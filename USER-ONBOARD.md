@@ -19,9 +19,7 @@ This is the short path for collaborators. Plain ASCII for mail and terminals.
 
 - **Windows 10/11.** About 200 MB free. **No admin rights needed.**
 - **git** (to clone and to pull upgrades): `winget install --id Git.Git`
-  or gitforwindows.org.
-- A **GitHub account** that has accepted John's collaborator invite (the
-  package repo is private).
+  or gitforwindows.org. No GitHub account needed — the repo is public.
 - **Python 3.8+** — onboard installs it via winget if you don't have it.
 - For the **AI features** (in-dashboard terminals, research/plan/build
   sessions, Gandalf): the **Claude Code CLI** with your subscription
@@ -39,28 +37,21 @@ This is the short path for collaborators. Plain ASCII for mail and terminals.
 
 ### 1. Clone the repo somewhere stable
 
-Accept John's GitHub invite first (check the email on your GitHub account),
-then:
-
 ```text
 cd C:\dev        (create the folder if needed)
 git clone https://github.com/johncliechty/anchor-plus-skills.git
 cd anchor-plus-skills
 ```
 
-- The first clone of the private repo pops a **browser sign-in** (Git
-  Credential Manager) — sign in with the GitHub account that received the
-  invite.
 - Keep this folder — **your Anchor data lives inside it** (see "Known
   limits" below).
 - **Upgrading later is just `git pull`** — your data files are untracked and
   git-ignored, so a pull updates the product without touching your tasks or
   projects.
 
-(No git and can't install it? After accepting the invite you can use the
-repo page's "Code → Download ZIP" instead — then right-click the zip →
-Properties → check **Unblock** → OK **before** extracting, and note zip
-installs must be upgraded by hand.)
+(No git and can't install it? Use the repo page's "Code → Download ZIP"
+instead — then right-click the zip → Properties → check **Unblock** → OK
+**before** extracting, and note zip installs must be upgraded by hand.)
 
 ### 2. Run onboard (one command)
 
