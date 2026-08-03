@@ -1,0 +1,98 @@
+{
+  "tier": "tier2",
+  "brownfield": true,
+  "projectDir": "<path> Foundry\\skills\\gandalf",
+  "versions": [
+    "SKILL.md (truth-updated 2026-07-11)",
+    "planning/NEXT-SESSION-HANDOFF.md (2026-06-20)",
+    "prereg-constants.json",
+    "planning/crucible-advisor/MASTER-PLAN.md"
+  ],
+  "items": [
+    {
+      "id": "NS-locked",
+      "fact": "North Star is locked (verbatim) for Gandalf as a deep-think advisor (Understand, Situate, Anticipate).",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null,
+      "note": "From NORTH-STAR.md"
+    },
+    {
+      "id": "core-powers",
+      "fact": "Gandalf performs UNDERSTAND (vetted diagnose core), SITUATE (researchPrime commission), and ANTICIPATE (bounded Oranges-lens premortem).",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null
+    },
+    {
+      "id": "host-built",
+      "fact": "The runtime host (gandalf-run.mjs), seam passes, and both live/deterministic paths are built and integrated. Deduped LATEST TRUTH (SKILL.md 2026-07-11) over older NEXT-SESSION-HANDOFF.md build plan.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true
+    },
+    {
+      "id": "single-family-ceiling",
+      "fact": "Single-family runs are capped at PROMISING tier; GROUNDED tier requires cross-family refutation.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true
+    },
+    {
+      "id": "no-brainstorm",
+      "fact": "Gandalf does not do divergent brainstorming (Jumper handles this); boundaries B1-B9, B-honesty, B-ceiling enforce scope.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true
+    },
+    {
+      "id": "prereg-frozen",
+      "fact": "Pre-registration constants (refuter_budget_R=3, spawn caps, refuter thresholds) are committed and frozen in prereg-constants.json.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null
+    },
+    {
+      "id": "ledger-unbuilt",
+      "fact": "The Phase-0 shared compose contract (orchestrator commission-id ledger) is not yet built; anti-laundering law is on honor-system and B2'/B7' are BLOCKED-this-cycle.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null
+    },
+    {
+      "id": "gap-oracle-values",
+      "fact": "Values for G (non-additivity margin), k (oracle floor), and calibration ICC are missing/unfinalized, pending the H1 feasibility gate.",
+      "label": "Gap",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null
+    },
+    {
+      "id": "gap-ledger-ownership",
+      "fact": "The ledger-ownership fork decision (shared compose contract vs Gandalf STEP-0) remains unfinalized.",
+      "label": "Gap",
+      "touchesCriterion": false,
+      "resolvable": true,
+      "peopleOnly": true,
+      "tested": null
+    }
+  ],
+  "reproduces": null,
+  "archaeologyRun": false,
+  "generatedFrom": "stage0:ingest"
+}

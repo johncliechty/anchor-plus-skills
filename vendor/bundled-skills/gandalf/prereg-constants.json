@@ -1,0 +1,26 @@
+{
+  "_note": "Gandalf advisor — build-time FROZEN CONSTANTS, committed in Wave 1 (GATE-0). Available to ALL waves. These are the dive's §5 residuals that are NOT power-calc-set. The power-calc-SET values (G non-additivity margin, k oracle floor) and the calibration ICC live in preregistration.json (committed by the H1 feasibility gate), NEVER here. JSON has no comments; keys prefixed '_' are documentation.",
+  "schema_version": "gandalf-advisor-1",
+  "substrate": {
+    "cross_model": false,
+    "_reason": "Single-family substrate (Fable 5). cross_model:false ⇒ single-family ceiling = PROMISING (B-ceiling)."
+  },
+  "refuter_budget_R": 3,
+  "refuter_firing_threshold": {
+    "value_if_true_at_least": "high",
+    "or_severity_at_least": "major",
+    "_semantics": "Only elevations with value-if-true ≥ HIGH (top dual-axis band) OR severity ≥ major get an INDEPENDENT named-defeater refuter. The rest ship SPECULATIVE with the 'no independent refutation ran' stamp."
+  },
+  "spawn_caps": {
+    "commission_depth": 1,
+    "per_run_spawn_cap": 5,
+    "_per_run_breakdown": "SITUATE commissions (≤2) + refuter budget R (≤3) = 5.",
+    "skill_twice_in_commission_chain": "HALT",
+    "_cycle_guard": "A skill appearing twice in the commission_chain ⇒ HALT-for-human (no silent recursion)."
+  },
+  "output_caps": {
+    "max_nitpicks": 7,
+    "max_elevations": 5,
+    "_note": "Carried diagnose-core residuals (Stage-2 committed defaults). Enforced as the nitpick/elevation caps in the Wave-1 schema-conformance suite (assertCaps). Tightenable by a later wave, never silently exceeded."
+  }
+}

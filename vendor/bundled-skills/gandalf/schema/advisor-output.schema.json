@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "gandalf/advisor-output/1",
+  "title": "Gandalf advisor output (Increment 1, committed typed schema)",
+  "description": "The committed typed output schema for a Gandalf advisor run. Wave 1 (GATE-0) freezes the SHAPE; the deterministic canaries own shape + rung-consistency, label/semantic TRUTH is owned by the advisory layer (PRINCIPLE-D). Validated by a zero-dependency subset validator in test/harness.mjs (type, required, properties, items, enum, const, min/max, additionalProperties). additionalProperties is left open so later waves may add fields without a schema break.",
+  "type": "object",
+  "required": ["schema_version", "cross_model", "degraded", "reasoning", "verdict", "findings", "nitpicks", "elevations", "risk_labels"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "cross_model": { "type": "boolean" },
+    "degraded": { "type": "boolean" },
+    "reasoning": { "type": "string", "description": "Reasoning text — MUST precede 'verdict' in key order (reasoning-before-verdict invariant)." },
+    "verdict": { "type": "string", "description": "Overall verdict; may be 'this is sound'." },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "rung", "reasoning", "verdict"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "rung": { "type": "string", "enum": ["REFUTED", "UNVERIFIED", "CLAIMED", "CORROBORATED", "OBSERVED"] },
+          "reasoning": { "type": "string" },
+          "verdict": { "type": "string" },
+          "kind": { "type": "string", "enum": ["diagnose", "situate", "anticipate", "nitpick"] },
+          "severity": { "type": "string", "enum": ["minor", "major", "critical"] },
+          "degraded": { "type": "boolean" },
+          "gandalf_core": {
+            "type": "object",
+            "description": "Diagnose-core provenance envelope (B5): proves a kind:'diagnose' finding came from the vetted diagnose core (PROTOCOL v2), not re-derived inline. Required on diagnose findings by the B5 canary (assertDiagnoseCoreProvenance); minted only via seam/diagnose-core.mjs.",
+            "properties": {
+              "protocol": { "type": "string", "description": "The vetted diagnose-core protocol marker; must equal GANDALF_CORE_PROTOCOL ('PROTOCOL v2')." }
+            }
+          },
+          "subject_cardinality": { "type": "integer", "minimum": 1, "description": "ANTICIPATE bounded-premortem cardinality (Wave 5 / B3): Gandalf's Oranges-lens foresight reads a SINGLE effort, so on a kind:'anticipate' finding this must be 1. A value > 1 is a multi-path read (Crucible's engine) and FAILS B3 (assertBoundedPremortem)." },
+          "future_state_condition": { "type": "string", "description": "ANTICIPATE forward-looking field (Wave 5 / B9): a not-yet-present condition the anticipation surfaces. Required (with enabling_assumption) on a kind:'anticipate' finding by the B9 canary (assertForwardLooking); minted via seam/anticipate.mjs composeAnticipation." },
+          "enabling_assumption": { "type": "string", "description": "ANTICIPATE forward-looking field (Wave 5 / B9): the assumption that would have to hold for the future_state_condition to arrive. Required (with future_state_condition) on a kind:'anticipate' finding by the B9 canary." }
+        }
+      }
+    },
+    "nitpicks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "rung", "reasoning", "verdict"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "rung": { "type": "string", "enum": ["REFUTED", "UNVERIFIED", "CLAIMED", "CORROBORATED", "OBSERVED"] },
+          "reasoning": { "type": "string" },
+          "verdict": { "type": "string" }
+        }
+      }
+    },
+    "elevations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "tier", "value_if_true", "reasoning", "verdict"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "tier": { "type": "string", "enum": ["SPECULATIVE", "PROMISING", "GROUNDED"] },
+          "value_if_true": { "type": "string", "enum": ["low", "medium", "high"] },
+          "rung": { "type": "string", "enum": ["REFUTED", "UNVERIFIED", "CLAIMED", "CORROBORATED", "OBSERVED"] },
+          "reasoning": { "type": "string" },
+          "verdict": { "type": "string" },
+          "refutation_provenance": {
+            "type": "object",
+            "description": "The independent named-defeater refutation envelope (seam/refute.composeRefutationProvenance). W2a ADDITIVELY carries the cross-family provenance the commission-id ledger binds — drafter_family, refuter_family, result_digest. These are optional in W2a (emitted, not yet REQUIRED by vetElevationRefutation — that gate is W2b). additionalProperties stays open so the envelope's existing fields (kind, defeater, independent, survived, refuter_commission_id) are unaffected.",
+            "additionalProperties": true,
+            "properties": {
+              "drafter_family": { "type": ["string", "null"], "description": "W2a: the model family that authored the drafted claim under refutation." },
+              "refuter_family": { "type": ["string", "null"], "description": "W2a: the model family that ran the independent refutation (cross-family when != drafter_family)." },
+              "result_digest": { "type": "string", "description": "W2a: a stable SHA-256 over the refuter's defeater + verdict content — the tuple the minted commission-id is cryptographically bound to." }
+            }
+          }
+        }
+      }
+    },
+    "risk_labels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["leg", "tier"],
+        "additionalProperties": true,
+        "properties": {
+          "leg": { "type": "string", "enum": ["diagnose", "situate", "anticipate"] },
+          "tier": { "type": "string", "enum": ["SPECULATIVE", "PROMISING", "GROUNDED"] },
+          "rung": { "type": "string", "enum": ["REFUTED", "UNVERIFIED", "CLAIMED", "CORROBORATED", "OBSERVED"] }
+        }
+      }
+    }
+  }
+}

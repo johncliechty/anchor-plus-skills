@@ -45,7 +45,10 @@ test_write.txt
 # Foreman orchestration state (transient build artifact, not product)
 foreman-checkpoint.json
 _devtest/
-gandalf/
+# ROOT-anchored (v1.1.3): the unanchored form also matched the VENDORED
+# gandalf skill inside the published collaborator repo and silently dropped
+# it from the clone. This rule's intent is the root Foreman-state dir only.
+/gandalf/
 _foreman-status.log
 .foreman/
 rnd_jobs/
@@ -101,20 +104,23 @@ planning/**/_*.log
 # Collaborator-clone data files (v1.1.3 clone distribution): in a clone of
 # the published package repo, live Anchor data accumulates UNTRACKED inside
 # the package folder — ignore it so `git status` stays clean and `git pull`
-# upgrades never touch user data. On the AUTHOR repo most of these are
-# TRACKED files, and ignore rules never apply to tracked files, so this
-# section is inert for the author (exception: friction/ was untracked and is
-# now hidden from status — the journal store is live data, not source).
-DASHBOARD.md
-INBOX.md
-PROJECTS.md
-CANCELLED.md
-SAVED_FOR_LATER.md
-WEEKLY_REVIEW.md
-domains/
-logs/
-health_reports/
-friction/
+# upgrades never touch user data. ROOT-ANCHORED (leading slash) so they can
+# never match nested shipped content (starter/domains/, skill-internal dirs
+# — the unanchored form silently dropped those from the published repo). On
+# the AUTHOR repo most of these are TRACKED files, and ignore rules never
+# apply to tracked files, so this section is inert for the author
+# (exception: friction/ was untracked and is now hidden from status — the
+# journal store is live data, not source).
+/DASHBOARD.md
+/INBOX.md
+/PROJECTS.md
+/CANCELLED.md
+/SAVED_FOR_LATER.md
+/WEEKLY_REVIEW.md
+/domains/
+/logs/
+/health_reports/
+/friction/
 
 # v1.1.3 share-fix: the stale built package-v1 trees were REMOVED from git
 # (61MB of duplicated product; they made agents crawl old copies and tripped
