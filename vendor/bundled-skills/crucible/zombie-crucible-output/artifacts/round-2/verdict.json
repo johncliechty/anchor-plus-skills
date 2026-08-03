@@ -1,0 +1,299 @@
+{
+  "round": 2,
+  "findings": [
+    {
+      "id": "topic:daemon-dependency-missing",
+      "severity": "BLOCKER",
+      "agreement": 2,
+      "demoted": false,
+      "isBlocker": true,
+      "isNew": false,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "1. System-Wide Detection",
+      "raisedBy": [
+        "Skeptic",
+        "Contrarian"
+      ],
+      "section": "Wave 1 / Wave 4",
+      "message": "The known blocker 'daemon-dependency-missing' remains unresolved. Wave 4 assumes a 'background daemon is queried via IPC', but Wave 1 only delivers an 'OS process discovery module' without defining the daemon's actual creation, lifecycle management, or deployment architecture. A maintainer cannot build the IPC without the daemon foundation."
+    },
+    {
+      "id": "topic:ingestion-missing-telemetry",
+      "severity": "BLOCKER",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "3. Historical Forensics",
+      "raisedBy": [
+        "Skeptic"
+      ],
+      "section": "Wave 6",
+      "message": "Wave 6 relies on the assumption that 'Historical telemetry data exists in the database', but no wave in the plan actually delivers the mechanism to capture, ingest, and persist this historical process data. A maintainer will be unable to implement retrospective queries without a data collection pipeline."
+    },
+    {
+      "id": "topic:heuristics-missing-required",
+      "severity": "MINOR",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "1. System-Wide Detection",
+      "raisedBy": [
+        "Skeptic"
+      ],
+      "section": "Wave 1",
+      "message": "Wave 1 deliverables specify AI heuristic rules for 'agy, trio, claude, LLM API detection' but fail to explicitly include 'VS Code AI swarms' and 'cowork' as mandated by the North Star. This omission risks a maintainer overlooking the specific signatures required for these required platforms."
+    },
+    {
+      "id": "topic:missing-persistence-telemetry",
+      "severity": "BLOCKER",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "3",
+      "raisedBy": [
+        "Contrarian"
+      ],
+      "section": "Wave 6 — Historical Forensics Analysis and UI",
+      "message": "Wave 6 assumes 'Historical telemetry data exists in the database', yet no preceding wave provisions this database, defines its schema, or implements the continuous collection and persistence of system-wide OS-level process data. Retrospective analysis is physically impossible without prior telemetry logging."
+    },
+    {
+      "id": "topic:freeze-mechanism-undefined",
+      "severity": "MAJOR",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "4",
+      "raisedBy": [
+        "Contrarian"
+      ],
+      "section": "Wave 5 — Bulk Swarm Approvals and Context Display",
+      "message": "Wave 5 mandates dispatching a 'Soft Freeze command' to neutralize swarms, but omits the actual OS-level implementation needed to freeze drastically distinct targets (Anchor, VS Code, raw terminal processes, cowork). A GUI button is insufficient if the underlying execution mechanisms for freezing are not engineered."
+    },
+    {
+      "id": "topic:mandated-missing-targets",
+      "severity": "MAJOR",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "1",
+      "raisedBy": [
+        "Contrarian"
+      ],
+      "section": "Wave 1 — System-Wide Process Discovery",
+      "message": "The North Star explicitly mandates tracking 'Anchor, VS Code AI swarms, raw terminal processes, and cowork', but Wave 1 deliverables only specify heuristics for 'agy, trio, claude, LLM API detection'. The explicitly mandated detection environments must be included in the deliverables."
+    },
+    {
+      "id": "topic:leakage-secret-telemetry",
+      "severity": "BLOCKER",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "3. Historical Forensics",
+      "raisedBy": [
+        "Analyst"
+      ],
+      "section": "Wave 6 — Historical Forensics Analysis and UI",
+      "message": "Storing historical process data—especially full command lines required for 'LLM API detection'—in a persistent database introduces a critical security vulnerability: plain-text logging of API keys, environment variables, and authentication tokens. The implementation plan must explicitly define a strict redaction and sanitization pipeline before telemetry is written to disk."
+    },
+    {
+      "id": "topic:freeze-ipc-unauthenticated-vector",
+      "severity": "BLOCKER",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "4. Human-in-the-Loop Approval",
+      "raisedBy": [
+        "Analyst"
+      ],
+      "section": "Wave 5 — Bulk Swarm Approvals and Context Display",
+      "message": "The GUI issues a 'Soft Freeze command' to the background daemon via IPC. Because freezing system-wide processes requires elevated OS privileges, an unauthenticated IPC channel acts as a severe privilege escalation and Denial of Service vector, allowing any unprivileged local process to freeze arbitrary applications. The plan must mandate IPC authentication and process validation."
+    },
+    {
+      "id": "topic:boundary-privilege-undefined",
+      "severity": "MAJOR",
+      "agreement": 1,
+      "demoted": false,
+      "isBlocker": false,
+      "isNew": true,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "1. System-Wide Detection",
+      "raisedBy": [
+        "Analyst"
+      ],
+      "section": "Wave 1 — System-Wide Process Discovery",
+      "message": "System-wide OS process monitoring (capturing VS Code, terminal, and cowork sessions globally) requires elevated administrative/root privileges to see processes not owned by the current user. The plan fails to specify the security boundary, privilege escalation model, or least-privilege constraints for how this discovery module operates safely without exposing a high-privileged attack surface."
+    }
+  ],
+  "blockers": [
+    {
+      "id": "topic:daemon-dependency-missing",
+      "severity": "BLOCKER",
+      "agreement": 2,
+      "demoted": false,
+      "isBlocker": true,
+      "isNew": false,
+      "traces_to_north_star": "yes",
+      "tag": "refinement",
+      "criterion": "1. System-Wide Detection",
+      "raisedBy": [
+        "Skeptic",
+        "Contrarian"
+      ],
+      "section": "Wave 1 / Wave 4",
+      "message": "The known blocker 'daemon-dependency-missing' remains unresolved. Wave 4 assumes a 'background daemon is queried via IPC', but Wave 1 only delivers an 'OS process discovery module' without defining the daemon's actual creation, lifecycle management, or deployment architecture. A maintainer cannot build the IPC without the daemon foundation."
+    }
+  ],
+  "newBlockers": [],
+  "demoted": [],
+  "dry": true,
+  "verdict": "DRY",
+  "angles": {
+    "Skeptic": "future-maintainer",
+    "Contrarian": "steel-man-the-premise",
+    "Analyst": "security"
+  },
+  "reviews": [
+    {
+      "reviewer": "Skeptic",
+      "angle": "future-maintainer",
+      "answerable": "yes",
+      "note": "Adversarial review completed with a focus on future maintainability. Identified missing ingestion pipelines and verified unresolved known blockers.",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "topic": "daemon-dependency-missing",
+          "claim_id": null,
+          "section": "Wave 1 / Wave 4",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "1. System-Wide Detection",
+          "message": "The known blocker 'daemon-dependency-missing' remains unresolved. Wave 4 assumes a 'background daemon is queried via IPC', but Wave 1 only delivers an 'OS process discovery module' without defining the daemon's actual creation, lifecycle management, or deployment architecture. A maintainer cannot build the IPC without the daemon foundation."
+        },
+        {
+          "severity": "BLOCKER",
+          "topic": "missing-telemetry-ingestion",
+          "claim_id": null,
+          "section": "Wave 6",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "3. Historical Forensics",
+          "message": "Wave 6 relies on the assumption that 'Historical telemetry data exists in the database', but no wave in the plan actually delivers the mechanism to capture, ingest, and persist this historical process data. A maintainer will be unable to implement retrospective queries without a data collection pipeline."
+        },
+        {
+          "severity": "MINOR",
+          "topic": "missing-required-heuristics",
+          "claim_id": null,
+          "section": "Wave 1",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "1. System-Wide Detection",
+          "message": "Wave 1 deliverables specify AI heuristic rules for 'agy, trio, claude, LLM API detection' but fail to explicitly include 'VS Code AI swarms' and 'cowork' as mandated by the North Star. This omission risks a maintainer overlooking the specific signatures required for these required platforms."
+        }
+      ]
+    },
+    {
+      "reviewer": "Contrarian",
+      "angle": "steel-man-the-premise",
+      "answerable": "yes",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "topic": "missing-telemetry-persistence",
+          "claim_id": null,
+          "section": "Wave 6 — Historical Forensics Analysis and UI",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "3",
+          "message": "Wave 6 assumes 'Historical telemetry data exists in the database', yet no preceding wave provisions this database, defines its schema, or implements the continuous collection and persistence of system-wide OS-level process data. Retrospective analysis is physically impossible without prior telemetry logging."
+        },
+        {
+          "severity": "BLOCKER",
+          "topic": "daemon-dependency-missing",
+          "claim_id": null,
+          "section": "Wave 1 — System-Wide Process Discovery",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "1",
+          "message": "The known blocker 'daemon-dependency-missing' remains unresolved. The draft relies on a background daemon being queried via IPC (as seen in the truncated Wave 4 text) but fails to allocate a wave to deliver, instantiate, or manage the lifecycle of this persistent background daemon."
+        },
+        {
+          "severity": "MAJOR",
+          "topic": "undefined-freeze-mechanism",
+          "claim_id": null,
+          "section": "Wave 5 — Bulk Swarm Approvals and Context Display",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "4",
+          "message": "Wave 5 mandates dispatching a 'Soft Freeze command' to neutralize swarms, but omits the actual OS-level implementation needed to freeze drastically distinct targets (Anchor, VS Code, raw terminal processes, cowork). A GUI button is insufficient if the underlying execution mechanisms for freezing are not engineered."
+        },
+        {
+          "severity": "MAJOR",
+          "topic": "missing-mandated-targets",
+          "claim_id": null,
+          "section": "Wave 1 — System-Wide Process Discovery",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "1",
+          "message": "The North Star explicitly mandates tracking 'Anchor, VS Code AI swarms, raw terminal processes, and cowork', but Wave 1 deliverables only specify heuristics for 'agy, trio, claude, LLM API detection'. The explicitly mandated detection environments must be included in the deliverables."
+        }
+      ]
+    },
+    {
+      "reviewer": "Analyst",
+      "angle": "security",
+      "answerable": "yes",
+      "findings": [
+        {
+          "severity": "BLOCKER",
+          "topic": "secret-leakage-in-telemetry",
+          "section": "Wave 6 — Historical Forensics Analysis and UI",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "3. Historical Forensics",
+          "message": "Storing historical process data—especially full command lines required for 'LLM API detection'—in a persistent database introduces a critical security vulnerability: plain-text logging of API keys, environment variables, and authentication tokens. The implementation plan must explicitly define a strict redaction and sanitization pipeline before telemetry is written to disk."
+        },
+        {
+          "severity": "BLOCKER",
+          "topic": "unauthenticated-ipc-freeze-vector",
+          "section": "Wave 5 — Bulk Swarm Approvals and Context Display",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "4. Human-in-the-Loop Approval",
+          "message": "The GUI issues a 'Soft Freeze command' to the background daemon via IPC. Because freezing system-wide processes requires elevated OS privileges, an unauthenticated IPC channel acts as a severe privilege escalation and Denial of Service vector, allowing any unprivileged local process to freeze arbitrary applications. The plan must mandate IPC authentication and process validation."
+        },
+        {
+          "severity": "MAJOR",
+          "topic": "undefined-privilege-boundary",
+          "section": "Wave 1 — System-Wide Process Discovery",
+          "tag": "refinement",
+          "traces_to_north_star": "yes",
+          "criterion": "1. System-Wide Detection",
+          "message": "System-wide OS process monitoring (capturing VS Code, terminal, and cowork sessions globally) requires elevated administrative/root privileges to see processes not owned by the current user. The plan fails to specify the security boundary, privilege escalation model, or least-privilege constraints for how this discovery module operates safely without exposing a high-privileged attack surface."
+        }
+      ]
+    }
+  ]
+}

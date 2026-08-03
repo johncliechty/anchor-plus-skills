@@ -1,0 +1,112 @@
+/* Anchor R&D interactive terminal — CHROME for the REAL xterm.js console.
+ *
+ * The terminal canvas itself is now a genuine xterm.js Terminal (its own
+ * stylesheet is vendored at /vendor/xterm/xterm.css). This stylesheet styles the
+ * Anchor REPL chrome layered AROUND that canvas: the title bar, the command
+ * input line, the inline gate / AskUserQuestion prompts, and the
+ * exit -> discover -> confirm-adopt panel. xterm.js is vendored as a plain
+ * static asset (like KaTeX), behind the same window.AnchorTerm.mount API.
+ */
+.aterm {
+  background: #0a0c11;
+  border: 1px solid #2e3340;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+}
+.aterm-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #12151d;
+  border-bottom: 1px solid #2e3340;
+  font-size: 11px;
+  color: #8b8f9a;
+}
+.aterm-bar .dot { width: 9px; height: 9px; border-radius: 50%; background: #3a3f4c; }
+.aterm-bar .dot.live { background: #6c9cfc; animation: aterm-pulse 1.5s infinite; }
+.aterm-bar .dot.done { background: #4ade80; }
+.aterm-bar .dot.fail { background: #f87171; }
+.aterm-bar .title { color: #cdd2dc; font-weight: 600; }
+.aterm-bar .status { margin-left: auto; }
+@keyframes aterm-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(108,156,252,.5); }
+  70% { box-shadow: 0 0 0 6px rgba(108,156,252,0); }
+  100% { box-shadow: 0 0 0 0 rgba(108,156,252,0); }
+}
+/* Host for the real xterm.js Terminal canvas. xterm sizes itself to this box. */
+.aterm-screen {
+  min-height: 160px;
+  height: 320px;
+  max-height: 60vh;
+  overflow: hidden;
+  padding: 8px 10px;
+  background: #0a0c11;
+}
+.aterm-screen .xterm { height: 100%; }
+.aterm-screen .xterm-viewport { background: #0a0c11 !important; }
+/* Degraded fallback (only if window.Terminal is unavailable). */
+.aterm-fallback {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #cdd2dc;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* Gate + adopt chrome live below the canvas. */
+.aterm-chrome { padding: 0 12px; }
+.aterm-chrome:empty { padding: 0; }
+/* Inline gate / AskUserQuestion prompt surfaced as chrome below the terminal. */
+.aterm-gate {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: rgba(251,191,36,.08);
+  border: 1px solid rgba(251,191,36,.4);
+  border-radius: 6px;
+}
+.aterm-gate .q { color: #fbbf24; margin-bottom: 6px; }
+.aterm-gate .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.aterm-gate .opt {
+  font-size: 11.5px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+  border: 1px solid rgba(251,191,36,.5); background: #1a1d27; color: #fbbf24;
+}
+.aterm-gate .opt:hover { background: rgba(251,191,36,.18); }
+.aterm-inputrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid #2e3340;
+  background: #0c0e14;
+}
+.aterm-inputrow .prompt { color: #4ade80; font-weight: 700; }
+.aterm-inputrow input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e2e4e9;
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.aterm-inputrow input:disabled { color: #555a66; }
+/* Exit → discover → confirm-adopt panel. */
+.aterm-adopt {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-top: 1px solid #2e3340;
+  background: #12151d;
+}
+.aterm-adopt h5 { margin: 0 0 6px; font-size: 12px; color: #e2e4e9; }
+.aterm-adopt ul { margin: 4px 0 8px; padding-left: 18px; font-size: 12px; color: #8b8f9a; }
+.aterm-adopt .row { display: flex; gap: 8px; }
+.aterm-adopt button {
+  font-size: 12px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #2e3340; background: #1a1d27; color: #e2e4e9;
+}
+.aterm-adopt button.accent { background: #6c9cfc; color: #0b1020; border-color: #6c9cfc; font-weight: 600; }

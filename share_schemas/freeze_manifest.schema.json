@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "anchor://share/freeze_manifest.schema.json",
+  "title": "Skill freeze manifest with tag placeholders (v1)",
+  "description": "Freeze interface for Stage-2/W3 verify_freeze_manifest. Tag and commit fields are PLACEHOLDER only until concurrent skill run merges and John go-ahead. ship_allowed stays false while placeholders remain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "freeze_tags",
+    "skills_pin",
+    "package_matrix_version",
+    "ship_allowed"
+  ],
+  "properties": {
+    "schema": { "const": "share-freeze-manifest/v1" },
+    "schema_version": { "const": 1 },
+    "freeze_tags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchor", "trio", "skill-foundry"],
+      "properties": {
+        "anchor": { "type": "string", "minLength": 1 },
+        "trio": { "type": "string", "minLength": 1 },
+        "skill-foundry": { "type": "string", "minLength": 1 }
+      }
+    },
+    "freeze_commits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "anchor": { "type": "string", "minLength": 1 },
+        "trio": { "type": "string", "minLength": 1 },
+        "skill-foundry": { "type": "string", "minLength": 1 }
+      }
+    },
+    "skills_pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "commit"],
+      "properties": {
+        "tag": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string", "minLength": 1 }
+      }
+    },
+    "package_matrix_version": { "type": "string", "minLength": 1 },
+    "ship_allowed": { "type": "boolean" },
+    "notes": { "type": "string" }
+  }
+}

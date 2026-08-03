@@ -1,0 +1,136 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Ecgberht High Seat — wireframes v2.1 Screens 0 + 2 + 3 (TW6).
+   Docked overlay over the live Anchor MAIN dashboard (portfolio altitude).
+   One overlay component family with the project Seal (two mounts).
+   Laws: ambient calm + ONE raised block; tiles are one line each (never a
+   master data table); capacity is spoken (no %-meters, no token gauges);
+   the ⚑ badge on the toolbar button is the only ambient signal.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ecg-hs-btn { display: inline-flex; align-items: center; gap: 4px; position: relative; }
+.ecg-hs-btn img { width: 14px; height: 14px; border-radius: 2px; }
+.ecg-hs-badge {
+  display: none; /* shown only when the raise queue is non-empty */
+  margin-left: 4px; padding: 0 6px; border-radius: 8px;
+  background: #e0a437; color: #14161c; font-size: 10px; font-weight: 700;
+  line-height: 15px; min-width: 15px; text-align: center;
+}
+.ecg-hs-badge.on { display: inline-block; }
+
+.ecg-hs-dock {
+  position: fixed; inset: 28px 36px; z-index: 990;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: #0f1117; border: 1px solid #2a2f3c; border-radius: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .6);
+  color: #e6e8ee; font-size: 13px;
+}
+.ecg-hs-dock.full { inset: 0; border-radius: 0; }
+
+.ecg-hs-bar {
+  display: flex; align-items: center; gap: 10px; flex: none;
+  padding: 10px 14px; border-bottom: 1px solid #2a2f3c; background: #131722;
+}
+.ecg-hs-bar .ecg-hs-ico { width: 22px; height: 22px; border-radius: 4px; }
+.ecg-hs-bar .ti { font-weight: 600; }
+.ecg-hs-bar .ti small { color: #8b93a7; font-weight: 400; }
+.ecg-hs-bar .seatpill {
+  padding: 2px 9px; border: 1px solid #2a2f3c; border-radius: 10px;
+  color: #8b93a7; font-size: 11px; white-space: nowrap;
+}
+.ecg-hs-bar .stamp { color: #8b93a7; font-size: 11px; margin-left: auto; }
+.ecg-hs-bar button {
+  background: transparent; border: 1px solid #2a2f3c; color: #8b93a7;
+  border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 12px;
+}
+.ecg-hs-bar button:hover { color: #e6e8ee; }
+
+.ecg-hs-body { flex: 1; overflow: auto; padding: 14px 18px; }
+.ecg-hs-crumb { color: #8b93a7; font-size: 11px; margin-bottom: 10px; cursor: pointer; }
+.ecg-hs-crumb:hover { color: #e6e8ee; }
+
+/* S2-E2 — the single raise block */
+.ecg-hs-raise {
+  border: 1px solid #e0a437; border-radius: 12px; padding: 14px 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(180deg, rgba(224, 164, 55, .07), transparent);
+}
+.ecg-hs-raise h3 { margin: 0 0 6px; color: #e0a437; font-size: 14px; }
+.ecg-hs-raise .note { color: #8b93a7; font-size: 11px; margin-top: 8px; }
+.ecg-hs-quiet {
+  border: 1px solid #2a2f3c; border-radius: 12px; padding: 12px 16px;
+  margin-bottom: 14px; color: #aeb4c2;
+}
+
+/* S2-E3 — tiles: one line each, quiet dimmed. NOT a table. */
+.ecg-hs-tiles {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px; margin-bottom: 14px;
+}
+.ecg-hs-tile {
+  background: #151a26; border: 1px solid #2a2f3c; border-radius: 10px;
+  padding: 11px 13px;
+}
+.ecg-hs-tile.dim { opacity: .62; }
+.ecg-hs-tile .nm { display: flex; align-items: center; gap: 7px; font-weight: 600; margin-bottom: 4px; }
+.ecg-hs-tile .nm img { width: 18px; height: 18px; border-radius: 50%; }
+.ecg-hs-tile .goal { color: #8b93a7; margin-bottom: 6px; font-size: 12px; }
+.ecg-hs-tile .pill { font-size: 11.5px; color: #aeb4c2; }
+.ecg-hs-tile .pill.raised { color: #e0a437; }
+
+/* S2-E4 — capacity & focus (spoken; never a meter) */
+.ecg-hs-balance {
+  background: #151a26; border: 1px solid #2a2f3c; border-radius: 10px;
+  padding: 13px 16px; margin-bottom: 14px;
+}
+.ecg-hs-balance .who { color: #6c9cfc; font-weight: 600; margin-bottom: 6px; }
+.ecg-hs-balance .mech { color: #566079; font-size: 10.5px; margin-top: 8px; }
+.ecg-hs-reasons { margin: 8px 0 0; padding-left: 18px; color: #aeb4c2; display: none; }
+.ecg-hs-reasons.open { display: block; }
+
+.ecg-hs-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.ecg-hs-actions button {
+  background: #1b2230; border: 1px solid #2a2f3c; color: #e6e8ee;
+  border-radius: 7px; padding: 5px 12px; cursor: pointer; font-size: 12px;
+}
+.ecg-hs-actions button.pri { border-color: #6c9cfc; background: #1b2740; }
+.ecg-hs-actions button:hover { border-color: #6c9cfc; }
+
+/* Saybox + footer */
+.ecg-hs-say { display: flex; gap: 8px; margin-top: 4px; }
+.ecg-hs-say input {
+  flex: 1; background: #10141d; border: 1px solid #2a2f3c; color: #e6e8ee;
+  border-radius: 8px; padding: 7px 11px; font-size: 13px;
+}
+.ecg-hs-say button {
+  background: #1b2740; border: 1px solid #6c9cfc; color: #e6e8ee;
+  border-radius: 8px; padding: 7px 14px; cursor: pointer;
+}
+.ecg-hs-foot {
+  flex: none; padding: 7px 14px; border-top: 1px solid #2a2f3c;
+  color: #566079; font-size: 10.5px; background: #131722;
+}
+.ecg-hs-reply { color: #aeb4c2; margin-top: 8px; font-size: 12px; }
+
+/* Screen 3 — Decision Packet cards (in-overlay hop target) */
+.ecg-hs-packet { display: grid; gap: 12px; }
+.ecg-hs-pcard {
+  background: #151a26; border: 1px solid #2a2f3c; border-radius: 10px;
+  padding: 12px 16px;
+}
+.ecg-hs-pcard h3 {
+  margin: 0 0 8px; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: #8b93a7;
+}
+.ecg-hs-pcard.goal { border-color: #e0a437; }
+.ecg-hs-pcard.goal h3 { color: #e0a437; }
+.ecg-hs-pcard .prov { color: #566079; font-size: 10.5px; margin-top: 6px; }
+.ecg-hs-pcard .unknown { color: #e0a437; font-style: italic; }
+.ecg-hs-art iframe {
+  width: 100%; height: 320px; border: 1px solid #2a2f3c; border-radius: 8px;
+  background: #fff;
+}
+
+/* TW7 S4-E2 — capacity-unknown hard-stop chamber: spoken refusal, three
+   honest options, amber accent. No meter has ever been rendered here. */
+.ecg-hs-capstop { border-color: #7a5a1e; }
+.ecg-hs-capstop .who { color: #e0a437; }

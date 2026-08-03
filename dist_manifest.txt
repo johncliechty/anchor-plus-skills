@@ -1,0 +1,304 @@
+# Anchor — shippable-file manifest (Wave 8, deny-by-default)
+#
+# This file is the SINGLE SOURCE OF TRUTH for what ships in the public,
+# data-free distribution (MASTER-PLAN C10). The distro builder (distro.py)
+# is DENY-BY-DEFAULT: a file is staged into the export ONLY if it matches an
+# entry below. Anything not listed here — your task/project markdown, the R&D
+# registry JSON, .anchor/ stores, logs/, health_reports/, foreman build state,
+# planning/, _archive/, _mockups/ — is EXCLUDED automatically.
+#
+# Syntax:
+#   - One path or glob per line, relative to the repo root, POSIX separators.
+#   - Lines starting with '#' and blank lines are ignored.
+#   - Globs use ** for recursive matches (e.g. vendor/**).
+#   - There are NO exclude rules here: deny-by-default means "not listed = not shipped".
+#
+# A NEW unlisted source file will NOT silently ship — add it here deliberately.
+
+# ── Product code (Python stdlib only at runtime) ───────────────────────────
+anchor.py
+anchor_gui.py
+anchor_md.py
+anchor_healthcheck.py
+paths.py
+rnd_registry.py
+dir_browser.py
+job_runner.py
+supervisor.py
+foundry_api.py
+foundry_north_star.py
+foundry_ops.py
+foundry_gui_write.py
+skill_runner.py
+foundry_map_gates.py
+foundry_autoload.py
+foundry_gui.py
+foundry_decisions.py
+foundry_journal.py
+rollup_honesty.py
+usage_ledger.py
+usage_capture.py
+narration.py
+anchor_settings.py
+gate_adapter.py
+lanes.py
+effort_history.py
+report_viewer.py
+brownfield_scan.py
+anchor_marker.py
+distro.py
+
+# ── Foundry map data (REQUIRED at import) ──────────────────────
+# foundry_map.py resolves _SCHEMA = load_schema() at MODULE SCOPE, and
+# anchor_gui -> foundry_gui -> foundry_autoload -> foundry_map is an
+# unconditional import chain. Without these the shipped bundle raises
+# FileNotFoundError on `import anchor_gui` and the dashboard cannot start
+# at all. They were absent from v1.1.0 and earlier (added 2026-07-26).
+foundry_map.py
+foundry_map_v2.schema.json
+foundry_map_v2.json
+foundry_map_v2.lock.json
+
+# ── Doctor V3 "honest agentic diagnostics" module ──────────────────────────
+# Stdlib-only: doctor.py (the run_doctor() system check the /doctor session
+# seed embeds) uses only sys / shutil / platform / os / subprocess / pathlib.
+# anchor_gui.py imports it at runtime for the doctor seed, so it must ship or
+# the shipped /doctor surface degrades. Its interrupted-update probe imports
+# update_transaction ONLY inside a try/except (update_transaction.py is
+# deliberately NOT shipped — its closure drags the foundry update subsystem,
+# and anchor.py already treats it the same lazy/optional way) — absent, the
+# probe silently skips; nothing ImportErrors at import time.
+doctor.py
+
+# ── Friction journal (v1.1.1) ───────────────────────────────
+# The user-initiated journaling store behind `anchor.py journal` and
+# POST /api/rnd/journal_friction. anchor_gui.py imports it at module
+# scope for those handlers, so it MUST ship or the server cannot import.
+friction_journal.py
+
+# ── R&D control surface v2 modules ─────────────────────────────────────────
+sessions.py
+summarizer.py
+deliverables.py
+rnd_terminal.py
+
+# ── R&D control surface v3 "Mission Control" modules ───────────────────────
+# pty_manager.py is the ONE module permitted a native import (winpty / pywinpty);
+# it is LAZY + terminal-only and the declared exception in the distro import scan.
+pty_manager.py
+session_registry.py
+worktrees.py
+terminal_session.py
+handoff.py
+preview_server.py
+
+# ── R&D control surface v8 "Durable Artifacts" modules ─────────────────────
+# Both stdlib-only: project_bootstrap (auto git-init + starter CLAUDE.md) and
+# project_remote (link GitHub + auto-push) shell out to git/gh as external CLIs
+# via subprocess through an injectable seam — never importing them as deps.
+project_bootstrap.py
+project_remote.py
+
+# ── R&D control surface v9 "Tidy" modules ──────────────────────────────────
+# Stdlib-only: project_move (the guarded atomic on-disk folder move) uses only
+# shutil / pathlib / re + the existing worktrees seam — no third-party imports.
+project_move.py
+
+# ── R&D control surface v10 "Live Handoff & Boneyard" modules ──────────────
+# Stdlib-only: boneyard (the per-project searchable index over discarded
+# session/idea material) uses only hashlib / json / os / time / pathlib + the
+# existing rnd_registry seam — no third-party imports. It is an INDEX over the
+# already-persisted docs (v8 keystone), not a second copy.
+boneyard.py
+
+# ── R&D control surface v12 "Efforts" modules ─────────────────────────────
+# Stdlib-only: effort_view (the derived, drift-safe, deduped view-layer that
+# groups registry chains + new single-session efforts into uniform efforts) uses
+# only the session_registry / effort_history / summarizer seams — no third-party
+# imports. It is a DERIVED CACHE rebuilt from the registry on every call, never a
+# stored source of truth, and never mutates a live member.
+effort_view.py
+
+# ── Gandalf integration v1 "honest project read" module ────────────────────
+# Stdlib-only: gandalf (the two-stage engine — Stage A model via the runner seam,
+# Stage B Gandalf's own Tier-1 HOST via the ANCHOR_GANDALF_HOST_CMD seam) uses only
+# json / os / subprocess / time / pathlib + the existing paths / job_runner /
+# summarizer seams. ``node`` (the Stage-B host) is an EXTERNAL CLI through a seam,
+# like git/gh — never a Python dependency.
+gandalf.py
+
+# ── Re-architecture 2026-07 runtime modules (C2 route table + auth soak) ───
+# Both stdlib-only and imported by anchor_gui.py at runtime: route_table (the
+# declarative HTTP route table + strangler dispatch substrate, W7) is pure data
+# + pure functions; auth_warn (the ANCHOR_AUTH_WARN log-only would-401 soak
+# recorder, W8) uses only json / os / time / pathlib + the paths seam.
+route_table.py
+auth_warn.py
+
+# ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
+# Stdlib-only: journal (the per-project append-only JSONL event journal — the
+# ONE schema-validated emit() choke point + the Butler envelope + the blessed
+# journal-first-then-legacy dual_write wrapper) uses only json / os / re /
+# threading / time / pathlib + the paths / pillar_flags seams (lazily
+# rnd_registry / tools.write_tripwire). Imported by terminal_session.py at
+# runtime (the first instrumented mutation class — session lifecycle, D1).
+journal.py
+
+# ── Session-lifecycle / reaper / foundry runtime modules (v1.1.3 share-fix) ──
+# THE 2026-07-30 INCIDENT CLASS: these modules exist on the author machine and
+# are imported by anchor_gui.py / job_runner.py / pty_manager.py at RUNTIME
+# (lazily, inside try/except — so `import anchor_gui` stays green while the
+# shipped bundle boots degraded: boot reconcile dies, /api/rnd/orphan_check
+# spams ModuleNotFoundError every ~30-60s, kill containment weakens). They were
+# never listed here, so no collaborator install ever received them (see
+# friction-intake-2026-07-30.md). The import-closure gate in distro.py now
+# refuses a build whose staged .py files import an unstaged first-party module,
+# so this class of gap can never ship silently again.
+# NOTE: reaper/reaper_arming/zombie_hunter are the process-reaping daemon — it
+# ships UNARMED by default (the arming ladder + .anchor/reaper.disarmed brake).
+proc_probe.py
+reaper.py
+reaper_arming.py
+freeze_state.py
+zombie_hunter.py
+tidy_idy_runner.py
+foundry_integrity.py
+foundry_safety.py
+foundry_skills.py
+foundry_acceptance.py
+# Found by the new import-closure gate itself (beyond the friction intake's
+# list): orientation (the /api/rnd/orient_session handler's engine) and parity
+# (the C3 journal↔legacy parity classifier the shipped healthcheck walks).
+# Their own closures resolve entirely to already-shipped modules. The dev-only
+# ``tools/`` package stays unshipped (declared in _OPTIONAL_FIRST_PARTY; its
+# consumers degrade by design and the healthcheck skip-warns without it).
+orientation.py
+parity.py
+
+# ── Share / onboard surface (v1.1.3: the REAL cold-start collaborators use) ──
+# USER-ONBOARD.md documents `.\onboard.cmd` → onboard.ps1 → `python -m
+# share_onboard` as the sole cold-start. Until v1.1.3 that surface only shipped
+# because a side builder (planning/…/_build_clean_ship.py) globbed it in past
+# the manifest; the manifest itself listed only onboard.py. It is now listed
+# HERE so distro.py — the one blessed builder — stages the entire cold-start
+# closure. verify_freeze_manifest is a MODULE-LEVEL import of
+# share_ci_ship_gate (shipping one without the other is an instant
+# ModuleNotFoundError — the friction intake's 12th missing module).
+onboard.cmd
+onboard.ps1
+onboard_cli.py
+onboard_bootstrap.py
+launch_anchor_dashboard.py
+USER-ONBOARD.md
+verify_freeze_manifest.py
+share_capability_matrix.py
+share_ci_ship_gate.py
+share_contracts.py
+share_feedback.py
+share_feedback_intake.py
+share_governance.py
+share_home_config.py
+share_onboard.py
+share_package_matrix.py
+share_publish.py
+share_readiness.py
+share_skill_journal.py
+share_skill_seal.py
+share_skills_root.py
+share_sources.py
+share_topology.py
+share_sources_pin.json
+share_freeze_manifest.json
+share_governance_pack/**
+share_schemas/**
+
+# ── Version + changelog + desktop icon (v1.1.3) ─────────────────────────────
+# VERSION ships so a collaborator install self-reports its real version
+# (friction_journal._anchor_version reads the file beside itself; absent →
+# "unknown", which is exactly what the 2026-07-30 intake had to guess around).
+# anchor.ico is the desktop-shortcut branding USER-ONBOARD.md promises.
+VERSION
+CHANGELOG.md
+anchor.ico
+
+# ── Vendored brand asset (Ghost World Labs mark; pure-data SVG) ─────────────
+vendor/brand/gwl-m-icon.svg
+# Steward persona icon pairs (2026-07-29): the selectable steward UI
+# (anchor_settings.STEWARDS) renders these on the High Seat + Projects
+# tiles; product art, ships with the bundle.
+vendor/brand/ecgberht-portfolio-high-seat.jpg
+vendor/brand/ecgberht-project-seal.jpg
+vendor/brand/aladdin-high-seat-cave.jpg
+vendor/brand/aladdin-seal-lamp.jpg
+vendor/brand/jarvis-high-seat-hat.jpg
+vendor/brand/jarvis-seal-salver.jpg
+# Workbench tile icon (2026-07-30, John-LOCKED): the Watchmaker's Bench.
+# NOTE: the anvil candidate is RESERVED for the future 'anvil'
+# code-validation skill's icon — do not reuse it for the workbench.
+vendor/brand/workbench-icon.jpg
+# Gandalf the White wizard mark (white robes/staff; the Gandalf tab icon + served
+# by /vendor/brand/). Pure-data SVG, no dependency.
+vendor/brand/gandalf-white-icon.svg
+
+# ── Vendored, dependency-free assets (KaTeX for the report viewer) ──────────
+vendor/katex/katex.min.js
+vendor/katex/katex.min.css
+vendor/katex/auto-render.min.js
+vendor/katex/PROVENANCE.txt
+vendor/katex/fetch_katex.sh
+vendor/katex/fonts/**
+
+# ── Vendored terminal console assets (xterm.js + the anchor-term fallback) ──
+vendor/xterm/**
+vendor/anchor-term/**
+
+# ── Vendored bundled skills (researchPrime / crucible / foreman / gandalf) ──
+# Generated AT BUILD TIME by vendor_skills.vendor_all into the export dest (git
+# archive of each env-injected source + denylist + host-path/PII scrub). Listed
+# here so the deny-by-default stager keeps them. The generator itself ships too.
+vendor/bundled-skills/**
+.claude/skills/onboard/**
+vendor_skills.py
+
+# ── Distro installer (Wave 6; stdlib-only; skills-install + scaffold + token) ─
+# The collaborator's bring-up entry: COPY-default skill install, only-if-absent
+# scaffold, out-of-tree token. Ships so a fresh clone can `python onboard.py`.
+onboard.py
+
+# ── Starter Anchor templates (Wave 5; headers-only, zero data) ─────────────
+# A fresh, data-free Anchor to scaffold from: the 6 top-level markdown files +
+# domains/* with the real heading skeleton but ZERO task/project/inbox entries.
+# Parses cleanly through the real parsers to an empty state; carries no PII.
+starter/**
+
+# ── Extracted static app frontend (rearch W4; C1 increment 1) ──────────────
+# static/project-window.js is the byte-parity-gated static copy of the
+# project-window app JS (minted mechanically by tools/extract_project_window_js.py,
+# a dev/gate tool that — like the other rearch tools/ — does not ship),
+# served traversal-safe under /static when the frontend pillar flag is
+# ANCHOR_FRONTEND=static. Pure browser JS, no dependency, no data.
+# pillar_flags.py ships because anchor_gui.py now imports it at runtime
+# (the frontend off-switch flag); stdlib-only.
+static/**
+pillar_flags.py
+
+# ── Packaging / dev metadata ───────────────────────────────────────────────
+pyproject.toml
+dist_manifest.txt
+.gitattributes
+.gitignore
+
+# ── Tests + fixtures (dev-only; pytest is not a shipped runtime dep) ────────
+# Shipped so a collaborator can run the gate. The planted-secret fixture is
+# intentionally EXCLUDED (it carries deliberately-fake personal data).
+tests/conftest.py
+tests/__init__.py
+tests/fake_claude.py
+tests/test_*.py
+# DENIALS (!pattern): PII-planting suites — they embed synthetic secrets and
+# personal-data shapes BY DESIGN (scrub/redaction tests) and must never ship.
+!tests/test_share_feedback_w6.py
+!tests/test_share_onboard_w5.py
+!tests/test_log_redaction_2026_07_26.py
+tests/fixtures/fake_stream.jsonl
+tests/fixtures/gate_stream.jsonl

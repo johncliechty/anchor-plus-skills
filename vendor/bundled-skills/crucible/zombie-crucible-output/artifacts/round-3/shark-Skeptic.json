@@ -1,0 +1,35 @@
+{
+  "reviewer": "Skeptic",
+  "angle": "frustrated-UX",
+  "answerable": "yes",
+  "note": "Critique focusing on UX frustrations and strict adherence to the North Star criteria.",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "automated-kills-not-disabled",
+      "section": "Wave 5 — Bulk Swarm Approvals and Context Display",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4. Human-in-the-Loop Approval: Replace automated kills",
+      "message": "The plan adds a human-in-the-loop freeze workflow but never explicitly mandates the removal or disabling of the legacy automated kill engine. If the original automated kill logic is not explicitly stripped out, it will preempt the human approval flow, completely breaking the core user experience and violating the 'Replace automated kills' mandate."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "cryptic-context-explanation",
+      "section": "Wave 5 — Bulk Swarm Approvals and Context Display",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4. Human-in-the-Loop Approval: detailed, human-readable explanation of what the process is and why it should be neutralized.",
+      "message": "Wave 5 proposes displaying the 'explicit heuristic rule violated' in the accordion. This is a highly technical, system-centric detail rather than the required 'human-readable explanation of what the process is'. Users will be frustrated by cryptic rule names (e.g., 'rule_17_high_cpu') when they need plain-English context to confidently approve a freeze."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "missing-error-state-for-sweep",
+      "section": "Wave 4 — Human-in-the-Loop GUI Foundation and Relaunch Sweep",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "2. GUI Enhancements: manual 'Relaunch Sweep' button... for on-demand, fresh process updates.",
+      "message": "The Relaunch Sweep UX defines a happy path with an 'async spinner until the updated process list is returned', but fails to define a timeout or error state. If the heavy OS-level scan hangs, the user will be trapped with an infinite spinner and no way to recover, resulting in a severely degraded UX."
+    }
+  ]
+}

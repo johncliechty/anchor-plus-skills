@@ -1,0 +1,10 @@
+{
+  "name": "crucible",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Crucible — the planning brain of the ResearchOne -> Crucible -> Foreman trio. Turns an intent into a vetted, Foreman-ready implementation plan.",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

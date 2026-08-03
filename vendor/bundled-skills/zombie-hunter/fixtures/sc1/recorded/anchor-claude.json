@@ -1,0 +1,33 @@
+{
+  "id": "sc1-recorded-anchor",
+  "hostClass": "anchor",
+  "hostFixtureId": "F-H-ANCHOR",
+  "description": "Anchor GUI host (python + anchor_gui.py) with claude child",
+  "enginePid": 230,
+  "nodes": [
+    {
+      "pid": 4,
+      "ppid": 0,
+      "imagePath": "C:\\Windows\\System32\\services.exe",
+      "name": "services.exe",
+      "createTime": 7000000,
+      "commandLine": ""
+    },
+    {
+      "pid": 130,
+      "ppid": 4,
+      "imagePath": "C:\\Python\\python.exe",
+      "name": "python.exe",
+      "createTime": 7000100,
+      "commandLine": "python.exe <path>"
+    },
+    {
+      "pid": 230,
+      "ppid": 130,
+      "imagePath": "C:\\Users\\x\\claude.exe",
+      "name": "claude.exe",
+      "createTime": 7000200,
+      "commandLine": "claude.exe -p"
+    }
+  ]
+}

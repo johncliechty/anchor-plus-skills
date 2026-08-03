@@ -1,0 +1,48 @@
+{
+  "reviewer": "Skeptic",
+  "angle": "competitor",
+  "answerable": "yes",
+  "note": "Reviewed against PM competitor angle. The draft lacks the technical depth required to compete as a specialized AI process sentinel, behaving more like a generic task manager.",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "missing-ai-fingerprinting-heuristics",
+      "claim_id": null,
+      "section": "Wave 1",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "1",
+      "message": "From a competitor product perspective, the plan completely fails to define how it will identify what constitutes an 'AI swarm' versus a normal user process. Wave 1 specifies WMI discovery but lacks any fingerprinting rules, telemetry hooks, or heuristic engines to differentiate a standard VS Code instance or terminal from an AI-driven one (Anchor, cowork). Without AI-specific detection logic, this tool has no moat and is functionally identical to a generic OS task manager."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "generic-context-generator-lacks-data",
+      "claim_id": null,
+      "section": "Wave 5",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4",
+      "message": "Wave 5 proposes a 'violation explanation template generator' for the 'Show Context' toggle, but the architecture outlines no mechanism to extract actual AI context (e.g., active prompts, workspace context, or agent IDs) from the target processes. A competitor product would show exactly what the AI is trying to do; providing only a generic boilerplate template without a data-extraction pipeline fails the requirement for a 'detailed, human-readable explanation of what the process is'."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "wmi-performance-bottleneck",
+      "claim_id": null,
+      "section": "Wave 1",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "1",
+      "message": "Wave 1 proposes WMI for real-time system-wide process discovery, while Wave 6 uses ETW for historical telemetry. Competitor endpoint and monitoring tools avoid WMI for continuous enumeration due to its severe CPU overhead, slow response times, and general fragility. Failing to use lightweight ETW or modern native APIs for real-time tracking will degrade user system performance and make the sentinel too heavy to run continuously."
+    },
+    {
+      "severity": "MINOR",
+      "topic": "resource-locking-on-freeze",
+      "claim_id": null,
+      "section": "Wave 5",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4",
+      "message": "While Objective 4 specifies freezing the swarm pending human approval, suspending processes retains their memory and VRAM allocations. If a zombie swarm is consuming massive resources, freezing it without a fast-path to reclaim resources leaves the user's system crippled until manual intervention. Competitors would implement a memory-reclamation strategy or prominently warn the user about resource locking during the freeze state."
+    }
+  ]
+}

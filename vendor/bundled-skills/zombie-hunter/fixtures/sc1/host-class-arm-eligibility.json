@@ -1,0 +1,53 @@
+{
+  "version": "w5-ol3-host-arm-v1",
+  "globalArmRequiresSc1Gate": true,
+  "residualCannotMintGlobalArm": true,
+  "description": "OL3 per-host-class arm eligibility metadata — no global arm from residual-only classes",
+  "classes": {
+    "vscode": {
+      "hostClass": "vscode",
+      "armEligibleClassScoped": true,
+      "source": "sc1_recorded_fixture",
+      "globalArmFromThisAlone": false
+    },
+    "cursor": {
+      "hostClass": "cursor",
+      "armEligibleClassScoped": true,
+      "source": "sc1_recorded_fixture",
+      "globalArmFromThisAlone": false
+    },
+    "windowsterminal": {
+      "hostClass": "windowsterminal",
+      "armEligibleClassScoped": true,
+      "source": "sc1_recorded_fixture",
+      "globalArmFromThisAlone": false
+    },
+    "anchor": {
+      "hostClass": "anchor",
+      "armEligibleClassScoped": true,
+      "source": "sc1_recorded_fixture",
+      "globalArmFromThisAlone": false
+    },
+    "code-insiders": {
+      "hostClass": "code-insiders",
+      "armEligibleClassScoped": false,
+      "source": "attestation_or_later_live",
+      "globalArmFromThisAlone": false,
+      "residual": true
+    },
+    "openconsole": {
+      "hostClass": "openconsole",
+      "armEligibleClassScoped": false,
+      "source": "attestation_or_later_live",
+      "globalArmFromThisAlone": false,
+      "residual": true
+    },
+    "grok": {
+      "hostClass": "grok",
+      "armEligibleClassScoped": false,
+      "source": "attestation_or_later_live",
+      "globalArmFromThisAlone": false,
+      "residual": true
+    }
+  }
+}

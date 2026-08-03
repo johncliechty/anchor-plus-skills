@@ -1,0 +1,60 @@
+KaTeX — vendored assets for the Anchor R&D report viewer (Reader mode)
+======================================================================
+
+Purpose
+-------
+The Anchor report viewer's "Reader" mode renders an effort's `report.md` as HTML
+and uses KaTeX to typeset LaTeX math. These assets are VENDORED (committed into
+the repo) so the Reader needs NO install and NO network access at runtime — the
+served HTML links these local files under `vendor/katex/`, never a CDN.
+
+Version
+-------
+KaTeX 0.16.11
+
+Source (official jsdelivr CDN mirror of the npm package `katex@0.16.11`)
+------------------------------------------------------------------------
+  katex.min.css       https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css
+  katex.min.js        https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js
+  auto-render.min.js  https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js
+
+Downloaded 2026-06-08. The files in this directory are the REAL, unmodified
+KaTeX 0.16.11 distribution files (verified: katex.min.css opens with the
+`@font-face` KaTeX_AMS declaration; the JS files are the genuine UMD bundles).
+
+Fonts (optional add — deliberately omitted from the byte-present vendor set)
+----------------------------------------------------------------------------
+`katex.min.css` references its WOFF2/WOFF/TTF web fonts via relative URLs under
+`fonts/` (e.g. `fonts/KaTeX_Main-Regular.woff2`). The full font set is ~1 MB of
+binary WOFF2 files. To keep the vendored payload light, the font BINARIES are
+NOT committed here; the `fonts/` directory is created as the documented drop
+location. Math still renders structurally without the fonts (the browser
+substitutes a system font); for pixel-perfect glyphs, drop the font binaries
+into `vendor/katex/fonts/` (the CSS already points there — no edit needed).
+
+The testable invariant for the report viewer is that the Reader correctly
+REFERENCES these vendored assets (the `vendor/katex/` CSS + JS + an auto-render
+call) and renders the markdown — NOT that the font binaries are byte-present.
+
+Re-fetching everything (CSS + JS + the full font set)
+-----------------------------------------------------
+Run `fetch_katex.sh` (bash + curl) in this directory, or manually:
+
+  V=0.16.11
+  base=https://cdn.jsdelivr.net/npm/katex@$V/dist
+  curl -sLo katex.min.css        $base/katex.min.css
+  curl -sLo katex.min.js         $base/katex.min.js
+  curl -sLo auto-render.min.js   $base/contrib/auto-render.min.js
+  # Optional fonts (pixel-perfect glyphs):
+  for f in AMS-Regular Caligraphic-Bold Caligraphic-Regular Fraktur-Bold \
+           Fraktur-Regular Main-Bold Main-BoldItalic Main-Italic Main-Regular \
+           Math-BoldItalic Math-Italic SansSerif-Bold SansSerif-Italic \
+           SansSerif-Regular Script-Regular Size1-Regular Size2-Regular \
+           Size3-Regular Size4-Regular Typewriter-Regular; do
+    curl -sLo fonts/KaTeX_$f.woff2 $base/fonts/KaTeX_$f.woff2
+  done
+
+License
+-------
+KaTeX is distributed under the MIT License. See
+https://github.com/KaTeX/KaTeX/blob/main/LICENSE

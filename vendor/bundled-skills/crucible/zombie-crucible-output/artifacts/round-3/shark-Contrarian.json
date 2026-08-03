@@ -1,0 +1,47 @@
+{
+  "reviewer": "Contrarian",
+  "angle": "operator",
+  "answerable": "yes",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "unresolved-lifecycle-after-freeze",
+      "claim_id": null,
+      "section": "Wave 5",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4. Human-in-the-Loop Approval",
+      "message": "From an PM operator perspective, merely 'freezing' a rogue swarm leaves its memory allocation intact and the issue unresolved. The draft implements the 'freeze' action but provides no operator workflow to subsequently 'kill' (freeing resources) or 'resume' (if a false positive) the frozen swarm, leaving the human-in-the-loop workflow dangerously incomplete."
+    },
+    {
+      "severity": "BLOCKER",
+      "topic": "daemon-dependency-missing",
+      "claim_id": null,
+      "section": "Wave 4",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "2. GUI Enhancements",
+      "message": "This item from the known blocker register remains unresolved. The draft relies on querying a 'background daemon via IPC' for the Relaunch Sweep, but fails to define the daemon's lifecycle, deployment, or operator recovery mechanics if the daemon crashes, making the Sweep feature inoperable in practice."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "historical-forensics-dead-end",
+      "claim_id": null,
+      "section": "Wave 6",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "3. Historical Forensics",
+      "message": "Wave 6 displays past undetected zombies in the GUI but provides no clear operator action. Simply rendering past zombies without giving the operator a way to clear the alert, triage it, or flag the pattern to improve future detection turns the forensics feature into a passive UI rather than a useful management tool."
+    },
+    {
+      "severity": "MINOR",
+      "topic": "heuristic-jargon-in-context",
+      "claim_id": null,
+      "section": "Wave 5",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4. Human-in-the-Loop Approval",
+      "message": "Wave 5 notes the context accordion explains 'the explicit heuristic rule violated'. The North Star demands a 'detailed, human-readable explanation of what the process is and why it should be neutralized'. Raw heuristic rule names are not human-readable context; the generation must translate these rules into plain-English operational consequences."
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "sc1-orphan-detached-spender-a",
+  "hostClass": "ORPHAN_DETACHED_SPENDER",
+  "geometry": "A",
+  "description": "Geometry (A) reparented orphan under services.exe",
+  "enginePid": 300,
+  "positiveControl": true,
+  "nodes": [
+    {
+      "pid": 4,
+      "ppid": 0,
+      "imagePath": "C:\\Windows\\System32\\services.exe",
+      "name": "services.exe",
+      "createTime": 7000000,
+      "commandLine": ""
+    },
+    {
+      "pid": 300,
+      "ppid": 4,
+      "imagePath": "C:\\Users\\x\\claude.exe",
+      "name": "claude.exe",
+      "createTime": 7005000,
+      "commandLine": "claude.exe -p"
+    }
+  ]
+}

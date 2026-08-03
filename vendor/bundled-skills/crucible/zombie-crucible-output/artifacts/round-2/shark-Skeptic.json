@@ -1,0 +1,38 @@
+{
+  "reviewer": "Skeptic",
+  "angle": "future-maintainer",
+  "answerable": "yes",
+  "note": "Adversarial review completed with a focus on future maintainability. Identified missing ingestion pipelines and verified unresolved known blockers.",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "daemon-dependency-missing",
+      "claim_id": null,
+      "section": "Wave 1 / Wave 4",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "1. System-Wide Detection",
+      "message": "The known blocker 'daemon-dependency-missing' remains unresolved. Wave 4 assumes a 'background daemon is queried via IPC', but Wave 1 only delivers an 'OS process discovery module' without defining the daemon's actual creation, lifecycle management, or deployment architecture. A maintainer cannot build the IPC without the daemon foundation."
+    },
+    {
+      "severity": "BLOCKER",
+      "topic": "missing-telemetry-ingestion",
+      "claim_id": null,
+      "section": "Wave 6",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "3. Historical Forensics",
+      "message": "Wave 6 relies on the assumption that 'Historical telemetry data exists in the database', but no wave in the plan actually delivers the mechanism to capture, ingest, and persist this historical process data. A maintainer will be unable to implement retrospective queries without a data collection pipeline."
+    },
+    {
+      "severity": "MINOR",
+      "topic": "missing-required-heuristics",
+      "claim_id": null,
+      "section": "Wave 1",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "1. System-Wide Detection",
+      "message": "Wave 1 deliverables specify AI heuristic rules for 'agy, trio, claude, LLM API detection' but fail to explicitly include 'VS Code AI swarms' and 'cowork' as mandated by the North Star. This omission risks a maintainer overlooking the specific signatures required for these required platforms."
+    }
+  ]
+}

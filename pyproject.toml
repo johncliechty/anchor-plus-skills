@@ -1,0 +1,30 @@
+[project]
+name = "anchor"
+# Keep in lockstep with the VERSION file (the single human-facing stamp; it
+# ships so installs self-report correctly — v1.1.3 share-fix alignment).
+version = "1.1.3"
+description = "Anchor — per-project productivity & R&D control surface (Python stdlib only at runtime)"
+requires-python = ">=3.8"
+# NOTE: The shipped Anchor product is Python stdlib only. No runtime dependencies.
+# pytest is a dev/test-only dependency and is NOT shipped (see MASTER-PLAN.md "## Constraints").
+
+[project.optional-dependencies]
+dev = ["pytest"]
+# OPTIONAL terminal extra: the v3 ConPTY terminal subsystem (pty_manager's real
+# pywinpty backend) is the ONE place that may use a native dep. It is NOT part of
+# the stdlib-only core import path — installed only via `pip install .[terminal]`.
+terminal = ["pywinpty>=2.0; sys_platform == 'win32'"]
+
+[tool.pytest.ini_options]
+addopts = "-v"
+testpaths = ["tests"]
+# A live engine that wedges must never hang the suite while burning tokens
+# (2026-07-26 hardening). pytest-timeout is optional — when absent this marker
+# registration is inert and the suite behaves exactly as before; install with
+# `pip install pytest-timeout` and add `--timeout=120` to addopts to enforce.
+markers = [
+  "live: requires a REAL engine; only runs with ANCHOR_TESTS_ALLOW_LIVE=1",
+]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

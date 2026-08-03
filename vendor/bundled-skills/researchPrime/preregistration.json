@@ -1,0 +1,13 @@
+{
+  "_README": "PRE-REGISTRATION GATE (I6, no gamed gates). These thresholds were COMMITTED BY A HUMAN before any measurement was taken (committed_by/committed_date below are the attestation). They decide every later acceptance criterion. Do NOT alter them after measurement begins — that would defeat the pre-registration. See bin/preregistration.mjs REQUIRED_THRESHOLDS for what each gates and its valid range. An out-of-range value is gate corruption (HARD test failure), not a clean HALT.",
+  "G": 60,
+  "X_pct": 10,
+  "C_min": 0.3,
+  "N": 2,
+  "K": 2,
+  "M": 0,
+  "T": 0.05,
+  "N_min": 20,
+  "committed_by": "trio-maintainer",
+  "committed_date": "2026-06-06"
+}

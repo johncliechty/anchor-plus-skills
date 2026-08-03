@@ -1,0 +1,105 @@
+{
+  "$schema_version": "phasef-tools-manifest/1",
+  "pinned": "2026-06-22",
+  "host": "win32",
+  "comment": "Wave-1 (F0) PINNED external-tool manifest. Local certifiers (lean, z3, ollama) are referenced by ABSOLUTE path (never PATH); the cross-family class is GEMINI-PRIMARY via the agy CLI (kind=cli-agy, no HTTP endpoint / no key — reached by driver_ref through the agy login) + ollama-FALLBACK. The F0 probe spawns each local tool from a clean shell (no shell interpolation), runs the cross-family PRIMARY (Gemini via agy) FIRST, and runs each tool's per-class integrity sentinels before any certifier is trusted. Local paths verified on this host 2026-06-22; cross-family moved to the agy transport 2026-07-06.",
+  "tool_lane_env": "RAMANUJAN_TOOL_TESTS",
+  "wall_clock_budget_ms": {
+    "smoke_reachable": 30000,
+    "deterministic_sentinel": 60000,
+    "cross_family_warmup": 300000,
+    "cross_family_sentinel": 600000,
+    "gemini_request": 60000,
+    "frontier_selftest": 180000,
+    "probe_total": 1200000
+  },
+  "cross_family": {
+    "primary": "gemini",
+    "fallback": "ollama",
+    "frontier_rung": "CORROBORATED",
+    "fallback_rung": "PLAUSIBILITY-CORROBORATED",
+    "hard_fault_rung": "CONJECTURAL",
+    "tiers": { "frontier": "gemini", "fallback": "ollama" },
+    "note": "Substrate (2026-07): cross-family certification is GEMINI-PRIMARY via the agy CLI (frontier LABEL \"Gemini 3.1 Pro (High)\") with ollama-FALLBACK. The F0 probe runs the PRIMARY first; a Gemini that is unreachable / times out / errors, OR that agy SUBSTITUTES or cannot ATTEST (served != the requested LABEL — the silent-Flash tripwire), is QUARANTINED and the probe falls back to ollama (stamping tier=fallback => PLAUSIBILITY-CORROBORATED). If the ollama fallback ALSO fails its sentinel, the cross-family lift HARD-FAULTS to CONJECTURAL (the system NEVER runs with an un-probed cross-family backend). The frontier CORROBORATED rung is enabled ONLY after a passing FRONTIER-CANARY SELF-TEST (a real agy round-trip whose INDEPENDENT re-run reproduces the normalized VERDICT — verdict-level, never an answer/transcript hash) from the ATTESTED frontier LABEL."
+  },
+  "tools": {
+    "gemini": {
+      "class": "probabilistic",
+      "role": "F1-cross-family-PRIMARY",
+      "kind": "cli-agy",
+      "driver_ref": "<path>",
+      "model": "Gemini 3.1 Pro (High)",
+      "family": "gemini",
+      "tier": "frontier",
+      "rung": "CORROBORATED",
+      "temperature": 0,
+      "request_timeout_ms": 60000,
+      "note": "Cross-family PRIMARY (2026-07): the frontier Google family via the Antigravity CLI `agy` (genuinely generator-INDEPENDENT of Claude). NO HTTP endpoint and NO API key — agy is reached through the user LOGIN, addressed by a human LABEL (\"Gemini 3.1 Pro (High)\", NEVER an API-style id, which agy silently degrades to Flash), via the proven transport at driver_ref (<path> `agy -p` with served-model ATTESTATION (served==requested) and a no-shell steer. Deterministic-enough decoding at the verdict level (the frontier-canary self-test reproduces the normalized VERDICT, never a token/transcript hash). This replaces the DEAD Gemini HTTP API (generativelanguage.googleapis.com, at $0/429). The live seam is env-gated (CRUCIBLE_AGENT_LIVE=1); the fast `node --test` gate injects a stub and spawns no agy. The model LABEL here MUST byte-match cross-family-verifier.mjs FRONTIER_MODEL or the frontier CORROBORATED rung silently degrades to fallback."
+    },
+    "lean": {
+      "class": "deterministic",
+      "role": "F2-lean-kernel",
+      "path": "C:\\Users\\john\\.elan\\bin\\lean.exe",
+      "version": "4.31.0",
+      "version_args": ["--version"],
+      "note": "Core Lean only; mathlib (multi-GB) FLAGGED follow-on. Verified 1+1=2 := rfl -> exit 0, 1+1=3 := rfl -> exit 1."
+    },
+    "lake": {
+      "class": "deterministic",
+      "role": "F2-lean-build",
+      "path": "C:\\Users\\john\\.elan\\bin\\lake.exe",
+      "version": "4.31.0",
+      "version_args": ["--version"],
+      "note": "Lean build driver; pinned for completeness. Core Lean only (no mathlib this increment)."
+    },
+    "z3": {
+      "class": "deterministic",
+      "role": "F3-smt",
+      "path": "C:\\Users\\john\\AppData\\Roaming\\Python\\bin\\z3.exe",
+      "version": "4.16.0",
+      "version_args": ["--version"],
+      "note": "Used ONLY within z3-DECIDABLE theories (LIA/LRA/BV); quantified number-theory/analysis is out of scope this increment (fail-CLOSED on unknown). Verified sat/unsat."
+    },
+    "ollama": {
+      "class": "probabilistic",
+      "role": "F1-cross-family-FALLBACK",
+      "tier": "fallback",
+      "rung": "PLAUSIBILITY-CORROBORATED",
+      "path": "C:\\Users\\john\\AppData\\Local\\Programs\\Ollama\\ollama.exe",
+      "version_args": ["--version"],
+      "note": "Cross-family FALLBACK (non-Claude) verifier panel, used when the Gemini PRIMARY is quarantined (key-missing / 401|403 / 429 / unreachable). A weaker soft-check tier => PLAUSIBILITY-CORROBORATED (NOT a proof oracle). A SINGLE cold generation measured >200s on this host, so a persistent server + a paid-once warm-up is REQUIRED; per-call model reload is forbidden. The bare `ollama run` default is NOT temp 0 — deterministic decoding is pinned below.",
+      "server": {
+        "host": "127.0.0.1",
+        "port": 11434,
+        "base_url": "http://127.0.0.1:11434",
+        "serve_args": ["serve"],
+        "version_path": "/api/version",
+        "generate_path": "/api/generate",
+        "keep_alive": "30m",
+        "ready_timeout_ms": 60000,
+        "fresh_load_min_ns": 50000000
+      },
+      "models": [
+        { "name": "qwen2.5:7b-instruct-q4_K_M", "family": "qwen" },
+        { "name": "llama3:latest", "family": "llama" }
+      ],
+      "deterministic_decoding": {
+        "temperature": 0,
+        "top_k": 1,
+        "top_p": 1,
+        "seed": 1,
+        "num_predict": 256
+      },
+      "cross_family_probe": {
+        "trials": 5,
+        "quorum": "5/5",
+        "note": "P8 probabilistic-class integrity: N=5 trials at deterministic decoding on a known-true + known-false battery (5/5 each) PLUS a proof-JUDGING sentinel (a planted plausible-but-wrong proof the panel MUST reject). A model that accepts the wrong proof is QUARANTINED from the PLAUSIBILITY-CORROBORATED path."
+      }
+    }
+  },
+  "faithfulness_instance_battery": {
+    "comment": "Wave-4 (F2+F3) reads this. The metamorphic concrete-instance battery is tool/cross-family/human/PRNG-sourced (NEVER Claude-enumerated), provenance-stamped, coupled to a non-vacuity check.",
+    "default_count": 16,
+    "bounded_domain": { "min": -64, "max": 64 }
+  }
+}

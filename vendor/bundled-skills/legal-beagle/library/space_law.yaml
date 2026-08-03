@@ -1,0 +1,21 @@
+domain: Space Law
+rules:
+  - id: space-treaty-compliance
+    name: Outer Space Treaty Compliance
+    description: Ensure the agreement complies with the Outer Space Treaty of 1967 regarding peaceful uses.
+    type: presence
+  - id: liability-allocation
+    name: Space Liability Allocation
+    description: Ensure clear allocation of liability for damage caused by space objects.
+    type: presence
+templates:
+  - id: launch-services-agreement
+    name: Space Launch Services Agreement
+    content: |
+      Space Launch Services Agreement between ${LaunchProvider} and ${Customer}.
+      The Launch Provider agrees to launch the satellite ${SatelliteName} into orbit.
+      This launch shall comply with all national registration requirements.
+    variables:
+      - LaunchProvider
+      - Customer
+      - SatelliteName

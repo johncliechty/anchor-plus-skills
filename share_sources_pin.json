@@ -1,0 +1,35 @@
+{
+  "schema": "share-sources-pin/v1",
+  "schema_version": 1,
+  "ship_allowed": false,
+  "ship_allowed_stamp_text": "only after concurrent skill-run merge + John go-ahead",
+  "skills_pin": {
+    "tag": "PLACEHOLDER",
+    "commit": "PLACEHOLDER"
+  },
+  "pins": [
+    {
+      "repo": "anchor",
+      "tag": "PLACEHOLDER",
+      "commit": "PLACEHOLDER"
+    },
+    {
+      "repo": "trio",
+      "tag": "PLACEHOLDER",
+      "commit": "PLACEHOLDER"
+    },
+    {
+      "repo": "skill-foundry",
+      "tag": "PLACEHOLDER",
+      "commit": "PLACEHOLDER"
+    }
+  ],
+  "package_versions": {
+    "A": "0.0.0-placeholder",
+    "B": "0.0.0-placeholder"
+  },
+  "scrub_tool_versions": {
+    "vendor_skills.py": "GREEN-share-distro",
+    "distro.py": "GREEN-share-distro"
+  }
+}

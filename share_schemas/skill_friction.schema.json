@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "anchor://share/skill_friction.schema.json",
+  "title": "Shareable skill-friction export record (v1)",
+  "description": "Sanitizer-clean, allowlist-only friction export for opt-in global improvement feed. Never includes full journals, prompts, session purpose, PII, or absolute host paths. Schema-versioned semver.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "skill_id",
+    "skill_version",
+    "outcome",
+    "structural_failure_codes"
+  ],
+  "properties": {
+    "schema": { "const": "share-skill-friction/v1" },
+    "schema_version": {
+      "type": "string",
+      "description": "Semver for this feedback contract (e.g. 1.0.0)."
+    },
+    "export_id": { "type": "string" },
+    "skill_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9._\\-]{0,63}$"
+    },
+    "skill_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+\\-]{0,63}$"
+    },
+    "install_key": {
+      "type": "string",
+      "description": "De-identified high-entropy UUID; never name/email/machine/path."
+    },
+    "outcome": {
+      "enum": ["friction", "failed", "refused", "workaround"]
+    },
+    "structural_failure_codes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "timeout",
+          "tool_missing",
+          "seat_failover",
+          "parse_error",
+          "gate_red",
+          "budget_exhausted",
+          "permission_denied",
+          "network_denied",
+          "unknown",
+          "none"
+        ]
+      }
+    },
+    "duration_band": {
+      "enum": ["lt_1m", "1_5m", "5_30m", "30m_2h", "gt_2h", "unknown"]
+    },
+    "complexity_band": {
+      "enum": ["trivial", "small", "medium", "large", "unknown"]
+    },
+    "os_class": {
+      "enum": ["windows", "macos", "linux", "other", "unknown"]
+    },
+    "model_family_seats": {
+      "type": "array",
+      "items": {
+        "enum": ["claude", "gemini", "grok", "openai", "unknown"]
+      }
+    },
+    "workaround_codes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "retry",
+          "seat_switch",
+          "manual_fix",
+          "skip_step",
+          "reduce_scope",
+          "reread_docs",
+          "other",
+          "none"
+        ]
+      }
+    },
+    "workaround_tokens": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "maxLength": 24,
+        "pattern": "^[a-z0-9][a-z0-9_\\-]{0,23}$"
+      }
+    },
+    "source_record_id": {
+      "type": "string",
+      "description": "Opaque local journal record_id when already clean."
+    }
+  }
+}

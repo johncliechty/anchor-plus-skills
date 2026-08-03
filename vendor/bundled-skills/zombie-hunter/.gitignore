@@ -1,0 +1,10 @@
+# Runtime + build artifacts — never commit
+telemetry.db
+telemetry.db-*
+*.log
+_sentinel-out.log
+_sentinel-err.log
+_foreman-status.log
+_foreman-output.log
+_foreman-error.log
+foreman-checkpoint.json

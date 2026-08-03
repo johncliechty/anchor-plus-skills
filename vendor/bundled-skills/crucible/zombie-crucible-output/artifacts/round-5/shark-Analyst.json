@@ -1,0 +1,34 @@
+{
+  "reviewer": "Analyst",
+  "angle": "frustrated-UX",
+  "answerable": "yes",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "manual-freeze-allows-drain",
+      "section": "Wave 5",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4",
+      "message": "Wave 5 requires the user to explicitly click 'Freeze' before the orchestrator suspends the rogue swarm. If the system waits for a human to notice and click a button in the GUI, the runaway AI process continues draining resources indefinitely. The system should auto-freeze on detection and use the human-in-the-loop approval for the final Kill/Resume decision. Forcing the user to race a resource-hogging process is a broken UX that defeats the purpose of a sentinel."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "missing-user-notification",
+      "section": "Wave 5",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4",
+      "message": "Objective 4 mandates a human-facing approval workflow, but there is no mention of how the user is notified that their approval is needed. Requiring the user to proactively open the GUI just to check for pending rogue swarms is a highly frustrating UX. There must be an OS-level notification or system tray alert to pull the human into the loop when a swarm is caught."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "missing-relaunch-sweep-deliverable",
+      "section": "Wave 1-6",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "2",
+      "message": "Objective 2 explicitly requires a manual 'Relaunch Sweep' button, but it is entirely missing from the visible implementation deliverables. A button that triggers a system-wide sweep requires careful UX state management (e.g., loading spinners, disabling the button while sweeping to prevent spam-clicks) to avoid user frustration, which is completely omitted from the plan."
+    }
+  ]
+}

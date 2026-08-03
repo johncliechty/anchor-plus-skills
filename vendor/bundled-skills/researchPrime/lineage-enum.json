@@ -1,0 +1,6 @@
+{
+  "_README": "CLOSED ATTESTED-LINEAGE ENUM (crit-5, HALT-for-human). This is the set of reviewer model LINEAGES that count as genuinely DISTINCT independent origins for G8 cross-lineage origin fusion (I3). Choosing it is a RESERVED HUMAN DECISION and must be committed BEFORE any cross-lineage origin is claimed — exactly like the pre-registered thresholds. `lineages` = an array of at least two distinct, non-empty lineage names; `committed_by` = who committed it; `committed_date` = an ISO date (YYYY-MM-DD). See bin/lineage-enum.mjs REQUIRED_FIELDS.",
+  "lineages": ["claude", "gemini", "gpt", "grok"],
+  "committed_by": "John",
+  "committed_date": "2026-06-10"
+}

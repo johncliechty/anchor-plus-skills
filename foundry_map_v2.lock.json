@@ -1,0 +1,153 @@
+{
+  "schema": "foundry-map-lock/v1",
+  "lock_version": 1,
+  "generated_from": {
+    "schema": "foundry-map/v2",
+    "map_version": 2,
+    "skill_count": 11
+  },
+  "resolved": [
+    {
+      "ref": "skill:crucible",
+      "name": "crucible",
+      "version": "1.0.0",
+      "source": "C:/dev/trio/crucible",
+      "dependencies": [
+        {
+          "ref": "skill:foreman",
+          "type": "import",
+          "range": "^2.0.0",
+          "pinned": "2.0.0"
+        }
+      ],
+      "closure": [
+        "skill:foreman@2.0.0"
+      ]
+    },
+    {
+      "ref": "skill:financial-analyst",
+      "name": "financial-analyst",
+      "version": "1.0.0",
+      "source": "skills/financial-analyst",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:foreman",
+      "name": "foreman",
+      "version": "2.0.0",
+      "source": "C:/dev/trio/foreman",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:gandalf",
+      "name": "gandalf",
+      "version": "1.2.0",
+      "source": "skills/gandalf",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:jumper",
+      "name": "jumper",
+      "version": "1.0.0",
+      "source": "skills/jumper",
+      "dependencies": [
+        {
+          "ref": "skill:gandalf",
+          "type": "compose",
+          "range": "^1.0.0",
+          "pinned": "1.2.0"
+        }
+      ],
+      "closure": [
+        "skill:gandalf@1.2.0"
+      ]
+    },
+    {
+      "ref": "skill:legal-beagle",
+      "name": "legal-beagle",
+      "version": "1.0.0",
+      "source": "skills/legal-beagle",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:literature-review",
+      "name": "literature-review",
+      "version": "1.0.0",
+      "source": "skills/literature-review",
+      "dependencies": [
+        {
+          "ref": "skill:research-prime",
+          "type": "augment",
+          "range": "^2.0.0",
+          "pinned": "2.0.0"
+        }
+      ],
+      "closure": [
+        "skill:crucible@1.0.0",
+        "skill:foreman@2.0.0",
+        "skill:research-prime@2.0.0"
+      ]
+    },
+    {
+      "ref": "skill:ramanujan",
+      "name": "ramanujan",
+      "version": "1.1.0",
+      "source": "skills/ramanujan",
+      "dependencies": [],
+      "closure": []
+    },
+    {
+      "ref": "skill:research-prime",
+      "name": "researchPrime",
+      "version": "2.0.0",
+      "source": "C:/dev/trio/researchPrime",
+      "dependencies": [
+        {
+          "ref": "skill:crucible",
+          "type": "import",
+          "range": "^1.0.0",
+          "pinned": "1.0.0"
+        },
+        {
+          "ref": "skill:foreman",
+          "type": "import",
+          "range": "^2.0.0",
+          "pinned": "2.0.0"
+        }
+      ],
+      "closure": [
+        "skill:crucible@1.0.0",
+        "skill:foreman@2.0.0"
+      ]
+    },
+    {
+      "ref": "skill:tidy-idy",
+      "name": "tidy-idy",
+      "version": "0.9.0",
+      "source": "skills/tidy-idy",
+      "dependencies": [
+        {
+          "ref": "skill:gandalf",
+          "type": "compose",
+          "range": "^1.0.0",
+          "pinned": "1.2.0"
+        }
+      ],
+      "closure": [
+        "skill:gandalf@1.2.0"
+      ]
+    },
+    {
+      "ref": "skill:zombie-hunter",
+      "name": "zombie-hunter",
+      "version": "1.0.0",
+      "source": "skills/zombie-hunter",
+      "dependencies": [],
+      "closure": []
+    }
+  ]
+}

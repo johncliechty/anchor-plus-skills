@@ -1,0 +1,43 @@
+{
+  "version": "w5-sc1-attestation-v1",
+  "description": "Residual / non-recorded host classes — class-scoped UNCERTAIN/KEEP only; cannot mint global arm",
+  "residualCannotMintGlobalArm": true,
+  "hosts": [
+    {
+      "hostClass": "code-insiders",
+      "reason": "No dedicated SC1 recorded fixture in W5 pack; class-scoped residual until live matrix or recorded tree added",
+      "owner": "operator-lab",
+      "expiry": "2027-07-21T00:00:00.000Z"
+    },
+    {
+      "hostClass": "openconsole",
+      "reason": "Residual H member without SC1 recorded tree in W5 primary pack",
+      "owner": "operator-lab",
+      "expiry": "2027-07-21T00:00:00.000Z"
+    },
+    {
+      "hostClass": "grok",
+      "reason": "Grok-as-host residual; class-scoped only until proven recorded/live",
+      "owner": "operator-lab",
+      "expiry": "2027-07-21T00:00:00.000Z"
+    },
+    {
+      "hostClass": "shell",
+      "reason": "Shell-ancestor residual attestation (class-scoped KEEP/UNCERTAIN policy)",
+      "owner": "operator-lab",
+      "expiry": "2027-07-21T00:00:00.000Z"
+    },
+    {
+      "hostClass": "explorer",
+      "reason": "Explorer-ancestor residual attestation",
+      "owner": "operator-lab",
+      "expiry": "2027-07-21T00:00:00.000Z"
+    },
+    {
+      "hostClass": "conhost",
+      "reason": "conhost-ancestor residual attestation",
+      "owner": "operator-lab",
+      "expiry": "2027-07-21T00:00:00.000Z"
+    }
+  ]
+}

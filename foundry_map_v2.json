@@ -1,0 +1,151 @@
+{
+  "schema": "foundry-map/v2",
+  "map_version": 2,
+  "skills": [
+    {
+      "ref": "skill:crucible",
+      "name": "crucible",
+      "source": "C:/dev/trio/crucible",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [
+        {
+          "type": "import",
+          "to": "skill:foreman",
+          "range": "^2.0.0",
+          "note": "imports Foreman's durability/git/driver modules and spawns locate-plan.mjs — v1 carried this only as prose"
+        }
+      ],
+      "note": "canonical-external pointer (trio monorepo); the Foundry records the location, holds no copy"
+    },
+    {
+      "ref": "skill:financial-analyst",
+      "name": "financial-analyst",
+      "source": "skills/financial-analyst",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": []
+    },
+    {
+      "ref": "skill:foreman",
+      "name": "foreman",
+      "source": "C:/dev/trio/foreman",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "2.0.0",
+      "edges": [],
+      "note": "canonical-external pointer (trio monorepo); the root of the trio's import graph"
+    },
+    {
+      "ref": "skill:gandalf",
+      "name": "gandalf",
+      "source": "skills/gandalf",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "1.2.0",
+      "edges": [],
+      "note": "Foundry-authored deep-think advisor; the composition target of jumper and tidy-idy"
+    },
+    {
+      "ref": "skill:jumper",
+      "name": "jumper",
+      "source": "skills/jumper",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [
+        {
+          "type": "compose",
+          "to": "skill:gandalf",
+          "range": "^1.0.0",
+          "note": "the ideation engine composes gandalf — the same relationship the Wave-4 runner manifest declares as composes: [gandalf]"
+        }
+      ]
+    },
+    {
+      "ref": "skill:legal-beagle",
+      "name": "legal-beagle",
+      "source": "skills/legal-beagle",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": []
+    },
+    {
+      "ref": "skill:literature-review",
+      "name": "literature-review",
+      "source": "skills/literature-review",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": [
+        {
+          "type": "augment",
+          "to": "skill:research-prime",
+          "range": "^2.0.0",
+          "note": "an augmented researchPrime — inherits the trio tier switch directly"
+        }
+      ]
+    },
+    {
+      "ref": "skill:ramanujan",
+      "name": "ramanujan",
+      "source": "skills/ramanujan",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "1.1.0",
+      "edges": []
+    },
+    {
+      "ref": "skill:research-prime",
+      "name": "researchPrime",
+      "source": "C:/dev/trio/researchPrime",
+      "status": "5 - Production/Stable",
+      "tier": "standard",
+      "version": "2.0.0",
+      "edges": [
+        {
+          "type": "import",
+          "to": "skill:crucible",
+          "range": "^1.0.0",
+          "note": "the Phase-3 engine imports the trio's Crucible machinery, never forks"
+        },
+        {
+          "type": "import",
+          "to": "skill:foreman",
+          "range": "^2.0.0",
+          "note": "the Phase-3 engine imports the trio's Foreman machinery, never forks"
+        }
+      ],
+      "note": "stable ref differs from the display name on purpose — the ref survives a rename"
+    },
+    {
+      "ref": "skill:tidy-idy",
+      "name": "tidy-idy",
+      "source": "skills/tidy-idy",
+      "status": "3 - Alpha",
+      "tier": "standard",
+      "version": "0.9.0",
+      "edges": [
+        {
+          "type": "compose",
+          "to": "skill:gandalf",
+          "range": "^1.0.0",
+          "note": "uses gandalf deep-think for its pruning analysis"
+        }
+      ],
+      "note": "held out of the regular-use skill set (needs more work) — hence 3 - Alpha"
+    },
+    {
+      "ref": "skill:zombie-hunter",
+      "name": "zombie-hunter",
+      "source": "skills/zombie-hunter",
+      "status": "4 - Beta",
+      "tier": "standard",
+      "version": "1.0.0",
+      "edges": []
+    }
+  ]
+}

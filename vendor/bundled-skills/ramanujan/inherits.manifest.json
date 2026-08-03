@@ -1,0 +1,119 @@
+{
+  "manifest_version": 1,
+  "description": "Ramanujan A0.5a inheritance manifest. Pins each INHERITED module/artifact Ramanujan composes (it never reimplements them, per NS8) to a resolvable path + an expected interface SHAPE + a version signal. The Wave-2 gate (src/inherits-gate.mjs) reads this, resolves every entry, version-checks it, interface-shape-checks it, and round-trips a durable counter/spent-nonce through the durability-substrate entry. Any unresolvable path / version mismatch / interface mismatch fails the gate fast (non-zero), naming the offending logical_name. Paths are resolved RELATIVE TO THIS FILE (repo root); the inherited repos are siblings of this build under <path>.",
+  "inheritance_set": "Phase-0 (handoff/journal/sleep + the atomic durability substrate they build on) | Gandalf v1 commission seam | the three research dive engines (dive-1/dive-2/dive-3)",
+  "entries": [
+    {
+      "logical_name": "phase0-handoff",
+      "kind": "module",
+      "path": "../../planning/portfolio-program/src/handoff-contract.mjs",
+      "version": { "from": "packageJson", "expected": "0.1.0" },
+      "exports": [
+        { "name": "HANDOFF_REQUIRED_FIELDS", "type": "array" },
+        { "name": "emitHandoff", "type": "function" },
+        { "name": "parseHandoff", "type": "function" },
+        { "name": "handoffContractValidator", "type": "function" },
+        { "name": "validateHandoff", "type": "function" }
+      ]
+    },
+    {
+      "logical_name": "phase0-journal",
+      "kind": "module",
+      "path": "../../planning/portfolio-program/src/journal.mjs",
+      "version": { "from": "packageJson", "expected": "0.1.0" },
+      "exports": [
+        { "name": "JOURNAL_FIELDS", "type": "array" },
+        { "name": "PROVENANCE_VALUES", "type": "array" },
+        { "name": "validateEntry", "type": "function" },
+        { "name": "journalValidator", "type": "function" }
+      ]
+    },
+    {
+      "logical_name": "phase0-sleep",
+      "kind": "module",
+      "path": "../../planning/portfolio-program/src/sleep-loop.mjs",
+      "version": { "from": "packageJson", "expected": "0.1.0" },
+      "exports": [
+        { "name": "clusterEntries", "type": "function" },
+        { "name": "distill", "type": "function" },
+        { "name": "northStarGate", "type": "function" },
+        { "name": "evalGate", "type": "function" },
+        { "name": "runSleepCycle", "type": "function" }
+      ]
+    },
+    {
+      "logical_name": "phase0-durability",
+      "role": "durability-substrate",
+      "kind": "module",
+      "path": "../../../trio/foreman/bin/foreman-lib.mjs",
+      "version": { "from": "packageJson", "expected": "0.0.0" },
+      "note": "The atomic write-tmp+fsync+rename / validating-read substrate that Phase-0 (handoff/journal/sleep) and the Crucible/researchPrime engines all persist through. This is the inherited 'Phase-0 durability substrate' the P9 contract names; Wave 4's monotone counter / spent-nonce set reuses it (no new store). The Wave-2 gate round-trips a counter/spent value through these exports across a simulated reload.",
+      "exports": [
+        { "name": "newCheckpoint", "type": "function" },
+        { "name": "validateCheckpoint", "type": "function" },
+        { "name": "writeCheckpointAtomic", "type": "function" },
+        { "name": "readCheckpoint", "type": "function" },
+        { "name": "HaltError", "type": "function" }
+      ]
+    },
+    {
+      "logical_name": "gandalf-commission-seam",
+      "kind": "module",
+      "path": "../gandalf/seam/situate.mjs",
+      "version": { "from": "none" },
+      "note": "Gandalf v1 SITUATE compose seam: mints the typed commission ENVELOPE (commissionResearchPrime) Ramanujan's CONTEXTUALIZE pillar emits (never dispatches inline). No package.json / version export upstream, so no semver is pinned; path + interface shape are.",
+      "exports": [
+        { "name": "SITUATE_KIND", "type": "string" },
+        { "name": "commissionResearchPrime", "type": "function" },
+        { "name": "composeSituate", "type": "function" },
+        { "name": "independentOriginCredit", "type": "function" },
+        { "name": "needsVerificationHandoff", "type": "function" }
+      ]
+    },
+    {
+      "logical_name": "dive-1-understand-firewall",
+      "kind": "json",
+      "path": "./planning/research/run/DELIVERABLE-ENGINE.json",
+      "version": { "from": "none" },
+      "note": "Dive-1 research engine deliverable (UNDERSTAND + firewall). A machine artifact, not a code module, so the interface SHAPE is its required top-level keys.",
+      "keys": [
+        { "name": "deliverable" },
+        { "name": "convergence" },
+        { "name": "honesty" },
+        { "name": "tier" },
+        { "name": "thresholds" },
+        { "name": "unresolvedHigh" }
+      ]
+    },
+    {
+      "logical_name": "dive-2-solve-verify",
+      "kind": "json",
+      "path": "./planning/research-solve-verify/run/DELIVERABLE-ENGINE.json",
+      "version": { "from": "none" },
+      "note": "Dive-2 research engine deliverable (SOLVE + the verification stack).",
+      "keys": [
+        { "name": "deliverable" },
+        { "name": "convergence" },
+        { "name": "honesty" },
+        { "name": "tier" },
+        { "name": "thresholds" },
+        { "name": "unresolvedHigh" }
+      ]
+    },
+    {
+      "logical_name": "dive-3-interactive-partner",
+      "kind": "json",
+      "path": "./planning/research-partner-layer/run/DELIVERABLE-ENGINE.json",
+      "version": { "from": "none" },
+      "note": "Dive-3 research engine deliverable (INTERACTIVE PARTNER LAYER) — the layer that composes dive-1/dive-2/Gandalf/Phase-0 into the six-pillar partner.",
+      "keys": [
+        { "name": "deliverable" },
+        { "name": "convergence" },
+        { "name": "honesty" },
+        { "name": "tier" },
+        { "name": "thresholds" },
+        { "name": "unresolvedHigh" }
+      ]
+    }
+  ]
+}

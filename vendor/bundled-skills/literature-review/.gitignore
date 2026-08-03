@@ -1,0 +1,5 @@
+# Runtime artifacts (regenerated per run) — not source
+litreview-out/
+scratch/
+_foreman-status.log
+foreman-checkpoint.json

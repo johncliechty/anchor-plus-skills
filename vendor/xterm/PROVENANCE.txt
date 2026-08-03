@@ -1,0 +1,47 @@
+xterm.js — vendored real terminal emulator (Anchor R&D interactive terminal)
+============================================================================
+
+WHAT THIS IS
+  xterm.js + xterm.css are the genuine, upstream xterm.js terminal emulator,
+  vendored as plain static assets (exactly like the vendored KaTeX bundle).
+  xterm.js is pure browser JavaScript with NO native/compiled component — the
+  shipped library is a single UMD bundle (xterm.js) plus a stylesheet
+  (xterm.css). This satisfies Anchor's stdlib-only / no-native-assets rule the
+  same way KaTeX does.
+
+  These files provide the real terminal CANVAS/DOM renderer (the `Terminal`
+  class, exposed as `window.Terminal` by the UMD bundle). The Anchor REPL chrome
+  (command input handling, inline gates / AskUserQuestion, the
+  exit -> discover -> confirm-adopt panel, and the best-effort reap on unload)
+  is layered ON TOP of this by vendor/anchor-term/anchor-term.js, which adapts
+  the Anchor SSE stream into `term.write()` and captures `term.onData()` input.
+  The public mount API (window.AnchorTerm.mount) is UNCHANGED, so callers and
+  tests need no rewrite of the integration surface.
+
+SOURCE
+  Package : @xterm/xterm (the current scoped package name for xterm.js)
+  Version : 6.0.0
+  Copied  : 2026-06-11 from a local, OFFLINE node_modules tree on this machine
+            (no network access; the gate has no internet):
+              C:\dev\Agentic-Home\sandbox-lab-gui\node_modules\@xterm\xterm\lib\xterm.js
+              C:\dev\Agentic-Home\sandbox-lab-gui\node_modules\@xterm\xterm\css\xterm.css
+              C:\dev\Agentic-Home\sandbox-lab-gui\node_modules\@xterm\xterm\LICENSE
+  (Identical copies of @xterm/xterm 6.0.0 also exist under the local VS Code
+   install at %LOCALAPPDATA%\Programs\Microsoft VS Code\...\resources\app\
+   node_modules\@xterm\xterm — used here only as corroboration of availability.)
+
+FILES
+  xterm.js   — the upstream UMD bundle (defines window.Terminal). The trailing
+               `//# sourceMappingURL=xterm.js.map` comment was stripped because
+               the .map is not vendored (it would 404 harmlessly otherwise).
+  xterm.css  — the upstream stylesheet for the terminal viewport/scrollbar.
+  LICENSE    — the upstream MIT license (xterm.js authors / SourceLair / chjj).
+
+SERVED AT
+  /vendor/xterm/xterm.js
+  /vendor/xterm/xterm.css
+  (read-only static route in anchor_gui.py, path-traversal safe, mirroring the
+   vendored-KaTeX and anchor-term static-asset patterns.)
+
+LICENSE
+  xterm.js is MIT licensed; the full text is preserved verbatim in ./LICENSE.

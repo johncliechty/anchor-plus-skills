@@ -1,0 +1,67 @@
+{
+  "reviewer": "Contrarian",
+  "angle": "competitor",
+  "answerable": "yes",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "Missing Daemon Dependency",
+      "claim_id": null,
+      "section": "Wave 3",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "2. GUI Enhancements",
+      "message": "Wave 3's done-when requires querying the background daemon via IPC for the Relaunch Sweep feature. However, Wave 3 explicitly lists 'Depends on: —'. It must depend on Wave 2 (where the daemon is built) so the test and execution sequence is sound."
+    },
+    {
+      "severity": "BLOCKER",
+      "topic": "Untestable Done-When (Missing GUI)",
+      "claim_id": null,
+      "section": "Wave 3",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "2. GUI Enhancements",
+      "message": "Wave 3's done-when and Given/When/Then describe a user opening the GUI and clicking 'Relaunch Sweep', but Wave 3's deliverables only build IPC and a Soft Freeze module. Without delivering the GUI components in this wave, the acceptance criteria are untestable."
+    },
+    {
+      "severity": "BLOCKER",
+      "topic": "Phantom Wave Dependency",
+      "claim_id": null,
+      "section": "Wave 4",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4. Human-in-the-Loop Approval",
+      "message": "Wave 4 lists its dependency as 'Human-in-the-Loop GUI Foundation and Relaunch Sweep', but no such wave exists in the plan. The implementation plan has a disconnected dependency graph, which will block execution."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "Missing Explicit Targets",
+      "claim_id": null,
+      "section": "Wave 1",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "1. System-Wide Detection",
+      "message": "The North Star explicitly requires monitoring 'VS Code AI swarms' and 'cowork'. However, Wave 1 only lists 'agy, trio, claude, LLM API detection' in its deliverables. The implementation must explicitly target the mandated applications to satisfy the objective."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "Violates Freeze Requirement",
+      "claim_id": null,
+      "section": "Wave 4",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "4. Human-in-the-Loop Approval",
+      "message": "The North Star explicitly mandates a workflow that 'freezes the rogue swarm'. Wave 4 instead delivers a 'Kill' button on the parent row and dispatches a 'Soft Freeze/Kill command', which fails to fully replace the kill behavior with a strict freeze as mandated."
+    },
+    {
+      "severity": "NIT",
+      "topic": "Out-of-Scope Security Features",
+      "claim_id": null,
+      "section": "Wave 1 and Wave 2",
+      "tag": "out-of-scope",
+      "traces_to_north_star": "no",
+      "criterion": null,
+      "message": "Wave 1 and 2 introduce a 'Cryptographic Allowlist' and 'at-rest database encryption'. These features are not mandated by the North Star and represent over-engineering that inflates scope and delays time-to-market compared to competitors."
+    }
+  ]
+}

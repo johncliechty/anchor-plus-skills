@@ -1,0 +1,21 @@
+{
+  "schema": "share-freeze-manifest/v1",
+  "schema_version": 1,
+  "ship_allowed": false,
+  "freeze_commits": {
+    "anchor": "PLACEHOLDER",
+    "trio": "PLACEHOLDER",
+    "skill-foundry": "PLACEHOLDER"
+  },
+  "freeze_tags": {
+    "anchor": "PLACEHOLDER",
+    "trio": "PLACEHOLDER",
+    "skill-foundry": "PLACEHOLDER"
+  },
+  "skills_pin": {
+    "tag": "PLACEHOLDER",
+    "commit": "PLACEHOLDER"
+  },
+  "package_matrix_version": "0.0.0-placeholder",
+  "notes": "Freeze tags remain PLACEHOLDER until concurrent skill-run merge + John go-ahead. Plan-complete is not ship-allowed."
+}

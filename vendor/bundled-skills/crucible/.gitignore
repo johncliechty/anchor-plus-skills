@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+.crucible/
+__pycache__/
+.pytest_cache/
+# Foreman build artifacts (this repo is built by Foreman)
+.foreman/
+foreman-checkpoint.json

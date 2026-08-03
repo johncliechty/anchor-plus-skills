@@ -1,0 +1,30 @@
+{
+  "name": "@foundry/triage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared two-dimension triage core (model tier × process depth) for the 11 trio+foundry skills — NS-01.",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./core": "./core.mjs",
+    "./lock": "./lock.mjs",
+    "./crucible-wire": "./crucible-wire.mjs",
+    "./foreman-wire": "./foreman-wire.mjs",
+    "./mapping": "./mapping.mjs",
+    "./researchprime-wire": "./researchprime-wire.mjs",
+    "./skills-manifest": "./skills-manifest.mjs",
+    "./prose-block": "./prose-block.mjs",
+    "./entry-points": "./entry-points.mjs",
+    "./repairs": "./repairs.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/recommend.test.mjs test/vocabulary.test.mjs test/lock.test.mjs test/stage0-wire.test.mjs test/foreman-inherit.test.mjs test/rp-intake-mapping.test.mjs test/wave6-prose-manifest.test.mjs test/b4-ramanujan-prose-drift.test.mjs && node test/b4-ramanujan-smoke.mjs",
+    "b4-ramanujan-smoke": "node test/b4-ramanujan-smoke.mjs",
+    "regenerate-prose-blocks": "node scripts/regenerate-prose-blocks.mjs",
+    "regenerate-prose-blocks:check": "node scripts/regenerate-prose-blocks.mjs --check"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

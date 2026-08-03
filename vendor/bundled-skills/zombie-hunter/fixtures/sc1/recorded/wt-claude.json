@@ -1,0 +1,33 @@
+{
+  "id": "sc1-recorded-wt",
+  "hostClass": "windowsterminal",
+  "hostFixtureId": "F-H-WT",
+  "description": "Windows Terminal host with live-engine-shaped claude child",
+  "enginePid": 220,
+  "nodes": [
+    {
+      "pid": 4,
+      "ppid": 0,
+      "imagePath": "C:\\Windows\\System32\\services.exe",
+      "name": "services.exe",
+      "createTime": 7000000,
+      "commandLine": ""
+    },
+    {
+      "pid": 120,
+      "ppid": 4,
+      "imagePath": "C:\\Windows\\System32\\WindowsTerminal.exe",
+      "name": "WindowsTerminal.exe",
+      "createTime": 7000100,
+      "commandLine": ""
+    },
+    {
+      "pid": 220,
+      "ppid": 120,
+      "imagePath": "C:\\Users\\x\\claude.exe",
+      "name": "claude.exe",
+      "createTime": 7000200,
+      "commandLine": "claude.exe -p"
+    }
+  ]
+}

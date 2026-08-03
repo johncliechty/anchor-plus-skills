@@ -1,0 +1,43 @@
+{
+  "project": "tidy-idy",
+  "version": "1.0.0",
+  "description": "Adversarial repository hygiene enforcer",
+  "docs": { "description": "INTENT.md", "plan": "PLAN.md", "execution_log": "LOG.md" },
+  "waves": [
+    {
+      "id": "W1",
+      "name": "Foundation & Project Discovery",
+      "entrypoint": "bin/scanner.mjs"
+    },
+    {
+      "id": "W2",
+      "name": "Git Hygiene Pre-flight & Compliant Nagging",
+      "entrypoint": "bin/hygiene.mjs"
+    },
+    {
+      "id": "W3",
+      "name": "Gandalf Batch Analysis (True Ruthlessness)",
+      "entrypoint": "bin/analyze.mjs"
+    },
+    {
+      "id": "W4",
+      "name": "Batched Adversarial Debate Engine",
+      "entrypoint": "bin/debate.mjs"
+    },
+    {
+      "id": "W5",
+      "name": "True Ruthlessness (Archive & Safelocked 30-Day TTL)",
+      "entrypoint": "bin/archive.mjs"
+    },
+    {
+      "id": "W6",
+      "name": "Context Compression Engine",
+      "entrypoint": "bin/compress.mjs"
+    },
+    {
+      "id": "W7",
+      "name": "Orchestration & Reporting",
+      "entrypoint": "bin/tidy.mjs"
+    }
+  ]
+}

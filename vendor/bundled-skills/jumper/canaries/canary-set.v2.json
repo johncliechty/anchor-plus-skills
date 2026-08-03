@@ -1,0 +1,41 @@
+{
+  "schema": "canary-set/v1",
+  "skill": "jumper",
+  "version": 2,
+  "append_only": true,
+  "note": "P2 2026-07-25 (journal-hardening): v1 was the UNTOUCHED skill-repo-template exemplar ('skill': 'skill-repo-template', review-classifier canaries, one of them asserting the wrong verdict) — the North Star's NG-1..NG-4 had NO canaries at all. v2 records jumper's REAL negative canaries. The machine-checkable ones are ENFORCED by test/ng-canaries.test.mjs against the real engine (these rows document them); NG-3 is a prompt-contract refusal that engine-level code cannot observe and is honestly marked so. v1 is retained unmodified as history (append-only law).",
+  "canaries": [
+    {
+      "id": "ng1-no-gate-bypass",
+      "kind": "non-goal",
+      "name": "no just-brainstorm-skip-the-gates mode",
+      "input": { "kind": "engine", "options": { "skipKillFilter": true } },
+      "expected": { "behavior": "the option is ignored — every returned concept carries gateLogs with all three gates recorded" },
+      "enforced_by": "test/ng-canaries.test.mjs"
+    },
+    {
+      "id": "ng2-no-self-assigned-tiers",
+      "kind": "non-goal",
+      "name": "a pre-stamped Gandalf draft is re-graded, never passed through",
+      "input": { "kind": "engine", "rawDraft": { "elevations": [{ "tier": "GROUNDED" }] } },
+      "expected": { "behavior": "applySeamPass floors the elevation to SPECULATIVE absent a ledger-resolved commission" },
+      "enforced_by": "test/ng-canaries.test.mjs"
+    },
+    {
+      "id": "ng3-not-a-build-engine",
+      "kind": "non-goal",
+      "name": "implement-the-winner requests are refused with a Crucible/Foreman handoff pointer",
+      "input": { "kind": "prompt-contract", "text": "implement the winning idea in the repo" },
+      "expected": { "behavior": "refusal + handoff pointer (SKILL.md contract; not observable at engine level — honestly not machine-enforced)" },
+      "enforced_by": "SKILL.md prompt contract (documented, not executable)"
+    },
+    {
+      "id": "ng4-no-fabricated-diversity",
+      "kind": "non-goal",
+      "name": "same-sphere survivors surface honestly, never relabeled as diverse",
+      "input": { "kind": "engine", "scenario": "all fan-out candidates return the same foreignDomain" },
+      "expected": { "behavior": "every survivor carries its true foreignDomain (all identical) — the engine never renames one domain into several" },
+      "enforced_by": "test/ng-canaries.test.mjs"
+    }
+  ]
+}

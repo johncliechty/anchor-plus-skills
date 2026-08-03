@@ -1,0 +1,27 @@
+{
+  "reviewer": "Contrarian",
+  "angle": "bored-investor",
+  "answerable": "yes",
+  "findings": [
+    {
+      "severity": "BLOCKER",
+      "topic": "missing-ai-fingerprinting",
+      "claim_id": null,
+      "section": "Wave 1 — System-Wide Process Discovery and Daemon Core",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "1. System-Wide Detection",
+      "message": "You are selling a system-wide AI sentinel, but Wave 1 only implements generic WMI process discovery. Any intern can list Windows processes. How do you actually fingerprint an 'AI-related process' (e.g., distinguishing a VS Code AI swarm from a standard VS Code instance)? Without defining the specific heuristics or command-line signatures for Anchor, VS Code, and cowork, you are just building an expensive Task Manager. The core detection IP is completely missing from the plan."
+    },
+    {
+      "severity": "MAJOR",
+      "topic": "missing-evasion-heuristic",
+      "claim_id": null,
+      "section": "Wave 6 — Historical Forensics UI and Resource Bounding",
+      "tag": "refinement",
+      "traces_to_north_star": "yes",
+      "criterion": "3. Historical Forensics",
+      "message": "You've spent all your planning effort on background thread CPU limits and ETW chunking, but entirely skipped the actual intelligence: how does the system know a past process actually 'evaded detection' and was a 'zombie swarm' rather than just a legitimate high-CPU compile job? Without a concrete heuristic to correlate resource consumption with evasion, this feature will just be a noisy, useless history log that delivers zero actionable value."
+    }
+  ]
+}

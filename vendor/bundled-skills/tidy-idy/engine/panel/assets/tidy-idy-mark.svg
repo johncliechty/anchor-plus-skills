@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Tidy-Idy header mark — stacked tidy lines + readiness pip; matches Mockup A CURRENT -->
+  <rect width="64" height="64" rx="12" fill="#232733"/>
+  <path d="M18 40h28v4H18zm4-8h20v4H22zm-2-8h24v4H20z" fill="#6c9cfc"/>
+  <circle cx="44" cy="22" r="6" fill="#4ade80"/>
+</svg>

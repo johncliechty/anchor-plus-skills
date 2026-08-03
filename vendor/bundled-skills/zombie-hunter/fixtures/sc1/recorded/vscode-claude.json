@@ -1,0 +1,33 @@
+{
+  "id": "sc1-recorded-vscode",
+  "hostClass": "vscode",
+  "hostFixtureId": "F-H-CODE",
+  "description": "VS Code host with live-engine-shaped claude child",
+  "enginePid": 200,
+  "nodes": [
+    {
+      "pid": 4,
+      "ppid": 0,
+      "imagePath": "C:\\Windows\\System32\\services.exe",
+      "name": "services.exe",
+      "createTime": 7000000,
+      "commandLine": ""
+    },
+    {
+      "pid": 100,
+      "ppid": 4,
+      "imagePath": "C:\\Users\\x\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+      "name": "Code.exe",
+      "createTime": 7000100,
+      "commandLine": ""
+    },
+    {
+      "pid": 200,
+      "ppid": 100,
+      "imagePath": "C:\\Users\\x\\claude.exe",
+      "name": "claude.exe",
+      "createTime": 7000200,
+      "commandLine": "claude.exe -p"
+    }
+  ]
+}

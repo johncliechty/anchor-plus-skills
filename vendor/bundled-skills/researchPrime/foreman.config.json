@@ -1,0 +1,14 @@
+{
+  "triage_track": "HEAVY",
+  "docs": {
+    "description": "DESCRIPTION.md",
+    "plan": "IMPLEMENTATION-PLAN.md",
+    "execution_log": "EXECUTION-LOG.md"
+  },
+  "git": {
+    "enabled": false
+  },
+  "models": {
+    "review": "gemini-cli:Gemini 3.1 Pro (High)"
+  }
+}
