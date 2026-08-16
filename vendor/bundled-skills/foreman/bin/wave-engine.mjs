@@ -1147,6 +1147,13 @@ export async function runWave(o) {
     && priorLedger.changed.some((f) => isProvenDeliverablePath(String(f))));
   const skipExecute = resumeStep === 'review'
     || (resumeStep === 'gate' && hasProvenSources);
+  // Declared BEFORE the execute step: the 0102 agent-died halt calls finishHalt,
+  // which closes over iteration/findings/lastGate — post-execute declarations TDZ.
+  let iteration = seededIteration;
+  let findings = [];
+  let lastGate = null;
+  let lastChanged = [];   // Phase 3c: the wave's changed files (for the GO commit)
+  let lastCitation = null;
   let exec = { note: 'done', citation: null };
   if (skipExecute) {
     steps.push(`▸ execute… skipped (resume at ${resumeStep}${hasProvenSources ? ' + proven ledger' : ''}; re-prove GREEN at gate)`);
@@ -1154,7 +1161,26 @@ export async function runWave(o) {
       (hasProvenSources ? ' with proven ledger' : '') +
       ' (crash-resilience; gate re-proves truth)');
   } else {
+    // (declared before the execute step: the 0102 agent-died halt below runs
+    // finishHalt, which reads `iteration` — a post-execute declaration would TDZ.)
     exec = await agentWait('execute', () => driver.execute(ctx));
+    // 0102: an agent that DIED must abort the wave as a loud, named HALT — never
+    // advance to a gate that re-proves the PREVIOUS wave's tree and blesses an
+    // empty wave GREEN. The discriminating field is the transport's ok:false
+    // (forwarded as agent_failed), regardless of whether it died at launch
+    // (0082's class) or 20 minutes and 60 tool calls in (0102's class).
+    if (exec?.agent_failed) {
+      const af = exec.agent_failed;
+      const timedOut = /TIMEOUT/i.test(String(af.exit_class || ''));
+      const reason = `[taxonomy:agent-died] HALT: the execute agent died (${af.detail}) — nothing was executed; the wave must not advance to the gate`;
+      steps.push(`✗ ${reason}`);
+      log(`execute: agent DIED (${af.exit_class}) — HALT, never "complete"`);
+      return finishHalt({ reason, recommend:
+        `[taxonomy:agent-died] execute for wave ${wave.n} died with class ${af.exit_class} after ${af.tools} tool call(s). ` +
+        (timedOut
+          ? `This is the per-call cap killing a still-working agent: raise --call-timeout-min (default 20; the 0102 wave needed 43) and re-invoke wave ${wave.n}.`
+          : `Check the engine CLI/auth (a <2s, 0-tool death is the 0082 launch-failure class — usage limits or a broken CLI), then re-invoke wave ${wave.n}.`) });
+    }
     steps.push(`▸ execute… ${exec?.note || 'done'}`);
     log(`execute: ${exec?.note || 'done'}`);
   }
@@ -1165,11 +1191,7 @@ export async function runWave(o) {
   // When execute was skipped, baseline still reflects current disk (idempotent).
   const testBaseline = testHashSnapshot(projectDir, foremanDir);
 
-  let iteration = seededIteration;
-  let findings = [];
-  let lastGate = null;
-  let lastChanged = [];   // Phase 3c: the wave's changed files (for the GO commit)
-  let lastCitation = exec?.citation || null;
+  lastCitation = exec?.citation || lastCitation;
 
   // Wave-scoped gate when plan declares per-wave gate-command (0082 P1.6).
   // P1 2026-07-25 (0078 T7): re-resolved from the plan ON DISK every iteration, so a
@@ -1583,6 +1605,17 @@ export async function runWave(o) {
     iteration++;
     const fix = await agentWait(`fix-${iteration}`,
       () => driver.fix({ ...ctx, iteration }, lastGate, findings));
+    if (fix?.agent_failed) {
+      const af = fix.agent_failed;
+      const timedOut = /TIMEOUT/i.test(String(af.exit_class || ''));
+      const reason = `[taxonomy:agent-died] HALT: the fix agent died (${af.detail}) — iteration ${iteration} applied nothing`;
+      steps.push(`✗ ${reason}`);
+      log(`fix iter ${iteration}: agent DIED (${af.exit_class}) — HALT, never "applied"`);
+      return finishHalt({ reason, recommend:
+        `[taxonomy:agent-died] fix iteration ${iteration} for wave ${wave.n} died with class ${af.exit_class}. ` +
+        (timedOut ? `Raise --call-timeout-min and resume at the gate.`
+                  : `Check the engine CLI/auth (0082 launch-failure class), then resume at the gate.`) });
+    }
     lastCitation = fix?.citation || lastCitation;
     steps.push(`▸ fix iter ${iteration}… ${fix?.note || 'applied'}`);
     log(`fix iter ${iteration}: ${fix?.note || 'applied'}`);

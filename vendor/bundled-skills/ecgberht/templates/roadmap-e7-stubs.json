@@ -1,0 +1,31 @@
+{
+  "schema": "ecgberht-e7-stubs-v0",
+  "status": "parked",
+  "not_built": true,
+  "oauth_code": "none — E7 is recorded on the Roadmap, never built, in this run",
+  "why_parked": "Scope / OAuth trap (frozen plan, Oranges foresight). A future John-approved wave builds E7 with its own consent + OAuth plan.",
+  "pe_gate_feature": "calendar_email",
+  "steps": [
+    {
+      "step_id": "e7-calendar-connector",
+      "name": "E7 · calendar connector (future — parked)",
+      "status": "parked",
+      "done_when": "A future John-approved E7 wave ships a calendar connector with its own consent + OAuth plan",
+      "waiting_on": "parked by Stage 2 — recorded on the Roadmap only; no OAuth code in this build"
+    },
+    {
+      "step_id": "e7-email-connector",
+      "name": "E7 · email connector (future — parked)",
+      "status": "parked",
+      "done_when": "A future John-approved E7 wave ships an email connector with its own consent + OAuth plan",
+      "waiting_on": "parked by Stage 2 — recorded on the Roadmap only; no OAuth code in this build"
+    },
+    {
+      "step_id": "e7-calendar-proactivity",
+      "name": "E7 · calendar-driven proactivity (future — parked)",
+      "status": "parked",
+      "done_when": "Raise queue may consult calendar context only after the E7 connectors exist and the calendar_email PE gate is open",
+      "waiting_on": "parked by Stage 2 — depends on the parked E7 connectors; raise aging stays simple until then"
+    }
+  ]
+}

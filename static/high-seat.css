@@ -56,6 +56,10 @@
 }
 .ecg-hs-raise h3 { margin: 0 0 6px; color: #e0a437; font-size: 14px; }
 .ecg-hs-raise .note { color: #8b93a7; font-size: 11px; margin-top: 8px; }
+/* (2026-08-06) The briefing: did / waiting-on-you / next, one line each —
+   the raise answers John's questions before he asks them. */
+.ecg-hs-raise-proj { color: #8b93a7; font-size: 11px; margin-bottom: 4px; }
+.ecg-hs-brief-line { margin: 2px 0; line-height: 1.45; }
 .ecg-hs-quiet {
   border: 1px solid #2a2f3c; border-radius: 12px; padding: 12px 16px;
   margin-bottom: 14px; color: #aeb4c2;
@@ -134,3 +138,50 @@
    honest options, amber accent. No meter has ever been rendered here. */
 .ecg-hs-capstop { border-color: #7a5a1e; }
 .ecg-hs-capstop .who { color: #e0a437; }
+
+/* The never-joined portfolio (2026-08-04 hardening). `register` is the only verb
+   that mints a project marker, and the index it writes is what this surface reads
+   — so until projects join there is genuinely nothing to show. Styled as a calm
+   empty state, deliberately NOT as the amber .ecg-hs-raise alarm: empty is not
+   broken, and it used to render as a "can't reach the steward" failure banner. */
+.ecg-hs-empty {
+  border: 1px solid #2a2f3c; border-radius: 12px; padding: 18px 20px;
+  margin-bottom: 14px; color: #aeb4c2;
+}
+.ecg-hs-empty-title {
+  color: #d7dbe4; font-size: 14px; font-weight: 600; margin-bottom: 8px;
+}
+.ecg-hs-empty .ecg-hs-quiet { border: 0; padding: 0; margin: 0 0 6px; }
+.ecg-hs-empty .ecg-hs-actions { margin-top: 12px; }
+
+/* (2026-08-07, John) Rows are a live portfolio glance: happening-now line +
+   lifetime spend + a green breathing dot while a run is live; the whole row
+   clicks through to that project's steward (#seal deep link). */
+.ecg-hs-tile.clickable { cursor: pointer; }
+.ecg-hs-tile.clickable:hover { outline: 1px solid #7aa2f7; }
+.ecg-hs-tile .hs-live {
+  color: #34a853; margin-left: 6px;
+  animation: ecghslive 1.6s ease-in-out infinite;
+}
+.ecg-hs-tile .hs-now { font-size: 11.5px; color: #7aa2f7; margin-top: 2px; }
+.ecg-hs-tile .hs-spend { font-size: 11px; color: #8b93a5; }
+.ecg-hs-newproj { margin-top: 12px; }
+@keyframes ecghslive {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+.ecg-hs-more { margin-top: 10px; }
+.ecg-hs-more summary {
+  cursor: pointer; color: #8b93a5; font-size: 12px; padding: 4px 2px;
+}
+.ecg-hs-more[open] summary { margin-bottom: 8px; }
+.ecg-hs-sayrow { display: flex; gap: 8px; margin-top: 12px; }
+.ecg-hs-say {
+  flex: 1; min-width: 0; background: #14161d; border: 1px solid #2a2f3c;
+  border-radius: 7px; color: #d7dbe4; font-size: 13px; padding: 8px 11px;
+}
+.ecg-hs-say:focus { outline: none; border-color: #7aa2f7; }
+.ecg-hs-createcard {
+  margin-top: 10px; border: 1px solid #7aa2f7; border-radius: 10px;
+  padding: 12px 14px; color: #d7dbe4; font-size: 13px;
+}

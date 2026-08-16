@@ -57,8 +57,10 @@ def test_lane_launch_uses_seeded_term_start_not_start_terminal(gui, tmp_path):
     assert "function newTermSession" in html
     # General launch uses settings-backed default_cli (newEffort('general') → newGeneral()).
     assert "newEffort('general')" in html or "newGeneral(" in html
-    assert "id='newResearchBtn'" in html  # v12 W10 refine: + New research
-    assert "id='newPlanBuildBtn'" in html  # v12 W10 refine: + New plan/build
+    # (2026-08-07, John's simple workbench) only the general starter remains.
+    assert "id='newGeneralBtn'" in html
+    assert "id='newResearchBtn'" not in html
+    assert "id='newPlanBuildBtn'" not in html
     # The seeded endpoint is the launch target.
     assert "/api/rnd/term_start" in html
 

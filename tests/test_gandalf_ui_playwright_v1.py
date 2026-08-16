@@ -95,6 +95,11 @@ def _seed_ok_run(folder, pid, run_id="run-1700000000000",
 
 def test_gandalf_panel_above_grass_and_row_expands(server, tmp_path):
     pytest.importorskip("playwright.sync_api")
+    pytest.skip("RETIRED FROM PROJECT PAGES (2026-08-07, John): the standalone "
+                "Gandalf panel is gone from project windows — commissioned "
+                "Gandalf runs live in the Seal's run ledger. The panel remains "
+                "only in the dashboard's slim Workbench (/project/__dashboard__), "
+                "where it renders from the same _render_layoutd_gandalf_panel.")
     gui, base, _ = server
     folder = tmp_path / "Proj"
     pid = _mkproject(folder, "Proj")["id"]
@@ -197,6 +202,11 @@ def test_gandalf_panel_above_grass_and_row_expands(server, tmp_path):
 
 def test_gandalf_empty_state_shows_run_button(server, tmp_path):
     pytest.importorskip("playwright.sync_api")
+    pytest.skip("RETIRED FROM PROJECT PAGES (2026-08-07, John): the standalone "
+                "Gandalf panel is gone from project windows — commissioned "
+                "Gandalf runs live in the Seal's run ledger. The panel remains "
+                "only in the dashboard's slim Workbench (/project/__dashboard__), "
+                "where it renders from the same _render_layoutd_gandalf_panel.")
     gui, base, _ = server
     folder = tmp_path / "Fresh"
     pid = _mkproject(folder, "Fresh")["id"]  # no runs seeded
@@ -218,3 +228,14 @@ def test_gandalf_empty_state_shows_run_button(server, tmp_path):
         run_btn = pg.query_selector("#gandalfPanel .gandalf-empty .gandalf-run")
         assert run_btn is not None, "empty state must offer a Run button"
         b.close()
+
+
+def test_gandalf_panel_absent_from_project_pages(server, tmp_path):
+    """(2026-08-07, John) The standalone Gandalf panel is GONE from project
+    windows; it renders only for the dashboard's slim Workbench."""
+    gui, base, _ = server
+    folder = tmp_path / "NoPanel"
+    pid = _mkproject(folder, "NoPanel")["id"]
+    html = gui.render_project_window_html(pid)
+    # assert on the MARKUP (the app JS legitimately mentions #gandalfPanel).
+    assert "id='gandalfPanel'" not in html and 'id="gandalfPanel"' not in html,         "Gandalf panel markup leaked onto a project page"

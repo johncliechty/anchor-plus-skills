@@ -251,25 +251,50 @@ def _ensure_jobs_dir() -> None:
 
 
 def _write_record(rec: dict) -> None:
-    """Persist a job record (atomic-ish) under the write lock."""
+    """Persist a job record (atomic-ish) under the write lock.
+
+    On Windows, ``os.replace`` fails with a transient PermissionError
+    (WinError 5) while any other handle holds the destination open —
+    ``load_record`` reads take no lock, so a concurrent read can briefly
+    block the swap (observed live 2026-08-07: the reader thread's
+    ``_finalize`` died unhandled mid-replace). Retry the replace a few
+    times before letting the error propagate; the holds are millisecond
+    -scale.
+    """
     with _paths.WRITE_LOCK:
         p = _record_path(rec["job_id"])
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(rec, indent=2, ensure_ascii=False),
                        encoding="utf-8")
-        tmp.replace(p)
+        for attempt in range(5):
+            try:
+                tmp.replace(p)
+                return
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
 
 
 def load_record(job_id: str):
-    """Return the persisted job record dict, or ``None``."""
+    """Return the persisted job record dict, or ``None``.
+
+    A read racing an in-flight ``_write_record`` replace can transiently
+    fail on Windows (the destination passes through a delete-pending
+    state → OSError on open), so one failed read gets a single short
+    retry before the honest ``None``.
+    """
     p = _record_path(job_id)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
+    for attempt in range(2):
+        if not p.exists():
+            return None
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            if attempt == 0:
+                time.sleep(0.02)
+    return None
 
 
 def list_records() -> list:

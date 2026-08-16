@@ -240,11 +240,99 @@ ROUTES = [
     # UI host: live C:\dev\Anchor (hardened line). Engine: C:\dev\Ecgberht.
     _r("GET", "/api/ecgberht/chamber", AUTH_TOKEN, match=MATCH_PREFIX,
        handler="handle_ecgberht_chamber", migrated=True),
+    # (steward-chamber W6) Deterministic-first painted M1 slice: zero-spawn /
+    # zero-model read over the W4/W5 sidecar projections (chamber_open).
+    _r("GET", "/api/ecgberht/seal_open", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_seal_open", migrated=True),
+    # (steward-chamber W9) STATUS overlay as drawn: latest ⏱ table + remaining
+    # steps with n>=3 median ETAs — the same zero-spawn/zero-model bounded read
+    # as seal_open, rendered via chamber_status_overlay.
+    _r("GET", "/api/ecgberht/status_overlay", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_status_overlay", migrated=True),
+    # (steward-chamber W9) The injection-clock deliverable read (SAFE
+    # projection; argv/cwd never serialize) …
+    _r("GET", "/api/ecgberht/deliverable_state", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_deliverable_state", migrated=True),
+    # … and the ONE deliverable-action mutator (F3: shell:false, list-argv from
+    # the code-owned verb allow-list, contained path, pinned cwd; labeled inert
+    # otherwise). Row + red-to-green proof in chamber/routes-inventory.json.
+    _r("POST", "/api/ecgberht/deliverable_action", AUTH_TOKEN,
+       handler="handle_ecgberht_deliverable_action", migrated=True),
+    # (steward-chamber W10) The serialized decision-gate queue (E5): the
+    # read-only head-only queue state + render …
+    _r("GET", "/api/ecgberht/gate_queue", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_gate_queue", migrated=True),
+    # … and its three mutators — resolve/skip the HEAD gate (serialization
+    # law: a non-head gate refuses by name) and the sweep-card binding that
+    # releases the E2 enqueue gate (C5/F4). Rows + red-to-green proof in
+    # chamber/routes-inventory.json (tests/test_chamber_gate_routes_w10.py).
+    _r("POST", "/api/ecgberht/gate_resolve", AUTH_TOKEN,
+       handler="handle_ecgberht_gate_resolve", migrated=True),
+    _r("POST", "/api/ecgberht/gate_skip", AUTH_TOKEN,
+       handler="handle_ecgberht_gate_skip", migrated=True),
+    _r("POST", "/api/ecgberht/sweep_bind", AUTH_TOKEN,
+       handler="handle_ecgberht_sweep_bind", migrated=True),
+    # (steward-chamber W11) The REFINE-THE-PLAN overlay: the read-only
+    # draft/sections/overlay-html state …
+    _r("GET", "/api/ecgberht/refine_state", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_refine_state", migrated=True),
+    # … its ONE plan-writing mutator — the SECTION-SCOPED HASH-BOUND confirm
+    # (writes only on a matching section hash; a moved section answers the
+    # drawn 'plan moved' card WITH diff, draft preserved) — and the E7
+    # mid-flight re-brief write (live channel, acknowledgment receipt on the
+    # step, NO relaunch; refused-and-queued during an active sweep). Rows +
+    # red-to-green proof in chamber/routes-inventory.json
+    # (tests/test_chamber_refine_routes_w11.py).
+    _r("POST", "/api/ecgberht/refine_confirm", AUTH_TOKEN,
+       handler="handle_ecgberht_refine_confirm", migrated=True),
+    _r("POST", "/api/ecgberht/rebrief", AUTH_TOKEN,
+       handler="handle_ecgberht_rebrief", migrated=True),
     _r("POST", "/api/ecgberht/speak", AUTH_TOKEN,
        handler="handle_ecgberht_speak", migrated=True),
     # TW7 Screen 4 — stand-up confirm ONLY path (empty project → Face+Strip)
     _r("POST", "/api/ecgberht/stand_up", AUTH_TOKEN,
        handler="handle_ecgberht_stand_up", migrated=True),
+    # Hardening 2026-08-04 — join active projects to the portfolio index. The
+    # ONLY path that mints a project marker, and therefore the only way the High
+    # Seat can ever have rows. A POST because registering WRITES a marker into
+    # each project root, and the portfolio altitude folds projections read-only.
+    _r("POST", "/api/ecgberht/register_projects", AUTH_TOKEN,
+       handler="handle_ecgberht_register_projects", migrated=True),
+    # 2026-08-04 — the missing SC1 path. A dictated project description compiles
+    # to a PROPOSED scaffolding (preview writes nothing) and, on an explicit
+    # confirm, becomes roadmap steps through the single writer.
+    _r("POST", "/api/ecgberht/scaffold_preview", AUTH_TOKEN,
+       handler="handle_ecgberht_scaffold_preview", migrated=True),
+    _r("POST", "/api/ecgberht/scaffold_confirm", AUTH_TOKEN,
+       handler="handle_ecgberht_scaffold_confirm", migrated=True),
+    # 2026-08-04 — THE CONVERSATIONAL DOOR. Free-form speech goes to the steward's
+    # seat model (with the Face, roadmap and Strip as context) instead of dead-ending
+    # on the closed act table; control verbs still compile deterministically in the
+    # engine. envelope_confirm is the one human "yes, spend on this session" that
+    # covers the whole conversation, so the steward never asks per sentence.
+    _r("POST", "/api/ecgberht/converse", AUTH_TOKEN,
+       handler="handle_ecgberht_converse", migrated=True),
+    _r("POST", "/api/ecgberht/envelope_confirm", AUTH_TOKEN,
+       handler="handle_ecgberht_envelope_confirm", migrated=True),
+    _r("POST", "/api/ecgberht/envelope_raise", AUTH_TOKEN,
+       handler="handle_ecgberht_envelope_raise", migrated=True),
+    # (2026-08-06) steward run-loop W5: the steward actually RUNS a skill.
+    _r("POST", "/api/ecgberht/commission_propose", AUTH_TOKEN,
+       handler="handle_ecgberht_commission_propose", migrated=True),
+    _r("POST", "/api/ecgberht/commission_go", AUTH_TOKEN,
+       handler="handle_ecgberht_commission_go", migrated=True),
+    _r("POST", "/api/ecgberht/commission_watch", AUTH_TOKEN,
+       handler="handle_ecgberht_commission_watch", migrated=True),
+    _r("GET", "/api/ecgberht/commission_runs", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_commission_runs", migrated=True),
+    _r("GET", "/api/ecgberht/step_detail", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_step_detail", migrated=True),
+    _r("POST", "/api/ecgberht/step_note", AUTH_TOKEN,
+       handler="handle_ecgberht_step_note", migrated=True),
+    _r("GET", "/api/ecgberht/run_pulse", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_run_pulse", migrated=True),
+    _r("POST", "/api/ecgberht/high_seat_say", AUTH_TOKEN,
+       handler="handle_ecgberht_high_seat_say", migrated=True),
     # ── Ecgberht High Seat (TW6 — wireframes v2.1 Screens 0+2+3) ──────────
     # Same live-Anchor host + Ecgberht engine bridge (high-seat-bridge.mjs).
     # Specific prefixes are registered BEFORE the bare /high_seat prefix so
@@ -259,6 +347,19 @@ ROUTES = [
        handler="handle_ecgberht_bring_up", migrated=True),
     _r("GET", "/api/ecgberht/artifact", AUTH_TOKEN, match=MATCH_PREFIX,
        handler="handle_ecgberht_artifact", migrated=True),
+    # ── Ecgberht Chamber UI (Wave 18 — steps, proposals, artifacts, corrections)
+    # Token-auth only (OPEN_ROUTES review: none of these are open). Bridge:
+    # Ecgberht scripts/chamber-ui-bridge.mjs. Specific prefixes before generics.
+    _r("GET", "/api/ecgberht/chamber_steps", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_chamber_steps", migrated=True),
+    _r("GET", "/api/ecgberht/chamber_proposal", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_chamber_proposal", migrated=True),
+    _r("POST", "/api/ecgberht/chamber_confirm", AUTH_TOKEN,
+       handler="handle_ecgberht_chamber_confirm", migrated=True),
+    _r("GET", "/api/ecgberht/chamber_artifact", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_chamber_artifact", migrated=True),
+    _r("POST", "/api/ecgberht/chamber_correct", AUTH_TOKEN,
+       handler="handle_ecgberht_chamber_correct", migrated=True),
     _r("GET", "/api/rnd/remote_status", AUTH_TOKEN, match=MATCH_PREFIX,
        handler="handle_remote_status", migrated=True),
     _r("GET", "/api/rnd/project_rollup", AUTH_TOKEN, match=MATCH_PREFIX,

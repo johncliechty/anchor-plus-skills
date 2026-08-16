@@ -146,31 +146,32 @@ def _col_tiles(body, trio_lane):
 
 @pytest.mark.skipif(not _have_git(), reason="git not on PATH")
 def test_live_planning_session_appears_in_planning_column(gui_env):
-    """POSITIVE + NEGATIVE-vs-v6: a started planning session (registry only, no
-    effort rows yet) renders as a TILE in the Planning column with a running
-    light + a blurb. The v6 board excluded such sessions — assert it now appears."""
+    """(2026-08-07, John's simple workbench) The trio columns are gone; the
+    live-session-appears-immediately contract is asserted on the GENERAL zone:
+    a started general session (registry only, no effort rows yet) renders as a
+    board tile with a running light."""
     gui = gui_env["gui"]
     pid = gui_env["pid"]
     import terminal_session as ts
 
-    # The Planning column is EMPTY before any session (no effort rows).
+    # The General zone is EMPTY before any session (no effort rows).
     body0 = _strip(gui.render_project_window_html(pid))
-    assert _col_tiles(body0, "plan") == [], \
-        "planning column should be empty before any session"
+    assert _col_tiles(body0, "general") == [], \
+        "general zone should be empty before any session"
 
-    rec = ts.start_session(pid, "plan", backend="claude")
+    rec = ts.start_session(pid, "general", backend="claude")
     sid = rec["session_id"]
     assert gui._sessreg.get_session(sid)["status"] == gui._sessreg.STATUS_RUNNING
 
     body = _strip(gui.render_project_window_html(pid))
-    tiles = _col_tiles(body, "plan")
-    # Exactly one planning tile, for THIS session, with a running light.
+    tiles = _col_tiles(body, "general")
+    # Exactly one tile, for THIS session, with a running light.
     sess_tiles = [(c, a) for c, a in tiles if a.get("data-session") == sid]
     assert len(sess_tiles) == 1, \
-        "live planning session not rendered as exactly one column tile"
+        "live general session not rendered as exactly one board tile"
     classes, attrs = sess_tiles[0]
     assert attrs.get("data-light") == "green", "running session not green-lit"
-    assert attrs.get("data-lane") == "plan", "tile not in the plan board zone"
+    assert attrs.get("data-lane") == "general", "tile not in the general zone"
     # v12 Wave 2: the Layout-D tile signals "live" via the green status light +
     # the lane-tile click hook (the old data-live re-adoption hook is retired).
     assert "lane-tile" in classes, "live session tile missing the click hook"
@@ -178,17 +179,19 @@ def test_live_planning_session_appears_in_planning_column(gui_env):
 
 @pytest.mark.skipif(not _have_git(), reason="git not on PATH")
 def test_lane_mapping_planning_alias(gui_env):
-    """A registry record using the STORE lane form ('planning') maps to the same
-    'plan' board column as the trio form."""
+    """(2026-08-07, John's simple workbench) NEGATIVE: trio-lane sessions have
+    NO board zone — a 'planning' registry session renders no board tile (it
+    stays reachable via the session bar chips + the run ledger)."""
     gui = gui_env["gui"]
     pid = gui_env["pid"]
     import session_registry as reg
     rec = reg.register_session(pid, "planning", status=reg.STATUS_RUNNING)
     sid = rec["session_id"]
     body = _strip(gui.render_project_window_html(pid))
-    sess_tiles = [a for c, a in _col_tiles(body, "plan")
-                  if a.get("data-session") == sid]
-    assert len(sess_tiles) == 1, "'planning' lane did not map to the plan column"
+    for lane in ("plan", "research", "general"):
+        hits = [a for c, a in _col_tiles(body, lane)
+                if a.get("data-session") == sid]
+        assert hits == [], "trio session leaked into the %s zone" % lane
 
 
 @pytest.mark.skipif(not _have_git(), reason="git not on PATH")
@@ -215,19 +218,19 @@ def test_dedupe_one_tile_per_session_id(gui_env):
     import session_registry as reg
     import effort_history as eh
 
-    rec = reg.register_session(pid, "research", status=reg.STATUS_RUNNING)
+    rec = reg.register_session(pid, "general", status=reg.STATUS_RUNNING)
     sid = rec["session_id"]
     # Write an effort-history run row keyed on the SAME id (as adoption would),
     # so sessions.list_sessions yields a session for it (keyed ``run::<sid>``).
-    eh.record_effort(gui_env["repo"], pid, "research", sid,
-                     skill="researchPrime",
+    eh.record_effort(gui_env["repo"], pid, "general", sid,
+                     skill="",
                      prompt_seed="look into cooling loops",
                      extra={"title": "cooling loops"})
 
     body = _strip(gui.render_project_window_html(pid))
     # The effort session renders under the ``run::<sid>`` key; the live registry
     # row dedupes onto it (prefix-stripped tail == sid) → exactly one tile.
-    matches = [a for c, a in _col_tiles(body, "research")
+    matches = [a for c, a in _col_tiles(body, "general")
                if _strip_prefix(a.get("data-session", "")) == sid]
     assert len(matches) == 1, \
         "session present as live+effort rendered %d tiles (want 1)" % len(matches)
@@ -250,19 +253,19 @@ def test_newest_prominent_older_under_expander(gui_env):
     pid = gui_env["pid"]
     import session_registry as reg
     import time as _t
-    older = reg.register_session(pid, "research", status=reg.STATUS_DONE)
+    older = reg.register_session(pid, "general", status=reg.STATUS_DONE)
     _t.sleep(0.02)
-    newer = reg.register_session(pid, "research", status=reg.STATUS_RUNNING)
+    newer = reg.register_session(pid, "general", status=reg.STATUS_RUNNING)
 
     body = _strip(gui.render_project_window_html(pid))
     # The Research zone: the prominent tile is the .headline (newest); the older
     # one is a .minitile inside the #shelf_research collapsible shelf.
     start = body.find("pgrid layoutd")
     assert start >= 0, "no Layout-D board in body"
-    shelf_at = body.find("id='shelf_research'", start)
+    shelf_at = body.find("id='shelf_general'", start)
     if shelf_at < 0:
-        shelf_at = body.find('id="shelf_research"', start)
-    assert shelf_at >= 0, "no research shelf when 2 sessions exist"
+        shelf_at = body.find('id="shelf_general"', start)
+    assert shelf_at >= 0, "no general shelf when 2 sessions exist"
     prominent = body[start:shelf_at]          # headline region (before the shelf)
     shelf = body[shelf_at:body.find("grassWorkbenchTpl", shelf_at)]
     assert ('data-session="%s"' % newer["session_id"]) in prominent, \
@@ -283,8 +286,10 @@ def test_tile_carries_a_short_clean_blurb(gui_env):
     pid = gui_env["pid"]
     import session_registry as reg
     import summarizer
-    store_lane = "research"
-    rec = reg.register_session(pid, "research", status=reg.STATUS_DONE)
+    # (2026-08-07) The general zone is the board; the blurb contract is
+    # asserted there.
+    store_lane = "general"
+    rec = reg.register_session(pid, "general", status=reg.STATUS_DONE)
     sid = rec["session_id"]
     # Seed a CACHED session summary whose claim carries markdown + glyphs.
     cached = {
@@ -383,7 +388,7 @@ def test_playwright_started_session_appears_in_column_and_strip(server):
     import session_registry as reg
     pid = bundle["pid"]
 
-    sid1 = ts.start_session(pid, "plan", backend="claude")["session_id"]
+    sid1 = ts.start_session(pid, "general", backend="claude")["session_id"]
 
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
@@ -398,13 +403,13 @@ def test_playwright_started_session_appears_in_column_and_strip(server):
 
         # 1) Exactly one Layout-D tile for sid1 in the Plan/Build zone, running.
         #    Initially the sole plan session is the Latest-Plan/Build headline.
-        plan_sel = '.pgrid.layoutd .tile[data-session="%s"][data-lane="plan"]' % sid1
+        plan_sel = '.pgrid.layoutd .tile[data-session="%s"][data-lane="general"]' % sid1
         pg.wait_for_selector(plan_sel, timeout=8000)
         assert pg.eval_on_selector_all(plan_sel, "e=>e.length") == 1, \
-            "expected exactly one Plan/Build-zone tile for the session"
+            "expected exactly one General-zone tile for the session"
         assert pg.eval_on_selector(
             plan_sel, "e=>e.getAttribute('data-light')") == "green", \
-            "Plan/Build tile not green (running)"
+            "General tile not green (running)"
         # The session also shows in the top active strip.
         pg.wait_for_selector(
             '#sessionBar .live-chip[data-session="%s"]' % sid1, timeout=8000)
@@ -413,7 +418,7 @@ def test_playwright_started_session_appears_in_column_and_strip(server):
         pg.screenshot(path=str(_DEVTEST / "wave3_board.png"))
 
         # 2) Start a SECOND planning session, finish the FIRST, reload.
-        sid2 = ts.start_session(pid, "plan", backend="claude")["session_id"]
+        sid2 = ts.start_session(pid, "general", backend="claude")["session_id"]
         reg.update_session(sid1, status=reg.STATUS_DONE)
         pg.goto(f"{base}/project/{pid}", wait_until="networkidle")
         from tests.ui_helpers import expand_workbench
@@ -424,8 +429,8 @@ def test_playwright_started_session_appears_in_column_and_strip(server):
         pg.wait_for_selector(
             '.pgrid.layoutd .headline[data-session="%s"]' % sid2, timeout=8000)
         assert pg.eval_on_selector_all(
-            '#shelf_plan_build .minitile[data-session="%s"]' % sid1,
-            "e=>e.length") == 1, "finished planning session not under the shelf"
+            '#shelf_general .minitile[data-session="%s"]' % sid1,
+            "e=>e.length") == 1, "finished general session not under the shelf"
         assert pg.eval_on_selector(
             '.pgrid.layoutd .tile[data-session="%s"]' % sid1,
             "e=>e.getAttribute('data-light')") == "amber", \

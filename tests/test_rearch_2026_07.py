@@ -1011,7 +1011,8 @@ class TestW2PlaywrightFlows:
         from tests import rearch_flows as flows
         w2_env, base = w2_server
         pid, _ = _mk_w2_project(w2_env, "FlowDock")
-        rec = flows.start_live_session(pid, "research", effort_managed=True)
+        # (2026-08-07) trio zones are gone — the dock flow runs on the general zone.
+        rec = flows.start_live_session(pid, "general", effort_managed=True)
         sid = rec["session_id"]
         try:
             with sync_playwright() as p:

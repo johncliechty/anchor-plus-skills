@@ -1,0 +1,29 @@
+{
+  "name": "ecgberht",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Ecgberht — Foundry skill + deterministic steward engine (Face + Strip)",
+  "main": "engine/index.mjs",
+  "exports": {
+    ".": "./engine/index.mjs",
+    "./engine": "./engine/index.mjs"
+  },
+  "bin": {
+    "ecgberht": "./bin/ecgberht.mjs"
+  },
+  "scripts": {
+    "test": "node scripts/run-all-tests.mjs",
+    "ecgberht": "node bin/ecgberht.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ecgberht",
+    "foundry-skill",
+    "steward",
+    "face-strip"
+  ],
+  "license": "UNLICENSED"
+}

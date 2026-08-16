@@ -8,7 +8,44 @@ from pathlib import Path
 #: First-party modules that are ALLOWED to be absent on an install — each is a
 #: documented deliberate exclusion whose consumers degrade safely (lazy
 #: try/except imports). Mirrors distro._OPTIONAL_FIRST_PARTY.
-OPTIONAL_ABSENT = frozenset({"update_transaction", "tools"})
+#: Modules whose ABSENCE is intentional, so doctor must not call the install
+#: broken over them. THE BUILDER OWNS THIS LIST. ``distro._OPTIONAL_FIRST_PARTY``
+#: is what the fail-closed import-closure gate actually enforces at build time,
+#: each entry carrying a written justification; this module derives from it
+#: rather than keeping a second copy.
+#:
+#: WHY (found by share_sandbox G6a on the v1.2 line, 2026-08): this WAS a
+#: hand-maintained duplicate — ``{"update_transaction", "tools"}`` — and it
+#: drifted. The builder grew declarations for the steward-chamber modules
+#: (``chamber_mockup_diff`` et al., lazily imported inside try/except and
+#: honestly degrading) while doctor did not, so a CORRECTLY-built package made
+#: doctor announce "This install is INCOMPLETE — re-download". Doctor is the
+#: FIRST thing the consumer CLAUDE.md tells a collaborator to run, so the one
+#: cheap deterministic check told every new user their good install was broken.
+#: Two lists disagreeing is the same root cause as the v1.1.x two-builders
+#: incident: one must win, and it is the one the gate enforces.
+_FALLBACK_OPTIONAL_ABSENT = frozenset({"update_transaction", "tools"})
+
+
+def _optional_absent():
+    """The builder's declared-optional set, with an honest fallback.
+
+    Doctor must stay useful on a PARTIAL install (that is its whole job), so a
+    missing or broken ``distro`` degrades to the historical literal rather than
+    raising — but on any real package ``distro.py`` is on the manifest and the
+    builder's list wins.
+    """
+    try:
+        import distro
+        declared = getattr(distro, "_OPTIONAL_FIRST_PARTY", None)
+        if declared:
+            return frozenset(declared) | _FALLBACK_OPTIONAL_ABSENT
+    except Exception:
+        pass
+    return _FALLBACK_OPTIONAL_ABSENT
+
+
+OPTIONAL_ABSENT = _optional_absent()
 
 #: Import names that are OPTIONAL EXTRAS (probed separately, never counted as
 #: a missing first-party module): the winpty native dep is the [terminal]

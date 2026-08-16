@@ -207,6 +207,11 @@ export function makeAgentDriver({ agent }) {
     // execute/fix pin to the strongest coder, review can fan out to another family.
     async execute(ctx) {
       const out = await agent(executePrompt(ctx), { label: `execute:w${ctx.wave.n}`, role: 'execute' });
+      // 0102: a dead agent (typed { agent_failed } marker from the transport) must
+      // never be labeled "complete" — forward the failure so the engine HALTs.
+      if (out && typeof out === 'object' && out.agent_failed) {
+        return { note: `agent execute DIED (${out.exit_class})`, agent_failed: out };
+      }
       return { note: 'agent execute complete', raw: out };
     },
     async review(ctx, gate) {
@@ -219,6 +224,11 @@ export function makeAgentDriver({ agent }) {
         reviewer: `reviewer-${ctx.reviewerIndex}`,
         answerable: out?.answerable ?? 'yes',
         note: out?.note,
+        // T10a: drivers stamp transport_failed on unparseable-after-retry (with
+        // answerable:'no'). Forward it so wave-engine degrades the seat BEFORE the
+        // §4.7 ambiguity gate — stripping it turned every review JSON hiccup into a
+        // false [taxonomy:ambiguity] HALT (live: W16 2026-07-29, sleep stage2).
+        ...(out?.transport_failed ? { transport_failed: true } : {}),
         // F3: forward a well-formed plan-amendment proposal (diff + rationale) so
         // the engine can raise the PLAN-AMENDMENT-PROPOSAL halt; absent otherwise.
         ...(out?.plan_amendment ? { plan_amendment: out.plan_amendment } : {}),
@@ -229,6 +239,9 @@ export function makeAgentDriver({ agent }) {
     },
     async fix(ctx, gate, findings) {
       const out = await agent(fixPrompt(ctx, gate, findings), { label: `fix:w${ctx.wave.n}.${ctx.iteration}`, role: 'fix' });
+      if (out && typeof out === 'object' && out.agent_failed) {
+        return { note: `agent fix DIED (${out.exit_class})`, agent_failed: out };
+      }
       return { note: 'agent fix complete', raw: out };
     },
   };

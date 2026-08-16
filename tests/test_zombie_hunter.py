@@ -415,7 +415,7 @@ def test_start_session_persists_identity_and_classify_is_non_abstain(tmp_path, m
     wt = tmp_path / "wt"
     wt.mkdir()
     monkeypatch.setattr(ts._wt, "create_worktree",
-                        lambda project_id, sid: {"ok": True, "path": str(wt), "branch": "b"})
+                        lambda project_id, sid, **kw: {"ok": True, "path": str(wt), "branch": "b"})
     monkeypatch.setattr(ts._wt, "remove_worktree", lambda *a, **k: None)
 
     proj = rnd.add_project("Temp", str(tmp_path / "repo"), scaffold=False)

@@ -1,0 +1,8 @@
+{
+  "schema": "ecgberht-receipt-v0",
+  "kind": "handback",
+  "as_of": "2026-08-02",
+  "active_effort": "torn",
+  "why_next": "Incomplete body — missing required fields intentionally.",
+  "human_wait": "none"
+}

@@ -1,0 +1,18 @@
+{
+  "schema": "ecgberht-receipt-v0",
+  "kind": "handback",
+  "as_of": "2026-08-02",
+  "active_effort": "wave4-contract-fixture",
+  "why_next": "Conformant handback fixture for skill-lane contract tests.",
+  "grasscatch_why": null,
+  "tool_depth_why": "LITE fixture depth for contract validation only.",
+  "human_wait": "none",
+  "uncertainty_flags": ["fixture", "contract-test"],
+  "skill": "researchPrime",
+  "depth": "LITE",
+  "commission_id": "fixture-commission-001",
+  "client_event_id": "client-evt-fixture-001",
+  "handback_id": "hb-fixture-001",
+  "contract_version": "1.0.0",
+  "partial": false
+}

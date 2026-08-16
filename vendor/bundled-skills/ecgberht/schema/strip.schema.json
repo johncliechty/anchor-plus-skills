@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ecgberht-strip-v0",
+  "title": "Ecgberht Strip (instrument heartbeat)",
+  "description": "Typed Strip fields for portfolio rank and dispatch. Machine append-only instruments/receipts. Aligns with the campaign v0 strip.json (ecgberht-strip-v0). Heal law: Strip wins append-only clocks; reject silent in-place clock rewrite; crisis heal = explicit re-sync append only; capacity=unknown is rank penalty + LITE bias (never silent green).",
+  "type": "object",
+  "required": [
+    "schema",
+    "phase",
+    "active_effort",
+    "human_wait",
+    "capacity",
+    "negative_heartbeat",
+    "grasscatch",
+    "uncertainty_flags",
+    "tool_depth_cell",
+    "next_recommended",
+    "why_next"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "const": "ecgberht-strip-v0",
+      "description": "Locked Strip schema id"
+    },
+    "project_id": { "type": "string" },
+    "face_path": { "type": "string" },
+    "as_of": { "type": "string" },
+    "phase": {
+      "type": "string",
+      "description": "Effort/campaign phase label (planning, build, blocked, …)"
+    },
+    "active_effort": {
+      "type": "string",
+      "description": "Active effort id or short label"
+    },
+    "effort_status": { "type": "string" },
+    "human_wait": {
+      "type": "string",
+      "description": "What is waiting on a human, or 'none'"
+    },
+    "capacity": {
+      "type": "string",
+      "enum": ["known", "unknown"],
+      "description": "AI/subscription capacity signal; unknown is stricter than zero (rank penalty + LITE bias)"
+    },
+    "negative_heartbeat": {
+      "type": "object",
+      "description": "Explicit no-attention-needed signal (silence is not truth)",
+      "properties": {
+        "no_attention_needed": { "type": "boolean" },
+        "why": { "type": ["string", "null"] },
+        "until": { "type": ["string", "null"] }
+      },
+      "required": ["no_attention_needed"],
+      "additionalProperties": true
+    },
+    "anti_starvation_age_days": {
+      "type": "number",
+      "description": "Anti-starvation age in days for strip-first rank boost"
+    },
+    "instruments": {
+      "type": "array",
+      "description": "Append-only instrument history; prior entries must never be rewritten in place",
+      "items": { "type": "object" }
+    },
+    "receipts": {
+      "type": "array",
+      "description": "Append-only receipt history; prior entries must never be rewritten in place",
+      "items": { "type": "object" }
+    },
+    "grasscatch": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Parked ideas / deferred scopes (Strip instrument, not Face narrative)"
+    },
+    "uncertainty_flags": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "tool_depth_cell": {
+      "type": "string",
+      "description": "Dispatch/table depth cell (LITE|FULL|SPIKE|commission|refuse or named cell)"
+    },
+    "next_recommended": {
+      "type": "string",
+      "description": "Recommended next action (short)"
+    },
+    "why_next": {
+      "type": "string",
+      "description": "Why that next action ranks first"
+    }
+  }
+}

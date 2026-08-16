@@ -151,22 +151,23 @@ def test_dock_embedded_in_flow_not_fixed(gui_env, tmp_path):
 # ── 1c. John change #2 — TWO new-session controls (research + plan/build) ────
 
 def test_two_new_session_controls(gui_env, tmp_path):
-    """John change #2: + New research AND + New plan/build start controls are
-    present, wired to newEffort('research') / newEffort('plan')."""
+    """(2026-08-07, John's simple workbench) ONE start control: the general
+    terminal. The research/plan starters are gone — trio work is commissioned
+    through the steward."""
     gui = gui_env
     pid, _ = _multi(gui, tmp_path)
     html = gui.render_project_window_html(pid)
-    assert "+ New research" in html, "missing '+ New research' control"
-    assert "+ New plan/build" in html, "missing '+ New plan/build' control"
-    assert "newEffort('research')" in html, \
-        "the research control must call newEffort('research')"
-    assert "newEffort('plan')" in html, \
-        "the plan/build control must call newEffort('plan')"
+    assert "+ New general terminal" in html, "missing '+ New general terminal'"
+    assert "+ New research" not in html, "'+ New research' must be gone"
+    assert "+ New plan/build" not in html, "'+ New plan/build' must be gone"
+    assert "newEffort('general')" in html, \
+        "the general control must call newEffort('general')"
     body = _strip(html)
     c = _parse(body)
     btn_ids = {d.get("id") for _, _, d in c.els}
-    assert "newResearchBtn" in btn_ids, "no #newResearchBtn"
-    assert "newPlanBuildBtn" in btn_ids, "no #newPlanBuildBtn"
+    assert "newGeneralBtn" in btn_ids, "no #newGeneralBtn"
+    assert "newResearchBtn" not in btn_ids, "#newResearchBtn must be gone"
+    assert "newPlanBuildBtn" not in btn_ids, "#newPlanBuildBtn must be gone"
 
 
 # ── 1d. John change #3 — per-effort metrics line in the dock summary ─────────
@@ -280,25 +281,27 @@ def test_dock_summary_above_terminal_dom_order(gui_env, tmp_path):
 
 
 def test_effort_tiles_bound_to_effort_view(gui_env, tmp_path):
-    """Each Layout-D effort tile (headline + minitile) carries data-effort-id +
-    data-current-stage from the effort view (W10 binding / EV-2 stage source)."""
+    """Each Layout-D effort tile carries data-effort-id + data-current-stage
+    from the effort view (W10 binding / EV-2 stage source).
+
+    (2026-08-07, John's simple workbench) The board is the GENERAL zone now —
+    the binding contract is asserted on general-session tiles; trio sessions
+    have no board zone (they surface via the session bar + the run ledger)."""
+    import effort_history as eh
     gui = gui_env
-    pid, _ = _multi(gui, tmp_path)
+    pid, fp = _multi(gui, tmp_path)
+    eh.record_effort(fp, pid, "general", "g1", skill="",
+                     prompt_seed="General terminal session")
     body = _strip(gui.render_project_window_html(pid))
     c = _parse(body)
     tiles = [d for t, cl, d in c.els if "lane-tile" in cl]
-    assert tiles, "no Layout-D effort tiles rendered"
+    assert tiles, "no Layout-D effort tiles rendered (general zone)"
     # Every effort tile is bound to an effort_id (the dock-open contract).
     assert all(d.get("data-effort-id") is not None for d in tiles), \
         "an effort tile is not bound to data-effort-id"
     # And carries a current-stage attr (the EV-2 stage-track source).
     assert all("data-current-stage" in d for d in tiles), \
         "an effort tile is missing data-current-stage"
-    # The headline tiles carry a real stage value (research/plan/build).
-    headlines = [d for t, cl, d in c.els if "headline" in cl and "tile" in cl]
-    stages = {d.get("data-current-stage") for d in headlines}
-    assert stages & {"research", "plan", "build", "planning"}, \
-        f"headline tiles carry no recognizable stage: {stages}"
 
 
 # ── 3. DOM NEGATIVE: no effort selected → dock UNBOUND, no body bound ────────

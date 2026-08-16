@@ -6,16 +6,17 @@ extraction. The archived commit sha below is the honest provenance.
 
 | Skill | Source | Archived commit |
 |-------|--------|-----------------|
-| researchPrime | <path> | `ef1f093635e62f6675a6d559d882e8c35e3535b3` |
-| crucible | <path> | `ef1f093635e62f6675a6d559d882e8c35e3535b3` |
-| foreman | <path> | `ef1f093635e62f6675a6d559d882e8c35e3535b3` |
-| gandalf | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| jumper | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| ramanujan | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| legal-beagle | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| literature-review | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| financial-analyst | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| tidy-idy | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| zombie-hunter | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
-| drivers | <path> | `ef1f093635e62f6675a6d559d882e8c35e3535b3` |
-| foundry-triage | <path> Foundry | `85fa94e5df4897311b8941cfb4d7252f01458145` |
+| researchPrime | <path> | `a4583a7bb73ee5a7066ce9587385ada7c4eb54db` |
+| crucible | <path> | `a4583a7bb73ee5a7066ce9587385ada7c4eb54db` |
+| foreman | <path> | `a4583a7bb73ee5a7066ce9587385ada7c4eb54db` |
+| gandalf | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| jumper | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| ramanujan | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| legal-beagle | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| literature-review | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| financial-analyst | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| tidy-idy | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| zombie-hunter | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |
+| ecgberht | <path> | `fbb6464d92451b187a31a031a7aa6ac3626cd3b8` |
+| drivers | <path> | `a4583a7bb73ee5a7066ce9587385ada7c4eb54db` |
+| foundry-triage | <path> Foundry | `6a5604940ebfe64d31de83a876a9b4c8cdee3b94` |

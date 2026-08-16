@@ -1,0 +1,10 @@
+# Runtime / build artifacts — never engine truth.
+node_modules/
+_foreman-logs/
+_foreman-status.log
+foreman-checkpoint.json
+*.log
+
+# Durable-write transient artifacts (should never outlive a write).
+.*.tmp-*
+*.lock

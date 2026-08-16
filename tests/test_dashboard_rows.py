@@ -204,6 +204,11 @@ def test_every_brand_img_uses_single_vendored_svg(env):
         # (vendor/brand/ecgberht-portfolio-high-seat.jpg), same documented
         # feature-icon class as the two above; not a duplicate brand MARK.
         "/vendor/brand/ecgberht-portfolio-high-seat.jpg",
+        # Steward effort (2026-08): the per-project seal icon on High Seat
+        # rows / project tiles and the workbench tile icon — both real
+        # shipped feature icons on disk, same documented class as above.
+        "/vendor/brand/ecgberht-project-seal.jpg",
+        "/vendor/brand/workbench-icon.jpg",
     }
     srcs = set(
         s.split("?", 1)[0]

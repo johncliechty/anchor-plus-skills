@@ -267,7 +267,21 @@ def _resolve_start_point(folder, start_point=None):
 
 # ── create / remove / reap ──────────────────────────────────────────────────
 
-def create_worktree(project_id, session_id, base=None, start_point=None):
+#: Heavy binaries a COMMISSIONED session never needs checked out.
+#:
+#: Discovered the hard way (2026-08-06): a commissioned Crucible session on the MBA
+#: Teaching AI project produced a 1.4 GB worktree, because that repo has a 1.27 GB
+#: zip COMMITTED to git (1,430 MB across 13 tracked files). Every commission paid the
+#: full checkout in time and disk. A planning skill does not need the media.
+LEAN_EXCLUDE_GLOBS = (
+    "*.zip", "*.7z", "*.rar", "*.tar", "*.tar.gz", "*.tgz",
+    "*.mp4", "*.mov", "*.avi", "*.mkv", "*.wav", "*.mp3",
+    "*.iso", "*.dmg", "*.psd", "*.sketch",
+)
+
+
+def create_worktree(project_id, session_id, base=None, start_point=None,
+                    exclude_globs=None):
     """Create a worktree + branch for a session. Returns a status dict.
 
     Resolves the project's git repo (``rnd_registry.get_project(pid)
@@ -343,6 +357,31 @@ def create_worktree(project_id, session_id, base=None, start_point=None):
     # ALWAYS create a FRESH branch (``-b``) off the resolved start point — never
     # silently attach to a pre-existing branch and inherit its tip. If the branch
     # already exists, fail clearly rather than reuse it.
+    # LEAN CHECKOUT. With ``exclude_globs`` the worktree is created empty and then
+    # filled via a non-cone sparse-checkout that skips those patterns — so a
+    # commissioned session gets the project's text and code without dragging its
+    # media across. Falls back to a full checkout if any step fails: a slightly fat
+    # worktree is a cost, a missing one is a broken commission.
+    if exclude_globs:
+        ok, rc, out, err = _git(
+            folder, ["worktree", "add", "--no-checkout", "-b", branch,
+                     str(path), str(start_point)])
+        if ok:
+            patterns = ["/*"] + [f"!{g}" for g in exclude_globs]
+            sp_ok, _rc, _o, sp_err = _git(path, ["sparse-checkout", "set", "--no-cone", *patterns])
+            co_ok, _rc2, _o2, co_err = _git(path, ["checkout"])
+            if sp_ok and co_ok:
+                return {"ok": True, "path": str(path), "branch": branch,
+                        "isolation": "worktree", "start_point": str(start_point),
+                        "lean": True, "excluded": list(exclude_globs)}
+            # Sparse setup failed — fill it completely rather than hand back a
+            # half-populated tree that would look like missing project files.
+            _git(path, ["sparse-checkout", "disable"])
+            _git(path, ["checkout"])
+            return {"ok": True, "path": str(path), "branch": branch,
+                    "isolation": "worktree", "start_point": str(start_point),
+                    "lean": False, "lean_failed": (sp_err or co_err or "").strip()[:200]}
+
     args = ["worktree", "add", "-b", branch, str(path), str(start_point)]
     ok, rc, out, err = _git(folder, args)
     if not ok:

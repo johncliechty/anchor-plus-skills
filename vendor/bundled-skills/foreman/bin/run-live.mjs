@@ -272,7 +272,25 @@ async function agent(prompt, opts = {}) {
     ? `\n\nRespond with ONLY a single raw JSON object (no markdown fences, no prose) ` +
       `that conforms to this JSON Schema:\n${JSON.stringify(opts.schema)}`
     : '';
-  const { text } = await runClaude(prompt + schemaSuffix, label);
+  const { text, rec } = await runClaude(prompt + schemaSuffix, label);
+  // 0102: THE DISCRIMINATING FIELD IS ok:false, FULL STOP. A per-call-timeout
+  // SIGKILL of a 20-minute, 60-tool execute was logged "execute complete" and
+  // auto-advanced to a gate that would have gone GREEN on the previous wave's
+  // tree — because this function destructured only { text } and the rec died
+  // here. A dead agent now returns a TYPED failure marker (never bare '') so
+  // the engine can HALT loudly instead of blessing an empty step. Deliberately
+  // a marker, not a throw: a timeout re-run dies at the same cap, so the right
+  // move is a deterministic [taxonomy:agent-died] HALT with the cap named —
+  // not a reliability-wrapper retry that pays for the same death twice.
+  if (rec && rec.ok === false) {
+    emit(`   !! ${label} agent DIED (class ${rec.exit_class}, ${rec.tools ?? 0} tools, ` +
+      `${rec.duration_ms ?? '?'}ms) — typed failure, never "complete"`);
+    return {
+      agent_failed: true, exit_class: rec.exit_class, label,
+      tools: rec.tools ?? 0, duration_ms: rec.duration_ms ?? null,
+      detail: `agent ${label} died: class ${rec.exit_class}, ${rec.tools ?? 0} tool calls, ${rec.duration_ms ?? '?'}ms`,
+    };
+  }
   if (!opts.schema) return text;
   let obj = extractJson(text);
   if (!obj) {

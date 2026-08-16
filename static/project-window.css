@@ -41,24 +41,29 @@
 /* the bounded parked-worktree budget stamp in the project header */
 .dhead .pwbudget{font-size:11px;color:var(--text-dim);font-family:ui-monospace,Consolas,monospace}
 
+/* ── Ecgberht Chamber UI (Wave 18) — failure + typed artifact surfaces ── */
+.ecg-chamber-fail{padding:10px 12px;border:1px solid var(--border,#333);border-radius:6px;background:var(--surface2,#1a1a1a);margin:8px 0}
+.ecg-chamber-fail .code{font:11px/1.3 ui-monospace,monospace;color:var(--accent,#eab308);margin-bottom:4px}
+.ecg-chamber-fail .text{font-size:13px;color:var(--text,#ddd)}
+.ecg-chamber-steps .ecg-step{display:flex;gap:8px;padding:4px 0;font-size:13px}
+.ecg-chamber-artifact.commissioned-artifact-card{border-left:3px solid var(--accent,#eab308);padding:8px 10px;margin:8px 0}
+.ecg-chamber-artifact .hash,.typed-artifact .hash{font:11px/1.3 ui-monospace,monospace;opacity:.75}
+.ecg-chamber-proposal .spend{margin:8px 0;padding:8px;border:1px dashed var(--border,#444);border-radius:4px}
+.ecg-chamber-steps-host,.ecg-chamber-artifact-host{min-height:0}
+
 /* ── Ecgberht Seal chamber (wireframes v2.1 Screen 1) — docked overlay over the project view ── */
 .ecg-seal-btn{display:inline-flex;align-items:center;gap:5px}
 .ecg-seal-ico{width:14px;height:14px;border-radius:50%;object-fit:cover;display:inline-block;vertical-align:middle}
-.ecg-dock{position:relative;width:auto;margin:12px 18px 4px;background:var(--surface);border:1px solid var(--border);border-top:2px solid #c9a227;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden}
-.ecg-dock .ecg-dbar{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--border);background:var(--surface2);flex:0 0 auto}
-.ecg-dock .ecg-dbar .ti{font-weight:600}.ecg-dock .ecg-dbar .ti small{color:var(--text-dim);font-weight:400}
-.ecg-dock .ecg-dbar .sp{flex:1}
-.ecg-dock .ecg-seat-pill{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid #c9a227;color:#c9a227;background:transparent;cursor:pointer}
-.ecg-dock .ecg-stamp{font-size:11px;color:var(--text-dim);font-family:ui-monospace,Consolas,monospace}
-.ecg-goalbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);background:rgba(201,162,39,.06)}
-.ecg-goalbar .g{flex:1}.ecg-goalbar .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
-.ecg-goalbar .txt{font-size:13px}
+/* (chamber-m1 W2) The v0 chamber dock CSS — the dock, goal-bar, conversation
+   column, roadmap rail, say box and footer classes — is DELETED with the v0
+   renderers; the M1 slice ships its own signed-mockup styles into its shadow
+   root (plus the #ecgSealSlice fallback block below). Classes still emitted
+   by surviving non-chamber surfaces (.ecg-btn, .ecg-msg, the ledger, pulse
+   and step-detail families) remain. */
 .ecg-btn{font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer}
 .ecg-btn.gold{border-color:#c9a227;color:#c9a227}
 .ecg-chamber{display:flex;gap:0;min-height:260px}
-.ecg-rail{flex:0 0 270px;border-right:1px solid var(--border);padding:12px 14px;overflow:auto}
-.ecg-rail h3{font-size:11px;margin:0 0 8px;letter-spacing:.06em;text-transform:uppercase}
-.ecg-rail h3 .house{color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0}
+.ecg-livestatus{padding:5px 16px;font-size:11.5px;color:#34a853;border-top:1px dashed var(--border);font-family:ui-monospace,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ecg-step{display:flex;gap:8px;font-size:12px;padding:4px 0;align-items:baseline}
 .ecg-step .m{width:14px;flex:0 0 14px;text-align:center}
 .ecg-step small{display:block;color:var(--text-dim);font-size:10px}
@@ -68,24 +73,106 @@
 .ecg-runblock table{width:100%;border-collapse:collapse}
 .ecg-runblock td{padding:1px 4px 1px 0;vertical-align:top}.ecg-runblock td:first-child{color:var(--text-dim);width:52px}
 .ecg-prov{font-size:10px;color:var(--text-dim);margin-top:8px;font-family:ui-monospace,Consolas,monospace}
-.ecg-convo{flex:1;display:flex;flex-direction:column;padding:12px 16px;gap:10px;overflow:auto}
+/* (2026-08-06) THE CONVERSATION SCROLLS LIKE A TERMINAL.
+   John: "the dialog just keeps running down and down and then I lose track of
+   scaffolding ... it should be more like a terminal, as it gets to a certain amount of
+   output that should just be pushed up and go off the screen, with a little scroll bar
+   on the side you can click and move up and down."
+   A bounded height is what makes the scrollbar exist at all — `flex:1` alone let the
+   panel grow forever and pushed the say box off the bottom. */
+.ecg-convo{flex:1;min-height:0;max-height:52vh;display:flex;flex-direction:column;
+  padding:12px 16px;gap:10px;overflow-y:auto;overflow-x:hidden;scroll-behavior:smooth}
+
+/* THE SCAFFOLDING IS PINNED, not scrolled away with the chat. It is the thing he is
+   working ON; losing it up the scrollback is the complaint. */
+/* (2026-08-06) The scaffolding is the thing being decided — give it room.
+   30vh was "a little awkward... should be bigger" (John, first real use). */
+.ecg-scaffold-pin{border:1px solid var(--border);border-left:2px solid #c9a227;
+  border-radius:8px;margin:0 16px;background:var(--surface2);flex:0 0 auto;
+  max-height:62vh;overflow-y:auto;font-size:13.5px;line-height:1.5}
+.ecg-roadmap-echo{margin:6px 0 2px 18px;padding:0}
+.ecg-roadmap-echo li{margin:3px 0}
+.ecg-scaffold-pin > summary{cursor:pointer;padding:7px 12px;font-size:11px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);user-select:none}
+.ecg-scaffold-pin .body{padding:0 12px 10px}
+.ecg-scaffold-pin .ecg-scaffold-steps li{margin:3px 0}
+.ecg-scaffold-pin .act{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
 .ecg-msg{max-width:92%;border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--surface2)}
 .ecg-msg .who{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:3px}
 .ecg-msg.steward{align-self:flex-start;border-left:2px solid #c9a227}
 .ecg-msg.john{align-self:flex-end;border-right:2px solid var(--border)}
 .ecg-msg .act{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
 .ecg-divider{align-self:center;color:var(--text-dim);font-size:11px;font-family:ui-monospace,Consolas,monospace;border-top:1px dashed var(--border);width:100%;text-align:center;padding-top:8px}
+/* (2026-08-06) A commissioned run's report: the decision John owes, set off. */
+.ecg-run-needs{margin-top:6px;padding:6px 9px;border-left:2px solid #e0a437;background:rgba(224,164,55,.07);border-radius:6px;font-size:12.5px}
+/* The RUNNING strip — the persistent "something is genuinely working" signal. */
+.ecg-run-strip{margin:0 16px 8px;border:1px solid #2c4a33;border-radius:8px;background:rgba(52,168,83,.08);padding:6px 10px}
+.ecg-run-strip .row{display:flex;align-items:center;gap:9px;padding:3px 0;font-size:13px}
+.ecg-run-strip .dot{color:#34a853;animation:ecgpulse 1.6s ease-in-out infinite}
+@keyframes ecgpulse{0%,100%{opacity:1}50%{opacity:.35} }
+/* (2026-08-06 evening) THE RUN LEDGER — always-on, board-level. Green pulse =
+   running · amber pulse = needs you · GOLD = finished · dim gold = watch ended
+   · red = died. Click Report for the steward's read; Open for the terminal. */
+.ecg-run-ledger{margin:0 0 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);padding:4px 12px}
+.ecg-run-ledger .lrow{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;border-top:1px dashed var(--border)}
+.ecg-run-ledger .lrow:first-child{border-top:0}
+.ecg-run-ledger .lrow .lbl{flex:1}
+.ecg-run-ledger .lrow .dot{font-size:15px}
+.ecg-run-ledger .lrow.run .dot{color:#34a853;animation:ecgpulse 1.6s ease-in-out infinite}
+.ecg-run-ledger .lrow.ask .dot{color:#e0a437;animation:ecgpulse 1.2s ease-in-out infinite}
+.ecg-run-ledger .lrow.done .dot{color:#d4af37}
+.ecg-run-ledger .lrow.stale .dot{color:#9a8a4a}
+.ecg-run-ledger .lrow.dead .dot{color:#e05b4f}
+.ecg-run-ledger .lreport{margin:2px 0 8px 25px;padding:8px 11px;border-left:2px solid #d4af37;background:rgba(212,175,55,.06);border-radius:6px;font-size:12.8px;line-height:1.5}
+.ecg-run-ledger .lrec{margin-top:5px;color:var(--text-dim)}
+/* (2026-08-07) Step detail unfold + the thinking steward's surfaces. */
+.ecg-stepdetail{margin:2px 0 8px 20px;padding:8px 11px;border-left:2px solid var(--border);background:var(--surface2);border-radius:6px;font-size:12.3px;line-height:1.5}
+.ecg-stepdetail .sd-done{color:var(--text-dim);margin-bottom:5px}
+.ecg-stepdetail .sd-fact{margin:2px 0}
+.ecg-stepdetail .sd-sugh{margin-top:6px;color:#e0a437}
+.ecg-stepdetail .sd-sug{margin:2px 0 0 6px;color:var(--text-dim)}
+.ecg-stepdetail .sd-ready{margin-top:6px;color:#34a853}
+.ecg-stepdetail .sd-loading{color:var(--text-dim)}
+.ecg-stepdetail .sd-name{font-weight:600;margin-bottom:4px}
+.ecg-stepdetail .sd-name .sd-status{font-weight:400;font-size:10.5px;color:var(--text-dim);margin-left:7px;text-transform:uppercase;letter-spacing:.04em}
+.ecg-stepdetail .sd-mine{color:#7aa2f7}
+.ecg-stepdetail .sd-addwrap{display:flex;gap:6px;margin-top:8px}
+.ecg-stepdetail .sd-add{flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:12.3px;padding:4px 8px}
+.ecg-stepdetail .sd-add:focus{outline:none;border-color:#7aa2f7}
+.ecg-pulse-tab{position:fixed;right:0;top:38%;z-index:60;background:var(--surface2);border:1px solid var(--border);border-right:none;border-radius:8px 0 0 8px;padding:12px 7px;cursor:pointer;writing-mode:vertical-rl;font-size:12px;color:var(--text);display:flex;align-items:center;gap:6px}
+.ecg-pulse-tab .pdot{color:#34a853}
+.ecg-pulse-tab.p-run .pdot{animation:ecgpulse 1.6s ease-in-out infinite}
+.ecg-pulse-tab.p-ask .pdot{color:#e0a437}
+.ecg-pulse-tab.p-done .pdot{color:#d4af37}
+.ecg-run-fold{margin:0 0 10px}
+.ecg-run-fold>summary{cursor:pointer;color:var(--text-dim);font-size:12px;padding:4px 2px;user-select:none}
+.ecg-run-fold[open]>summary{margin-bottom:6px}
+.ecg-run-ledger .ldismiss{margin-left:auto;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:0 4px}
+.ecg-run-ledger .ldismiss:hover{color:var(--text)}
+.ecg-directive{white-space:pre-line}
+.ecg-pulse-win .pw-status{flex:1;min-height:80px;overflow:auto;background:var(--surface);border:1px solid #34a853;border-radius:6px;padding:8px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;white-space:pre-wrap;color:var(--text)}
+.ecg-pulse-win .pw-rawfold>summary{cursor:pointer;color:var(--text-dim);font-size:11.5px;padding:2px 0}
+.ecg-stepdetail .sd-runh{margin-top:8px;color:#d4af37;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+.ecg-stepdetail .sd-run{margin:4px 0;padding-left:8px;border-left:2px solid var(--border)}
+.ecg-pulse-tab:hover{background:var(--surface)}
+.ecg-pulse-win{position:fixed;right:12px;top:9%;bottom:9%;width:400px;max-width:88vw;z-index:61;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;flex-direction:column;padding:10px 12px;gap:7px}
+.ecg-pulse-win .pw-bar{display:flex;align-items:center;justify-content:space-between;font-weight:600}
+.ecg-pulse-win .pw-head{font-size:12.3px;color:var(--text)}
+.ecg-pulse-win .pw-star{font-size:12.3px;color:var(--text);border-left:3px solid #d4af37;padding-left:8px;white-space:pre-line;line-height:1.5}
+.ecg-pulse-win .pw-brief{font-size:12.3px;color:var(--text);border-left:3px solid #7aa2f7;padding-left:8px;white-space:pre-line;line-height:1.5}
+.ecg-pulse-win .pw-tail{max-height:26vh;min-height:0;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.45;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+.ecg-hs-tile.clickable{cursor:pointer}
+.ecg-hs-tile.clickable:hover{outline:1px solid #7aa2f7}
+.ecg-hs-tile .hs-live{color:#34a853;margin-left:6px;animation:ecgpulse 1.6s ease-in-out infinite}
+.ecg-hs-tile .hs-now{font-size:11.5px;color:#7aa2f7;margin-top:2px}
+.ecg-hs-tile .hs-spend{font-size:11px;color:var(--text-dim)}
+.ecg-hs-newproj{margin-top:10px}
+.ecg-impact{margin-top:8px;padding:7px 10px;border-left:2px solid #7aa2f7;background:rgba(122,162,247,.07);border-radius:6px;font-size:12.8px}
+.ecg-orange{margin-top:5px;font-size:12.5px;color:#e0a437}
+.ecg-directive{margin-top:7px;border:1px solid var(--border);border-left:2px solid #c9a227;border-radius:8px;padding:8px 11px;background:var(--surface2)}
+.ecg-directive .dvh{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px}
+.ecg-directive .dvt{font-size:12.8px;line-height:1.5}
 .ecg-chip{display:inline-block;border:1px solid var(--border);border-radius:7px;padding:5px 9px;font-size:12px;margin-top:6px;cursor:pointer;background:var(--surface)}
-.ecg-saybox{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border);align-items:flex-end}
-.ecg-saybox input,.ecg-saybox textarea{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 10px;font-size:13px}
-/* (2026-07-31) The say line is a GROWING textarea, not a one-line input. John
-   dictates whole paragraphs into it ("it didn't show everything I was typing
-   ... the window didn't grow as I spoke"); a single-line input scrolled the
-   text out of sight, so he could not read back what he had just said. It
-   starts one row tall and grows with the content up to ~40% of the viewport,
-   then scrolls. Enter sends; Shift+Enter is a newline. */
-.ecg-saybox textarea{resize:vertical;overflow-y:auto;max-height:40vh;min-height:34px;line-height:1.45;font-family:inherit}
-.ecg-footer{padding:6px 16px 10px;font-size:10px;color:var(--text-dim);text-align:center;font-family:ui-monospace,Consolas,monospace}
 
 /* ── iPad / touch dictation target (2026-07-26 hardening, P0.3) ─────────────
    xterm hides its helper textarea at 0x0, opacity:0, left:-9999em, z-index:-5.
@@ -135,3 +222,77 @@
 .dash-tile.tile-seal{border-color:rgba(224,164,55,0.45)}
 .dash-tile.tile-seal>summary{font-size:18px;padding:16px 18px;color:#e0a437}
 .dash-tile.tile-workbench .tile-body{padding:0 10px 12px}
+
+/* Dictation → scaffolding offer (2026-08-04). Proposed stages shown BEFORE any
+   write, so the list reads as a proposal to check, not a result to accept. */
+.ecg-scaffold-steps { margin: 8px 0 4px; padding-left: 22px; }
+.ecg-scaffold-steps li { margin: 4px 0; line-height: 1.4; }
+.ecg-scaffold-done { color: #8b93a7; font-size: 11px; margin-top: 2px; }
+
+/* ── steward-chamber W6: the painted M1 vertical slice (#ecgSealSlice) ──────
+   Styles copied VERBATIM from the SIGNED mockups.html (M1 v2 + the signed
+   amendment states), scoped under the slice mount so nothing leaks into the
+   legacy chamber. The DOM/class structure itself is the C9-pinned spec
+   (chamber_mockup_diff); these rules only paint it. W7 replaces this scoped
+   copy with the style-isolated full-M1 mount importing the mockup CSS. */
+#ecgSealSlice{--gold:#c9a227;--run:#34a853;--ask:#e0a437;--done:#d4af37;--blue:#7aa2f7}
+#ecgSealSlice .dock{background:var(--surface);border:1px solid var(--border);border-top:2px solid var(--gold);border-radius:10px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+#ecgSealSlice .dbar{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--border);background:var(--surface2)}
+#ecgSealSlice .seal{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#3a3f4d,#171a22);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
+#ecgSealSlice .dbar .ti{font-weight:600;font-size:13.5px}
+#ecgSealSlice .dbar .ti small{color:var(--text-dim);font-weight:400}
+#ecgSealSlice .pill{font-size:10.5px;border:1px solid var(--border);border-radius:999px;padding:2px 10px;color:var(--text-dim);background:var(--surface)}
+#ecgSealSlice .dbar .sp{flex:1}
+#ecgSealSlice .stamp{font-size:10.5px;color:var(--text-dim);letter-spacing:.05em}
+#ecgSealSlice .btn{font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-family:inherit}
+#ecgSealSlice .btn:hover{border-color:var(--text-dim)}
+#ecgSealSlice .btn:focus-visible{outline:1px solid var(--gold);outline-offset:1px}
+#ecgSealSlice .btn.gold{border-color:var(--gold);color:var(--gold)}
+#ecgSealSlice .progress{display:flex;align-items:center;gap:14px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-dim)}
+#ecgSealSlice .bar{flex:0 0 190px;height:7px;border-radius:4px;background:var(--surface2);border:1px solid var(--border);overflow:hidden}
+#ecgSealSlice .bar b{display:block;height:100%;background:linear-gradient(90deg,var(--done),var(--gold))}
+#ecgSealSlice .progress .run-now{color:var(--run)}
+#ecgSealSlice .progress .eta{color:var(--text)}
+#ecgSealSlice .goalbar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);background:rgba(201,162,39,.06);font-size:12.5px}
+#ecgSealSlice .goalbar .lab{font-size:10px;letter-spacing:.09em;color:var(--gold);text-transform:uppercase;flex:none}
+#ecgSealSlice .goalbar .txt{color:var(--text);max-width:72ch}
+#ecgSealSlice .chamber{display:flex;min-height:430px}
+#ecgSealSlice .flow{flex:0 0 300px;border-right:1px solid var(--border);padding:12px 14px;overflow:auto}
+#ecgSealSlice .flow h3{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-dim);margin:0 0 10px;font-weight:600}
+#ecgSealSlice .fstep{position:relative;padding:0 0 4px 22px;font-size:12.5px}
+#ecgSealSlice .fstep::before{content:"";position:absolute;left:7px;top:20px;bottom:-2px;width:2px;background:var(--border)}
+#ecgSealSlice .fstep:last-child::before{display:none}
+#ecgSealSlice .fstep .dot{position:absolute;left:0;top:3px;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim)}
+#ecgSealSlice .fstep.done .dot{border-color:var(--done);color:var(--done)}
+#ecgSealSlice .fstep.run .dot{border-color:var(--run);color:var(--run);animation:ecgsealpulse 1.6s ease-in-out infinite}
+#ecgSealSlice .fstep .nm{font-weight:600}
+#ecgSealSlice .fstep .yield{color:var(--text-dim);font-size:11.5px}
+#ecgSealSlice .fstep .yield a{color:var(--blue);text-decoration:none}
+#ecgSealSlice .fstep .skillch{color:var(--text-dim);font-size:11px}
+#ecgSealSlice .runcard{margin:6px 0 8px;border:1px solid var(--run);border-radius:8px;background:var(--surface2);padding:8px 10px}
+#ecgSealSlice .ttable{font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.55;color:var(--text);white-space:pre;overflow-x:auto}
+#ecgSealSlice .deliv{margin-top:10px;border:1px dashed var(--gold);border-radius:8px;padding:8px 10px;font-size:12px}
+#ecgSealSlice .deliv .lab{font-size:9.5px;letter-spacing:.09em;color:var(--gold);text-transform:uppercase}
+@keyframes ecgsealpulse{0%,100%{opacity:1}50%{opacity:.4} }
+@media (prefers-reduced-motion:reduce){#ecgSealSlice .fstep.run .dot,#ecgSealSlice .livedot{animation:none} }
+#ecgSealSlice .convo{flex:1;min-width:0;display:flex;flex-direction:column}
+#ecgSealSlice .msgs{flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+#ecgSealSlice .msg{max-width:92%;border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-size:13px;background:var(--surface2)}
+#ecgSealSlice .msg .who{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:3px}
+#ecgSealSlice .msg.steward{align-self:flex-start;border-left:2px solid var(--gold)}
+#ecgSealSlice .livestatus{padding:5px 16px;font-size:11.5px;color:var(--run);border-top:1px dashed var(--border);font-family:ui-monospace,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ecgSealSlice .livedot{display:inline-block;animation:ecgsealpulse 1.6s ease-in-out infinite}
+#ecgSealSlice .saybox{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--border)}
+#ecgSealSlice .saybox input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;padding:7px 11px;font-family:inherit}
+#ecgSealSlice .saybox input:focus-visible{outline:none;border-color:var(--gold)}
+#ecgSealSlice .fstep .skillch.nosk,#ecgSealSlice .yield.miss{color:var(--ask)}
+#ecgSealSlice .eta.nohist{color:var(--text-dim);font-style:italic}
+#ecgSealSlice .goalbar.unread{background:rgba(224,164,55,.06)}
+#ecgSealSlice .goalbar.unread .lab{color:var(--ask)}
+#ecgSealSlice .goalbar.unread .txt{color:var(--text-dim);font-style:italic}
+#ecgSealSlice .runcard.warm{border-color:var(--border)}
+#ecgSealSlice .runcard.warm .ttable{color:var(--text-dim)}
+#ecgSealSlice .livestatus.idle{color:var(--text-dim);animation:none}
+#ecgSealSlice .degrail{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:12px;border:1px solid var(--ask);border-radius:8px;background:rgba(224,164,55,.06)}
+#ecgSealSlice .degrail .lab{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ask);flex:none}
+#ecgSealSlice .degrail .sp{flex:1}

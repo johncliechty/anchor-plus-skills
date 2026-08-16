@@ -35,6 +35,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import uuid
 
 import paths as _paths
@@ -299,11 +300,27 @@ class _PywinptyChild:
             return
         text = data if isinstance(data, str) else data.decode("utf-8", "replace")
         try:
-            self._proc.write(text)
-            try:
-                self._proc.flush()
-            except Exception:
-                pass
+            # (2026-08-07, Ecgberht journal 0080) A multi-KB ONE-SHOT write
+            # into ConPTY loses/fuses characters in the child's line editor —
+            # live-caught as briefs arriving with words fused ("Beginthe
+            # commissioned work"), which sent a whole researchPrime run off a
+            # corrupted prompt. Large payloads (seeds, briefs, doctor
+            # briefings) now go in SMALL PACED chunks; interactive keystrokes
+            # (short writes) are untouched.
+            if len(text) > 512:
+                for i in range(0, len(text), 256):
+                    self._proc.write(text[i:i + 256])
+                    try:
+                        self._proc.flush()
+                    except Exception:
+                        pass
+                    time.sleep(0.02)
+            else:
+                self._proc.write(text)
+                try:
+                    self._proc.flush()
+                except Exception:
+                    pass
         except Exception:
             pass
 

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ecgberht-roadmap-v0",
+  "title": "Ecgberht Campaign Roadmap (append-only events + derived projection)",
+  "description": "Roadmap is engine truth. roadmap_events[] is append-only history — prior entries are never rewritten. roadmap_projection is DERIVED from the event fold only (single writer: appendRoadmapEvent via roadmap-propose / roadmap-set; TW3 job lifecycle binds via commission_bind + status_flip through the same writer — no dual-write, no second store). A status flip without a receipt event is refused/rejected. Heal rebuilds the projection from events; events are never healed. Face prose alone is an honest gap (empty projection) — steps are never invented from narrative.",
+  "type": "object",
+  "required": ["schema", "roadmap_events", "roadmap_projection"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "const": "ecgberht-roadmap-v0",
+      "description": "Locked Roadmap schema id"
+    },
+    "project_id": { "type": ["string", "null"] },
+    "as_of": { "type": ["string", "null"] },
+    "roadmap_events": {
+      "type": "array",
+      "description": "Append-only event history; contiguous seq; prior entries must never be rewritten in place",
+      "items": {
+        "type": "object",
+        "required": ["kind", "step_id"],
+        "additionalProperties": true,
+        "properties": {
+          "seq": { "type": "number", "description": "1-based contiguous append order" },
+          "kind": {
+            "type": "string",
+            "enum": ["step_create", "step_set", "status_flip", "commission_bind"]
+          },
+          "step_id": { "type": "string" },
+          "at": { "type": "string", "description": "ISO date the event was appended" },
+          "name": { "type": "string", "description": "step_create only" },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "planned", "active", "waiting", "done", "parked"],
+            "description": "step_create initial status"
+          },
+          "done_when": { "type": ["string", "null"] },
+          "waiting_on": { "type": ["string", "null"] },
+          "fields": {
+            "type": "object",
+            "description": "step_set only; keys limited to name/done_when/waiting_on (status → status_flip; commissioned_as → commission_bind)"
+          },
+          "from": { "type": ["string", "null"], "description": "status_flip prior status" },
+          "to": {
+            "type": "string",
+            "enum": ["proposed", "planned", "active", "waiting", "done", "parked"],
+            "description": "status_flip target status"
+          },
+          "receipt": {
+            "type": "object",
+            "description": "REQUIRED on status_flip — a flip without receipt is refused (append) / rejected (rebuild)",
+            "required": ["who", "why"],
+            "properties": {
+              "who": { "type": "string" },
+              "when": { "type": "string" },
+              "why": { "type": "string" }
+            },
+            "additionalProperties": true
+          },
+          "commissioned_as": {
+            "type": "string",
+            "description": "commission_bind only — TW3 job-lifecycle single-writer hook"
+          }
+        }
+      }
+    },
+    "roadmap_projection": {
+      "type": "array",
+      "description": "DERIVED step list — rebuilt from roadmap_events on every append/heal; direct writes rejected. A stored projection that disagrees with the event fold is a silent rewrite → reject.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "planned", "active", "waiting", "done", "parked"]
+          },
+          "done_when": { "type": ["string", "null"] },
+          "waiting_on": { "type": ["string", "null"] },
+          "commissioned_as": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

@@ -680,7 +680,11 @@ export async function reviseDraft({ agent, northStar, draft, verdict, direction,
  *                                                    cap applies: total rounds from 1 may
  *                                                    not exceed roundCap (resume with
  *                                                    startRound=6 + roundCap=5 → 0 remaining).
- * @param {number}  [o.humanLockableAfterDry=2]        consecutive dry rounds with no ≥2-agree
+ * @param {number}  [o.humanLockableAfterDry=1]        consecutive dry rounds with no ≥2-agree
+ *   ELEGANCE rule 5 (2026-08-15): ONE genuinely-dry round ends a review loop — never a
+ *   streak, which pays reviewers to keep finding filler. The first dry-held round goes
+ *   to the USER (the convergence authority) instead of buying a second identical round.
+ *   Overridable per run for callers who deliberately want the old double-check.
  *                                                    Shark blockers before human-lockable HALT
  *                                                    (Judge/fresh-eyes hold without multi-Shark
  *                                                    substance). 0 disables. Default 2.
@@ -704,7 +708,7 @@ export async function runMasterPlanLoop({
   roundCap = undefined,
   startRound = 1,
   additionalRounds = null,
-  humanLockableAfterDry = 2,
+  humanLockableAfterDry = 1,
   sharkRoles = undefined,
   /** When set, applies band profile defaults for roundCap/sharkRoles (cf-slick). */
   depth = null,
@@ -921,7 +925,7 @@ export async function runMasterPlanLoop({
     const hl = assessHumanLockable({ tally: verdict, dryHeldStreak: dryHeldStreak + 1 });
     if (hl.eligible) dryHeldStreak += 1;
     else dryHeldStreak = 0;
-    const threshold = Number.isInteger(humanLockableAfterDry) ? humanLockableAfterDry : 2;
+    const threshold = Number.isInteger(humanLockableAfterDry) ? humanLockableAfterDry : 1;
     if (threshold > 0 && dryHeldStreak >= threshold) {
       log(`stage1 loop: human-lockable after ${dryHeldStreak} consecutive dry hold(s) ` +
         `(${hl.reason}) — HALTing for the user (convergence authority), not burning more rounds`);

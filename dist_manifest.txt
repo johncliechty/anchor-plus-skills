@@ -135,6 +135,129 @@ gandalf.py
 route_table.py
 auth_warn.py
 
+# ── Ecgberht steward HOST CONTRACTS (2026-08) ──────────────────────────────
+# Anchor implements host contracts ONLY for the Ecgberht foundry skill (North
+# Star v5 non-goal: no steward logic in Anchor Python). Both are stdlib-only and
+# imported by anchor_gui.py at runtime, so the deny-by-default import-closure
+# gate requires them staged: commission_executor (runs a CONFIRMED commission
+# and returns the durable handback per the SKILL-OWNED contract) and
+# status_outbox (the Anchor-side status producer on the Wave-13 ingestion seam).
+# `node` — the skill host — is an EXTERNAL CLI through a seam, like git/gh.
+commission_executor.py
+status_outbox.py
+# Steward run-loop 2026-08 (imported by anchor_gui.py handlers): the
+# commission-session join (propose→confirm→launch→watch→ingest, the
+# auto-continue hop, the campaign auto-commit) and its stdlib-only
+# runner (drive/classify). Both stdlib-only per the same law.
+commission_session.py
+commission_runner.py
+# Steward chamber 2026-08 (W4): commission_session.py imports chamber_manifest
+# (the versioned pipeline-manifest owner/lint) and chamber_projections (the
+# chamber sidecar append/atomic-write substrate) at runtime, so the deny-by-
+# default import-closure gate requires both staged. Both stdlib-only.
+# chamber/manifest-schema.json is chamber_manifest.load_schema()'s runtime
+# data document (the F2 versioned schema the lint validates against) — absent,
+# the shipped manifest lint dies FileNotFoundError (the foundry_map lesson).
+chamber_manifest.py
+chamber_projections.py
+chamber/manifest-schema.json
+# Steward chamber 2026-08 (W5): commission_session.py imports chamber_reconcile
+# (the reflection-landing brief projector) at runtime, so the import-closure
+# gate requires it staged. chamber_coldopen (the one-time cold-open rebuild
+# CLI — the documented cure when the sidecar is absent/broken) and
+# chamber_brownfield (its manifest derivation, imported by coldopen) ship with
+# it: the sidecar without its rebuild tool is the ships-broken-by-omission
+# class this gate exists for. All three stdlib-only; they read/write only the
+# target project folder (roadmap.json / .ecgberht/ / .anchor/chamber/) — no
+# repo data files beyond the W4 schema above.
+chamber_reconcile.py
+chamber_brownfield.py
+chamber_coldopen.py
+# Steward chamber 2026-08 (W6): anchor_gui.py's seal-open handler imports
+# chamber_open (the zero-model first-paint read over the W4/W5 sidecar
+# projections + the ledger tail, and the verbatim-mockup slice renderer) at
+# runtime, so the import-closure gate requires it staged. Stdlib-only; it
+# reads only the target project folder (roadmap.json / .anchor/commission-runs)
+# — no repo data files. chamber_mockup_diff does not ship (see the W7 block
+# below — now a declared-optional lazy import).
+chamber_open.py
+# Steward chamber 2026-08 (W7): anchor_gui.py's seal-open handler now imports
+# chamber_rail (the full M1 rail — typed edges, rulebook states, pulse ⏱ seed,
+# guarded ETA medians — over the same bounded W6 open) and the run_pulse
+# handler imports chamber_pulse (the extracted pulse data core) at runtime;
+# chamber_rail imports chamber_eta (the guarded per-skill ETA medians) at
+# module scope. The deny-by-default import-closure gate requires all three
+# staged. All stdlib-only; they read only the target project folder
+# (roadmap.json / .anchor/chamber/ / .anchor/commission-runs) — no repo data
+# files. chamber_mockup_diff STILL does not ship: its data document (the
+# signed mockups.html) lives under planning/ (never shipped), and its one
+# product consumer — chamber_rail.mockup_css — imports it lazily inside
+# try/except and degrades honestly to the scoped W6 stylesheet when absent,
+# so it is declared in distro.py's _OPTIONAL_FIRST_PARTY instead.
+chamber_rail.py
+chamber_pulse.py
+chamber_eta.py
+# Steward chamber 2026-08 (W9): chamber_rail now imports chamber_deliverable
+# (the ENGINE-FED deliverable-state projection + the F3-bounded registry
+# action) at MODULE scope, anchor_gui.py's status_overlay handler imports
+# chamber_status_overlay (the verbatim §overlays STATUS-table render over the
+# same bounded rail read) and its deliverable_state / deliverable_action
+# handlers import chamber_deliverable at runtime, and commission_session.py
+# records the deliverable landing through it best-effort on run finish — so
+# the deny-by-default import-closure gate requires both staged. Both
+# stdlib-only; they read only the target project folder (roadmap.json /
+# .anchor/chamber/) — no repo data files. chamber_dom_law (the CI DOM-slot
+# sink lint) does NOT ship: no shipped module imports it, and its data
+# document (chamber/dom-slot-inventory.json) stays repo-side with it.
+chamber_deliverable.py
+chamber_status_overlay.py
+# Steward E1 2026-08 (steward-e1 W2): anchor_gui.py's converse / high_seat_say
+# handlers import chamber_e1_hook (the turn-completion hook: the --e1 bound
+# payload + the bridge-boundary enforce/block + the drawn blocked-turn
+# render) at runtime, and chamber_e1_hook imports chamber_e1_bound (the
+# committed deterministic question parse + typed answer-reference schema +
+# the fail-closed F7 ratification reader) at module scope — the deny-by-
+# default import-closure gate requires both staged. Both stdlib-only, zero
+# model/network/PTY. chamber/E1-BOUND-RATIFICATION.md is the F7 artifact the
+# hook reads at runtime: absent it fails CLOSED by name (never permissive),
+# so it ships so a fresh install carries the bound John ratifies.
+chamber_e1_bound.py
+chamber_e1_hook.py
+chamber/E1-BOUND-RATIFICATION.md
+# Steward chamber 2026-08 (W10): anchor_gui.py's gate_queue / gate_resolve /
+# gate_skip / sweep_bind handlers import chamber_gates (the serialized FIFO
+# decision-gate queue + the E2 enqueue guard + the two-tier containment-checked
+# died→sweep machinery) at runtime, and commission_session.py enforces the E2
+# enqueue gate at confirm_and_launch + registers the died→sweep transition
+# through it — so the deny-by-default import-closure gate requires it staged.
+# Stdlib-only (over the staged chamber_projections / chamber_manifest /
+# commission_session seams; git is an external CLI via subprocess, like
+# worktrees); it reads/writes only the target project folder
+# (.anchor/chamber/) — no repo data files. chamber_directive (the
+# compose-first directive-card template) does NOT ship yet: no shipped module
+# imports it (its consumers are the W10 CI fixture suite), the same repo-side
+# status as chamber_dom_law above until a product consumer lands.
+chamber_gates.py
+# Steward chamber 2026-08 (W11): anchor_gui.py's refine_state / refine_confirm
+# handlers import chamber_refine (the REFINE overlay: section-scoped
+# hash-bound confirm + the drawn 'plan moved' card WITH diff), its rebrief
+# handler imports chamber_rebrief (the E7 live re-brief: paced-PTY delivery,
+# receipt on the step, sweep-contention queueing — reads the committed
+# chamber/rebrief-channel-audit.json mode record at runtime),
+# commission_session.py folds chamber_preload (the E6 standing-preferences
+# preload; reads chamber/standing-rules.json) into the session-start brief
+# and calls chamber_corrections.handback_guard (the E3 resurrection guard)
+# before the ingest bridge — so the deny-by-default import-closure gate
+# requires all four staged, plus the two committed data documents the
+# shipped modules read. All stdlib-only over the staged chamber_projections /
+# pty_manager seams; per-project writes stay in .anchor/chamber/.
+chamber_preload.py
+chamber_refine.py
+chamber_rebrief.py
+chamber_corrections.py
+chamber/standing-rules.json
+chamber/rebrief-channel-audit.json
+
 # ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
 # Stdlib-only: journal (the per-project append-only JSONL event journal — the
 # ONE schema-validated emit() choke point + the Butler envelope + the blessed
@@ -191,6 +314,7 @@ onboard_bootstrap.py
 launch_anchor_dashboard.py
 USER-ONBOARD.md
 verify_freeze_manifest.py
+share_agent_rules.py
 share_capability_matrix.py
 share_ci_ship_gate.py
 share_contracts.py

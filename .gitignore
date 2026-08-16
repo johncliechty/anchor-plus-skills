@@ -86,6 +86,9 @@ bridge_test*.txt
 .anchor/worktrees/
 .anchor/projects/*/discovery.json
 .anchor/projects/*/**/jobs/
+# The chamber's derived projection substrate (chamber_coldopen.cold_open_rebuild
+# regenerates it from the run records; brief/projections/manifest + their locks).
+.anchor/chamber/
 .anchor/reaper_receipts.jsonl
 .anchor/usage_ledger/
 # rearch W12 (C3): the per-project append-only event journal — runtime,
@@ -128,3 +131,11 @@ planning/**/_*.log
 # collaborators actually received — is kept LOCALLY for provenance under
 # _archive/ but never re-tracked; git history (pre-v1.1.3) holds the rest.
 _archive/share-package-v1-snapshot-2026-08-01/
+
+# Anchor-side foundry-journal MACHINE records (runtime telemetry, 2026-08-04).
+# foundry_journal.py writes one record per skill run under skills/<skill>/journal/
+# machine/ with model_cost + inputs/outputs sidecars. Same class as rnd_jobs/ and
+# .anchor/**/journal.jsonl: regenerated at runtime, grows every session, and is a
+# SKILL artifact rather than Anchor source — skill work lives in the skill's own
+# global location, not in this repo.
+skills/

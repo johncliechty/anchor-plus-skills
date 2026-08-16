@@ -79,9 +79,8 @@ def test_render_project_window_html_back_link(gui, tmp_path):
     pid = entry["id"]
     
     html = gui.render_project_window_html(pid)
-    # Check that back-to-dashboard link has target="_top"
-    assert '<a href="/" target="_top">' in html
-    assert 'Back to dashboard' in html
+    # (2026-08-07, John) The back-to-dashboard link is GONE from project pages.
+    assert 'Back to dashboard' not in html
 
 
 def test_render_project_window_html_not_found(gui):

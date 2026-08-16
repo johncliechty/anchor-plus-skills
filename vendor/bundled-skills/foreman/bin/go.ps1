@@ -21,6 +21,9 @@ param(
   [int]$Cap = 0,          # 0 => take from foreman.config.json budget, else default 3
   [int]$MaxWaves = 0,     # 0 => take from foreman.config.json budget (unbounded if absent)
   [int]$MaxWallMin = 0,   # 0 => unbounded
+  [int]$CallTimeoutMin = 0, # 0 => run-live default (20). 0102: the default cap SIGKILLed
+                            # a healthy 43-minute execute; the flag existed in run-live
+                            # but go.ps1 never exposed it, so every retry died identically.
   [switch]$Resume,        # continue from the on-disk checkpoint (clears a halt once its blocker is resolved)
   [switch]$Doctor,        # 0082: prove test-command collects >0 tests then exit
   [switch]$Detached,      # 0082: launch detached (DEFAULT ON) — no Wait; survives session close
@@ -69,6 +72,7 @@ if ($Cap -le 0) { $Cap = 3 }
 $cliArgs = @("`"$engine`"", "`"$proj`"", '--reviewers', $Reviewers, '--cap', $Cap) + $gitArgs
 if ($MaxWaves -gt 0)   { $cliArgs += @('--max-waves', $MaxWaves) }
 if ($MaxWallMin -gt 0) { $cliArgs += @('--max-wallclock-min', $MaxWallMin) }
+if ($CallTimeoutMin -gt 0) { $cliArgs += @('--call-timeout-min', $CallTimeoutMin) }
 
 # -Resume: continue from the checkpoint. If the checkpoint is HALTED, the engine refuses to
 # auto-resume until the blocker is cleared. If the project defines a pre-registration gate

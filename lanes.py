@@ -561,6 +561,24 @@ def launch_lane(project_id: str, lane: str, env=None, job_id: str = None,
         raise KeyError(project_id)
     folder_path = project.get("folder_path", "")
 
+    # FAST-FAIL the concurrency policy as soon as the project resolves — the
+    # same checks launch_guarded makes atomically, in the same order (same-lane
+    # first, then the folder build lock). The preamble below (store scaffold,
+    # prompt-seed build, spawn-cap census) does real file I/O and can stretch
+    # to whole seconds on a loaded host; deciding the refusal only after it
+    # let a to-be-refused launch slip through whenever the holder finished
+    # mid-preamble, and left scaffold side effects behind a refused launch.
+    # The refusal is judged against the state at REQUEST time; the
+    # authoritative check-and-set still happens inside launch_guarded under
+    # WRITE_LOCK.
+    same = _jr.lane_holder(project_id, lane)
+    if same is not None:
+        raise _jr.LaneBusyError(_jr.REFUSED_SAME_LANE, holder=same)
+    if lane == _jr.BUILD_LANE:
+        held = _jr.folder_build_holder(str(folder_path))
+        if held is not None:
+            raise _jr.LaneBusyError(_jr.REFUSED_FOLDER_BUILD, holder=held)
+
     output_dir = lane_output_dir(folder_path, project_id, lane)
     # Scaffold the per-project store (idempotent) so the lane dir exists.
     _rnd.scaffold_project_store(folder_path, project_id)

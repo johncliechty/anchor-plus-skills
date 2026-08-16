@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ecgberht-handback-contract-v1",
+  "title": "Ecgberht durable handback-file contract (skill-owned)",
+  "description": "SKILL-OWNED durable handback-file protocol (North Star criterion 15, Wave 4). Every executor (Anchor reference executor = implementation #1; in-session executor = implementation #2) MUST implement this contract. The handback JSON body is validated by the EXISTING receipt-validate.mjs (kind=handback) — this schema covers the on-disk envelope, path convention, terminal marker, write discipline, and idempotence — not a second receipt validator. Refuted e-1 (new handback artifact channel) stays dead: this is the EXISTING bundle/receipt made restart-safe.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "handback_rel_dir",
+    "handback_json_name",
+    "terminal_marker_name",
+    "write_discipline",
+    "single_writer",
+    "kill_mid_write",
+    "duplicate_delivery",
+    "receipt_validator"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Version pin. Wave-21 conformance suite fails if executors disagree on contract_version."
+    },
+    "handback_rel_dir": {
+      "type": "string",
+      "const": ".ecgberht/handback",
+      "description": "Directory inside the run's worktree where the handback pair lives."
+    },
+    "handback_json_name": {
+      "type": "string",
+      "const": "handback.json",
+      "description": "Filename of the handback JSON (receipt shape; validated by receipt-validate.mjs)."
+    },
+    "terminal_marker_name": {
+      "type": "string",
+      "const": "TERMINAL.marker",
+      "description": "Filename of the terminal marker. Presence means the handback write completed durably."
+    },
+    "write_discipline": {
+      "type": "string",
+      "const": "temp-fsync-rename",
+      "description": "S6: each file is written temp + fsync + rename (atomic replace) in the target directory."
+    },
+    "single_writer": {
+      "type": "boolean",
+      "const": true,
+      "description": "One writer per run dir by construction — a contract clause binding every executor."
+    },
+    "kill_mid_write": {
+      "type": "object",
+      "required": ["marker_absent_means", "ingestable"],
+      "properties": {
+        "marker_absent_means": {
+          "type": "string",
+          "const": "not_ingestable",
+          "description": "If the terminal marker is absent, the pair is NOT ingestable (even if handback.json is present)."
+        },
+        "ingestable": {
+          "type": "string",
+          "const": "handback_json_and_terminal_marker_both_present",
+          "description": "Complete pair only: handback.json + TERMINAL.marker."
+        }
+      }
+    },
+    "duplicate_delivery": {
+      "type": "object",
+      "required": ["idempotence_key", "semantics"],
+      "properties": {
+        "idempotence_key": {
+          "type": "string",
+          "const": "client_event_id",
+          "description": "Ingestion is idempotent on client_event_id (exactly-once adopt)."
+        },
+        "semantics": {
+          "type": "string",
+          "const": "ingest_exactly_once",
+          "description": "Re-delivery of the same client_event_id is a no-op after first successful ingest."
+        }
+      }
+    },
+    "receipt_validator": {
+      "type": "string",
+      "const": "engine/receipt-validate.mjs",
+      "description": "No new validator — handback JSON must pass validateReceipt (kind=handback)."
+    },
+    "write_order": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Normative write order: handback.json first, then TERMINAL.marker. Marker last is what makes kill-mid-write safe."
+    },
+    "no_credential_in_child": {
+      "type": "boolean",
+      "const": true,
+      "description": "Descope D-1: child env/argv must never carry ANCHOR_TOKEN or a capability secret."
+    }
+  }
+}

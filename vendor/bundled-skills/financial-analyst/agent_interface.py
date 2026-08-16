@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 from graph_engine import Graph
 from templates.re_waterfall import create_waterfall_graph
 from templates.vc_comp import create_vc_comp_graph
+from templates.cancer_human_capital import create_cancer_human_capital_graph
 from report_generator import generate_report, generate_pdf_report, generate_llm_prompt
 from compiler_excel import compile_to_excel
 from compiler_python import compile_to_python
@@ -39,6 +40,8 @@ class FinancialAnalystAgent:
             self.graph = create_vc_comp_graph(**kwargs)
         elif template_name == "re_waterfall":
             self.graph = create_waterfall_graph(**kwargs)
+        elif template_name == "cancer_human_capital":
+            self.graph = create_cancer_human_capital_graph(**kwargs)
         else:
             raise ValueError(f"Unknown template: {template_name}")
         return self.graph

@@ -53,6 +53,12 @@ SKILL_SOURCES = [
     ("financial-analyst", "ANCHOR_FOUNDRY_DIR", "skills/financial-analyst"),
     ("tidy-idy", "ANCHOR_FOUNDRY_DIR", "skills/tidy-idy"),
     ("zombie-hunter", "ANCHOR_FOUNDRY_DIR", "skills/zombie-hunter"),
+    # v1.2.3: the Ecgberht steward. Repo root IS the skill (the gandalf shape).
+    # Anchor already shipped its HOST CONTRACTS (the chamber_* modules) while
+    # the skill itself stayed home — collaborators had steward-shaped Anchor
+    # surface with no steward behind it. Its campaign record is stripped by the
+    # scoped denials above; only the engine ships.
+    ("ecgberht", "ANCHOR_ECGBERHT_DIR", ""),
 ]
 
 # Early canary (W2): one Trio skill + one large Foundry skill through the
@@ -117,6 +123,49 @@ _DENY_DIR_COMPONENTS = {
     "test",
     "tests",
 }
+# PER-SKILL denials (v1.2.3, added for the Ecgberht steward).
+#
+# The steward is a campaign-memory skill: its repo is ~970 files, and most of
+# them are the AUTHOR'S OWN portfolio record — what the steward learned about
+# John's projects — not product. The generic list above already drops the bulk
+# (planning / test / journal / .foreman = 487 files), but the rest carry names
+# too generic to deny globally: a future skill may legitimately ship a
+# ``research/`` or ``drafts/`` directory as product. Scoping them to the one
+# skill that must not export them keeps the global list honest.
+#
+# Cross-family review (2026-08-15) confirmed the engine does not read these at
+# runtime: ``rank.mjs`` scores Strip projections only, ``loadDispatchTable()``
+# falls back to ``BUILTIN_CELLS``, ``prior-art/`` and ``ideation/`` have no
+# engine or bin load path, and ``listJournalEntries()`` is an optional
+# per-PROJECT scan that returns ``present:false`` rather than failing.
+_DENY_DIR_COMPONENTS_BY_SKILL = {
+    "ecgberht": {
+        "e4-skill-plan", "e9-e10-crucible", "ideation", "research",
+        "artifacts", "drafts", "mockups", "prior-art",
+        # The steward's OWN live runtime state (attention.json). Harmless-
+        # looking — no project names — but it is the author's cell, so a
+        # stranger's fresh install would open already showing someone else's
+        # "needs_you / commission_awaiting_confirm" from 2026-08-03. A steward
+        # must start with an empty attention cell, not an inherited one.
+        ".ecgberht",
+    },
+}
+
+#: Root documents that are the author's campaign record or in-flight process,
+#: not the shipped skill. ``ecgberht.md`` is the big one: at the steward's repo
+#: root it IS John's portfolio memory (per-project copies are minted from
+#: ``templates/``, which ships).
+_DENY_BASENAMES_BY_SKILL = {
+    "ecgberht": {
+        "ecgberht.md", "brief-cache.json", "roadmap.json", "strip.json",
+        "implementation-plan.md", "foreman.config.json",
+        "self-run-checklist.md", "handoff-grok-crucible.md",
+        "next-ux-and-anchor-orchestration.md",
+        "review-brief-for-external-model.md", "review-fable-2026-07-25.md",
+        "vision-correction-2026-07-25.md",
+    },
+}
+
 # Glob-ish suffix / pattern matches on the basename.
 _DENY_BASENAME_SUFFIXES = (
     "-checkpoint.json",
@@ -133,10 +182,21 @@ _DENY_DIR_SUFFIXES = (
 )
 
 
-def _is_denied(rel: Path) -> bool:
-    """Return True if a relative extracted path matches the denylist."""
+def _is_denied(rel: Path, skill: str | None = None) -> bool:
+    """Return True if a relative extracted path matches the denylist.
+
+    ``skill`` (optional) additionally applies that skill's scoped denials —
+    see :data:`_DENY_DIR_COMPONENTS_BY_SKILL`.
+    """
     parts = [p for p in rel.parts]
     base = rel.name.lower()
+
+    key = (skill or "").lower()
+    extra_dirs = _DENY_DIR_COMPONENTS_BY_SKILL.get(key, frozenset())
+    if extra_dirs and any(c.lower() in extra_dirs for c in parts):
+        return True
+    if base in _DENY_BASENAMES_BY_SKILL.get(key, frozenset()):
+        return True
 
     # Directory-component denials (drop the whole subtree).
     for comp in parts[:-1] if not rel.is_dir() else parts:
@@ -356,7 +416,12 @@ def _archive_subdir(repo, commit, subdir, dest_dir) -> bool:
 # --------------------------------------------------------------------------- #
 # Denylist + scrub passes over the extracted tree
 # --------------------------------------------------------------------------- #
-def _apply_denylist(skill_dir: Path) -> None:
+def _apply_denylist(skill_dir: Path, skill: str | None = None) -> None:
+    """Strip denied paths from an extracted skill tree.
+
+    ``skill`` opts the tree into that skill's SCOPED denials on top of the
+    global list (see ``_DENY_DIR_COMPONENTS_BY_SKILL``).
+    """
     skill_dir = Path(skill_dir)
     if not skill_dir.exists():
         return
@@ -366,7 +431,7 @@ def _apply_denylist(skill_dir: Path) -> None:
         for name in files:
             p = root_p / name
             rel = p.relative_to(skill_dir)
-            if _is_denied(rel):
+            if _is_denied(rel, skill):
                 try:
                     p.unlink()
                 except OSError:
@@ -375,7 +440,7 @@ def _apply_denylist(skill_dir: Path) -> None:
             d = root_p / name
             rel = d.relative_to(skill_dir)
             # A directory whose name (or an ancestor) is denied.
-            if _is_denied(Path(*rel.parts)):
+            if _is_denied(Path(*rel.parts), skill):
                 shutil.rmtree(d, ignore_errors=True)
     # Prune any now-empty directories left behind.
     for root, dirs, files in os.walk(skill_dir, topdown=False):
@@ -483,7 +548,7 @@ def vendor_all(dest, sources=None):
 
         # THE POINT OF THE WAVE: denylist AFTER extraction (git archive keeps
         # tracked personal logs).
-        _apply_denylist(skill_dir)
+        _apply_denylist(skill_dir, name)
         # Residual host-path / PII scrub.
         _scrub_tree(skill_dir)
 

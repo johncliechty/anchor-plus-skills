@@ -76,7 +76,10 @@ def test_running_session_tile_carries_green_light(gui, tmp_path):
     import job_runner as jr
     folder, pid = _mkproject(gui, tmp_path)
     # A real (non-discovered) running effort → the lane tile is green.
-    eh.record_effort(str(folder), pid, "plan", "p_run", skill="crucible",
+    # (2026-08-09 repin) John's simple-workbench order removed the research/
+    # plan_build zones; the GENERAL zone is the living tile surface — same
+    # light logic, living zone.
+    eh.record_effort(str(folder), pid, "general", "g_run", skill=None,
                      extra={"status": jr.STATUS_RUNNING})
     # Force the live-status join: the job record reports RUNNING.
     html = gui.render_project_window_html(pid)
@@ -97,8 +100,9 @@ def test_done_session_tile_carries_amber_light(gui, tmp_path):
     import effort_history as eh
     import job_runner as jr
     folder, pid = _mkproject(gui, tmp_path)
-    eh.record_effort(str(folder), pid, "research", "r_done",
-                     skill="researchPrime", extra={"status": jr.STATUS_DONE})
+    # (2026-08-09 repin) general zone — see the green-light test's note.
+    eh.record_effort(str(folder), pid, "general", "g_done",
+                     skill=None, extra={"status": jr.STATUS_DONE})
     html = gui.render_project_window_html(pid)
     assert "data-light=\"amber\"" in html
 
@@ -108,12 +112,13 @@ def test_discovered_session_tile_is_grey(gui, tmp_path):
     (never fabricated as running)."""
     import effort_history as eh
     folder, pid = _mkproject(gui, tmp_path)
-    jid = eh.discovered_job_id("plan", "planning/rnd-v1/PLAN.md")
+    # (2026-08-09 repin) general zone — see the green-light test's note.
+    jid = eh.discovered_job_id("general", "general/notes.md")
     eh.record_effort(
-        str(folder), pid, "plan", jid, skill="crucible",
+        str(folder), pid, "general", jid, skill=None,
         extra={"source": eh.SOURCE_DISCOVERED,
-               "artifact_path": "planning/rnd-v1/PLAN.md",
-               "created_at": 1000.0, "title": "v1 Plan"})
+               "artifact_path": "general/notes.md",
+               "created_at": 1000.0, "title": "Notes"})
     html = gui.render_project_window_html(pid)
     assert "data-light=\"grey\"" in html
 

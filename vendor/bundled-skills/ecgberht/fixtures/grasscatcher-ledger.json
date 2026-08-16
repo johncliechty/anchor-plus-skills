@@ -1,0 +1,88 @@
+{
+  "schema": "ecgberht-grasscatcher-ledger-v0",
+  "spelling": "Ecgberht",
+  "description": "W6 permanent scope-deferral ledger (product non-goals). Distinct from campaign soft-vet grasscatch receipts — these items are deferred product surfaces, never MVP verbs or engine surfaces.",
+  "depth": "LITE",
+  "mvp_status": "deferred",
+  "receipt_shape": {
+    "schema": "ecgberht-receipt-v0",
+    "kind": "grasscatch",
+    "required_fields": [
+      "deferred",
+      "grasscatch_why",
+      "suggested_later_owner",
+      "handback_shape",
+      "uncertainty_flags"
+    ],
+    "handback_shape": {
+      "when": "post_mvp",
+      "return_via": "strip_receipt",
+      "needs": [
+        "active_effort",
+        "why_next",
+        "grasscatch_why",
+        "tool_depth_why",
+        "human_wait",
+        "uncertainty_flags"
+      ]
+    }
+  },
+  "items": [
+    {
+      "id": "openclaw-harness-product",
+      "deferred": "OpenClaw harness product",
+      "why": "Multi-agent substrate / wallets are a separate product — Ecgberht is skill+engine only",
+      "suggested_later_owner": "separate-harness-product",
+      "category": "harness",
+      "non_goal": true
+    },
+    {
+      "id": "calendar-email-oauth",
+      "deferred": "calendar/email OAuth",
+      "why": "Full calendar/email connectors out of LITE MVP scope",
+      "suggested_later_owner": "connector-product",
+      "category": "connectors",
+      "non_goal": true
+    },
+    {
+      "id": "anchor-v1-0-x-release-edits",
+      "deferred": "Anchor v1.0.x release edits",
+      "why": "Public freeze tree / Anchor-release-v1.0 must stay untouched",
+      "suggested_later_owner": "anchor-release-owners",
+      "category": "anchor-freeze",
+      "non_goal": true
+    },
+    {
+      "id": "default-chat-gateway",
+      "deferred": "default chat gateway",
+      "why": "No default chat gateway tax on every turn; not an in-app personality product",
+      "suggested_later_owner": "chat-product",
+      "category": "chat",
+      "non_goal": true
+    },
+    {
+      "id": "family-finances-domain",
+      "deferred": "Family-Finances domain",
+      "why": "Domain features belong to Family-Finances project, not Ecgberht engine surface",
+      "suggested_later_owner": "family-finances-project",
+      "category": "domain",
+      "non_goal": true
+    },
+    {
+      "id": "anchor-1-1-portfolio-ui",
+      "deferred": "Anchor 1.1 portfolio UI",
+      "why": "Any future Anchor UI is 1.1 / next-gen only — not this MVP",
+      "suggested_later_owner": "anchor-1.1",
+      "category": "ui",
+      "non_goal": true
+    },
+    {
+      "id": "launch-tree-merge",
+      "deferred": "launch-tree merge",
+      "why": "Launch-cut Anchor merge is Grasscatcher foresight, not MVP verb work",
+      "suggested_later_owner": "launch-orchestration",
+      "category": "launch",
+      "non_goal": true
+    }
+  ]
+}

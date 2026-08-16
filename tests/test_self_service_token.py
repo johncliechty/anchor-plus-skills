@@ -370,7 +370,19 @@ def test_fetch_wrapper_401_prompts_home(server_authed):
 # a 401 into a fresh window.prompt — a window with a perfectly good stored token
 # kept asking for it again, and the goal could never be saved.
 
-_STEWARD_POST_ENDPOINTS = ("speak", "stand_up", "high_seat_act")
+# (chamber-m1 W2, 2026-08-14) The LIST MOVED WITH THE SURFACE, and the
+# regression law did not change. ``speak`` and ``stand_up`` were the v0
+# chamber's mutating POSTs; both call sites lived inside `_ecgRenderChamber` /
+# `_ecgRenderStandUp`, which this wave DELETED. Both remain live SERVER routes
+# (the chamber route is kept as a data API and the stand_up engine verb is
+# untouched) — they simply have no client call site to scan any more, so
+# leaving them here would have failed the floor assertion below forever, and
+# the cheap "fix" would have been to delete the floor.
+#
+# What replaced them is M1's own mutating set, and every one of them is held to
+# the same law: the token rides in a HEADER (all four go through ``_postJson``).
+_STEWARD_POST_ENDPOINTS = ("converse", "refine_confirm", "deliverable_action",
+                           "high_seat_act")
 
 
 def _asset(name):

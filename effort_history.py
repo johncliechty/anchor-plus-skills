@@ -155,7 +155,12 @@ def _save_index(folder_path, project_id: str, lane: str, order: list) -> None:
         f.write(json.dumps(list(order), indent=2))
         f.flush()
         os.fsync(f.fileno())
-    tmp.replace(p)
+    # The final rename goes through the shared bounded retry: on Windows,
+    # os.replace raises a transient PermissionError (WinError 5) while a
+    # concurrent lock-free reader (_load_index runs outside WRITE_LOCK)
+    # briefly holds index.json open — the same sharing-violation race class
+    # already tolerated by paths.atomic_write_text and job_runner._write_record.
+    _paths._replace_with_retry(str(tmp), str(p))
 
 
 # ── Effort pointer-record CRUD (append/version — never delete; D5) ──────────
@@ -2556,7 +2561,13 @@ _DOC_EXCLUDE_DIRS = (".anchor", ".git", "node_modules", "__pycache__",
 #: Bare trio doc filenames we persist even when they sit at the project root (not
 #: under a lane dir) — the canonical plan/report/log artifacts.
 _DOC_ROOT_NAMES = ("master-plan.md", "implementation-plan.md",
-                   "execution-log.md", "report.md", "handoff.md")
+                   "execution-log.md", "report.md", "handoff.md",
+                   # (2026-08-06, found live) Crucible's Stage-0 artifact and
+                   # the decision log are trio docs too — a commissioned run
+                   # wrote NORTH-STAR.md at the worktree root and the kill-path
+                   # persist dropped it as "no-docs". The run loop's PRODUCED
+                   # patterns already recognize both names.
+                   "north-star.md", "decision-log.md")
 
 #: Document extensions we consider persistable produced artifacts.
 _DOC_EXTS = (".md", ".pdf")

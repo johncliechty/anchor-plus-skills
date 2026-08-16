@@ -43,6 +43,11 @@ def _seed(folder):
     return folder
 
 
+@pytest.mark.skip(reason="2026-08-09: John's simple-workbench order (2026-08-06) "
+                  "removed the research/plan_build zones from the project page — "
+                  "research/plan tiles no longer render there; discovered efforts "
+                  "surface via the steward ledger/chamber instead. The vN-absence "
+                  "contract lives on in the general zone's tiles.")
 def test_real_vN_present_and_discovered_has_no_vN(gui, tmp_path):
     import effort_history as eh
     import rnd_registry as rnd

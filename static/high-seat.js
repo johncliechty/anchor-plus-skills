@@ -85,7 +85,18 @@ function ecgHighSeatBadge(done) {
       if (done) done(false);
       return;
     }
-    var n = out.queue_length || 0;
+    // (2026-08-04) ok:true does NOT imply a known queue. When no project has
+    // joined the portfolio the server answers ok:true with queue_length null —
+    // the count is UNKNOWN, not zero. `out.queue_length || 0` would have turned
+    // that null into a confident "⚑ 0", which is precisely the "nothing needs
+    // you" lie the comment above forbids. Hide the badge instead.
+    if (out.queue_length == null) {
+      badge.textContent = '';
+      badge.className = 'ecg-hs-badge';
+      if (done) done(true);
+      return;
+    }
+    var n = out.queue_length;
     badge.textContent = '⚑ ' + n;
     badge.className = n > 0 ? 'ecg-hs-badge on' : 'ecg-hs-badge';
     if (done) done(true);
@@ -217,7 +228,19 @@ function _ecgHsRenderPacket(body, pid, payload) {
   wrap.appendChild(_ecgHsEl('div', 'ecg-hs-pcard prov', pv.footer_stamp));
 }
 
+var _ECG_HS_RAISED_ANCHOR_ID = null;
+
 function ecgHsBringUp(body, pid) {
+  // (2026-08-07, John opened a "chamber empty … nothing here yet" overlay on
+  // the deck project.) The RICH chamber lives on the project page — when the
+  // raised project maps to an Anchor id, go THERE (#seal auto-opens it)
+  // instead of the thin packet overlay. The overlay stays as the fallback
+  // for a raise we cannot map.
+  if (_ECG_HS_RAISED_ANCHOR_ID) {
+    window.location.href = '/project/' +
+      encodeURIComponent(_ECG_HS_RAISED_ANCHOR_ID) + '#seal';
+    return;
+  }
   _ecgHsGet('/api/ecgberht/bring_up?project_id=' + encodeURIComponent(pid), function (out) {
     if (!out || !out.ok) {
       _ecgHsReply(body, "I couldn't open that: " + ((out && (out.error || out.message)) || 'no response'));
@@ -229,6 +252,52 @@ function ecgHsBringUp(body, pid) {
 }
 
 /* ── Screen 2: the High Seat body ── */
+/* The typed confirm card a spoken "start a project" becomes. Nothing is
+   created until the click; an existing folder registers brownfield and the
+   server fires its first-scan Gandalf on its own. */
+function _ecgHsProjectCreateCard(host, pc) {
+  var card = _ecgHsEl('div', 'ecg-hs-createcard');
+  var name = pc.name || (String(pc.folder).replace(/[\\\/]+$/, '')
+    .split(/[\\\/]/).pop() || 'project');
+  card.appendChild(_ecgHsEl('div', null,
+    'Create “' + name + '” at ' + pc.folder + '?'));
+  var acts = _ecgHsEl('div', 'ecg-hs-actions');
+  var go = _ecgHsEl('button', 'ecg-hs-btn pri', 'Create it');
+  go.onclick = function () {
+    go.disabled = true;
+    go.textContent = 'Creating…';
+    fetch('/api/rnd/new_project', {
+      method: 'POST',
+      headers: _ecgHsHeaders(),
+      body: JSON.stringify({ mode: 'auto', name: name, folder_path: pc.folder })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var entry = j && j.entry;
+      if (!j || j.ok === false || !entry) {
+        go.disabled = false;
+        go.textContent = 'Create it';
+        _ecgHsReply(card, 'Could not create it: ' +
+          ((j && (j.message || j.error)) || 'no response') + ' — nothing was made.');
+        return;
+      }
+      _ecgHsReply(card, 'Created — opening its steward. ' +
+        (j.path_existed
+          ? 'Existing material found; the first Gandalf read starts on its own.'
+          : 'Fresh folder scaffolded.'));
+      window.location.href = '/project/' + encodeURIComponent(entry.id) + '#seal';
+    }).catch(function () {
+      go.disabled = false;
+      go.textContent = 'Create it';
+      _ecgHsReply(card, 'That didn’t go through — nothing was made.');
+    });
+  };
+  var no = _ecgHsEl('button', 'ecg-hs-btn', 'Not now');
+  no.onclick = function () { card.remove(); };
+  acts.appendChild(go);
+  acts.appendChild(no);
+  card.appendChild(acts);
+  host.appendChild(card);
+}
+
 function _ecgHsRenderHighSeat(body, vm) {
   body.innerHTML = '';
 
@@ -237,41 +306,155 @@ function _ecgHsRenderHighSeat(body, vm) {
   if (rb && rb.present) {
     var raise = _ecgHsEl('div', 'ecg-hs-raise');
     raise.appendChild(_ecgHsEl('h3', null, rb.heading));
-    var line = (rb.project_id || '') + ' — ' + rb.summary +
-      (rb.time_estimate ? ' · ' + rb.time_estimate : '');
-    raise.appendChild(_ecgHsEl('div', null, line));
-    raise.appendChild(_ecgHsActions([
-      { label: 'Bring it up', pri: true, onclick: function () { ecgHsBringUp(body, rb.project_id); } },
+    // THE BRIEFING (2026-08-06). The engine has carried did/next since W4 and
+    // nothing rendered it — so the raise read as a nag ("needs input") and
+    // John had to open the project to ask what it had done and what it would
+    // do next. Render the briefing lines when they exist; the one-line summary
+    // stays as the fallback for raises that carry no briefing.
+    if (rb.briefing && rb.briefing.length > 1) {
+      raise.appendChild(_ecgHsEl('div', 'ecg-hs-raise-proj', rb.project_id || ''));
+      rb.briefing.forEach(function (line) {
+        raise.appendChild(_ecgHsEl('div', 'ecg-hs-brief-line', line));
+      });
+      if (rb.time_estimate) {
+        raise.appendChild(_ecgHsEl('div', 'note', rb.time_estimate));
+      }
+    } else {
+      var line = (rb.project_id || '') + ' — ' + rb.summary +
+        (rb.time_estimate ? ' · ' + rb.time_estimate : '');
+      raise.appendChild(_ecgHsEl('div', null, line));
+    }
+    var raiseActs = [
+      { label: 'Bring it up', pri: true, onclick: function () { ecgHsBringUp(body, rb.project_id); } }
+    ];
+    // A raise born from a commissioned session carries that session — opening
+    // IT (not just the project) is how John answers the skill directly.
+    if (rb.session_id && rb.project_id) {
+      raiseActs.push({ label: 'Open the session', onclick: function () {
+        window.location.href = '/project/' + encodeURIComponent(rb.project_id) +
+          '#session=' + encodeURIComponent(rb.session_id);
+      } });
+    }
+    raiseActs.push(
       { label: 'Later today', onclick: function () {
           _ecgHsReply(raise, 'Set aside for now — nothing saved; it stays in the queue.');
         } },
       { label: 'Tomorrow', onclick: function () {
           _ecgHsReply(raise, 'Set aside for now — nothing saved; it stays in the queue.');
         } }
-    ]));
+    );
+    raise.appendChild(_ecgHsActions(raiseActs));
     raise.appendChild(_ecgHsEl('div', 'note', rb.queue_note));
     body.appendChild(raise);
   } else {
     body.appendChild(_ecgHsEl('div', 'ecg-hs-quiet', rb ? rb.voice : ''));
   }
 
-  // S2-E3 — tiles: seal + goal-phrase + one state pill each; never a table
+  // S2-E3 — tiles: seal + goal-phrase + one state pill each; never a table.
+  // (2026-08-07, John) Each row is a LIVE glance — what's happening now +
+  // lifetime spend — and clicking it opens that project's steward directly.
+  // Active campaigns (real runs on record) render up front; the merely-
+  // registered rest fold behind one line (2026-08-07: two real campaigns
+  // must not drown in a stack of quiet registrations).
+  var allTiles = vm.tiles.tiles || [];
+  // Map the raised project to its Anchor id so "Bring it up" can land in the
+  // REAL chamber (project page #seal) rather than the thin overlay.
+  _ECG_HS_RAISED_ANCHOR_ID = null;
+  allTiles.forEach(function (t) {
+    if (t.state_kind === 'raised' && t.anchor_project_id) {
+      _ECG_HS_RAISED_ANCHOR_ID = t.anchor_project_id;
+    }
+  });
+  var activeTiles = allTiles.filter(function (t) { return t.active_campaign; });
+  var quietTiles = allTiles.filter(function (t) { return !t.active_campaign; });
+  if (!activeTiles.length) { activeTiles = allTiles; quietTiles = []; }
   var tiles = _ecgHsEl('div', 'ecg-hs-tiles');
-  (vm.tiles.tiles || []).forEach(function (t) {
-    var tile = _ecgHsEl('div', 'ecg-hs-tile' + (t.dimmed ? ' dim' : ''));
+  var renderTile = function (t, host) {
+    var tile = _ecgHsEl('div', 'ecg-hs-tile' + (t.dimmed ? ' dim' : '') +
+      (t.anchor_project_id ? ' clickable' : ''));
     var nm = _ecgHsEl('div', 'nm');
     var ico = document.createElement('img');
     ico.src = _ecgHsStwSealSrc();
     ico.alt = '';
     ico.onerror = function () { this.style.display = 'none'; };
     nm.appendChild(ico);
-    nm.appendChild(_ecgHsEl('span', null, t.name));
+    nm.appendChild(_ecgHsEl('span', null, t.display_name || t.name));
+    if (t.now_running) nm.appendChild(_ecgHsEl('span', 'hs-live', '●'));
     tile.appendChild(nm);
     tile.appendChild(_ecgHsEl('div', 'goal', t.goal_phrase));
+    if (t.now_line) tile.appendChild(_ecgHsEl('div', 'hs-now', t.now_line));
+    if (t.spend_line) tile.appendChild(_ecgHsEl('div', 'hs-spend', t.spend_line));
     tile.appendChild(_ecgHsEl('div', 'pill' + (t.state_kind === 'raised' ? ' raised' : ''), t.state_pill));
-    tiles.appendChild(tile);
-  });
+    if (t.anchor_project_id) {
+      tile.onclick = function () {
+        window.location.href = '/project/' +
+          encodeURIComponent(t.anchor_project_id) + '#seal';
+      };
+      tile.title = 'Open this project’s steward';
+    }
+    host.appendChild(tile);
+  };
+  activeTiles.forEach(function (t) { renderTile(t, tiles); });
   body.appendChild(tiles);
+  if (quietTiles.length) {
+    var more = document.createElement('details');
+    more.className = 'ecg-hs-more';
+    var sum = document.createElement('summary');
+    sum.textContent = quietTiles.length + ' quieter project' +
+      (quietTiles.length === 1 ? '' : 's') + ' — registered, no campaign yet';
+    more.appendChild(sum);
+    var qhost = _ecgHsEl('div', 'ecg-hs-tiles');
+    quietTiles.forEach(function (t) { renderTile(t, qhost); });
+    more.appendChild(qhost);
+    body.appendChild(more);
+  }
+
+  // (2026-08-07, John: "I want to just TALK to it") The High Seat saybox:
+  // free speech to the portfolio steward. "Start a project at <path>" comes
+  // back as a typed confirm card — an existing folder joins brownfield and
+  // its first Gandalf read fires on its own.
+  var mk = _ecgHsEl('div', 'ecg-hs-newproj');
+  var sayRow = _ecgHsEl('div', 'ecg-hs-sayrow');
+  var sayInp = document.createElement('input');
+  sayInp.type = 'text';
+  sayInp.className = 'ecg-hs-say';
+  sayInp.placeholder = 'Talk to ' + _ecgHsStwName() +
+    ' — e.g. “start a new project called X at C:\\dev\\X”';
+  var sayBtn = _ecgHsEl('button', 'ecg-hs-btn', 'Say it');
+  var sendSay = function () {
+    var t = (sayInp.value || '').trim();
+    if (!t || sayBtn.disabled) return;
+    sayBtn.disabled = true;
+    sayBtn.textContent = 'Thinking…';
+    fetch('/api/ecgberht/high_seat_say', {
+      method: 'POST',
+      headers: _ecgHsHeaders(),
+      body: JSON.stringify({ text: t })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      sayBtn.disabled = false;
+      sayBtn.textContent = 'Say it';
+      if (!j || !j.ok) {
+        _ecgHsReply(mk, (j && (j.say || j.message || j.error)) ||
+          'No answer came back — nothing was done.');
+        return;
+      }
+      sayInp.value = '';
+      _ecgHsReply(mk, j.say || '…');
+      if (j.project_create && j.project_create.folder) {
+        _ecgHsProjectCreateCard(mk, j.project_create);
+      }
+    }).catch(function () {
+      sayBtn.disabled = false;
+      sayBtn.textContent = 'Say it';
+      _ecgHsReply(mk, 'That didn’t go through — nothing was done.');
+    });
+  };
+  sayBtn.onclick = sendSay;
+  sayInp.onkeydown = function (ev) { if (ev.key === 'Enter') sendSay(); };
+  sayRow.appendChild(sayInp);
+  sayRow.appendChild(sayBtn);
+  mk.appendChild(sayRow);
+  body.appendChild(mk);
 
   // S2-E4 — capacity & focus: spoken recommendation + reasons + override
   var bal = vm.balancing;
@@ -374,12 +557,68 @@ function _ecgHsRenderHighSeat(body, vm) {
   body.appendChild(say);
 }
 
+/* The never-joined portfolio (2026-08-04 hardening).
+
+   `register` is the only verb that mints a project marker, a minted project_id is
+   the only thing the engine indexes, and the index is what this surface reads — so
+   until projects join, the High Seat has nothing to show. That is EMPTY, and it
+   used to render as a 502 "can't reach the steward" banner quoting a remedy the
+   operator had no way to run. Say what is true and offer the act. */
+function _ecgHsRenderEmptyPortfolio(body, out) {
+  body.innerHTML = '';
+  var wrap = _ecgHsEl('div', 'ecg-hs-empty');
+  wrap.appendChild(_ecgHsEl('div', 'ecg-hs-empty-title',
+    _ecgHsStwName() + ' — no projects have joined yet'));
+  wrap.appendChild(_ecgHsEl('div', 'ecg-hs-quiet',
+    (out && out.message) ||
+    'This is empty, not broken. Register your active projects to see them here.'));
+  if (out && out.candidate_roots) {
+    wrap.appendChild(_ecgHsEl('div', 'ecg-hs-quiet',
+      out.candidate_roots + ' active project' +
+      (out.candidate_roots === 1 ? '' : 's') + ' ready to join.'));
+  }
+  // Reuse the dock's existing action-row styling (.ecg-hs-actions > button.pri)
+  // rather than inventing classes with no CSS behind them.
+  var row = _ecgHsEl('div', 'ecg-hs-actions');
+  var btn = _ecgHsEl('button', 'pri', 'Register my projects');
+  row.appendChild(btn);
+  btn.onclick = function () {
+    btn.disabled = true;
+    btn.textContent = 'Registering…';
+    fetch('/api/ecgberht/register_projects', {
+      method: 'POST', headers: _ecgHsHeaders(), body: JSON.stringify({})
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || j.ok === false) {
+        btn.disabled = false;
+        btn.textContent = 'Register my projects';
+        wrap.appendChild(_ecgHsEl('div', 'ecg-hs-quiet',
+          'Could not register: ' + ((j && (j.message || j.error)) || 'no response')));
+        return;
+      }
+      _ecgHsLoadHighSeat(body); // re-read: the index now has rows
+    }).catch(function () {
+      btn.disabled = false;
+      btn.textContent = 'Register my projects';
+    });
+  };
+  wrap.appendChild(row);
+  body.appendChild(wrap);
+}
+
 function _ecgHsLoadHighSeat(body) {
   _ecgHsGet('/api/ecgberht/high_seat?', function (out) {
     if (!out || !out.ok) {
       body.innerHTML = '';
       body.appendChild(_ecgHsEl('div', 'ecg-hs-quiet',
         "I can't reach the " + _ecgHsStwName() + " right now: " + ((out && (out.error || out.message)) || 'no response')));
+      return;
+    }
+    // (2026-08-04) EMPTY IS NOT BROKEN, and it is not a rendered view model
+    // either: ok:true with no projects registered carries no `high_seat`, so
+    // passing it to the renderer would paint an undefined view. Offer the ONE
+    // action that resolves the state instead of a dead panel.
+    if (out.empty || !out.high_seat) {
+      _ecgHsRenderEmptyPortfolio(body, out);
       return;
     }
     _ecgHsRenderHighSeat(body, out.high_seat);
@@ -481,7 +720,15 @@ function openEcgberhtHighSeat() {
   });
 }
 
-/* Ambient init: the badge is the only Ecgberht signal outside the overlay. */
+/* Ambient init: the badge is the only Ecgberht signal outside the overlay.
+   Wave 17 poll contract (latency tests import these names — do not rename):
+   - ECG_HS_MIN_MS = one healthy visible-tab poll interval
+   - ECG_HS_MAX_MS = geometric backoff ceiling under consecutive failures
+   - document.hidden → skip poll entirely; pagehide → clear timer
+   Under failure backoff latency may reach MAX_MS; under a hidden tab polls
+   skip entirely — both are the contract, not silent violations. */
+var ECG_HS_MIN_MS = 90000;
+var ECG_HS_MAX_MS = 15 * 60 * 1000;
 (function () {
   // The badge poll reaches an endpoint that SPAWNS A NODE SUBPROCESS on the
   // server, so a plain 90s setInterval means every open tab — including ones
@@ -490,7 +737,7 @@ function openEcgberhtHighSeat() {
   // shape as the zombie-hunter restart storm, just slower. So: skip the poll
   // while the tab is hidden (refresh once on becoming visible), and back off
   // geometrically on consecutive failures, resetting on the first success.
-  var MIN_MS = 90000, MAX_MS = 15 * 60 * 1000;
+  var MIN_MS = ECG_HS_MIN_MS, MAX_MS = ECG_HS_MAX_MS;
   var fails = 0, timer = null;
 
   var delay = function () {

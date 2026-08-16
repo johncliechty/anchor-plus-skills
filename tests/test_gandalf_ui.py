@@ -40,6 +40,23 @@ def gui_env(tmp_path, monkeypatch):
     yield importlib.reload(anchor_gui)
 
 
+
+def _dashboard_ctx():
+    """(2026-08-09 repin) John's order removed the Gandalf panel from project
+    pages — it lives ONLY on the __dashboard__ project now. These DOM tests
+    exercise the living surface: the dashboard's virtual entry (folder =
+    data_dir().parent, writable in the test env)."""
+    from pathlib import Path
+    import paths as _p
+    folder = Path(_p.data_dir()).parent
+    folder.mkdir(parents=True, exist_ok=True)
+    # Shared surface — each test starts with a CLEAN gandalf index (the
+    # dashboard folder persists across tests in one gui_env).
+    import shutil
+    shutil.rmtree(folder / ".anchor" / "projects" / "__dashboard__" / "gandalf",
+                  ignore_errors=True)
+    return folder, "__dashboard__"
+
 def _mkproject(folder, name="P"):
     import rnd_registry
     folder.mkdir(parents=True, exist_ok=True)
@@ -97,8 +114,7 @@ def _parse(body):
 
 def test_render_smoke_brace_balanced_and_panel_present(gui_env, tmp_path):
     gui = gui_env
-    folder = tmp_path / "Smoke"
-    pid = _mkproject(folder, "Smoke")["id"]
+    folder, pid = _dashboard_ctx()
     _seed_run(folder, pid)
     html = gui.render_project_window_html(pid)
     assert isinstance(html, str) and html.strip()
@@ -113,8 +129,7 @@ def test_render_smoke_brace_balanced_and_panel_present(gui_env, tmp_path):
 
 def test_dom_positive_panel_above_grass_with_rows(gui_env, tmp_path):
     gui = gui_env
-    folder = tmp_path / "Has"
-    pid = _mkproject(folder, "Has")["id"]
+    folder, pid = _dashboard_ctx()
     # two OK runs (one cross_model=False single-family, one a degraded run)
     _seed_run(folder, pid, run_id="run-2", ts=1700000200.0,
               verdict="This is sound — one promising elevation worth pursuing.")
@@ -166,8 +181,7 @@ def test_dom_positive_panel_above_grass_with_rows(gui_env, tmp_path):
 
 def test_dom_run_row_carries_exec_rel_for_inline_expand(gui_env, tmp_path):
     gui = gui_env
-    folder = tmp_path / "Exec"
-    pid = _mkproject(folder, "Exec")["id"]
+    folder, pid = _dashboard_ctx()
     _seed_run(folder, pid)
     body = _strip(gui.render_project_window_html(pid))
     els = _parse(body)
@@ -180,8 +194,7 @@ def test_dom_run_row_carries_exec_rel_for_inline_expand(gui_env, tmp_path):
 
 def test_dom_negative_empty_state(gui_env, tmp_path):
     gui = gui_env
-    folder = tmp_path / "Empty"
-    pid = _mkproject(folder, "Empty")["id"]
+    folder, pid = _dashboard_ctx()
     body = _strip(gui.render_project_window_html(pid))
     els = _parse(body)
     # The panel still renders.
@@ -197,8 +210,7 @@ def test_dom_negative_empty_state(gui_env, tmp_path):
 
 def test_dom_negative_error_run_has_reason_no_dead_links(gui_env, tmp_path):
     gui = gui_env
-    folder = tmp_path / "Err"
-    pid = _mkproject(folder, "Err")["id"]
+    folder, pid = _dashboard_ctx()
     _seed_run(folder, pid, run_id="run-err", ok=False, verdict="",
               report_rel=None, exec_rel=None, advisor_rel=None,
               reason="host-unavailable")

@@ -232,10 +232,28 @@ def test_read_endpoints_answer_with_the_query_token_with_auth_on(authed):
         return r.status
 
     for path in ("/api/ecgberht/chamber?project_id=%s&token=%s" % (pid, TOKEN),
-                 "/api/ecgberht/high_seat?token=%s" % TOKEN,
-                 "/api/ecgberht/high_seat_badge?token=%s" % TOKEN,
                  "/api/rnd/friction?limit=3&token=%s" % TOKEN):
         assert _get(path) == 200, path
+
+    # The two PORTFOLIO reads: EMPTY IS NOT BROKEN (fixed 2026-08-04).
+    #
+    # These used to answer 502. On a host where no project has joined the
+    # portfolio, the index home (%USERPROFILE%\.steward\portfolio) has never been
+    # written — it is created by `register`, the one verb that mints a project
+    # marker. The engine reports the absence as GLANCE_INDEX_MISSING, and Anchor
+    # mapped ok:false -> 502, so a FRESH INSTALL was told its index was BROKEN when
+    # it was merely EMPTY, over a remedy ("run the index audit fix") that was not on
+    # any reachable verb surface.
+    #
+    # Both now answer 200 with the honest empty state AND the action that resolves
+    # it. This assertion was previously pinned at 502 precisely so that fixing the
+    # finding would fail the test and force this deliberate update.
+    for path in ("/api/ecgberht/high_seat?token=%s" % TOKEN,
+                 "/api/ecgberht/high_seat_badge?token=%s" % TOKEN):
+        assert _get(path) != 401, "%s: token transport broken (401)" % path
+        assert _get(path) == 200, (
+            "%s must answer 200 with the honest empty state, never a 502 banner, "
+            "when no project has joined the portfolio yet" % path)
 
     # The asymmetry, pinned so a future change to it is deliberate.
     assert _get("/api/ecgberht/high_seat", {"X-Anchor-Token": TOKEN}) == 401
@@ -412,3 +430,145 @@ def test_say_line_grows_with_dictated_text_and_enter_sends(authed):
                 "sending must clear the say line"
         finally:
             b.close()
+
+
+# ── TALKING to the steward, in the browser (2026-08-04) ─────────────────────
+# John set a goal, dictated what the project was, pressed send, and got
+# "Ecgberht could not compile that to a closed act." The chamber compiled talk
+# through a closed ELEVEN-act table and none of them is "describe my project".
+# The replacement is a CONVERSATION: free-form speech goes to the steward's seat
+# model, which answers and proposes a scaffolding he refines by talking.
+#
+# These tests enter where the PERSON enters — typing into the real say box and
+# reading what comes back. No endpoint is called directly.
+#
+# THE SEAT IS REPLAYED FROM A REAL RECORDED REPLY (captured live by
+# Ecgberht/scripts/record-steward-fixture.mjs). What this lane proves is that the
+# SURFACE IS WIRED: say box → /api/ecgberht/converse → rendered proposal →
+# confirm → steps on disk. The model's actual behaviour against John's verbatim
+# text is proven under a STRICT prompt hash in the Ecgberht bridge lane
+# (test/wh4-conversational-steward.test.mjs), which is where drift must fail.
+
+ECG_ROOT = Path(__file__).resolve().parents[2] / "Ecgberht"
+def _seat_tape(monkeypatch, name):
+    """Point the server's bridge spawns at a recorded tape, or FAIL loudly.
+
+    Never skip: a skipped acceptance test is how three vacuous guards nearly shipped.
+    """
+    f = ECG_ROOT / "test" / "fixtures" / name
+    if not f.exists():
+        pytest.fail(
+            "the recorded seat tape is missing (%s) — run "
+            "`node scripts/record-steward-fixture.mjs` in the Ecgberht checkout." % f)
+    monkeypatch.setenv("ECGBERHT_SEAT_REPLAY", str(f))
+
+
+@pytest.fixture
+def talking(authed, monkeypatch):
+    """`authed` + a TALK-ONLY tape: the steward converses and frames nothing."""
+    _seat_tape(monkeypatch, "steward-browser-talk.json")
+    return authed
+
+
+@pytest.fixture
+def planning(authed, monkeypatch):
+    """`authed` + a tape that reaches the frontier tier: talk, then a framed plan."""
+    _seat_tape(monkeypatch, "steward-browser-plan.json")
+    return authed
+
+
+def _say(pg, text):
+    pg.fill("#ecgSayInput", text)
+    pg.press("#ecgSayInput", "Enter")
+
+
+def test_describing_the_project_starts_a_conversation_not_a_refusal(talking):
+    """The exact walk John made: set a goal, describe the project, press send.
+
+    Two regressions guarded here, both his words:
+      "it didn't ask me anything about it just threw it up there"  -> no plan on turn 1
+      "I have to approve some amount of effort before it will do anything" -> no budget gate
+    """
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    pid, base = talking["pid"], talking["base"]
+    dictation = ("We are going to revamp my BA 815 course. I want to integrate AI "
+                 "throughout, replace the written quizzes with AI-run oral exams, "
+                 "and open the tool track beyond just R.")
+
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page()
+        pg.add_init_script(
+            "window.localStorage.setItem('anchor_token', '%s');"
+            "window.prompt = function(){ return null; };" % TOKEN)
+        try:
+            _chamber_with_goal(pg, base, pid, goal="Revamp BA 815 with AI throughout")
+            _say(pg, dictation)
+
+            # The steward ANSWERS. No act-table dead end, and no budget dialog first.
+            pg.wait_for_function(
+                "() => {var c=document.getElementById('ecgConvo');"
+                " return c && !c.textContent.includes('Thinking…');}", timeout=60000)
+            said = pg.text_content("#ecgConvo")
+            assert "could not compile that to a closed act" not in said, said[-400:]
+            assert "session budget" not in said.lower(), (
+                "a budget dialog stood between him and talking: %s" % said[-400:])
+
+            # And it TALKED rather than dumping a scaffolding on him.
+            pinned = pg.evaluate(
+                "() => !!document.getElementById('ecgScaffoldPin')")
+            assert pinned is False, (
+                "the opening turn produced a scaffolding instead of a conversation")
+        finally:
+            b.close()
+
+
+def test_confirming_the_conversation_writes_the_steps(planning):
+    """Clicking Confirm must land the reviewed stages on the campaign roadmap."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    pid, base = planning["pid"], planning["base"]
+    folder = Path(planning["repo"])
+
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        pg = b.new_page()
+        pg.add_init_script(
+            "window.localStorage.setItem('anchor_token', '%s');"
+            "window.prompt = function(){ return null; };" % TOKEN)
+        try:
+            _chamber_with_goal(pg, base, pid, goal="Revamp BA 815 with AI throughout")
+            # A turn that asks for the plan: the frontier tier frames it, and it lands
+            # in the PINNED panel rather than scrolling away in the conversation.
+            _say(pg, "Frame that into a plan now.")
+            pg.wait_for_selector("#ecgScaffoldPin .ecg-scaffold-steps", timeout=120000)
+
+            shown = pg.eval_on_selector_all(
+                "#ecgScaffoldPin .ecg-scaffold-steps > li",
+                "els => els.map(e => e.firstChild.textContent.trim())")
+
+            pg.click("#ecgScaffoldPin .act button:has-text('Confirm')")
+            pg.wait_for_function(
+                "() => {var c=document.getElementById('ecgConvo');"
+                " return c && /on the campaign roadmap now/i.test(c.textContent);}",
+                timeout=30000)
+            said = pg.text_content("#ecgConvo")
+            assert "Could not write that" not in said, said[-400:]
+        finally:
+            b.close()
+
+    # The OUTCOME, on disk — and it must match what was on SCREEN.
+    ledger = folder / "roadmap.json"
+    assert ledger.exists(), "no roadmap.json was written"
+    events = json.loads(ledger.read_text(encoding="utf-8")).get("roadmap_events", [])
+    creates = [e for e in events if e.get("kind") == "step_create"]
+    assert len(creates) >= 3, f"only {len(creates)} step_create events"
+    assert [e["name"] for e in creates] == shown, (
+        "what landed on the roadmap differs from what was shown before confirming")
+
+    # E5: the conversation itself left no transcript behind.
+    raw = ledger.read_text(encoding="utf-8")
+    assert not any(k in raw for k in ("chat_turn", "dialogue_turn", "transcript")), raw[:400]

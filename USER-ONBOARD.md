@@ -1,4 +1,4 @@
-# Install guide — Anchor + skills (v1.1.3, Package A / B)
+# Install guide — Anchor + skills (v1.2.4, Package A / B)
 
 **All rights reserved.** Not open source. Use by author permission only.
 
@@ -11,7 +11,7 @@ This is the short path for collaborators. Plain ASCII for mail and terminals.
 - **Package B — Anchor + skills**: the full product. A local R&D dashboard
   (runs on your machine at `http://localhost:8777`, nothing leaves your
   computer) that drives projects, tasks, and AI research/plan/build sessions,
-  plus 13 bundled skills for Claude Code. **Pick this to try Anchor.**
+  plus 14 bundled skills for Claude Code. **Pick this to try Anchor.**
 - **Package A — skills only**: just the skills, registered for your coding
   agent. No server, no dashboard.
 
@@ -119,6 +119,61 @@ python launch_anchor_dashboard.py
 
 ---
 
+## Running the skills properly (read this before your first real run)
+
+Two files in the package root decide whether the skills behave the way they
+were designed to. They are short; read them before you invoke anything
+expensive.
+
+### `AGENTS.md` — the run contract
+
+Every bundled skill points here. Most importantly it defines the **10-minute
+status table**: any long run (a Foreman build, a Crucible plan, a researchPrime
+investigation, any `-Heavy` variant) reports progress roughly every ten
+minutes, unprompted, in one fixed format — what it is doing, elapsed, ETA, the
+last gate result, and anything that broke.
+
+If you start a long run and get twenty minutes of silence, something is wrong.
+The usual cause is the run being launched as a blocking foreground call, which
+freezes the session so it cannot report; `AGENTS.md` gives the launch pattern
+that avoids it.
+
+> **Package A note.** Seat assignment (which model does the work, which model
+> checks it) resolves from Anchor's preferences. Package A has no Anchor, so
+> either create `~/.anchor/model_prefs.json` or expect the skills to stamp
+> `cross_model:false` and cap their confidence. **That stamp is correct
+> behavior, not a bug** — it means one model family did the work and the check,
+> so the check is a weaker signal. The skills will never quietly pass that off
+> as independent verification.
+
+### `AUTONOMOUS-MODE.md` — running unattended
+
+By default your agent asks before each action. That is right while you are
+learning what the skills do — and wrong the moment you want a Foreman build to
+run for an hour while you are away, since a single wave touches dozens of files
+and runs your test suite several times.
+
+`AUTONOMOUS-MODE.md` gives the exact settings block, what each capability is
+for, and what stays blocked. **The change lands in your own user-level config,
+not a file we ship** — an agent deliberately restricts what a settings file
+arriving inside a cloned repository may authorize, which is a good rule we are
+not going to work around. After reading it, one command installs both the
+agent-level best-practice rules and (optionally) the autonomy settings,
+reversibly, into your own config:
+
+```text
+python share_agent_rules.py install --settings
+```
+
+(`install` alone = rules only; `remove` undoes the rules block; `status`
+shows what is installed. Your pre-merge settings are kept at
+`settings.json.anchor-orig`.)
+
+Read the risk section there before you turn it on. It is a real grant of
+authority on your machine, and it is the same one the author runs with.
+
+---
+
 ## If something is broken (cheap checks first)
 
 1. `python doctor.py` — deterministic install health: missing modules,
@@ -147,7 +202,7 @@ This exact loop is what produced the v1.1.3 fixes.
 
 ---
 
-## Known limits of v1.1.3 (honest)
+## Known limits of v1.2.4 (honest)
 
 - **No auto-start:** run the launcher (or click the icon) again after a
   reboot.

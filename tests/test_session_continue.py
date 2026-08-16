@@ -399,9 +399,10 @@ def test_continue_control_and_summary_fields_in_js(gui_env, tmp_path):
     pid = _mkproject(folder, "Ctl")["id"]
     js = _js(gui.render_project_window_html(pid))
 
-    # Continue control + endpoint wired.
-    assert "ro-continue" in js
-    assert "Continue in a live session" in js
+    # Continue control + endpoint wired. (2026-08-09 repin: John's one-
+    # resume-button order removed .ro-continue + its label; resume-live is
+    # the single surviving control, still wired through continueSession.)
+    assert "resume-live" in js
     assert "continueSession(" in js
     assert "/api/rnd/continue_session" in js
 
@@ -419,7 +420,10 @@ def test_continue_control_and_summary_fields_in_js(gui_env, tmp_path):
     assert mb, "_mountReadOnlyBody not found"
     body = mb.group(1)
     assert "ro-past" in body, "historical body must render the past-session view"
-    assert "ro-continue" in body, "historical body must offer Continue"
+    # (2026-08-09 repin) One-resume-button order: the continue affordance
+    # rides the narration layer (resume-live via _mountLayer1Narration),
+    # not a second body-level button.
+    assert "_mountLayer1Narration" in body, "historical body must mount the narration layer (which carries resume-live)"
 
 
 # ── (4) REAL Playwright + Chromium interaction test (dev-only) ───────────────
@@ -503,7 +507,7 @@ def test_historical_panel_shows_summary_and_continue_works(server, tmp_path):
             "past-session body has no summary sections (dead-end note only)"
         # The Continue control is present.
         assert pg.eval_on_selector_all(
-            "#dockTermHost .ro-continue", "e=>e.length") == 1
+            "#dockTermHost .resume-live", "e=>e.length") >= 1
 
         # The dock is bound to the historical session.
         src_sid = pg.eval_on_selector(
@@ -511,7 +515,7 @@ def test_historical_panel_shows_summary_and_continue_works(server, tmp_path):
         assert src_sid, "dock must carry the source data-session"
         # Click Continue → the dock RE-BINDS to a NEW live session (same dock, the
         # read-only body is replaced by a live terminal). No second dock.
-        pg.click("#dockTermHost .ro-continue")
+        pg.click("#dockTermHost .resume-live")
         # The read-only historical body is GONE and the dock now carries a
         # DIFFERENT data-session (the new live session).
         pg.wait_for_function(

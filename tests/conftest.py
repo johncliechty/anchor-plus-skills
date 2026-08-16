@@ -257,32 +257,67 @@ def _looks_like_server_or_stream(thread):
 
 
 def _best_effort_stop_servers(leaked):
-    """Best-effort: shut down any reachable http.server/socketserver instance.
+    """Best-effort: shut down the server(s) the LEAKED threads belong to.
 
     A test that started a server via ``serve_forever`` in a daemon thread but
     didn't ``shutdown()``/``server_close()`` leaves the thread blocked in the
-    selector. We can't reach the server object from the thread directly, so we
-    sweep ``gc`` for live ``socketserver.BaseServer`` instances and shut down
-    any that are still serving. Guarded — never raises out of teardown.
+    selector. Every suite server thread uses the bound-method pattern
+    (``Thread(target=srv.serve_forever)``), so the leaked loop's own server is
+    reachable via ``target.__self__`` and is stopped PRECISELY.
+
+    What is deliberately NOT done anymore: sweeping ``gc`` for EVERY live
+    ``socketserver.BaseServer`` on any leak. A per-request worker of a healthy
+    server (``process_request_thread``) routinely outlives its test by a few
+    milliseconds under load; the old global sweep classified that straggler as
+    leakage and shut down ALL servers — including a still-owned module-scoped
+    fixture server, refusing every later test in the module. A straggling
+    request worker now gets a short join (it exits on its own once the
+    response is flushed); its OWNING server is never torn down over it. The
+    global gc sweep survives only as the fallback for a leaked serve loop
+    whose server object cannot be resolved (a closure-wrapped target).
+    Guarded — never raises out of teardown.
     """
     try:
         import gc
         import socketserver
     except Exception:
         return
+
+    def _stop(server):
+        try:
+            # Only servers still in a serve_forever loop expose this flag
+            # as a usable Event; shutdown() is a no-op/safe otherwise.
+            server.shutdown()
+        except Exception:
+            pass
+        try:
+            server.server_close()
+        except Exception:
+            pass
+
     try:
-        for obj in gc.get_objects():
-            if isinstance(obj, socketserver.BaseServer):
-                try:
-                    # Only servers still in a serve_forever loop expose this flag
-                    # as a usable Event; shutdown() is a no-op/safe otherwise.
-                    obj.shutdown()
-                except Exception:
-                    pass
-                try:
-                    obj.server_close()
-                except Exception:
-                    pass
+        to_stop, sweep = [], False
+        for t in leaked:
+            target = getattr(t, "_target", None)
+            qual = (getattr(target, "__qualname__", "") or "").lower()
+            name = (t.name or "").lower()
+            owner = getattr(target, "__self__", None)
+            if "process_request" in qual:
+                # A straggling per-request worker of a live server, not a
+                # leaked server: give it a beat to finish flushing.
+                t.join(timeout=2.0)
+                continue
+            if isinstance(owner, socketserver.BaseServer):
+                to_stop.append(owner)
+            elif any(tok in qual for tok in ("serve_forever", "_serve")) or \
+                    any(tok in name for tok in ("serve_forever", "_serve")):
+                sweep = True  # a leaked serve loop with no resolvable server
+        for srv in to_stop:
+            _stop(srv)
+        if sweep:
+            for obj in gc.get_objects():
+                if isinstance(obj, socketserver.BaseServer):
+                    _stop(obj)
     except Exception:
         pass
 

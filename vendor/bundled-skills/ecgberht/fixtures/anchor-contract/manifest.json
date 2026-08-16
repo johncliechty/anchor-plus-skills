@@ -1,0 +1,40 @@
+{
+  "schema": "anchor-contract-fixtures-v1",
+  "version": "anchor-contract-v1",
+  "intent_schema": "commit-intent-v1",
+  "ack_schema": "commit-ack-v1",
+  "obligations": {
+    "engine_must": "emit one commit-intent-v1 per durable project-state write, accept every ack in `accept`, refuse every ack in `refuse_on_bytes` by its named commit-ack-v1 code, refuse every ack in `refuse_on_lineage` by its named anchor-contract code, and invoke no durability tool of its own",
+    "anchor_must": "acknowledge every intent in `acknowledge` with a commit-ack-v1 carrying that intent's exact sha256"
+  },
+  "acknowledge": [
+    "intents/i-001-register.json",
+    "intents/i-002-receipt.json",
+    "intents/i-003-roadmap-two-files.json"
+  ],
+  "accept": [
+    "acks/a-001-register.json",
+    "acks/a-002-receipt.json",
+    "acks/a-003-roadmap.json"
+  ],
+  "refuse_on_bytes": [
+    "rejected-acks/r-001-schema-mismatch.json",
+    "rejected-acks/r-002-unknown-field.json",
+    "rejected-acks/r-003-anchor-missing.json",
+    "rejected-acks/r-004-hash-not-hex.json",
+    "rejected-acks/r-005-intent-seq-zero.json",
+    "rejected-acks/r-006-project-id-not-minted.json",
+    "rejected-acks/r-007-acked-at-local-time.json",
+    "rejected-acks/r-008-commit-id-empty.json"
+  ],
+  "refuse_on_lineage": [
+    "lineage-refused/l-001-hash-disagrees.json",
+    "lineage-refused/l-002-no-such-intent.json",
+    "lineage-refused/l-003-unknown-project.json"
+  ],
+  "c7b": {
+    "open": true,
+    "owner": "anchor",
+    "note": "The engine half is closed and green in this repository. The half that honours an intent ships from the Anchor repository; until it does, every durability surface reports an unacknowledged receipt as 'state not yet committed'."
+  }
+}

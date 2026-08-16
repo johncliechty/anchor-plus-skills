@@ -1,0 +1,22 @@
+{
+  "schema": "ecgberht-strip-v0",
+  "project_id": "fixture-minimal",
+  "face_path": "ECGBERHT.md",
+  "as_of": "2026-07-24",
+  "phase": "planning",
+  "active_effort": "W1",
+  "effort_status": "IN_PROGRESS",
+  "tool_depth_cell": "stub",
+  "human_wait": "none",
+  "capacity": "unknown",
+  "negative_heartbeat": {
+    "no_attention_needed": false,
+    "why": null,
+    "until": null
+  },
+  "anti_starvation_age_days": 0,
+  "grasscatch": [],
+  "next_recommended": "Fill closed verbs after skill pack scaffold",
+  "why_next": "W1 installs layout; later waves implement behavior",
+  "uncertainty_flags": ["capacity_unknown"]
+}

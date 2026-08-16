@@ -233,7 +233,714 @@ window.addEventListener('DOMContentLoaded', function () {
       try { _resolveGrassOriginChips(document); } catch (e) {}
     });
   } catch (e) {}
+  // (2026-08-06) Deep link from the High Seat raise: #session=<id> opens THAT
+  // session's panel — "Bring it up" lands John in the very session that asked.
+  try {
+    var m = (window.location.hash || '').match(/^#session=([\w.-]+)/);
+    if (m) setTimeout(function () { try { openPanel(m[1]); } catch (e) {} }, 400);
+  } catch (e) {}
+  // (2026-08-07) Deep link from a High Seat project row: #seal lands John
+  // straight in this project's steward, chamber open.
+  try {
+    if ((window.location.hash || '') === '#seal') {
+      setTimeout(function () { try { openEcgberhtSeal(); } catch (e) {} }, 400);
+    }
+  } catch (e) {}
+  // (2026-08-06 evening) THE RUN LEDGER lives on the BOARD, not inside the
+  // chamber — two Gandalfs ran to completion invisibly because the only
+  // indicator needed the chamber open AND the run still live. This is the
+  // always-on view: green pulse = running, gold = finished, amber = needs you.
+  try { _ecgMountRunLedger(); } catch (e) {}
+  // (2026-08-06 evening) SIMPLE WORKBENCH: John works in General terminals;
+  // research/plan/build get commissioned by the steward and watched from the
+  // ledger. Hide the trio zones + their start buttons (client-side so the
+  // server render and its test pins stay untouched; a later tidy wave can
+  // remove them server-side).
+  try { _ecgSimplifyBoard(); } catch (e) {}
 });
+
+function _ecgSimplifyBoard() {
+  ['research', 'plan_build'].forEach(function (z) {
+    document.querySelectorAll("[data-zone='" + z + "']").forEach(function (el) {
+      var lbl = el.previousElementSibling;
+      if (lbl && lbl.className === 'sectionlbl') lbl.style.display = 'none';
+      el.style.display = 'none';
+    });
+    ['shelf_' + z, 'tgl_' + z].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  });
+  ['newResearchBtn', 'newPlanBuildBtn'].forEach(function (id) {
+    var b = document.getElementById(id);
+    if (b) b.style.display = 'none';
+  });
+  var g = document.getElementById('newGeneralBtn');
+  if (g) g.textContent = '+ New general terminal';
+  // (2026-08-06, John round 2) The trio was hidden INSIDE the workbench but
+  // still announced OUTSIDE it: the "Research: 0 · Planning: 0 · Build: 0"
+  // chips row and the tile subtitle both said the old shape. Quiet them too.
+  document.querySelectorAll('.rnd-status-line').forEach(function (el) {
+    el.style.display = 'none';
+  });
+  var wb = document.getElementById('tile-workbench');
+  var sum = wb && wb.querySelector('summary');
+  if (sum) {
+    sum.childNodes.forEach(function (n) {
+      if (n.nodeType === 3 || (n.nodeType === 1 && /research/i.test(n.textContent || ''))) {
+        if (/research\s*·\s*plan/i.test(n.textContent || '')) {
+          n.textContent = (n.nodeType === 3)
+            ? ' general terminal — sessions & panels'
+            : 'general terminal — sessions & panels';
+        }
+      }
+    });
+  }
+}
+
+/* (2026-08-07, John) Click a step's text → its accumulated detail unfolds:
+   done-when, everything runs and talk have fed into it, and what it still
+   needs (suggestions). Read-only, deterministic, no model call. */
+function _ecgToggleStepDetail(row, stepId) {
+  var open = row.nextElementSibling;
+  if (open && open.className === 'ecg-stepdetail') { open.remove(); return; }
+  var panel = _ecgEl('div', 'ecg-stepdetail');
+  panel.appendChild(_ecgEl('div', 'sd-loading', 'gathering what we know…'));
+  row.parentNode.insertBefore(panel, row.nextSibling);
+  fetch('/api/ecgberht/step_detail?project_id=' + encodeURIComponent(PROJECT_ID) +
+        '&step_id=' + encodeURIComponent(stepId) + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      panel.textContent = '';
+      if (!j || !j.ok) {
+        panel.appendChild(_ecgEl('div', 'sd-loading',
+          'Could not read that step: ' + ((j && (j.message || j.error)) || 'no response')));
+        return;
+      }
+      // WHAT IS INTENDED for this step, first — the reason the panel exists.
+      if (j.name) {
+        var hd = _ecgEl('div', 'sd-name', j.name);
+        if (j.status) hd.appendChild(_ecgEl('span', 'sd-status', j.status));
+        panel.appendChild(hd);
+      }
+      if (j.done_when) panel.appendChild(_ecgEl('div', 'sd-done', 'Done when: ' + j.done_when));
+      var haveAny = false;
+      // The findings ledger — what runs and reflection have fed this step.
+      (j.findings || []).forEach(function (f) {
+        haveAny = true;
+        var row = _ecgEl('div', 'sd-fact', '• ' + (f.finding || f));
+        if (f.source) row.title = 'from ' + f.source + (f.at ? ' · ' + String(f.at).slice(0, 10) : '');
+        panel.appendChild(row);
+      });
+      var d = j.detail || {};
+      var elements = d.elements || d.answers || null;
+      if (elements && typeof elements === 'object') {
+        Object.keys(elements).forEach(function (k) {
+          var v = elements[k];
+          var text = (v && typeof v === 'object') ? (v.value ?? v.answer ?? '') : v;
+          if (!text) return;
+          haveAny = true;
+          panel.appendChild(_ecgEl('div', 'sd-fact', '• ' + k.replace(/_/g, ' ') + ': ' + text));
+        });
+      }
+      // WHAT RAN HERE (2026-08-07, John: the roadmap is where outputs live —
+      // "what was it given … what did it get for the summary … open the
+      // report"): each run for THIS step, its brief, its outcome, its
+      // report summary, one click to the session.
+      var stepRuns = (_ECG_RUNS_CACHE || []).filter(function (r) {
+        return r.step_id === stepId;
+      });
+      if (stepRuns.length) {
+        haveAny = true;
+        panel.appendChild(_ecgEl('div', 'sd-runh', 'What ran here'));
+        stepRuns.forEach(function (r) {
+          var runRow = _ecgEl('div', 'sd-run');
+          runRow.appendChild(_ecgEl('div', null,
+            (r.skill || 'run') + ' · ' + r.outcome + ' · ' + _ecgRunAge(r.at)));
+          if (r.directive) {
+            runRow.appendChild(_ecgEl('div', 'sd-fact', 'Given: ' +
+              String(r.directive).slice(0, 160)));
+          }
+          if (r.report && r.report.say) {
+            runRow.appendChild(_ecgEl('div', 'sd-fact',
+              String(r.report.say).slice(0, 240)));
+          }
+          var op = _ecgEl('button', 'ecg-btn', 'Open the session');
+          op.onclick = function () { try { openPanel(r.session_id); } catch (e) {} };
+          runRow.appendChild(op);
+          panel.appendChild(runRow);
+        });
+      }
+      if (!haveAny) {
+        panel.appendChild(_ecgEl('div', 'sd-loading',
+          'No detail gathered for this step yet — runs and conversation fill it in.'));
+      }
+      if (j.suggestions && j.suggestions.length) {
+        panel.appendChild(_ecgEl('div', 'sd-sugh', 'Still needed before this step can run:'));
+        j.suggestions.forEach(function (s) {
+          panel.appendChild(_ecgEl('div', 'sd-sug', '· ' + (s.question || s.element || s)));
+        });
+      } else if (j.ready === true) {
+        panel.appendChild(_ecgEl('div', 'sd-ready', 'Ready to commission.'));
+      }
+      // (2026-08-07, John) Not just looking at it: detail added HERE lands on
+      // the step's ledger, and the steward picks it up in the chamber to
+      // refine — the talking tier reacts now, the thinking tier folds it in
+      // at the next reflection.
+      var wrap = _ecgEl('div', 'sd-addwrap');
+      var inp = document.createElement('input');
+      inp.className = 'sd-add';
+      inp.type = 'text';
+      inp.placeholder = 'Add detail or ask about this step…';
+      var add = _ecgEl('button', 'ecg-btn', 'Add');
+      var send = function () {
+        var t = (inp.value || '').trim();
+        if (!t || add.disabled) return;
+        add.disabled = true;
+        _postJson('/api/ecgberht/step_note', {
+          project_id: PROJECT_ID, step_id: stepId, note: t
+        }).then(function (r) { return r.json(); }).then(function (k) {
+          add.disabled = false;
+          if (!k || !k.ok) {
+            wrap.appendChild(_ecgEl('div', 'sd-loading', 'Could not save that: ' +
+              ((k && (k.message || k.error)) || 'no response')));
+            return;
+          }
+          inp.value = '';
+          // Show it landed, in place.
+          panel.insertBefore(
+            _ecgEl('div', 'sd-fact sd-mine', '• ' + t), wrap);
+          // Then the steward reacts to it in the chamber — the refinement
+          // conversation John asked for, with the step named. The chamber
+          // mounts ASYNC on first open, so retry for it (shark F5: a slow
+          // mount must not silently eat the promised reply, and an expiry
+          // says so IN the panel — the note itself is already safe).
+          var say = 'About the step “' + (j.name || stepId) + '”: ' + t;
+          var noteFail = 'Your note IS saved on the step — ' + _ecgStwLabel() +
+            ' just didn’t answer. Ask again in the chamber when you like.';
+          var tries = 0;
+          var kick = function () {
+            var convo = document.getElementById('ecgConvo');
+            if (convo) { _ecgConverse(convo, say, false, noteFail); return; }
+            if (++tries <= 40) { setTimeout(kick, 250); return; }
+            if (document.body.contains(wrap)) {
+              wrap.appendChild(_ecgEl('div', 'sd-loading',
+                'Saved. The chamber didn’t open to discuss it — open the Seal and ask there.'));
+            }
+          };
+          try { openEcgberhtSeal(); } catch (e) {}
+          kick();
+        }).catch(function () {
+          add.disabled = false;
+          wrap.appendChild(_ecgEl('div', 'sd-loading', "That didn't go through."));
+        });
+      };
+      add.onclick = send;
+      inp.onkeydown = function (ev) { if (ev.key === 'Enter') send(); };
+      wrap.appendChild(inp);
+      wrap.appendChild(add);
+      panel.appendChild(wrap);
+    })
+    .catch(function () {
+      panel.textContent = '';
+      panel.appendChild(_ecgEl('div', 'sd-loading', "That didn't load — try again."));
+    });
+}
+
+/* (2026-08-06) Run-state dots ON the scaffolding bullets: the rail step that
+   owns a run gets its dot (green pulse = running · amber = needs you · gold =
+   finished) and becomes clickable — straight into the workbench session. */
+function _ecgAnnotateRailRuns() {
+  var rows = document.querySelectorAll('.ecg-rail .ecg-step[data-step]');
+  rows.forEach(function (row) {
+    var stepId = row.getAttribute('data-step');
+    if (!stepId) return;
+    var run = null;
+    (_ECG_RUNS_CACHE || []).forEach(function (r) {
+      if (r.step_id === stepId && (!run || String(r.at) > String(run.at))) run = r;
+    });
+    // (2026-08-06, John) The state lives INSIDE the bullet — the step's own
+    // marker fills gold when its run finished, pulses a green center while
+    // running — never a second dot beside the circle.
+    var marker = row.querySelector('.m');
+    if (!marker) return;
+    if (marker._ecgOrig === undefined) marker._ecgOrig = marker.textContent;
+    if (!run) {
+      marker.textContent = marker._ecgOrig;
+      marker.className = 'm';
+      row.classList.remove('has-run');
+      row.onclick = null;
+      return;
+    }
+    var bits = _ecgRunStateBits(run);
+    marker.textContent = run.outcome === 'running' ? '◉' : '●';
+    marker.className = 'm mrun ' + bits.cls;
+    marker.title = (run.skill || '') + ' — ' + bits.phrase + ' (click to open the session)';
+    row.classList.add('has-run');
+    row.onclick = function () { try { openPanel(run.session_id); } catch (e) {} };
+  });
+}
+
+/* ── The Run Ledger (board-level; the chamber strip reuses its data) ───────── */
+var _ECG_LEDGER_POLL = null;
+
+function _ecgMountRunLedger() {
+  // (2026-08-06, the "exactly the same" round) The ledger first mounted INSIDE
+  // the collapsed Workbench accordion — built, served, and invisible. It lives
+  // at PAGE level now: above the Seal/Workbench tiles, in view the moment the
+  // page opens. Mount retries ride the poll, so a late-rendering page still
+  // gets it.
+  var mount = function () {
+    if (document.getElementById('ecgRunLedger')) return true;
+    var anchorEl = document.getElementById('tile-workbench') ||
+                   document.querySelector('.pgrid.layoutd');
+    if (!anchorEl) return false;
+    var host = document.createElement('div');
+    host.id = 'ecgRunLedger';
+    host.className = 'ecg-run-ledger';
+    var target = document.getElementById('tile-workbench') || anchorEl;
+    target.parentNode.insertBefore(host, target);
+    return true;
+  };
+  mount();
+  var tick = function () {
+    if (!mount()) return;
+    var host = document.getElementById('ecgRunLedger');
+    fetch('/api/ecgberht/commission_runs?project_id=' +
+          encodeURIComponent(PROJECT_ID) + _tokenQ())
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok) return;
+        _ECG_RUNS_CACHE = j.runs || [];
+        // Page level: ONE thin ambient line — glance without opening anything.
+        _ecgRenderAmbientRuns(host, _ECG_RUNS_CACHE);
+        // Inside the Seal: the full run tiles, completion order, above the
+        // say box (John: "each of these tiles should be inside of the seal
+        // dialogue, at the bottom, in the order they were completed").
+        var dock = document.getElementById('ecgSealDock');
+        if (dock) {
+          // (2026-08-07, John) The DIALOG is the spine: the say box sits
+          // DIRECTLY under the last steward message, and the run tiles fold
+          // ABOVE the conversation — visible, never in between, dismissible.
+          var fold = document.getElementById('ecgChamberRunFold');
+          if (!fold) {
+            fold = document.createElement('details');
+            fold.className = 'ecg-run-fold';
+            fold.id = 'ecgChamberRunFold';
+            var sum = document.createElement('summary');
+            sum.id = 'ecgChamberRunSum';
+            fold.appendChild(sum);
+            var cl = _ecgEl('div', 'ecg-run-ledger');
+            cl.id = 'ecgChamberLedger';
+            fold.appendChild(cl);
+            // Insert at the TOP of the conversation COLUMN (the fold's
+            // parent must be the ref node's parent — inserting into dock
+            // with a nested ref throws and silently killed this tick).
+            var convoEl = document.getElementById('ecgConvo');
+            if (convoEl && convoEl.parentNode) {
+              convoEl.parentNode.insertBefore(fold, convoEl);
+            } else {
+              dock.appendChild(fold);
+            }
+          }
+          var live = _ECG_RUNS_CACHE.filter(function (r) {
+            return r.outcome === 'running' || r.outcome === 'asked';
+          }).length;
+          var doneN = _ECG_RUNS_CACHE.length - live;
+          var sumEl = document.getElementById('ecgChamberRunSum');
+          if (sumEl) {
+            sumEl.textContent = 'Runs — ' +
+              (live ? live + ' live/waiting · ' : '') + doneN + ' finished';
+          }
+          // Auto-open ONCE per page load when something is live; after John
+          // closes it, his choice stands (2026-08-07: "keeps opening on its
+          // own — which is not what it should be doing").
+          if (live && !fold.open && !window._ECG_FOLD_AUTOOPENED) {
+            fold.open = true;
+            window._ECG_FOLD_AUTOOPENED = true;
+          }
+          _ecgRenderRunLedger(document.getElementById('ecgChamberLedger'),
+            _ECG_RUNS_CACHE.slice().reverse());
+          try { _ecgLiveStatusLine(); } catch (e) {}
+          try { _ecgDriveNext(); } catch (e) {}
+        }
+        try { _ecgAnnotateRailRuns(); } catch (e) {}
+        try { _ecgPulseSync(_ECG_RUNS_CACHE); } catch (e) {}
+      })
+      .catch(function () {});
+  };
+  tick();
+  _ECG_LEDGER_POLL = setInterval(tick, 15000);
+}
+
+/* (2026-08-07, John) The ONE live status line in the dialog, updated IN
+   PLACE — timestamp + what's running + elapsed + the latest ⏱ headline.
+   Sits right above the say box; disappears when nothing is live. */
+function _ecgLiveStatusLine() {
+  var running = (_ECG_RUNS_CACHE || []).filter(function (r) {
+    return r.outcome === 'running';
+  })[0];
+  var say = document.querySelector('.ecg-convo-col .ecg-saybox');
+  var line = document.getElementById('ecgLiveStatus');
+  if (!running) { if (line) line.remove(); return; }
+  if (!line && say && say.parentNode) {
+    line = _ecgEl('div', 'ecg-livestatus');
+    line.id = 'ecgLiveStatus';
+    say.parentNode.insertBefore(line, say);
+  }
+  if (!line) return;
+  var now = new Date();
+  var hh = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+  line.textContent = '⏱ ' + hh + ' · ' + (running.skill || 'run') +
+    ' running · started ' + _ecgRunAge(running.at) +
+    (window._ECG_LAST_STATUS_LINE ? ' · ' + window._ECG_LAST_STATUS_LINE : '');
+  // Refresh the ⏱ headline from the pulse read (cheap: huge cursor skips
+  // the tail; the status scan is server-side over the full buffer).
+  fetch('/api/ecgberht/run_pulse?project_id=' + encodeURIComponent(PROJECT_ID) +
+        '&session_id=' + encodeURIComponent(running.session_id) +
+        '&cursor=999999999' + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.ok && j.latest_status) {
+        var first = String(j.latest_status).split('\n')
+          .map(function (s) { return s.trim(); })
+          .filter(function (s) { return s && !/^[─—-]+$/.test(s); })
+          .slice(0, 2).join(' · ');
+        window._ECG_LAST_STATUS_LINE = first.slice(0, 160);
+      }
+    }).catch(function () {});
+}
+
+/* (2026-08-07, John) THE PULSE — the 10-minute-status feel, in the page.
+   While a commissioned run is live, a slim vertical tab hugs the right edge;
+   click it and a panel opens with what the run IS (skill · step · the
+   composed brief), what it serves (the North star), and its most recent
+   output — the skills' own ⏱ status blocks ride in that tail. */
+var _ECG_PULSE = { sid: null, cursor: 0, timer: null };
+
+function _ecgPulseSync(runs) {
+  // The tab shows whenever the campaign HAS runs (2026-08-07, John: "I don't
+  // see that anywhere" — it only existed while something was mid-run). A
+  // running run wins the stage; else the newest run, state-colored:
+  // green pulse = running · amber = needs you · gold = last run.
+  var all = runs || [];
+  var current = all.filter(function (r) { return r.outcome === 'running'; })[0] || all[0];
+  var tab = document.getElementById('ecgPulseTab');
+  if (!current) {
+    if (tab) tab.remove();
+    _ecgPulseClose();
+    _ECG_PULSE.sid = null;
+    return;
+  }
+  if (_ECG_PULSE.sid !== current.session_id) {
+    // A different run took the stage — the panel re-primes from zero.
+    _ECG_PULSE.sid = current.session_id;
+    _ECG_PULSE.cursor = 0;
+    _ecgPulseClose();
+  }
+  if (!tab) {
+    tab = _ecgEl('div', 'ecg-pulse-tab');
+    tab.id = 'ecgPulseTab';
+    tab.onclick = _ecgPulseOpen;
+    tab.title = 'What is this run doing right now?';
+    document.body.appendChild(tab);
+  }
+  var state = current.outcome === 'running' ? 'running'
+    : current.outcome === 'asked' ? 'needs you'
+      : 'last run · ' + current.outcome;
+  tab.className = 'ecg-pulse-tab ' +
+    (current.outcome === 'running' ? 'p-run'
+      : current.outcome === 'asked' ? 'p-ask' : 'p-done');
+  tab.textContent = '';
+  tab.appendChild(_ecgEl('span', 'pdot', '●'));
+  tab.appendChild(_ecgEl('span', 'plbl', (current.skill || 'run') + ' · ' + state));
+}
+
+function _ecgPulseOpen() {
+  if (document.getElementById('ecgPulseWin')) { _ecgPulseClose(); return; }
+  var win = _ecgEl('div', 'ecg-pulse-win');
+  win.id = 'ecgPulseWin';
+  var bar = _ecgEl('div', 'pw-bar');
+  bar.appendChild(_ecgEl('span', 'ti', 'Run pulse'));
+  var x = _ecgEl('button', 'ecg-btn', '×');
+  x.onclick = _ecgPulseClose;
+  bar.appendChild(x);
+  // The bar itself closes too — click open, click closed (John).
+  bar.onclick = function (ev) { if (ev.target === bar) _ecgPulseClose(); };
+  win.appendChild(bar);
+  win.appendChild(_ecgEl('div', 'pw-head', 'reading the run…'));
+  // (2026-08-07, John) TWO things matter here: the North star + charge as
+  // scannable bullets, and the skills' own ⏱ 10-minute status updates.
+  // Raw output folds away.
+  var star = _ecgEl('div', 'pw-star', '');
+  win.appendChild(star);
+  var brief = _ecgEl('div', 'pw-brief', '');
+  win.appendChild(brief);
+  var stat = _ecgEl('pre', 'pw-status', '');
+  stat.style.display = 'none';
+  win.appendChild(stat);
+  var rawFold = document.createElement('details');
+  rawFold.className = 'pw-rawfold';
+  var rawSum = document.createElement('summary');
+  rawSum.textContent = 'Raw session output';
+  rawFold.appendChild(rawSum);
+  var tail = _ecgEl('pre', 'pw-tail', '');
+  rawFold.appendChild(tail);
+  win.appendChild(rawFold);
+
+  // Prose → '• ' bullets: honor '- ' lines when present (composed
+  // directives), else split on sentences, cap the count.
+  var bullets = function (text, cap) {
+    var t = String(text || '').trim();
+    if (!t) return '';
+    var lines = t.split(/\n+/).map(function (s) { return s.trim(); })
+      .filter(Boolean);
+    if (lines.length < 2) {
+      lines = t.split(/(?<=[.!?])\s+/).map(function (s) { return s.trim(); })
+        .filter(Boolean);
+    }
+    return lines.slice(0, cap || 4).map(function (s) {
+      return '• ' + s.replace(/^[-·•]\s*/, '');
+    }).join('\n');
+  };
+  var act = _ecgEl('div', 'act');
+  var open = _ecgEl('button', 'ecg-btn', 'Open the session');
+  open.onclick = function () {
+    var sid = _ECG_PULSE.sid;
+    try { openPanel(sid); } catch (e) {}
+  };
+  act.appendChild(open);
+  win.appendChild(act);
+  document.body.appendChild(win);
+  var poll = function () {
+    var sid = _ECG_PULSE.sid;
+    if (!sid || !document.getElementById('ecgPulseWin')) return;
+    fetch('/api/ecgberht/run_pulse?project_id=' + encodeURIComponent(PROJECT_ID) +
+          '&session_id=' + encodeURIComponent(sid) +
+          '&cursor=' + _ECG_PULSE.cursor + _tokenQ())
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok || !document.getElementById('ecgPulseWin')) return;
+        win.querySelector('.pw-head').textContent =
+          (j.skill || 'run') + (j.step_id ? ' · ' + j.step_id : '') +
+          ' · ' + (j.outcome || '') +
+          (j.auto_chain ? ' · auto hop ' + j.auto_chain : '') +
+          (j.at ? ' · since ' + _ecgRunAge(j.at) : '');
+        star.textContent = j.north_star
+          ? 'NORTH STAR\n' + bullets(j.north_star, 3) : '';
+        brief.textContent = j.directive
+          ? 'THE CHARGE\n' + bullets(j.directive, 6) : '';
+        if (j.latest_status) {
+          stat.textContent = '⏱ LATEST STATUS\n' + j.latest_status;
+          stat.style.display = '';
+        }
+        if (j.tail) {
+          tail.textContent = (tail.textContent + j.tail).slice(-8000);
+          tail.scrollTop = tail.scrollHeight;
+        }
+        if (j.cursor != null) _ECG_PULSE.cursor = j.cursor;
+        if (j.outcome && j.outcome !== 'running') {
+          win.querySelector('.pw-head').textContent += ' — finished; the report lands in the chamber';
+        }
+      })
+      .catch(function () {});
+  };
+  poll();
+  _ECG_PULSE.timer = setInterval(poll, 12000);
+}
+
+function _ecgPulseClose() {
+  var win = document.getElementById('ecgPulseWin');
+  if (win) win.remove();
+  if (_ECG_PULSE.timer) { clearInterval(_ECG_PULSE.timer); _ECG_PULSE.timer = null; }
+}
+
+/* (2026-08-07, John) OPEN = DRIVE. He opens the Seal and it used to sit
+   there. Now, once per page load, when the chamber is open with a roadmap and
+   nothing running and no card pending and no unanswered question — the next
+   step's commission card comes up UNPROMPTED, one Go from moving. */
+var _ECG_AUTODROVE = false;
+function _ecgDriveNext() {
+  if (_ECG_AUTODROVE) return;
+  var convo = document.getElementById('ecgConvo');
+  if (!convo) return;
+  if (!document.querySelector('.ecg-rail .ecg-step')) return;   // no roadmap yet
+  var running = _ECG_RUNS_CACHE.some(function (r) { return r.outcome === 'running'; });
+  if (running) { _ECG_AUTODROVE = true; return; }               // ledger shows it
+  var newest = _ECG_RUNS_CACHE[0];
+  if (newest && newest.outcome === 'asked') { _ECG_AUTODROVE = true; return; } // answer first
+  if (_ECG_PENDING_GO && document.body.contains(_ECG_PENDING_GO)) {
+    _ECG_AUTODROVE = true; return;                              // card already up
+  }
+  _ECG_AUTODROVE = true;
+  // (2026-08-07, John) NEVER re-propose a step that already ran — his "yes"
+  // to a re-proposed deep read spent a second heavy pass. The candidate is
+  // the FIRST roadmap step with no run record; when every listed step has
+  // run, propose nothing and let the conversation drive.
+  var ranSteps = {};
+  (_ECG_RUNS_CACHE || []).forEach(function (r) {
+    if (r.step_id) ranSteps[r.step_id] = true;
+  });
+  var candidate = null;
+  document.querySelectorAll('.ecg-rail .ecg-step[data-step]').forEach(function (row) {
+    var id = row.getAttribute('data-step');
+    if (!candidate && id && !ranSteps[id]) candidate = id;
+  });
+  if (!candidate) return;
+  _ecgComposeAndPropose(convo, null, candidate);
+}
+
+/* (2026-08-07, John) NEVER a blind Go: "it should have — hey, this is what
+   researchPrime's gonna work on … are you fine with this, do you want to
+   refine it, then we go forward." Every manual/auto commission first asks
+   the steward to COMPOSE the brief (it knows the campaign's findings); the
+   reply renders the directive card — the statement, Refine, Go. If no
+   directive comes back, _ecgRenderStewardTurn falls through to the plain
+   propose card, so a commission is never lost. */
+var _ECG_COMPOSE_STEP = null;
+
+function _ecgComposeAndPropose(convo, skill, stepId) {
+  _ECG_COMPOSE_STEP = stepId || null;
+  _ecgConverse(convo,
+    'Commission ' + (skill || 'the right skill') +
+    (stepId ? ' for the roadmap step "' + stepId + '"' : ' for the step in hand') +
+    ': compose the exact brief you would send — what it should find out or ' +
+    'do, grounded in everything this campaign knows — and show it to me ' +
+    'before anything runs.',
+    true);
+}
+
+/* The thin page-level line: state dots + a phrase, click opens the Seal. */
+function _ecgRenderAmbientRuns(host, runs) {
+  host.textContent = '';
+  var rows = (runs || []).slice(0, 3);
+  if (!rows.length) { host.style.display = 'none'; return; }
+  host.style.display = '';
+  host.classList.add('ambient');
+  var line = _ecgEl('div', 'lrow');
+  rows.forEach(function (run) {
+    var bits = _ecgRunStateBits(run);
+    var seg = _ecgEl('span', 'seg ' + bits.cls);
+    seg.appendChild(_ecgEl('span', 'dot', '●'));
+    seg.appendChild(_ecgEl('span', null, ' ' + (run.skill || 'run') + ' ' +
+      (run.outcome === 'running' ? 'running' :
+       run.outcome === 'asked' ? 'needs you' : 'finished')));
+    line.appendChild(seg);
+  });
+  line.appendChild(_ecgEl('span', 'lbl', ' — open the Seal for reports'));
+  line.style.cursor = 'pointer';
+  line.onclick = function () { try { openEcgberhtSeal(); } catch (e) {} };
+  host.appendChild(line);
+}
+
+function _ecgRunStateBits(run) {
+  if (run.outcome === 'running') {
+    return { cls: 'run', dot: '●', phrase: 'running — working in a session I manage' };
+  }
+  if (run.outcome === 'asked') {
+    return { cls: 'ask', dot: '●', phrase: 'needs you — it asked a question' };
+  }
+  if (run.outcome === 'produced') {
+    return { cls: 'done', dot: '●', phrase: 'finished — report ready' };
+  }
+  if (run.outcome === 'quiet' || run.outcome === 'timeout') {
+    return { cls: 'stale', dot: '●', phrase: run.outcome === 'quiet'
+      ? 'went quiet — report ready, session may still be working'
+      : 'watch ended — report ready, session may still be working' };
+  }
+  return { cls: 'dead', dot: '●', phrase: String(run.outcome || 'unknown') };
+}
+
+function _ecgRunAge(at) {
+  try {
+    var t = new Date(String(at).replace(' ', 'T'));
+    var m = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000));
+    return m < 60 ? m + 'm' : Math.round(m / 60) + 'h';
+  } catch (e) { return ''; }
+}
+
+var _ECG_DISMISSED_RUNS = {};
+
+function _ecgRenderRunLedger(host, runs) {
+  // (Shark F6a) Never wipe the ledger while John is READING a report in it —
+  // the 15s tick used to snap the expander shut mid-read. Stale-but-stable
+  // wins; the next tick after he closes it refreshes.
+  if (host.querySelector('.lreport')) return;
+  host.textContent = '';
+  var rows = (runs || []).filter(function (r) {
+    // Dismissed FINISHED tiles stay gone; live/waiting ones cannot be hidden.
+    return !(_ECG_DISMISSED_RUNS[r.session_id] &&
+             r.outcome !== 'running' && r.outcome !== 'asked');
+  }).slice(0, 8);
+  if (!rows.length) { host.style.display = 'none'; return; }
+  host.style.display = '';
+  rows.forEach(function (run) {
+    var bits = _ecgRunStateBits(run);
+    var row = _ecgEl('div', 'lrow ' + bits.cls);
+    row.appendChild(_ecgEl('span', 'dot', bits.dot));
+    row.appendChild(_ecgEl('span', 'lbl',
+      (run.skill || 'skill') + ' · ' + bits.phrase + ' · ' + _ecgRunAge(run.at)));
+    if (run.outcome !== 'running' && run.outcome !== 'asked') {
+      var dis = _ecgEl('button', 'ldismiss', '×');
+      dis.title = 'Dismiss this tile (the run record stays)';
+      dis.onclick = function (ev) {
+        ev.stopPropagation();
+        _ECG_DISMISSED_RUNS[run.session_id] = true;
+        var rep = row.nextElementSibling;
+        if (rep && rep.className === 'lreport') rep.remove();
+        row.remove();
+      };
+      row.appendChild(dis);
+    }
+    var openBtn = _ecgEl('button', 'ecg-btn', 'Open the session');
+    openBtn.onclick = function () { try { openPanel(run.session_id); } catch (e) {} };
+    row.appendChild(openBtn);
+    if (run.report && (run.report.say || run.report.needs)) {
+      var repBtn = _ecgEl('button', 'ecg-btn', 'Report');
+      repBtn.onclick = function () {
+        var open = row.nextElementSibling;
+        if (open && open.className === 'lreport') { open.remove(); return; }
+        var rep = _ecgEl('div', 'lreport');
+        if (run.report.say) rep.appendChild(_ecgEl('div', null, run.report.say));
+        if (run.report.needs) {
+          rep.appendChild(_ecgEl('div', 'ecg-run-needs', 'Waiting on you: ' + run.report.needs));
+        }
+        if (run.report.recommend) {
+          rep.appendChild(_ecgEl('div', 'lrec', 'My recommendation: ' + run.report.recommend));
+        }
+        (run.prior_reports || []).slice().reverse().forEach(function (pr) {
+          if (!pr || !pr.say) return;
+          rep.appendChild(_ecgEl('div', 'lrec', 'Earlier read: ' + pr.say));
+          if (pr.needs) rep.appendChild(_ecgEl('div', 'ecg-run-needs', 'It asked: ' + pr.needs));
+        });
+        // The report is the steward's READ; the session's full transcript is
+        // persisted in the project — one click for the whole thing.
+        var tl = _ecgEl('a', 'lrec', 'Open the full transcript →');
+        tl.href = '/artifact/' + encodeURIComponent(PROJECT_ID) +
+          '?path=' + encodeURIComponent('general/' +
+            String(run.session_id).slice(0, 12) + '-transcript.md') + _tokenQ();
+        tl.target = '_blank';
+        rep.appendChild(tl);
+        row.parentNode.insertBefore(rep, row.nextSibling);
+      };
+      row.appendChild(repBtn);
+    }
+    if (run.outcome === 'asked' || run.outcome === 'quiet' || run.outcome === 'timeout') {
+      var back = _ecgEl('button', 'ecg-btn',
+        run.outcome === 'asked' ? 'Hand it back' : 'Keep watching');
+      back.onclick = function () {
+        back.disabled = true;
+        _postJson('/api/ecgberht/commission_watch', {
+          project_id: PROJECT_ID, session_id: run.session_id
+        }).then(function (r) { return r.json(); }).then(function (k) {
+          back.textContent = (k && k.ok) ? 'Watching ✓' : 'Could not re-arm';
+        }).catch(function () { back.disabled = false; });
+      };
+      row.appendChild(back);
+    }
+    host.appendChild(row);
+  });
+}
 function _postJson(url, payload) {
   var headers = {'Content-Type': 'application/json'};
   var tok = _anchorToken();
@@ -3190,21 +3897,16 @@ function _mountReadOnlyBody(sessionId, host, s) {
     ? '<div class="ro-note">Session is running in the background — no live '
       + 'terminal attached.</div>'
     : '';
-  // Skeleton with a Continue button (always available for a historical session)
-  // and a region we fill async from the cached session summary.
+  // Skeleton + async summary region. (2026-08-06: the old '▶ Continue in a
+  // live session' button here duplicated Layer-1's '▶ Resume live' — two
+  // restart buttons for one act, John's exact complaint. Layer-1's control,
+  // which dedups against an already-minted continuation, is the one that
+  // stays.)
   host.innerHTML = runningNote
     + '<div class="ro-past" data-session="' + _esc(sessionId) + '">'
-    + '<div class="ro-actions">'
-    + '<button class="ro-continue" type="button">▶ Continue in a live session</button>'
-    + '</div>'
     + '<div class="ro-detail"><div class="summ-loading">loading past-session '
     + 'summary…</div></div>'
     + '</div>';
-  var btn = host.querySelector('.ro-continue');
-  if (btn) btn.onclick = function (e) {
-    e.stopPropagation();
-    continueSession(sessionId, s.lane);
-  };
   var detail = host.querySelector('.ro-detail');
   _fillPastSessionDetail(sessionId, (s && s.lane) || '', detail);
   // telemetry-resume W3 — the Layer-1 WARM narrated view. Prepend the
@@ -6096,9 +6798,6 @@ document.addEventListener('click', function() {
    Engine receipts keep engine vocabulary — livery is display-only. */
 function _ecgStw() { return (window.ANCHOR_STEWARD || {}); }
 function _ecgStwLabel() { return _ecgStw().label || 'Ecgberht'; }
-function _ecgStwSealSrc() {
-  return _ecgStw().seal_src || '/vendor/brand/ecgberht-project-seal.jpg';
-}
 
 
 function _ecgEl(tag, cls, text) {
@@ -6118,6 +6817,9 @@ function _ecgStatusCls(status) {
 function closeEcgberhtSeal() {
   var dock = document.getElementById('ecgSealDock');
   if (dock) dock.remove();  // close changes nothing in the ledger
+  try { _ecgSealStopPulsePoll(); } catch (e) { /* poll not armed */ }
+  var slice = document.getElementById('ecgSealSlice');
+  if (slice) slice.remove();  // the W6 painted slice closes the same way — read-only
   var tile = document.getElementById('tile-ecgseal');
   if (tile) tile.open = false;
 }
@@ -6161,12 +6863,27 @@ function _ecgRenderRail(rail, runBlock) {
     for (var i = 0; i < rail.steps.length; i++) {
       var s = rail.steps[i];
       var row = _ecgEl('div', 'ecg-step ' + _ecgStatusCls(s.status));
+      // (2026-08-06) The step id rides the DOM so run-state dots can land on
+      // the very bullet the run belongs to (John: "that's where the green
+      // should show up as well").
+      row.setAttribute('data-step', s.id || '');
       row.appendChild(_ecgEl('span', 'm', s.marker));
-      var body = _ecgEl('span', null, (s.id ? s.id + ' ' : '') + (s.name || ''));
+      var body = _ecgEl('span', 'steptext', (s.id ? s.id + ' ' : '') + (s.name || ''));
       body.appendChild(_ecgEl('small', null, s.substatus || ''));
       row.appendChild(body);
+      // (2026-08-07, John) Clicking the step TEXT opens its accumulated detail
+      // + suggestions; the dot (marker) keeps opening the session when one ran.
+      // Captured PER ITERATION (shark F1): a shared `var` closure made every
+      // click open the LAST step's panel and write notes to the WRONG ledger.
+      body.onclick = (function (rr, sid) {
+        return function (e) {
+          e.stopPropagation();
+          _ecgToggleStepDetail(rr, sid);
+        };
+      })(row, s.id);
       aside.appendChild(row);
     }
+    setTimeout(_ecgAnnotateRailRuns, 0);
   }
   var rb = _ecgEl('div', 'ecg-runblock');
   rb.id = 'ecgRunBlock';
@@ -6186,370 +6903,723 @@ function _ecgRenderRail(rail, runBlock) {
   return aside;
 }
 
-function _ecgSpeak(convo, text) {
-  _ecgJohnMsg(convo, text);
-  var recall = /\bremind me\b|\bwhy did we\b/i.test(text);
-  var body = recall
-    ? {project_id: PROJECT_ID, kind: 'recall', text: text}
-    : {project_id: PROJECT_ID, kind: 'speak', text: text};
-  // (2026-07-30 FIX) via _postJson so the token rides the X-Anchor-Token HEADER
-  // (+ X-Anchor-Build). The do_POST middleware never reads ?token= — a
-  // query-only POST 401s, and the global fetch wrapper turns that 401 into a
-  // token prompt, so the saybox kept re-asking for a token the window already
-  // had. NO ?token= query on a POST: the exact-match route row is compared
-  // against the path, so a query string used to miss the row entirely and
-  // answer 404 "Unknown endpoint".
-  _postJson('/api/ecgberht/speak', body
-  ).then(function (r) { return r.json(); }).then(function (j) {
-    if (!j || !j.ok) {
-      _ecgStewardMsg(convo, _ecgStwLabel() + " didn't answer — nothing was saved.");
-      return;
-    }
-    if (j.mode === 'recall') {
-      var rec = j.recall || {};
-      var m = _ecgStewardMsg(convo, rec.unknown
-        ? rec.voice
-        : String(rec.answer && rec.answer.value != null ? rec.answer.value : rec.answer) + ' — ' + rec.voice);
-      if (rec.chip) {
-        var chip = _ecgEl('div', 'ecg-chip', rec.chip.label);
-        chip.title = 'provenance: ' + rec.chip.opens;
-        m.appendChild(chip);
-      }
-      // TW7 S4-E3 — thin evidence: honest unknown + a CONSTRUCTIVE offer
-      // (commission a fresh look), never padded into a fake answer.
-      if (rec.unknown && j.thin_evidence && j.thin_evidence.offer) {
-        var offer = j.thin_evidence.offer;
-        var act = _ecgEl('div', 'act');
-        var ob = _ecgEl('button', 'ecg-btn', offer.label);
-        ob.title = offer.compiles_to;
-        ob.onclick = function () {
-          var say = document.getElementById('ecgSayInput');
-          if (say) {
-            say.value = 'commission a fresh look: ' + (j.thin_evidence.question || '');
-            say.focus();
-          }
-        };
-        act.appendChild(ob);
-        m.appendChild(act);
-      }
-      return;
-    }
-    var c = j.compiled || {};
-    if (c.compiled) {
-      if (j.offer) {
-        // S1-E6 — Grasscatcher offer beat (receipt only on yes, via closed verb)
-        _ecgStewardMsg(convo, j.offer.question, [
-          {label: j.offer.actions[0].label, onclick: function () {
-            _ecgStewardMsg(convo, 'Parked. ' + j.offer.on_yes);
-          } },
-          {label: j.offer.actions[1].label}
-        ]);
-      } else if (j.divider_preview) {
-        // S1-E7 — receipted seat switch is a non-event
-        convo.appendChild(_ecgEl('div', 'ecg-divider', j.divider_preview.text));
-      } else {
-        _ecgStewardMsg(convo, 'Understood that as: ' + (c.label || c.act) + '.');
-      }
+/* (2026-08-04) THE EPHEMERAL CONVERSATION.
+
+   E5 says chat is NEVER persisted — Strip receipts, roadmap events and the Face are
+   the sole ledger. That does NOT mean the steward has to be amnesiac: the turns live
+   HERE, in page memory, get replayed for continuity, and die with the page. Reloading
+   the window loses them and that is correct — the durable continuity is the open
+   scaffold_proposal on the ledger, which is what makes turn N+1 a REFINEMENT of the
+   scaffolding rather than a restart. */
+var _ECG_TURNS = [];
+
+function _ecgNoteTurn(role, text) {
+  if (!text) return;
+  _ECG_TURNS.push({role: role, text: String(text)});
+  if (_ECG_TURNS.length > 24) _ECG_TURNS = _ECG_TURNS.slice(-24);
+}
+
+/* The steward's answer to a turn: what it said, what it still needs, and — when it
+   has enough to be useful — a proposal to react to. */
+function _ecgRenderStewardTurn(convo, j) {
+  _ecgNoteTurn('steward', j.say);
+  var msg = _ecgStewardMsg(convo, j.say);
+
+  if (j.asks && j.asks.length) {
+    var ul = _ecgEl('ul', 'ecg-asks');
+    j.asks.forEach(function (q) { ul.appendChild(_ecgEl('li', null, q)); });
+    msg.appendChild(ul);
+  }
+  if (j.proposal && j.proposal.steps && j.proposal.steps.length) {
+    _ecgRenderProposal(convo, msg, j);
+  }
+  // (2026-08-06) "Start Gandalf" in conversation routes HERE: the model signals
+  // wants_commission instead of pretending work began (it cannot start
+  // anything), and the commission card appears — one Go from a real run.
+  // (2026-08-07) With a composed directive, the DIRECTIVE card renders — the
+  // brief John iterates on before Go; without one, the plain propose flow.
+  if (j.wants_commission) {
+    if (j.commission_directive) {
+      _ecgDirectiveCard(convo, {
+        skill: j.commission_skill || 'researchPrime',
+        // A compose-first flow knows which step it was composing FOR.
+        step_id: _ECG_COMPOSE_STEP || null,
+        directive: j.commission_directive,
+        why: null,
+      });
+      _ECG_COMPOSE_STEP = null;
     } else {
-      var prop = (c.proposal && c.proposal.message) ||
-        "I didn't understand that as something I can do — nothing was saved.";
-      _ecgStewardMsg(convo, prop);
+      _ecgCommissionPropose(convo, j.commission_skill || null);
     }
+  }
+  _ecgScrollToLatest(convo);
+  return msg;
+}
+
+/* (2026-08-06) Keep the conversation pinned to the newest message, like a terminal. */
+function _ecgScrollToLatest(convo) {
+  if (convo) convo.scrollTop = convo.scrollHeight;
+}
+
+/* The PINNED scaffolding panel — lives outside the scrolling conversation so it cannot
+   disappear up the scrollback while John is working on it. Replaced wholesale on each
+   re-proposal, so what is pinned is always the current scaffolding. */
+function _ecgScaffoldPin() {
+  var convo = document.getElementById('ecgConvo');
+  if (!convo || !convo.parentNode) return null;
+  var pin = document.getElementById('ecgScaffoldPin');
+  if (!pin) {
+    pin = document.createElement('details');
+    pin.id = 'ecgScaffoldPin';
+    pin.className = 'ecg-scaffold-pin';
+    pin.open = true;
+    // Directly after the conversation, above the say box.
+    convo.parentNode.insertBefore(pin, convo.nextSibling);
+  }
+  pin.textContent = '';
+  return pin;
+}
+
+/* A proposed scaffolding, with its Parable-of-the-Oranges annotations. Nothing is
+   written until [Confirm], and Confirm binds to the proposal HASH — so what lands on
+   the roadmap is exactly what was on screen, never a re-derivation of the prose. */
+function _ecgRenderProposal(convo, _msg, j) {
+  var steps = j.proposal.steps;
+  // Render into the PIN, not the message — the chat scrolls, the scaffolding stays.
+  var pin = _ecgScaffoldPin();
+  var msg = pin || _msg;
+  if (pin) {
+    var sum = _ecgEl('summary', null,
+      'Scaffolding — ' + steps.length + ' stage' + (steps.length === 1 ? '' : 's') +
+      ' · not written yet');
+    pin.appendChild(sum);
+    msg = _ecgEl('div', 'body');
+    pin.appendChild(msg);
+  }
+  msg.appendChild(_ecgEl('div', 'ecg-scaffold-note',
+    'That is ' + steps.length + ' stage' + (steps.length === 1 ? '' : 's') +
+    '. Nothing is written yet — confirm and they become the campaign roadmap.'));
+
+  var list = _ecgEl('ol', 'ecg-scaffold-steps');
+  steps.forEach(function (st) {
+    var li = _ecgEl('li', null, st.name);
+    if (st.done_when) {
+      li.appendChild(_ecgEl('div', 'ecg-scaffold-done', 'done when: ' + st.done_when));
+    }
+    var or = st.oranges_annotations || [];
+    if (or.length) {
+      var ol = _ecgEl('ul', 'ecg-oranges');
+      or.forEach(function (o) { ol.appendChild(_ecgEl('li', null, o)); });
+      li.appendChild(ol);
+    }
+    list.appendChild(li);
+  });
+  msg.appendChild(list);
+
+  if (j.foresight && j.foresight.length) {
+    var fs = _ecgEl('div', 'ecg-foresight');
+    fs.appendChild(_ecgEl('div', 'ecg-foresight-h', 'What bites later:'));
+    var fl = _ecgEl('ul', null);
+    j.foresight.forEach(function (f) { fl.appendChild(_ecgEl('li', null, f)); });
+    fs.appendChild(fl);
+    msg.appendChild(fs);
+  }
+
+  var act = _ecgEl('div', 'act');
+  var yes = _ecgEl('button', 'ecg-btn pri', 'Confirm — build the roadmap');
+  yes.onclick = function () {
+    yes.disabled = true;
+    yes.textContent = 'Writing…';
+    _postJson('/api/ecgberht/scaffold_confirm', {
+      project_id: PROJECT_ID,
+      proposal_hash: j.proposal_hash,
+      proposal_id: j.proposal_id
+    }).then(function (r) { return r.json(); }).then(function (k) {
+      if (!k || !k.ok) {
+        yes.disabled = false;
+        yes.textContent = 'Confirm — build the roadmap';
+        _ecgStewardMsg(convo, 'Could not write that: ' +
+          ((k && (k.message || k.error)) || 'no response') + ' — nothing was saved.');
+        return;
+      }
+      var n = (k.step_ids || []).length;
+      _ecgStewardMsg(convo, 'Written. ' + n + ' stage' + (n === 1 ? '' : 's') +
+        ' are on the campaign roadmap now.');
+      var pinned = document.getElementById('ecgScaffoldPin');
+      if (pinned) pinned.remove();
+      act.remove();
+      if (typeof ecgSealMountInline === 'function') ecgSealMountInline();
+      // (2026-08-06) ACCEPT = GO. Show the roadmap in the rail AND in the
+      // conversation, then drive: propose the first step's commission — one
+      // Go button away from execution, zero further handshakes.
+      _ecgRefreshRail(function (rail) {
+        _ecgPrintRoadmap(convo, rail);
+        _ecgCommissionPropose(convo);
+      });
+    }).catch(function () {
+      yes.disabled = false;
+      yes.textContent = 'Confirm — build the roadmap';
+      _ecgStewardMsg(convo, "That didn't go through — nothing was saved.");
+    });
+  };
+  // (2026-08-06) REFINE ITERATES, NOTHING DISAPPEARS. "Not that" used to
+  // DELETE the pinned scaffolding — one stray click and John watched his plan
+  // vanish, then thought the steward had lost it ("what happened, we had a
+  // plan"). The proposal is still the open proposal on the ledger; the panel
+  // now stays through refinement rounds and only Confirm ends planning.
+  var refine = _ecgEl('button', 'ecg-btn', 'Refine it — tell me what to change');
+  refine.onclick = function () {
+    var say = _ecgSayLine();
+    _ecgStewardMsg(convo, 'Tell me what to change — the scaffolding stays pinned ' +
+      'below and I rework it in place until you confirm.');
+    if (say) { say.placeholder = 'What should change in the scaffolding?'; say.focus(); }
+  };
+  var aside = _ecgEl('button', 'ecg-btn', 'Set aside');
+  aside.onclick = function () {
+    var pinned = document.getElementById('ecgScaffoldPin');
+    if (pinned) pinned.open = false;
+    _ecgStewardMsg(convo, 'Set aside — it stays pinned (collapsed) below. Talk to me ' +
+      'to rework it, or open it and confirm when ready. Nothing was written.');
+  };
+  act.appendChild(yes);
+  act.appendChild(refine);
+  act.appendChild(aside);
+  msg.appendChild(act);
+}
+
+/* Talking costs a model call, and nothing is spent without a human saying so. ONE
+   confirmation covers the whole session — never a prompt per sentence. */
+function _ecgOfferEnvelope(convo, j, retryText) {
+  var msg = _ecgStewardMsg(convo, j.say || j.message ||
+    'Talking costs a model call and there is no confirmed session budget yet.');
+  var act = _ecgEl('div', 'act');
+  var go = _ecgEl('button', 'ecg-btn pri', 'Confirm session budget');
+  go.onclick = function () {
+    go.disabled = true;
+    go.textContent = 'Confirming…';
+    _postJson('/api/ecgberht/envelope_confirm', {project_id: PROJECT_ID}
+    ).then(function (r) { return r.json(); }).then(function (k) {
+      if (!k || !k.ok) {
+        go.disabled = false;
+        go.textContent = 'Confirm session budget';
+        _ecgStewardMsg(convo, 'Could not open a session budget: ' +
+          ((k && (k.message || k.error)) || 'no response'));
+        return;
+      }
+      act.remove();
+      _ecgStewardMsg(convo, k.message || 'Session budget confirmed — we can talk.');
+      if (retryText) _ecgConverse(convo, retryText, true);
+    }).catch(function () {
+      go.disabled = false;
+      go.textContent = 'Confirm session budget';
+      _ecgStewardMsg(convo, "That didn't go through.");
+    });
+  };
+  act.appendChild(go);
+  msg.appendChild(act);
+}
+
+/* Reaching the spend cap is a CHECKPOINT, not a wall. The steward has already stopped
+   and reported what it spent; this is John answering "carry on". Raising is still a
+   human confirmation and is recorded with who. */
+function _ecgOfferRaise(convo, j, retryText) {
+  var msg = _ecgStewardMsg(convo, j.say || j.message ||
+    "We've reached the session budget, so I stopped rather than keep spending.");
+  if (!j.can_raise) return;
+
+  var act = _ecgEl('div', 'act');
+  var suggested = Math.max(1, Math.ceil((Number(j.max_spend_usd) || 1) * 2));
+  var go = _ecgEl('button', 'ecg-btn pri', 'Raise to $' + suggested + ' and carry on');
+  go.onclick = function () {
+    go.disabled = true;
+    go.textContent = 'Raising…';
+    _postJson('/api/ecgberht/envelope_raise', {
+      project_id: PROJECT_ID, max_spend_usd: suggested
+    }).then(function (r) { return r.json(); }).then(function (k) {
+      if (!k || !k.ok) {
+        go.disabled = false;
+        go.textContent = 'Raise to $' + suggested + ' and carry on';
+        _ecgStewardMsg(convo, 'Could not raise the budget: ' +
+          ((k && (k.message || k.error)) || 'no response'));
+        return;
+      }
+      act.remove();
+      _ecgStewardMsg(convo, k.message || 'Budget raised — carrying on.');
+      if (retryText) _ecgConverse(convo, retryText, true);
+    }).catch(function () {
+      go.disabled = false;
+      go.textContent = 'Raise to $' + suggested + ' and carry on';
+      _ecgStewardMsg(convo, "That didn't go through.");
+    });
+  };
+  var stop = _ecgEl('button', 'ecg-btn', 'Leave it — stop here');
+  stop.onclick = function () {
+    act.remove();
+    _ecgStewardMsg(convo, 'Stopped. Nothing further was spent.');
+  };
+  act.appendChild(go);
+  act.appendChild(stop);
+  msg.appendChild(act);
+}
+
+/* (2026-08-04) TALK TO THE STEWARD.
+
+   Was: everything went to /speak, which compiled against a closed ELEVEN-act table,
+   and anything that matched none of them dead-ended on "could not compile that to a
+   closed act" — which is what John got the first time he described his own project.
+
+   Now: free-form speech goes to /converse, where the ENGINE routes it (control verbs
+   still compile deterministically; only genuine talk reaches the seat). Provenance
+   recall stays on /speak because it answers from the record with a source chip, which
+   is a different and honest capability. */
+/* (steward-e1 W2, E1 + V5) The DRAWN blocked-turn refusal in the talk
+   column: the engine refused to close the steward's turn because a ratified
+   direct question id from John lacks a typed answer-reference. Its own
+   state — named finding + the unanswered question(s) — never an ambiguous
+   silence. textContent-only builders (F5). */
+function _ecgRenderBlockedTurn(convo, blocked) {
+  var msg = _ecgEl('div', 'ecg-msg steward blocked');
+  msg.appendChild(_ecgEl('div', 'who', '⛔ ' + _ecgStwLabel() + ' — turn blocked'));
+  msg.appendChild(_ecgEl('div', 'bfind',
+    (blocked.finding || 'E1-TURN-CLOSE-BLOCKED')
+    + ' · a direct question from John lacks a typed answer-reference'));
+  var qs = blocked.unanswered || [];
+  for (var i = 0; i < qs.length; i++) {
+    var q = qs[i] || {};
+    var row = _ecgEl('div', 'bq', '“' + (q.text || '') + '” ');
+    row.appendChild(_ecgEl('span', 'bqid', q.question_id || ''));
+    msg.appendChild(row);
+  }
+  msg.appendChild(_ecgEl('div', 'bnote',
+    blocked.message || ('The engine refused to close this turn — the E1 '
+      + 'refusal state, drawn distinct from “are you working”.')));
+  convo.appendChild(msg);
+  _ecgScrollToLatest(convo);
+  return msg;
+}
+
+function _ecgConverse(convo, text, isRetry, failText) {
+  // failText (shark F4): the note flow saves DURABLY before talking — its
+  // failure copy must never claim "nothing was saved" about a saved note.
+  var failMsg = failText || (_ecgStwLabel() + " didn't answer — nothing was saved.");
+  if (!isRetry) { _ecgJohnMsg(convo, text); _ecgNoteTurn('john', text); }
+  var thinking = _ecgStewardMsg(convo, 'Thinking…');
+  thinking.classList.add('ecg-thinking');
+  _ecgScrollToLatest(convo);
+
+  _postJson('/api/ecgberht/converse', {
+    project_id: PROJECT_ID,
+    text: text,
+    turns: _ECG_TURNS.slice(0, -1)
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    thinking.remove();
+    if (!j) {
+      _ecgStewardMsg(convo, failMsg);
+      return;
+    }
+    if (j.code === 'CONVERSE_NO_ENVELOPE' || j.status_code === 'CONVERSE_NO_ENVELOPE') {
+      _ecgOfferEnvelope(convo, j, text);
+      return;
+    }
+    if (j.code === 'CONVERSE_BUDGET_REACHED') {
+      _ecgOfferRaise(convo, j, text);
+      return;
+    }
+    if (!j.ok) {
+      // Honest failure: say what happened, never dress it up as an answer.
+      _ecgStewardMsg(convo, j.say || j.message || j.user_text || failMsg);
+      return;
+    }
+    if (j.lane === 'act' && j.compiled) {
+      _ecgHandleAct(convo, j.compiled, text);
+      return;
+    }
+    if (j.turn_blocked && j.blocked) {
+      // (steward-e1 W2, E1 + V5) THE DRAWN BLOCKED-TURN STATE: the engine
+      // structurally refused to close the turn on an unanswered ratified
+      // question. Painted as its OWN state (AG-BLOCKED-TURN) so the cure
+      // never looks like the disease ("are you working"). textContent-only
+      // (F5) — the finding, the question text and its id are all data.
+      _ecgRenderBlockedTurn(convo, j.blocked);
+      return;
+    }
+    _ecgRenderStewardTurn(convo, j);
   }).catch(function () {
-    _ecgStewardMsg(convo, _ecgStwLabel() + " didn't answer — nothing was saved.");
+    thinking.remove();
+    _ecgStewardMsg(convo, failMsg);
   });
 }
 
-/* (2026-07-31) The chamber's buttons were LABELS ONLY — the goal bar's
-   [Still the goal] / [Refine it] and the opening message's two actions were
-   appended with no onclick, so clicking them did nothing at all. John: "when I
-   try to click the refine button nothing would happen".
+/* (2026-08-06) REFRESH THE RAIL IN PLACE. The chamber view model was fetched
+   once at open, so a roadmap confirmed DURING the conversation never reached
+   the Campaign Roadmap rail — John watched an empty rail sit beside a live
+   ten-stage campaign. Re-fetch and swap just the aside; the conversation is
+   untouched. Returns the fresh rail (for printing the roadmap back). */
+function _ecgRefreshRail(done) {
+  fetch('/api/ecgberht/chamber?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      var ch = j && j.ok && j.chamber;
+      if (!ch || !ch.roadmap_rail) { if (done) done(null); return; }
+      var dock = document.getElementById('ecgSealDock');
+      var old = dock && dock.querySelector('aside.ecg-rail');
+      // (Shark F6b) A refresh replaces the WHOLE aside — including an open
+      // step-detail panel and any half-typed note in it. An OPEN panel always
+      // wins (John's law: things must not vanish under him); the rail catches
+      // up on the first refresh after the panel closes.
+      if (old) {
+        if (old.querySelector('.ecg-stepdetail')) {
+          if (done) done(ch.roadmap_rail);
+          return;
+        }
+        old.replaceWith(_ecgRenderRail(ch.roadmap_rail, ch.run_block));
+      }
+      if (done) done(ch.roadmap_rail);
+    })
+    .catch(function () { if (done) done(null); });
+}
 
-   Every one of those buttons already declares a closed ACT in the engine view
-   model (still_the_goal · refine_goal · carry_on · show_detail), and
-   /api/ecgberht/speak already compiles free-form talk into exactly those acts.
-   So a button SAYS its canonical utterance through the existing
-   talk → compile → receipt path; it never invents a private side channel.
+/* Print the confirmed roadmap back into the conversation — "I saved it" is not
+   showing it. One line per step, in order. */
+function _ecgPrintRoadmap(convo, rail) {
+  if (!rail || !rail.steps || !rail.steps.length) return;
+  var msg = _ecgStewardMsg(convo, 'The campaign roadmap, as written:');
+  var ol = _ecgEl('ol', 'ecg-roadmap-echo');
+  rail.steps.forEach(function (s) {
+    ol.appendChild(_ecgEl('li', null, (s.name || s.id || '') +
+      (s.substatus ? ' — ' + s.substatus : '')));
+  });
+  msg.appendChild(ol);
+  _ecgScrollToLatest(convo);
+}
 
-   The utterance is keyed off the ACT ID, not the label: the engine's carry_on
-   pattern is /^carry on\b/ and the label is "Fine — carry on", which would not
-   compile. refine_goal is the one act that needs an ARGUMENT (the new goal
-   text), so its button prefills the say line and hands John the cursor — the
-   same affordance the thin-evidence offer button already uses. */
-var _ECG_ACT_SAY = {
-  still_the_goal: 'Still the goal',
-  carry_on: 'Carry on',
-  show_detail: 'Show me the detail'
-};
-//: Acts that need the user to finish the sentence → prefill, never auto-send.
-var _ECG_ACT_PREFILL = {
-  refine_goal: 'Refine goal to '
-};
+/* A compiled CONTROL act — deterministic, no model, no spend. */
+function _ecgHandleAct(convo, c, text) {
+  if (c.act === 'park_that') {
+    _ecgStewardMsg(convo, 'Parked — captured as a soft-vet receipt, not a roadmap step.');
+    return;
+  }
+  if (c.act === 'switch_seat' && c.args && c.args.seat) {
+    convo.appendChild(_ecgEl('div', 'ecg-divider', 'seat → ' + c.args.seat));
+    return;
+  }
+  // (2026-08-06) "go ahead with the commission" — the steward proposes for the
+  // step in hand and shows exactly what would run; NOTHING launches until the
+  // Go button (the hash-bound confirm). Deterministic path end to end.
+  if (c.act === 'confirm_commission') {
+    _ecgCommissionPropose(convo);
+    return;
+  }
+  // (2026-08-06, John) "Carry on" used to echo itself and stop — he said yes
+  // and nothing happened. Carrying on IS a request to drive: hand it to the
+  // steward as a full talk turn (worded past the act table's 8-word gate) so
+  // the next concrete move — including a commission card — actually comes.
+  if (c.act === 'carry_on') {
+    _ecgConverse(convo,
+      'Carry on — decide the next concrete move on this campaign and drive it forward now.',
+      true);
+    return;
+  }
+  _ecgStewardMsg(convo, 'Understood that as: ' + (c.label || c.act) + '.');
+}
+
+/* ── Conversation → commission (steward run-loop W5, 2026-08-06) ─────────────
+   The steward actually RUNS a skill. propose → John's Go (hash-bound confirm)
+   → a managed session (skill loaded, brief seeded, lean worktree) → the run
+   loop drives it → the report comes back HERE, in the chamber, and the ⚑
+   raise fetches John when the skill needs him. */
+
+function _ecgCommissionPropose(convo, skill, stepId) {
+  var waiting = _ecgStewardMsg(convo, 'Framing the commission…');
+  var body = { project_id: PROJECT_ID };
+  if (skill) body.skill = skill;
+  if (stepId) body.step_id = stepId;
+  _postJson('/api/ecgberht/commission_propose', body)
+    .then(function (r) { return r.json(); }).then(function (j) {
+      waiting.remove();
+      // (2026-08-06) ONE CARD, EVER. John's chamber stacked a fresh Gandalf
+      // card on every turn — including while Gandalf was ALREADY RUNNING.
+      // A live run for this step → point at the strip; a pending card for
+      // this step → point at it. Never a second card.
+      if (j && j.ok) {
+        var running = _ECG_RUNS_CACHE.some(function (r) {
+          return r.outcome === 'running' && r.step_id === j.step_id;
+        });
+        if (running) {
+          _ecgStewardMsg(convo, 'That one is already running — see the green ' +
+            'Running strip below (Open the session shows it working).');
+          return;
+        }
+        if (_ECG_PENDING_GO && document.body.contains(_ECG_PENDING_GO) &&
+            _ECG_PENDING_GO._ecgStep === j.step_id) {
+          _ecgStewardMsg(convo, 'The Go card for that is already up, just below — ' +
+            'say "go" or click it.');
+          _ECG_PENDING_GO.focus();
+          return;
+        }
+      }
+      if (!j || !j.ok) {
+        // A step with no TYPE cannot pick its own skill — offer the choice
+        // instead of a dead-end (the refusal literally says "say which skill",
+        // and buttons are how the chamber lets him say it).
+        if (j && j.error === 'skill_unresolved') {
+          var m = _ecgStewardMsg(convo,
+            'This step doesn’t say which kind of work it is — which skill should I run?');
+          var pick = _ecgEl('div', 'act');
+          ['researchPrime', 'Crucible', 'Foreman', 'Gandalf', 'Jumper'].forEach(function (s) {
+            var b = _ecgEl('button', 'ecg-btn', s);
+            b.onclick = function () { pick.remove(); _ecgComposeAndPropose(convo, s); };
+            pick.appendChild(b);
+          });
+          m.appendChild(pick);
+          return;
+        }
+        _ecgStewardMsg(convo, (j && (j.message || j.error))
+          ? 'I can’t commission yet: ' + (j.message || j.error)
+          : 'I couldn’t frame a commission — nothing was launched.');
+        return;
+      }
+      var msg = _ecgStewardMsg(convo,
+        'I propose commissioning ' + j.skill + ' for “' +
+        (j.step_name || j.step_id) + '”. It runs in a session I manage — ' +
+        'I’ll come get you the moment it needs you. Nothing starts until you say go.');
+      // Even the fallback card says what the run is AIMED at — never a
+      // blind Go (2026-08-07, John: "it's just doing research on what?").
+      if (j.step && j.step.done_when) {
+        msg.appendChild(_ecgEl('div', 'ecg-directive',
+          'It will be aimed at: ' + j.step.done_when));
+      }
+      var act = _ecgEl('div', 'act');
+      var go = _ecgEl('button', 'ecg-btn pri', 'Go — run ' + j.skill);
+      go._ecgStep = j.step_id;
+      _ECG_PENDING_GO = go;
+      go.onclick = function () {
+        go.disabled = true;
+        go.textContent = 'Starting…';
+        if (_ECG_PENDING_GO === go) _ECG_PENDING_GO = null;
+        _postJson('/api/ecgberht/commission_go', {
+          project_id: PROJECT_ID, proposal: j
+        }).then(function (r) { return r.json(); }).then(function (k) {
+          if (!k || !k.ok) {
+            go.disabled = false;
+            go.textContent = 'Go — run ' + j.skill;
+            _ECG_PENDING_GO = go;
+            _ecgStewardMsg(convo, 'Could not start it: ' +
+              ((k && (k.message || k.error)) || 'no response') + ' — nothing is running.');
+            return;
+          }
+          act.remove();
+          _ecgStewardMsg(convo, (k.say ||
+            ('Commissioned — ' + j.skill + ' is running in a managed session.')) +
+            ' Watch it on the green Running strip below.');
+          _ecgRefreshRail();
+          _ecgWatchCommissionRuns(convo);
+        }).catch(function () {
+          go.disabled = false;
+          go.textContent = 'Go — run ' + j.skill;
+          _ecgStewardMsg(convo, 'That didn’t go through — nothing is running.');
+        });
+      };
+      var no = _ecgEl('button', 'ecg-btn', 'Not now');
+      no.onclick = function () {
+        act.remove();
+        _ecgStewardMsg(convo, 'Left alone — nothing was launched.');
+      };
+      act.appendChild(go);
+      act.appendChild(no);
+      msg.appendChild(act);
+    }).catch(function () {
+      waiting.remove();
+      _ecgStewardMsg(convo, 'That didn’t go through — nothing was launched.');
+    });
+}
+
+/* Poll the run records while a commission is out; when it stops, render the
+   steward's REPORT (not the transcript) + the two moves John actually has. */
+var _ECG_RUN_POLL = null;
+var _ECG_RUN_SEEN = {};
+var _ECG_RUN_PRIMED = false;
+var _ECG_RUNS_CACHE = [];   // last-poll records — card dedup + "is it running"
+var _ECG_PENDING_GO = null; // the live Go button, so "go" in chat can press it
+
+
+function _ecgWatchCommissionRuns(convo) {
+  if (_ECG_RUN_POLL) return;
+  var tick = function () {
+    fetch('/api/ecgberht/commission_runs?project_id=' +
+          encodeURIComponent(PROJECT_ID) + _tokenQ())
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok) return;
+        // First look after a page load: history is history — do not replay
+        // old reports as if they just happened. The exception is a run still
+        // WAITING on John (asked): that is his open loop, so it surfaces.
+        if (!_ECG_RUN_PRIMED) {
+          _ECG_RUN_PRIMED = true;
+          (j.runs || []).forEach(function (run, i) {
+            if (!run.session_id || run.outcome === 'running') return;
+            var stillWaiting = run.outcome === 'asked' && i === 0;
+            if (!stillWaiting) {
+              _ECG_RUN_SEEN[run.session_id + ':' + String(run.watch_count || 0)] = true;
+            }
+          });
+        }
+        _ECG_RUNS_CACHE = j.runs || [];
+        var pending = false;
+        (j.runs || []).forEach(function (run) {
+          if (!run.session_id) return;
+          if (run.outcome === 'running') { pending = true; return; }
+          var key = run.session_id + ':' + String(run.watch_count || 0);
+          if (_ECG_RUN_SEEN[key]) return;
+          _ECG_RUN_SEEN[key] = true;
+          _ecgRenderRunReport(convo, run);
+        });
+        var stillWatching = (j.watching || []).length > 0;
+        if (!pending && !stillWatching && _ECG_RUN_POLL) {
+          clearInterval(_ECG_RUN_POLL);
+          _ECG_RUN_POLL = null;
+        }
+      })
+      .catch(function () {});
+  };
+  _ECG_RUN_POLL = setInterval(tick, 15000);
+  setTimeout(tick, 3000);
+}
+
+/* (2026-08-07) THE DIRECTIVE CARD — the steward's composed next move, with
+   its Parable-of-the-Oranges why. John iterates or approves; Go chains
+   propose→launch with the directive riding the session brief. */
+function _ecgDirectiveCard(convo, next) {
+  if (!next || !next.directive || !next.skill) return;
+  var msg = _ecgStewardMsg(convo, 'My next move' +
+    (next.why ? ' — ' + next.why : '') + ':');
+  var dv = _ecgEl('div', 'ecg-directive');
+  dv.appendChild(_ecgEl('div', 'dvh', 'Directive for ' + next.skill + ':'));
+  dv.appendChild(_ecgEl('div', 'dvt', next.directive));
+  msg.appendChild(dv);
+  var act = _ecgEl('div', 'act');
+  var go = _ecgEl('button', 'ecg-btn pri', 'Go — run ' + next.skill + ' with this brief');
+  go._ecgStep = next.step_id || null;
+  _ECG_PENDING_GO = go;
+  go.onclick = function () {
+    go.disabled = true;
+    go.textContent = 'Starting…';
+    if (_ECG_PENDING_GO === go) _ECG_PENDING_GO = null;
+    var body = { project_id: PROJECT_ID, skill: next.skill };
+    if (next.step_id) body.step_id = next.step_id;
+    _postJson('/api/ecgberht/commission_propose', body)
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || !j.ok) throw new Error((j && (j.message || j.error)) || 'propose failed');
+        return _postJson('/api/ecgberht/commission_go', {
+          project_id: PROJECT_ID, proposal: j, directive: next.directive
+        }).then(function (r) { return r.json(); });
+      }).then(function (k) {
+        if (!k || !k.ok) throw new Error((k && (k.message || k.error)) || 'launch failed');
+        act.remove();
+        _ecgStewardMsg(convo, (k.say || 'Commissioned.') +
+          ' The directive rides its opening brief — watch the ledger below.');
+        _ecgRefreshRail();
+        _ecgWatchCommissionRuns(convo);
+      }).catch(function (e) {
+        go.disabled = false;
+        go.textContent = 'Go — run ' + next.skill + ' with this brief';
+        _ECG_PENDING_GO = go;
+        _ecgStewardMsg(convo, 'Could not start it: ' + e.message + ' — nothing is running.');
+      });
+  };
+  var refine = _ecgEl('button', 'ecg-btn', 'Refine the brief');
+  refine.onclick = function () {
+    var say = _ecgSayLine();
+    _ecgStewardMsg(convo, 'Tell me what to change about the directive — I\'ll ' +
+      'bring back a revised card.');
+    if (say) { say.placeholder = 'What should the ' + next.skill + ' directive say instead?'; say.focus(); }
+  };
+  var no = _ecgEl('button', 'ecg-btn', 'Not now');
+  no.onclick = function () { act.remove(); _ecgStewardMsg(convo, 'Held — nothing launched.'); };
+  act.appendChild(go);
+  act.appendChild(refine);
+  act.appendChild(no);
+  msg.appendChild(act);
+  _ecgScrollToLatest(convo);
+}
+
+function _ecgRenderRunReport(convo, run) {
+  _ecgRefreshRail();
+  var rep = run.report || {};
+  var msg = _ecgStewardMsg(convo, rep.say ||
+    (run.skill + ' stopped (' + run.outcome + ').'));
+  // (2026-08-07) The reflection: what this run CHANGES, its oranges, and the
+  // composed next move — the thinking between runs John asked for.
+  var refl = run.reflection || {};
+  if (refl.impact) {
+    msg.appendChild(_ecgEl('div', 'ecg-impact', 'What this changes: ' + refl.impact));
+  }
+  (refl.oranges || []).forEach(function (o) {
+    msg.appendChild(_ecgEl('div', 'ecg-orange', '🍊 ' + o));
+  });
+  if (refl.fed_steps && refl.fed_steps.length) {
+    msg.appendChild(_ecgEl('div', 'lrec', 'Fed into the plan: ' +
+      refl.fed_steps.map(function (f) { return f.step_id + ' (' + f.facts + ')'; }).join(' · ')));
+  }
+  if (rep.needs) {
+    msg.appendChild(_ecgEl('div', 'ecg-run-needs', 'Waiting on you: ' + rep.needs));
+  }
+  var act = _ecgEl('div', 'act');
+  var open = _ecgEl('button', 'ecg-btn' + (rep.needs ? ' pri' : ''), 'Open the session');
+  open.onclick = function () { try { openPanel(run.session_id); } catch (e) {} };
+  act.appendChild(open);
+  if (run.outcome === 'asked') {
+    var back = _ecgEl('button', 'ecg-btn', 'Hand it back to the steward');
+    back.onclick = function () {
+      back.disabled = true;
+      _postJson('/api/ecgberht/commission_watch', {
+        project_id: PROJECT_ID, session_id: run.session_id
+      }).then(function (r) { return r.json(); }).then(function (k) {
+        _ecgStewardMsg(convo, (k && k.ok)
+          ? (k.say || 'Watching again — I’ll take it from here.')
+          : 'Could not re-arm the watch: ' + ((k && (k.message || k.error)) || 'no response'));
+        if (k && k.ok) _ecgWatchCommissionRuns(convo);
+      }).catch(function () { back.disabled = false; });
+    };
+    act.appendChild(back);
+  }
+  msg.appendChild(act);
+  // The reflection's composed next move. When the reflection said no human
+  // input was needed, the host already CARRIED ON (John's standing autonomy
+  // rule) — say so, never offer a second Go for a run that is live.
+  var auto = run.auto_continue || null;
+  if (auto && auto.launched) {
+    // A run is ALREADY live — a stale Go card must not be pressable by the
+    // go-phrase regex answering "carried on" (shark F2).
+    if (_ECG_PENDING_GO) {
+      try { _ECG_PENDING_GO.disabled = true; } catch (e) {}
+      _ECG_PENDING_GO = null;
+    }
+    var on = _ecgStewardMsg(convo, auto.say ||
+      ('Carried on without you — ' + (auto.skill || 'the next skill') +
+       ' is running with the directive I composed.'));
+    on.appendChild(_ecgEl('div', 'lrec',
+      'Watch it on the Running strip; say "stop" any time to pull me back.'));
+  } else if (refl.next && refl.next.directive) {
+    if (auto && auto.say) {
+      _ecgStewardMsg(convo, auto.say);
+    }
+    _ecgDirectiveCard(convo, refl.next);
+  }
+  _ecgScrollToLatest(convo);
+}
+
 
 function _ecgSayLine() { return document.getElementById('ecgSayInput'); }
 
-/* (2026-07-31) A GROWING say line. John dictates whole paragraphs into the
-   chamber — "it didn't show everything I was typing ... the window didn't grow
-   as I spoke" — and a one-line <input> scrolled his own words out of sight, so
-   he could not read back what he had just said before sending it.
 
-   _ecgGrowingInput builds a <textarea> that starts one row tall and grows with
-   its content (capped by the CSS max-height, then it scrolls). ENTER SENDS,
-   Shift+Enter makes a newline — dictation software emits plain newlines, which
-   would otherwise fire a send mid-thought.
 
-   ``onSend`` receives the trimmed text and must return true when it consumed
-   it (the box is then cleared). */
-function _ecgAutoGrow(el) {
-  if (!el) return;
-  el.style.height = 'auto';
-  el.style.height = Math.max(el.scrollHeight, 34) + 'px';
-}
-
-function _ecgGrowingInput(id, placeholder, onSend) {
-  var ta = document.createElement('textarea');
-  ta.id = id;
-  ta.rows = 1;
-  ta.placeholder = placeholder || '';
-  ta.setAttribute('aria-multiline', 'true');
-  ta.oninput = function () { _ecgAutoGrow(ta); };
-  ta.onkeydown = function (e) {
-    if (e.key !== 'Enter' || e.shiftKey) return;
-    e.preventDefault();
-    var text = (ta.value || '').trim();
-    if (!text) return;
-    if (onSend(text) !== false) { ta.value = ''; _ecgAutoGrow(ta); }
-  };
-  return ta;
-}
-
-/* The engine returns the North Star as the raw Face slice — a markdown
-   blockquote plus the section's trailing rule, e.g. "> Ship the thing.\n\n\n---".
-   The goal bar renders it as TEXT, so those markers showed up verbatim on the
-   dashboard. Strip the decoration for DISPLAY only; the stored Face is
-   untouched, and a goal that is genuinely empty stays honestly empty. */
-function _ecgGoalText(raw) {
-  var s = String(raw == null ? '' : raw);
-  s = s.replace(/^\s*(?:-{3,}|_{3,})\s*$/gm, '');   // horizontal rules
-  s = s.replace(/^[ \t]*>[ \t]?/gm, '');            // blockquote markers
-  return s.replace(/\s+/g, ' ').trim();
-}
-
-// Wire ONE chamber action button to its declared act. Unknown acts fall back to
-// speaking the label — the compiler answers with an honest refuse-with-proposal
-// rather than the button silently doing nothing.
-function _ecgWireAct(btn, action) {
-  if (!btn || !action) return btn;
-  var act = action.act || '';
-  btn.onclick = function () {
-    var convo = document.getElementById('ecgConvo');
-    var pre = _ECG_ACT_PREFILL[act];
-    if (pre) {
-      var say = _ecgSayLine();
-      if (say) {
-        say.value = pre;
-        say.focus();
-        try { say.setSelectionRange(say.value.length, say.value.length); } catch (e) {}
-      }
-      if (convo) {
-        _ecgStewardMsg(convo, 'Say the new goal in your own words — I have '
-          + 'started the line for you. Nothing changes until you send it.');
-      }
-      return;
-    }
-    if (!convo) return;
-    _ecgSpeak(convo, _ECG_ACT_SAY[act] || action.label || '');
-  };
-  if (act) btn.title = 'compiles to: ' + act;
-  return btn;
-}
-
-function _ecgRenderChamber(host, vm) {
-  var chamber = vm.chamber;
-  var dock = _ecgEl('div', 'ecg-dock');
-  dock.id = 'ecgSealDock';
-
-  // S1-E1 — titlebar: seal icon · steward-of title · seat pill · quiet stamp
-  var bar = _ecgEl('div', 'ecg-dbar');
-  var ico = _ecgEl('img', 'ecg-seal-ico');
-  ico.src = _ecgStwSealSrc();
-  ico.alt = '';
-  ico.onerror = function () { this.style.display = 'none'; };
-  bar.appendChild(ico);
-  var ti = _ecgEl('span', 'ti', _ecgStwLabel() + ' ');
-  ti.appendChild(_ecgEl('small', null, '· ' + chamber.titlebar.title.replace(/^Ecgberht · /, '')));
-  bar.appendChild(ti);
-  var pill = _ecgEl('button', 'ecg-seat-pill', chamber.titlebar.seat_switcher.pill);
-  pill.title = 'which model Ecgberht is using — set in Anchor model preferences';
-  bar.appendChild(pill);
-  bar.appendChild(_ecgEl('span', 'sp'));
-  bar.appendChild(_ecgEl('span', 'ecg-stamp', chamber.titlebar.stamp));
-  var closeBtn = _ecgEl('button', 'ecg-btn', '×');
-  closeBtn.title = 'Close (nothing is saved by closing)';
-  closeBtn.onclick = closeEcgberhtSeal;
-  bar.appendChild(closeBtn);
-  dock.appendChild(bar);
-
-  // S1-E2 — goal bar FIRST: North Star + [Still the goal] [Refine it]
-  var goal = _ecgEl('div', 'ecg-goalbar');
-  goal.id = 'ecgGoalBar';
-  var g = _ecgEl('div', 'g');
-  g.appendChild(_ecgEl('div', 'lab', chamber.goal_bar.label));
-  g.appendChild(_ecgEl('div', 'txt', _ecgGoalText(chamber.goal_bar.goal)));
-  goal.appendChild(g);
-  var gacts = chamber.goal_bar.actions || [];
-  for (var gi = 0; gi < gacts.length; gi++) {
-    goal.appendChild(_ecgWireAct(
-      _ecgEl('button', 'ecg-btn' + (gacts[gi].primary ? ' gold' : ''),
-             gacts[gi].label), gacts[gi]));
-  }
-  dock.appendChild(goal);
-
-  // S1-E3/E4 — Roadmap rail + run block · S1-E5 — conversation main region
-  var body = _ecgEl('div', 'ecg-chamber');
-  body.appendChild(_ecgRenderRail(chamber.roadmap_rail, chamber.run_block));
-  var convo = _ecgEl('div', 'ecg-convo');
-  convo.id = 'ecgConvo';
-  var opening = chamber.conversation.opening;
-  var omsg = _ecgStewardMsg(convo, opening.text);
-  // The opening actions are wired the same way as the goal bar (they were
-  // label-only too). Built after the message so the buttons can be wired.
-  var oacts = opening.actions || [];
-  if (oacts.length) {
-    var obox = _ecgEl('div', 'act');
-    for (var oi = 0; oi < oacts.length; oi++) {
-      obox.appendChild(_ecgWireAct(
-        _ecgEl('button', 'ecg-btn', oacts[oi].label), oacts[oi]));
-    }
-    omsg.appendChild(obox);
-  }
-  body.appendChild(convo);
-  dock.appendChild(body);
-
-  // S1-E9 — saybox + footer stamp
-  var say = _ecgEl('div', 'ecg-saybox');
-  var input = _ecgGrowingInput('ecgSayInput',
-    chamber.conversation.saybox.placeholder,
-    function (text) { _ecgSpeak(convo, text); return true; });
-  say.appendChild(input);
-  var speak = _ecgEl('button', 'ecg-btn gold', chamber.conversation.saybox.action);
-  speak.onclick = function () {
-    if (!input.value.trim()) return;
-    _ecgSpeak(convo, input.value.trim());
-    input.value = '';
-    _ecgAutoGrow(input);   // collapse the grown box back to one row
-  };
-  say.appendChild(speak);
-  dock.appendChild(say);
-  var footer = chamber.footer_stamp +
-    (vm.parity && vm.parity.agrees ? ' · CLI parity: status agrees' : '');
-  dock.appendChild(_ecgEl('div', 'ecg-footer', footer));
-
-  host.appendChild(dock);
-  document.addEventListener('keydown', function esc(e) {
-    if (e.key === 'Escape') { closeEcgberhtSeal(); document.removeEventListener('keydown', esc); }
-  });
-}
-
-/* TW7 S4-E1 — new-ground chamber (wireframes v2.1 Screen 4). An empty
-   project (no Face, no Strip) opens the stand-up conversation: the steward
-   asks for the goal IN JOHN'S WORDS and invents nothing. Face+Strip are
-   created on [Set the goal with me] confirm ONLY; [Not now] exits clean —
-   zero writes either way until that confirm. */
-function _ecgRenderStandUp(host, su) {
-  var dock = _ecgEl('div', 'ecg-dock');
-  dock.id = 'ecgSealDock';
-
-  var bar = _ecgEl('div', 'ecg-dbar');
-  var ico = _ecgEl('img', 'ecg-seal-ico');
-  ico.src = _ecgStwSealSrc();
-  ico.alt = '';
-  ico.onerror = function () { this.style.display = 'none'; };
-  bar.appendChild(ico);
-  var ti = _ecgEl('span', 'ti', _ecgStwLabel() + ' ');
-  ti.appendChild(_ecgEl('small', null, '· nothing set up here yet'));
-  bar.appendChild(ti);
-  bar.appendChild(_ecgEl('span', 'sp'));
-  var closeBtn = _ecgEl('button', 'ecg-btn', '×');
-  closeBtn.title = 'Close (nothing is saved by closing)';
-  closeBtn.onclick = closeEcgberhtSeal;
-  bar.appendChild(closeBtn);
-  dock.appendChild(bar);
-
-  var convo = _ecgEl('div', 'ecg-convo');
-  convo.id = 'ecgConvo';
-
-  var goalRow = _ecgEl('div', 'ecg-saybox');
-  // A GROWING box here too — the stand-up goal is dictated in whole sentences,
-  // and a one-line input hid everything past the first few words.
-  var goalInput = _ecgGrowingInput('ecgStandUpGoal', su.goal_prompt,
-                                   function () { confirm(); return false; });
-
-  var confirm = function () {
-    var goal = goalInput.value.trim();
-    if (!goal) {
-      // The steward never fills this in — an empty goal is a refusal.
-      _ecgStewardMsg(convo, "I won't invent a goal for you — say what this " +
-        'project is for, in your own words, and I will set it up.');
-      goalInput.focus();
-      return;
-    }
-    // (2026-07-30 FIX) via _postJson — the token MUST ride the X-Anchor-Token
-    // header on a POST (the middleware never reads ?token=), and the URL must
-    // carry NO query (the exact-match route row is compared against the path,
-    // so ?token= missed the row and answered 404 "Unknown endpoint"). Between
-    // them, those two faults meant entering a goal here could never work with
-    // auth ON — first a token re-prompt, then "Couldn't do that".
-    _postJson('/api/ecgberht/stand_up',
-              {project_id: PROJECT_ID, north_star: goal, who: 'john'}
-    ).then(function (r) { return r.json(); }).then(function (out) {
-      if (out && out.ok) {
-        _ecgStewardMsg(convo, (out.voice || 'Set up.') +
-          ' Created: ' + (out.created || []).join(' + ') + ' — saved.', [
-          {label: 'Open it', onclick: function () {
-            closeEcgberhtSeal();
-            openEcgberhtSeal();
-          } }
-        ]);
-        goalRow.style.display = 'none';
-      } else {
-        _ecgStewardMsg(convo, "Couldn't do that: " +
-          ((out && (out.message || out.error)) || 'no response') +
-          ' — nothing was created.');
-      }
-    }).catch(function () {
-      _ecgStewardMsg(convo, "Ecgberht didn't answer — nothing was created.");
-    });
-  };
-
-  // Steward speaks first — Screen 4 stand-up voice, two actions only.
-  _ecgStewardMsg(convo, su.voice, [
-    {label: su.actions[0].label, onclick: function () { goalInput.focus(); } },
-    {label: su.actions[1].label, onclick: function () {
-      // Not now → exit clean: no Face, no Strip, no invented goal.
-      closeEcgberhtSeal();
-    } }
-  ]);
-  dock.appendChild(convo);
-
-  goalRow.appendChild(goalInput);
-  var setBtn = _ecgEl('button', 'ecg-btn gold', 'Set the goal');
-  setBtn.onclick = confirm;
-  // Enter/Shift+Enter is owned by _ecgGrowingInput (Enter confirms, Shift+Enter
-  // is a newline) — do NOT re-bind onkeydown here or the newline is lost.
-  goalRow.appendChild(setBtn);
-  dock.appendChild(goalRow);
-
-  dock.appendChild(_ecgEl('div', 'ecg-footer',
-    'nothing is created until you confirm · your words become the North Star'));
-
-  host.appendChild(dock);
-  document.addEventListener('keydown', function esc(e) {
-    if (e.key === 'Escape') { closeEcgberhtSeal(); document.removeEventListener('keydown', esc); }
-  });
-}
 
 function openEcgberhtSeal() {
+  /* (steward-chamber W6) 'seal-open' marks the Seal click — the C1 paint
+     budget ('seal-open' → 'seal-painted' < 2000ms) starts HERE, before any
+     fetch or layout work. */
+  try { performance.mark('seal-open'); } catch (e) { /* marks unsupported */ }
   /* The chamber lives in ONE expandable tile (2026-07-30): the seal
      button expands it (same pattern as the main dashboard tiles). */
   var tile = document.getElementById('tile-ecgseal');
@@ -6558,38 +7628,524 @@ function openEcgberhtSeal() {
   ecgSealMountInline();
 }
 
+/* F5-CHAMBER-DOM-BEGIN — chamber DOM injection law (steward-chamber W9, C10).
+   Every DOM write inside this region obeys F5: agent-influenced strings
+   enter ONLY via textContent / attribute-safe setters, link targets validate
+   against the fixed internal prefixes (_ecgSealHrefAllowed), and the ONLY
+   sanctioned markup-injection sinks are the REGISTERED ones carrying
+   server-escaped chamber renders — see chamber/dom-slot-inventory.json
+   (owner chamber_dom_law.py). Adding a raw markup sink inside this region
+   without registering it there FAILS CI (the growth rule,
+   chamber_dom_law.js_sink_problems). */
+/* ── steward-chamber W6: the deterministic-first painted M1 slice ──────────
+   The Seal paints in <2s from the W4/W5 sidecar projections through
+   GET /api/ecgberht/seal_open (chamber_open.py — zero model calls, zero
+   child processes, zero writes; server-rendered verbatim-mockup markup with
+   every slot value escaped). (chamber-m1 W2) The slice IS the chamber on
+   every branch: the v0 dock renderers and the slice-drop are DELETED from
+   the tree — guarded by name in tests/test_chamber_v0_is_gone_w2.py — and
+   the successor hydrate is a data API that never touches the DOM. A fresh
+   deploy paints the DRAWN degraded-rail state whose [Rebuild projections]
+   affordance carries the W5 cold-open command — the open path itself never
+   rebuilds. */
+
+/* (steward-chamber W7) run_pulse re-homed into the running step: the painted
+   rail's ⏱ card seeds from the banked record server-side, then this poll —
+   the CHAMBER consumer of the same run_pulse data core the tiles consume —
+   refreshes the latest ⏱ status block in place. Read-only GETs.
+   (steward-chamber W9) The same interval IS the injection clock for the
+   deliverable-landing live push: each tick also reads the SAFE
+   /api/ecgberht/deliverable_state projection and flips the ◇ box live IN
+   PLACE the moment the ENGINE-FED landing exists (no reopen, never
+   model-remembered — manifest + disk + the W4 landing projection are the
+   only sources). The clock stops when the run leaves 'running' AND the
+   deliverable question is settled (landed-applied or none declared), or
+   when the slice closes. */
+var _ecgPulseTimer = null;
+function _ecgSealStopPulsePoll() {
+  if (_ecgPulseTimer) { clearInterval(_ecgPulseTimer); _ecgPulseTimer = null; }
+}
+
+/* F5 link-scheme law: a chamber link may target ONLY the fixed internal
+   read routes. Everything else — javascript:, data:, absolute/protocol-
+   relative URLs, an agent-invented path — never becomes a navigation. */
+function _ecgSealHrefAllowed(href) {
+  return typeof href === 'string' &&
+    (href.indexOf('/artifact/') === 0 || href.indexOf('/report/') === 0 ||
+     href.indexOf('/summary/') === 0);
+}
+
+/* The ◇ box goes LIVE (mockups §deliv S1): rebuild the deliv box body from
+   the SAFE armed-action projection via textContent / setAttribute ONLY (F5
+   — no markup path exists for the description or any server string here).
+   Idempotent per landing (data-deliv-live guards re-entry). */
+function _ecgSealApplyDeliverable(root, st) {
+  if (!st || !st.ok || !st.declared) return false;
+  var box = root.querySelector('.deliv');
+  if (!box) return false;
+  if (box.getAttribute('data-deliv-live')) return true;
+  var a = st.action || {};
+  if (a.state !== 'armed') return false;
+  box.textContent = '';
+  var lab = document.createElement('div');
+  lab.className = 'lab';
+  lab.textContent = 'Deliverable';
+  box.appendChild(lab);
+  box.appendChild(document.createTextNode(
+    (st.description || 'declared deliverable') + ' — landed ✓'));
+  var row = document.createElement('div');
+  row.style.marginTop = '6px'; row.style.display = 'flex'; row.style.gap = '6px';
+  if (a.kind === 'href' && a.href && _ecgSealHrefAllowed(a.href)) {
+    var openB = document.createElement('button');
+    openB.className = 'btn gold';
+    openB.textContent = a.label || 'open ▸';
+    openB.setAttribute('data-deliv-href', a.href);
+    row.appendChild(openB);
+  } else if (a.kind === 'spawn') {
+    var runB = document.createElement('button');
+    runB.className = 'btn gold';
+    runB.textContent = a.label || 'open ▸';
+    runB.setAttribute('data-deliv-action', '1');
+    row.appendChild(runB);
+  }
+  var whereB = document.createElement('button');
+  whereB.className = 'btn';
+  whereB.textContent = 'where it lands';
+  whereB.title = a.output_rel || '';
+  row.appendChild(whereB);
+  box.appendChild(row);
+  box.setAttribute('data-deliv-live', '1');
+  return true;
+}
+
+function _ecgSealStartPulsePoll(root, view) {
+  _ecgSealStopPulsePoll();
+  var live = view && view.live_run;
+  var sid = live && live.session_id;
+  var dv = view && view.deliverable;
+  // The deliverable leg runs while a declared deliverable is not yet live
+  // in the box (landed-at-open renders live server-side — nothing to push).
+  var wantDeliv = !!(dv && dv.declared && !(dv.action && dv.action.landed));
+  if (!sid && !wantDeliv) return;
+  var state = { run: !!sid, deliv: wantDeliv };
+  _ecgPulseTimer = setInterval(function () {
+    if (!document.getElementById('ecgSealSlice')) { _ecgSealStopPulsePoll(); return; }
+    if (state.run) {
+      fetch('/api/ecgberht/run_pulse?project_id=' + encodeURIComponent(PROJECT_ID) +
+            '&session_id=' + encodeURIComponent(sid) + _tokenQ())
+        .then(function (r) { return r.json(); })
+        .then(function (p) {
+          if (!p || !p.ok) return;
+          var card = root.querySelector('.fstep.run .runcard');
+          if (card && p.latest_status) {
+            var tt = card.querySelector('.ttable');
+            if (tt) {
+              var eta = card.getAttribute('data-eta-line');
+              tt.textContent = p.latest_status + (eta ? '\n' + eta : '');
+            }
+            card.classList.remove('warm');  // a captured block ends the drawn pre-emission face
+          }
+          /* (steward-e1 W2, E1) THE CAMPAIGN FOOTER injects on the SAME
+             telemetry clock as the ⏱ table — from the re-homed run_pulse
+             emitter's record fields, ZERO model involvement. The W7 wave
+             injected only the ttable; the footer used to update only at
+             open. Rebuilt textContent-only (F5) to the drawn structure
+             (span.livedot inside div.livestatus). */
+          var ls = root.querySelector('.livestatus');
+          if (ls && p.outcome === 'running') {
+            ls.textContent = '';
+            ls.classList.remove('idle');
+            var ldot = document.createElement('span');
+            ldot.className = 'livedot';
+            ldot.textContent = '⏱';
+            ls.appendChild(ldot);
+            ls.appendChild(document.createTextNode(
+              ' ' + (p.skill || 'a run') + ' running on '
+              + (p.step_id || 'a step') + ' · since ' + (p.at || 'unknown time')));
+          }
+          if (p.outcome && p.outcome !== 'running') {
+            state.run = false;  // the deliverable leg may still be waiting on the landing
+            if (!state.deliv) _ecgSealStopPulsePoll();
+          }
+        })
+        .catch(function () { /* a missed poll is silent — next tick retries */ });
+    }
+    if (state.deliv) {
+      fetch('/api/ecgberht/deliverable_state?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.ok) return;
+          if (!d.declared) { state.deliv = false; }
+          else if (_ecgSealApplyDeliverable(root, d)) { state.deliv = false; }
+          if (!state.run && !state.deliv) _ecgSealStopPulsePoll();
+        })
+        .catch(function () { /* a missed poll is silent — next tick retries */ });
+    }
+    if (!state.run && !state.deliv) _ecgSealStopPulsePoll();
+  }, 15000);
+}
+
+/* (steward-chamber W9) The STATUS overlay, exactly as drawn (§overlays left
+   frame): server-rendered from the same bounded read as the Seal open (zero
+   model calls, zero spawns), toggled from [status ▸] / re-click, closed by
+   its ×, a click on the backdrop, or Esc. */
+function _ecgSealOpenStatusOverlay(root) {
+  var old = root.querySelector('#ecgStatusOverlay');
+  if (old) { old.remove(); return; }
+  fetch('/api/ecgberht/status_overlay?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j || !j.ok || !j.html) return;
+      if (root.querySelector('#ecgStatusOverlay')) return;
+      var ov = document.createElement('div');
+      ov.id = 'ecgStatusOverlay';
+      ov.innerHTML = j.html;  // server-escaped verbatim-mockup markup (registered F5 sink)
+      root.appendChild(ov);
+      var page = ov.querySelector('.page');
+      if (page) {
+        page.addEventListener('click', function (e2) {
+          if (e2.target === page) ov.remove();  // click outside the dock closes
+        });
+      }
+      var onEsc = function (e3) {
+        if (e3.key === 'Escape') { ov.remove(); document.removeEventListener('keydown', onEsc); }
+      };
+      document.addEventListener('keydown', onEsc);
+    })
+    .catch(function () { /* the overlay simply does not open — never a guess */ });
+}
+
+/* (steward-chamber W11) The REFINE-THE-PLAN overlay, exactly as drawn
+   (§overlays right frame): server-rendered talk-to-edit dock. Talk stays
+   DRAFT — the plan writes ONLY through POST /api/ecgberht/refine_confirm,
+   the section-scoped hash-bound confirm; a genuine same-section conflict
+   answers 409 with the drawn 'plan moved' card WITH diff (server-escaped),
+   painted in place of the dock body. Toggled from [Refine the plan],
+   closed by its ×, the backdrop, or Esc. */
+function _ecgSealOpenRefineOverlay(root) {
+  var old = root.querySelector('#ecgRefineOverlay');
+  if (old) { old.remove(); return; }
+  fetch('/api/ecgberht/refine_state?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j || !j.ok || !j.html) return;
+      if (root.querySelector('#ecgRefineOverlay')) return;
+      var rov = document.createElement('div');
+      rov.id = 'ecgRefineOverlay';
+      rov.innerHTML = j.html;  // server-escaped verbatim-mockup markup (registered F5 sink)
+      root.appendChild(rov);
+      var page = rov.querySelector('.page');
+      if (page) {
+        page.addEventListener('click', function (e2) {
+          if (e2.target === page) rov.remove();  // click outside the dock closes
+        });
+      }
+      var onEsc = function (e3) {
+        if (e3.key === 'Escape') { rov.remove(); document.removeEventListener('keydown', onEsc); }
+      };
+      document.addEventListener('keydown', onEsc);
+    })
+    .catch(function () { /* the overlay simply does not open — never a guess */ });
+}
+
+/* The refine-confirm write path: section id + bound hash ride the overlay's
+   armed dataset (set by the draft flow); the server re-checks the hash —
+   this client NEVER decides a conflict. On 409 the server's drawn 'plan
+   moved' card (WITH diff) replaces the dock body via the registered sink. */
+function _ecgRefineConfirm(root, rov) {
+  var sec = rov.getAttribute('data-refine-section') || '';
+  var bound = rov.getAttribute('data-refine-hash') || '';
+  var text = rov.getAttribute('data-refine-text') || '';
+  if (!sec) { rov.remove(); return; }
+  _postJson('/api/ecgberht/refine_confirm',
+    { project_id: PROJECT_ID, section_id: sec, bound_hash: bound, new_text: text })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.ok) { rov.remove(); return; }
+      if (j && j.html) {
+        rov.innerHTML = j.html;  // the drawn 'plan moved' card (registered F5 sink)
+      }
+    })
+    .catch(function () { /* the confirm did not land — the draft is preserved server-side */ });
+}
+
+/* ── chamber-m1 W1: the drawn say box, wired ─────────────────────────────
+   The mockup's <input placeholder="Talk to …"> + [Say it] button carried no
+   data-* hook, so the slice's delegation could not reach them — the ONLY
+   unwired affordance in M1. The server now emits data-say-input /
+   data-say-send onto the drawn elements (ATTRIBUTES ONLY — the C9 signature
+   is (tag, sorted-classes), so the hash pin holds) and these handlers post
+   the turn to the EXISTING /api/ecgberht/converse. Replies paint into the
+   drawn .msgs with MOCKUP classes (.msg.john / .msg.steward /
+   .msg.steward.blocked) — page CSS does not cross the shadow boundary, so
+   v0's .ecg-msg painter classes would render invisible inside the slice.
+   Every builder here is textContent/createTextNode-only (F5 — no markup
+   sink). E1 stays engine-enforced server-side; _ecgSliceBlockedTurn makes
+   the refusal VISIBLE in the slice as the signed AG-BLOCKED-TURN shape. */
+var _ECG_SLICE_TURNS = [];
+
+function _ecgSliceStewardName(root) {
+  var who = root.querySelector('.msgs .msg.steward .who');
+  var name = who ? (who.textContent || '').trim() : '';
+  return (name && name.indexOf('⛔') < 0) ? name : 'Ecgberht';
+}
+
+function _ecgSliceMsg(root, classes, who, text) {
+  var msgs = root.querySelector('.msgs');
+  if (!msgs) return null;
+  var msg = document.createElement('div');
+  msg.className = classes;
+  var w = document.createElement('div');
+  w.className = 'who';
+  w.textContent = who;
+  msg.appendChild(w);
+  msg.appendChild(document.createTextNode(text || ''));
+  msgs.appendChild(msg);
+  msgs.scrollTop = msgs.scrollHeight;
+  return msg;
+}
+
+/* The signed AG-BLOCKED-TURN drawn state (msg steward blocked · who / bfind /
+   bq+bqid rows / bnote — chamber/MOCKUP-AMENDMENT-GATE-W2.md), textContent-
+   only. An engine-green refusal that never appears is the defect; this is
+   where the refusal becomes pixels. */
+function _ecgSliceBlockedTurn(root, blocked) {
+  var msgs = root.querySelector('.msgs');
+  if (!msgs) return null;
+  var b = blocked || {};
+  var msg = document.createElement('div');
+  msg.className = 'msg steward blocked';
+  var who = document.createElement('div');
+  who.className = 'who';
+  who.textContent = '⛔ ' + _ecgSliceStewardName(root) + ' — turn blocked';
+  msg.appendChild(who);
+  var find = document.createElement('div');
+  find.className = 'bfind';
+  find.textContent = (b.finding || 'E1-TURN-CLOSE-BLOCKED') +
+    ' · a direct question from John lacks a typed answer-reference';
+  msg.appendChild(find);
+  var qs = b.unanswered || [];
+  for (var i = 0; i < qs.length; i++) {
+    var q = qs[i] || {};
+    var row = document.createElement('div');
+    row.className = 'bq';
+    row.appendChild(document.createTextNode('“' + (q.text || '') + '” '));
+    var qid = document.createElement('span');
+    qid.className = 'bqid';
+    qid.textContent = q.question_id || '';
+    row.appendChild(qid);
+    msg.appendChild(row);
+  }
+  var note = document.createElement('div');
+  note.className = 'bnote';
+  note.textContent = b.message || ('The engine refused to close this turn — '
+    + 'the E1 refusal state, drawn distinct from “are you working”.');
+  msg.appendChild(note);
+  msgs.appendChild(msg);
+  msgs.scrollTop = msgs.scrollHeight;
+  return msg;
+}
+
+function _ecgSliceSay(root) {
+  var input = root.querySelector('[data-say-input]');
+  if (!input) return;
+  var text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  var name = _ecgSliceStewardName(root);
+  _ecgSliceMsg(root, 'msg john', 'John', text);
+  _ECG_SLICE_TURNS.push({role: 'john', text: text});
+  if (_ECG_SLICE_TURNS.length > 24) _ECG_SLICE_TURNS = _ECG_SLICE_TURNS.slice(-24);
+  var thinking = _ecgSliceMsg(root, 'msg steward', name, 'Thinking…');
+  _postJson('/api/ecgberht/converse', {
+    project_id: PROJECT_ID,
+    text: text,
+    turns: _ECG_SLICE_TURNS.slice(0, -1)
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (thinking) thinking.remove();
+    if (j && j.turn_blocked && j.blocked) {
+      _ecgSliceBlockedTurn(root, j.blocked);  // the refusal must be SEEN
+      return;
+    }
+    var say = j && (j.say || j.message || j.user_text);
+    if (j && j.ok && say) {
+      _ECG_SLICE_TURNS.push({role: 'steward', text: String(say)});
+      _ecgSliceMsg(root, 'msg steward', name, say);
+      return;
+    }
+    // Honest failure: say what happened, never dress it up as an answer.
+    _ecgSliceMsg(root, 'msg steward', name,
+      say || (name + " didn't answer — nothing was saved."));
+  }).catch(function () {
+    if (thinking) thinking.remove();
+    _ecgSliceMsg(root, 'msg steward', name,
+      name + " didn't answer — nothing was saved.");
+  });
+}
+
+function _ecgSealPaintSlice(host) {
+  if (document.getElementById('ecgSealSlice')) return;
+  fetch('/api/ecgberht/seal_open?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j || !j.ok || !j.html) return;               // honest: no slice — the legacy path still paints
+      if (document.getElementById('ecgSealDock')) return; // legacy chamber already hydrated
+      if (document.getElementById('ecgSealSlice')) return;
+      var slice = document.createElement('div');
+      slice.id = 'ecgSealSlice';
+      /* (W7) STYLE-ISOLATED mount: the server ships the SIGNED mockup's
+         verbatim CSS (hash-pinned extraction — chamber_rail.mockup_css) and
+         the markup mounts inside a shadow root carrying exactly that
+         stylesheet, so page styles cannot bleed in and the mockup CSS
+         applies verbatim. Anchor's tokens inherit through the host (custom
+         properties cross the shadow boundary). When the pin cannot serve
+         the CSS the mount falls back to the light DOM + the page's scoped
+         W6 stylesheet — honest degraded styling, never a silent restyle. */
+      var root = slice;
+      if (j.css && slice.attachShadow) {
+        try { root = slice.attachShadow({ mode: 'open' }); } catch (e) { root = slice; }
+      }
+      if (root !== slice) {
+        var st = document.createElement('style');
+        st.textContent = j.css;
+        root.appendChild(st);
+        var wrap = document.createElement('div');
+        wrap.innerHTML = j.html;  // server-escaped verbatim-mockup markup
+        while (wrap.firstChild) root.appendChild(wrap.firstChild);
+      } else {
+        slice.innerHTML = j.html; // server-escaped verbatim-mockup markup
+      }
+      root.addEventListener('click', function (ev) {
+        var t = ev.target;
+        if (!t || !t.getAttribute) return;
+        if (t.getAttribute('data-seal-close') != null) {
+          closeEcgberhtSeal();  // the slice's × — read-only, writes nothing
+          return;
+        }
+        var sid = t.getAttribute('data-open-session');
+        if (sid) {
+          ev.preventDefault();
+          if (typeof openPanel === 'function') openPanel(sid);  // session ▸ — the actual terminal
+          return;
+        }
+        if (t.getAttribute('data-say-send') != null) {
+          ev.preventDefault();
+          _ecgSliceSay(root);  // chamber-m1 W1: the drawn [Say it], wired
+          return;
+        }
+        if (t.getAttribute('data-status-overlay') != null) {
+          ev.preventDefault();
+          _ecgSealOpenStatusOverlay(root);  // W9: the drawn STATUS overlay — never a raw jump
+          return;
+        }
+        if (t.getAttribute('data-overlay-close') != null) {
+          ev.preventDefault();
+          var ovl = root.querySelector('#ecgStatusOverlay');
+          if (ovl) ovl.remove();
+          var rvl = root.querySelector('#ecgRefineOverlay');
+          if (rvl) rvl.remove();
+          return;
+        }
+        if (t.getAttribute('data-refine-overlay') != null) {
+          ev.preventDefault();
+          _ecgSealOpenRefineOverlay(root);  // W11: the drawn REFINE overlay — talk stays draft
+          return;
+        }
+        if (t.getAttribute('data-refine-confirm') != null) {
+          ev.preventDefault();
+          var rcv = root.querySelector('#ecgRefineOverlay');
+          if (rcv) _ecgRefineConfirm(root, rcv);  // hash-bound: the server decides
+          return;
+        }
+        if (t.getAttribute('data-refine-keep') != null) {
+          ev.preventDefault();  // keep refining — the dock stays open, nothing writes
+          return;
+        }
+        if (t.getAttribute('data-refine-discard') != null) {
+          ev.preventDefault();
+          var rdv = root.querySelector('#ecgRefineOverlay');
+          var rsec = rdv ? (rdv.getAttribute('data-refine-section') || '') : '';
+          if (rsec) {
+            _postJson('/api/ecgberht/refine_confirm',
+              { project_id: PROJECT_ID, action: 'discard', section_id: rsec })
+              .catch(function () { /* draft discard is best-effort */ });
+          }
+          if (rdv) rdv.remove();
+          return;
+        }
+        var dh = t.getAttribute('data-deliv-href');
+        if (dh) {
+          ev.preventDefault();
+          // F5: the href was server-built for a fixed internal route and is
+          // re-validated here before it can ever become a navigation.
+          if (_ecgSealHrefAllowed(dh)) window.open(dh + _tokenQ(), '_blank');
+          return;
+        }
+        if (t.getAttribute('data-deliv-action') != null) {
+          ev.preventDefault();
+          t.disabled = true;
+          // The action re-resolves SERVER-side under the F3 bounds; the
+          // request carries only the project id — never a path or verb.
+          _postJson('/api/ecgberht/deliverable_action', { project_id: PROJECT_ID })
+            .then(function (r) { return r.json(); })
+            .then(function (k) {
+              t.disabled = false;
+              t.textContent = (k && k.ok) ? 'opened ✓'
+                : ((k && k.label) || 'action inert');
+            })
+            .catch(function () { t.disabled = false; });
+          return;
+        }
+      });
+      /* (chamber-m1 W1) Enter in the drawn say input sends the turn — the
+         same delegation surface, key leg (click on send, Enter on input). */
+      root.addEventListener('keydown', function (ev) {
+        var t = ev.target;
+        if (!t || !t.getAttribute) return;
+        if (ev.key === 'Enter' && t.getAttribute('data-say-input') != null) {
+          ev.preventDefault();
+          _ecgSliceSay(root);
+        }
+      });
+      host.appendChild(slice);
+      _ecgSealStartPulsePoll(root, j.view);
+      /* 'seal-painted' lands on the FIRST FULL-FRAME COMMIT after the slice
+         mounts (double rAF = the painted frame), per the plan's mark law.
+         The measured delta rides window.ECG_SEAL_PAINT_MS for CI/sign-off. */
+      requestAnimationFrame(function () { requestAnimationFrame(function () {
+        try {
+          performance.mark('seal-painted');
+          var m = performance.measure('seal-open-to-paint', 'seal-open', 'seal-painted');
+          if (m && m.duration != null) {
+            window.ECG_SEAL_PAINT_MS = m.duration;
+          } else {
+            var es = performance.getEntriesByName('seal-open-to-paint');
+            window.ECG_SEAL_PAINT_MS = es.length ? es[es.length - 1].duration : null;
+          }
+        } catch (e) { /* marks unsupported — never break the paint */ }
+      }); });
+    })
+    .catch(function () { /* deterministic paint unavailable — legacy path continues */ });
+}
+
 function ecgSealMountInline() {
   var host = document.getElementById('ecgSealHost');
   if (!host) return;
   if (document.getElementById('ecgSealDock')) return;
+  _ecgSealPaintSlice(host);  // W6 deterministic-first paint; never blocked by the fetch below
+  /* (chamber-m1 W1) THE HYDRATE NO LONGER REPLACES THE SLICE. For twelve
+     waves this fetch's handlers mounted the v0 dock renderers and then
+     dropped the slice, deleting the painted M1 chamber on every branch of
+     every open. All three mount/drop call sites are GONE from this path —
+     and (chamber-m1 W2) the v0 renderers themselves are DELETED from the
+     tree, guarded by name in tests/test_chamber_v0_is_gone_w2.py. The
+     painted slice IS the chamber, and it already carries the honest drawn
+     faces for the unbuilt and degraded cases server-side. The route itself
+     remains a data API (speak/converse/commission compile against its view
+     model), so the fetch still settles; it never touches the DOM. */
   fetch('/api/ecgberht/chamber?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
     .then(function (r) { return r.json(); })
-    .then(function (j) {
-      if (j && j.ok && j.mode === 'stand_up' && j.stand_up) {
-        // TW7 Screen 4 — empty project: stand-up conversation, never an
-        // invented chamber over a steward that does not exist.
-        _ecgRenderStandUp(host, j.stand_up);
-        return;
-      }
-      if (!j || !j.ok || !j.chamber) {
-        var dock = _ecgEl('div', 'ecg-dock');
-        dock.id = 'ecgSealDock';
-        var bar = _ecgEl('div', 'ecg-dbar');
-        bar.appendChild(_ecgEl('span', 'ti', 'Ecgberht'));
-        bar.appendChild(_ecgEl('span', 'sp'));
-        var x = _ecgEl('button', 'ecg-btn', '×');
-        x.onclick = closeEcgberhtSeal;
-        bar.appendChild(x);
-        dock.appendChild(bar);
-        var msg = _ecgEl('div', 'ecg-convo');
-        _ecgStewardMsg(msg, (j && j.error) ? ("I can't reach Ecgberht right now: " + j.error +
-          '. Nothing was made up and nothing was saved.') :
-          "I can't reach Ecgberht right now. Nothing was made up and nothing was saved.");
-        dock.appendChild(msg);
-        host.appendChild(dock);
-        return;
-      }
-      _ecgRenderChamber(host, j);
-    })
+    .then(function () { /* data API only — the M1 slice remains on screen */ })
     .catch(function () { /* leave the dashboard untouched */ });
 }
+/* F5-CHAMBER-DOM-END — chamber DOM injection law region (steward-chamber W9). */

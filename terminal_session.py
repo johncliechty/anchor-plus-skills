@@ -558,7 +558,7 @@ def _engine_launch_argv(cmd, backend, engine_uuid):
 def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
                   parent_session_id=None, paste_prompt=None, grass_origin=None,
                   effort_id=None, effort_managed=False, actor=None,
-                  extra_cli_args=None):
+                  extra_cli_args=None, lean_worktree=False):
     """Start a live, worktree-isolated, registered terminal session.
 
     Resolves ``project_id`` in ``rnd_registry``, mints ONE session id, creates a
@@ -671,7 +671,12 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
         origin = _resolve_grass_origin_from_chain(parent_id, parent_rec)
 
     # 1) Isolated worktree first — if this fails we never start a PTY.
-    wt = _wt.create_worktree(project_id, sid)
+    # ``lean_worktree`` skips heavy binaries in the checkout. A commissioned skill
+    # needs the project's text and code, not its media: on the MBA Teaching AI repo
+    # (a 1.27 GB zip committed to git) this is 0.3 MB / 0.1s instead of 1430 MB / 5.3s.
+    wt = _wt.create_worktree(
+        project_id, sid,
+        exclude_globs=_wt.LEAN_EXCLUDE_GLOBS if lean_worktree else None)
     if not wt.get("ok"):
         raise TerminalSessionError(
             "worktree creation failed (%s): %s"
@@ -941,7 +946,7 @@ def live_doctor_session():
     return None
 
 
-def start_doctor_session(seed_context=None, backend=None):
+def start_doctor_session(seed_context=None, backend=None, resolve=False):
     """Start (or attach to) THE doctor agentic session (doctor V3 Wave 2).
 
     Returns ``(record, attached)``. Idempotent: while one doctor session is
@@ -951,7 +956,10 @@ def start_doctor_session(seed_context=None, backend=None):
     the reserved ``__doctor__`` pseudo-project: bare ``general`` lane (the
     briefing is the ``seed_context``, delivered once by the seed-once
     mechanism), cwd = the live Anchor folder (no worktree), and the engine CLI
-    in READ-ONLY plan permission mode (:data:`DOCTOR_READONLY_CLI_ARGS`).
+    in READ-ONLY plan permission mode (:data:`DOCTOR_READONLY_CLI_ARGS`) —
+    UNLESS ``resolve=True`` (2026-08-07, John: "when you hit resolve this it
+    should actually … resolve it, not do a plan"): a RESOLVE session launches
+    with the engine's normal write posture so it can actually fix the issue.
     Output/input ride the EXISTING term_ws / term_stream2 / term_input2 /
     term_kill transports keyed by the returned ``session_id`` — no new
     transport. The caller resolves ``backend`` honestly via
@@ -961,10 +969,11 @@ def start_doctor_session(seed_context=None, backend=None):
     if existing is not None:
         return existing, True
     backend = backend or _reg.BACKEND_CLAUDE
+    extra = [] if resolve else list(DOCTOR_READONLY_CLI_ARGS.get(backend, ()))
     rec = start_session(
         DOCTOR_PROJECT_ID, DOCTOR_LANE, backend=backend, label=DOCTOR_LABEL,
         seed_context=seed_context,
-        extra_cli_args=list(DOCTOR_READONLY_CLI_ARGS.get(backend, ())))
+        extra_cli_args=extra)
     return rec, False
 
 

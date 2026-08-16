@@ -865,26 +865,34 @@ def static_asset(rel_path: str):
     return target.read_bytes(), ctype
 
 
-#: Per-process cache of minted content-hash versions {rel_path: hash8}.
+#: Cache of minted content-hash versions {rel_path: (mtime, size, hash8)}.
+#: Keyed on the file's (mtime, size) so an EDIT re-mints WITHOUT a restart —
+#: the once-per-process mint (2026-08-06) served John three rounds of stale UI:
+#: the page kept referencing the old ?v= while the bytes on disk were new.
 _static_asset_versions = {}
 
 
 def static_asset_version(rel_path: str) -> str:
     """The content-hash cache-buster for a static asset (the ``?v=<hash8>``).
 
-    sha256 of the file bytes, first 8 hex chars, minted ONCE per process (a
-    restart re-mints it, so a deploy that changes the file changes every
-    page's asset URL). A missing asset honestly returns ``"missing"`` and is
-    NOT cached, so the version heals as soon as the file exists.
+    sha256 of the CURRENT file bytes, first 8 hex chars, re-minted whenever
+    the file's (mtime, size) changes — so a changed file changes every page's
+    asset URL on the next render, restart or not. A missing asset honestly
+    returns ``"missing"`` and is not cached, healing as soon as it exists.
     """
+    try:
+        st = (STATIC_DIR / rel_path.lstrip("/")).stat()
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return "missing"
     cached = _static_asset_versions.get(rel_path)
-    if cached is not None:
-        return cached
+    if cached is not None and cached[0] == key:
+        return cached[1]
     asset = static_asset(rel_path)
     if asset is None:
         return "missing"
     ver = _hashlib.sha256(asset[0]).hexdigest()[:8]
-    _static_asset_versions[rel_path] = ver
+    _static_asset_versions[rel_path] = (key, ver)
     return ver
 
 
@@ -4503,25 +4511,24 @@ def _render_layoutd_html(folder_path, project_id):
     zones = _layoutd_zones(folder_path, project_id, sessions_by_lane)
     # v12 W10: bind the tiles to the effort view (session_id → effort dict).
     effort_index = _build_effort_index(project_id)
-    research_zone = _render_layoutd_zone(
-        "research", "Research", "&#128300; Latest Research",
-        zones["research"], folder_path, project_id, effort_index=effort_index)
-    plan_build_zone = _render_layoutd_zone(
-        "plan_build", "Plan/Build", "&#128208;&#8594;&#128296; Latest Plan / Build",
-        zones["plan_build"], folder_path, project_id, effort_index=effort_index)
-    # General sessions zone (bare terminals): most-recent headline + older-runs
-    # shelf, mirroring the research / plan-build zones. Rendered ONLY when the
-    # project actually has general sessions (unlike the always-present trio zones)
-    # — so a project with no general activity is unchanged, and general sessions
-    # are still started from the existing top "Open terminal" control (newGeneral,
-    # which refreshes the board so this zone appears).
+    # (2026-08-07, John — the simple workbench, SERVER-side this time.) The
+    # Research and Plan/Build zones are gone: John works in general terminals,
+    # and steward-commissioned trio runs are watched from the run ledger, not
+    # board columns. Sessions in those lanes stay reachable via the session
+    # bar chips and the ledger's "Open the session".
+    research_zone = ""
+    plan_build_zone = ""
+    # The GENERAL zone is the board now — always rendered, empty state included.
     general_sessions = zones.get("general", []) or []
-    general_zone = ""
-    if general_sessions:
-        general_zone = _render_layoutd_zone(
-            "general", "General", "&#128187; Latest General session",
-            general_sessions, folder_path, project_id, effort_index=effort_index)
-    gandalf_panel = _render_layoutd_gandalf_panel(folder_path, project_id)
+    general_zone = _render_layoutd_zone(
+        "general", "General", "&#128187; Latest General session",
+        general_sessions, folder_path, project_id, effort_index=effort_index)
+    # (2026-08-07, John) The Gandalf panel is OUTSIDE the steward — commissioned
+    # Gandalf runs live in the Seal's ledger now, so the project page drops the
+    # standalone tab. It stays in the dashboard's slim Workbench (John's four
+    # right-hand tiles there include it).
+    gandalf_panel = (_render_layoutd_gandalf_panel(folder_path, project_id)
+                     if project_id == "__dashboard__" else "")
     grass_panel = _render_layoutd_grass_panel(folder_path, project_id)
     deliv_panel = _render_layoutd_deliverables_panel(folder_path, project_id)
     files_panel = _render_layoutd_files_panel(folder_path, project_id)
@@ -4529,20 +4536,15 @@ def _render_layoutd_html(folder_path, project_id):
     # starts an effort at the Research stage, "+ New plan/build" starts one at the
     # Plan stage (W6 supports starting at research OR plan). Both go through
     # newEffort(stage) → term_start (effort_managed=True), token-authed.
+    # (2026-08-07, John) One start control: the general terminal. Research /
+    # plan / build work is commissioned through the steward, not hand-started
+    # from board buttons.
     new_effort = (
         "<div class='neweffort-wrap' style='margin:0 0 18px;display:flex;gap:8px'>"
-        "<button class='btn primary neweffort' id='newResearchBtn' "
-        "onclick=\"newEffort('research')\" "
-        "title='Start a new effort at the Research stage'>"
-        "+ New research</button>"
-        "<button class='btn primary neweffort' id='newPlanBuildBtn' "
-        "onclick=\"newEffort('plan')\" "
-        "title='Start a new effort at the Plan stage (then advance to Build)'>"
-        "+ New plan/build</button>"
         "<button class='btn primary neweffort' id='newGeneralBtn' "
         "onclick=\"newEffort('general')\" "
-        "title='Start a new general session'>"
-        "+ New general</button></div>"
+        "title='Start a new general terminal session'>"
+        "+ New general terminal</button></div>"
     )
     board = (
         "<div class='pgrid layoutd'>"
@@ -5624,6 +5626,11 @@ def render_project_window_html(project_id: str) -> str:
             + PROJECT_WINDOW_JS_ASSET + "?v="
             + static_asset_version(PROJECT_WINDOW_JS_ASSET)
             + "'></script>"
+            # Wave 18 chamber UI (steps/proposal/artifact/correction) — token
+            # routes only; poller adopts high-seat.js:485-528 by name.
+            "<script src='" + STATIC_URL_PREFIX + "/chamber-ui.js?v="
+            + static_asset_version("chamber-ui.js")
+            + "'></script>"
         )
     else:
         try:
@@ -5650,6 +5657,10 @@ def render_project_window_html(project_id: str) -> str:
             + anchor_boot_script(project_window_boot_extra(project_id)) + "\n"
             + _PROJECT_WINDOW_JS +
             "</script>"
+            # Wave 18 chamber UI (same asset as static branch).
+            "<script src='" + STATIC_URL_PREFIX + "/chamber-ui.js?v="
+            + static_asset_version("chamber-ui.js")
+            + "'></script>"
         )
     # ── rearch W5 (C1 increment 2): the shell-CSS block ─────────────────────
     # Chosen by the SAME `frontend` pillar flag as the W4 app-JS block above
@@ -5693,11 +5704,36 @@ def render_project_window_html(project_id: str) -> str:
         f"<div style='padding:8px 18px;border-bottom:1px solid var(--border);"
         f"font-size:12.5px;color:var(--text-dim);white-space:pre-wrap'>"
         f"&#128221; {notes_esc}</div>" if notes_raw.strip() else "")
+    # ── SLIM MODE (2026-08-07, John) ─────────────────────────────────────────
+    # The main dashboard's Workbench tile iframes THIS page for the
+    # __dashboard__ pseudo-project — and got a nested project cockpit with a
+    # steward inside it. Slim = what that tile is FOR: general-terminal admin
+    # + the right-hand tiles. No Seal, no chips, workbench open by default.
+    slim = (project_id == "__dashboard__")
+    # The seal tile is a SLOT now: pre-filled markup (slot values are never
+    # re-scanned, so the steward values are baked in here, not @@-referenced).
+    seal_tile = "" if slim else (
+        "<details class='dash-tile tile-seal' id='tile-ecgseal' "
+        "ontoggle=\"if(this.open)ecgSealMountInline()\"><summary title='"
+        + html_lib.escape(_stew_ui["label"], quote=True)
+        + " — the steward chamber (take charge)'><img class='tile-ico' src='"
+        + html_lib.escape("/vendor/brand/%s?v=%s" % (_stew_ui["seal"], BUILD_ID), quote=True)
+        + "' alt='' onerror=\"this.style.display='none'\"/> "
+        + html_lib.escape(_stew_ui["seal_name"])
+        + "<span class='tile-count'>" + html_lib.escape(_stew_ui["label"])
+        + " &mdash; the steward chamber</span></summary>"
+        "<div class='tile-body'><div class='ecg-seal-host' id='ecgSealHost'></div>"
+        "<div class='ecg-chamber-steps-host' id='ecgChamberStepsHost' data-wave='18'></div>"
+        "<div class='ecg-chamber-artifact-host' id='ecgChamberArtifactHost' data-wave='18'></div>"
+        "</div></details>")
     slots = {
         "name": name,
         "xterm_prefix": XTERM_URL_PREFIX,
         "shell_css": shell_css_block,
-        "back_link": "" if project_id == "__dashboard__" else back_link_normal,
+        "seal_tile": seal_tile,
+        "wb_open": " open" if slim else "",
+        # (2026-08-07, John) no back-link on project pages — not needed.
+        "back_link": "",
         "notes_attr": notes_attr,
         "blurb_attr": blurb_attr,
         "folder": folder,
@@ -5713,7 +5749,9 @@ def render_project_window_html(project_id: str) -> str:
         "objective_block": objective_block,
         "blurb_block": blurb_block,
         "notes_block": notes_block,
-        "status_line": status,
+        # (2026-08-07, John) The Research/Planning/Build counter chips are the
+        # old shape of the course — gone from the project page entirely.
+        "status_line": "",
         "kanban": kanban,
         "dock_chrome": dock_chrome,
         "boneyard_tpl": boneyard_tpl,
@@ -10124,6 +10162,20 @@ def handle_new_project(handler, path, body):
     mode = body.get("mode", "existing")
     name = body.get("name", "")
     priority = body.get("priority", 2)
+    # (2026-08-07, John — High Seat "+ New project") mode 'auto': one folder
+    # path decides. Existing folder → brownfield register (discover/adopt +
+    # first-scan Gandalf fire inside); missing → create it under its parent.
+    if mode == "auto":
+        folder = Path(str(body.get("folder_path", ""))).expanduser()
+        if folder.exists():
+            res = select_existing_project(name or folder.name, str(folder),
+                                          priority=priority)
+            handler._send_json({"ok": True, "path_existed": True, **res})
+        else:
+            res = create_new_folder_project(
+                name or folder.name, str(folder.parent), priority=priority)
+            handler._send_json({"ok": True, "path_existed": False, **res})
+        return
     if mode == "new_folder":
         res = create_new_folder_project(
             name, body.get("parent_path", ""),
@@ -10477,6 +10529,368 @@ def handle_ecgberht_chamber(handler, path, body):
     handler._send_json(out, 200 if out.get("ok") else 502)
 
 
+def handle_ecgberht_seal_open(handler, path, body):
+    """GET /api/ecgberht/seal_open — the W6 painted vertical-slice M1 open
+    (steward-chamber C1).
+
+    DETERMINISTIC-FIRST: the response derives from the W4/W5 sidecar
+    projections + the ledger tail alone (``chamber_open.seal_open_view``,
+    bounded reads: snapshot tail-read + the 200-read run-record backstop) and
+    is rendered as the verbatim-mockup slice (``render_seal_slice_html``,
+    every slot value escaped) — ZERO model calls, ZERO child processes (this
+    handler never touches the Node bridge), ZERO writes. A fresh deploy
+    (sidecar absent / schema-stale) answers the DRAWN degraded-rail state
+    (AG-DEGRADED-RAIL) carrying the explicit W5 cold-open rebuild affordance
+    — never an inline rebuild on the open path. The W6 CI suite
+    (tests/test_chamber_seal_ci_w6.py) asserts the spawn/network trace, the
+    <2s budget, and the C9 DOM/class diff on every chamber change.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or q.get("pid", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    # W7: the FULL M1 rail (chamber_rail — typed edges, rulebook states,
+    # pulse ⏱ seed, guarded ETA medians) over the same bounded W6 open; the
+    # response also carries the SIGNED mockup's verbatim CSS for the
+    # style-isolated (shadow-root) mount. Still zero model calls, zero child
+    # processes (never touches the Node bridge), zero writes.
+    import chamber_rail
+    try:
+        view = chamber_rail.seal_rail_view(folder, project_id=pid)
+        stw = _steward_ui()
+        html_out = chamber_rail.render_seal_rail_html(
+            view, steward={"label": stw.get("label") or "Ecgberht"})
+        css_out = chamber_rail.mockup_css()
+    except Exception as exc:  # honest failure — never a blank or a guess
+        handler._send_json({"ok": False, "error": "seal_open_failed",
+                            "message": str(exc)}, 500)
+        return
+    handler._send_json({"ok": True, "view": view, "html": html_out,
+                        "css": css_out}, 200)
+
+
+def handle_ecgberht_status_overlay(handler, path, body):
+    """GET /api/ecgberht/status_overlay — the W9 STATUS overlay, exactly as
+    drawn (steward-chamber C2/C9).
+
+    John's "most recent status update + what's left and how long": the
+    latest captured ⏱ status table (or the honest pre-emission / idle face)
+    plus the remaining rail steps with their n>=3 median ETAs, rendered
+    server-side as the verbatim §overlays structure
+    (``chamber_status_overlay.render_status_overlay_html`` over the same
+    bounded ``chamber_rail.seal_rail_view`` read the Seal open uses). Pure
+    read — ZERO model calls, ZERO child processes (never the Node bridge),
+    ZERO writes; every slot value escaped (F5); token-authed like every
+    chamber read (401 before substance).
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or q.get("pid", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_rail
+    import chamber_status_overlay
+    try:
+        view = chamber_rail.seal_rail_view(folder, project_id=pid)
+        html_out = chamber_status_overlay.render_status_overlay_html(view)
+        ov = chamber_status_overlay.overlay_view(view)
+    except Exception as exc:  # honest failure — never a blank or a guess
+        handler._send_json({"ok": False, "error": "status_overlay_failed",
+                            "message": str(exc)}, 500)
+        return
+    handler._send_json({"ok": True, "html": html_out,
+                        "table_state": ov.get("table_state"),
+                        "degraded": ov.get("degraded")}, 200)
+
+
+def handle_ecgberht_deliverable_state(handler, path, body):
+    """GET /api/ecgberht/deliverable_state — the W9 injection-clock read
+    (steward-chamber C2, F3).
+
+    The SAFE deliverable projection the open chamber polls on the injection
+    clock to flip the ◇ box live the moment the ENGINE-FED landing exists on
+    disk — no reopen, never model-remembered
+    (``chamber_deliverable.deliverable_state``: manifest + disk + the W4
+    landing projection are the only sources). Read-only; relative paths
+    only; argv/cwd never serialize; zero model calls; zero spawns.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or q.get("pid", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_deliverable
+    try:
+        out = chamber_deliverable.deliverable_state(folder, project_id=pid)
+    except Exception as exc:  # honest failure — never a guess
+        handler._send_json({"ok": False, "error": "deliverable_state_failed",
+                            "message": str(exc)}, 500)
+        return
+    handler._send_json(out, 200)
+
+
+def handle_ecgberht_deliverable_action(handler, path, body):
+    """POST /api/ecgberht/deliverable_action — invoke THE registry action
+    for the project's declared deliverable (steward-chamber W9, C10 — F3).
+
+    The ONE chamber execution path, F3-bounded end to end: the action is
+    re-resolved server-side from the validated manifest at invoke time
+    (never trusted from the client — the request carries only the project
+    id), so the spawn — when one is armed at all — is ``shell:false`` with a
+    LIST argv built from the CODE-OWNED verb allow-list's fixed prefix plus
+    the symlink/junction-resolved CONTAINED output path, cwd pinned to the
+    project folder. Anything else — unknown type, disallowed verb, hostile
+    path content, an uncontained resolution, not-landed — answers the
+    LABELED inert state with its NAMED reason and executes NOTHING (409).
+    An armed ``open-report`` action answers its internal href and spawns
+    nothing. Token-authed + F6 (POST-only mutator; row in
+    chamber/routes-inventory.json; red-to-green in
+    tests/test_chamber_close_ci_w9.py).
+    """
+    pid = str(body.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_deliverable
+    try:
+        action = chamber_deliverable.action_for_project(folder, project_id=pid)
+        result = chamber_deliverable.invoke_action(action)
+    except Exception as exc:  # honest failure — never a guess, never a spawn
+        handler._send_json({"ok": False, "error": "deliverable_action_failed",
+                            "message": str(exc)}, 500)
+        return
+    if not result.get("ok"):
+        # The labeled inert state: named reason + user-visible label,
+        # nothing executed. 409 — the affordance is honestly not armed.
+        result.setdefault("error", "deliverable_action_inert")
+        handler._send_json(result, 409)
+        return
+    handler._send_json(result, 200)
+
+
+def handle_ecgberht_gate_queue(handler, path, body):
+    """GET /api/ecgberht/gate_queue — the serialized decision-gate queue as
+    VISIBLE STATE (steward-chamber W10, E5).
+
+    Head-only by law: the response carries every gate's id/kind/status (the
+    queue is inspectable) but card CONTENT only for the HEAD, and the
+    server-rendered ``html`` paints exactly one prose card
+    (``chamber_gates.render_gate_queue_html`` — every slot escaped, F5;
+    swept paths are text, never markup). Pure read — no model, no spawn,
+    no write; token-authed like every chamber read."""
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or q.get("pid", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_gates
+    state = chamber_gates.queue_state(folder)
+    out = dict(state)
+    out["html"] = chamber_gates.render_gate_queue_html(state)
+    handler._send_json(out, 200 if state.get("ok") else 500)
+
+
+def handle_ecgberht_gate_resolve(handler, path, body):
+    """POST /api/ecgberht/gate_resolve — resolve the HEAD decision gate
+    (steward-chamber W10, E5).
+
+    The serialization law lives server-side: only the queue HEAD may
+    resolve; a non-head gate_id is refused by name (409) and releases
+    nothing. Resolving releases the next card, returned as ``released``.
+    Token-authed + F6 (POST-only mutator; row in
+    chamber/routes-inventory.json; red-to-green in
+    tests/test_chamber_gate_routes_w10.py)."""
+    b = body or {}
+    pid = str(b.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    gate_id = str(b.get("gate_id", "") or "").strip()
+    if not gate_id:
+        handler._send_json({"ok": False, "error": "gate_id required"}, 400)
+        return
+    import chamber_gates
+    out = chamber_gates.resolve_gate(folder, gate_id,
+                                     resolution=b.get("resolution"))
+    handler._send_json(out, 200 if out.get("ok") else 409)
+
+
+def handle_ecgberht_gate_skip(handler, path, body):
+    """POST /api/ecgberht/gate_skip — skip the HEAD decision gate
+    (steward-chamber W10, E5; same head-only serialization law as resolve).
+    Token-authed + F6; row in chamber/routes-inventory.json."""
+    b = body or {}
+    pid = str(b.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    gate_id = str(b.get("gate_id", "") or "").strip()
+    if not gate_id:
+        handler._send_json({"ok": False, "error": "gate_id required"}, 400)
+        return
+    import chamber_gates
+    out = chamber_gates.skip_gate(folder, gate_id)
+    handler._send_json(out, 200 if out.get("ok") else 409)
+
+
+def handle_ecgberht_sweep_bind(handler, path, body):
+    """POST /api/ecgberht/sweep_bind — run the two-tier containment-checked
+    worktree sweep for a died/quiet/timeout run and BIND its card into the
+    decision-gate queue (steward-chamber W10, C5/E2/F4).
+
+    The state-machine transition that releases the E2 enqueue gate: tier 1
+    lands declared-deliverable-glob matches onto the step, tier 2 lists the
+    worktree's unclaimed changes BY PATH ONLY (symlink- and
+    junction-resolved containment both directions; nothing is executed),
+    and the card takes the queue HEAD — a held gate is re-queued behind it,
+    never dropped. Campaign state auto-commits after the bind (V3 landing
+    class: sweep landing). Token-authed + F6; row in
+    chamber/routes-inventory.json; red-to-green in
+    tests/test_chamber_gate_routes_w10.py."""
+    b = body or {}
+    pid = str(b.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    sid = str(b.get("session_id", "") or "").strip()
+    if not sid:
+        handler._send_json({"ok": False, "error": "session_id required"}, 400)
+        return
+    import chamber_gates
+    import commission_session as _cs
+    record = _cs.load_run_record(folder, sid)
+    if record is None:
+        # An honest sweep still binds for a record that vanished: the death
+        # row is what blocks E2, and only a bound card may release it.
+        record = {"session_id": sid}
+    try:
+        swept = chamber_gates.run_sweep(folder, record)
+        out = chamber_gates.bind_sweep_card(folder, swept, session_id=sid)
+    except Exception as exc:  # honest failure — never a half-bound queue
+        handler._send_json({"ok": False, "error": "sweep_bind_failed",
+                            "message": str(exc)}, 500)
+        return
+    out["sweep"] = (swept.get("sweep") if isinstance(swept, dict) else None)
+    handler._send_json(out, 200 if out.get("ok") else 409)
+
+
+def handle_ecgberht_refine_state(handler, path, body):
+    """GET /api/ecgberht/refine_state — the REFINE-THE-PLAN overlay state
+    (steward-chamber W11, C7).
+
+    Read-only: the refineable plan sections (id + section-scoped hash +
+    text), the open draft for a section when ``?section=`` is asked, and
+    the server-rendered overlay html (``chamber_refine.
+    render_refine_overlay_html`` — the drawn §overlays dock, every slot
+    escaped, F5). Talk stays DRAFT — nothing here writes; the ledger
+    writes only on the hash-bound confirm. Token-authed."""
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or q.get("pid", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_refine
+    sections = chamber_refine.plan_sections(folder)
+    out = dict(sections)
+    section = (q.get("section", [""])[0] or "").strip()
+    if section:
+        out["draft"] = chamber_refine.current_draft(folder, section)
+    out["html"] = chamber_refine.render_refine_overlay_html(
+        {"messages": [], "summary": None})
+    handler._send_json(out, 200 if sections.get("ok") else 500)
+
+
+def handle_ecgberht_refine_confirm(handler, path, body):
+    """POST /api/ecgberht/refine_confirm — the SECTION-SCOPED HASH-BOUND
+    plan write (steward-chamber W11, C7 — the mockup's law: 'the ledger
+    writes only on Confirm the plan').
+
+    ``{project_id, section_id, bound_hash, new_text}`` applies IFF the
+    bound section hash still matches — unrelated activity elsewhere never
+    invalidates the confirm; a genuine same-section conflict answers 409
+    with the drawn 'plan moved' card WITH diff (draft preserved, html
+    included). ``{action: 'draft'}`` opens/replaces the talk-draft;
+    ``{action: 'discard'}`` drops it — neither touches the plan.
+    Token-authed + F6 (POST-only mutator; row in
+    chamber/routes-inventory.json; red-to-green in
+    tests/test_chamber_refine_routes_w11.py)."""
+    b = body or {}
+    pid = str(b.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_refine
+    action = str(b.get("action", "confirm") or "confirm").strip()
+    section_id = str(b.get("section_id", "") or "").strip()
+    if not section_id:
+        handler._send_json({"ok": False, "error": "section_id required"}, 400)
+        return
+    if action == "draft":
+        out = chamber_refine.open_draft(folder, section_id,
+                                        b.get("draft_text") or b.get("text"))
+        handler._send_json(out, 200 if out.get("ok") else 400)
+        return
+    if action == "discard":
+        out = chamber_refine.discard_draft(folder, section_id)
+        handler._send_json(out, 200 if out.get("ok") else 500)
+        return
+    out = chamber_refine.confirm_refine(
+        folder, section_id, str(b.get("bound_hash", "") or ""),
+        b.get("new_text") or b.get("text"))
+    if out.get("error") == chamber_refine.ERROR_PLAN_MOVED:
+        out["html"] = chamber_refine.render_plan_moved_card_html(
+            out.get("card") or {})
+        handler._send_json(out, 409)
+        return
+    handler._send_json(out, 200 if out.get("ok") else 400)
+
+
+def handle_ecgberht_rebrief(handler, path, body):
+    """POST /api/ecgberht/rebrief — mid-flight RE-BRIEF of the running
+    commission in the audited LIVE mode (steward-chamber W11, C7 — E7).
+
+    ``{project_id, session_id, text, step_id?}`` delivers ONE paced write
+    onto the LIVE session's stdin (the wired paced-PTY channel — never a
+    relaunch) and mints the acknowledgment receipt on the step. During an
+    active sweep the re-brief is REFUSED-AND-QUEUED behind the sweep's
+    card binding with the named finding (409) — never interleaved. A
+    dead/unknown session answers the honest named refusal (409).
+    Token-authed + F6 (POST-only mutator; row in
+    chamber/routes-inventory.json; red-to-green in
+    tests/test_chamber_refine_routes_w11.py)."""
+    b = body or {}
+    pid = str(b.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    sid = str(b.get("session_id", "") or "").strip()
+    if not sid:
+        handler._send_json({"ok": False, "error": "session_id required"}, 400)
+        return
+    import chamber_rebrief
+    out = chamber_rebrief.rebrief(folder, sid, b.get("text"),
+                                  step_id=b.get("step_id"))
+    if out.get("ok"):
+        handler._send_json(out, 200)
+        return
+    handler._send_json(
+        out, 409 if (out.get("queued")
+                     or out.get("error") == chamber_rebrief.ERROR_SESSION_NOT_LIVE)
+        else 400)
+
+
 def handle_ecgberht_speak(handler, path, body):
     """POST /api/ecgberht/speak — compile saybox talk (closed acts only)."""
     pid = str(body.get("project_id", "") or "").strip()
@@ -10560,6 +10974,576 @@ def _ecgberht_hs_bridge(args, timeout=30):
                 "message": out[:500]}
 
 
+def _ecgberht_steward_cli(args, timeout=30):
+    """Spawn the Ecgberht STEWARD PORTFOLIO CLI (`bin/steward.mjs`) and parse JSON.
+
+    A SECOND closed surface, separate from the fifteen per-project talk verbs the
+    seal-chamber bridge speaks. Anchor needs exactly one verb from it — ``register``
+    — because that is the only path that mints a project marker, a minted
+    (dashed-UUID) project_id is the only thing the engine will index, and the index
+    is what the High Seat reads. Anchor's own project ids are 32-hex WITHOUT dashes
+    and deliberately never cross this boundary as an identity.
+    """
+    import subprocess
+    root = _ecgberht_root()
+    cli = root / "bin" / "steward.mjs"
+    if not cli.exists():
+        return {"ok": False, "error": "ecgberht_engine_missing",
+                "message": "steward CLI not found (set ECGBERHT_ROOT or keep the "
+                           "Ecgberht checkout beside Anchor)"}
+    try:
+        res = subprocess.run(
+            ["node", str(cli)] + list(args),
+            capture_output=True, text=True, timeout=timeout,
+            encoding="utf-8", errors="replace",
+            cwd=str(root), creationflags=_paths.NO_WINDOW)
+    except Exception as exc:
+        return {"ok": False, "error": "bridge_spawn_failed", "message": str(exc)}
+    out = (res.stdout or "").strip()
+    if not out:
+        return {"ok": False, "error": "bridge_no_output",
+                "message": (res.stderr or "").strip()[:500]}
+    try:
+        return json.loads(out) if out.startswith("{") else json.loads(out.splitlines()[-1])
+    except Exception:
+        return {"ok": False, "error": "bridge_bad_json", "message": out[:500]}
+
+
+def handle_ecgberht_scaffold_preview(handler, path, body):
+    """POST /api/ecgberht/scaffold_preview — dictation -> PROPOSED scaffolding.
+
+    The chamber compiles talk through a closed ELEVEN-act table, none of which is
+    "scaffold this project", so a dictated project description used to dead-end at
+    "could not compile that to a closed act". This is that missing path.
+
+    PURE: the bridge's preview is zero-model and writes NOTHING — no ledger entry,
+    no session envelope — because seeing a proposal should cost nothing. The write
+    is a separate, explicit act (scaffold_confirm).
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    text = (b.get("text") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    if not text:
+        handler._send_json({"ok": False, "error": "empty_text",
+                            "message": "Nothing to scaffold — say what the project is."}, 400)
+        return
+    if _ecgberht_reject_oversized(handler, text):
+        return
+    args = ["--project", folder, "--scaffold-preview", text]
+    if (b.get("goal") or "").strip():
+        args.extend(["--goal", (b.get("goal") or "").strip()])
+    out = _ecgberht_bridge(args)
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_scaffold_confirm(handler, path, body):
+    """POST /api/ecgberht/scaffold_confirm — write the confirmed stages.
+
+    The ONE write on this path: opens the session envelope, proposes through the
+    spine, then batch-confirms, so the steps land in roadmap_events via the single
+    writer. Carries ``who`` because a confirmation is a human decision.
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    text = (b.get("text") or b.get("description") or "").strip()
+    stages = b.get("stages")
+    # THE CONVERSATIONAL PATH confirms by PROPOSAL HASH: the proposal is already a
+    # typed scaffold_proposal on the ledger, and binding to its hash is what makes
+    # "what gets written is exactly what you reviewed" true. Without this the browser
+    # sent a hash, the host dropped it, and the confirm 400'd as "Nothing to confirm".
+    proposal_hash = (b.get("proposal_hash") or "").strip()
+    if not text and not stages and not proposal_hash:
+        handler._send_json({"ok": False, "error": "empty_scaffold",
+                            "message": "Nothing to confirm."}, 400)
+        return
+    if text and _ecgberht_reject_oversized(handler, text):
+        return
+    fields = {
+        "project_path": folder,
+        "goal": b.get("goal"),
+        "description": text or None,
+        "stages": stages or None,
+        "who": b.get("who") or "john",
+    }
+    if proposal_hash:
+        fields["proposal_hash"] = proposal_hash
+        if (b.get("proposal_id") or "").strip():
+            fields["proposal_id"] = b["proposal_id"].strip()
+    if b.get("client_event_id"):
+        fields["client_event_id"] = b["client_event_id"]
+    out = _ecgberht_bridge(["--project", folder,
+                            "--scaffold-confirm", json.dumps(fields)])
+    # (2026-08-06) Plan approval banks the campaign: John's standing rule is
+    # commit-as-we-go, and both his first real campaigns sat untracked for a
+    # day. Best-effort — a git hiccup never breaks the confirm he just made.
+    if out.get("ok"):
+        try:
+            import commission_session as _cs
+            out["campaign_commit"] = _cs.commit_campaign_state(
+                folder, "roadmap confirmed")
+        except Exception:
+            pass
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_converse(handler, path, body):
+    """POST /api/ecgberht/converse — TALK to the steward (2026-08-04).
+
+    The chamber used to compile free-form speech through a closed ELEVEN-act table,
+    so describing or refining a project dead-ended on "could not compile that to a
+    closed act". This is the conversational door: routing happens in the ENGINE
+    (control verbs still compile deterministically; only genuine talk reaches the
+    seat), and the reply is a conversational answer plus, when there is enough to be
+    useful, a typed proposal for review.
+
+    ``turns`` carries the EPHEMERAL conversation so far — the browser page holds it,
+    it is replayed for continuity, and it is never persisted anywhere. The durable
+    continuity comes from the open scaffold_proposal on the ledger.
+
+    Nothing is written here; confirming stays a separate explicit act.
+
+    TIMEOUT: a real seat call is slow — measured 60-162s end-to-end on this host —
+    so this path gets its own generous bound. The default 20s would kill every turn.
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    text = (b.get("text") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    if not text:
+        handler._send_json({"ok": False, "error": "empty_text",
+                            "message": "Say something and the steward will answer."}, 400)
+        return
+    if _ecgberht_reject_oversized(handler, text):
+        return
+    args = ["--project", folder, "--converse", text]
+    # steward-e1 W2 (E1): the turn-completion hook's bound payload rides the
+    # W2-proven converse seam — the deterministic question ids + the F7
+    # ratification state, computed by the committed Anchor owner
+    # (chamber_e1_hook / chamber_e1_bound), never re-derived by the engine.
+    args.extend(["--e1", json.dumps(_e1_bound_payload(text))])
+    packed = _ecgberht_pack_turns(b.get("turns"))
+    if packed:
+        args.extend(["--turns", json.dumps(packed)])
+    if (b.get("who") or "").strip():
+        args.extend(["--who", (b.get("who") or "").strip()])
+    out = _ecgberht_bridge(args, timeout=ECGBERHT_CONVERSE_TIMEOUT_S)
+    out = _e1_enforce_turn_close(text, out)
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def _e1_bound_payload(utterance):
+    """The ``--e1`` payload for one steward turn (steward-e1 W2). A hook
+    failure NEVER silently disarms enforcement: the fallback payload fails
+    CLOSED by name (E1-F7-ARTIFACT-MISSING), never permissive."""
+    try:
+        import chamber_e1_hook as _e1h
+        return _e1h.bound_payload_for_turn(utterance)
+    except Exception as exc:
+        return {"schema_version": 1, "enforceable": False,
+                "finding": "E1-F7-ARTIFACT-MISSING",
+                "reason": "the bound payload could not be computed (%s) — "
+                          "fail closed by name, never silently open" % exc}
+
+
+def _e1_enforce_turn_close(utterance, out):
+    """The BRIDGE-BOUNDARY leg of the E1 seam (steward-e1 W2): re-evaluate
+    the returned turn and block a close the engine leg let through. A hook
+    error attaches a NAMED unenforceable verdict — loud, never silent."""
+    try:
+        import chamber_e1_hook as _e1h
+        return _e1h.enforce_bridge_result(utterance, out)
+    except Exception as exc:
+        if isinstance(out, dict) and out.get("lane") == "converse":
+            out.setdefault("turn_close", {
+                "decision": "unenforceable", "enforced": False,
+                "finding": "E1-F7-ARTIFACT-MISSING",
+                "reason": "the turn-completion hook errored at the bridge "
+                          "boundary (%s) — named, never silently open"
+                          % exc,
+                "unanswered": [], "answered": []})
+        return out
+
+
+def handle_ecgberht_high_seat_say(handler, path, body):
+    """POST /api/ecgberht/high_seat_say — TALK to the steward at portfolio
+    level (2026-08-07, John: "I don't want to click a new project button —
+    I want to just talk to it").
+
+    Routes the utterance through the __dashboard__ project's steward (its
+    campaign IS running Anchor, and it carries the auto-opened envelope) with
+    the PORTFOLIO: prefix the talk instruction knows. A spoken "start a
+    project" comes back as the typed project_create act — the High Seat
+    renders the confirm card; nothing is created until John clicks it.
+    """
+    b = body or {}
+    text = (b.get("text") or "").strip()
+    if not text:
+        handler._send_json({"ok": False, "error": "empty_text",
+                            "message": "Say something and the steward will answer."}, 400)
+        return
+    if _ecgberht_reject_oversized(handler, text):
+        return
+    folder, err, status = _ecgberht_project_folder("__dashboard__")
+    if err is not None:
+        handler._send_json({"ok": False, "error": "no_dashboard_steward",
+                            "message": "The dashboard steward is not set up — "
+                                       "open a project's Seal instead."}, 502)
+        return
+    args = ["--project", folder, "--converse", "PORTFOLIO: " + text]
+    # steward-e1 W2 (E1): the High Seat talks through the SAME converse seam,
+    # so the same turn-completion hook rides it — computed over the exact
+    # utterance the engine sees (the PORTFOLIO-prefixed text).
+    args.extend(["--e1", json.dumps(_e1_bound_payload("PORTFOLIO: " + text))])
+    packed = _ecgberht_pack_turns(b.get("turns"))
+    if packed:
+        args.extend(["--turns", json.dumps(packed)])
+    out = _ecgberht_bridge(args, timeout=ECGBERHT_CONVERSE_TIMEOUT_S)
+    out = _e1_enforce_turn_close("PORTFOLIO: " + text, out)
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_envelope_confirm(handler, path, body):
+    """POST /api/ecgberht/envelope_confirm — the human "yes, spend on this session".
+
+    Talking to the steward costs a model call, and nothing is spent without human
+    confirmation. Asking per sentence would be unusable, so ONE confirmation covers
+    the session until a bound trips (compiles / synthetic spend / TTL, whichever
+    first). This is that one confirmation.
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    fields = {"project_path": folder, "who": b.get("who") or "john"}
+    # The dollar cap is the USER'S to set — the engine defaults only apply when he
+    # does not name one. Turns are unlimited by construction on this path.
+    cap = b.get("max_spend_usd")
+    if cap is not None:
+        try:
+            cap = float(cap)
+        except (TypeError, ValueError):
+            handler._send_json({"ok": False, "error": "bad_max_spend",
+                                "message": "max_spend_usd must be a number."}, 400)
+            return
+        if cap <= 0:
+            handler._send_json({"ok": False, "error": "bad_max_spend",
+                                "message": "max_spend_usd must be greater than zero."}, 400)
+            return
+        fields["max_spend_usd"] = cap
+    if b.get("client_event_id"):
+        fields["client_event_id"] = b["client_event_id"]
+    out = _ecgberht_bridge(["--project", folder,
+                            "--envelope-confirm", json.dumps(fields)])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_envelope_raise(handler, path, body):
+    """POST /api/ecgberht/envelope_raise — "go past it".
+
+    Reaching the spend cap STOPS the steward and asks; this is the human answering
+    "carry on". Raising is still a confirmation, recorded on the ledger with who —
+    the cap moves only because a person said so.
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    try:
+        cap = float(b.get("max_spend_usd"))
+    except (TypeError, ValueError):
+        handler._send_json({"ok": False, "error": "bad_max_spend",
+                            "message": "Raising the budget needs a numeric cap."}, 400)
+        return
+    fields = {"project_path": folder, "who": b.get("who") or "john",
+              "max_spend_usd": cap}
+    if b.get("client_event_id"):
+        fields["client_event_id"] = b["client_event_id"]
+    out = _ecgberht_bridge(["--project", folder,
+                            "--envelope-raise", json.dumps(fields)])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+# ── Ecgberht: conversation → commission (steward run-loop W5, 2026-08-06) ────
+# The steward actually RUNS a skill: propose for the step in hand → John's
+# hash-bound confirm → a managed session with the skill loaded and the brief
+# seeded → the run loop drives it → the run comes home (report + ⚑ raise via
+# the ingest bridge). commission_session.py owns the join; these handlers are
+# thin doors. The watcher lives on a daemon thread of THIS service — the
+# long-lived process (a throwaway process kills the PTY it starts).
+
+def handle_ecgberht_commission_propose(handler, path, body):
+    """POST /api/ecgberht/commission_propose — propose for the step in hand.
+
+    READ-ONLY: the reply carries requires_confirm + the proposal John binds.
+    Nothing is launched and nothing is written until commission_go.
+    """
+    import commission_session as _cs
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    out = _cs.propose(folder,
+                      step_id=(b.get("step_id") or None),
+                      skill=(b.get("skill") or None),
+                      depth=(b.get("depth") or None))
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_commission_go(handler, path, body):
+    """POST /api/ecgberht/commission_go — John said go.
+
+    Hash-confirm through the engine, launch the managed session (lean
+    worktree, skill loaded, brief seeded), start the watcher. Returns at once
+    with the session id; the raise arrives when the skill needs John.
+    """
+    import commission_session as _cs
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    proposal = b.get("proposal")
+    if not isinstance(proposal, dict):
+        handler._send_json({"ok": False, "error": "proposal_required",
+                            "message": "commission_go needs the proposal from "
+                                       "commission_propose."}, 400)
+        return
+    # The request already passed the token middleware; revalidate at launch
+    # with the same service token so the executor's launch-auth law stays real.
+    tok = _paths.expected_token()
+    out = _cs.confirm_and_launch(
+        folder, proposal,
+        project_id=pid,
+        who=(b.get("who") or "john"),
+        backend=(b.get("backend") or "claude"),
+        # (2026-08-07) The iterated, John-approved directive rides the brief.
+        directive=(b.get("directive") or None),
+        auth_ctx={"token": tok} if tok else None,
+        expected_token=tok,
+        enforce_auth=bool(tok),
+    )
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_commission_watch(handler, path, body):
+    """POST /api/ecgberht/commission_watch — "hand it back to the steward".
+
+    John answered the skill's question IN the session; this re-arms the watch
+    WITHOUT sending anything (the cursor snaps past the old question first).
+    """
+    import commission_session as _cs
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    sid = (b.get("session_id") or "").strip()
+    if not sid:
+        handler._send_json({"ok": False, "error": "session_id required"}, 400)
+        return
+    out = _cs.rearm_watch(folder, pid, sid)
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_step_detail(handler, path, body):
+    """GET /api/ecgberht/step_detail?project_id=&step_id= — the rail click.
+
+    Everything the campaign has accumulated on one scaffolding step + what it
+    still needs (suggestions). Read-only, deterministic, no model call.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    step_id = (q.get("step_id", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    if not step_id:
+        handler._send_json({"ok": False, "error": "step_id required"}, 400)
+        return
+    out = _ecgberht_bridge(["--project", folder, "--step-detail", step_id])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_step_note(handler, path, body):
+    """POST /api/ecgberht/step_note — John adds detail from the rail panel.
+
+    {project_id, step_id, note} → the note lands durably on the step's
+    findings ledger (source: john). The chamber sends the conversational
+    refinement turn separately; this is only the durable write.
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    step_id = (b.get("step_id") or "").strip()
+    note = (b.get("note") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    if not step_id or not note:
+        handler._send_json({"ok": False,
+                            "error": "step_id and note required"}, 400)
+        return
+    # Same argv ceiling as every spoken act (shark F3): an unbounded note
+    # dies as an opaque bridge_spawn_failed near the 32k command-line cap,
+    # and anything over the converse cap half-succeeds (saved but unspoken).
+    if _ecgberht_reject_oversized(handler, note):
+        return
+    out = _ecgberht_bridge(["--project", folder, "--step-note", step_id,
+                            "--note", note, "--who", "john"])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def _strip_terminal_noise(s):
+    """Strip ANSI/OSC control sequences + CRs so a live PTY tail reads as
+    text in the pulse tile. (steward-chamber W7: the implementation moved
+    into the run_pulse data core — ``chamber_pulse.strip_terminal_noise`` —
+    this delegate keeps the historical symbol for existing callers/tests.)"""
+    import chamber_pulse as _cp2
+    return _cp2.strip_terminal_noise(s)
+
+
+def _read_face_north_star(folder):
+    """The '## North star' blockquote from the project's ECGBERHT.md face —
+    a display line for the pulse tile. (steward-chamber W7: implementation
+    moved into ``chamber_pulse.read_face_north_star``; delegate kept.)"""
+    import chamber_pulse as _cp2
+    return _cp2.read_face_north_star(folder)
+
+
+def handle_ecgberht_run_pulse(handler, path, body):
+    """GET /api/ecgberht/run_pulse?project_id=&session_id=&cursor= — the live
+    heartbeat of a commissioned run (2026-08-07, John: "a 10 minute status
+    update... I can just look and inspect what's happening in a very easy
+    natural way"). Read-only: the run record (skill · step · directive · age)
+    + the campaign's North star + the session's RECENT output (the skills'
+    own ⏱ status blocks ride in it). Cursor-incremental like the terminals.
+
+    steward-chamber W7 (wire-homing row run_pulse, C12): this owner symbol
+    REMAINS the tile endpoint — the payload production is SPLIT into the
+    data core ``chamber_pulse.pulse_payload`` (parity proven against the
+    committed pulse-stream replay fixtures BEFORE anything was deleted; the
+    chamber's running-step ⏱ slot is the second consumer of the same core).
+    The HTTP contract here is unchanged.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    sid = (q.get("session_id", [""])[0] or "").strip()
+    try:
+        cursor = int(q.get("cursor", ["0"])[0] or 0)
+    except ValueError:
+        cursor = 0
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    if not sid:
+        handler._send_json({"ok": False, "error": "session_id required"}, 400)
+        return
+    import chamber_pulse as _cp2
+    out = _cp2.pulse_payload(folder, sid, cursor)
+    if out is None:
+        handler._send_json({"ok": False, "error": "unknown_run"}, 404)
+        return
+    handler._send_json(out, 200)
+
+
+def handle_ecgberht_commission_runs(handler, path, body):
+    """GET /api/ecgberht/commission_runs?project_id= — the project's runs.
+
+    SAFE projections (no worktree paths, no transcript bodies) newest-first —
+    what the chamber polls to say "running / needs you / here's the report".
+    """
+    import commission_session as _cs
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    rows = _cs.list_runs(folder)
+    watching = [r["session_id"] for r in rows
+                if r.get("session_id") and _cs.watcher_active(r["session_id"])]
+    handler._send_json({"ok": True, "runs": rows, "watching": watching}, 200)
+
+
+def handle_ecgberht_register_projects(handler, path, body):
+    """POST /api/ecgberht/register_projects — join active projects to the portfolio.
+
+    An EXPLICIT human act, never automatic. Registering writes a steward marker
+    into each project root, and the portfolio altitude's contract is that it folds
+    projections READ-ONLY and never writes to a project store — so this cannot ride
+    a read path (that is precisely why it is a POST with a confirm, not a lazy
+    side effect of rendering the High Seat).
+
+    Idempotent for the caller: a root already marked answers ``already_registered``
+    with the SAME project id and is counted as registered, not as an error.
+    """
+    roots, skipped, failed = _ecgberht_portfolio_roots()
+    if failed:
+        handler._send_json({"ok": False, "error": "registry_unreadable",
+                            "message": "could not read the project registry; "
+                                       "the portfolio is unknown, not empty"}, 502)
+        return
+
+    only = (body or {}).get("root")
+    if only:
+        roots = [r for r in roots if str(r) == str(only)]
+        if not roots:
+            handler._send_json({"ok": False, "error": "unknown_root",
+                                "message": "that project is not an active R&D root"}, 404)
+            return
+
+    if not roots:
+        handler._send_json({"ok": True, "registered": 0, "already": 0, "failed": 0,
+                            "results": [], "skipped_roots": skipped,
+                            "message": "No active projects to register."}, 200)
+        return
+
+    results, n_new, n_old, n_bad = [], 0, 0, 0
+    for r in roots:
+        out = _ecgberht_steward_cli(["register", "--root", str(r)])
+        ok = bool(out.get("ok"))
+        already = bool(out.get("already_registered"))
+        if ok and already:
+            n_old += 1
+        elif ok:
+            n_new += 1
+        else:
+            n_bad += 1
+        results.append({"root": str(r), "ok": ok, "already_registered": already,
+                        "project_id": out.get("project_id"),
+                        "code": out.get("code") or out.get("error"),
+                        "message": (out.get("message") or out.get("text") or "")[:300]})
+
+    handler._send_json({"ok": n_bad == 0, "registered": n_new, "already": n_old,
+                        "failed": n_bad, "results": results,
+                        "skipped_roots": skipped,
+                        "message": "%d newly registered, %d already in the portfolio%s."
+                                   % (n_new, n_old,
+                                      ", %d refused" % n_bad if n_bad else "")},
+                       200 if n_bad == 0 else 207)
+
+
 #: Cap on user text handed to a bridge AS A COMMAND-LINE ARGUMENT. This is not
 #: the PTY path: ``rnd_terminal.MAX_TURN_CHARS`` (100_000) writes to a child's
 #: STDIN, which has no such limit. Here the text becomes argv, and Windows caps
@@ -10580,6 +11564,41 @@ def _ecgberht_reject_oversized(handler, text):
                         "length": len(text),
                         "limit": _ECGBERHT_MAX_SPOKEN_CHARS}, 413)
     return True
+
+
+#: A real seat call is SLOW — measured 60s (refinement) to 162s (first turn, with
+#: read-only grounding) on this host. The shared bridge default of 20s would kill
+#: every conversational turn, so the converse path carries its own bound. It stays
+#: under the engine's own SEAT_TIMEOUT_MS so the child dies before the parent gives up.
+ECGBERHT_CONVERSE_TIMEOUT_S = 240
+
+#: Ephemeral conversation replayed to the steward for continuity. Bounded by CHARS,
+#: not just count: the turns ride as ONE argv value alongside the utterance, and the
+#: steward's own replies run to a thousand characters each, so a naive "last N turns"
+#: would silently walk into the same Windows command-line ceiling that
+#: `_ecgberht_reject_oversized` exists to prevent. Oldest turns are dropped first —
+#: the durable continuity is the open scaffold_proposal on the ledger, not this.
+ECGBERHT_MAX_EPHEMERAL_TURNS = 12
+_ECGBERHT_MAX_TURNS_CHARS = 12_000
+
+
+def _ecgberht_pack_turns(turns):
+    """Newest-first char-budgeted slice of the ephemeral turns, restored to order."""
+    if not isinstance(turns, list):
+        return []
+    kept, used = [], 0
+    for turn in reversed(turns[-ECGBERHT_MAX_EPHEMERAL_TURNS:]):
+        if not isinstance(turn, dict):
+            continue
+        text = str(turn.get("text") or "")
+        if not text.strip():
+            continue
+        if used + len(text) > _ECGBERHT_MAX_TURNS_CHARS:
+            break
+        kept.append({"role": str(turn.get("role") or "john"), "text": text})
+        used += len(text)
+    kept.reverse()
+    return kept
 
 
 #: The high-seat bridge takes its roots as ONE ``--roots a;b;c`` argument, so a
@@ -10624,7 +11643,12 @@ def _ecgberht_portfolio_roots():
 
 def handle_ecgberht_high_seat(handler, path, body):
     """GET /api/ecgberht/high_seat — Screen 2 view model (raise queue +
-    tiles + spoken capacity balancing) over all active project roots."""
+    tiles + spoken capacity balancing) over the portfolio index.
+
+    Wave 17: semicolon-skipped roots are passed via ``--skipped`` JSON so they
+    render as named unknown rows (row count never shrinks). The fold answers
+    from the index; bridge_bad_json maps to GLANCE_INDEX_UNPARSEABLE text.
+    """
     roots, skipped, failed = _ecgberht_portfolio_roots()
     if failed:
         # A registry read that BLEW UP is not an empty portfolio. Say so.
@@ -10632,20 +11656,142 @@ def handle_ecgberht_high_seat(handler, path, body):
                             "message": "could not read the project registry; "
                                        "the portfolio is unknown, not empty"}, 502)
         return
-    if not roots:
+    args = []
+    if roots:
+        args.extend(["--roots", _ECGBERHT_ROOT_DELIM.join(roots)])
+    # Wave 17 delimiter guard: skipped roots cross the boundary as JSON, not
+    # in the ';'-joined argv (which would mis-split them).
+    if skipped:
+        args.extend(["--skipped", json.dumps(skipped)])
+    if not roots and not skipped:
         handler._send_json({"ok": False, "error": "no_projects",
-                            "message": "no active R&D project folders to steward",
+                            "code": "GLANCE_PORTFOLIO_EMPTY",
+                            "message": "No active projects registered.",
                             "skipped_roots": skipped}, 200)
         return
-    out = _ecgberht_hs_bridge(["--roots", _ECGBERHT_ROOT_DELIM.join(roots)])
-    if skipped and isinstance(out, dict):
-        out["skipped_roots"] = skipped
+    out = _ecgberht_hs_bridge(args)
+    if isinstance(out, dict):
+        if skipped:
+            out["skipped_roots"] = skipped
+        # EMPTY IS NOT BROKEN (hardening 2026-08-04). A portfolio index that has
+        # never been written is a portfolio nobody has JOINED yet — not a damaged
+        # one. It used to surface as a 502 banner quoting a remedy ("run the index
+        # audit fix") that was not on any reachable verb surface, which is the
+        # unknown-vs-empty honesty defect pointed the wrong way round. Report the
+        # honest empty state, at 200, WITH the action that resolves it.
+        if out.get("code") == "GLANCE_INDEX_MISSING" or                 out.get("error") == "GLANCE_INDEX_MISSING":
+            handler._send_json({
+                "ok": True,
+                "empty": True,
+                "code": "GLANCE_NO_PROJECTS_REGISTERED",
+                "message": "No projects have joined the portfolio yet — this is "
+                           "empty, not broken. Register your active projects to "
+                           "see them here.",
+                "can_register": True,
+                "register_endpoint": "/api/ecgberht/register_projects",
+                "candidate_roots": len(roots),
+                "skipped_roots": skipped,
+            }, 200)
+            return
+        # Map bridge garbage into the glance failure surface (never a blank panel).
+        if out.get("error") == "bridge_bad_json":
+            out["code"] = "GLANCE_INDEX_UNPARSEABLE"
+            out["message"] = (
+                "Index snapshot or bridge output unreadable — nothing is guessed."
+            )
+            out["bridge_bad_json"] = True
+        _hs_enrich_tiles(out)
     handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def _hs_pick_entry(entries):
+    """One folder can host N registered projects (live: BA815 has two). Pick
+    the one that OWNS the work — the entry whose effort store holds the most
+    files — so the High Seat click lands on the project id John actually
+    uses, never an empty sibling registration."""
+    best, best_score = None, -1
+    for e in entries:
+        score = 0
+        try:
+            store = Path(e["folder_path"]) / ".anchor" / "projects" / e["id"]
+            if store.exists():
+                for _root, _dirs, files in os.walk(store):
+                    score += len(files)
+                    if score > 500:
+                        break
+        except Exception:
+            score = 0
+        if score > best_score:
+            best, best_score = e, score
+    return best
+
+
+def _hs_enrich_tiles(out):
+    """(2026-08-07, John) The High Seat rows become a real portfolio glance:
+    each tile gains the ANCHOR project id (path-passport: matched by resolved
+    folder, never the steward registry id), a happening-NOW line from the
+    project's commission runs, and its lifetime spend — so "what's going on /
+    how are we using tokens" is answered on sight. Best-effort, read-only."""
+    try:
+        tiles = ((out.get("high_seat") or {}).get("tiles") or {}).get("tiles")
+        if not tiles:
+            return
+        import commission_session as _cs
+        by_folder = {}
+        for entry in _rnd.list_projects():
+            try:
+                by_folder.setdefault(
+                    str(Path(entry["folder_path"]).resolve()), []).append(entry)
+            except Exception:
+                continue
+        for t in tiles:
+            p = t.get("project_path")
+            if not p:
+                continue
+            try:
+                entry = _hs_pick_entry(by_folder.get(str(Path(p).resolve())) or [])
+            except Exception:
+                entry = None
+            if not entry:
+                continue
+            t["anchor_project_id"] = entry["id"]
+            if entry.get("name"):
+                t["display_name"] = entry["name"]
+            try:
+                runs = _cs.list_runs(entry["folder_path"])
+                if runs:
+                    r = runs[0]
+                    state = {"running": "running now",
+                             "asked": "waiting on you"}.get(
+                        r.get("outcome"), f"last run {r.get('outcome')}")
+                    t["now_line"] = f"{r.get('skill', 'skill')} · {state}"
+                    t["now_running"] = r.get("outcome") == "running"
+                    # A campaign John has actually RUN is active — it renders
+                    # up front; registered-but-untouched projects collapse
+                    # (2026-08-07: "just two projects are running right now —
+                    # it should just have those two tiles").
+                    t["active_campaign"] = True
+            except Exception:
+                pass
+            try:
+                roll = _eh.project_effort_rollup(entry["id"], window="lifetime")
+                cost = (roll or {}).get("cost_usd") or (roll or {}).get("cost")
+                if cost:
+                    t["spend_line"] = "$%.2f lifetime" % float(cost)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def handle_ecgberht_high_seat_badge(handler, path, body):
     """GET /api/ecgberht/high_seat_badge — ⚑ raise-queue length ONLY.
-    The single ambient Ecgberht signal anywhere in Anchor (S0-E2)."""
+    The single ambient Ecgberht signal anywhere in Anchor (S0-E2).
+
+    Wave 17: BADGE PATH BOUNDED — the bridge ``--badge`` mode answers from the
+    portfolio-index badge cache / attention cells (no discoverStrips root walk).
+    At most one short-lived bridge process per client poll interval.
+    """
     roots, _skipped, failed = _ecgberht_portfolio_roots()
     if failed:
         # The badge is ambient chrome, so it stays quiet rather than throwing a
@@ -10654,13 +11800,33 @@ def handle_ecgberht_high_seat_badge(handler, path, body):
         handler._send_json({"ok": False, "error": "registry_unreadable",
                             "mode": "badge", "queue_length": None}, 502)
         return
-    if not roots:
-        handler._send_json({"ok": True, "mode": "badge",
-                            "badge": {"glyph": "⚑", "count": 0},
-                            "queue_length": 0}, 200)
+    # Wave 17: --badge is index-only; roots are optional (cache / attention).
+    # Still pass roots when present for transport parity; walk path is retired
+    # inside the bridge (buildBadgeFromIndex — never verbStatus/discoverStrips).
+    args = ["--badge"]
+    if roots:
+        args.extend(["--roots", _ECGBERHT_ROOT_DELIM.join(roots)])
+    out = _ecgberht_hs_bridge(args)
+    if isinstance(out, dict) and out.get("error") == "bridge_bad_json":
+        out["code"] = "GLANCE_INDEX_UNPARSEABLE"
+        out["message"] = (
+            "Index snapshot or bridge output unreadable — nothing is guessed."
+        )
+        out["bridge_bad_json"] = True
+        out["mode"] = "badge"
+        out["queue_length"] = None
+    # EMPTY IS NOT BROKEN (hardening 2026-08-04) — mirrors the high_seat handler.
+    # No project has joined the portfolio yet, so the queue length is genuinely
+    # UNKNOWN rather than zero: `queue_length: None` keeps the badge hidden instead
+    # of asserting the reassuring "nothing needs you" the index cannot support.
+    if isinstance(out, dict) and (out.get("code") == "GLANCE_INDEX_MISSING"
+                                  or out.get("error") == "GLANCE_INDEX_MISSING"):
+        handler._send_json({"ok": True, "mode": "badge", "empty": True,
+                            "code": "GLANCE_NO_PROJECTS_REGISTERED",
+                            "queue_length": None,
+                            "message": "No projects have joined the portfolio yet."},
+                           200)
         return
-    out = _ecgberht_hs_bridge(
-        ["--roots", _ECGBERHT_ROOT_DELIM.join(roots), "--badge"])
     handler._send_json(out, 200 if out.get("ok") else 502)
 
 
@@ -10786,6 +11952,190 @@ def handle_ecgberht_artifact(handler, path, body):
     ctype = _ECGBERHT_ARTIFACT_TYPES.get(target.suffix.lower(),
                                          "application/octet-stream")
     handler._send_bytes(target.read_bytes(), ctype, cache="no-cache")
+
+
+# ── Ecgberht Chamber UI (Wave 18 — steps / proposals / artifacts / corrections)
+# Spawns scripts/chamber-ui-bridge.mjs. Token-auth only (OPEN_ROUTES review:
+# none of these routes are open). I52 scaffold chrome refusal + T-CON-18 path
+# containment live in the engine; handlers only bridge.
+
+
+def _ecgberht_chamber_ui_bridge(args, timeout=30):
+    """Spawn the Ecgberht chamber-ui bridge (Node) and parse its one-line JSON."""
+    import subprocess
+    root = _ecgberht_root()
+    bridge = root / "scripts" / "chamber-ui-bridge.mjs"
+    if not bridge.exists():
+        return {"ok": False, "error": "ecgberht_engine_missing",
+                "code": "CHAMBER_DEP_MISSING",
+                "message": "chamber-ui bridge not found (set ECGBERHT_ROOT "
+                           "or keep Ecgberht checkout beside Anchor)"}
+    try:
+        proc = subprocess.run(
+            ["node", str(bridge), *args],
+            capture_output=True, timeout=timeout, cwd=str(root),
+            # windowsHide / CREATE_NO_WINDOW not available on subprocess.run
+            # flags portably; Anchor's service host already hides children.
+        )
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "bridge_timeout",
+                "code": "CHAMBER_DEP_DEAD",
+                "message": "chamber-ui bridge timed out — last good state "
+                           "shown with its age when available"}
+    except OSError as e:
+        return {"ok": False, "error": "bridge_spawn_failed",
+                "code": "CHAMBER_DEP_MISSING",
+                "message": "chamber-ui bridge could not start: %s" % e}
+    raw = (proc.stdout or b"").decode("utf-8", errors="replace").strip()
+    if not raw:
+        return {"ok": False, "error": "bridge_no_output",
+                "code": "CHAMBER_DEP_GARBAGE",
+                "message": "chamber-ui bridge produced no output — unreadable"}
+    # Last non-empty line is the JSON payload (stdout purity).
+    line = raw.splitlines()[-1]
+    try:
+        return json.loads(line)
+    except Exception:
+        return {"ok": False, "error": "bridge_bad_json",
+                "code": "CHAMBER_DEP_GARBAGE",
+                "message": "chamber-ui bridge returned unreadable JSON — "
+                           "shown as an error, nothing invented.",
+                "bridge_bad_json": True}
+
+
+def handle_ecgberht_chamber_steps(handler, path, body):
+    """GET /api/ecgberht/chamber_steps?project_id= — Wave 18 steps view."""
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or q.get("pid", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    out = _ecgberht_chamber_ui_bridge(["--project", folder, "--steps"])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_chamber_proposal(handler, path, body):
+    """GET /api/ecgberht/chamber_proposal?project_id=&proposal= — proposal/confirm surface.
+
+    ``proposal`` is a URL-encoded JSON proposal body (hash-bound confirm wiring
+    is client-side + POST chamber_confirm). Without a proposal body the surface
+    answers CHAMBER_EMPTY honestly.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    proposal_raw = (q.get("proposal", [""])[0] or "").strip()
+    if not proposal_raw:
+        # Empty-but-valid: nothing to confirm yet (CHAMBER_EMPTY).
+        out = _ecgberht_chamber_ui_bridge(["--proposal", "null"])
+        handler._send_json(
+            out if isinstance(out, dict) else {
+                "ok": True, "empty": True,
+                "code": "CHAMBER_EMPTY",
+                "message": "Proposal/confirm: nothing here yet.",
+            },
+            200,
+        )
+        return
+    out = _ecgberht_chamber_ui_bridge(["--project", folder,
+                                      "--proposal", proposal_raw])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_chamber_confirm(handler, path, body):
+    """POST /api/ecgberht/chamber_confirm — hash-bound confirm (idempotent).
+
+    Body: { project_id, proposal, proposal_hash, client_event_id?, who? }.
+    Post-render mutation surfaces confirm-hash-mismatch; double-submit of the
+    same client_event_id does not double-commit.
+    """
+    pid = str(body.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    payload = {
+        "proposal": body.get("proposal"),
+        "proposal_hash": body.get("proposal_hash"),
+        "client_event_id": body.get("client_event_id"),
+        "who": body.get("who") or "john",
+    }
+    out = _ecgberht_chamber_ui_bridge([
+        "--project", folder,
+        "--confirm", json.dumps(payload),
+    ])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_chamber_artifact(handler, path, body):
+    """GET /api/ecgberht/chamber_artifact?project_id=&rel=&bundle_hash= —
+
+    Wave 18 artifact view via packet-view classify/build + I52 scaffold
+    exemption + bundle-hash gate. Path escape → CHAMBER_PATH_REFUSED.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    rel = (q.get("rel", [""])[0] or "").strip()
+    bundle_hash = (q.get("bundle_hash", [""])[0] or "").strip() or None
+    kind = (q.get("kind", [""])[0] or "").strip() or "stage_artifact"
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    artifact = {
+        "kind": kind,
+        "path": rel or None,
+        "bundle_hash": bundle_hash,
+        "title": (q.get("title", [""])[0] or "").strip() or None,
+    }
+    # Scaffold probe: kind=scaffold_proposal must refuse chrome (I52).
+    out = _ecgberht_chamber_ui_bridge([
+        "--project", folder,
+        "--artifact", json.dumps(artifact),
+    ])
+    handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_chamber_correct(handler, path, body):
+    """POST /api/ecgberht/chamber_correct — propose or confirm a correction.
+
+    Body modes:
+      { action: 'propose', project_id, artifact, correction_text, who? }
+      { action: 'confirm', project_id, proposal, proposal_hash, client_event_id?, who? }
+    NEW VERSION is hash-bound; prior version stays addressable.
+    """
+    pid = str(body.get("project_id", "") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    action = str(body.get("action", "propose") or "propose").strip()
+    if action == "confirm":
+        payload = {
+            "proposal": body.get("proposal"),
+            "proposal_hash": body.get("proposal_hash"),
+            "client_event_id": body.get("client_event_id"),
+            "who": body.get("who") or "john",
+        }
+        out = _ecgberht_chamber_ui_bridge([
+            "--project", folder,
+            "--confirm-correction", json.dumps(payload),
+        ])
+    else:
+        payload = {
+            "artifact": body.get("artifact"),
+            "correction_text": body.get("correction_text"),
+            "who": body.get("who") or "john",
+        }
+        out = _ecgberht_chamber_ui_bridge([
+            "--project", folder,
+            "--correct", json.dumps(payload),
+        ])
+    handler._send_json(out, 200 if out.get("ok") else 502)
 
 
 def handle_build_deliverable(handler, path, body):
@@ -13175,8 +14525,24 @@ def handle_doctor_session_start(handler, path, body):
             "swarm_ratio": plan.get("swarm_ratio"),
             "reason": plan.get("reason", ""),
         }
+    resolve = bool(body.get("resolve"))
     try:
-        if short_only or issue:
+        if resolve and issue:
+            # (2026-08-07, John) RESOLVE mode: no plan, no wandering diagnose
+            # — a SHORT execution brief (short also mangles less on the PTY
+            # paste path, bug 0080). The session launches with the normal
+            # write posture, never --permission-mode plan.
+            seed = (
+                "ANCHOR DOCTOR - RESOLVE THIS ISSUE NOW\n"
+                "issue: %s\n"
+                "component: %s\n"
+                "Do: reproduce it minimally, FIX it in this folder (edit code/"
+                "config/tests as needed), verify the fix (run the relevant "
+                "check), then report what changed in 5 lines. Ask John only "
+                "if the fix requires a real product decision."
+                % ((issue.get("message") or "")[:400],
+                   (issue.get("component") or "")[:120]))
+        elif short_only or issue:
             seed = start_plan.get("seedText") or _w8_format_doctor_short_seed_text(
                 start_plan.get("seed"))
         else:
@@ -13187,7 +14553,7 @@ def handle_doctor_session_start(handler, path, body):
                 "(briefing assembly failed: %s)" % exc)
     try:
         rec, attached = _termsess.start_doctor_session(
-            seed_context=seed, backend=backend)
+            seed_context=seed, backend=backend, resolve=resolve)
     except _termsess.TerminalSessionError as exc:
         handler._send_json({
             "ok": False,
@@ -13285,10 +14651,13 @@ def _doctor_stats():
     except OSError:
         files = []
     reports = []
+    newest_body = None
     for p in files[:10]:
         try:
             body = p.read_text(encoding="utf-8", errors="replace")
             st = _doctor_report_status(body)
+            if newest_body is None:
+                newest_body = body
         except OSError:
             st = "unknown"
         reports.append({"name": p.name, "date": p.stem, "status": st})
@@ -13309,7 +14678,34 @@ def _doctor_stats():
         "days_ago": days_ago,
         "report_count": len(files),
         "reports": reports,
+        # (2026-08-07, John) The doctor LEADS with the diagnosis it already
+        # has — the newest report's Issues, parsed deterministically — so
+        # opening the page answers "what's wrong?" instantly, no model run.
+        "issues": _doctor_latest_issues(newest_body or ""),
     }
+
+
+def _doctor_latest_issues(body):
+    """The newest report's '## Issues' lines as {component, detail} rows —
+    the instant diagnosis the /doctor page leads with. Never raises."""
+    try:
+        m = re.search(r"^## Issues[^\n]*\n+(.*?)(?=^## |\Z)", body, re.S | re.M)
+        if not m:
+            return []
+        out = []
+        for ln in m.group(1).splitlines():
+            ln = ln.strip()
+            if not ln.startswith("- "):
+                continue
+            mm = re.match(r"- \[([^\]]+)\]\s*(.*)", ln)
+            comp = mm.group(1) if mm else ""
+            detail = (mm.group(2) if mm else ln[2:]).strip()
+            out.append({"component": comp[:120], "detail": detail[:400]})
+            if len(out) >= 8:
+                break
+        return out
+    except Exception:
+        return []
 
 
 def handle_doctor_status(handler, path, body):
@@ -13559,10 +14955,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 
   <div class="cols">
     <div class="col-left">
+      __ISSUES_BLOCK__
       <div class="card panel">
         <h3>Diagnostics</h3>
-        <button class="btn" id="runBtn" onclick="runDiagnostics()">Run diagnostics</button>
-        <div class="hint">Runs anchor_healthcheck.py in the background; output tails below live.</div>
+        <button class="btn" id="runBtn" onclick="runDiagnostics()">Re-run full health check</button>
+        <div class="hint">FULL re-run of anchor_healthcheck.py (several minutes). The daily 5 AM run already produced the report the cards above read from — use "Resolve this" on a found issue instead of re-running.</div>
         <pre id="hcout" class="hcout"></pre>
       </div>
       <div class="card panel">
@@ -13694,6 +15091,21 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   }
   // W9 / SC7 — banner→Doctor seed from URL query (1:1 fields; not a markdown path).
   var BANNER_ISSUE = null;
+  // (2026-08-07) The instant diagnosis: issues parsed server-side from the
+  // newest health report. "Resolve this" seeds the doctor session with the
+  // one issue — no full re-run, no blank agentic wandering.
+  var DOCTOR_ISSUES = __ISSUES_JSON__;
+  window.resolveIssue = function (i) {
+    var it = DOCTOR_ISSUES[i];
+    if (!it) return;
+    BANNER_ISSUE = {
+      issueId: 'report-issue-' + i,
+      message: '[' + (it.component || 'health') + '] ' + it.detail,
+      component: it.component || '',
+      suggestedChecks: []
+    };
+    window.runDiagnose({ fromBanner: true, resolve: true });
+  };
   var AUTO_DIAGNOSE = false;
   (function parseBannerIssueFromQuery() {
     try {
@@ -13747,6 +15159,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
         window.runDiagnose({ fromBanner: true });
       } else if (AUTO_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] === false) {
         term.write('[doctor] Banner diagnose deferred — engine ' + ZH_ENG + ' disabled with health; shell usable.\\r\\n');
+      } else if (!BANNER_ISSUE && DOCTOR_ISSUES.length && ZH_ENG_HEALTH[ZH_ENG] !== false) {
+        // (2026-08-07, John) Opening the doctor PLAINLY while the health
+        // banner is red behaves exactly like clicking the banner: the top
+        // issue loads into the terminal unasked.
+        BANNER_ISSUE = {
+          issueId: 'report-issue-0',
+          message: '[' + (DOCTOR_ISSUES[0].component || 'health') + '] ' + DOCTOR_ISSUES[0].detail,
+          component: DOCTOR_ISSUES[0].component || '',
+          suggestedChecks: []
+        };
+        term.write('[doctor] Health issues found — loading the top one (same as the banner click). '
+          + 'Use "Resolve this" above to FIX it.\\r\\n');
+        window.runDiagnose({ fromBanner: true });
       }
     })
     .catch(function () {
@@ -13776,6 +15201,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       startBody.short = true;
       startBody.shortSeed = true;
     }
+    // (2026-08-07) Resolve mode: execution posture, no --permission-mode plan.
+    if (opts.resolve) startBody.resolve = true;
     fetch('/api/doctor/session_start', { method: 'POST', headers: hdrs(), body: JSON.stringify(startBody) })
       .then(function (r) { return r.json(); })
       .then(function (p) {
@@ -13785,7 +15212,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
           var eng = document.getElementById('termEngine');
           if (eng && p.session.backend) eng.textContent = p.session.backend + (p.attached ? ' (reattached)' : '');
           term.write('[doctor] Session started async on ' + (p.session.backend || ZH_ENG)
-            + (opts.fromBanner ? ' (banner seed)' : '') + '.\\r\\n');
+            + (opts.fromBanner ? ' (banner seed)' : '') + (opts.resolve ? ' (RESOLVE mode)' : '') + '.\\r\\n');
+          if (p.attached && opts.resolve) {
+            term.write('[doctor] NOTE: attached to an EXISTING session (its posture stands). '
+              + 'Kill it and click Resolve this again for a fresh execution session.\\r\\n');
+          }
           attach();
         } else {
           var status = (p && p.status) || 'error';
@@ -13944,9 +15375,36 @@ def render_doctor_page_html():
         ("__LAST_AGO__", esc(ago)),
         ("__REPORT_COUNT__", str(s["report_count"])),
         ("__REPORTS_LIST__", reports_html),
+        ("__ISSUES_BLOCK__", _doctor_issues_block_html(s)),
+        ("__ISSUES_JSON__", json.dumps(s.get("issues") or [])),
     ):
         page = page.replace(key, value)
     return page
+
+
+def _doctor_issues_block_html(s):
+    """The lead panel: what the last health run FOUND, with one-click
+    resolve. Empty string when the latest report is clean."""
+    issues = s.get("issues") or []
+    if not issues:
+        return ""
+    rows = []
+    for i, it in enumerate(issues):
+        comp = html_lib.escape(it.get("component") or "health")
+        detail = html_lib.escape((it.get("detail") or "")[:220])
+        rows.append(
+            '<div class="issue-row" style="display:flex;gap:10px;align-items:'
+            'flex-start;margin:6px 0;font-size:13px;line-height:1.45">'
+            f'<div style="flex:1"><b>[{comp}]</b> {detail}</div>'
+            f'<button class="btn" onclick="resolveIssue({i})" '
+            'style="flex:none">Resolve this</button></div>')
+    return (
+        '<div class="card panel" style="border-color:#b45309">'
+        '<h3 style="color:#e0a437">Found by the last health run</h3>'
+        + "".join(rows)
+        + '<div class="hint">Parsed from the newest report — no model was '
+          'run to show this. "Resolve this" opens the doctor session '
+          'seeded with the one issue.</div></div>')
 
 
 def handle_term_input2(handler, path, body):
@@ -16966,6 +18424,33 @@ _MIGRATED_HANDLERS = {
     "handle_friction_list": handle_friction_list,
     "handle_journal_friction": handle_journal_friction,
     "handle_ecgberht_chamber": handle_ecgberht_chamber,
+    # (steward-chamber W6) The deterministic-first painted M1 slice open —
+    # registered WITH its route row (the stand_up 404 lesson below).
+    "handle_ecgberht_seal_open": handle_ecgberht_seal_open,
+    # (steward-chamber W9) STATUS overlay + F3 deliverable action registry —
+    # each registered WITH its route row (same lesson): the overlay read, the
+    # injection-clock deliverable read, and the ONE deliverable-action
+    # mutator (row + red-to-green in chamber/routes-inventory.json).
+    "handle_ecgberht_status_overlay": handle_ecgberht_status_overlay,
+    "handle_ecgberht_deliverable_state": handle_ecgberht_deliverable_state,
+    "handle_ecgberht_deliverable_action": handle_ecgberht_deliverable_action,
+    # (steward-chamber W10) Serialized decision-gate queue (E5) + the E2
+    # sweep-card binding — each registered WITH its route row (the stand_up
+    # 404 lesson): the head-only queue read, the resolve/skip mutators, and
+    # the died→sweep bind that releases the E2 enqueue gate.
+    "handle_ecgberht_gate_queue": handle_ecgberht_gate_queue,
+    "handle_ecgberht_gate_resolve": handle_ecgberht_gate_resolve,
+    "handle_ecgberht_gate_skip": handle_ecgberht_gate_skip,
+    "handle_ecgberht_sweep_bind": handle_ecgberht_sweep_bind,
+    # (steward-chamber W11) REFINE overlay + mid-flight re-brief — each
+    # registered WITH its route row (the stand_up 404 lesson): the read-only
+    # overlay state, the section-scoped hash-bound confirm (the ONE plan
+    # write; 'plan moved' card WITH diff on genuine conflict), and the E7
+    # live re-brief write (receipt on the step, no relaunch, queued behind
+    # an active sweep with the named finding).
+    "handle_ecgberht_refine_state": handle_ecgberht_refine_state,
+    "handle_ecgberht_refine_confirm": handle_ecgberht_refine_confirm,
+    "handle_ecgberht_rebrief": handle_ecgberht_rebrief,
     "handle_ecgberht_speak": handle_ecgberht_speak,
     # (2026-07-30 FIX) stand_up was DEFINED and declared migrated=True in the
     # route table, but never registered here — so _strangler_dispatch took its
@@ -16975,6 +18460,30 @@ _MIGRATED_HANDLERS = {
     # nothing was created." test_every_migrated_route_has_a_handler now makes
     # this class of omission impossible to reintroduce.
     "handle_ecgberht_stand_up": handle_ecgberht_stand_up,
+    "handle_ecgberht_register_projects": handle_ecgberht_register_projects,
+    "handle_ecgberht_scaffold_preview": handle_ecgberht_scaffold_preview,
+    "handle_ecgberht_scaffold_confirm": handle_ecgberht_scaffold_confirm,
+    "handle_ecgberht_converse": handle_ecgberht_converse,
+    "handle_ecgberht_envelope_confirm": handle_ecgberht_envelope_confirm,
+    "handle_ecgberht_envelope_raise": handle_ecgberht_envelope_raise,
+    # (2026-08-06) steward run-loop W5: conversation → commission join.
+    "handle_ecgberht_commission_propose": handle_ecgberht_commission_propose,
+    "handle_ecgberht_commission_go": handle_ecgberht_commission_go,
+    "handle_ecgberht_commission_watch": handle_ecgberht_commission_watch,
+    "handle_ecgberht_commission_runs": handle_ecgberht_commission_runs,
+    "handle_ecgberht_step_detail": handle_ecgberht_step_detail,
+    "handle_ecgberht_step_note": handle_ecgberht_step_note,
+    "handle_ecgberht_run_pulse": handle_ecgberht_run_pulse,
+    "handle_ecgberht_high_seat_say": handle_ecgberht_high_seat_say,
+    # (2026-08-04) Wave 18 chamber UI: five routes were declared migrated=True in
+    # route_table.py and their handlers DEFINED here, but never registered - the
+    # exact defect that made stand_up answer 404 "Unknown endpoint". Caught by
+    # test_every_migrated_route_has_a_registered_handler before first use.
+    "handle_ecgberht_chamber_steps": handle_ecgberht_chamber_steps,
+    "handle_ecgberht_chamber_proposal": handle_ecgberht_chamber_proposal,
+    "handle_ecgberht_chamber_confirm": handle_ecgberht_chamber_confirm,
+    "handle_ecgberht_chamber_artifact": handle_ecgberht_chamber_artifact,
+    "handle_ecgberht_chamber_correct": handle_ecgberht_chamber_correct,
     "handle_ecgberht_high_seat": handle_ecgberht_high_seat,
     "handle_ecgberht_high_seat_badge": handle_ecgberht_high_seat_badge,
     "handle_ecgberht_bring_up": handle_ecgberht_bring_up,
@@ -17951,7 +19460,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                 else:
                     data, ctype = asset
-                    self._send_bytes(data, ctype, cache="public, max-age=86400")
+                    # no-cache (revalidate each use), NOT max-age=86400: the
+                    # day-long cache pinned three rounds of stale UI to John's
+                    # browser. Local server, ~300KB — refetch is free; stale
+                    # app code is not.
+                    self._send_bytes(data, ctype, cache="no-cache")
             elif self.path.startswith(ANCHOR_TERM_URL_PREFIX):
                 # Read-only vendored terminal-console static asset (Wave 7),
                 # served like KaTeX (traversal-safe). Backs the interactive
@@ -18234,11 +19747,27 @@ class AnchorHandler(BaseHTTPRequestHandler):
         # so an undeclared POST is still default-denied while a future reviewed
         # open POST would be honored (rearch W8: post-middleware consults the
         # route-table auth policy).
-        _post_route = _routes.match("POST", urlparse(self.path).path)
+        _path_only = urlparse(self.path).path
+        _post_route = _routes.match("POST", _path_only)
         _post_open = (_post_route is not None
                       and _post_route.auth == _routes.AUTH_OPEN)
         if not _post_open and not _paths.auth_ok(provided):
             self._send_json({"ok": False, "error": "unauthorized"}, 401)
+            return
+
+        # Auth-cookie bootstrap (steward-chamber W11). The login/logout mint
+        # is part of the AUTH MIDDLEWARE layer, not the dispatch surface: it
+        # runs here — after the token check above, before the strangler seam —
+        # so a post-auth dispatch shim (the chamber F6 harness swaps
+        # _strangler_dispatch for a marker responder) can never swallow the
+        # Set-Cookie handshake. The rows stay declared/migrated in
+        # route_table.py and _strangler_dispatch still resolves them when
+        # called directly.
+        if _path_only == "/api/auth/login":
+            handle_auth_login(self, self.path, body)
+            return
+        if _path_only == "/api/auth/logout":
+            handle_auth_logout(self, self.path, body)
             return
 
         # Strangler dispatch (rearch W7 / C2): consult the declarative route
@@ -18257,7 +19786,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
         # dispatch — and with auth OFF the query is empty, which is why the
         # suites never saw it. Handlers still receive the FULL URI (query
         # included) — _strangler_dispatch passes ``self.path`` to the handler.
-        if self._strangler_dispatch("POST", urlparse(self.path).path, body):
+        if self._strangler_dispatch("POST", _path_only, body):
             return
             
         # /api/doctor/run removed (doctor V3 wave 1). The V2 handler spawned a
@@ -18519,6 +20048,20 @@ def main():
         job_runner.reconcile_on_startup()
     except Exception as e:
         _logger.error(f"job_runner.reconcile_on_startup failed: {e}")
+
+    try:
+        # Wave 4 / NS criterion 15: commission durable handback boot reconcile.
+        # Adopts complete handback pairs; names dead runs / missing handbacks /
+        # stranded launch intents — never silently absorbs. Best-effort.
+        import commission_executor as _ce
+        _cr = _ce.reconcile_commissions_on_startup()
+        if _cr.get("results"):
+            _logger.info(
+                "commission_executor.boot_reconcile: %d result(s), adopted=%s"
+                % (len(_cr["results"]), _cr.get("adopted_count", 0))
+            )
+    except Exception as e:
+        _logger.error(f"commission_executor.reconcile_commissions_on_startup failed: {e}")
 
     try:
         # rearch W15: re-adopt in-flight jobs through the supervisor seam — a

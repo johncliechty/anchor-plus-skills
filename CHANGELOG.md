@@ -1,5 +1,288 @@
 # Changelog
 
+## v1.2.4 — the elegance cycle: every skill sleeps, the engines stop lying about dead time (2026-08-15)
+
+A portfolio-wide sleep cycle over all 14 bundled skills, commissioned as
+"make these elegant, no rabbit holes, robust enough that scientists at any
+frontier lab would want them."
+
+### ELEGANCE.md Part II ships — what elegance IS, and the Rabbit-Catcher
+A researched, adversarially-vetted operational definition of elegance
+(three evidence sweeps, 38 rung-marked ledger items; four live cross-family
+governed rounds, new-blocker trajectory 3→1→1→0, stopped on the first
+genuinely-dry round per the Elegance Law's own rule 5). With it: the
+**Rabbit-Catcher** — a bounded per-element test battery (RC-1..7 + the RC-G
+guard clause) the steering seat runs at plan approval and on new mid-run
+elements. Needs must be INDEPENDENT of their proposer (no self-authored
+justification records); malleability work is never cut as "unused
+capability"; guards are judged by hazards, not recorded failures; verdicts
+are KEEP / HOLD-with-expiry / CUT-logged. Every SKILL.md carries the
+definition inline; `ELEGANCE.md` ships at the bundle root (emitted like
+AGENTS.md — pointed-at rule files must ship).
+
+### The engines stop blessing dead agents
+- **Foreman**: an agent whose transport reports `ok:false` is now a loud
+  `[taxonomy:agent-died]` HALT — never "execute complete". The recorded
+  failure: a 20-minute, 60-tool-call execute SIGKILLed at the per-call cap
+  with ZERO bytes written was blessed and advanced to a gate that would have
+  gone GREEN on the previous wave's tree. `go.ps1` now exposes
+  `-CallTimeoutMin` (the default 20 killed a healthy 43-minute wave).
+- **Crucible**: the first genuinely-dry held round now goes to the USER (the
+  convergence authority) instead of paying a second identical round — the
+  engine now obeys the Elegance rule its own SKILL.md carries.
+- **Steward**: `launch_failure` joins the closed run-outcome set — a session
+  dead before its greeting, with nothing written, raises "fix the engine
+  first", never "the session ended" (a blind relaunch bought the same death
+  three times, ~80 minutes, zero product). Plus the READ-BEFORE-PLAN law:
+  the steward opens its own campaign record before planning anything.
+- **researchPrime**: the plan-gate CLI's TTY-only trap and the agy field laws
+  (label-form models, fenced-JSON replies, absolute paths, `'yes'/'no'` enum)
+  are documented where the operator reads them.
+
+### The sleep cycle's own rails repaired
+LESSONS.md created for 4 skills that had none; jumper's 24 journal entries get
+their first promotions; gandalf's post-08-04 backlog promoted; NORTH-STAR.md
+promoted from in-code charters for legal-beagle and financial-analyst (marked
+as promotions — nothing newly authored); run-capture rails restored ×4;
+journal ids now law: max(NNNN)+1 over the whole directory. Standing rules
+promoted into foreman/crucible SKILL.md from ten journals. financial-analyst's
+SKILL.md mojibake (24 sequences) repaired.
+
+### Named cuts (per the law: shown, not silent)
+The full stall-detection ladder (the enabling idle-watchdog exists but no
+driver pumps heartbeats yet — turning it on would kill healthy long calls;
+deferred with the prerequisite named), cross-repo dirty-sibling checks, and
+the steward wall-clock ledger.
+
+## v1.2.3 — the skills arrive with their run contract (2026-08-15)
+
+The v1.2 line built cleanly and was never published. This release fixes what
+the built bundle was quietly getting wrong, so the skills behave on a
+collaborator's machine the way they behave on the author's.
+
+### The bundle shipped its skills without their governance
+Every vendored `SKILL.md` defers its run contract — the **LOCKED 10-minute
+status-table format**, the Heavy-vs-regular tiers, the invocation discipline —
+to `AGENTS.md`. Neither the author's user-global copy nor the Skill Foundry
+copy is in the bundle. Worse, the no-personal-data scan rewrote the author's
+absolute Skill Foundry path into a placeholder token in **ten staged files**:
+the scrub protected the author's privacy and, in doing so, converted a
+diagnosable absolute path into a string that resolves nowhere. The artifact
+linked; the symbol was missing. Collaborators got skills whose most visible
+behavior — reporting progress every ten minutes in a fixed format — was
+undefined.
+
+(This paragraph cannot quote the broken string itself: the new gate below
+correctly refuses to ship any file containing it, and it caught this changelog
+on the first build after it was written.)
+
+- **`AGENTS.md` now ships**, emitted into the staged root at build time (source
+  under `planning/`, which the manifest excludes — deliberately *not* at the
+  author repo root, where an `AGENTS.md` would hijack the
+  AGENTS.md-is-canonical convention). It carries the locked status table
+  verbatim, the launch pattern that makes the cadence actually fire
+  (background launch + armed wake-up), the tier definitions, and an honest
+  note that seat assignment resolves from Anchor's registry — so **Package A**
+  installs, which have no registry, are told to expect `cross_model:false`
+  rather than silently getting single-family verification.
+- **The 12 `SKILL.md` files were repointed** at the bundled copy (trio
+  `eb7c34e`, Skill Foundry `12d643b`) with no absolute path left for the scrub
+  to mangle.
+- **`AUTONOMOUS-MODE.md` ships** — how to run the skills unattended, what each
+  capability is for, what stays denied, and a plain no-warranty statement.
+  It documents editing the collaborator's **own** user-level settings: a
+  settings file arriving inside a cloned repo is restricted from granting
+  itself permissions, and that restriction is correct.
+- **`share_agent_rules.py` ships** — the one-command opt-in that makes the
+  above real: `python share_agent_rules.py install --settings` writes the
+  agent-level rules block into the collaborator's own `~/.claude/CLAUDE.md`
+  and merges the autonomy profile into their own `settings.json` — fill-only
+  (a value the user already set always wins), first-backup-wins
+  (`settings.json.anchor-orig`), fully reversible (`remove`, `status`).
+  Package A carries `AGENTS.md`/`AUTONOMOUS-MODE.md` too — without them the
+  skills-only install would have re-created the dangling-pointer defect.
+
+### New fail-closed gate: scrub residue
+The PII scan rewrites author paths to `<path>`; where the reference had a file
+target, that rewrite leaves a pointer to nothing — which is exactly how the
+above shipped invisibly. The new gate audits the PII scan's own output.
+Narrow by design: a general "does every referenced doc exist" check was
+refuted cross-family (staged prose legitimately names unstaged files like
+`DASHBOARD.md` and `MASTER-PLAN.md`, so its false-positive rate would get it
+switched off). Measured against the real v1.2.2 tree: **10 hits, 1 distinct
+pattern, 0 false positives**, and it fires when the defect is planted back.
+
+### Two stamps that disagreed
+- **`VERSION` said 1.2.2 while `pyproject.toml` said 1.1.3.** The G3 sandbox
+  gate could not catch it because it hard-coded the literal `"1.1.3"` instead
+  of asserting the two stamps *agree* — so it would have failed on every line
+  after 1.1.3 for a reason unrelated to product health. De-pinned to the real
+  invariant. Both stamps now read 1.2.3.
+- **`doctor.py` called a correctly-built package broken.** Its
+  `OPTIONAL_ABSENT` was a hand-maintained duplicate of the builder's
+  `_OPTIONAL_FIRST_PARTY`, frozen at `{update_transaction, tools}`; the builder
+  grew the steward-chamber declarations and doctor never did, so a good install
+  printed *"Module 'chamber_mockup_diff' is MISSING — this install is
+  INCOMPLETE"*. Doctor is the **first** thing the consumer `CLAUDE.md` tells a
+  collaborator to run, so the one free deterministic check was telling every
+  new user their install was broken. Same root cause as the v1.1.x
+  two-builders incident: one list must win, and it is the one the fail-closed
+  gate enforces. Found only because the acceptance suites had never been run
+  against the v1.2 line.
+
+### Evidence
+Build from a clean worktree of committed HEAD: **B 1052 files / A 602, all
+gates clean**. Stranger sandbox **10/10**. Pull dry run against a simulated
+collaborator install **7/7** (1056 files). Distro/doctor/share suites **111
+passed**. 13 new gates in `tests/test_share_v123.py`.
+
+### The Ecgberht steward now ships — engine only
+Anchor had been shipping the steward's **host contracts** (the `chamber_*`
+modules) while the skill itself stayed on the author machine, so collaborators
+got steward-shaped Anchor surface with nothing behind it. The bundle now
+carries **14 skills**, not 13.
+
+What does *not* ship is the point. The steward is a campaign-memory skill and
+most of its ~970 files are the author's own portfolio record. The generic
+denylist already dropped 487 (`planning` / `test` / `journal` / `.foreman`);
+the remainder carry names too generic to deny globally — a future skill may
+legitimately ship a `research/` or `drafts/` directory as product — so
+`_is_denied` / `_apply_denylist` now take an optional skill name and apply
+**scoped** denials. `ECGBERHT.md` at the steward's root is the author's
+portfolio memory and is denied by name; per-project copies mint from
+`templates/`, which ships. The steward's own `.ecgberht/attention.json` is
+denied too: it is live author state, and a stranger's fresh install must not
+open already showing someone else's pending "needs you".
+
+Result: **257 files, not 970.** Verified by leak probe — no private project
+names, no campaign record, no inherited runtime state.
+
+Safe because cross-family review confirmed the engine reads none of it at
+runtime: `rank.mjs` scores Strip projections only, `loadDispatchTable()` falls
+back to `BUILTIN_CELLS`, `prior-art/` and `ideation/` have no engine or bin
+load path, and `listJournalEntries()` is an optional per-project scan returning
+`present:false`.
+
+The sandbox harness gained the steward's source env — without it the suite
+silently exercised a 13-skill bundle while the builder shipped 14, an
+acceptance suite not testing what ships.
+
+### Still open — carried forward honestly
+- The ease count and tile retirement remain open by name from v1.2.1.
+- The Gandalf read that drove this release ran its **synthesis seat on Opus 5,
+  not Fable** (a tier-break against that skill's declared TOP tier). Its
+  refuter seat was genuinely cross-family (Gemini 3.1 Pro High), and every
+  material conclusion here was subsequently confirmed by execution — the
+  builds, the suites, and the leak probe — rather than resting on model
+  judgment.
+
+## v1.2.2 — E1 engine-enforced (2026-08-13)
+
+The steward can no longer walk away from a question you asked it.
+
+v1.2.1 shipped with E1 as a stated criterion and no implementation — the
+CHANGELOG said so plainly. This closes it. Two waves, both GREEN on the
+orchestrator gate, both adversarially reviewed by **Grok** with zero agreed
+blockers (the chamber build reviewed single-family; this is the first real
+cross-family review on this project).
+
+### What E1 now means in code
+- **`chamber_e1_bound.py`** — the deterministic, model-free question parser.
+  A direct question is a terminal-'?' sentence, an explicit `asks[]` entry,
+  or one of five committed imperative prefixes with no question mark:
+  `confirm …` · `tell me …` · `let me know …` · `did you …` ·
+  `can/could/would/will you …` (leading fillers stripped first). Each
+  question gets a deterministic id, discharged only by a typed
+  answer-reference.
+- **`chamber/E1-BOUND-RATIFICATION.md`** — bound v1, **ratified by John
+  2026-08-13**. The bound is a line the user drew, not one the model
+  inferred; E1's own "zero model involvement" clause requires that. Five
+  KNOWN-MISS forms (garble that destroys the anchor verb, prosody-only
+  questions, mid-sentence third-person asks, indirect "I was wondering…")
+  are signed as agreed out-of-bound losses — named, never silent. Widening
+  the bound requires a v2 signature; it can never widen itself.
+- **`chamber_e1_hook.py`** + the Ecgberht engine leg
+  (`enforceTurnCompletion`, `enforce_bridge_result`) — the turn-completion
+  hook on the W2-proven converse seam. A turn carrying an unanswered
+  ratified question id is structurally blocked with a named finding.
+- **Fails CLOSED, always.** An absent, altered, version-mismatched or
+  unsigned bound yields `E1-BOUND-UNRATIFIED` / `E1-F7-ARTIFACT-MISSING` and
+  refuses to enforce. An unenforceable bound never degrades to permissive.
+- **The refusal has a drawn face** (`AG-BLOCKED-TURN`), so a block never
+  reads as a hung steward — the V5 law, "the cure must not look like the
+  disease." Batched with the runcard transcript link into one signature;
+  C9 re-pinned `4a7f7953…` → `fe77d058…`.
+
+The W12 audit's E1 row moves **instrument-missing → reverified**. Test
+counts grew rather than merely holding: engine 1135 → 1146, pytest
+3173 → 3197.
+
+### Still open — carried forward honestly
+- **The ease count remains UNAVAILABLE by name.** Same missing-wave origin
+  as E1, but a separate criterion (C8); no classifier of record exists, so
+  the 5→0 re-score cannot run and `chamber/EASE-CLOSE-REPORT.md` refuses to
+  invent one.
+- **Tile retirement has still not executed.** The gate stays UNSIGNED and
+  `dismiss-finished-tile` stays deferred; no tile code deleted. The
+  transcript-link row is now resolved `equivalent`.
+- **A Foreman defect found by this build.** An execute agent SIGKILLed at
+  the per-call timeout, having written nothing, was logged
+  `execute complete` and advanced to a gate that would have returned GREEN
+  on an empty wave. The post-W12 guard only catches agents that die at
+  launch (0 tools, sub-2s); the predicate that matters is `ok:false`. Not
+  fixed here — Foreman is a separate tool.
+
+## v1.2.1 — the steward chamber (2026-08-12)
+
+The v1.2 line: a rebuild of how the steward talks to you inside a project.
+Twelve waves, all GREEN on the orchestrator gate (1135/1135), merged at
+`3dbc21c`. Planned by Crucible, built by Foreman, from the 4-stage steward
+assessment in `C:\dev\Ecgberht\planning\steward-assessment-2026-08-08`.
+
+Numbering note: `v1.2.0` was already spent on an earlier line-close commit
+(`120ddd0`, 2026-08-04), so the chamber release takes 1.2.1. A published
+version number is never reused.
+
+### The three defects this closes
+- **D1 — status was fragmented across four surfaces.** There is now ONE flow
+  surface: the M1 rail, with a STATUS overlay carrying the latest status table
+  and the remaining steps with median ETAs.
+- **D2 — talk turns took 60-160s.** The chamber renders DETERMINISTIC-FIRST:
+  it opens in under 2 seconds from projections, and the model is called only
+  when you actually speak. Enforced by a `<2s` CI budget at >=2x-real fixture
+  sizes plus a zero-model-call network/process trace.
+- **D3 — no declared pipeline.** Typed edges, a versioned manifest schema with
+  a lint, artifact contracts, and a declared deliverable per effort.
+
+### Enforcement that landed (engine-enforced, re-verified at its seam)
+- **E2** — worktree sweep before re-commissioning, with the enqueue guard.
+- **E3** — resurrection-regression diffs against the correction ledger.
+- **E5** — serialized gate queue, head-only.
+- **E6** — preference preload.
+- **E7** — mid-flight re-brief per audited mode, no relaunch.
+- **E9** — layered verification; collapsed-stage manifest-lint refusal.
+- **F3** deliverable-run execution bounds (shell:false, code-owned verb
+  allow-list, symlink/junction-resolved containment, labeled inert fallback),
+  **F4** sweep containment, **F5** DOM injection law over a registered slot
+  inventory with a growth rule, **F6** CSRF-class assertions on state-changing
+  surfaces with a caller-class threat split.
+
+### Known gaps — stated plainly, not buried
+- **E1 is NOT engine-enforced.** A steward turn can still close on an
+  unanswered direct question. W8 changed no chamber source: the bound parser,
+  the F7 ratification artifact, the turn-completion hook and the joint
+  negative-path test are all absent. Convention is the only cover. Full
+  evidence in `chamber/E1-ENFORCEMENT-REPORT.md`. Being closed in the next
+  release.
+- **The ease count is UNAVAILABLE by name.** No classifier of record was ever
+  registered, so the 5->0 same-ruler re-score cannot run.
+  `chamber/EASE-CLOSE-REPORT.md` refuses to fabricate a number.
+- **Tile retirement has NOT executed.** `chamber/TILE-RETIREMENT-GATE.md` is
+  unsigned and `chamber_retirement.retirement_allowed` refuses by name, so the
+  bottom run tiles all still render. No tile code was deleted.
+- Five test files cited in wave reports do not exist in the tree. Named in
+  `chamber/W12-AUDIT-REPORT.md` as plan defects.
+
 ## v1.1.3 — share-fix (2026-08-01)
 
 The recovery release for the broken 1.1.x collaborator distribution

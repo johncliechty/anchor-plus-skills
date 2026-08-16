@@ -59,6 +59,12 @@ def _multi(gui, tmp_path, name="Multi"):
                      prompt_seed="Control-stack architecture plan")
     eh.record_effort(fp, pid, "build", "b1", skill="foreman",
                      prompt_seed="Fuel-handling controller")
+    # (2026-08-07) The board is the GENERAL zone now — give it sessions so the
+    # positive DOM assertions (headline + shelf) have something real to pin.
+    eh.record_effort(fp, pid, "general", "g1", skill="",
+                     prompt_seed="General terminal session one")
+    eh.record_effort(fp, pid, "general", "g2", skill="",
+                     prompt_seed="General terminal session two")
     return pid, fp
 
 
@@ -103,7 +109,9 @@ def test_render_smoke_balanced_braces_and_landmarks(gui_env, tmp_path):
     assert html.count("{") == html.count("}"), (
         "brace imbalance in rendered HTML (likely an f-string `{`/`}` leak): "
         f"{html.count('{')} open vs {html.count('}')} close")
-    for landmark in ("Latest Research", "Latest Plan", "class='sectionlbl'",
+    # (2026-08-07, John's simple workbench) The trio zones are GONE server-side;
+    # the General zone is the board. The landmark set pins the NEW shape.
+    for landmark in ("Latest General session", "class='sectionlbl'",
                      "class='headline", "rightcol", "Grass Catcher",
                      "Deliverables", "effortDock"):
         assert landmark in html, f"missing Layout-D landmark: {landmark!r}"
@@ -118,14 +126,13 @@ def test_dom_positive_layoutd_shell(gui_env, tmp_path):
     els = _parse(body)
     classes = [c for _, c, _ in els]
 
-    # exactly two section labels: Latest Research + Latest Plan/Build
+    # exactly ONE section label: Latest General session (simple workbench)
     sectionlbls = [d for t, c, d in els if "sectionlbl" in c]
-    assert len(sectionlbls) == 2, "expected two Layout-D section labels"
+    assert len(sectionlbls) == 1, "expected one Layout-D section label (general)"
 
-    # exactly two headline cards (one per zone), each with its own collapsible
-    # shelf of little tiles.
+    # exactly ONE headline card (the general zone).
     headlines = [(t, c, d) for t, c, d in els if "headline" in c]
-    assert len(headlines) == 2, f"expected 2 headline cards, got {len(headlines)}"
+    assert len(headlines) == 1, f"expected 1 headline card, got {len(headlines)}"
     # neither headline is the empty-state placeholder (this project has sessions)
     assert all("data-empty" not in d for _, _, d in headlines)
 
@@ -179,11 +186,11 @@ def test_dom_negative_zero_sessions(gui_env, tmp_path):
     html = gui.render_project_window_html(pid)
     body = _strip(html)
     els = _parse(body)
-    # still two zones / section labels
-    assert sum("sectionlbl" in c for _, c, _ in els) == 2
-    # honest empty headline placeholders (no sessions), so each is data-empty
+    # still the one general zone / section label
+    assert sum("sectionlbl" in c for _, c, _ in els) == 1
+    # honest empty headline placeholder (no sessions) — the one general zone
     headlines = [d for t, c, d in els if "headline" in c]
-    assert len(headlines) == 2
+    assert len(headlines) == 1
     assert all(d.get("data-empty") == "1" for d in headlines), \
         "zero-session zones must render honest empty headline placeholders"
     # NO shelf + NO little tiles when there are no older sessions

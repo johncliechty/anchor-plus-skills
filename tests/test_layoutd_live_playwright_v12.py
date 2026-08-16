@@ -97,7 +97,7 @@ def test_layoutd_dock_live(server, tmp_path):
     gui, base, _ = server
     import session_registry as reg
 
-    pid, fp, rec = _live_effort(tmp_path, "Live", "research")
+    pid, fp, rec = _live_effort(tmp_path, "Live", "general")
     sid = rec["session_id"]
     # Pre-state: the live-session id SET (for the Advance no-mint assertion).
     sset0 = {r["session_id"] for r in reg.list_sessions(project_id=pid)}
@@ -140,10 +140,12 @@ def test_layoutd_dock_live(server, tmp_path):
             "  return t.readyState === 1; }",
             timeout=8000)
 
-        # the 3-node stage track reflects current_stage (research → 1 reached node).
+        # (2026-08-07) A GENERAL effort is stage-less — the 3-node trio track
+        # honestly lights nothing (the trio stage flow is retired from the
+        # board; commissions carry trio work now).
         reached0 = pg.eval_on_selector_all(
             "#dockTrack .node.reached", "e=>e.length")
-        assert reached0 == 1, f"research effort must light 1 node, got {reached0}"
+        assert reached0 == 0, f"general effort must light 0 nodes, got {reached0}"
 
         # ── (b) drag the splitter — terminal stays attached + fits + char round-trips
         cols0 = pg.evaluate("() => window.DOCK.term.cols")
@@ -186,23 +188,15 @@ def test_layoutd_dock_live(server, tmp_path):
             "  } return false; }",
             timeout=8000)
 
-        # ── (c) Advance -> calls /api/rnd/advance_stage, no new session minted
-        advanced = {"ok": False}
-        def _on_resp(resp):
-            if "/api/rnd/advance_stage" in resp.url:
-                advanced["ok"] = True
-        pg.on("response", _on_resp)
-        pg.click("#dockAdvance")
-        pg.wait_for_function("() => true", timeout=500)
-        # the stage track relabels to plan (2 reached nodes) IN PLACE.
-        pg.wait_for_function(
-            "() => document.querySelectorAll('#dockTrack .node.reached').length === 2",
-            timeout=8000)
-        assert advanced["ok"], "Advance did not call /api/rnd/advance_stage"
-        # session-id SET is UNCHANGED (in-session advance — no new session minted).
+        # ── (c) (2026-08-07) A GENERAL effort has no trio stage to advance —
+        # the Advance control stays hidden (honest disable; the trio stage
+        # flow is retired from the board, commissions carry trio work).
+        assert not pg.is_visible("#dockAdvance"), \
+            "Advance control must be hidden for a stage-less general effort"
+        # And no session was minted or dropped by any of the above.
         sset1 = {r["session_id"] for r in reg.list_sessions(project_id=pid)}
         assert sset1 == sset0, (
-            f"Advance minted/dropped a session: {sset1 ^ sset0}")
+            f"dock interactions minted/dropped a session: {sset1 ^ sset0}")
 
         assert not errors, f"JS console errors during the dock interactions: {errors}"
         b.close()
@@ -222,6 +216,13 @@ def test_layoutd_new_plan_build_starts_plan_effort_and_metrics(server, tmp_path)
            with the stage track at plan (2 reached nodes);
       (#3) the dock summary metrics line (#dockMetrics) renders 'Σ … tok · … · $…'
            (fetched from /api/rnd/effort_rollup)."""
+    pytest.skip("RETIRED SURFACE (2026-08-07, John's simple workbench): the "
+                "board's trio stage-effort UI (research/plan-build zones, "
+                "+ New research / + New plan/build, stage advance from board "
+                "tiles) is removed — trio work is commissioned through the "
+                "steward and watched from the run ledger. Dock mechanics stay "
+                "covered by the general-zone dock tests.")
+
     pytest.importorskip("playwright.sync_api")
     gui, base, _ = server
     import session_registry as reg
@@ -305,6 +306,13 @@ def test_layoutd_new_plan_build_starts_plan_effort_and_metrics(server, tmp_path)
 def test_layoutd_dock_warn_banner_handoff(server, tmp_path, monkeypatch):
     """(d) When context_status.over_threshold, the warn banner renders; one click
     calls /api/rnd/handoff_to_fresh."""
+    pytest.skip("RETIRED SURFACE (2026-08-07, John's simple workbench): the "
+                "board's trio stage-effort UI (research/plan-build zones, "
+                "+ New research / + New plan/build, stage advance from board "
+                "tiles) is removed — trio work is commissioned through the "
+                "steward and watched from the run ledger. Dock mechanics stay "
+                "covered by the general-zone dock tests.")
+
     pytest.importorskip("playwright.sync_api")
     gui, base, _ = server
     # Force the context-fullness heuristic over threshold via its env knob so the
@@ -383,7 +391,7 @@ def test_layoutd_dock_no_double_mount_from_chip(server, tmp_path):
     second terminal — openPanel routes it back to the dock."""
     pytest.importorskip("playwright.sync_api")
     gui, base, _ = server
-    pid, fp, rec = _live_effort(tmp_path, "Dbl", "research")
+    pid, fp, rec = _live_effort(tmp_path, "Dbl", "general")
     sid = rec["session_id"]
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
@@ -427,6 +435,13 @@ def test_layoutd_dock_no_double_mount_from_chip(server, tmp_path):
 def test_layoutd_dock_advance_hidden_at_build(server, tmp_path):
     """W10-R2-01: an effort already at the BUILD stage (no next stage) shows NO
     Advance → control in the dock (honest disable)."""
+    pytest.skip("RETIRED SURFACE (2026-08-07, John's simple workbench): the "
+                "board's trio stage-effort UI (research/plan-build zones, "
+                "+ New research / + New plan/build, stage advance from board "
+                "tiles) is removed — trio work is commissioned through the "
+                "steward and watched from the run ledger. Dock mechanics stay "
+                "covered by the general-zone dock tests.")
+
     pytest.importorskip("playwright.sync_api")
     gui, base, _ = server
     import terminal_session as ts
