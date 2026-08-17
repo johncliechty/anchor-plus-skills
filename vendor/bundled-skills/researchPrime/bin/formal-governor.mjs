@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 export const CONTRACT_VERSION = 1;
 import { resolveTier } from './governor.mjs';
 import { loopThresholds } from './round.mjs';
+import { loadPreregistration } from './preregistration.mjs';
 
 /**
  * Input classification table tagging each governor input 'known-by-Stage-1' 
@@ -67,6 +68,10 @@ export function hashLockedOutput(output) {
  * The Formal Stakes Governor.
  * Exposes a stable typed output contract covering round budget, bounds, and thresholds.
  */
+function preregisteredN() {
+  try { return loadPreregistration().N; } catch { return 1; }
+}
+
 export function lockGovernorOutput(inputs) {
   // Only Stage-1-known inputs determine the initial lock
   const stage1Inputs = extractStage1Inputs(inputs);
@@ -75,7 +80,11 @@ export function lockGovernorOutput(inputs) {
   
   const roundBudget = typeof stage1Inputs.maxRounds === 'number' ? stage1Inputs.maxRounds : 8;
   const thresholds = {
-    N: typeof stage1Inputs.N === 'number' ? stage1Inputs.N : 3,
+    // The fallback READS the pre-registration (it used to hard-code 3 while
+    // preregistration.json said 2 — two sources of truth, the doctor/builder
+    // drift class; the 2026-08-15 elegance run converged under a threshold
+    // nobody had committed). N re-locked to 1 by John 2026-08-16 (rule 5).
+    N: typeof stage1Inputs.N === 'number' ? stage1Inputs.N : preregisteredN(),
     K: typeof stage1Inputs.K === 'number' ? stage1Inputs.K : 4,
     M: typeof stage1Inputs.M === 'number' ? stage1Inputs.M : 2,
   };

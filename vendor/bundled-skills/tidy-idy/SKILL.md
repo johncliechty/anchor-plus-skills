@@ -64,6 +64,17 @@ proposer (no self-authored justification records); malleability work is
 never cut as "unused capability"; guards are judged by RC-G, never by
 retirement. Verdicts: KEEP / HOLD (with written trigger or budget) / CUT
 (logged).
+
+**THE SPEAKING LAW (John, 2026-08-16 — ELEGANCE.md Part III):** every ask,
+HALT, or summary this skill puts to the user describes the DECISION, never
+the machinery (a gate ask took FOUR attempts because it kept narrating waves
+and gates); a few plain sentences carrying the two-three details that matter
++ where the full detail lives; genuinely complicated content goes in NUMBERED
+BATCHES, one at a time, each ending "OK so far?"; no seat/stamp/gate
+vocabulary in the sentence the user must read; every ask ends with a question
+answerable in one word AND carries a recommendation (what you would choose +
+one line of why + alternatives when the choice has them + "or tell me
+something else" — options are a convenience, never a cage).
 <!-- /ELEGANCE-V2.1 -->
 <!-- /ELEGANCE-LAW -->
 

@@ -45,9 +45,10 @@ cd anchor-plus-skills
 
 - Keep this folder — **your Anchor data lives inside it** (see "Known
   limits" below).
-- **Upgrading later is just `git pull`** — your data files are untracked and
-  git-ignored, so a pull updates the product without touching your tasks or
-  projects.
+- **Upgrading later is `git pull`, then re-run `.\onboard.cmd`** — your data
+  files are untracked and git-ignored, so the pull never touches your tasks
+  or projects; the onboard re-run (idempotent) registers any NEW skills the
+  release added and heals older installs.
 
 (No git and can't install it? Use the repo page's "Code → Download ZIP"
 instead — then right-click the zip → Properties → check **Unblock** → OK

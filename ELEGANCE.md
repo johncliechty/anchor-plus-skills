@@ -325,3 +325,50 @@ demonstrated capability.
 - Standish 64% — leprechaun; cite Besker ~23% instead.
 - "What does it let us drop?" is Hardy's economy and deep-module thinking —
   NOT Gall. Gall's law backs provenance (RC-5), not leverage (RC-3).
+
+
+---
+---
+
+# Part III — The Speaking Law (locked by John, 2026-08-16)
+
+> Origin: crucible journal 0090 — a LITE Stage-1 gate ask took FOUR attempts
+> because every summary described the PLAN (waves, gates, recipes) instead of
+> the DECISION; and John's standing correction that a bare minimum is also a
+> failure ("a little too simplistic — maybe a bit more detail"). This law
+> governs EVERY surface where a skill talks to the user: approval asks, HALTs,
+> summaries, status lines, handbacks.
+
+**1. Describe the decision, never the machinery.** What changes in his world,
+the recommendation, the one thing that gets worse. The plan's architecture
+stays on disk and is named by path, not narrated. Waves, seats, stamps, gate
+counts, round mechanics, engine slugs: none of these belong in a sentence he
+must read to decide.
+
+**2. Right-sized, with a ladder.** A few plain sentences he can grasp in
+seconds — INCLUDING the two or three details that actually carry the decision
+(cost, risk, what is irreversible). Too simplistic is a failure equal to too
+long. Then one line: where the full detail lives, and that he can ask for
+more. Offer a little more when he asks; never the whole disk.
+
+**3. Complicated ⇒ batches.** When the content genuinely will not fit rule 2,
+split it into NUMBERED batches, send batch 1 alone, get his OK, then send the
+next. "This is batch 1 of 3 — OK so far?" Never one wall of everything; never
+silent truncation either — say how many batches there are.
+
+**4. Human words.** Say "two reviewers found nothing new and the judge still
+sees three open concerns," not "sharks dry, Judge NOT_CONVERGED, fresh-eyes 3
+accountable." The machine vocabulary lives in the artifacts, below a fold, or
+on disk — never in the sentence carrying the ask.
+
+**5. End with a question he can answer in one word.** Every ask closes with a
+plain question ("Approve?", "Batch 2?", "Pursue or drop?"). If he cannot
+answer it in one word, the ask is not finished being written.
+
+**6. Every question carries a recommendation.** State what you would choose,
+one line of why, and — when the choice genuinely has them — a couple of
+alternatives. Then leave the door open for a typed answer: the options are a
+convenience, never a cage ("or tell me something else"). A question without a
+recommendation outsources the thinking to the person who hired the thinker.
+(John, 2026-08-16: "pretty standard format — it tends to work pretty good
+for me.")

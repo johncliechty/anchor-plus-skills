@@ -955,12 +955,20 @@ export async function runMasterPlanLoop({
             }, null, 2) + '\n');
         } catch { /* best-effort */ }
       }
+      // THE SPEAKING LAW (ELEGANCE.md Part III; journal 0090 — this exact ask took
+      // FOUR attempts because it narrated waves/gates instead of the decision).
+      // The sentence John reads describes the DECISION; the machinery stays in the
+      // err fields + HUMAN-LOCKABLE.json on disk. Tests pin only 'human-lockable'.
+      const openCount = (verdict.findings || []).filter((f) => !f.demoted).length;
       const err = haltForHuman(
-        `human-lockable: Shark Tank is dry with no ≥2-agree BLOCKERs for ${dryHeldStreak} consecutive ` +
-          `round(s) (${hl.reason}). Judge/fresh-eyes held model-side lock without multi-Shark substance. ` +
-          `Best draft (${rounds.length} round(s)) is attached — YOU are the convergence authority: ` +
-          `approve to lock (approveMasterPlan with humanLockable loop), or challenge and re-run with ` +
-          `additionalRounds to extend.`,
+        `human-lockable: The plan is ready for your call. The reviewers have stopped ` +
+          `finding problems they agree on${openCount ? `, though ${openCount} single-reviewer ` +
+          `concern(s) stay listed for your eyes (OPEN-FINDINGS.json)` : ''}. ` +
+          `Approving locks this draft as the Master Plan; challenging costs another review ` +
+          `round. Recommendation: approve — the concerns left are single-reviewer catches, ` +
+          `worth a read but none met the two-reviewer bar; challenge instead if one of them ` +
+          `names something you care about. The full draft is on disk (BEST-DRAFT.md). ` +
+          `Approve, challenge, or tell me something else?`,
         'stage1-human-lockable',
       );
       err.best_draft = bestDraft;

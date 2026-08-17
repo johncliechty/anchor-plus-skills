@@ -1,13 +1,21 @@
 {
-  "_README": "PRE-REGISTRATION GATE (I6, no gamed gates). These thresholds were COMMITTED BY A HUMAN before any measurement was taken (committed_by/committed_date below are the attestation). They decide every later acceptance criterion. Do NOT alter them after measurement begins — that would defeat the pre-registration. See bin/preregistration.mjs REQUIRED_THRESHOLDS for what each gates and its valid range. An out-of-range value is gate corruption (HARD test failure), not a clean HALT.",
+  "_README": "PRE-REGISTRATION GATE (I6, no gamed gates). These thresholds were COMMITTED BY A HUMAN before any measurement was taken (committed_by/committed_date below are the attestation). They decide every later acceptance criterion. Do NOT alter them after measurement begins \u2014 that would defeat the pre-registration. See bin/preregistration.mjs REQUIRED_THRESHOLDS for what each gates and its valid range. An out-of-range value is gate corruption (HARD test failure), not a clean HALT.",
   "G": 60,
   "X_pct": 10,
   "C_min": 0.3,
-  "N": 2,
+  "N": 1,
   "K": 2,
   "M": 0,
   "T": 0.05,
   "N_min": 20,
   "committed_by": "trio-maintainer",
-  "committed_date": "2026-06-06"
+  "committed_date": "2026-06-06",
+  "relocked": {
+    "key": "N",
+    "from": 2,
+    "to": 1,
+    "by": "John",
+    "date": "2026-08-16",
+    "reason": "Elegance Law rule 5 \u2014 one genuinely-dry round ends a review loop; a streak pays reviewers to keep finding filler. Ratified in chat; the suspicious-dry guard still fires independently on too-fast dryness with unresolved high-severity findings."
+  }
 }
