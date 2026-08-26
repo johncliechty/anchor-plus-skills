@@ -662,9 +662,13 @@ async function main() {
       output = runHost(rawText, { cross_model: opts.cross_model });
     }
   } catch (err) {
-    // HONEST failure: malformed draft, conformance failure, or agy down on --live. Write NOTHING.
+    // HONEST failure: malformed draft or a live-path error. Write NOTHING. Label revised
+    // 2026-08-25 (journal 0300, rule 9): the old blanket "(agy down / non-attested)" branded
+    // EVERY live error a substrate failure — twice misdiagnosing a budget stop as "agy down".
+    // Read err.message; it names the actual cause. (Budget excess no longer halts at all —
+    // it pre-flights and floors; see live-refuter.mjs.)
     const kind = err instanceof SeamPassInputError ? 'malformed raw draft'
-      : opts.live ? 'live refutation failed (agy down / non-attested)' : 'conformance failure';
+      : opts.live ? `live refutation failed — ${err?.name || 'error'} (read the message below; NOT necessarily agy)` : 'conformance failure';
     process.stderr.write(`gandalf-run: ${kind} — no output written.\n${err.message}\n`);
     process.exitCode = 1;
     return;

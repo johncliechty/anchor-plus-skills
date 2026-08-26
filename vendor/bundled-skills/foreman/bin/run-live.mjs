@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 import { classifyExit, makeTelemetryRecord } from './transport.mjs';
 import { spawnGuarded, makeChildRegistry, acquireLock } from './proc-guard.mjs';
@@ -39,8 +39,17 @@ const BRANCH = flag('--branch', null);
 const STATUS_FILE = flag('--status', path.join(PROJECT, '_foreman-status.log'));
 const ALLOWED = flag('--allowed-tools', 'Bash,Edit,Write,Read,Glob,Grep');
 // Wave 7: per-call hard timeout (SIGKILL a hung sub-agent) + the single-run lock.
-const CALL_TIMEOUT_MIN = flag('--call-timeout-min', '20');
+// 2026-08-25 (journals 0102/0103, John-ratified card): default raised 20→45 — the 20-min
+// default SIGKILLed HEALTHY agents in two builds after diagnosis (cross-repo/content waves
+// legitimately need 43+ min). The floor is the dead-process backstop, not the supervisor.
+const CALL_TIMEOUT_MIN = flag('--call-timeout-min', '45');
 const CALL_TIMEOUT_MS = Number(CALL_TIMEOUT_MIN) > 0 ? Number(CALL_TIMEOUT_MIN) * 60000 : null;
+if (CALL_TIMEOUT_MS !== null && Number(CALL_TIMEOUT_MIN) < 45) {
+  console.log(`!! call-timeout ${CALL_TIMEOUT_MIN}m is below the 45m floor (journals 0102/0103: healthy agents killed at 20m) — proceeding as explicitly instructed`);
+}
+if (CALL_TIMEOUT_MS === null) {
+  console.log('!! per-call timeout DISABLED (--call-timeout-min 0) — NO dead-process backstop this run; a hung agent will hang the wave (explicit operator choice, named here)');
+}
 const LOCK_FILE = flag('--lock', path.join(PROJECT, '.foreman', 'run.lock'));
 
 // F-H sleep fix (0072): fail-loud guards + heartbeat so mid-wave deaths leave forensics
@@ -389,6 +398,79 @@ try {
   process.exit(3);
 }
 process.on('exit', () => { try { lock.release(); } catch { /* best-effort */ } });
+
+// ---- Sibling-repo cleanliness pre-flight (2026-08-25 — journal 0102 defect 2, John-ratified
+// card): a wave that wrote outside its repo once reported GREEN over a DIRTY sibling with
+// nothing complaining. Before the engine starts, every OTHER git repo the plan text names
+// (absolute paths — "the plan already names them as normative inputs") must be clean. The
+// HALT names the dirty repo AND exactly what was checked (the 0103 halt-transparency lesson).
+// The engine's own home repo and PROJECT itself are excluded (foreman's git flow owns those).
+// FOREMAN_ALLOW_DIRTY_SIBLINGS=1 proceeds with the state recorded, never silently.
+try {
+  const { resolveContract } = await import(new URL('./project-engine.mjs', import.meta.url));
+  const planText = resolveContract(PROJECT).planText;
+  const projReal = fs.realpathSync(PROJECT);
+  let engineHome = null;
+  try {
+    let cur = path.dirname(fileURLToPath(import.meta.url));
+    while (cur && path.dirname(cur) !== cur) {
+      if (fs.existsSync(path.join(cur, '.git'))) { engineHome = fs.realpathSync(cur); break; }
+      cur = path.dirname(cur);
+    }
+  } catch { /* engine outside a repo — nothing to exclude */ }
+  const gitRootOf = (p) => {
+    let cur = p;
+    while (cur && path.dirname(cur) !== cur) {
+      if (fs.existsSync(path.join(cur, '.git'))) return fs.realpathSync(cur);
+      cur = path.dirname(cur);
+    }
+    return null;
+  };
+  const candidates = new Set();
+  const unresolved = [];
+  const addCandidate = (m) => {
+    const cleaned = m.replace(/[),.;:\]]+$/, '');
+    try {
+      const st = fs.statSync(cleaned);
+      const root = gitRootOf(st.isDirectory() ? cleaned : path.dirname(cleaned));
+      if (root) candidates.add(root);
+    } catch { unresolved.push(cleaned); }
+  };
+  // Pass 1 (2026-08-25 review fix — the guard was FAIL-OPEN on spacey paths): quoted or
+  // backticked spans may contain spaces ("<path> Foundry\..."); the unquoted pass
+  // truncates at the first space, which both MISSES a spacey sibling entirely and can
+  // FALSE-match an existing shorter prefix. Quoted spans are scanned first, spaces allowed.
+  for (const m of planText.match(/["'`][A-Za-z]:[\\/][^"'`\r\n]+["'`]/g) ?? []) addCandidate(m.slice(1, -1));
+  // Pass 2: unquoted prose paths (no spaces — the honest limit of unquoted matching).
+  for (const m of planText.match(/[A-Za-z]:[\\/](?:[^\s"'`|<>:*?\r\n]+[\\/])*[^\s"'`|<>:*?\r\n]+/g) ?? []) addCandidate(m);
+  if (unresolved.length) {
+    emit(`sibling-repos: ${unresolved.length} plan path token(s) did not resolve on disk (first: ${unresolved[0].slice(0, 80)}) — note: unquoted paths cannot carry spaces; QUOTE spacey repo paths in the plan to have them guarded`);
+  }
+  candidates.delete(projReal);
+  if (engineHome) candidates.delete(engineHome);
+  const checked = [...candidates];
+  if (checked.length) emit(`sibling-repos: checked ${checked.length} plan-named repo(s): ${checked.join(' · ')}`);
+  const dirty = [];
+  for (const repo of checked) {
+    const r = spawnSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8', timeout: 20000 });
+    if (r.error || r.status !== 0) {
+      // Review fix: a git failure was silently counted CLEAN — say it, don't bless it.
+      emit(`sibling-repos: git status FAILED in ${repo} (${r.error?.message || `exit ${r.status}`}) — repo NOT verified clean`);
+      continue;
+    }
+    if (r.stdout.trim() !== '') dirty.push(`${repo} (${r.stdout.trim().split('\n').length} uncommitted path(s))`);
+  }
+  if (dirty.length) {
+    if (process.env.FOREMAN_ALLOW_DIRTY_SIBLINGS === '1') {
+      emit(`!! sibling-repo DIRTY at start (FOREMAN_ALLOW_DIRTY_SIBLINGS=1 — proceeding with eyes open): ${dirty.join('; ')}`);
+    } else {
+      emit(`[taxonomy:dirty-sibling] HALT before start: plan-named repo(s) not clean — ${dirty.join('; ')}. Commit or stash them, or set FOREMAN_ALLOW_DIRTY_SIBLINGS=1 to proceed with the state recorded. Checked: ${checked.join(' · ')}`);
+      process.exit(3);
+    }
+  }
+} catch (e) {
+  emit(`sibling-repos: preflight skipped (non-fatal) — ${e?.message || e}`);
+}
 
 const budgetConfig = (MAX_WAVES != null || MAX_WALL_MIN != null) ? {
   maxWaves: MAX_WAVES != null ? Number(MAX_WAVES) : null,

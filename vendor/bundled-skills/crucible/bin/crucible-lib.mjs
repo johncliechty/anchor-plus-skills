@@ -177,18 +177,34 @@ export const STAGE_SUCCESSOR = {
 };
 
 /** The HALT gate that guards each stage boundary (the "halt-gate set"). */
+// 2026-08-25 (John-ratified card): every gate reason speaks the DECISION-format ask the
+// main human-lockable gate already landed (Speaking Law; journals 0090/0091) — what the
+// choice is, the recommendation with one line of why, the alternatives, a one-word door.
+// Gate NAMES are pinned identifiers and unchanged.
 export const HALT_GATES = {
   'stage0->stage1': {
     name: 'north-star-lock',
-    reason: 'Stage 0 framing done — lock the North Star to proceed to the Master Plan',
+    reason:
+      'Your call: lock this North Star? Locking freezes the objective and turns drift ' +
+      'detection on; everything after is measured against it. Recommendation: lock — the ' +
+      'framing (with success criteria and non-goals) is on disk for a quick read; edit it ' +
+      'first if any line misstates your intent. Lock, edit, or tell me something else?',
   },
   'stage1->stage2': {
     name: 'master-plan-approval',
-    reason: 'Master Plan converged — approve it to proceed to the Implementation Plan',
+    reason:
+      'Your call: approve the Master Plan? Approving locks the plan and starts detailed ' +
+      'implementation planning; the full plan is on disk. Recommendation: approve — review ' +
+      'stopped finding problems reviewers agree on; challenge instead if an open finding ' +
+      'names something you care about. Approve, challenge, or tell me something else?',
   },
   'stage2->done': {
     name: 'implementation-plan-approval',
-    reason: 'Implementation Plan converged — approve it to hand off to Foreman',
+    reason:
+      'Your call: approve the Implementation Plan and hand it to the builder? Approving ' +
+      'freezes the build plan Foreman will execute wave by wave; the full plan is on disk. ' +
+      'Recommendation: approve — it passed the machine well-formedness gate and review ran ' +
+      'dry; challenge if a wave reads wrong. Approve, challenge, or tell me something else?',
   },
 };
 

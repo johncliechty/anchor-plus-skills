@@ -13,7 +13,7 @@ Usage:
 Launch from Cowork by typing "Dashboard" — Claude will run this for you.
 """
 
-import json, logging, os, re, socket, sys, threading, time, traceback, webbrowser
+import hashlib, json, logging, os, re, socket, sys, threading, time, traceback, webbrowser
 from datetime import datetime, date
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -96,8 +96,51 @@ _logger.propagate = False
 # Computed ONCE at process startup. Used by the self-healing client JS to
 # detect a redeploy and force a cache-busting reload (and to kill any leftover
 # service worker / Cache Storage left behind by an old Anchor build).
+#: The source files whose content decides what a browser is served. The build
+#: id is a fingerprint of THESE, not of the last commit.
+_BUILD_SOURCES = (
+    "anchor_gui.py", "route_table.py", "chamber_open.py", "chamber_rail.py",
+    "chamber_page.py", "chamber_efforts.py", "chamber_status_overlay.py",
+    "chamber_pulse.py", "chamber_e1_hook.py", "chamber_deliverable.py",
+    "chamber_refine.py",
+)
+# 2026-08-25 (elegance S-batch): steward_cockpit/ is the DEFAULT /project/ surface since
+# the cutover, but its files were absent here — cockpit-only edits never moved the build
+# id, so open cockpit pages never self-healed (the exact 2026-08-15 class, re-opened on
+# the new primary surface). The cockpit tree now counts.
+_BUILD_SOURCE_GLOBS = (
+    "static/*.js", "static/*.css", "static/*.html",
+    "steward_cockpit/*.py", "steward_cockpit/static/*.js",
+    "steward_cockpit/static/*.css", "steward_cockpit/static/*.html",
+)
+
+
 def _compute_build_id():
+    """A build id that changes when the CODE ON DISK changes.
+
+    (2026-08-15, John: "You have promised me so many times that updated code is
+    available once I restart and it is not there… how can we get this fixed for
+    good?")
+
+    THE BUG THIS FIXES. This was `git rev-parse --short HEAD`. BUILD_ID feeds
+    three things: the asset `?v=` cache-buster, `window.__ANCHOR_BUILD__`, and
+    `GET /api/version` — which the page polls every 30s and RELOADS ITSELF when
+    the value changes. Keyed on HEAD, all three froze for any work that was not
+    yet committed. So on a tree with uncommitted changes: the server restarts
+    with new code, reports the SAME version, the self-healing reload never
+    fires, an open page keeps showing the old render, and the honest report
+    "I restarted and nothing changed" is met with "try refreshing" — which
+    cannot help, because the page was never told there was anything new.
+
+    A whole day of edits shipped under one unchanging id this way.
+
+    Now: git HEAD stays as the readable prefix (it says which commit the tree is
+    based on) and a fingerprint of the served sources' size+mtime is appended,
+    so ANY edit — committed or not — moves the id. Cheap (a few dozen stat()
+    calls, once, at import), and it never raises.
+    """
     import subprocess
+    head = ""
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -105,12 +148,37 @@ def _compute_build_id():
             capture_output=True, text=True, timeout=5,
             creationflags=_paths.NO_WINDOW,
         )
-        rev = (out.stdout or "").strip()
-        if out.returncode == 0 and rev:
-            return rev
+        if out.returncode == 0:
+            head = (out.stdout or "").strip()
     except Exception:
-        pass
-    # Fallback: mtime of this source file (changes on every redeploy).
+        head = ""
+
+    stamps = []
+    try:
+        import glob as _glob
+        paths = [ANCHOR_DIR / name for name in _BUILD_SOURCES]
+        for pattern in _BUILD_SOURCE_GLOBS:
+            paths.extend(Path(p) for p in _glob.glob(str(ANCHOR_DIR / pattern)))
+        for p in sorted(paths, key=str):
+            try:
+                st = p.stat()
+                # 2026-08-25 hardening: RELATIVE PATH (basenames alias across the
+                # cockpit/static dirs) + ns mtime (int seconds missed fast edits).
+                try:
+                    rel = str(p.relative_to(ANCHOR_DIR))
+                except ValueError:
+                    rel = str(p)
+                stamps.append("%s:%d:%d" % (rel, st.st_size, st.st_mtime_ns))
+            except OSError:
+                continue
+    except Exception:
+        stamps = []
+
+    if stamps:
+        digest = hashlib.sha1("|".join(stamps).encode("utf-8")).hexdigest()[:7]
+        return ("%s+%s" % (head, digest)) if head else digest
+    if head:
+        return head
     try:
         return str(int(os.path.getmtime(__file__)))
     except Exception:
@@ -2297,6 +2365,44 @@ def _render_activity_reflection_html(refl: dict) -> str:
     return '<div class="rnd-row-activity">' + "".join(parts) + "</div>"
 
 
+def _steward_status_tile_line(entry: dict) -> str:
+    """The cockpit's persisted 10-minute status for a project row (steward
+    cutover 2026-08-25): ONE targeted stat+read of
+    ``<folder>/.ecgberht/status-summary.json`` — the universal file the
+    steward engine's cadence writes — so peeking at the dashboard shows the
+    10-minute summary without opening the project. Zero scans (the GET /
+    perf invariant holds), honest empty when the project has no cockpit
+    campaign or the file is stale (>1 day); never fabricated."""
+    folder = (entry.get("folder_path") or "").strip()
+    if not folder:
+        return ""
+    f = Path(folder) / ".ecgberht" / "status-summary.json"
+    try:
+        if time.time() - f.stat().st_mtime > 86400:
+            return ""
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    now_lines = [str(x).strip() for x in (data.get("now") or []) if str(x).strip()]
+    plan = data.get("plan") or {}
+    bits = []
+    if now_lines:
+        bits.append(now_lines[0])
+    step = str(plan.get("step") or "").strip()
+    if step and step != "(no active step)":
+        bits.append("step %s/%s · %s" % (plan.get("steps_done", 0),
+                                         plan.get("steps_total", 0), step))
+    wait = str(plan.get("waiting_on_you") or "").strip()
+    if wait:
+        bits.append("waiting on you: " + wait)
+    if not bits:
+        return ""
+    return ("⏱ %s · %s" % (str(data.get("at", ""))[-5:],
+                            " · ".join(bits)))[:200]
+
+
 def render_project_tile_html(entry: dict) -> str:
     """Render a THIN, full-width project ROW (v3 Wave 5, IMPLEMENTATION-PLAN
     lines 124-141): ``name · accurate cached project summary · per-lane
@@ -2333,6 +2439,15 @@ def render_project_tile_html(entry: dict) -> str:
     # new rnd_jobs/ scans, GET / perf invariant holds).
     refl = _project_activity_reflection(pid_raw)
     activity_block = _render_activity_reflection_html(refl)
+
+    # Steward cutover 2026-08-25 — the cockpit's persisted 10-minute status
+    # rides the home row (one targeted read; '' when absent/stale).
+    _stw_line = _steward_status_tile_line(entry)
+    steward_block = (
+        f'<span class="rnd-row-steward" '
+        f'title="{html_lib.escape(_stw_line, quote=True)}">'
+        f'{html_lib.escape(_stw_line)}</span>'
+    ) if _stw_line else ""
 
     # Per-lane mini-counts (compact form of the status line) + status dot.
     status = render_status_line_html(pid_raw)
@@ -2441,6 +2556,7 @@ def render_project_tile_html(entry: dict) -> str:
         f'<span class="rnd-badge rnd-state-{state}">{state}</span>'
         f'{summary_block}'
         f'{activity_block}'
+        f'{steward_block}'
         f'<span class="rnd-row-counts">{status}</span>'
         f'{rollup_block}'
         f'{kebab}'
@@ -5712,20 +5828,50 @@ def render_project_window_html(project_id: str) -> str:
     slim = (project_id == "__dashboard__")
     # The seal tile is a SLOT now: pre-filled markup (slot values are never
     # re-scanned, so the steward values are baked in here, not @@-referenced).
-    seal_tile = "" if slim else (
-        "<details class='dash-tile tile-seal' id='tile-ecgseal' "
-        "ontoggle=\"if(this.open)ecgSealMountInline()\"><summary title='"
-        + html_lib.escape(_stew_ui["label"], quote=True)
-        + " — the steward chamber (take charge)'><img class='tile-ico' src='"
-        + html_lib.escape("/vendor/brand/%s?v=%s" % (_stew_ui["seal"], BUILD_ID), quote=True)
-        + "' alt='' onerror=\"this.style.display='none'\"/> "
-        + html_lib.escape(_stew_ui["seal_name"])
-        + "<span class='tile-count'>" + html_lib.escape(_stew_ui["label"])
-        + " &mdash; the steward chamber</span></summary>"
-        "<div class='tile-body'><div class='ecg-seal-host' id='ecgSealHost'></div>"
-        "<div class='ecg-chamber-steps-host' id='ecgChamberStepsHost' data-wave='18'></div>"
-        "<div class='ecg-chamber-artifact-host' id='ecgChamberArtifactHost' data-wave='18'></div>"
-        "</div></details>")
+    # ── THE STEWARD STAGE (2026-08-15, John) ─────────────────────────────────
+    # The chamber was drawn as a PAGE and shipped as a closed drawer: a
+    # <details> that rendered shut, with three empty hosts, above the
+    # Workbench. John opened a project and saw an accordion. Promotion, not
+    # replacement — same page, same URL, everything still here; the steward is
+    # simply the main surface now and mounts on load instead of on a click.
+    # ?classic=1 restores the drawer if this is ever wrong for him.
+    _seal_ico = html_lib.escape(
+        "/vendor/brand/%s?v=%s" % (_stew_ui["seal"], BUILD_ID), quote=True)
+    if slim:
+        seal_tile = ""
+    else:
+        seal_tile = (
+            "<details class='dash-tile tile-seal' id='tile-ecgseal' "
+            "ontoggle=\"if(this.open)ecgSealMountInline()\"><summary title='"
+            + html_lib.escape(_stew_ui["label"], quote=True)
+            + " — the steward chamber (take charge)'><img class='tile-ico' src='"
+            + _seal_ico
+            + "' alt='' onerror=\"this.style.display='none'\"/> "
+            + html_lib.escape(_stew_ui["seal_name"])
+            + "<span class='tile-count'>" + html_lib.escape(_stew_ui["label"])
+            + " &mdash; the steward chamber</span></summary>"
+            "<div class='tile-body'><div class='ecg-seal-host' id='ecgSealHost'></div>"
+            "<div class='ecg-chamber-steps-host' id='ecgChamberStepsHost' data-wave='18'></div>"
+            "<div class='ecg-chamber-artifact-host' id='ecgChamberArtifactHost' data-wave='18'></div>"
+            "</div></details>")
+    # (2026-08-15) THE CLASSIC BANNER. `?classic=1` is sticky in a tab: click
+    # it once and every reload lands back on the cockpit, which looks exactly
+    # like "the new page never shipped". The old surface now says what it is
+    # and offers the way back, so the two can never be confused again.
+    if not slim:
+        seal_tile = (
+            "<div class='classic-banner'>"
+            "<span class='cb-lab'>CLASSIC COCKPIT</span>"
+            "<span>You are on the old project page. The AI cockpit is "
+            "the new one.</span>"
+            "<a class='cb-go' href='/project/"
+            + html_lib.escape(project_id, quote=True)
+            + "'>Open the cockpit &rarr;</a></div>") + seal_tile
+    # (2026-08-15) The intermediate "steward-stage" section that lived here for
+    # part of today is GONE. It was superseded by chamber_page.py within hours,
+    # and a superseded surface does not get to sit inert — that is the exact
+    # defect that let v0 out-compete M1 for twelve waves. When code is replaced,
+    # the replaced code is deleted.
     slots = {
         "name": name,
         "xterm_prefix": XTERM_URL_PREFIX,
@@ -7725,6 +7871,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 .rnd-row-summary.rnd-dim {{ color: var(--text-dim); opacity: .6; font-style: italic; }}
 /* v6 Wave 7 — timely activity reflection: running indicator + "what's happening". */
 .rnd-row-activity {{ flex: 3 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); overflow: hidden; }}
+.rnd-row-steward {{ flex: 2 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--accent); opacity: .9; font-variant-numeric: tabular-nums; }}
 .rnd-act-running {{ flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; color: var(--success); font-weight: 600; }}
 .rnd-act-pulse {{ width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 5px var(--success); animation: rndActPulse 1.4s ease-in-out infinite; }}
 @keyframes rndActPulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: .35; }} }}
@@ -10499,6 +10646,129 @@ def _ecgberht_bridge(args, timeout=20):
                 "message": out[:500]}
 
 
+def render_chamber_lock_document(project_id: str) -> str:
+    """The tokenless face of a chamber. No transcript, no goal, no steps, no
+    folder path — a lock, a one-line explanation, and the self-bounce: if the
+    browser holds the Anchor token, it reloads with it immediately, so an
+    authorized person never reads this page."""
+    pid_js = json.dumps(project_id)
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "<title>token-locked</title>"
+        "<style>body{background:#0f1117;color:#e2e4e9;font-family:system-ui,"
+        "'Segoe UI',sans-serif;display:flex;align-items:center;"
+        "justify-content:center;height:100vh;margin:0}"
+        ".lock{max-width:44ch;text-align:center}"
+        ".lock h1{font-size:17px;margin:0 0 8px}"
+        ".lock p{font-size:13px;color:#8b8f9a;margin:0 0 16px}"
+        ".lock button{font-size:12px;padding:6px 14px;border-radius:7px;"
+        "border:1px solid #c9a227;background:#232733;color:#c9a227;"
+        "cursor:pointer}</style></head><body>"
+        "<div class='lock'><h1>&#128274; This chamber is token-locked</h1>"
+        "<p>The steward conversation is private. Set the Anchor access token "
+        "and the page opens.</p>"
+        "<button onclick='setTok()'>Set the token</button></div>"
+        "<script>var PID=" + pid_js + ";"
+        # preserve the existing query (e.g. ?cockpit=1) across the bounce -
+        # rebuilding a bare /project/<id>?token= dropped it and always landed
+        # on the chamber, never the cockpit
+        "function go(t){var q=location.search.replace(/[?&]token=[^&]*/,'');"
+        "if(q&&q[0]!=='?')q='?'+q;"
+        "location.replace(location.pathname+q+(q?'&':'?')"
+        "+'token='+encodeURIComponent(t));}"
+        "function setTok(){var t=prompt('Anchor access token:');"
+        "if(t===null)return;try{localStorage.setItem('anchor_token',"
+        "t.trim());}catch(e){}go(t.trim());}"
+        "try{var t0=localStorage.getItem('anchor_token');"
+        "if(t0){go(t0);}}catch(e){}</script>"
+        "</body></html>")
+
+
+def render_chamber_page_document(project_id: str) -> str:
+    """GET /project/<id> — THE STEWARD CHAMBER AS THE PAGE (2026-08-15, John).
+
+    A whole document, not a tile in the cockpit. Measured on his screen, the
+    cockpit gave him 446px of conversation out of 1000; this gives ~848 by
+    spending 68px on chrome instead of 762.
+
+    Deterministic-first, exactly like ``seal_open``: the entire page is
+    rendered from the sidecar projections + the raw ledger tail + the
+    conversation log. ZERO model calls, ZERO child processes, ZERO writes on
+    the open path. It loads ONE stylesheet and ONE script — never the
+    cockpit's 8,000-line bundle, because dead code sharing a document with
+    live code is precisely what deleted the M1 chamber for twelve waves.
+    """
+    import chamber_page
+    import chamber_rail
+    proj = _rnd.get_project(project_id) or {}
+    folder = (proj.get("folder_path") or "").strip()
+    stw = _steward_ui()
+    _eff = {"active": "campaign"}
+    steward = {"label": stw.get("label") or "Ecgberht",
+               "glyph": stw.get("glyph") or "\U0001f9ff",
+               "seal_src": _steward_seal_icon_src(),
+               "seat": "claude"}
+    try:
+        import chamber_open as _copen
+        view = chamber_rail.seal_rail_view(folder, project_id=project_id)
+        # Elapsed time is a RENDER-time fact, never part of the deterministic
+        # open view — four stat() calls, no spawn, no write.
+        _proj = dict(proj)
+        # The stamp is the running server's build — the answer to "did my
+        # restart take?" without anyone having to guess.
+        _proj["build"] = "build %s" % BUILD_ID
+        # Multi-seal: the strip's tiles + the ACTIVE seal's thread. A
+        # non-campaign seal paints its own dialogue; the campaign paints the
+        # engine's log exactly as before.
+        import chamber_efforts as _ceff
+        _eff = _ceff.load_efforts(folder)
+        if _eff.get("active") and _eff["active"] != _ceff.CAMPAIGN_ID:
+            view["dialogue"] = _ceff.read_dialogue(folder, _eff["active"])
+        body = chamber_page.render_chamber_page_html(
+            view, steward=steward, project=_proj,
+            freshness=_copen.campaign_freshness(folder),
+            efforts=_eff)
+    except Exception as exc:
+        # Honest failure, never a blank page — and the cockpit (the default
+        # page since the 2026-08-25 cutover) is one click away so a broken
+        # chamber can never strand him. (?classic=1 would loop back HERE.)
+        body = (
+            "<div class='cpage'><div class='cfail'>"
+            "<h4>The chamber could not open.</h4>"
+            "<p>%s</p>"
+            "<a class='cbtn' href='/project/%s'>Open the cockpit</a> "
+            "<a class='cbtn' href='/'>Back to the High Seat</a>"
+            "</div></div>"
+            % (html_lib.escape(str(exc)), html_lib.escape(project_id, quote=True)))
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "<title>%s — %s</title>"
+        "<link rel='stylesheet' href='/static/chamber-page.css?v=%s'>"
+        # The workbench terminal needs xterm; it is vendored, not remote.
+        "<link rel='stylesheet' href='%s/xterm.css'>"
+        "</head><body>%s"
+        "<script>window.ANCHOR_PROJECT_ID=%s;window.ANCHOR_STEWARD_NAME=%s;"
+        "window.ANCHOR_BUILD=%s;window.ANCHOR_EFFORT=%s;</script>"
+        "<script src='%s/xterm.js'></script>"
+        "<script src='/static/chamber-page.js?v=%s'></script>"
+        # (2026-08-25 cutover) The chamber is now the ESCAPE HATCH behind
+        # ?classic=1; the beta link that used to live here is gone — the
+        # cockpit answers the plain /project/<id> URL.
+        "</body></html>"
+    ) % (html_lib.escape(proj.get("name") or "project"),
+         html_lib.escape(steward["label"]),
+         static_asset_version("chamber-page.css"),
+         XTERM_URL_PREFIX,
+         body,
+         json.dumps(project_id), json.dumps(steward["label"]),
+         json.dumps(BUILD_ID),
+         json.dumps(_eff.get("active") or "campaign"),
+         XTERM_URL_PREFIX,
+         static_asset_version("chamber-page.js"))
+
+
 def _ecgberht_project_folder(pid):
     """project_id -> (folder, error_json, status). Same validation as boneyard."""
     if not pid:
@@ -10569,6 +10839,107 @@ def handle_ecgberht_seal_open(handler, path, body):
         return
     handler._send_json({"ok": True, "view": view, "html": html_out,
                         "css": css_out}, 200)
+
+
+def handle_ecgberht_refresh(handler, path, body):
+    """POST /api/ecgberht/refresh — recompute this campaign's derived view.
+
+    (2026-08-15, John) "What you've got there when you open MBA Teaching is out
+    of date and I'm not sure why — I don't have a way of updating."
+
+    He was right and the reason was structural: the chamber paints from a
+    sidecar (``.anchor/chamber/*``) that is rebuilt ONLY by a terminal
+    ``chamber_coldopen.py rebuild`` or by a commission Anchor itself launched.
+    A steward session driven from VS Code writes the ledger and the transcript
+    and never touches the sidecar, so days of real work could sit on disk while
+    the page painted a week-old brief with no way for him to say "look again".
+    This is that button.
+
+    It rebuilds the DERIVED layer only, from the ledger already on disk: no
+    model call, no bridge spawn, nothing invented. Idempotent.
+    """
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_coldopen as _co
+    import chamber_open as _copen
+    try:
+        _co.cold_open_rebuild(folder)
+    except Exception as exc:
+        handler._send_json({"ok": False, "error": "refresh_failed",
+                            "message": str(exc)}, 500)
+        return
+    handler._send_json({"ok": True,
+                        "freshness": _copen.campaign_freshness(folder)}, 200)
+
+
+def handle_ecgberht_efforts(handler, path, body):
+    """GET /api/ecgberht/efforts — the project's seals (effort threads)."""
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_efforts as _ce
+    handler._send_json({"ok": True, **_ce.load_efforts(folder)}, 200)
+
+
+def handle_ecgberht_effort_act(handler, path, body):
+    """POST /api/ecgberht/effort_act — create / focus / park / finish a seal.
+
+    {project_id, act: "create"|"focus"|"park"|"done"|"reopen", effort_id?,
+     name?}. Small verbs over a small store — never the engine's spine.
+    """
+    import chamber_efforts as _ce
+    b = body or {}
+    pid = (b.get("project_id") or "").strip()
+    act = (b.get("act") or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    if act == "create":
+        store = _ce.create_effort(folder, b.get("name") or "")
+        if store.get("capped"):
+            handler._send_json({"ok": False, "error": "effort_cap",
+                                "message": store["capped"]}, 409)
+            return
+    elif act in ("focus", "park", "done", "reopen"):
+        eid = (b.get("effort_id") or "").strip()
+        if not _ce.valid_effort_id(eid):
+            handler._send_json({"ok": False, "error": "effort_id required"}, 400)
+            return
+        store = _ce.set_effort(
+            folder, eid,
+            status={"park": "parked", "done": "done",
+                    "reopen": "active"}.get(act),
+            active=(act in ("focus", "reopen")))
+    else:
+        handler._send_json({"ok": False, "error": "unknown act"}, 400)
+        return
+    handler._send_json({"ok": True, **store}, 200)
+
+
+def handle_ecgberht_effort_dialogue(handler, path, body):
+    """GET /api/ecgberht/effort_dialogue — one seal's thread tail."""
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("project_id", [""])[0] or "").strip()
+    eid = (q.get("effort_id", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    import chamber_efforts as _ce
+    import chamber_open as _copen
+    if eid == _ce.CAMPAIGN_ID:
+        turns = _copen.read_conversation_tail(folder)
+    else:
+        turns = _ce.read_dialogue(folder, eid)
+    handler._send_json({"ok": True, "effort_id": eid, "turns": turns}, 200)
 
 
 def handle_ecgberht_status_overlay(handler, path, body):
@@ -11139,6 +11510,22 @@ def handle_ecgberht_converse(handler, path, body):
         args.extend(["--who", (b.get("who") or "").strip()])
     out = _ecgberht_bridge(args, timeout=ECGBERHT_CONVERSE_TIMEOUT_S)
     out = _e1_enforce_turn_close(text, out)
+    # (2026-08-15) Multi-seal: a non-campaign effort keeps its OWN painted
+    # thread. The engine's global log still records everything (the audit
+    # trail); this only decides what that seal shows. Best-effort — a thread
+    # write must never break a turn John paid for.
+    eid = (b.get("effort_id") or "").strip()
+    if out.get("ok") and eid:
+        try:
+            import chamber_efforts as _ce
+            reply_text = ((out.get("blocked") or {}).get("held_say")
+                          if out.get("turn_blocked") else out.get("say"))
+            turns = [{"role": "john", "text": text}]
+            if reply_text:
+                turns.append({"role": "steward", "text": reply_text})
+            _ce.append_dialogue(folder, eid, turns)
+        except Exception:
+            pass
     handler._send_json(out, 200 if out.get("ok") else 502)
 
 
@@ -11760,12 +12147,35 @@ def _hs_enrich_tiles(out):
             try:
                 runs = _cs.list_runs(entry["folder_path"])
                 if runs:
-                    r = runs[0]
+                    # (2026-08-15, John: "flags — hey, it's time to look at
+                    # something — pop up to the main dashboard".) This took
+                    # runs[0], the NEWEST run. A project whose second run is
+                    # waiting on him while a third runs on read "running now",
+                    # so the one state he needs to see was the one state the
+                    # tile could not show. Rank by urgency, not by recency.
+                    _URGENCY = {"asked": 0, "died": 1, "quiet": 1, "timeout": 1,
+                                "running": 2}
+                    r = min(runs, key=lambda x: _URGENCY.get(
+                        str(x.get("outcome") or "").lower(), 3))
+                    outcome = str(r.get("outcome") or "").lower()
                     state = {"running": "running now",
-                             "asked": "waiting on you"}.get(
-                        r.get("outcome"), f"last run {r.get('outcome')}")
+                             "asked": "waiting on you",
+                             "died": "stopped — wants a decision",
+                             "quiet": "went quiet — wants a decision",
+                             "timeout": "timed out — wants a decision"}.get(
+                        outcome, f"last run {r.get('outcome')}")
                     t["now_line"] = f"{r.get('skill', 'skill')} · {state}"
-                    t["now_running"] = r.get("outcome") == "running"
+                    t["now_running"] = any(
+                        str(x.get("outcome") or "").lower() == "running"
+                        for x in runs)
+                    # The flag the High Seat can render without re-deriving it,
+                    # plus where to go when he clicks.
+                    t["needs_you"] = outcome in ("asked", "died", "quiet", "timeout")
+                    if t["needs_you"]:
+                        t["needs_you_reason"] = state
+                        t["needs_you_session"] = r.get("session_id") or ""
+                    if len(runs) > 1:
+                        t["run_count"] = len(runs)
                     # A campaign John has actually RUN is active — it renders
                     # up front; registered-but-untouched projects collapse
                     # (2026-08-07: "just two projects are running right now —
@@ -17723,6 +18133,13 @@ def handle_session_summary(handler, path, body):
             # managed id to those exact docs. Unresolvable → TERMINAL
             # "unknown" (the panel stops polling); else kick off
             # background generation run-once and tell the panel to poll.
+            # (2026-08-15) cache_only=1: the chamber's run tiles read
+            # summaries in a fan-out (dozens per open). Uncached MUST answer
+            # "unknown" instead of kicking off a background MODEL job per
+            # tile — the 2026-07-14 usage-leak class wore exactly this shape.
+            if (q.get("cache_only", [""])[0] or "").strip() in ("1", "true"):
+                handler._send_json({"ok": True, "status": "unknown"})
+                return
             session = None
             try:
                 session = _resolve_finished_session(
@@ -18473,6 +18890,10 @@ _MIGRATED_HANDLERS = {
     "handle_ecgberht_commission_runs": handle_ecgberht_commission_runs,
     "handle_ecgberht_step_detail": handle_ecgberht_step_detail,
     "handle_ecgberht_step_note": handle_ecgberht_step_note,
+    "handle_ecgberht_refresh": handle_ecgberht_refresh,
+    "handle_ecgberht_efforts": handle_ecgberht_efforts,
+    "handle_ecgberht_effort_act": handle_ecgberht_effort_act,
+    "handle_ecgberht_effort_dialogue": handle_ecgberht_effort_dialogue,
     "handle_ecgberht_run_pulse": handle_ecgberht_run_pulse,
     "handle_ecgberht_high_seat_say": handle_ecgberht_high_seat_say,
     # (2026-08-04) Wave 18 chamber UI: five routes were declared migrated=True in
@@ -18622,6 +19043,101 @@ class AnchorHandler(BaseHTTPRequestHandler):
         # stderr (it routes BrokenPipe/ConnectionReset/timeout messages here).
         # Real protocol errors still surface via the normal response paths.
         return
+
+    def _steward_same_origin(self):
+        """Defense-in-depth CSRF guard on the steward routes (the token is the
+        PRIMARY control — every /api/steward/* call is token-gated before this
+        runs; the chamber has no equivalent guard at all).
+
+        SAME-ORIGIN generally, not localhost-only (2026-08-25): John's work
+        desktop reaches Anchor over Tailscale, where the Host header is the
+        machine's tailnet name — the old localhost-only gate 403'd every
+        cockpit data call from there (shell loaded, no tiles, no persona
+        icon). We now refuse only POSITIVE cross-site evidence:
+        - fetch-metadata marking the call cross-site, or
+        - an Origin header naming a different host than the Host header
+          (allowing the reverse-proxy case — Tailscale Serve 443→8777 —
+          where the proxy rewrites Host to loopback while the browser's
+          Origin keeps the public name)."""
+        sfs = self.headers.get("Sec-Fetch-Site")
+        if sfs and sfs not in ("same-origin", "same-site", "none"):
+            return False
+        host = (self.headers.get("Host") or "").strip().lower()
+        host_bare = host.split(":")[0]
+        host_local = (host_bare in ("127.0.0.1", "localhost")
+                      or host.startswith("[::1]"))
+        origin = (self.headers.get("Origin") or "").strip().lower()
+        if (origin and host and not host_local
+                and origin.split("://")[-1] != host):
+            return False
+        return True
+
+    def _steward_pid_dir(self, pid):
+        """Resolve a project id to its campaign folder for the cockpit."""
+        proj = _rnd.get_project(pid) or {}
+        folder = (proj.get("folder_path") or "").strip()
+        return folder if folder and os.path.isdir(folder) else None
+
+    def _steward_api(self, method, verb, body=None):
+        """Dispatch a /api/steward/<verb> call to the cockpit mount, scoped to
+        the project id carried in ?pid= (GET) or the JSON body (POST)."""
+        if not self._steward_same_origin():
+            self._send_json({"error": "cross-origin refused"}, code=403); return
+        try:
+            from steward_cockpit import steward_routes as _scr
+            from steward_cockpit import steward_engine as _se
+            _scr.CONFIG["steward"] = (_steward_ui().get("label") or "Ecgberht")
+            # (2026-08-25) the effort-name guard refuses the live token — a
+            # token paste became an effort's directory name once
+            _scr.CONFIG["anchor_token"] = _paths.expected_token() or ""
+            # runtime state lives OUTSIDE the repo (Anchor's W11 invariant) - not
+            # in steward_cockpit/, where it would be committed/pushed and keep git
+            # dirty. Point it at the Anchor data dir (idempotent).
+            try:
+                _se.STATE_FILE = _paths.data_dir() / "steward-cockpit-state.json"
+            except Exception:
+                pass
+            _q = parse_qs(urlparse(self.path).query)
+            _qpid = (_q.get("pid") or [""])[0]
+            if method == "GET":
+                qs = {k: v[0] for k, v in _q.items()}
+                proot = self._steward_pid_dir(_qpid)
+                if proot is None:
+                    self._send_json({"error": "unknown project"}, code=404); return
+                obj, code = _scr.api_get(proot, verb, qs)
+            else:
+                # the client shim carries pid in the URL query for POST too;
+                # accept it from the body OR the query
+                pid = (body or {}).get("pid") or _qpid
+                proot = self._steward_pid_dir(pid)
+                if proot is None:
+                    self._send_json({"ok": False, "error": "unknown project"}, code=404); return
+                obj, code = _scr.api_post(proot, verb, body or {})
+            # Deliverable file streaming (2026-08-25): the routes layer returns a
+            # {__file__, __ctype__} marker (containment already enforced there);
+            # everything else stays JSON.
+            if code == 200 and isinstance(obj, dict) and "__file__" in obj:
+                try:
+                    with open(obj["__file__"], "rb") as fh:
+                        raw = fh.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", obj.get("__ctype__", "application/octet-stream"))
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Content-Disposition",
+                                     'inline; filename="%s"' % os.path.basename(obj["__file__"]).replace('"', ''))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                except Exception as exc:
+                    if not _is_benign_disconnect(exc):
+                        self._send_json({"error": "deliverable read failed: " + str(exc)}, code=500)
+                return
+            self._send_json(obj, code=code)
+        except Exception as exc:
+            if _is_benign_disconnect(exc):
+                return
+            self._send_json({"error": "steward: " + str(exc)}, code=500)
 
     def _send_json(self, data, code=200):
         body = json.dumps(data).encode()
@@ -19306,6 +19822,33 @@ class AnchorHandler(BaseHTTPRequestHandler):
             # the gated batch is 401'd here before the legacy handler runs.
             if self._data_plane_gate("GET", _path_only):
                 return
+            # --- Steward cockpit (additive; behind the same terminal token) ---
+            if _path_only.startswith("/steward-static/"):
+                from steward_cockpit import steward_routes as _scr
+                body, ctype = _scr.serve_static(_path_only[len("/steward-static/"):])
+                if body is None:
+                    self.send_error(404); return
+                self._send_bytes(body, ctype, cache="no-cache"); return
+            if _path_only.startswith("/steward/") and _path_only != "/steward/":
+                # the cockpit's sub-pages (v1 conversation, v3 terminal, report)
+                # served as documents with the client shim injected; token-gated
+                if not self._term_token_ok():
+                    self.send_error(401); return
+                from steward_cockpit import steward_routes as _scr
+                _scr.CONFIG["build"] = BUILD_ID   # the shim's self-heal probe
+                _page = _path_only[len("/steward/"):].strip("/")
+                _q = parse_qs(urlparse(self.path).query)
+                _pid = (_q.get("pid") or [""])[0]
+                _doc = _scr.serve_page_doc(_page, _pid)
+                if _doc is None:
+                    self.send_error(404); return
+                self._send_html(_doc)
+                return
+            if _path_only.startswith("/api/steward/"):
+                if not self._term_token_ok():
+                    self._send_json({"error": "unauthorized"}, code=401); return
+                self._steward_api("GET", _path_only[len("/api/steward/"):])
+                return
             if _path_only == "/" or _path_only == "/dashboard":
                 # Serve the dashboard for "/" REGARDLESS of query string so the
                 # cache-busting reload ("/?v=<build_id>") lands on the dashboard
@@ -19626,6 +20169,20 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     else:
                         self._send_bytes(data, ctype)
             # /zombie_terminal migrated to route_table (handle_zombie_terminal) — served by the strangler above.
+            elif self.path.startswith("/mockup"):
+                # (2026-08-15, John) "Maybe I need to have that as a reference
+                # — back up into the local web page so I can actually see it to
+                # compare." The signed M1 drawing, served next to the real
+                # thing. Read-only, no slots, no state.
+                _mk = Path(r"C:\dev\Ecgberht\planning"
+                           r"\steward-assessment-2026-08-08\mockups.html")
+                if _mk.is_file():
+                    self._send_html(_mk.read_text(encoding="utf-8"))
+                else:
+                    self._send_html(
+                        "<h1>The reference drawing is not on this host</h1>"
+                        "<p>It lives in the author's design repo and does not "
+                        "ship with the bundle.</p>")
             elif self.path.startswith("/project/"):
                 # Per-project window (Wave 3 basic view + 4-state status line).
                 # Opening a brownfield project DISCOVERS + ADOPTS its on-disk
@@ -19635,7 +20192,45 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     discover_and_adopt(pid)
                 except Exception:
                     pass  # discovery is best-effort; never block the view
-                self._send_html(render_project_window_html(pid))
+                # (2026-08-25) THE CUTOVER — THE COCKPIT IS THE PAGE (John
+                # approved 2026-08-25 after his first live run). Same URL,
+                # same click from the High Seat. The chamber PAGE moves
+                # behind ?chamber=1 as the escape hatch until John confirms
+                # the cockpit fully covers his needs (then chamber_*.py
+                # retires per its own cutover). ?classic=1 KEEPS its
+                # 2026-08-15 meaning — the old project window with the
+                # inline classic-chamber slice — because the chamber-m1
+                # recurrence instruments (test_chamber_m1_survives_w1 /
+                # test_chamber_first_paint_w6) guard that surface through
+                # this flag. ?cockpit=1 is still accepted (bookmarked beta
+                # links) — it is simply the default now. __dashboard__ keeps
+                # the slim project window because the home page IFRAMES it
+                # as the Workbench tile (a cockpit nested in the dashboard
+                # is what slim mode was invented to stop).
+                _qp = parse_qs(urlparse(self.path).query)
+                _flag = lambda k: _qp.get(k, [""])[0] in ("1", "true", "yes")
+                _chamber = _flag("chamber")
+                _classic = _flag("classic")
+                if pid == "__dashboard__" or _classic:
+                    self._send_html(render_project_window_html(pid))
+                elif not self._term_token_ok():
+                    # (2026-08-15, security audit P0) The steward transcript
+                    # is private; the /project/ row is historically open.
+                    # When a token is configured, a tokenless document GET
+                    # gets a LOCK page — which bounces itself via the
+                    # browser's stored token (query preserved, so ?classic
+                    # survives), so John never sees it and a tokenless
+                    # viewer never sees the conversation.
+                    self._send_html(render_chamber_lock_document(pid))
+                elif _chamber:
+                    self._send_html(render_chamber_page_document(pid))
+                else:
+                    # Token-gated: the doc is a shell, data rides the
+                    # token-checked /api/steward routes.
+                    from steward_cockpit import steward_routes as _scr
+                    _scr.CONFIG["steward"] = (_steward_ui().get("label") or "Ecgberht")
+                    _scr.CONFIG["build"] = BUILD_ID   # shim self-heal probe
+                    self._send_html(_scr.serve_cockpit_doc(pid))
             # /api/rnd/term_sessions migrated to route_table (handle_term_sessions) — served by the strangler above.
             # /api/rnd/chain migrated to route_table (handle_chain) — served by
             # the strangler above.
@@ -19753,6 +20348,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
                       and _post_route.auth == _routes.AUTH_OPEN)
         if not _post_open and not _paths.auth_ok(provided):
             self._send_json({"ok": False, "error": "unauthorized"}, 401)
+            return
+
+        # --- Steward cockpit POST (additive; token-gated by the check above) ---
+        if _path_only.startswith("/api/steward/"):
+            self._steward_api("POST", _path_only[len("/api/steward/"):], body)
             return
 
         # Auth-cookie bootstrap (steward-chamber W11). The login/logout mint

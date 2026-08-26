@@ -217,9 +217,35 @@ export async function runLiveRefutation(rawDraft, {
   // Which elevations FIRE the refuter (value-if-true ≥ HIGH OR severity ≥ major).
   const firing = [];
   rawElevations.forEach((e, i) => { if (isPlainObject(e) && firesRefuter(e)) firing.push(i); });
-  // INVARIANT 5 — bounded budget: more firing elevations than R ⇒ HALT (no silent drop of the excess).
-  assertRefuterBudget(firing.length, budget);
-  const firingSet = new Set(firing);
+  // INVARIANT 5, revised 2026-08-25 (John's ruling — elegance card + cost amendment; journals
+  // 0296/0298-0301: the frozen R=3 HALT fired on nearly every real read, was twice misread as
+  // "agy down", and shipped two avoidably-degraded deliverables). Cost is a PRE-FLIGHT
+  // conversation, never a mid-run wall: excess firing elevations no longer HALT the run — the
+  // top-R by value/severity get refuters; the excess ships UN-REFUTED and floors to SPECULATIVE
+  // by the existing honest-floor invariant, each named in the dispatch log. Nothing is silently
+  // dropped; paid-for output is never withheld (Gandalf's own locked law). The runaway ceiling
+  // (>4×R) also finishes-and-stamps — it only escalates the log line.
+  let toRefute = firing;
+  let floored = [];
+  if (firing.length > budget) {
+    const rank = (i) => {
+      const e = rawElevations[i];
+      const v = String(e?.value_if_true ?? '').toLowerCase() === 'high' ? 2 : 1;
+      // 2026-08-25 review fix: 'critical' outranks 'major' (it scored 0 — criticals
+      // were floored BEFORE majors under budget pressure, inverted priority).
+      const sev = String(e?.severity ?? '').toLowerCase();
+      const s = sev === 'critical' ? 2 : sev === 'major' ? 1 : 0;
+      return v * 10 + s;
+    };
+    const sorted = [...firing].sort((a, b) => rank(b) - rank(a) || a - b);
+    toRefute = sorted.slice(0, budget).sort((a, b) => a - b);
+    floored = sorted.slice(budget).sort((a, b) => a - b);
+    const nameOf = (i) => rawElevations[i]?.id ?? `e${i}`;
+    const ceiling = firing.length > Math.max(12, 4 * budget) ? ' RUNAWAY CEILING TRIPPED —' : '';
+    log(`refuter budget PRE-FLIGHT:${ceiling} ${firing.length} firing elevation(s) exceed budget ${budget} — FLOORING, not halting: refuting top ${budget} (${toRefute.map(nameOf).join(', ')}); ${floored.length} ship SPECULATIVE un-refuted (${floored.map(nameOf).join(', ')}). Re-run with --budget ${firing.length} to cover all.`);
+  }
+  const firingSet = new Set(toRefute);
+  const flooredSet = new Set(floored);
 
   // B3 (2026-07-11): firing elevations are INDEPENDENT — each gets its own refuter
   // call, its own mint, its own provenance — so they dispatch CONCURRENTLY under a
@@ -290,7 +316,7 @@ export async function runLiveRefutation(rawDraft, {
 
   // Bounded pool: `cap` workers drain the firing queue; per-elevation failures are
   // handled INSIDE refuteOne (it never rejects), so one bad refuter cannot sink the batch.
-  const queue = [...firing];
+  const queue = [...toRefute];
   const results = new Map(); // index -> { bound, entry }
   await Promise.all(Array.from({ length: Math.min(cap, queue.length) }, async () => {
     while (queue.length) {
@@ -305,6 +331,12 @@ export async function runLiveRefutation(rawDraft, {
   for (let i = 0; i < rawElevations.length; i++) {
     const raw = rawElevations[i];
     if (!isPlainObject(raw)) { outElevations.push(raw); continue; }
+    // Budget-floored elevations: fired but not refuted this run — recorded, never silent.
+    if (flooredSet.has(i)) {
+      outElevations.push({ ...raw });
+      dispatch.push({ index: i, id: raw.id ?? null, minted: false, reason: `budget floor (pre-flight): fired but not refuted this run — ships SPECULATIVE; re-run with --budget ${firing.length} to cover` });
+      continue;
+    }
     // Below-threshold elevations earn no refuter — pass a fresh copy through (the host floors them).
     if (!firingSet.has(i)) { outElevations.push({ ...raw }); continue; }
     const r = results.get(i);

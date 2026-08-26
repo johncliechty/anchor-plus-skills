@@ -141,9 +141,28 @@ def seal_rail_view(folder, project_id=None) -> dict:
     edges_by_target = _manifest_edges_by_target(manifest)
     manifest_skill = _manifest_skills(manifest)
 
-    # R-PROPOSED-EXCLUDED: a still-proposed step is not on the rail.
-    rail_steps = [s for s in view.get("steps") or []
-                  if s.get("status") != "proposed"]
+    # R-PROPOSED-EXCLUDED (AMENDED 2026-08-15, John) — a proposed step is DRAWN,
+    # marked as a draft, not hidden.
+    #
+    # The rule was written so an unconfirmed proposal could not masquerade as
+    # the campaign. What it actually produced: his live BA-815 campaign carries
+    # TEN steps, every one of them still `proposed` because the scaffolding was
+    # framed in a VS Code session and never batch-confirmed — so the rail
+    # painted EMPTY over a full plan sitting on disk, and he said "I need the
+    # scaffolding shown". A blank rail is not honesty; it is the same fact told
+    # worse. The steps ride the rail with a `draft` flag, the progress count
+    # still excludes them (nothing proposed is "done"), and the page labels the
+    # rail as a draft so the distinction the rule protects survives in the one
+    # place it belongs — on screen, next to the steps.
+    all_steps = view.get("steps") or []
+    rail_steps = []
+    for s in all_steps:
+        if s.get("status") == "proposed":
+            s = dict(s)
+            s["draft"] = True
+        rail_steps.append(s)
+    view["has_draft_steps"] = any(s.get("draft") for s in rail_steps)
+    view["all_draft"] = bool(rail_steps) and all(s.get("draft") for s in rail_steps)
 
     # R-STEP-MARKER inputs + FS-SKILL fallback + R-EDGE-LINE lines.
     live = view.get("live_run") or {}
@@ -332,31 +351,43 @@ def _fstep_html(view: dict, step: dict) -> str:
     if cls is None:
         cls = step_state_class(step.get("status"), bool(step.get("running")))
     name = _esc(step.get("name") or step.get("id") or "a step")
+    # (2026-08-15) data-step — ATTRIBUTE ONLY, so the C9 signature
+    # (tag, sorted-classes) and the signed mockup hash pin both hold. It is
+    # what makes "click a step to see more, or add a note" reachable: the
+    # /api/ecgberht/step_detail endpoint has existed since W-plenty with no
+    # living caller, because the rail it was drawn for never mounted.
+    # ATTRIBUTES ONLY — the C9 signature is (tag, sorted-classes), so the
+    # signed mockup hash pin holds and no amendment is needed. data-step is
+    # the rail click hook; data-draft marks a step that is proposed but not
+    # yet confirmed, so the page can say so without hiding it.
+    sid = ' data-step="%s"' % _esc(step.get("id") or "")
+    if step.get("draft"):
+        sid += ' data-draft="1"'
     if cls == "run":
         body = _runcard_html(view, step, eta_row) if step.get("running") \
             else _edge_html(step)
         return (
-            '<div class="fstep run">'
+            '<div class="fstep run"%s>'
             '<span class="dot">▶</span>'
             '<div class="nm">%s %s</div>'
             '%s'
             '</div>'
-        ) % (name, _skillch_html(step, None), body)
+        ) % (sid, name, _skillch_html(step, None), body)
     if cls == "done":
         return (
-            '<div class="fstep done">'
+            '<div class="fstep done"%s>'
             '<span class="dot">✔</span>'
             '<div class="nm">%s %s</div>'
             '%s'
             '</div>'
-        ) % (name, _skillch_html(step, None), _yield_html(step))
+        ) % (sid, name, _skillch_html(step, None), _yield_html(step))
     return (
-        '<div class="fstep">'
+        '<div class="fstep"%s>'
         '<span class="dot">○</span>'
         '<div class="nm">%s %s</div>'
         '%s'
         '</div>'
-    ) % (name, _skillch_html(step, eta_row), _edge_html(step))
+    ) % (sid, name, _skillch_html(step, eta_row), _edge_html(step))
 
 
 def _progress_html(view: dict) -> str:
@@ -393,11 +424,13 @@ def _progress_html(view: dict) -> str:
 
 def _flow_html(view: dict) -> str:
     steps_html = "".join(_fstep_html(view, s) for s in view.get("steps") or [])
+    if not steps_html:
+        steps_html = copen._empty_rail_html()   # a blank rail reads as broken
     return (
         '<aside class="flow">'
         '<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px">'
         '<h3 style="margin:0;flex:1">The flow</h3>'
-        '<button class="btn gold" style="font-size:10px">Still the plan</button>'
+        '<button class="btn gold" style="font-size:10px" data-still-plan="1">Still the plan</button>'
         '<button class="btn" style="font-size:10px" '
         'data-refine-overlay="1">Refine the plan</button>'
         '</div>'

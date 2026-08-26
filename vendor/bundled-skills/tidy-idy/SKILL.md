@@ -7,6 +7,11 @@ description: >-
   thin caller of the same CLI. Capability token stays in browser memory only.
 ---
 
+## North Star (LOCKED — John, 2026-08-25)
+
+Tidy-Idy makes any folder safely tidy in one reviewable pass: a triage panel the user decides once, reversible Trash, protected classes never touched — hygiene without fear.
+
+
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)
 

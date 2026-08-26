@@ -31,7 +31,7 @@
 
 ## Limits (honest)
 - Only as good as the sources and facts available
-- Domain checklists in the folder are sparse; don’t assume broad coverage
+- There is no domain library or checklist set — every analysis is grounded solely in the sources you provide
 - Consequential matters require a licensed professional in the right jurisdiction
 
 ## For agents / engines

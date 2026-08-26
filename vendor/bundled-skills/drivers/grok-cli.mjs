@@ -159,7 +159,29 @@ export function defaultRunGrokCli(fullPrompt, label, {
 }
 
 /**
+ * Required-boolean conformance for a parsed reply against the call's JSON Schema:
+ * every `required` property the schema types as boolean must BE a boolean on the
+ * object. Schemas with no required booleans (shark/reviewer shapes) trivially
+ * conform — this gate exists for verdict schemas like Jumper Gate-3's `passed`.
+ * PURE + exported for the driver test gate.
+ */
+export function conformsRequiredBooleans(obj, schema) {
+  if (!obj || typeof obj !== 'object') return false;
+  const req = Array.isArray(schema?.required) ? schema.required : [];
+  return req.every((k) =>
+    schema?.properties?.[k]?.type !== 'boolean' || typeof obj[k] === 'boolean');
+}
+
+/**
  * Agent seam: optional schema → JSON parse with one strict retry then ABSTAIN object.
+ *
+ * 2026-08-20 (Jumper gate-3 repair): the strict retry now ALSO fires when the first
+ * reply PARSES but lacks a schema-required boolean (e.g. no boolean `passed`).
+ * Before, a parsed-but-shapeless reply was returned WITHOUT any retry — the live
+ * grok seat never got its second chance and Jumper HALTed on a nonconforming
+ * verdict. Still exactly ONE retry total; still NEVER a verdict invented from
+ * prose: a reply that stays shapeless after the retry is returned as-is for the
+ * caller's own honesty gate, and a reply that stays unparseable abstains.
  */
 export function makeGrokCliAgentSeam({
   runGrokCli = null,
@@ -181,12 +203,18 @@ export function makeGrokCliAgentSeam({
     if (!opts.schema) return text;
 
     let obj = extractJson(text);
-    if (!obj) {
-      log(`   !! ${label} reply was not valid JSON — retrying once (strict reprompt)`);
-      const strict = `${prompt}\n\nYour previous reply was NOT valid JSON and could not be parsed. ` +
+    if (!obj || !conformsRequiredBooleans(obj, opts.schema)) {
+      const why = !obj
+        ? 'was NOT valid JSON and could not be parsed'
+        : 'parsed as JSON but did not carry the schema-required boolean field(s) as booleans';
+      log(`   !! ${label} reply ${!obj ? 'was not valid JSON' : 'parsed but was nonconforming (missing required boolean)'} — retrying once (strict reprompt)`);
+      const strict = `${prompt}\n\nYour previous reply ${why}. ` +
         `Respond with ONLY a single raw JSON object that conforms to this JSON Schema — ` +
         `no prose, no markdown fences, nothing else:\n${JSON.stringify(opts.schema)}`;
-      obj = extractJson((await run(strict, `${label}#retry`, callOpts)).text);
+      const retryObj = extractJson((await run(strict, `${label}#retry`, callOpts)).text);
+      // Prefer the retry's parse; if the retry came back unparseable, keep the
+      // first parse (when one exists) — never trade a real object for nothing.
+      obj = retryObj ?? obj;
     }
     if (!obj) {
       log(`   !! ${label} still unparseable after retry — TRANSPORT FAILURE (abstain; degradable)`);

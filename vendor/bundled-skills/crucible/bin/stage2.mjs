@@ -859,6 +859,10 @@ export async function runStage2({
           draft: plan, research, acceptanceCriteria, roundCap, artifactsDir: stateDir, log,
           sharkRoles: band.sharkRoles,
           capPendingAction: 'stage2-round-cap',
+          // 2026-08-25: name what THIS gate actually locks (the reused loop used to say
+          // "the Master Plan" here — a verified R3 mislabel).
+          artifactName: 'the Implementation Plan (Stage 2)',
+          haltStagePrefix: 'stage2',
           statusLog, statusLabel: `Crucible Stage 2 (${band.depth})`,
           routes,
         }),
@@ -870,8 +874,12 @@ export async function runStage2({
       // loop re-tanked, threw, and no doc-trio was ever written; the only recovery
       // was an out-of-tree force-emit script). The machine well-formedness gate
       // below still fails closed; only the throw-without-docs is retired.
+      // 2026-08-25: recognize the human-lockable case SEMANTICALLY (e.humanLockable),
+      // not by pending-action string — the id is now stage-correct ('stage2-human-
+      // lockable' since the mislabel fix) and string-matching it broke this catch once.
       const lockableWithApproval = approved === true && e && e.halt_for_human &&
-        (e.pending_action === 'stage1-human-lockable' || e.pending_action === 'stage2-round-cap') &&
+        (e.humanLockable === true || /-human-lockable$/.test(String(e.pending_action || '')) ||
+          e.pending_action === 'stage2-round-cap') &&
         (e.loop?.draft != null || e.best_draft != null);
       if (lockableWithApproval) {
         plan = assertPlanText(e.loop?.draft ?? e.best_draft, { label: 'implementation plan (human-lockable best draft)' });

@@ -3,6 +3,11 @@ name: literature-review
 description: An interactive literature-review skill — deterministic snowball search + PRISMA discipline, ONE-call-per-paper claim extraction with deterministic quote grounding, weighted consensus synthesis, and a final adversarial pass through researchPrime's real governed round. Outputs a source-grounded Assumptions Ledger + comparison matrix.
 ---
 
+## North Star (LOCKED — John, 2026-08-25)
+
+Given a research question, literature-review delivers a PRISMA-disciplined, quote-grounded synthesis with weighted consensus and an honest assumptions ledger — every claim traceable to a source, at a depth right-sized to the stakes.
+
+
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)
 
@@ -97,6 +102,15 @@ LITREVIEW_LIVE=1 node bin/cli.mjs --seed <pdf-or-s2-url> \
   [--stakes low|medium|high] [--out litreview-out] [--mock-user "q: ...|approve"]
 ```
 
+**Env:** `S2_API_KEY` (optional but strongly recommended) raises the Semantic Scholar rate
+limit — without it, sustained 429s killed 8 of 9 real invocations (journal 0004). Seeds now
+PRE-FLIGHT before any paid seat binds, with a recorded OpenAlex fallback by catalog
+identifier; both-provider failure halts by name with zero capacity spent (fix 2026-08-25).
+
+**Reverse-arrow rule (journal 0004, verified):** for any directional question "does X cause
+Y", ALSO seed/search the reverse direction "does Y cause X" — it recovered the one on-point
+paper in the skill's only real high-stakes use.
+
 The pipeline, in order — each stage honest about what ran:
 1. **Ingest** (deterministic): seed PDF → text chunks + Semantic Scholar id.
 2. **Snowball + PRISMA** (deterministic): depth-bounded citation walk with backoff; the venue
@@ -133,7 +147,7 @@ Depth locks come **only** from `@foundry/triage` (`literatureReviewKnobs` / live
 explicit "extraction/verification did NOT run" stamp — deterministic outputs only, nothing
 invented. With live seats, the model split is the 5:1 (extraction/copilot → Claude;
 reviewers/judge → Gemini; agy down ⇒ honest HALT). Every run auto-writes a `journal/runs/`
-training record; long runs emit the LOCKED global status table every ~10 min.
+training record; status cadence per the block below.
 
 > **⏱ STATUS UPDATES TO CHAT:** When running long phases in the background, you MUST arm a 10-minute cadence (`ScheduleWakeup` ~600s) and provide scheduled updates to the user in the LOCKED Status-table format — canonical definition in ONE place: the canonical `AGENTS.md` → "Long-run progress updates" (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer). The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick — the SESSION composes it from this skill's `journal/`.
 

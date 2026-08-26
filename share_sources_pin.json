@@ -1,35 +1,35 @@
 {
-  "schema": "share-sources-pin/v1",
-  "schema_version": 1,
-  "ship_allowed": false,
-  "ship_allowed_stamp_text": "only after concurrent skill-run merge + John go-ahead",
-  "skills_pin": {
-    "tag": "PLACEHOLDER",
-    "commit": "PLACEHOLDER"
+ "schema": "share-sources-pin/v1",
+ "schema_version": 1,
+ "ship_allowed": true,
+ "ship_allowed_stamp_text": "ship allowed for v1.2.5: John 2026-08-25 — 'commit and push, merge to master ... make everything current and push to the repo (after removing all project and personal data) so that I can share'. Scrub gates fail-closed in distro.build_distro.",
+ "skills_pin": {
+  "tag": "v1.2.5",
+  "commit": "03faa0cfb068"
+ },
+ "pins": [
+  {
+   "repo": "anchor",
+   "tag": "v1.2.5",
+   "commit": "8134b314212f"
   },
-  "pins": [
-    {
-      "repo": "anchor",
-      "tag": "PLACEHOLDER",
-      "commit": "PLACEHOLDER"
-    },
-    {
-      "repo": "trio",
-      "tag": "PLACEHOLDER",
-      "commit": "PLACEHOLDER"
-    },
-    {
-      "repo": "skill-foundry",
-      "tag": "PLACEHOLDER",
-      "commit": "PLACEHOLDER"
-    }
-  ],
-  "package_versions": {
-    "A": "0.0.0-placeholder",
-    "B": "0.0.0-placeholder"
+  {
+   "repo": "trio",
+   "tag": "v1.2.5",
+   "commit": "1f3acba2b404"
   },
-  "scrub_tool_versions": {
-    "vendor_skills.py": "GREEN-share-distro",
-    "distro.py": "GREEN-share-distro"
+  {
+   "repo": "skill-foundry",
+   "tag": "v1.2.5",
+   "commit": "03faa0cfb068"
   }
+ ],
+ "package_versions": {
+  "A": "1.2.5",
+  "B": "1.2.5"
+ },
+ "scrub_tool_versions": {
+  "vendor_skills.py": "GREEN-share-distro",
+  "distro.py": "GREEN-share-distro"
+ }
 }

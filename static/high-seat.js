@@ -380,9 +380,18 @@ function _ecgHsRenderHighSeat(body, vm) {
     nm.appendChild(ico);
     nm.appendChild(_ecgHsEl('span', null, t.display_name || t.name));
     if (t.now_running) nm.appendChild(_ecgHsEl('span', 'hs-live', '●'));
+    /* (2026-08-15, John) The flag he asked for: a project that wants him says
+       so on the tile, not only inside the raise queue overlay. */
+    if (t.needs_you) nm.appendChild(_ecgHsEl('span', 'hs-flag', '⚑'));
     tile.appendChild(nm);
     tile.appendChild(_ecgHsEl('div', 'goal', t.goal_phrase));
-    if (t.now_line) tile.appendChild(_ecgHsEl('div', 'hs-now', t.now_line));
+    if (t.now_line) {
+      tile.appendChild(_ecgHsEl('div', 'hs-now' + (t.needs_you ? ' needs' : ''),
+                                t.now_line));
+    }
+    if (t.run_count) {
+      tile.appendChild(_ecgHsEl('div', 'hs-runs', t.run_count + ' runs'));
+    }
     if (t.spend_line) tile.appendChild(_ecgHsEl('div', 'hs-spend', t.spend_line));
     tile.appendChild(_ecgHsEl('div', 'pill' + (t.state_kind === 'raised' ? ' raised' : ''), t.state_pill));
     if (t.anchor_project_id) {

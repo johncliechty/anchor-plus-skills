@@ -19,6 +19,15 @@ import {
   familyFromDriver,
   SelfRefutationHalt,
 } from '../gandalf/runtime/live-refuter.mjs';
+// 2026-08-19 (journal 0031, third RefuterBudgetHalt tournament kill after 0003/0012):
+// the compose seam CAPS refuter demand at the budget instead of letting gandalf's
+// HALT destroy the whole paid tournament. firesRefuter/REFUTER_BUDGET_R are the same
+// primitives runLiveRefutation uses, so the cap counts exactly what the HALT counts.
+import {
+  firesRefuter,
+  REFUTER_BUDGET_R,
+  RefuterBudgetHalt,
+} from '../gandalf/seam/refute.mjs';
 
 // Re-export family map for hermetic Gate-3 seating smokes (B3-G3-LITE-SEATING).
 export { familyFromDriver };
@@ -296,12 +305,74 @@ async function gradeGandalfDraftCrossFamily(rawDraft, options = {}) {
   // P1 2026-07-25 (journals 0003/0012): forward the refuter budget — the prereg R=3
   // ceiling HALTed whole tournaments (6 firing elevations > 3) with no dial to turn;
   // standalone gandalf has --budget but the compose seam never passed one through.
-  const { draft } = await runLiveRefutation(rawDraft, {
-    agent: refuterAgent, ledger, routes, drafterFamily, refuterFamily, log: options.log,
-    ...(Number.isInteger(options.refuterBudget) && options.refuterBudget > 0
-      ? { budget: options.refuterBudget } : {}),
+  //
+  // 2026-08-19 (journal 0031 — THIRD tournament killed by RefuterBudgetHalt): the dial
+  // was not enough; a run that omits --budget still died with output:null, destroying
+  // the paid draft AND the tournament it feeds. Per the Elegance Law ("a guardrail is
+  // never the whole product of a turn"), the JUMPER compose seam now CAPS demand at the
+  // budget: the first `budget` firing elevations (draft order) are refuted for real;
+  // the excess are HELD OUT of the refuter call and flow through the seam pass with NO
+  // provenance, so gandalf's own machinery floors them to SPECULATIVE with the
+  // "no independent refutation ran" stamp — explicitly stamped, never silently dropped,
+  // never granted a tier. The output additionally carries `refutation_capped` naming
+  // the numbers. Standalone gandalf keeps its HALT unchanged.
+  const effectiveBudget = Number.isInteger(options.refuterBudget) && options.refuterBudget > 0
+    ? options.refuterBudget : REFUTER_BUDGET_R;
+  const firingIdx = [];
+  elevations.forEach((e, i) => {
+    if (e !== null && typeof e === 'object' && !Array.isArray(e) && firesRefuter(e)) firingIdx.push(i);
   });
-  return applySeamPass(draft, { resolveCommission });
+  const log = typeof options.log === 'function' ? options.log : () => {};
+  let refutationDraft = rawDraft;
+  let heldOut = [];
+  let capStamp = null;
+  if (firingIdx.length > effectiveBudget) {
+    const keep = new Set(firingIdx.slice(0, effectiveBudget));
+    const firing = new Set(firingIdx);
+    const refutable = [];
+    elevations.forEach((e, i) => {
+      if (firing.has(i) && !keep.has(i)) heldOut.push(e);
+      else refutable.push(e);
+    });
+    refutationDraft = { ...rawDraft, elevations: refutable };
+    capStamp = {
+      requested: firingIdx.length,
+      budget: effectiveBudget,
+      refuted: effectiveBudget,
+      floored_speculative: firingIdx.length - effectiveBudget,
+      note: 'refutation capped at budget — excess firing elevations floored to SPECULATIVE with the '
+        + '"no independent refutation ran" stamp (not silently dropped, not a HALT); pass --budget N to refute more',
+    };
+    log(`jumper: gandalf refutation CAPPED at budget (${firingIdx.length} firing > R=${effectiveBudget}) — `
+      + `${heldOut.length} elevation(s) floored SPECULATIVE, run continues (journal 0031)`);
+  }
+  let draft;
+  try {
+    ({ draft } = await runLiveRefutation(refutationDraft, {
+      agent: refuterAgent, ledger, routes, drafterFamily, refuterFamily, log: options.log,
+      budget: effectiveBudget,
+    }));
+  } catch (err) {
+    // Belt: the cap above makes this unreachable for RefuterBudgetHalt, but if the
+    // firing count ever disagrees with gandalf's, NEVER destroy the paid draft —
+    // skip refutation entirely (all elevations floor SPECULATIVE) and stamp why.
+    if (!(err instanceof RefuterBudgetHalt)) throw err;
+    log(`jumper: RefuterBudgetHalt intercepted at the compose seam (${err.requested} > R=${err.budget}) — `
+      + 'refutation skipped, all elevations floored SPECULATIVE, run continues');
+    const graded = applySeamPass(rawDraft, { resolveCommission });
+    graded.refutation_capped = {
+      requested: err.requested, budget: err.budget, refuted: 0,
+      floored_speculative: elevations.length,
+      note: 'RefuterBudgetHalt intercepted — no refutation ran; every elevation floored to SPECULATIVE (honest floor, not a HALT)',
+    };
+    return graded;
+  }
+  const mergedDraft = capStamp
+    ? { ...draft, elevations: [...(Array.isArray(draft.elevations) ? draft.elevations : []), ...heldOut] }
+    : draft;
+  const graded = applySeamPass(mergedDraft, { resolveCommission });
+  if (capStamp) graded.refutation_capped = capStamp;
+  return graded;
 }
 
 /**
@@ -607,12 +678,22 @@ TRIZ (Theory of Inventive Problem Solving) provides 40 principles to resolve phy
 - Intermediary/Mediator (using an intermediate carrier or process)
 - Discarding and recovering (making elements disappear or regenerate)
 
-Analyze the analogical mapping (which includes foreignDomain, analogyReasoning, structuralMapping, and mappedContradictions) and any provided core contradictions. Output a structurally elegant resolution mapped back to the original domain.`;
+Analyze the analogical mapping (which includes foreignDomain, analogyReasoning, structuralMapping, and mappedContradictions) and any provided core contradictions. Output a structurally elegant resolution mapped back to the original domain.
+
+THE INSTANTIATION LAW (journal 0028 RC-1 — six zero-survivor runs traced here):
+your transfer is judged by what it DELIVERS. When the original problem statement
+asks for concrete terminal artifacts (names, images, designs, strings, plans),
+you must END by INSTANTIATING them — concrete, nameable, ready to hand to the
+requester. A framework, methodology, grammar, or design-language WITHOUT its
+instantiated artifacts is a FAILED transfer.`;
 
     const prompt = `System Prompt:
 ${systemPrompt}
 
-Analogical Mapping from Phase 2:
+${runOptions.problem ? `Original Problem Statement (the deliverable contract — your output must satisfy it, including any stated success criterion):
+${runOptions.problem}
+
+` : ''}Analogical Mapping from Phase 2:
 ${JSON.stringify(analogicalMapping, null, 2)}
 
 Core Contradictions:
@@ -624,7 +705,8 @@ Format your output as a JSON object with:
 - "trizPrinciplesApplied": array of strings listing the TRIZ principles applied (e.g. ["Segmentation", "Feedback"]).
 - "analogicalResolution": description of how the contradiction was resolved within the foreign analogical domain.
 - "symmetricalResolution": the elegant solution mapped back to the original domain, resolving the core contradictions.
-- "resolutionReasoning": the technical or structural reasoning explaining how the resolution achieves symmetry and resolves the contradictions without compromise.`;
+- "resolutionReasoning": the technical or structural reasoning explaining how the resolution achieves symmetry and resolves the contradictions without compromise.
+- "deliverable": the INSTANTIATED terminal artifact(s) the original problem statement asks for — the actual named things (the concrete image scenes, the candidate strings, the specific designs), never a framework alone. When the problem asks for N artifacts, deliver N.`;
 
     const schema = {
       type: "object",
@@ -635,9 +717,10 @@ Format your output as a JSON object with:
         },
         analogicalResolution: { type: "string" },
         symmetricalResolution: { type: "string" },
-        resolutionReasoning: { type: "string" }
+        resolutionReasoning: { type: "string" },
+        deliverable: { type: "string" }
       },
-      required: ["trizPrinciplesApplied", "analogicalResolution", "symmetricalResolution", "resolutionReasoning"]
+      required: ["trizPrinciplesApplied", "analogicalResolution", "symmetricalResolution", "resolutionReasoning", "deliverable"]
     };
 
     const response = await customRunAgent({
@@ -719,7 +802,11 @@ Judge each gate ON ITS OWN MERITS — a concept may pass one and fail the other.
     const promptGate12 = `System Prompt:
 ${systemPromptGate12}
 
-Concept to evaluate:
+${concept.problem ? `Original Problem Statement (what the requester asked to receive):
+${concept.problem}
+
+` : ''}Concept to evaluate:
+Deliverable: ${concept.deliverable || '(none provided)'}
 Symmetrical Resolution: ${concept.symmetricalResolution || ''}
 Resolution Reasoning: ${concept.resolutionReasoning || ''}
 
@@ -772,12 +859,17 @@ Format your output as a JSON object with:
     const systemPromptGate3 = `You are Jumper Kill-Filter Gate 3: Dirac Structural Symmetry Test (Adversarial Subagent).
 Your sole purpose is to act as an independent, highly critical adversary. You must actively hunt for LLM hallucinations, logical gaps, hand-waving, unstated assumptions, and structural asymmetries in the proposed resolution.
 Be ruthless. Reject any concept that contains vague steps, unresolved contradictions, or is not practically applicable. Only let concepts pass if they are structurally sound, concrete, and viable.
-Specifically, evaluate the structural symmetry of the resolution and check for unresolved contradictions by comparing it against the original core contradictions and the analogical mappings.`;
+Specifically, evaluate the structural symmetry of the resolution and check for unresolved contradictions by comparing it against the original core contradictions and the analogical mappings.
+THE DELIVERABLE TEST (journal 0028 RC-1): judge the concept's DELIVERABLE against the original problem statement's requirements, including any stated success criterion. If the problem asks for concrete terminal artifacts and the deliverable is a framework, methodology, grammar, or design-language without instantiated artifacts, that is a BLOCKER — reject. Judge the instantiated artifacts themselves, not the scaffold that produced them.`;
 
     const promptGate3 = `System Prompt:
 ${systemPromptGate3}
 
-Concept to evaluate:
+${concept.problem ? `Original Problem Statement (the deliverable contract):
+${concept.problem}
+
+` : ''}Concept to evaluate:
+Deliverable: ${concept.deliverable || '(none provided)'}
 Symmetrical Resolution: ${concept.symmetricalResolution || ''}
 Resolution Reasoning: ${concept.resolutionReasoning || ''}
 Triz Principles Applied: ${JSON.stringify(concept.trizPrinciplesApplied || [])}
@@ -847,19 +939,34 @@ Format your output as a JSON object with:
       throw new JumperCrossFamilyDegradeHalt(gate3DriverName, err);
     }
 
+    // 0028 RC-2: a nonconforming Gate-3 reply (no boolean `passed`, or the
+    // driver's transport-failure ABSTAIN object) is NOT a verdict. Two retry
+    // candidates that had PASSED gates 1–2 were recorded as "KILLED at gate 3,
+    // rejectionReason: null" without ever being judged. Same honesty law as
+    // agy-down: HALT, never a silent kill.
+    if (typeof res3?.passed !== "boolean" || res3?.transport_failed) {
+      throw new JumperCrossFamilyDegradeHalt(
+        gate3DriverName,
+        new Error(
+          "gate-3 reply nonconforming (no boolean `passed` after driver retry) — " +
+          "transport failure, not a verdict; rerun when the cross-family seat is healthy",
+        ),
+      );
+    }
+
     gateLogs.push({
       gate: 3,
       name: "Dirac Structural Symmetry Test",
       substrate: gate3Substrate,
       passed: res3.passed,
-      reasoning: res3.reasoning
+      reasoning: res3.reasoning ?? "(gate 3 returned no reasoning — nonconforming reply)"
     });
 
     if (!res3.passed) {
       return {
         passed: false,
         failedAtGate: 3,
-        rejectionReason: res3.reasoning,
+        rejectionReason: res3.reasoning ?? "(gate 3 returned passed:false with no reasoning — nonconforming reply)",
         gateLogs,
         stageCount: gateLogs.length,
         killGates: expectedKillGates,
@@ -947,6 +1054,10 @@ export class Jumper {
     hb('jumper: gandalf:start');
     const gandalfRead = await runGandalf(problemState, { ...runOptions, driver, runAgent: customRunAgent });
     hb('jumper: gandalf:done');
+    // 2026-08-19 (journal 0031): surface the compose-seam refutation cap in the FINAL
+    // output — the stamp must ride the artifact the caller reads, not just stderr.
+    const capSpread = gandalfRead?.refutation_capped
+      ? { refutation_capped: gandalfRead.refutation_capped } : {};
 
     // Step 2: Update synthesizer and get steering flags
     const synth1 = await synthesizer.update({
@@ -1009,11 +1120,15 @@ export class Jumper {
         });
         flags3 = [...(synth3?.steeringFlags || []), ...extraFlags];
       }
-      const diracResult = await transferEngine.run(hesseResult, petersonResult.coreContradictions, { ...runOptions, steeringFlags: flags3 });
+      // 0028 RC-1: thread the VERBATIM problem into Phase 3 and the candidate —
+      // before this, no phase after Gandalf knew what the user asked to receive,
+      // so every transfer terminated in a framework instead of an artifact.
+      const diracResult = await transferEngine.run(hesseResult, petersonResult.coreContradictions, { ...runOptions, steeringFlags: flags3, problem: problemState });
       return {
         ...diracResult,
         analogicalMapping: hesseResult,
-        coreContradictions: petersonResult.coreContradictions
+        coreContradictions: petersonResult.coreContradictions,
+        problem: problemState
       };
     };
 
@@ -1026,12 +1141,30 @@ export class Jumper {
             return buildCandidate(SPHERES[i % SPHERES.length], extraFlags)
               .then((c) => { hb(`jumper: sphere:${i + 1}/${fanOut} candidate built (${c?.analogicalMapping?.foreignDomain ?? '?'})`); return c; });
           }));
-        const judged = await Promise.all(candidates.map(async (concept, i) => {
-          hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} start`);
-          const filter = await filterEngine.run(concept, runOptions);
-          hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} ${filter.passed ? 'PASSED all gates' : `KILLED at gate ${filter.failedAtGate}`}`);
-          return { concept, filter };
-        }));
+        // 2026-08-19 (journal 0031): a mid-kill-filter HALT (e.g. agy down at Gate 3 →
+        // JumperCrossFamilyDegradeHalt) must NEVER destroy the paid candidates — attach
+        // them to the error so the CLI can emit an honest "not fully vetted" partial
+        // instead of output:null ("a guardrail is never the whole product of a turn").
+        let judged;
+        try {
+          judged = await Promise.all(candidates.map(async (concept, i) => {
+            hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} start`);
+            const filter = await filterEngine.run(concept, runOptions);
+            hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} ${filter.passed ? 'PASSED all gates' : `KILLED at gate ${filter.failedAtGate}`}`);
+            return { concept, filter };
+          }));
+        } catch (err) {
+          if (err && typeof err === 'object' && !err.jumperPartial) {
+            err.jumperPartial = {
+              stage: 'kill-filter',
+              honesty_stamp: 'NOT FULLY VETTED — the engine HALTed during the kill-filter; '
+                + 'these candidates are raw ideation output that passed NO gates',
+              ...capSpread,
+              candidates,
+            };
+          }
+          throw err;
+        }
         return {
           survivors: judged.filter((j) => j.filter.passed),
           killed: judged.filter((j) => !j.filter.passed),
@@ -1040,23 +1173,41 @@ export class Jumper {
 
       let { survivors, killed } = await runTournament();
       let retried = false;
+      let firstRoundKilled = [];
       if (!survivors.length && runOptions.retryOnKill) {
         // One bounded retry: the rejections become steering flags (the loop
         // learns WHY everything died before trying again). Never more than once.
         retried = true;
+        firstRoundKilled = killed;
         const lessons = killed.map((k) => `A prior candidate was KILLED at gate ${k.filter.failedAtGate}: ${String(k.filter.rejectionReason || '').slice(0, 300)}`);
         ({ survivors, killed } = await runTournament(lessons));
       }
 
-      const killLog = killed.map((k) => ({
+      // 0028 RC-3: the killLog covers EVERY round — the retry used to discard
+      // round 1's kills, so the output claimed 3 kills when 6 candidates died.
+      const toKillEntry = (round) => (k) => ({
+        round,
         failedAtGate: k.filter.failedAtGate,
         rejectionReason: k.filter.rejectionReason,
         gateLogs: k.filter.gateLogs,
         foreignDomain: k.concept?.analogicalMapping?.foreignDomain ?? null,
-      }));
+      });
+      const killLog = [
+        ...firstRoundKilled.map(toKillEntry(1)),
+        ...killed.map(toKillEntry(retried ? 2 : 1)),
+      ];
 
       if (!survivors.length) {
-        return { passed: false, fanOut, retried, survivors: [], killLog };
+        // 2026-08-25 (John-ratified card; journals 0025/0027): on a zero-survivor run the
+        // engine's most reliable value — gate-endorsed content and named blockers in the
+        // kill log — used to be hand-extracted by the session. The stamp marks the killLog
+        // itself as the deliverable (VERBATIM — a summarizing seat would blur the
+        // kill-filter's promise); the runner surfaces it as first-class output.
+        return {
+          passed: false, fanOut, retried, survivors: [], killLog,
+          salvage_stamp: 'SALVAGE — no survivor; the killLog below IS the deliverable of this run: verbatim gate-endorsed content and named blockers from every killed candidate (unranked, individually gate-attested, not vetted as a whole)',
+          ...capSpread,
+        };
       }
 
       // Rank: all survivors passed all 3 gates; order by richer structural
@@ -1070,6 +1221,7 @@ export class Jumper {
         passed: true,
         fanOut,
         retried,
+        ...capSpread,
         concept: top.concept,
         gateLogs: top.filter.gateLogs,
         groundingExecutionProtocol: gep,
@@ -1094,7 +1246,7 @@ export class Jumper {
         const filter2 = await filterEngine.run(concept2, runOptions);
         if (filter2.passed) {
           const gep2 = await this._generateGEP(concept2, customRunAgent, driver);
-          return { passed: true, retried: true, concept: concept2, gateLogs: filter2.gateLogs, groundingExecutionProtocol: gep2 };
+          return { passed: true, retried: true, ...capSpread, concept: concept2, gateLogs: filter2.gateLogs, groundingExecutionProtocol: gep2 };
         }
       }
       return {
@@ -1102,6 +1254,7 @@ export class Jumper {
         failedAtGate: filterResult.failedAtGate,
         rejectionReason: filterResult.rejectionReason,
         gateLogs: filterResult.gateLogs,
+        ...capSpread,
         concept
       };
     }
@@ -1111,6 +1264,7 @@ export class Jumper {
 
     return {
       passed: true,
+      ...capSpread,
       concept,
       gateLogs: filterResult.gateLogs,
       groundingExecutionProtocol: gepResult

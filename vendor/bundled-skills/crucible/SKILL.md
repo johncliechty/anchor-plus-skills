@@ -12,11 +12,15 @@ description: >-
   Deep-Think Synthesizer (steers, never decides) and decided by a context-free
   Judge plus the user (the convergence authority). A Node engine that IMPORTS
   Foreman's durability/git/driver modules (never forks) and SPAWNS
-  locate-plan.mjs as the machine well-formedness gate. STATUS (2026-06-05): the
-  full engine — Waves 1-11 — is built and GREEN; the dogfood self-run proves
-  convergence (finding -> dry round) + a user-gate HALT/resume and emits a
-  zero-HALT doc-trio, and the 5-gate Skill Productionization Checklist passes.
+  locate-plan.mjs as the machine well-formedness gate. STATUS (2026-08-24): engine
+  LIVE and in regular use (depth bands, Speaking-Law decision asks, first-dry stop);
+  current verified status lives in the foundry PLAN.md, never in this line.
 ---
+
+## North Star (LOCKED — John, 2026-08-25)
+
+Given an intent or a messy existing project, Crucible forges the shortest gold-standard, Foreman-ready plan that cannot drift from the user-locked North Star — right-sized to the stakes, with the user approving only three compact gates.
+
 
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)
@@ -102,14 +106,13 @@ drifting** from the project's locked objective.
 
 > **Tier definition (Heavy vs regular · always-cross-model · seat mapping):** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → "Skill tiers". A `-Heavy` run uses top-frontier models on EVERY seat regardless of the base session (delegate the frontier seat to a frontier-pinned sub-agent if the base session isn't frontier); foundry skills are ALWAYS true cross-model. Do not re-define tiers locally.
 
-> **Status (2026-06-05): the engine is built and GREEN through Wave 11.** The
-> three-stage pipeline, the Shark-Tank round engine, the Synthesizer + Judge, the
-> two-gate convergence, researchPrime integration, the cross-model Enhanced mode +
-> GitHub remote, the docs/VC layer, and the dogfood self-run + 5-gate
-> productionization checklist all live in `bin/` and are exercised by
-> `node --test test/`. The model-driven steps run through an injected `agent()`
-> seam; the machine well-formedness gate is Foreman's real `locate-plan.mjs`,
-> SPAWNED (never forked) so its exit code is forge-proof.
+> **Status (2026-08-24, elegance sweep): the engine is LIVE and in regular use.** The
+> three-stage pipeline, Shark-Tank round engine, Synthesizer + Judge, two-gate
+> convergence, and researchPrime integration live in `bin/` and are exercised by
+> `node --test test/`; the machine well-formedness gate is Foreman's real
+> `locate-plan.mjs`, SPAWNED (never forked) so its exit code is forge-proof.
+> Per the foundry rule, do NOT trust this block for currency — the verified
+> per-skill status table is `Skill Foundry/PLAN.md`.
 
 ## What Crucible is / is NOT
 
@@ -138,9 +141,12 @@ drifting** from the project's locked objective.
    stakes/irreversibility, unknowns) recommend a pipeline depth — **LITE** (single-pass,
    minimal/no Shark rounds for small/clear work), **FULL** (the full 3-stage + Shark-Tank
    machinery — the default), or **SPIKE-FIRST** (probe before planning when genuinely
-   uncertain). Right-sizing is **your** judgment, so it **HALTs for you to confirm** and
-   **defaults to FULL** when uncertain or when stakes are high — rigor is never silently
-   downgraded. The triage only right-sizes *ceremony*: the North-Star lock, post-lock drift
+   uncertain). Since 2026-08-25 (John-ratified card; Elegance rule 3) the band
+   **AUTO-APPLIES and announces itself in the first status line — it never asks** (a
+   confirm question was a fourth gate); an unsizable intake defaults to FULL **loudly**
+   ("DEFAULTED — triage could not size"), so rigor is never silently downgraded and a
+   small task never silently pays the FULL tax (journal 0087). The auto-band also writes
+   the triage LOCK record, so the Stage-2 Foreman handoff's fail-closed emit is satisfied. The triage only right-sizes *ceremony*: the North-Star lock, post-lock drift
    detection, the inclusion test, and full Shark-Tank rigor (when FULL) are unchanged in
    every band. Then greenfield Oranges framing, or a tiered brownfield ingest (T1
    inventory/dedupe → T2 reproduce-first + coverage → T3 delegate deep archaeology to
@@ -244,8 +250,16 @@ user is the final convergence authority**.
    split, Gemini cap 2). Pass its ROUTES into the loop (`runMasterPlanLoop({ ..., routes })`) so the
    Judge's stamp derives from where the judge role ACTUALLY dispatches (T7) — the default same-model
    Judge persona is the agy-down fallback, not the normal path.
-2. **Stage 0** → `runStage0`/protocol: complexity triage HALTs for depth confirmation; frame; candidate
-   North Star. **Gate ergonomics (John's locked preferences):**
+2. **Stage 0** → `runStage0`/protocol: complexity triage AUTO-BANDS (announced, never asked —
+   2026-08-25) + writes the triage lock; frame; candidate North Star. **Gate ergonomics (John's
+   locked preferences — SCOPE RECONCILED 2026-08-25):** the 07-16 show-the-artifact rule and the
+   08-15 Elegance rule 1 (artifact on disk + ≤200-word ask; longer approvals VOID) are BOTH his
+   locked words. Scope by artifact size, per his own later law and his live acceptances (0090/
+   0091 first-attempt approvals with the draft on disk): the **North Star (a short document)
+   still prints IN FULL at its lock ask** — the rule below stands verbatim for it and for any
+   short approval artifact (amendment diffs). **Long artifacts (Master Plan, Implementation
+   Plan) live on disk, named by path, with a ≤200-word decision block + print-on-request** —
+   never a clipped dialog preview.
    > **THE SHOW-THE-ARTIFACT RULE (locked by John, 2026-07-16): NEVER ask the user to approve/lock a
    > North Star they have not just been SHOWN. At the moment of the ask, print the ENTIRE candidate
    > North Star document — statement, success criteria, non-goals, risk taxonomy, foresight brief,
@@ -321,6 +335,10 @@ Every real run writes a `journal/runs/` training record (Skill Foundry AGENTS.md
 - **`approved=true` must emit, full stop.** A Stage-2 that re-tanks an
   approved plan without emitting is a defect (0069/0076's force-emit exists
   for it) — approval is the user's convergence authority being exercised.
+- **DRY ≠ clean — read OPEN-FINDINGS at every gate.** A quiet review round means
+  the reviewers stopped AGREEING, not that the plan is defect-free: on LITE's two
+  seats, real blocker-severity findings ride through as single-reviewer catches
+  (0091: four of four were real). The gate ask now says this; honor it. (0091, rule 9)
 
 ## Usage journal (sleep-loop feed — append after every REAL run)
 

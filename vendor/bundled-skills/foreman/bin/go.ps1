@@ -21,7 +21,7 @@ param(
   [int]$Cap = 0,          # 0 => take from foreman.config.json budget, else default 3
   [int]$MaxWaves = 0,     # 0 => take from foreman.config.json budget (unbounded if absent)
   [int]$MaxWallMin = 0,   # 0 => unbounded
-  [int]$CallTimeoutMin = 0, # 0 => run-live default (20). 0102: the default cap SIGKILLed
+  [int]$CallTimeoutMin = 0, # 0 => run-live default (45 since 2026-08-25; was 20). 0102: the 20m cap SIGKILLed
                             # a healthy 43-minute execute; the flag existed in run-live
                             # but go.ps1 never exposed it, so every retry died identically.
   [switch]$Resume,        # continue from the on-disk checkpoint (clears a halt once its blocker is resolved)

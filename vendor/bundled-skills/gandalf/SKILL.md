@@ -99,7 +99,10 @@ discussion:
    `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N]`
    Fires agy refuters on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under
    the host cap, mints claim-bound commissions, grades against the shared ledger — `cross_model:true` and
-   GROUNDED become reachable, DERIVED never asserted. agy down ⇒ honest non-zero HALT, nothing written.
+   GROUNDED become reachable, DERIVED never asserted. **Cost pre-flights, never mid-run walls (2026-08-25,
+   John's ruling; journals 0298-0301):** more firing elevations than the budget FLOORS — top-R refuted, the
+   excess ships SPECULATIVE, each named in the dispatch log; re-run with `--budget N` to cover all. A live
+   HALT's stderr names its ACTUAL cause — read it; "agy down" is one cause among several (0300 lesson).
 2. **Light regular-tier asks / agy down — Tier-1 deterministic grade:**
    `node runtime/gandalf-run.mjs --input draft.json --output read.json`
    Zero model calls; every elevation floors at SPECULATIVE with the "no independent refutation ran" stamp
@@ -191,8 +194,9 @@ Only elevations with `value_if_true` ≥ HIGH (or severity ≥ major) get an ind
 BELOW that firing threshold (value_if_true < high AND severity < major) earns NO refuter and therefore MUST be
 stamped SPECULATIVE — it cannot be PROMISING or GROUNDED no matter how convincing, because no refutation was
 earned** (B-honesty enforces this). PROMISING/GROUNDED are reserved for above-threshold elevations whose named
-defeater an independent refuter actually tried and failed to land. Bounded refuter fan-out: exceeding the
-pre-registered budget R HALTs (no silent drop).
+defeater an independent refuter actually tried and failed to land. Bounded refuter fan-out (revised
+2026-08-25, John's ruling): exceeding budget R FLOORS — top-R by value/severity get refuters, the
+excess ships SPECULATIVE with a named dispatch entry each; never a mid-run halt, never a silent drop.
 
 **RUNTIME (do NOT hand-assign tiers/stamps — the seams own them).** The honest tiers + refutation stamps are
 APPLIED DETERMINISTICALLY by the seam engine, so the output is canary-conformant by construction. Emit your RAW
@@ -211,7 +215,8 @@ anticipate→`composeAnticipation`, situate→`composeSituate`, elevation→`vet
 synthesis→`composeRiskLabels`) and writes the canary-conformant output; a malformed draft exits non-zero
 and writes nothing (no forged output).
 - **`--live` (the real path)** wires `runHostLive` + `runtime/live-refuter.mjs`: independent agy refuters
-  attempt each firing elevation's named defeater (concurrent, bounded, budget R with HALT), commissions are
+  attempt each firing elevation's named defeater (concurrent, bounded, budget R with pre-flight FLOOR — see
+  above; never a mid-run halt), commissions are
   minted into the per-run `seam/commission-ledger.mjs`, and the gate DERIVES `cross_model` / GROUNDED from
   resolved commissions — journal 0009/0010 are real GROUNDED runs through this path.
 - **Default (Tier-1 deterministic)** makes zero model calls; every elevation honestly floors at

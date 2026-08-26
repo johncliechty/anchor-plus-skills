@@ -1,0 +1,834 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>AI Cockpit — prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/shared.css">
+<style>
+  .cp { max-width: 1080px; margin: 0 auto; padding: 26px 20px 46vh; }
+  .cphead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .cphead h1 { font-size: 22px; font-weight: 600; }
+  .cphead .chips { color: var(--dim); font-size: 13px; }
+  .cptotal { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
+  .cpgoal { color: var(--dim); font-size: 14px; margin: 8px 0 24px;
+            max-width: 860px; }
+  .ctile { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+           box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+  .ctile > .thead { display: flex; align-items: center; gap: 12px;
+                    padding: 13px 20px; cursor: pointer; user-select: none;
+                    background: linear-gradient(180deg, var(--panel2), var(--panel));
+                    border-bottom: 1px solid transparent; }
+  .ctile.open > .thead { border-bottom-color: var(--line); }
+  .ctile > .thead img { width: 34px; height: 34px; border-radius: 8px;
+                        object-fit: cover; flex: none; }
+  .ctile > .thead .tname { font-size: 15.5px; font-weight: 600; }
+  .ctile > .thead .tsum { color: var(--dim); font-size: 12.5px;
+                          margin-left: auto; text-align: right;
+                          white-space: pre-line; }
+  .ctile > .tbody { display: none; padding: 4px 20px 18px; }
+  .ctile.open > .tbody { display: block; }
+  .efrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+           border: 1px solid var(--line); border-radius: 9px;
+           margin-bottom: 8px; cursor: pointer; }
+  .efrow:hover { border-color: var(--dim); }
+  .efrow .en { font-weight: 600; font-size: 14px; }
+  .efrow .eg { color: var(--dim); font-size: 12.5px; flex: 1;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .efrow .em { color: var(--faint); font-size: 12px; flex: none; }
+  .efrow .erename { color: var(--faint); flex: none; padding: 0 4px;
+                    cursor: pointer; }
+  .efrow .erename:hover { color: var(--steward); }
+  .frow2 { display: flex; align-items: center; gap: 10px; padding: 5px 2px;
+           font-size: 13.5px; border-bottom: 1px solid var(--line); }
+  .frow2:last-child { border-bottom: none; }
+  .frow2 .fn { flex: 1; cursor: pointer; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+  .frow2 .fn:hover { color: var(--steward); }
+  .frow2 .fm { color: var(--faint); font-size: 12px; flex: none; }
+  .crumb { color: var(--dim); font-size: 12.5px; margin: 6px 0 10px;
+           cursor: pointer; }
+  .ftools { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; }
+  .ftools input[type=text] { flex: 1; background: var(--bg); color: var(--text);
+           border: 1px solid var(--line); border-radius: 7px;
+           padding: 6px 11px; font-size: 13px; }
+  .ftools button.on { border-color: var(--steward); color: var(--steward); }
+  .dropzone { border: 1px dashed var(--line); border-radius: 9px;
+              padding: 10px 14px; color: var(--faint); font-size: 12.5px;
+              margin-top: 12px; }
+  .dropzone.hot { border-color: var(--steward); color: var(--steward); }
+  /* full-screen effort overlay */
+  .fswrap { position: fixed; inset: 0; z-index: 40; display: none;
+            flex-direction: column; background: var(--bg); }
+  .fswrap.show { display: flex; }
+  .fswrap iframe { flex: 1; border: none; }
+  /* pull-up workbench drawer */
+  /* the workbench lives in its TILE - no standing bottom bar; closing the
+     drawer collapses it back to the tile entirely */
+  .drawer { position: fixed; left: 22px; right: 22px; bottom: 0; z-index: 30;
+            background: var(--panel); border: 1px solid var(--line);
+            border-bottom: none; border-radius: 14px 14px 0 0;
+            box-shadow: 0 -6px 24px rgba(0,0,0,.35);
+            display: none; flex-direction: column; height: 42px;
+            transition: height .18s, left .18s, right .18s; }
+  .drawer.up { display: flex; height: 54vh; }
+  .drawer .dhandle { flex: none; display: flex; align-items: center; gap: 10px;
+                     padding: 7px 20px; cursor: pointer; user-select: none;
+                     font-size: 12.5px; letter-spacing: 1.2px;
+                     text-transform: uppercase; color: var(--dim); }
+  .drawer .dhandle img { width: 24px; height: 24px; border-radius: 6px;
+                         object-fit: cover; }
+  .drawer .dhandle .dusage { margin-left: auto; text-transform: none;
+                             letter-spacing: 0; font-size: 12px;
+                             color: var(--faint); }
+  .tabrow { flex: none; display: none; align-items: center; gap: 6px;
+            padding: 6px 20px; border-top: 1px solid var(--line);
+            flex-wrap: nowrap; overflow-x: auto; }
+  .tabrow .tsearch { margin-left: auto; flex: none; width: 220px;
+            background: var(--bg); color: var(--text);
+            border: 1px solid var(--line); border-radius: 7px;
+            padding: 4px 10px; font-size: 12px; }
+  .drawer.fsd { height: 100vh; left: 0; right: 0; border-radius: 0; border: none; }
+  .sumcard { position: absolute; inset: 0; display: flex; align-items: center;
+             justify-content: center; background: var(--bg); z-index: 3; }
+  .sumcard .inner { width: min(560px, 90%); background: var(--panel);
+             border: 1px solid var(--line); border-radius: 12px;
+             padding: 20px 24px; }
+  .sumcard .sname { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .sumcard .smeta { color: var(--faint); font-size: 12px; margin-bottom: 10px; }
+  .sumcard .stext { color: var(--dim); font-size: 13px; white-space: pre-wrap;
+             max-height: 30vh; overflow-y: auto; margin-bottom: 14px; }
+  .gsum { color: var(--dim); font-size: 13px; max-height: 58vh;
+          overflow-y: auto; margin: 8px 0; display: none; line-height: 1.55; }
+  .gsum .mdh { font-weight: 600; margin: 10px 0 4px; color: var(--text); }
+  .gsum blockquote { border-left: 2px solid var(--steward); padding: 2px 10px;
+          margin: 8px 0; }
+  .gsum ul, .gsum ol { margin: 6px 0 6px 18px; }
+  .gsum table { border-collapse: collapse; font-size: 11.5px; }
+  .gsum th, .gsum td { border: 1px solid var(--line); padding: 3px 7px; }
+  .box.gopen .gsum { display: block; }
+  .gbtns { display: flex; gap: 8px; margin-top: 8px; }
+  button.mini { padding: 2px 10px; font-size: 11.5px; }
+  .subshelf { border: 1px solid var(--line); border-radius: 9px;
+              margin-top: 12px; overflow: hidden; }
+  .subshelf .sshead { display: flex; align-items: center; gap: 8px;
+              padding: 9px 14px; cursor: pointer; user-select: none;
+              font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+              color: var(--dim); background: var(--panel2); }
+  .subshelf .sshead .ssc { margin-left: auto; text-transform: none;
+              letter-spacing: 0; color: var(--faint); }
+  .subshelf .ssbody { display: none; padding: 10px 14px; }
+  .subshelf.open .ssbody { display: block; }
+  .subshelf .search { width: 100%; background: var(--bg); color: var(--text);
+              border: 1px solid var(--line); border-radius: 7px;
+              padding: 5px 10px; font-size: 12.5px; margin-bottom: 8px; }
+  .grassrow2 { display: flex; gap: 10px; padding: 6px 2px; font-size: 13px;
+               border-bottom: 1px solid var(--line); align-items: baseline; }
+  .grassrow2:last-child { border-bottom: none; }
+  .grassrow2 .gw { color: var(--faint); font-size: 11.5px; flex: none; width: 78px; }
+  .grassrow2 .gt { flex: 1; }
+  .grassrow2 .gf { color: var(--faint); font-size: 11.5px; flex: none; }
+  .brow.expand { flex-direction: column; align-items: stretch; cursor: pointer; }
+  .brow .bsum { display: none; color: var(--faint); font-size: 12px;
+                white-space: pre-wrap; margin-top: 6px; }
+  .brow.open .bsum { display: block; }
+  .drawer.up .tabrow { display: flex; }
+  .ttab { display: inline-flex; align-items: center; gap: 7px;
+          padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px;
+          font-size: 12.5px; color: var(--dim); cursor: pointer; }
+  .ttab.on { color: var(--text); border-color: var(--steward); }
+  .ttab .tx { opacity: .5; padding-left: 2px; }
+  .ttab .tx:hover { opacity: 1; }
+  .drawer .dbody { flex: 1; min-height: 0; display: none; }
+  .drawer.up .dbody { display: flex; }
+  .drawer .dskills { width: 210px; border-right: 1px solid var(--line);
+                     overflow-y: auto; padding: 12px 16px; flex: none; }
+  .drawer .dskills h2 { font-size: 10.5px; text-transform: uppercase;
+                        letter-spacing: 1.2px; color: var(--faint);
+                        margin: 10px 0 6px; }
+  .drawer .dskills button { display: block; width: 100%; text-align: left;
+                            margin-bottom: 6px; font-size: 12.5px; }
+  .dmain { flex: 1; min-width: 0; position: relative; }
+  .dmain iframe { position: absolute; inset: 0; width: 100%; height: 100%;
+                  border: none; display: none; }
+  .dmain iframe.on { display: block; }
+  .dmain .dempty { position: absolute; inset: 0; display: flex;
+                   align-items: center; justify-content: center;
+                   color: var(--faint); font-size: 13px; }
+  .dside { width: 250px; flex: none; border-left: 1px solid var(--line);
+           overflow-y: auto; padding: 12px 16px; transition: width .18s; }
+  .dside.wide { width: min(600px, 46%); }
+  .dside .box { border: 1px solid var(--line); border-radius: 9px;
+                padding: 10px 12px; margin-bottom: 12px; }
+  .dside .box h3 { display: flex; align-items: center; gap: 8px;
+                   font-size: 11px; text-transform: uppercase;
+                   letter-spacing: 1.2px; color: var(--faint);
+                   margin-bottom: 7px; }
+  .dside .box h3 img { width: 20px; height: 20px; border-radius: 5px;
+                       object-fit: cover; }
+  .dside .brow { font-size: 12.5px; color: var(--dim); padding: 3px 0;
+                 display: flex; gap: 6px; align-items: center; }
+  .dside .brow .bl { flex: 1; overflow: hidden; text-overflow: ellipsis;
+                     white-space: nowrap; }
+  .dside .brow button { padding: 0 7px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="cp">
+  <div class="cphead">
+    <span class="dot" data-att></span>
+    <h1 data-project>…</h1>
+    <span class="chips" data-chips></span>
+    <span class="chips" style="margin-left:auto">
+      <a href="#" data-theme-toggle>switch the look</a> · <a href="/">⌂ High Seat</a></span>
+    <span class="cptotal" style="flex-basis:100%; text-align:right" data-total></span>
+  </div>
+  <div class="cpgoal" data-goal></div>
+
+  <div class="ctile" data-tile-seal>
+    <div class="thead"><img data-sealicon alt="" style="display:none">
+      <span class="tname" data-sealtitle>The Seal</span>
+      <span class="tsum" data-sealsum>…</span></div>
+    <div class="tbody">
+      <div data-efforts></div>
+      <div style="margin-top:10px"><button data-newe>＋ New effort</button></div>
+      <div class="subshelf" data-shelf-grass>
+        <div class="sshead" data-grasshead>🌿 Grasscatcher
+          <span class="ssc" data-grasscount></span></div>
+        <div class="ssbody">
+          <input class="search" data-grasssearch placeholder="search caught ideas…">
+          <div data-grasslist></div>
+        </div>
+      </div>
+      <div class="subshelf" data-shelf-ebone>
+        <div class="sshead" data-ebonehead>🪦 Effort boneyard
+          <span class="ssc" data-ebonecount></span></div>
+        <div class="ssbody">
+          <input class="search" data-ebonesearch placeholder="search boneyarded efforts…">
+          <div data-ebonelist></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctile" data-tile-wb>
+    <div class="thead"><img src="/brand/workbench-icon.jpg" alt="">
+      <span class="tname">Workbench</span>
+      <span class="tsum" data-wbsum>terminals · Gandalf · terminal boneyard</span></div>
+    <div class="tbody"><div class="chips">Opens the bench below — terminals keep
+      themselves saved and restart where they left off.</div></div>
+  </div>
+
+  <div class="ctile" data-tile-deliv>
+    <div class="thead"><span class="tname">◇ Deliverables</span>
+      <span class="tsum" data-delivsum>what the sessions produced</span></div>
+    <div class="tbody"><div data-delivlist></div></div>
+  </div>
+
+  <div class="ctile" data-tile-files>
+    <div class="thead"><span class="tname">🗀 Files</span>
+      <span class="tsum">browse · sort · search · drop files in</span></div>
+    <div class="tbody">
+      <div class="ftools">
+        <input type="text" data-fsearch placeholder="search the whole project by name…">
+        <button data-sort-name class="on">name</button>
+        <button data-sort-date>date</button>
+      </div>
+      <div class="crumb" data-crumb></div>
+      <div data-filelist></div>
+      <div class="dropzone" data-dropzone>drop files here to load them into this folder
+        — or <label style="text-decoration:underline;cursor:pointer">pick one<input
+        type="file" data-upfile multiple style="display:none"></label>
+        <span data-upmsg></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="fswrap" data-fs><iframe data-fsframe></iframe></div>
+
+<div class="drawer" data-drawer>
+  <div class="dhandle" data-dhandle>
+    <img src="/brand/workbench-icon.jpg" alt="">▾ Workbench — click to collapse back to the tile
+    <span class="dusage" data-dusage></span></div>
+  <div class="tabrow" data-tabrow></div>
+  <div class="dbody">
+    <div class="dskills">
+      <h2>Trio</h2><div data-sk-trio></div>
+      <h2>Foundry</h2><div data-sk-rest></div>
+    </div>
+    <div class="dmain" data-dmain>
+      <div class="dempty">open a terminal — ＋ Terminal above</div>
+    </div>
+    <div class="dside">
+      <div class="box" data-gbox>
+        <h3 style="cursor:pointer" data-ghead><img src="/brand/gandalf-icon-v5.jpg"
+          alt="">Gandalf <span style="margin-left:auto" data-gwhen></span></h3>
+        <div class="brow" data-gline>(no read yet)</div>
+        <div class="gbtns">
+          <button class="mini" data-greport>report</button>
+          <button class="mini" data-grerun>re-run</button>
+        </div>
+        <div class="gsum" data-gsum></div>
+      </div>
+      <div class="box"><h3>🪦 Terminal boneyard</h3>
+        <input class="search" data-bonesearch placeholder="search…"
+               style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12px;margin-bottom:6px">
+        <div data-bonelist><div class="brow">(empty)</div></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/md.js"></script>
+<script>
+"use strict";
+try { document.body.dataset.theme = localStorage.getItem("protoTheme") || "slate"; } catch (e) {}
+document.querySelector("[data-theme-toggle]").onclick = (ev) => {
+  ev.preventDefault();
+  const next = document.body.dataset.theme === "command" ? "slate" : "command";
+  try { localStorage.setItem("protoTheme", next); } catch (e) {}
+  document.body.dataset.theme = next;
+};
+const el = (t, c, x) => { const n = document.createElement(t);
+  if (c) n.className = c; if (x !== undefined) n.textContent = x; return n; };
+const LIGHTWORD = { green: "running", orange: "quiet", red: "needs a look" };
+const usageLine = (u) => "$" + (u.spend || 0).toFixed(2) + " · " +
+  Math.round((u.tokens || 0) / 1000) + "k tokens · " +
+  (u.secs >= 5400 ? ((u.secs / 3600).toFixed(1) + "h")
+                  : Math.round((u.secs || 0) / 60) + "m");
+
+/* ---------- header + seal ---------- */
+async function refresh() {
+  try {
+    const j = await (await fetch("/api/efforts")).json();
+    document.querySelector("[data-project]").textContent = j.project;
+    document.title = j.project + " — AI Cockpit";
+    const greens = j.efforts.filter(e => e.light === "green").length;
+    const flags = j.efforts.filter(e => e.attention === "needs_you").length;
+    const chips = document.querySelector("[data-chips]");
+    chips.textContent = "";
+    chips.appendChild(document.createTextNode(
+      j.efforts.length + " efforts · " + greens + " running · " + flags +
+      " waiting on you  "));
+    const b1 = el("span", "badge blue", "seat · " + j.seats.main);
+    const b2 = el("span", "badge amber", "review · " + j.seats.review);
+    b2.style.marginLeft = "6px";
+    chips.appendChild(b1); chips.appendChild(b2);
+    document.querySelector("[data-total]").textContent =
+      "all sessions: " + usageLine(j.usage.total);
+    const icon = document.querySelector("[data-sealicon]");
+    if (j.seal_icon) { icon.src = "/brand/" + j.seal_icon; icon.style.display = ""; }
+    document.querySelector("[data-sealtitle]").textContent =
+      "The " + j.seal_name + " — " + j.steward;
+    document.querySelector("[data-sealsum]").textContent =
+      j.efforts.length + " efforts · " +
+      (flags ? "⚑ " + flags + " need you" : "all quiet") +
+      "\n" + usageLine(j.usage.steward);
+    document.querySelector("[data-dusage]").textContent =
+      usageLine(j.usage.terms);
+    const wbsum = document.querySelector("[data-wbsum]");
+    wbsum.textContent = "terminals · Gandalf · boneyard\n" + usageLine(j.usage.terms);
+    const root = j.efforts.find(e => e.rel === "") || j.efforts[0];
+    if (root) document.querySelector("[data-goal]").textContent = root.goal_brief;
+    const wrap = document.querySelector("[data-efforts]");
+    wrap.textContent = "";
+    j.efforts.forEach(e => {
+      const r = el("div", "efrow");
+      r.appendChild(el("span", "light " + e.light));
+      r.appendChild(el("span", "en", e.name));
+      r.appendChild(el("span", "eg", e.goal_brief || "(no goal yet)"));
+      r.appendChild(el("span", "em", e.steps_done + "/" + e.steps_total));
+      const bcls = e.attention === "needs_you" ? "red"
+        : e.light === "green" ? "green"
+        : e.light === "red" ? "red" : "grey";
+      const btxt = e.attention === "needs_you" ? "needs you"
+        : e.light === "green" ? "running"
+        : e.light === "red" ? "stuck" : "quiet";
+      r.appendChild(el("span", "badge " + bcls, btxt));
+      // rename: effort names are the user's to set (2026-08-25 — a pasted
+      // token became a live effort name; the server also guards the shape)
+      if (e.rel) {
+        const rn = el("span", "erename", "✎");
+        rn.title = "rename this effort — a few plain words";
+        rn.onclick = async (ev) => {
+          ev.stopPropagation();
+          // the steward's suggestion (derived from the goal on record)
+          // prefills the box; edit or replace freely
+          const sug = (e.suggested_name && e.suggested_name !== e.name)
+            ? e.suggested_name : "";
+          const name = prompt("New name for this effort (a few plain words):"
+            + (sug ? "\nSteward's suggestion, from the goal — edit freely:" : ""),
+            sug || e.name);
+          if (!name || name === e.name) return;
+          const rr = await fetch("/api/rename_effort", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: e.rel, name }) });
+          const jj = await rr.json();
+          if (!jj.ok) { alert(jj.error || "could not rename it"); return; }
+          if (fsframe.dataset.rel === e.rel) { fsframe.removeAttribute("src");
+            delete fsframe.dataset.rel; }
+          refresh();
+        };
+        r.appendChild(rn);
+      }
+      r.onclick = () => openEffort(e.rel);
+      wrap.appendChild(r);
+    });
+  } catch (e) {}
+  clearTimeout(window._rfT); window._rfT = setTimeout(refresh, 6000);
+}
+document.querySelectorAll(".ctile > .thead").forEach(h =>
+  h.onclick = () => {
+    const tile = h.parentNode;
+    if (tile.dataset.tileWb !== undefined) { openDrawer(); return; }
+    tile.classList.toggle("open");
+    if (tile.dataset.tileFiles !== undefined && tile.classList.contains("open")) loadFiles();
+    if (tile.dataset.tileDeliv !== undefined && tile.classList.contains("open")) loadDeliv();
+  });
+document.querySelector("[data-tile-seal]").classList.add("open");
+
+document.querySelector("[data-newe]").onclick = async (ev) => {
+  ev.stopPropagation();
+  const name = prompt("Short name for the new effort:");
+  if (!name) return;
+  const r = await fetch("/api/new_effort", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }) });
+  const jj = await r.json();
+  if (jj.ok) openEffort(jj.rel); else alert(jj.error || "could not create it");
+};
+
+/* ---------- full-screen effort ---------- */
+const fs = document.querySelector("[data-fs]");
+const fsframe = document.querySelector("[data-fsframe]");
+function openEffort(rel) {
+  fs.classList.add("show");
+  const _pid = window.STEWARD_PID ? "&pid=" + encodeURIComponent(window.STEWARD_PID) : "";
+  const _tok = window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "";
+  const src = "/steward/v1?embed=1" + _pid + _tok + "&dir=" + encodeURIComponent(rel);
+  if (fsframe.dataset.rel !== rel) { fsframe.src = src; fsframe.dataset.rel = rel; }
+}
+window.addEventListener("message", (ev) => {
+  if (ev.data && ev.data.proto === "min") fs.classList.remove("show");
+});
+
+/* ---------- workbench: terminals with tabs, saved + boneyard ---------- */
+const drawer = document.querySelector("[data-drawer]");
+const dmain = document.querySelector("[data-dmain]");
+let ACTIVE = null;
+function openDrawer() { drawer.classList.add("up"); loadTerms(); }
+document.querySelector("[data-dhandle]").onclick = () => {
+  drawer.classList.toggle("up");
+  if (drawer.classList.contains("up")) loadTerms();
+};
+function showTerm(tid) {
+  ACTIVE = tid;
+  document.querySelectorAll(".dmain iframe").forEach(f =>
+    f.classList.toggle("on", f.dataset.tid === tid));
+  let f = document.querySelector('.dmain iframe[data-tid="' + tid + '"]');
+  if (!f) {
+    f = document.createElement("iframe");
+    f.dataset.tid = tid;
+    f.src = "/steward/v3?general=1" +
+      (window.STEWARD_PID ? "&pid=" + encodeURIComponent(window.STEWARD_PID) : "") +
+      (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "") +
+      "&dir=&term=" + tid;
+    f.classList.add("on");
+    dmain.appendChild(f);
+  }
+  document.querySelectorAll(".ttab").forEach(t =>
+    t.classList.toggle("on", t.dataset.tid === tid));
+}
+let TSEARCH = "";
+async function loadTerms() {
+  const j = await (await fetch("/api/terms?dir=")).json();
+  const row = document.querySelector("[data-tabrow]");
+  row.textContent = "";
+  const plus = el("button", "", "＋ Terminal");
+  plus.onclick = async () => {
+    const r = await fetch("/api/term_new", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir: "" }) });
+    const jj = await r.json();
+    if (jj.ok) { await loadTerms(); showTerm(jj.tid); }
+  };
+  row.appendChild(plus);
+  const live = (j.terms || []).filter(t => !t.archived)
+    .filter(t => !TSEARCH || (t.label + " " + (t.last_text || "") + " " + t.cli)
+      .toLowerCase().includes(TSEARCH));
+  live.forEach(t => {
+    const tab = el("span", "ttab" + (t.tid === ACTIVE ? " on" : ""));
+    tab.dataset.tid = t.tid;
+    tab.appendChild(el("span", "light " + (t.alive ? "green" : "orange")));
+    tab.appendChild(el("span", "", t.label + " · " + t.cli +
+      (t.alive ? "" : t.saved ? " · saved" : "")));
+    const x = el("span", "tx", "🪦");
+    x.title = "archive to the terminal boneyard (saved, restorable)";
+    x.onclick = async (ev) => {
+      ev.stopPropagation();
+      await fetch("/api/term_archive", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", tid: t.tid }) });
+      const f = document.querySelector('.dmain iframe[data-tid="' + t.tid + '"]');
+      if (f) f.remove();
+      loadTerms();
+    };
+    tab.appendChild(x);
+    // a dormant saved session opens with a summary + "restart?" first
+    tab.onclick = () => {
+      if (!t.alive && t.saved && t.tid !== ACTIVE) showSummary(t);
+      else showTerm(t.tid);
+    };
+    row.appendChild(tab);
+  });
+  const search = el("input", "tsearch");
+  search.placeholder = "search sessions…";
+  search.value = TSEARCH;
+  search.oninput = () => { TSEARCH = search.value.toLowerCase();
+    clearTimeout(window._tt); window._tt = setTimeout(loadTerms, 250); };
+  row.appendChild(search);
+  const fsb = el("button", "", "⛶");
+  fsb.title = "full-screen the workbench (click again to restore)";
+  fsb.onclick = () => drawer.classList.toggle("fsd");
+  row.appendChild(fsb);
+  // terminal boneyard: searchable, each row opens to a summary + restore
+  const bone = document.querySelector("[data-bonelist]");
+  bone.textContent = "";
+  const bq = (document.querySelector("[data-bonesearch]").value || "").toLowerCase();
+  const archived = (j.terms || []).filter(t => t.archived)
+    .filter(t => !bq || (t.label + " " + (t.last_text || "") + " " + t.cli)
+      .toLowerCase().includes(bq));
+  archived.forEach(t => {
+    const r = el("div", "brow expand");
+    const head = el("div", "bl", "🪦 " + t.label + " · " + t.cli +
+      (t.last_used ? " · " + t.last_used : ""));
+    r.appendChild(head);
+    const sum = el("div", "bsum",
+      (t.last_text ? "Last it was doing:\n" + t.last_text
+                   : "(no record of its last activity)") +
+      (t.usage && t.usage.spend ? "\n" + usageLine(t.usage) : ""));
+    const rb = el("button", "mini", "restore");
+    rb.style.marginTop = "6px";
+    rb.onclick = async (ev) => {
+      ev.stopPropagation();
+      await fetch("/api/term_restore", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", tid: t.tid }) });
+      loadTerms();
+    };
+    sum.appendChild(rb);
+    r.appendChild(sum);
+    r.onclick = () => r.classList.toggle("open");
+    bone.appendChild(r);
+  });
+  if (!archived.length) bone.appendChild(el("div", "brow",
+    bq ? "nothing matches" : "(empty)"));
+  if (!ACTIVE) {
+    const first = (j.terms || []).find(t => !t.archived);
+    if (first) showTerm(first.tid);
+  }
+}
+function showSummary(t) {
+  document.querySelectorAll(".sumcard").forEach(c => c.remove());
+  const card = el("div", "sumcard");
+  const inner = el("div", "inner");
+  inner.appendChild(el("div", "sname", t.label + " · " + t.cli));
+  inner.appendChild(el("div", "smeta", "created " + t.created +
+    (t.last_used ? " · last active " + t.last_used : "") +
+    (t.usage && t.usage.spend ? " · " + usageLine(t.usage) : "")));
+  inner.appendChild(el("div", "stext",
+    t.last_text ? "Last it was doing:\n\n" + t.last_text
+                : "(no record of its last activity)"));
+  const row = el("div", "gbtns");
+  row.style.display = "flex";
+  const rb = el("button", "", "Restart it");
+  rb.onclick = async () => {
+    card.remove();
+    await fetch("/api/engine", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir: "", general: true, term: t.tid,
+                             action: "wake" }) });
+    showTerm(t.tid);
+  };
+  const ob = el("button", "", "Open without waking");
+  ob.onclick = () => { card.remove(); showTerm(t.tid); };
+  const cb = el("button", "", "Not now");
+  cb.onclick = () => card.remove();
+  row.appendChild(rb); row.appendChild(ob); row.appendChild(cb);
+  inner.appendChild(row);
+  card.appendChild(inner);
+  dmain.appendChild(card);
+}
+
+/* ---------- Gandalf: latest read, expand, full report, re-run ---------- */
+function gandalfFinding(summary) {
+  // the FINDING, not the run metadata: first substantive sentence
+  const lines = summary.split("\n").map(l => l.trim());
+  for (const l of lines) {
+    if (!l || l.startsWith("#") || l.startsWith(">") || l.startsWith("|")) continue;
+    const clean = l.replace(/^[-*]\s*/, "").replace(/\*\*/g, "").replace(/`/g, "");
+    if (clean.length > 25) return clean.slice(0, 150);
+  }
+  return "read available — click to expand";
+}
+async function loadGandalf() {
+  try {
+    const j = await (await fetch("/api/gandalf?dir=")).json();
+    const runs = j.runs || [];
+    const latest = runs[0];
+    document.querySelector("[data-gwhen]").textContent =
+      latest ? latest.when + " · " + runs.length + " reads" : "";
+    document.querySelector("[data-gline]").textContent = latest
+      ? (latest.finding || gandalfFinding(latest.summary))
+      : "(no read yet — expand to re-run)";
+    const gs = document.querySelector("[data-gsum]");
+    gs.textContent = "";
+    if (latest) {
+      if ((latest.points || []).length) {
+        const h = el("div", "mdh", "What Gandalf found");
+        h.style.fontWeight = "600"; h.style.color = "var(--text)";
+        gs.appendChild(h);
+        const ul = el("ul");
+        ul.style.margin = "6px 0 12px 18px";
+        latest.points.forEach(pt => ul.appendChild(el("li", "", pt)));
+        gs.appendChild(ul);
+      }
+      const h2 = el("div", "mdh", "Executive summary");
+      h2.style.fontWeight = "600"; h2.style.color = "var(--text)";
+      gs.appendChild(h2);
+      const body = el("div");
+      mdRender(body, latest.summary);
+      gs.appendChild(body);
+    }
+    const rep = document.querySelector("[data-greport]");
+    rep.style.display = latest && latest.report_rel ? "" : "none";
+    rep.onclick = () => latest && window.open(
+      "/report?dir=&path=" + encodeURIComponent(latest.report_rel), "_blank");
+  } catch (e) {}
+}
+document.querySelector("[data-ghead]").onclick = () => {
+  const open = document.querySelector("[data-gbox]").classList.toggle("gopen");
+  // reading mode: widen into the terminal so the summary reads without scroll
+  document.querySelector(".dside").classList.toggle("wide", open);
+};
+document.querySelector("[data-grerun]").onclick = () => {
+  if (!confirm("Commission a fresh Gandalf read of the whole project through the steward?")) return;
+  fetch("/api/say", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dir: "",
+      text: "Commission a Gandalf read of the whole project now (LITE depth). " +
+            "Write it under gandalf/ as usual, and have exec-summary.md OPEN " +
+            "with one line: '**Bottom line:** <one interesting, plain-English " +
+            "sentence on what is really going on in this project>' - a human " +
+            "reads that line on a tile. Tell me when it lands." }) });
+  alert("Asked the steward — watch its session (the Seal tile) for the run.");
+};
+loadGandalf();
+setInterval(loadGandalf, 30000);
+document.querySelector("[data-bonesearch]").addEventListener("input",
+  () => { clearTimeout(window._bt); window._bt = setTimeout(loadTerms, 250); });
+
+/* ---------- seal tile shelves: grasscatcher + effort boneyard ---------- */
+let GRASS = [], EBONES = [];
+function renderGrass() {
+  const q = (document.querySelector("[data-grasssearch]").value || "").toLowerCase();
+  const list = document.querySelector("[data-grasslist]");
+  list.textContent = "";
+  const rows = GRASS.filter(g => !q ||
+    (g.text + " " + g.effort + " " + g.when).toLowerCase().includes(q));
+  rows.forEach(g => {
+    const r = el("div", "grassrow2");
+    r.appendChild(el("span", "gw", g.when || ""));
+    r.appendChild(el("span", "gt", g.text));
+    r.appendChild(el("span", "gf", g.effort));
+    list.appendChild(r);
+  });
+  if (!rows.length) list.appendChild(el("div", "grassrow2",
+    q ? "nothing matches" : "nothing caught yet — say “later: …” in any session"));
+  document.querySelector("[data-grasscount]").textContent = GRASS.length + " ideas";
+}
+function renderEbones() {
+  const q = (document.querySelector("[data-ebonesearch]").value || "").toLowerCase();
+  const list = document.querySelector("[data-ebonelist]");
+  list.textContent = "";
+  const rows = EBONES.filter(b => !q ||
+    (b.name + " " + b.goal_brief).toLowerCase().includes(q));
+  rows.forEach(b => {
+    const r = el("div", "brow expand");
+    r.appendChild(el("div", "bl", "🪦 " + b.name + " · " + b.boneyarded +
+      " · " + b.steps_done + "/" + b.steps_total));
+    const sum = el("div", "bsum", b.goal_brief || "(no goal recorded)");
+    const rb = el("button", "mini", "restore");
+    rb.style.marginTop = "6px";
+    rb.onclick = async (ev) => {
+      ev.stopPropagation();
+      const rr = await fetch("/api/boneyard_restore", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: b.name }) });
+      const jj = await rr.json();
+      if (!jj.ok) alert(jj.error || "could not restore it");
+      loadShelves();
+    };
+    sum.appendChild(rb);
+    r.appendChild(sum);
+    r.onclick = () => r.classList.toggle("open");
+    list.appendChild(r);
+  });
+  if (!rows.length) list.appendChild(el("div", "brow",
+    q ? "nothing matches" : "the boneyard is empty"));
+  document.querySelector("[data-ebonecount]").textContent = EBONES.length + " resting";
+}
+async function loadShelves() {
+  try {
+    GRASS = (await (await fetch("/api/grass")).json()).grass || [];
+    EBONES = (await (await fetch("/api/boneyard")).json()).boneyard || [];
+    renderGrass(); renderEbones();
+  } catch (e) {}
+}
+document.querySelector("[data-grasshead]").onclick = (ev) => {
+  ev.stopPropagation();
+  document.querySelector("[data-shelf-grass]").classList.toggle("open"); };
+document.querySelector("[data-ebonehead]").onclick = (ev) => {
+  ev.stopPropagation();
+  document.querySelector("[data-shelf-ebone]").classList.toggle("open"); };
+document.querySelector("[data-grasssearch]").addEventListener("input", renderGrass);
+document.querySelector("[data-ebonesearch]").addEventListener("input", renderEbones);
+loadShelves();
+setInterval(loadShelves, 20000);
+
+(async () => {
+  try {
+    const sk = (await (await fetch("/api/skills")).json()).skills || [];
+    const mk = (list, sel) => {
+      const box = document.querySelector(sel);
+      list.forEach(name => {
+        const b = el("button", "", name);
+        b.onclick = () => {
+          if (!ACTIVE) { alert("open a terminal first (＋ Terminal)"); return; }
+          fetch("/api/say", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: "", general: true, term: ACTIVE,
+              text: "Invoke the " + name + " skill and await my instructions." }) });
+        };
+        box.appendChild(b);
+      });
+    };
+    mk(sk.slice(0, 3), "[data-sk-trio]"); mk(sk.slice(3), "[data-sk-rest]");
+  } catch (e) {}
+})();
+
+/* ---------- deliverables ---------- */
+async function loadDeliv() {
+  const j = await (await fetch("/api/deliverables?dir=")).json();
+  const list = document.querySelector("[data-delivlist]");
+  list.textContent = "";
+  (j.deliverables || []).forEach(dv => {
+    const row = el("div", "frow2");
+    const fn = el("span", "fn", "◇ " + dv.name + (dv.exists ? "" : "  (moved)"));
+    fn.title = dv.path;
+    if (dv.exists) fn.onclick = () => fetch("/api/open", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir: "", path: dv.path }) });
+    row.appendChild(fn);
+    row.appendChild(el("span", "fm", dv.effort + " · " + dv.src));
+    list.appendChild(row);
+  });
+  if (!(j.deliverables || []).length)
+    list.appendChild(el("div", "frow2", "nothing produced yet — deliverables appear as sessions write files"));
+  document.querySelector("[data-delivsum]").textContent =
+    (j.deliverables || []).length + " produced";
+}
+
+/* ---------- files: sort · search · drag-drop ---------- */
+let SUB = "", SORT = "name", FILES = [];
+async function loadFiles() {
+  const q = document.querySelector("[data-fsearch]").value.trim();
+  const r = await fetch("/api/files?dir=&sub=" + encodeURIComponent(SUB) +
+                        "&q=" + encodeURIComponent(q));
+  const j = await r.json();
+  FILES = j.entries || [];
+  renderFiles(q);
+}
+function renderFiles(q) {
+  const crumb = document.querySelector("[data-crumb]");
+  crumb.textContent = q ? "🔍 matches across the project (click to clear)"
+    : "📁 " + (SUB ? "project / " + SUB.replace(/\//g, " / ") + "   (click to go up)"
+                   : "project root");
+  crumb.onclick = () => {
+    const s = document.querySelector("[data-fsearch]");
+    if (s.value) { s.value = ""; loadFiles(); return; }
+    SUB = SUB.split("/").slice(0, -1).join("/"); loadFiles();
+  };
+  const rows = FILES.slice();
+  rows.sort((a, b) => a.dir !== b.dir ? (a.dir ? -1 : 1)
+    : SORT === "date" ? b.mtime - a.mtime
+    : a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  const list = document.querySelector("[data-filelist]");
+  list.textContent = "";
+  rows.forEach(f => {
+    const row = el("div", "frow2");
+    const fn = el("span", "fn", (f.dir ? "📁 " : "· ") + f.name);
+    fn.onclick = () => {
+      if (f.dir) { SUB = SUB ? SUB + "/" + f.name : f.name; loadFiles(); }
+      else fetch("/api/open", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", path: q ? f.name
+          : (SUB ? SUB + "/" : "") + f.name }) });
+    };
+    row.appendChild(fn);
+    row.appendChild(el("span", "fm",
+      new Date(f.mtime * 1000).toISOString().slice(0, 10) +
+      (f.dir ? "" : " · " + (f.size > 1048576
+        ? (f.size / 1048576).toFixed(1) + " MB"
+        : Math.max(1, Math.round(f.size / 1024)) + " KB"))));
+    list.appendChild(row);
+  });
+  if (!rows.length) list.appendChild(el("div", "frow2",
+    q ? "nothing matches" : "(empty folder)"));
+}
+document.querySelector("[data-fsearch]").addEventListener("input",
+  () => { clearTimeout(window._ft); window._ft = setTimeout(loadFiles, 300); });
+document.querySelector("[data-sort-name]").onclick = (e) => {
+  SORT = "name"; e.target.classList.add("on");
+  document.querySelector("[data-sort-date]").classList.remove("on"); renderFiles(); };
+document.querySelector("[data-sort-date]").onclick = (e) => {
+  SORT = "date"; e.target.classList.add("on");
+  document.querySelector("[data-sort-name]").classList.remove("on"); renderFiles(); };
+
+async function uploadOne(file) {
+  const msg = document.querySelector("[data-upmsg]");
+  msg.textContent = " · loading " + file.name + "…";
+  const buf = await file.arrayBuffer();
+  let bin = ""; const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  const b64 = btoa(bin);
+  const send = (mode) => fetch("/api/upload", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dir: "", sub: SUB, name: file.name,
+                           data_b64: b64, mode }) }).then(r => r.json());
+  let j = await send("new");
+  if (!j.ok && j.exists) {
+    if (confirm("“" + file.name + "” already exists here. Replace it?")) {
+      j = await send("replace");
+    } else if (confirm("Keep both? (saves as “" + file.name + " (1)”)")) {
+      j = await send("keepboth");
+    } else { msg.textContent = " · skipped " + file.name; return; }
+  }
+  msg.textContent = j.ok ? " · loaded " + j.name : " · " + (j.error || "failed");
+}
+const dz = document.querySelector("[data-dropzone]");
+dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("hot"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("hot"));
+dz.addEventListener("drop", async (e) => {
+  e.preventDefault(); dz.classList.remove("hot");
+  for (const f of e.dataTransfer.files) await uploadOne(f);
+  loadFiles();
+});
+document.querySelector("[data-upfile]").addEventListener("change", async (ev) => {
+  for (const f of ev.target.files) await uploadOne(f);
+  ev.target.value = ""; loadFiles();
+});
+
+refresh();
+</script>
+</body></html>

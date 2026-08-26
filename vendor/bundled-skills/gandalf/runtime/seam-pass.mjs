@@ -247,10 +247,16 @@ export function applySeamPass(rawDraft, { cross_model = false, resolveCommission
   const rawElevations = Array.isArray(rawDraft.elevations) ? rawDraft.elevations : [];
 
   // --- findings: dispatch by kind through the shipped seams; drop only REFUTED -----------------
+  // 2026-08-25 (John-ratified card — journals 0301/0303: killed/dropped items left NO record,
+  // so a kill was indistinguishable from a silent omission — an honesty hole in an honesty
+  // engine): every drop is RECORDED with its reason in output.kill_log (below the fold).
+  const killLog = { findings: [], nitpicks: [], elevations: [] };
+  const briefOf = (raw) => String(raw?.topic ?? raw?.claim ?? raw?.message ?? raw?.id ?? '(untitled)').slice(0, 120);
   const findings = [];
   let anyDegraded = false;
   rawFindings.forEach((raw, i) => {
-    if (!isPlainObject(raw) || dropsFromOutput(raw)) return; // skip non-objects / only REFUTED drops
+    if (!isPlainObject(raw)) { killLog.findings.push({ index: i, reason: 'not an object' }); return; }
+    if (dropsFromOutput(raw)) { killLog.findings.push({ index: i, brief: briefOf(raw), reason: 'REFUTED — rung refuted by its refutation record' }); return; }
     const passed = passFinding(raw, i); // never throws now (a seam refusal → a generic finding)
     if (itemDegraded(passed)) anyDegraded = true;
     findings.push(ensureItemKeys(passed, i, 'f'));
@@ -259,7 +265,8 @@ export function applySeamPass(rawDraft, { cross_model = false, resolveCommission
   // --- nitpicks: normalize to the required keys; skip non-objects; drop REFUTED -----------------
   const nitpicks = [];
   rawNitpicks.forEach((raw, i) => {
-    if (!isPlainObject(raw) || dropsFromOutput(raw)) return;
+    if (!isPlainObject(raw)) { killLog.nitpicks.push({ index: i, reason: 'not an object' }); return; }
+    if (dropsFromOutput(raw)) { killLog.nitpicks.push({ index: i, brief: briefOf(raw), reason: 'REFUTED — rung refuted by its refutation record' }); return; }
     if (itemDegraded(raw)) anyDegraded = true;
     nitpicks.push(ensureItemKeys(raw, i, 'n'));
   });
@@ -268,14 +275,21 @@ export function applySeamPass(rawDraft, { cross_model = false, resolveCommission
   const elevations = [];
   let anyCrossFamily = false; // W2b: DERIVES the top-level cross_model — set only by a genuine refutation
   rawElevations.forEach((raw, i) => {
-    if (!isPlainObject(raw)) return;
+    if (!isPlainObject(raw)) { killLog.elevations.push({ index: i, reason: 'not an object' }); return; }
     let passed;
     try {
       passed = passElevation(raw, i, resolve);
     } catch (e) {
-      return; // an un-salvageable elevation is dropped, never fatal to the run
+      // an un-salvageable elevation is dropped, never fatal to the run — but RECORDED
+      killLog.elevations.push({ index: i, brief: briefOf(raw), reason: `un-salvageable: ${e?.message ?? e}` });
+      return;
     }
-    if (passed === null) return; // dropped (REFUTED)
+    if (passed === null) {
+      // dropped (REFUTED) — record WHY, incl. the refutation's named defeater when present
+      const defeater = raw?.refutation_provenance?.defeater ?? null;
+      killLog.elevations.push({ index: i, brief: briefOf(raw), reason: 'REFUTED — the named defeater landed', defeater });
+      return;
+    }
     if (passed.cross_family_refuted === true) anyCrossFamily = true; // a real ledger-bound refutation
     if (itemDegraded(passed)) anyDegraded = true;
     // Guarantee a valid value_if_true (required enum) before normalizing the rest.
@@ -304,6 +318,10 @@ export function applySeamPass(rawDraft, { cross_model = false, resolveCommission
   // composeRiskLabels reads the finalized findings: one label per present leg, envelope rung,
   // PROMISING ceiling on a single-family run.
   output.risk_labels = composeRiskLabels(output);
+
+  // Kill log rides below the fold (additive; schema additionalProperties:true) — John sees
+  // WHY each recommendation died, and a kill is never confusable with a silent omission.
+  output.kill_log = killLog;
 
   return output;
 }

@@ -296,3 +296,35 @@
 #ecgSealSlice .degrail{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:12px;border:1px solid var(--ask);border-radius:8px;background:rgba(224,164,55,.06)}
 #ecgSealSlice .degrail .lab{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ask);flex:none}
 #ecgSealSlice .degrail .sp{flex:1}
+
+/* (2026-08-15) The steward-stage / effort-tile / step-panel styles that
+   lived here are DELETED with the stage they served — superseded the
+   same day by static/chamber-page.css. A replaced surface's styles do
+   not get to linger either. */
+
+/* Honest failure face for the chamber (light DOM — the slice never mounted). */
+.dash-tile .ecg-fail{
+  margin:14px 16px;padding:14px 16px;border:1px solid var(--warning,#fbbf24);
+  border-radius:9px;background:rgba(251,191,36,.07);
+}
+.ecg-fail-h{font-size:13.5px;font-weight:600;color:var(--text,#e6e9f0);margin-bottom:5px}
+.ecg-fail-w{font-size:12.5px;color:var(--text-dim,#8a90a2);margin-bottom:10px;max-width:78ch}
+.ecg-fail .btn{
+  font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;font-family:inherit;
+  border:1px solid var(--border,#2a3040);background:var(--surface2,#232733);color:var(--text,#e6e9f0);
+}
+
+
+/* ?classic=1 is sticky in a tab — say so, loudly, with the way back. */
+.classic-banner{
+  display:flex;align-items:center;gap:12px;margin:14px 18px;padding:10px 14px;
+  border:1px solid var(--warning,#fbbf24);border-radius:9px;
+  background:rgba(251,191,36,.09);font-size:12.5px;color:var(--text-dim,#8a90a2);
+}
+.classic-banner .cb-lab{
+  font-size:9.5px;letter-spacing:.09em;color:var(--warning,#fbbf24);flex:none;
+}
+.classic-banner .cb-go{
+  margin-left:auto;flex:none;color:var(--text,#e6e9f0);text-decoration:none;
+  border:1px solid var(--warning,#fbbf24);border-radius:6px;padding:3px 11px;font-size:11.5px;
+}

@@ -3,6 +3,11 @@ name: zombie-hunter
 description: The armed-by-evidence background reaper for the Anchor service — it freezes or kills only a truly-orphaned sub-agent swarm and never a legitimate run, via ownership-based liveness, positive proof-of-death, an abstain-by-default safety gate, and a token-authenticated control plane.
 ---
 
+## North Star (LOCKED — John, 2026-08-25)
+
+Zombie-Hunter reaps only truly-orphaned agent processes, armed strictly by evidence — ownership liveness, positive proof-of-death, abstain-by-default — never killing legitimate work. (Full criteria: NORTH-STAR.md in this folder, locked 2026-07-05 origin.)
+
+
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)
 
@@ -340,6 +345,10 @@ The kill-switch `.anchor/reaper.disarmed` and the persisted `.anchor/reaper_froz
 ## Process depth bands (Track B6) — `REAPER_PASSES_MIN=1`
 
 Depth-variable knobs come **only** from `@foundry/triage` (`resolveZombieHunterDepthKnobs` / live `BAND_MAPPINGS['zombie-hunter']`). Depth may thin **reaperPasses** and **ceremonyLevel**; it never thins safety.
+
+> **STATUS TRUTH (2026-08-24):** these band modules are **built and tested but NOT yet wired
+> into the running daemon's sweep** — the daemon currently runs fixed-depth. Wiring lands with
+> the portfolio-wide NS-01 completion sweep (John-ratified card, elegance review 2026-08-23).
 
 | Floor / rule | Contract |
 |--------------|----------|

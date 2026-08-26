@@ -3,6 +3,11 @@ name: researchPrime
 description: Universal best-in-class research skill with an engine-backed, stakes-scaled adversarial verification loop. Runs a distinct PLANNING phase and a FRESH plan-only EXECUTION phase (true context isolation on sub-agent hosts; honest degraded mode elsewhere), then a Phase-3 that — on hosts with Node — drives a multi-round adversarial loop (heterogeneous >=2-agree reviewers, a separate context-free Judge, an active Deep-Think Synthesizer, convergence-until-dry, cross-lineage origin fusion) via a Node engine that IMPORTS, never forks, the trio's Crucible+Foreman machinery. Weights evidence on the OBSERVED>CORROBORATED>CLAIMED>UNVERIFIED>REFUTED ladder, reports correlated-blind-spot recall honestly, resists the bandwagon effect, refuses to flatter or hallucinate, and returns three summary levels (full report / executive / agent-implementation). Hosts without Node get a schema-conformant prose run stamped "adversarial verification did NOT run". Use for /researchPrime, "deep research with validation", or any high-stakes investigation.
 ---
 
+## North Star (LOCKED — John, 2026-08-25)
+
+Given any high-stakes question, researchPrime returns a decision-ready, source-graded answer at three summary levels whose every consequential claim survived stakes-scaled adversarial verification — honestly stamped when verification could not run — and never spends heavy rounds on a low-stakes ask.
+
+
 <!-- ELEGANCE-LAW v2 -->
 ## The Elegance Law (locked by John — binding on this skill)
 
@@ -118,7 +123,15 @@ Emit the stakes vector + foresight receipt as the Phase-1 hand-off; the governor
 
 ## PLAN REVIEW GATE — report the plan ONE-SHOT to the user (approve / edit / abort)
 
-Before crossing the context boundary, present the frozen Phase-1 plan to the user **in one shot** and get an explicit decision. This is the load-bearing checkpoint: execution does not begin until the user APPROVEs. Surface the whole plan in the message body (never clipped into a dialog preview): the AXIS + what would falsify a candidate, the candidate branches, the best-in-class baselines to beat, the stakes vector + projected tier, and the Oranges foresight receipt.
+Before crossing the context boundary, present the frozen Phase-1 plan to the user **in one
+shot** and get an explicit decision. This is the load-bearing checkpoint: execution does not
+begin until the user APPROVEs. **The ask obeys Elegance rule 1** (reworded 2026-08-25 — the
+old "surface the whole plan in the body" instruction collided with rule 1's ≤200-word VOID
+clause, making every approval at this gate formally void): the frozen plan artifact stays ON
+DISK and is NAMED BY PATH; the message body carries a **≤200-word decision block** — the AXIS
+in one line, the branch count + tier with its trigger, the recommendation, and the one thing
+that gets worse — plus the offer to print any section on request. Never clip the ask into a
+dialog preview; never paste the whole plan unasked.
 
 Accept exactly one of: **APPROVE** (proceed to execution), **EDIT** (revise the plan per the user's change and re-present — bounded to 3 cycles), **ABORT** (halt the run). On EDIT, the revised plan is re-frozen and re-reported before any approval counts.
 
@@ -157,11 +170,12 @@ Gather evidence; record each item in the evidence ledger with its origin(s) and 
 1. Make a run dir; write `round-1-input.json`: `{ round, northStar, stakes, reviews:[{reviewer, angle,
    lineage, findings:[{claim_id?, topic, severity, traces_to_north_star, message}]}], adjudications?:{...} }`.
    When the reviewed artifact carries claim ids, reviewers MUST set `claim_id` (agreement keys on it — G6).
-   FIELD LAWS (each one burned a real round): `traces_to_north_star` is the STRING `'yes'`/`'no'`, never a
-   boolean — `String(true) !== 'yes'`, so booleans demote EVERY finding and the round skips zero-AXIS
-   (2026-08-15). Reviewer prompts hand agy ABSOLUTE artifact paths (0002 — never rely on its CWD); agy
-   replies may arrive ```json-fenced ~1-in-6 (0052 — strip fences before parsing); agy takes `--model
-   "<label form>"` and no permission flags (0048).
+   FIELD LAWS (each burned a real round — **ENGINE-ENFORCED since 2026-08-25**: run-rounds
+   HALTs loudly at input load on any violation, one line naming the exact field; these lines
+   remain as the WHY): `traces_to_north_star` is the STRING `'yes'`/`'no'`, never a boolean —
+   booleans silently demote EVERY finding (2026-08-15). Reviewer prompts hand agy ABSOLUTE
+   artifact paths (0002); a ```-fenced agy reply pasted as data is a transcription defect —
+   strip the fence (0052). agy takes `--model "<label form>"` and no permission flags (0048).
 2. `node bin/run-rounds.mjs <runDir> [--max-rounds N]` — replay mode by default (recorded adjudications);
    `RESEARCHPRIME_LIVE_ROUND=1` routes reviewer/debate/judge LIVE to Gemini via agy (5:1; agy down ⇒
    honest HALT, never self-review). `--max-rounds` (default 8) is a HARD budget — the cap stops honestly

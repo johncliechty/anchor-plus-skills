@@ -1,0 +1,297 @@
+/* steward-proto shared styles - dark, calm, terminal-adjacent */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  /* the Anchor cockpit family: bluer surfaces, brighter accent */
+  --bg: #0f1117; --panel: #1a1d27; --panel2: #232733; --line: #2e3340;
+  --text: #e2e4e9; --dim: #8b8f9a; --faint: #5d6270;
+  --john: #e8c268; --steward: #6c9cfc;
+  --ok: #4ade80; --warn: #fbbf24; --flag: #f87171; --run: #4ade80;
+  --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+  --ui: "Segoe UI", system-ui, sans-serif;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--ui);
+       font-size: 15px; line-height: 1.5; }
+button { font: inherit; font-size: 12.5px; color: var(--text);
+         background: var(--panel2); border: 1px solid var(--line);
+         border-radius: 7px; padding: 6px 13px; cursor: pointer; }
+button:hover { border-color: var(--dim); }
+/* the original cockpit's signature badges + tags */
+.badge { display: inline-block; text-transform: uppercase; font-size: 10px;
+         font-weight: 700; letter-spacing: .5px; padding: 2px 8px;
+         border-radius: 10px; border: 1px solid; }
+.badge.blue { color: #6c9cfc; border-color: #6c9cfc;
+              background: rgba(108,156,252,.12); }
+.badge.amber { color: #fbbf24; border-color: #fbbf24;
+               background: rgba(251,191,36,.12); }
+.badge.green { color: #22c55e; border-color: #22c55e;
+               background: rgba(34,197,94,.12); }
+.badge.red { color: #f87171; border-color: #f87171;
+             background: rgba(248,113,113,.12); }
+.badge.grey { color: #94a3b8; border-color: #94a3b8;
+              background: rgba(148,163,184,.12); }
+.tag { font-size: 10px; text-transform: uppercase; letter-spacing: .4px;
+       color: var(--dim); background: #1b2030; border: 1px solid var(--line);
+       border-radius: 9px; padding: 1px 7px; }
+a { color: var(--steward); text-decoration: none; }
+
+/* ---------- app frame ---------- */
+.app { display: grid; grid-template-columns: 320px 1fr;
+       grid-template-rows: auto minmax(0, 1fr); height: 100vh; overflow: hidden; }
+.rail, .main { min-height: 0; }
+.app.min .rail, .app.min .main { display: none; }
+
+/* ---------- top bar ---------- */
+.bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px;
+       padding: 8px 14px; border-bottom: 1px solid var(--line);
+       background: var(--panel); font-size: 13.5px; }
+.bar .title { font-weight: 600; letter-spacing: .2px; }
+.bar .spacer { flex: 1; }
+.bar .chip { color: var(--dim); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+       background: var(--faint); margin-right: 6px; vertical-align: baseline; }
+.dot.working { background: var(--run); }
+.dot.needs_you, .dot.blocked { background: var(--flag); }
+.dot.deliverable_ready { background: var(--warn); }
+.busy { color: var(--warn); min-width: 90px; }
+
+/* ---------- left rail (the map) ---------- */
+.rail { border-right: 1px solid var(--line); background: var(--panel);
+        overflow-y: auto; padding: 16px 16px 24px; }
+.rail h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+           color: var(--faint); margin: 20px 0 8px; }
+.rail h2:first-child { margin-top: 0; }
+.goal { font-size: 14px; line-height: 1.55; color: var(--text);
+        white-space: pre-wrap; }
+.steps { list-style: none; }
+.steps li { display: flex; gap: 9px; padding: 5px 0; font-size: 13.5px;
+            align-items: baseline; cursor: default; }
+.steps .mark { font-family: var(--mono); width: 15px; flex: none; }
+.steps li.done   { color: var(--dim); }  .steps li.done .mark { color: var(--ok); }
+.steps li.active .mark { color: var(--run); }
+.steps li.active { color: var(--text); font-weight: 600; }
+.steps li.waiting .mark { color: var(--flag); }
+.steps li.planned, .steps li.proposed { color: var(--dim); }
+.steps li .why { display: none; font-weight: 400; color: var(--dim);
+                 font-size: 12.5px; margin-top: 2px; }
+.steps li.open .why { display: block; }
+.progress { font-size: 12.5px; color: var(--dim); margin-bottom: 6px; }
+.wait, .grass { font-size: 13px; color: var(--dim); white-space: pre-wrap; }
+.wait { color: #d9b3a5; }
+.grasslist { list-style: none; }
+.grasslist li { padding: 3px 0 3px 14px; position: relative; color: var(--dim); }
+.grasslist li::before { content: "•"; position: absolute; left: 2px;
+                        color: var(--faint); }
+.catchrow { display: flex; gap: 6px; margin-top: 8px; }
+.catchrow input { flex: 1; background: var(--bg); color: var(--text);
+                  border: 1px solid var(--line); border-radius: 6px;
+                  padding: 5px 9px; font-size: 13px; }
+.fresh { margin-top: 22px; font-size: 12px; color: var(--faint); }
+.gaps { margin-top: 10px; font-size: 12px; color: var(--warn); }
+
+/* ---------- main column ---------- */
+.main { display: flex; flex-direction: column; min-width: 0; }
+.scroll { flex: 1; overflow-y: auto; padding: 20px 8% 30px; }
+
+/* ---------- transcript ---------- */
+.blk { margin: 0 auto 18px; max-width: 1050px; width: 100%; }
+.blk .who { font-family: var(--mono); font-size: 11.5px; letter-spacing: 1.5px;
+            margin-bottom: 4px; }
+.blk.john .who { color: var(--john); }
+.blk.steward .who { color: var(--steward); }
+.blk .body { white-space: pre-wrap; font-size: 15px; }
+.blk.john .body { color: #efe6cd; }
+.blk.hist { opacity: .62; }
+.blk.tool { font-family: var(--mono); font-size: 12.5px; color: var(--faint);
+            margin: -8px 0 12px; }
+.blk.sys { font-size: 12.5px; color: var(--faint); font-style: italic; }
+.blk.turnend { font-family: var(--mono); font-size: 11.5px; color: var(--faint);
+               margin: -10px 0 16px; }
+.divider { text-align: center; color: var(--faint); font-size: 12px;
+           margin: 16px 0; }
+.body table { border-collapse: collapse; margin: 8px 0; font-size: 13.5px; }
+.body th, .body td { border: 1px solid var(--line); padding: 4px 10px;
+                     text-align: left; }
+.body th { color: var(--dim); background: var(--panel2); }
+.body code { font-family: var(--mono); background: var(--panel2);
+             padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+/* md.js is THE renderer now (renderRich folded into it) — keep its block
+   elements compact inside conversation bodies */
+.blk .body p { margin: 0 0 8px; }
+.blk .body p:last-child { margin-bottom: 0; }
+.blk .body ul, .blk .body ol { margin: 4px 0 8px 20px; }
+.blk .body li { margin: 2px 0; }
+.blk .body .mdh { font-weight: 600; margin: 8px 0 4px; font-size: inherit; }
+.blk .body blockquote { border-left: 2px solid var(--steward);
+    padding: 2px 10px; margin: 6px 0; color: var(--dim); }
+.blk .body pre { background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px 10px; overflow-x: auto;
+    font: 13px var(--mono); margin: 6px 0; }
+.blk .body pre code { background: none; padding: 0; }
+.blk .body .tblwrap { overflow-x: auto; }
+.blk .body hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; }
+/* the engine-composed two-part 10-minute status (pane-only) */
+.blk.status .snow { color: var(--ok); }
+.blk.status .splan { color: var(--dim); }
+.blk.status .sflag { color: #d9b3a5; }
+
+/* ---------- composer ---------- */
+.composer { border-top: 1px solid var(--line); background: var(--panel);
+            padding: 12px 8%; }
+.composer textarea { width: 100%; background: var(--bg); color: var(--text);
+                     border: 1px solid var(--line); border-radius: 8px;
+                     padding: 10px 12px; font: 15px var(--ui); resize: none;
+                     min-height: 46px; max-height: 40vh; overflow-y: auto; }
+.composer textarea:focus { outline: none; border-color: var(--dim); }
+.composer .row { display: flex; align-items: center; gap: 10px;
+                 margin-top: 7px; }
+.composer .hint { color: var(--faint); font-size: 12px; flex: 1; }
+.composer .send { background: #24466e; border-color: #35577f; }
+
+/* ---------- V1 iterations: goal bar · collapsible rail · status pane ---------- */
+.appx { grid-template-rows: auto auto minmax(0, 1fr); }
+.goalbar { grid-column: 1 / -1; border-bottom: 1px solid var(--line);
+           background: var(--panel2); padding: 8px 16px; cursor: pointer; }
+.goalbar .gline { display: flex; gap: 10px; align-items: baseline; }
+.goalbar .glabel { font-size: 10.5px; text-transform: uppercase;
+                   letter-spacing: 1.2px; color: var(--faint); flex: none; }
+.goalbar .gbrief { font-size: 14.5px; }
+.goalbar .gcaret { color: var(--faint); flex: none; margin-left: auto; }
+.goalbar .gfull { display: none; margin: 10px 0 4px; max-width: 980px;
+                  font-size: 14px; color: var(--dim); white-space: pre-wrap; }
+.goalbar.open .gfull { display: block; }
+.goalbar.open .gcaret { transform: rotate(90deg); }
+
+.leftcol { display: flex; flex-direction: column; min-height: 0;
+           border-right: 1px solid var(--line); background: var(--panel); }
+.leftcol .rail { flex: 1 1 auto; border-right: none; }
+.app.railhide .leftcol { display: none; }
+.railtab { position: fixed; left: 0; top: 38%; z-index: 5; display: none;
+           writing-mode: vertical-rl; padding: 18px 7px; font-size: 12.5px;
+           letter-spacing: 2.5px; font-weight: 600; color: var(--steward);
+           background: linear-gradient(180deg, var(--panel2), var(--panel));
+           border: 1px solid var(--line); border-left: none;
+           border-radius: 0 10px 10px 0; cursor: pointer;
+           box-shadow: 2px 0 10px rgba(0,0,0,.35); }
+.railtab:hover { color: var(--text); border-color: var(--dim); }
+.app.railhide .railtab { display: block; }
+.railhead { display: flex; align-items: center; }
+.railhead h2 { flex: 1; margin: 0 !important; }
+.railhead button { padding: 0 8px; font-size: 12px; }
+
+.statuspane { flex: 1 1 auto; min-height: 0; display: flex;
+              flex-direction: column; border-top: 1px solid var(--line); }
+.statuspane .phead { display: flex; align-items: center; padding: 7px 16px;
+                     font-size: 11px; text-transform: uppercase;
+                     letter-spacing: 1.2px; color: var(--faint);
+                     cursor: pointer; user-select: none; }
+.statuspane .phead .pcount { margin-left: auto; color: var(--dim); }
+.statuspane .pscroll { flex: 1; overflow-y: auto; padding: 4px 16px 16px;
+                       font-size: 12.5px; }
+.statuspane .pscroll .blk { margin-bottom: 10px; }
+.statuspane .pscroll .body { font-size: 12.5px; }
+.statuspane .pscroll table { font-size: 11.5px; }
+.statuspane.shut { flex: 0 0 auto; }
+.statuspane.shut .pscroll { display: none; }
+
+button.armed { background: #234a2c; border-color: #3b6b46; color: #b5e6c3; }
+
+/* ---------- V1 merged: right-side status window + light ---------- */
+.app3 { grid-template-columns: auto minmax(0, 1fr) auto; }
+/* pin every pane to its column so collapsing one never re-flows the others:
+   the map's edge is always the left edge, status' edge always the right */
+.app3 .leftcol { grid-column: 1; grid-row: 3; }
+.app3 .main { grid-column: 2; grid-row: 3; }
+.app3 .rightcol { grid-column: 3; grid-row: 3; }
+.light { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         flex: none; }
+.light.green { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+.light.orange { background: var(--warn); }
+.light.red { background: #e05f5f; box-shadow: 0 0 7px #e05f5f; }
+.leftcol { width: 300px; }
+.rightcol { width: 0; border: none; overflow: hidden;
+            background: var(--panel); display: flex; flex-direction: column;
+            min-height: 0; }
+.rightcol .pshut { display: none; }
+.rightcol .popen { display: none; }
+.app.statusopen .rightcol { width: var(--statusw, 380px);
+            border-left: 1px solid var(--line); position: relative; }
+.app.statusopen .rightcol .popen { display: flex; flex-direction: column;
+                                   min-height: 0; height: 100%; }
+/* the status tail-tab on the right edge (mirror of the map's) */
+.statustab { position: fixed; right: 0; top: 38%; z-index: 5;
+             display: flex; flex-direction: column; align-items: center;
+             gap: 10px; writing-mode: vertical-rl; padding: 16px 7px;
+             font-size: 12px; letter-spacing: 2.5px; font-weight: 600;
+             color: var(--steward);
+             background: linear-gradient(180deg, var(--panel2), var(--panel));
+             border: 1px solid var(--line); border-right: none;
+             border-radius: 10px 0 0 10px; cursor: pointer;
+             box-shadow: -2px 0 10px rgba(0,0,0,.35); }
+.statustab:hover { color: var(--text); border-color: var(--dim); }
+.app.statusopen .statustab { display: none; }
+/* the pinned open question - an ask can never scroll away unanswered */
+.openq { display: none; padding: 9px 8%; font-size: 13.5px; cursor: pointer;
+         color: #f6c5c5; background: rgba(248,113,113,.10);
+         border-bottom: 1px solid rgba(248,113,113,.45); }
+.openq::before { content: "⚑ waiting on your answer:  "; color: var(--flag);
+                 font-weight: 600; }
+.openq.show { display: block; }
+.pmsgs { padding: 5px 14px 8px; font-size: 11.5px; color: var(--faint);
+         border-bottom: 1px solid var(--line); }
+/* drag grip to slide the status pane wider/narrower */
+.pgrip { position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+         cursor: ew-resize; z-index: 4; }
+.pgrip:hover { background: rgba(108,156,252,.25); }
+.phead2 { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+          border-bottom: 1px solid var(--line); font-size: 13px; }
+.phead2 button { margin-left: auto; padding: 0 8px; }
+.platest { padding: 9px 14px; font-size: 12.5px; color: var(--dim);
+           border-bottom: 1px solid var(--line); white-space: pre-wrap; }
+.rightcol .pscroll { flex: 1; min-height: 0; overflow-y: auto;
+                     padding: 10px 14px; font-size: 12.5px; }
+.rightcol .pscroll .blk { margin-bottom: 10px; }
+.rightcol .pscroll .body { font-size: 12.5px; }
+.rightcol .pscroll table { font-size: 11.5px; }
+.rightcol .pscroll .blk.steward.folded .body { max-height: 1.5em;
+    overflow: hidden; opacity: .55; cursor: pointer; }
+.pfiles { border-top: 1px solid var(--line); padding: 10px 14px;
+          max-height: 26vh; overflow-y: auto; }
+.pfiles h2 { font-size: 10.5px; text-transform: uppercase;
+             letter-spacing: 1.2px; color: var(--faint); margin-bottom: 6px; }
+.pfiles .frow { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+                font-size: 12.5px; color: var(--dim); }
+.pfiles .fname { flex: 1; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+.gfull .ghist { margin-top: 12px; padding-top: 10px;
+                border-top: 1px solid var(--line); font-size: 13px;
+                color: var(--dim); white-space: pre-wrap;
+                max-height: 34vh; overflow-y: auto; }
+
+/* ---------- polish (S1 "slate" default, Anchor-family) ---------- */
+body { font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+.bar { background: linear-gradient(180deg, #20242f, var(--panel));
+       box-shadow: 0 1px 0 rgba(255,255,255,.03) inset; }
+button { transition: border-color .15s, background .15s, color .15s; }
+.goalbar:hover { background: #1e2531; }
+
+/* ---------- S2 "command" — richer, higher contrast ---------- */
+body[data-theme="command"] {
+  --bg: #05070d; --panel: #0a0f1a; --panel2: #0e1524; --line: #1b2c4a;
+  --text: #d9e4f5; --dim: #7f93b3; --faint: #506183;
+  --john: #ffd479; --steward: #5fd4ff; --ok: #35e08b; --warn: #ffb347;
+}
+body[data-theme="command"] .bar {
+  background: linear-gradient(180deg, #0d1626, #0a0f1a);
+  border-bottom: 1px solid #1e3357; }
+body[data-theme="command"] .bar .title { letter-spacing: .5px; }
+body[data-theme="command"] .light.green { box-shadow: 0 0 10px var(--ok); }
+body[data-theme="command"] .light.red { box-shadow: 0 0 10px #e05f5f; }
+body[data-theme="command"] .blk .who { letter-spacing: 2.2px; }
+body[data-theme="command"] .blk.steward .who { text-shadow: 0 0 12px rgba(95,212,255,.45); }
+body[data-theme="command"] .blk.john .who { text-shadow: 0 0 12px rgba(255,212,121,.35); }
+body[data-theme="command"] .goalbar { background: linear-gradient(90deg, #0e1524, #0a0f1a); }
+body[data-theme="command"] .composer textarea { border-color: #1e3357; }
+
+/* (2026-08-25) The bake-off shells (seal / v2 / v1a / v1b / index) and their
+   CSS are GONE — the experiment concluded, v1 + the cockpit won. */

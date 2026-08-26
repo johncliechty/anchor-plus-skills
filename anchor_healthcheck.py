@@ -4509,6 +4509,197 @@ def _git_commit_in(repo: Path, msg: str = "hc commit") -> bool:
         return False
 
 
+def check_steward_cockpit_surface(report: Report):
+    """Exercise the steward-cockpit surface (the DEFAULT /project/ page since
+    the 2026-08-25 cutover) — FULLY STUBBED, hermetic.
+
+    The engine seam is the package's own ``fake_claude.py`` stream-json stub
+    (``fake=True`` — zero tokens, zero real sessions; the 2026-07-14
+    usage-leak lesson). The walk runs in a throwaway temp campaign dir with
+    the module STATE_FILE redirected to a temp file (real state untouched):
+
+      (1) deterministic readers — ``read_map`` over a synthetic campaign +
+          ``compose_status`` returning the two-part (now / plan) shape;
+      (2) the mount — ``serve_cockpit_doc`` injects the client shim;
+          ``serve_static`` serves only the shipped static set (the deleted
+          bake-off shells STAY deleted); ``api_get`` efforts/status round-trip;
+      (3) the engine — wake through the fake, ``say`` round-trip to turn_end
+          events, the turn-boundary ``.ecgberht/status-summary.json`` persist
+          (the universal file the dashboard tile reads), then stop.
+
+    Env + STATE_FILE restored, temp dirs removed; nothing binds :8777,
+    touches real campaign data, or reaches the network."""
+    name = "Steward cockpit surface"
+    import tempfile as _tf
+    failures, steps = [], []
+    tmp = Path(_tf.mkdtemp(prefix="anchor-hc-steward-"))
+    state_tmp = Path(_tf.mkdtemp(prefix="anchor-hc-steward-state-"))
+    old_state_file = None
+    eng = None
+    se = None
+    try:
+        from steward_cockpit import steward_campaign as _sc
+        from steward_cockpit import steward_engine as _se
+        from steward_cockpit import steward_routes as _sr
+        se = _se
+        old_state_file = _se.STATE_FILE
+        _se.STATE_FILE = state_tmp / "state.json"
+
+        # (1) synthetic campaign + deterministic readers
+        (tmp / "ECGBERHT.md").write_text(
+            "# Ecgberht — Face\n\n## North star\n\nProve the cockpit surface "
+            "end-to-end with zero tokens.\n\n## Human wait\n\n- nothing\n",
+            encoding="utf-8")
+        (tmp / "roadmap.json").write_text(json.dumps({
+            "roadmap_projection": [
+                {"id": "s1", "name": "walk the surface", "status": "active",
+                 "done_when": "the healthcheck passes"}]}), encoding="utf-8")
+        (tmp / "strip.json").write_text(json.dumps({
+            "human_wait": "", "next_recommended": "carry on",
+            "grasscatch": []}), encoding="utf-8")
+        (tmp / ".ecgberht").mkdir()
+        (tmp / ".ecgberht" / "attention.json").write_text(
+            json.dumps({"state": "working", "reason": "stub run in flight"}),
+            encoding="utf-8")
+        m = _sc.read_map(str(tmp))
+        if not m["goal_brief"] or m["steps_total"] != 1:
+            failures.append(f"read_map: goal/steps wrong ({m['goal_brief']!r}, "
+                            f"{m['steps_total']})")
+        else:
+            steps.append("read_map")
+        stat = _sc.compose_status(str(tmp), {"busy": False, "queued": 0})
+        if (not stat.get("now") or not isinstance(stat.get("plan"), dict)
+                or stat["plan"].get("step") != "walk the surface"):
+            failures.append(f"compose_status shape wrong: {stat}")
+        else:
+            steps.append("compose_status")
+
+        # (2) the mount
+        doc = _sr.serve_cockpit_doc("hc-pid")
+        if not doc or "STEWARD_PID" not in doc or "AI Cockpit" not in doc:
+            failures.append("serve_cockpit_doc missing shim/shell")
+        else:
+            steps.append("cockpit doc")
+        body, _ct = _sr.serve_static("shared.js")
+        if body is None:
+            failures.append("serve_static shared.js missing")
+        for gone in ("seal.html", "v2.html", "v1a.html", "v1b.html",
+                     "index.html", "../paths.py"):
+            b, _c = _sr.serve_static(gone)
+            if b is not None:
+                failures.append(f"serve_static serves retired/outside file: {gone}")
+        if body is not None and not any(f.startswith("serve_static serves")
+                                        for f in failures):
+            steps.append("static set")
+        obj, code = _sr.api_get(str(tmp), "efforts", {})
+        if code != 200 or not obj.get("efforts"):
+            failures.append(f"api_get efforts: {code} {obj}")
+        else:
+            steps.append("efforts")
+            # each row carries the goal-derived rename suggestion, and the
+            # suggestion itself must pass the effort-name guard
+            row = obj["efforts"][0]
+            sug = row.get("suggested_name")
+            if not sug:
+                failures.append(f"efforts row missing suggested_name: {row}")
+            else:
+                _n, _e = _sr._validate_effort_name(sug)
+                if _e:
+                    failures.append(
+                        f"suggested name fails its own guard: {sug!r} ({_e})")
+        obj, code = _sr.api_get(str(tmp), "status", {"dir": ""})
+        if code != 200 or "plan" not in obj:
+            failures.append(f"api_get status: {code} {obj}")
+        else:
+            steps.append("status verb")
+
+        # (2026-08-25) effort NAME guard + rename: a pasted token/secret is
+        # refused; a rename moves the dir AND migrates the engine-state keys.
+        old_tok = _sr.CONFIG.get("anchor_token")
+        try:
+            _sr.CONFIG["anchor_token"] = "sekret-token-guard-1"
+            for bad, why in (
+                    ("E3aB8dvObAselKS1XSIvXhH9GUJxpM8FhMc", "secret-shaped"),
+                    ("name with sekret-token-guard-1 inside", "the token"),
+            ):
+                obj, code = _sr.api_post(str(tmp), "new_effort", {"name": bad})
+                if code != 400 or obj.get("ok"):
+                    failures.append(f"new_effort accepted a {why} name")
+            obj, code = _sr.api_post(str(tmp), "new_effort",
+                                     {"name": "temp effort"})
+            if code != 200 or not obj.get("ok"):
+                failures.append(f"new_effort refused a plain name: {obj}")
+            edir = str(Path(tmp) / "temp effort")
+            _se._update_state(edir, {"session_id": "fake-keep-me"})
+            obj, code = _sr.api_post(str(tmp), "rename_effort",
+                                     {"dir": "temp effort",
+                                      "name": "renamed effort"})
+            moved = (Path(tmp) / "renamed effort" / "ECGBERHT.md").is_file()
+            migrated = (_se._read_all_state()
+                        .get(str(Path(tmp) / "renamed effort"), {})
+                        .get("session_id") == "fake-keep-me")
+            if code != 200 or not obj.get("ok") or not moved or not migrated:
+                failures.append(
+                    f"rename_effort: code={code} ok={obj.get('ok')} "
+                    f"moved={moved} state_migrated={migrated}")
+            else:
+                steps.append("name guard + rename")
+        finally:
+            if old_tok is None:
+                _sr.CONFIG.pop("anchor_token", None)
+            else:
+                _sr.CONFIG["anchor_token"] = old_tok
+
+        # (3) the engine, through the fake (zero tokens)
+        eng = _se.Engine(str(tmp), fake=True)
+        r = eng.say("hello there")
+        if not r.get("ok"):
+            failures.append(f"say refused: {r}")
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            ends = [e for e in eng.events if e.get("t") == "turn_end"]
+            if len(ends) >= 2:   # stand-up turn + the queued hello turn
+                break
+            time.sleep(0.25)
+        else:
+            failures.append("engine never reached 2 turn_end events "
+                            f"(events: {[e.get('t') for e in eng.events][-8:]})")
+        if not any(e.get("t") == "delta" and e.get("text")
+                   for e in eng.events):
+            failures.append("no streamed delta from the fake engine")
+        st = eng.state()
+        for key in ("alive", "busy", "light", "epoch", "open_question"):
+            if key not in st:
+                failures.append(f"engine state missing {key}")
+        summary_f = tmp / ".ecgberht" / "status-summary.json"
+        if not summary_f.is_file():
+            failures.append("turn boundary did not persist status-summary.json")
+        else:
+            persisted = json.loads(summary_f.read_text(encoding="utf-8"))
+            if "now" not in persisted or "plan" not in persisted:
+                failures.append(f"persisted status malformed: {persisted}")
+            else:
+                steps.append("engine round-trip + status persist")
+        eng.stop()
+        eng = None
+    except Exception as e:
+        failures.append(f"{type(e).__name__}: {e}")
+    finally:
+        try:
+            if eng is not None:
+                eng.stop()
+        except Exception:
+            pass
+        if se is not None and old_state_file is not None:
+            se.STATE_FILE = old_state_file
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(state_tmp, ignore_errors=True)
+    if failures:
+        report.check(name, False, "; ".join(failures[:6]))
+    else:
+        report.check(name, True, f"{len(steps)} steps")
+
+
 def check_gandalf_surface(report: Report, server_proc, rnd_env: dict):
     """Exercise the Gandalf v1 "honest project read" surface — FULLY STUBBED.
 
@@ -6587,6 +6778,9 @@ def main():
         check_rnd_v11_1_surface(report, server_proc, rnd_env)
         check_rnd_v12_surface(report, server_proc, rnd_env)
         check_gandalf_surface(report, server_proc, rnd_env)
+        # Steward cutover 2026-08-25: the cockpit is the default /project/
+        # page — walk its whole surface through the zero-token fake.
+        check_steward_cockpit_surface(report)
         # Honest-Telemetry W7: the fully-stubbed capture+finalize walk (clean +
         # corrupted RED-classified legs + the new-route auth enumeration) and the
         # split-severity LIVE drift tripwire over the real sidecar store.

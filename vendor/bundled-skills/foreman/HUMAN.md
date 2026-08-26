@@ -36,3 +36,15 @@
 
 ## For agents / engines
 Full protocol and wiring live in `SKILL.md` next to this file (trio monorepo: `<path> Load that only when running the skill — this card is for people.
+
+## What the running dashboard looks like (moved from SKILL.md, 2026-08-24)
+
+```
+[Foreman | <path> | wave 3/7 "MoE judge wiring"]
+  ▸ execute… done (commit 1a2b3c4, 2 files)            +6m
+  ▸ review (2 independent, sequential)… 1 MAJOR        +5m
+  ▸ fix iter 1… closed MAJOR; re-review… GO            +4m
+  ✓ wave 3 converged (2 iters) · gate 18/18 (orchestrator-run)
+  → advancing to wave 4/7
+context: ~38% (best-effort) · elapsed 1h12m · budget 3/8 waves · window OK
+```

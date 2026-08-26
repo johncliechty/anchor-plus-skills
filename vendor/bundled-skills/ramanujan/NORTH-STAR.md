@@ -1,3 +1,6 @@
+<!-- SUPERSEDED 2026-08-25: John locked the current identity North Star directly in
+     SKILL.md ('North Star (LOCKED — John, 2026-08-25)'). THAT text is canonical; this
+     file is retained as lock history only. -->
 <!-- PROMOTED to NORTH-STAR.md 2026-07-25 (journal-hardening P2): this LOCKED v3 text
      lived under the -CANDIDATE- filename while the file NAMED NORTH-STAR.md described the
      7-pillar architecture the skill explicitly PARKED (SKILL.md construction freeze) — a

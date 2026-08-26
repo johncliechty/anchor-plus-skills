@@ -167,7 +167,12 @@ def _open_seal(browser, h, mode):
                             timeout=20000):
         with pg.expect_response(lambda r: "/api/ecgberht/chamber?" in r.url,
                                 timeout=20000):
-            pg.goto("%s/project/%s?token=%s#seal"
+            # (2026-08-15) ?classic=1 — this file is the recurrence instrument
+            # for the CLASSIC chamber (the mounted #ecgSealSlice and its shadow
+            # root). /project/<id> now serves the chamber PAGE, which renders
+            # server-side with no slice to mount; its own real-browser gate is
+            # tests/test_chamber_page_w1.py. Both surfaces stay guarded.
+            pg.goto("%s/project/%s?classic=1&token=%s#seal"
                     % (h["srv"]["base"], h["pid"], TEST_TOKEN),
                     wait_until="domcontentloaded")
     # The paint-mark law says the slice mounted; the settle above says the

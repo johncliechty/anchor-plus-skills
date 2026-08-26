@@ -289,6 +289,62 @@ export async function expandOpenAlexId(openAlexId, options = {}) {
   }));
 }
 
+/** Map one OpenAlex work object to the pipeline's paper shape (same shape the
+ *  reference-expansion fallbacks above emit). */
+function openAlexWorkToPaper(w) {
+  return {
+    paperId: `openalex:${String(w.id).split('/').pop()}`,
+    title: w.title ?? w.display_name ?? 'Untitled',
+    venue: w.primary_location?.source?.display_name ?? w.host_venue?.display_name ?? 'Unknown',
+    year: w.publication_year ?? null,
+    citationCount: w.cited_by_count ?? 0,
+    authors: (w.authorships ?? []).map((a) => ({ name: a.author?.display_name ?? '?' })),
+    openAccessPdf: w.open_access?.oa_url ? { url: w.open_access.oa_url } : null,
+    abstract: null,
+    provider: 'openalex',
+  };
+}
+
+// ── Seed-LOAD fallback (2026-08-25 — the journal-0004 fix, John-ratified elegance card).
+// The single call gating the ENTIRE live pipeline was the S2 seed-paper load: 8 of 9
+// real invocations died there on sustained 429 (journal 0004, 2026-07-29). Same law as
+// the expansion fallback above: after real S2 retries fail, fall back to OpenAlex BY
+// CATALOG IDENTIFIER (doi/pmid directly; arXiv via its DataCite DOI) — NEVER by fuzzy
+// title (seed-identity.mjs pins that refusal). Every fallback is RECORDED, never silent.
+export function seedEntityIdToOpenAlexUrl(seedEntityId) {
+  const s = String(seedEntityId);
+  if (/^DOI:/i.test(s)) return `https://api.openalex.org/works/doi:${s.slice(4)}`;
+  if (/^PMID:/i.test(s)) return `https://api.openalex.org/works/pmid:${s.slice(5)}`;
+  if (/^arXiv:/i.test(s)) return `https://api.openalex.org/works/doi:10.48550/arXiv.${s.slice(6)}`;
+  return null;
+}
+
+export async function resolveSeedPaperWithFallback(seedEntityId, options = {}) {
+  const customFetch = options.fetch || fetch;
+  let s2Err;
+  try {
+    const seedUrl = `https://api.semanticscholar.org/graph/v1/paper/${seedEntityId}?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
+    const res = await fetchWithBackoff(seedUrl, { ...options, fetch: customFetch });
+    const data = await res.json();
+    if (data && data.paperId) return { paper: data, provider: 's2' };
+    s2Err = new Error('S2 returned no paperId for the seed');
+  } catch (err) {
+    s2Err = err;
+  }
+  const oaUrl = seedEntityIdToOpenAlexUrl(seedEntityId);
+  if (!oaUrl) {
+    throw new Error(`Failed to fetch seed paper metadata: ${s2Err.message} (no OpenAlex identifier route for ${seedEntityId})`);
+  }
+  try {
+    const res = await fetchWithBackoff(oaUrl, { ...options, fetch: customFetch });
+    const w = await res.json();
+    if (!w || !w.id) throw new Error('OpenAlex returned no work for the identifier');
+    return { paper: openAlexWorkToPaper(w), provider: 'openalex', fallbackReason: `s2: ${s2Err.message}` };
+  } catch (oaErr) {
+    throw new Error(`Failed to fetch seed paper metadata from BOTH providers — s2: ${s2Err.message}; openalex: ${oaErr.message}`);
+  }
+}
+
 /**
  * Performs a depth-bounded citation snowball search starting from seedEntityId.
  */
@@ -310,21 +366,22 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
     allPapers.set(options.seedPaper.paperId, options.seedPaper);
     queue.push({ paperId: options.seedPaper.paperId, depth: 0 });
     visited.add(options.seedPaper.paperId);
-  } else {
-    // Fetch seed paper details first
-    try {
-      const seedUrl = `https://api.semanticscholar.org/graph/v1/paper/${seedEntityId}?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
-      const res = await fetchWithBackoff(seedUrl, { fetch: customFetch, ...options });
-      const data = await res.json();
-      if (data && data.paperId) {
-        allPapers.set(data.paperId, data);
-        queue.push({ paperId: data.paperId, depth: 0 });
-        visited.add(data.paperId);
-      }
-    } catch (err) {
-      // If the seed paper cannot be loaded, we fail or handle gracefully. Let's throw if seed cannot be resolved.
-      throw new Error(`Failed to fetch seed paper metadata: ${err.message}`);
+    // A pre-flight-resolved seed that came via a provider fallback is RECORDED here
+    // (2026-08-25 review fix — the fallback previously bypassed providerFallbacks
+    // entirely on the now-primary pre-flight path).
+    if (options.seedPaperFallback) {
+      providerFallbacks.push({ stage: 'seed-load(pre-flight)', entityId: String(seedEntityId), ...options.seedPaperFallback });
     }
+  } else {
+    // Fetch seed paper details first — with the RECORDED OpenAlex fallback (the
+    // journal-0004 fix): the run now dies here only when BOTH providers fail.
+    const resolved = await resolveSeedPaperWithFallback(seedEntityId, { fetch: customFetch, ...options });
+    if (resolved.provider !== 's2') {
+      providerFallbacks.push({ stage: 'seed-load', entityId: String(seedEntityId), from: 's2', to: resolved.provider, reason: resolved.fallbackReason });
+    }
+    allPapers.set(resolved.paper.paperId, resolved.paper);
+    queue.push({ paperId: resolved.paper.paperId, depth: 0 });
+    visited.add(resolved.paper.paperId);
   }
 
   // Traversal loop (BFS)

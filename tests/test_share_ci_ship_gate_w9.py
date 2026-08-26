@@ -301,10 +301,49 @@ def test_non_admin_windows_desktop_and_service_no_elevation(tmp_path):
 
 # ── GWT #3: execute/ship gate fail-closed ────────────────────────────────────
 
+# v1.2.5 (2026-08-25): the SHIPPED freeze records are released (real pins),
+# so the placeholder-law tests below run on these SYNTHETIC pre-release docs.
+# The law itself — placeholders / missing go-ahead → no live vendoring —
+# is unchanged in the code.
+_PLACEHOLDER_SOURCES_DOC = {
+    "schema": "share-sources-pin/v1",
+    "schema_version": 1,
+    "ship_allowed": False,
+    "ship_allowed_stamp_text": (
+        "only after concurrent skill-run merge + John go-ahead"
+    ),
+    "skills_pin": {"tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+    "pins": [
+        {"repo": "anchor", "tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+        {"repo": "trio", "tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+        {"repo": "skill-foundry", "tag": "PLACEHOLDER",
+         "commit": "PLACEHOLDER"},
+    ],
+    "package_versions": {"A": "0.0.0-placeholder", "B": "0.0.0-placeholder"},
+    "scrub_tool_versions": {"vendor_skills.py": "GREEN-share-distro",
+                            "distro.py": "GREEN-share-distro"},
+}
+
+_PLACEHOLDER_FREEZE_DOC = {
+    "schema": "share-freeze-manifest/v1",
+    "schema_version": 1,
+    "ship_allowed": False,
+    "skills_pin": {"tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+    "freeze_tags": {
+        "anchor": "PLACEHOLDER",
+        "trio": "PLACEHOLDER",
+        "skill-foundry": "PLACEHOLDER",
+    },
+    "package_matrix_version": "0.0.0-placeholder",
+}
+
+
 def test_given_placeholders_or_missing_goahead_when_gate_then_fail_closed():
     """GWT #3: freeze placeholders / missing go-ahead → no live vendoring."""
-    # Shipped freeze is PLACEHOLDER + no go-ahead.
+    # Pre-release freeze is PLACEHOLDER + no go-ahead.
     report = w9.evaluate_execute_ship_gate(
+        sources_doc=dict(_PLACEHOLDER_SOURCES_DOC),
+        freeze_doc=dict(_PLACEHOLDER_FREEZE_DOC),
         concurrent_skill_run_merged=False,
         john_go_ahead=False,
         clean_scan_ok=True,
@@ -328,6 +367,8 @@ def test_given_placeholders_or_missing_goahead_when_gate_then_fail_closed():
 
     with pytest.raises(w9.ShipGateError) as ei:
         w9.assert_execute_ship_gate(
+            sources_doc=dict(_PLACEHOLDER_SOURCES_DOC),
+            freeze_doc=dict(_PLACEHOLDER_FREEZE_DOC),
             concurrent_skill_run_merged=False,
             john_go_ahead=False,
         )
@@ -398,15 +439,18 @@ def test_ship_gate_checklist_fail_closed_until_all_green():
     assert ok["failed_items"] == []
 
 
-def test_verify_freeze_manifest_green_on_shipped_placeholders():
+def test_verify_freeze_manifest_released_shipped_docs():
+    # v1.2.5: shipped docs carry REAL tags. They verify clean in post-merge
+    # mode, and without the per-run go-ahead flags ship stays false —
+    # fail-closed survives the release.
     result = vfm.verify_freeze_manifest(
-        require_placeholders=True,
+        require_placeholders=False,
         concurrent_skill_run_merged=False,
         john_go_ahead=False,
     )
     assert result["ok"] is True
     assert result["ship_allowed"] is False
-    assert result["freeze_placeholders"] is True
+    assert result["freeze_placeholders"] is False
 
 
 # ── Foreman wave templates ───────────────────────────────────────────────────

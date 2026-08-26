@@ -40,6 +40,11 @@ export function extractJson(text) {
   // Each attempt is also retried with trailing commas stripped (a common model malformation
   // that breaks JSON.parse). Hardened 2026-07-17 to cut transient reviewer abstains.
   const stripTrailingCommas = (s) => s.replace(/,(\s*[}\]])/g, '$1');
+  // Grok CLI plain output (2026-08-20 gate-3 probe): the model can emit JSON whose
+  // string values contain LITERAL newlines/control chars — invalid JSON that broke
+  // Jumper Gate-3 as a phantom "transport failure". Last-resort candidate: control
+  // chars → spaces (legal between tokens, content-neutral inside prose strings).
+  const stripControlChars = (s) => s.replace(/[\u0000-\u001F]/g, ' ');
   const candidates = [
     t,
     (t.match(/\{[\s\S]*\}/) || [])[0],
@@ -48,7 +53,8 @@ export function extractJson(text) {
   for (const c of candidates) {
     if (typeof c !== 'string' || !c) continue;
     try { return JSON.parse(c); } catch { /* try comma-stripped */ }
-    try { return JSON.parse(stripTrailingCommas(c)); } catch { /* next candidate */ }
+    try { return JSON.parse(stripTrailingCommas(c)); } catch { /* try control-char-sanitized */ }
+    try { return JSON.parse(stripControlChars(stripTrailingCommas(c))); } catch { /* next candidate */ }
   }
   return null;
 }

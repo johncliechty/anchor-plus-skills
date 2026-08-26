@@ -81,5 +81,8 @@ Optional human checklist in `fixtures/sc1/sc1-human-signoff-checklist.json` must
 folder — ironic for the hygiene sentinel). It is now gitignored along with
 `_foreman-status.log`/`_sentinel-err.log`. Retention: when it exceeds ~200 MB, stop the
 sentinel, archive or delete the db (it is rebuildable runtime telemetry, not product
-state), and restart. A future wave may add automatic rotation; until then this runbook
-entry IS the rotation policy — do not let the db ride a release.
+state), and restart. TRUTH RECONCILE (2026-08-24 elegance sweep): automatic ROW retention is
+already wired — the daemon deletes old rows itself. What is NOT automatic is file shrink: the
+db file never gets smaller without a VACUUM/rebuild step (queued for the next daemon code-touch
+wave). Until VACUUM lands, the manual stop→archive→restart above applies only if file size
+becomes a problem. Do not let the db ride a release.

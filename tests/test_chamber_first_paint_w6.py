@@ -122,7 +122,11 @@ def test_measured_first_open_paints_under_2s_and_lands_the_decision_log(
             # a paint test. The paint marks ride the slice's own seal_open
             # fetch, so the measurement is unaffected; what the un-aborted
             # hydrate now proves is that it no longer deletes the slice.
-            pg.goto("%s/project/%s?token=%s#seal"
+            # (2026-08-15) ?classic=1 — ECG_SEAL_PAINT_MS is the CLASSIC
+            # chamber's mount measure. /project/<id> now serves the chamber
+            # page, which is rendered server-side and has no mount to time;
+            # its paint budget is asserted in tests/test_chamber_page_w1.py.
+            pg.goto("%s/project/%s?classic=1&token=%s#seal"
                     % (srv["base"], pid, TEST_TOKEN),
                     wait_until="domcontentloaded")
             # The #seal deep link clicks the Seal open; the slice paints and

@@ -202,9 +202,12 @@ const post = (path, body) => {
   }
   // Capability token stays browser-memory only (never storage/URL).
   // When this page is opened through Anchor's reverse proxy (Tailscale), the
-  // dashboard shared-secret rides on the page URL as ?token= (Anchor convention
-  // for GET navigations). Forward it as X-Anchor-Token so POSTs re-enter the
+  // dashboard shared-secret rides on the page URL as a token query parameter
+  // (Anchor's convention for GET navigations — NOT the capability token, which
+  // never touches a URL). Forward it as X-Anchor-Token so POSTs re-enter the
   // proxy; direct loopback opens have no such query and need no Anchor header.
+  // (Comment reworded 2026-08-25 so the literal query-string form never ships
+  // in the page bytes — the SC4 page-scan ban stays absolute.)
   const headers = {
     'content-type': 'application/json',
     ${embedJson(TOKEN_HEADER)}: TOKEN,

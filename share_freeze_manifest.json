@@ -1,21 +1,21 @@
 {
-  "schema": "share-freeze-manifest/v1",
-  "schema_version": 1,
-  "ship_allowed": false,
-  "freeze_commits": {
-    "anchor": "PLACEHOLDER",
-    "trio": "PLACEHOLDER",
-    "skill-foundry": "PLACEHOLDER"
-  },
-  "freeze_tags": {
-    "anchor": "PLACEHOLDER",
-    "trio": "PLACEHOLDER",
-    "skill-foundry": "PLACEHOLDER"
-  },
-  "skills_pin": {
-    "tag": "PLACEHOLDER",
-    "commit": "PLACEHOLDER"
-  },
-  "package_matrix_version": "0.0.0-placeholder",
-  "notes": "Freeze tags remain PLACEHOLDER until concurrent skill-run merge + John go-ahead. Plan-complete is not ship-allowed."
+ "schema": "share-freeze-manifest/v1",
+ "schema_version": 1,
+ "ship_allowed": true,
+ "freeze_commits": {
+  "anchor": "8134b314212f",
+  "trio": "1f3acba2b404",
+  "skill-foundry": "03faa0cfb068"
+ },
+ "freeze_tags": {
+  "anchor": "v1.2.5",
+  "trio": "v1.2.5",
+  "skill-foundry": "v1.2.5"
+ },
+ "skills_pin": {
+  "tag": "v1.2.5",
+  "commit": "03faa0cfb068"
+ },
+ "package_matrix_version": "1.2.5",
+ "notes": "v1.2.5 freeze 2026-08-25. The anchor commit above is the reviewed content commit; the anchor v1.2.5 tag lands on the freeze-record commit that follows it (this file's own commit) — only these freeze records differ between the two. trio and skill-foundry tags are annotated tags on the exact vendored commits (the bundle's vendor/bundled-skills/SOURCES.md carries the same shas). Ecgberht vendored at 8cbe95b153e1 (tag v1.2.5)."
 }

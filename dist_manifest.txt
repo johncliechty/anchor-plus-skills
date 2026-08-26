@@ -197,6 +197,13 @@ chamber_open.py
 chamber_rail.py
 chamber_pulse.py
 chamber_eta.py
+# The chamber PAGE (2026-08-15): /project/<id> renders chamber_page at MODULE
+# consequence — anchor_gui imports it per request; absent it, EVERY project
+# click on a collaborator's install is a 500. The multi-seal store rides with
+# it. (The v1.1.0 lesson: deny-by-default dropped a required file and the app
+# could not start. These rows exist so that cannot recur here.)
+chamber_page.py
+chamber_efforts.py
 # Steward chamber 2026-08 (W9): chamber_rail now imports chamber_deliverable
 # (the ENGINE-FED deliverable-state projection + the F3-bounded registry
 # action) at MODULE scope, anchor_gui.py's status_overlay handler imports
@@ -257,6 +264,31 @@ chamber_rebrief.py
 chamber_corrections.py
 chamber/standing-rules.json
 chamber/rebrief-channel-audit.json
+
+# ── Steward cockpit (2026-08-25 cutover) ───────────────────────────────────
+# anchor_gui.py imports steward_cockpit.steward_routes / steward_engine at
+# runtime for the DEFAULT /project/<id> page (the chamber is the ?classic=1
+# escape hatch now), so the deny-by-default gate requires the whole package
+# staged: routes (the Anchor mount), engine (the persistent stream-json
+# steward session), campaign (zero-model disk readers incl. the two-part
+# 10-minute status), fake_claude (the STEWARD_COCKPIT_FAKE stub the
+# healthcheck drives the cockpit through — zero tokens, the 2026-07-14
+# usage-leak lesson), and the static pages (cockpit shell + v1 conversation +
+# v3 terminal + report + ONE markdown renderer md.js). All stdlib-only;
+# runtime state lives OUTSIDE the repo (data_dir steward-cockpit-state.json,
+# per-project .anchor/ + .ecgberht/) — no repo data files.
+steward_cockpit/__init__.py
+steward_cockpit/steward_engine.py
+steward_cockpit/steward_routes.py
+steward_cockpit/steward_campaign.py
+steward_cockpit/fake_claude.py
+steward_cockpit/static/cockpit.html
+steward_cockpit/static/v1.html
+steward_cockpit/static/v3.html
+steward_cockpit/static/report.html
+steward_cockpit/static/shared.js
+steward_cockpit/static/shared.css
+steward_cockpit/static/md.js
 
 # ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
 # Stdlib-only: journal (the per-project append-only JSONL event journal — the
@@ -418,6 +450,9 @@ dist_manifest.txt
 tests/conftest.py
 tests/__init__.py
 tests/fake_claude.py
+# test_chamber_page_w1 imports this harness; shipping the tests without
+# it fails collection on every collaborator install.
+tests/chamber_harness.py
 tests/test_*.py
 # DENIALS (!pattern): PII-planting suites — they embed synthetic secrets and
 # personal-data shapes BY DESIGN (scrub/redaction tests) and must never ship.

@@ -282,17 +282,23 @@ def render_blocked_turn(blocked, steward_name="the steward") -> str:
             '<div class="bq">“%s” <span class="bqid">%s</span></div>'
             % (_esc(str(q.get("text") or ""), quote=True),
                _esc(str(q.get("question_id") or ""), quote=True)))
+    # (2026-08-15) The HELD answer is rendered. The seat call already ran and
+    # was already debited; withholding its text turned a bookkeeping refusal
+    # into "the steward ignored me". A guardrail is never the whole turn.
+    held = str(b.get("held_say") or "").strip()
+    held_html = ('<div class="bheld">%s</div>' % _esc(held, quote=True)) if held else ""
     return (
         '<div class="msg steward blocked">'
         '<div class="who">⛔ %s — turn blocked</div>'
+        '%s'
         '<div class="bfind">%s · a direct question from John lacks a typed '
         'answer-reference</div>'
         '%s'
         '<div class="bnote">The engine refused to close this turn — the E1 '
         'refusal state, drawn distinct from “are you working”.</div>'
         '</div>'
-    ) % (_esc(str(steward_name), quote=True), _esc(finding, quote=True),
-         "".join(rows))
+    ) % (_esc(str(steward_name), quote=True), held_html,
+         _esc(finding, quote=True), "".join(rows))
 
 
 def amendment_gate_state(path=None) -> dict:

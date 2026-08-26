@@ -399,6 +399,11 @@ HOSTILE_FIXTURES = {
     "chamber_open._render_flow": _drive_open,
     "chamber_open._render_convo": _drive_open,
     "chamber_open._render_degraded": _drive_open,
+    # (2026-08-15) The honest empty rail. It takes NO input and carries no
+    # interpolation slot, so the hostile strings cannot reach it — it is
+    # driven through the same open fixture anyway, so the registry and the
+    # fixture map cannot drift apart and a future slot added here is caught.
+    "chamber_open._empty_rail_html": _drive_open,
     "chamber_open.render_seal_slice_html": _drive_open,
     "chamber_rail._skillch_html": _drive_rail,
     "chamber_rail._yield_html": _drive_rail,

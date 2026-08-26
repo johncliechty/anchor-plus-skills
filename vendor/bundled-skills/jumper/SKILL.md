@@ -108,16 +108,27 @@ node bin/jumper-run.mjs --problem "<statement>" --depth FULL --fan-out <ideaRoun
   (`JumperKillGatesFloorHalt`); engine does not start.
 - **Model seats are pre-decided** (invocation discipline): drafter/ideation = Claude; Gate 3 =
   Gemini via agy (`JUMPER_GATE3_DRIVER` overrides the driver, never the independence rule).
-- **HALTs are honest outcomes, not bugs**: `JumperSelfReviewHalt` = Gate 3 resolved to the drafter
-  family (fixed at PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any
-  paid seat; fix model prefs or pass `--no-live-refuter` for an honest single-family run);
+- **HALTs are honest outcomes, not bugs — and a HALT never destroys paid work (2026-08-19,
+  journal 0031)**: `JumperSelfReviewHalt` = Gate 3 resolved to the drafter family (fixed at
+  PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any paid seat; fix
+  model prefs or pass `--no-live-refuter` for an honest single-family run);
   `JumperCrossFamilyDegradeHalt` = agy down (Jumper NEVER silently self-reviews — rerun when agy
-  is back); `RefuterBudgetHalt` = more firing elevations than the refuter budget (prereg R=3) —
-  raise it with **`--budget N`** (journals 0003/0012: this HALT killed two tournaments when the
-  dial didn't exist). `--no-live-refuter` floors elevations to SPECULATIVE honestly.
+  is back; if candidates were already built, the CLI emits them to `--output` stamped
+  **NOT FULLY VETTED** instead of nothing). `RefuterBudgetHalt` no longer kills a composed run
+  (it killed THREE tournaments: journals 0003/0012/0030): the compose seam CAPS refuter demand
+  at the budget (prereg R=3, or `--budget N`) — the first R firing elevations are refuted for
+  real, the excess floor to SPECULATIVE with the "no independent refutation ran" stamp, and the
+  output carries `refutation_capped` naming the numbers. Standalone gandalf keeps its HALT.
+  `--no-live-refuter` floors ALL elevations to SPECULATIVE honestly.
 - **Watch the heartbeats** (2026-07-25): the CLI streams `jumper: gandalf:start|done`,
   `sphere:i/n`, `killfilter:candidate i/n …` to stderr — a healthy long run is visibly moving;
   silence for many minutes is the anomaly (journal 0014's false-DONE came from this blindness).
+- **Startup can no longer stall silently (2026-08-19, journal 0031)**: the CLI writes an
+  IN-FLIGHT run record (start time, pid, input) the moment the engine starts — record present
+  = engine started; absent = the launch wrapper never reached node (the BA-815 0.14s-CPU/25-min
+  stall left zero trace). A STARTUP WATCHDOG then fails the run LOUDLY, writing WHY into that
+  same record, if the first model round-trip hasn't landed within `JUMPER_STARTUP_WATCHDOG_S`
+  (default 900). The record is rewritten in place at HALT/success — one record per run.
 - **NG canaries are executable** (`test/ng-canaries.test.mjs` + `canaries/canary-set.v2.json`):
   no gate-bypass option exists, pre-stamped tiers get re-graded, same-sphere survivors are
   never relabeled as diverse.

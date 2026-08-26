@@ -29,6 +29,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import process from 'node:process';
 
@@ -121,10 +122,11 @@ export async function buildCharter() {
   const pack = loadPack('investment-memo');
   const criteria = (pack?.rubric?.criteria ?? []).map((c) => `- [${c.id}] ${c.statement}`);
   return [
-    'DEAL-REVIEW CHARTER (financial-analyst adversarial engine, 2026-07-25).',
-    'The artifact under review is a FINANCIAL DEAL REPORT produced by a deterministic',
-    'exact-Decimal calculation engine. The math is NOT in dispute (tie-out proved',
-    'Excel==Python); your job is everything the math cannot prove:',
+    'DEAL-REVIEW CHARTER (financial-analyst adversarial engine, 2026-07-25; tie-out premise',
+    'made honest 2026-08-25). The artifact under review is a FINANCIAL DEAL REPORT produced',
+    'by a deterministic exact-Decimal calculation engine. Whether the math tied out is',
+    'CARRIED IN THE RECORD (tie_out.state) — never assumed; your job is everything the',
+    'math cannot prove:',
     ...criteria,
     '- [fa1] TEMPLATE OMISSIONS: the shipped templates are textbook-granularity',
     '  (no option-pool shuffle, SAFEs, share counts, catch-up tiers, IRR/MOIC unless',
@@ -153,6 +155,12 @@ export async function runDealReview({
   agent = null,
   live = false,
   outDir = null,
+  // 2026-08-25 (John-ratified card): the tie-out record CROSSES the seam. The charter
+  // asserted "tie-out proved Excel==Python" on faith; now it is an input. `tieOut` is the
+  // record from agent_interface.tie_out(); `requireTieOut` (the chain sets it) makes a GO
+  // impossible without a PASSING record. Without a record the verdict says UNVERIFIED.
+  tieOut = null,
+  requireTieOut = false,
   log = (m) => process.stderr.write(`${m}\n`),
 } = {}) {
   if (typeof reportText !== 'string' || !reportText.trim()) {
@@ -176,16 +184,26 @@ export async function runDealReview({
   if (!agent) {
     // The literature-review honest-stop pattern, verbatim in spirit: nothing was
     // reviewed; nothing is stamped reviewed; the grounding gate result still stands.
+    const tieOutVerifiedGO = tieOut != null && tieOut.ok === true;
+    const tieOutStateGO = tieOutVerifiedGO
+      ? `VERIFIED (${tieOut.nodes_compared ?? '?'} nodes, max delta ${tieOut.max_delta ?? '?'})`
+      : tieOut != null ? 'FAILED (record present, ok!==true)' : 'UNVERIFIED (no record crossed the seam)';
+    const gatesPass = grounding.ok && (!requireTieOut || tieOutVerifiedGO);
     const record = {
       skill: 'financial-analyst', engine: 'deal-review', ts: new Date().toISOString(),
       status: 'STOPPED-HONESTLY',
       reason: 'no live model seats (--live) and no injected agent — the adversarial review did NOT run; nothing was fabricated',
       grounding,
+      tie_out: { state: tieOutStateGO, verified: tieOutVerifiedGO, required: requireTieOut === true, record: tieOut ?? null },
       cross_model: false,
-      verdict: grounding.ok ? 'UNREVIEWED (grounding gate PASSED; adversarial review not run)' : 'BLOCKED (grounding gate FAILED; adversarial review not run)',
+      verdict: gatesPass ? 'UNREVIEWED (deterministic gates PASSED; adversarial review not run)' :
+        !grounding.ok ? 'BLOCKED (grounding gate FAILED; adversarial review not run)' :
+        `BLOCKED (tie-out ${tieOutStateGO}; adversarial review not run)`,
     };
+    record.receipt = buildReceipt(reportText, { nodeValues, declaredInputs, tieOutState: tieOutStateGO, grounding });
     if (outDir) writeRecord(outDir, record, log);
     log(`STOPPED HONESTLY: ${record.reason}`);
+    log(`RECEIPT (required in the deliverable footer): ${record.receipt.footer_line}`);
     return record;
   }
 
@@ -224,11 +242,17 @@ export async function runDealReview({
   const families = tracker ? tracker.families() : [];
   const cross_model = families.length > 1;
   const openBlockers = (lastVerdict?.blockers ?? []).map((b) => ({ id: b.id, severity: b.severity, agreement: b.agreement, message: b.message }));
-  const pass = grounding.ok && (lastVerdict?.dry === true) && !lastVerdict?.inconclusive && judgeVerdict?.lockable === true;
+  const tieOutVerified = tieOut != null && tieOut.ok === true;
+  const tieOutState = tieOutVerified
+    ? `VERIFIED (${tieOut.nodes_compared ?? '?'} nodes, max delta ${tieOut.max_delta ?? '?'})`
+    : tieOut != null ? 'FAILED (record present, ok!==true)' : 'UNVERIFIED (no record crossed the seam)';
+  const pass = grounding.ok && (lastVerdict?.dry === true) && !lastVerdict?.inconclusive && judgeVerdict?.lockable === true
+    && (!requireTieOut || tieOutVerified);
   const record = {
     skill: 'financial-analyst', engine: 'deal-review', ts: new Date().toISOString(),
     status: 'REVIEWED',
     grounding,
+    tie_out: { state: tieOutState, verified: tieOutVerified, required: requireTieOut === true, record: tieOut ?? null },
     rounds: roundResults,
     openBlockers,
     judge: { decision: judgeVerdict?.decision ?? null, lockable: judgeVerdict?.lockable === true, stamp: judgeVerdict?.stamp ?? null },
@@ -236,12 +260,30 @@ export async function runDealReview({
     substrate_families: families,
     single_family_note: cross_model ? null : 'single-family review — shared-blind-spot risk is NOT mitigated (stamped honestly, never claimed otherwise)',
     live: liveInfo,
-    verdict: pass ? 'GO (grounded · shark-dry · judge lockable)' :
+    // 2026-08-25 (John-ratified, wording only): the machine's say-so never ships a model —
+    // John's ack is the real gate.
+    verdict: pass ? `GO — awaiting human ack (grounded · shark-dry · judge lockable · tie-out ${tieOutVerified ? 'verified' : tieOut != null ? 'FAILED but not required — read tie_out.state' : 'not required'})` :
+      requireTieOut && !tieOutVerified && grounding.ok ? `BLOCKED (tie-out ${tieOutState})` :
       grounding.ok ? 'BLOCKED (open findings or judge held)' : 'BLOCKED (grounding gate FAILED)',
   };
+  record.receipt = buildReceipt(reportText, { nodeValues, declaredInputs, tieOutState, grounding });
   if (outDir) writeRecord(outDir, record, log);
   log(`verdict: ${record.verdict} · cross_model=${cross_model}`);
+  log(`RECEIPT (required in the deliverable footer): ${record.receipt.footer_line}`);
   return record;
+}
+
+// RECEIPT (2026-08-25, John's rider): binds the exact report bytes + graph values + tie-out
+// state to the gate results. A missing footer line marks a deliverable visibly unverified.
+function buildReceipt(reportText, { nodeValues, declaredInputs, tieOutState, grounding }) {
+  const sha = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+  const report_sha256 = sha(String(reportText));
+  const values_sha256 = sha(JSON.stringify({ nodeValues, declaredInputs }));
+  const ts = new Date().toISOString();
+  return {
+    report_sha256, values_sha256, ts,
+    footer_line: `financial-analyst receipt ${report_sha256.slice(0, 12)} · grounding ${grounding.ok ? 'CLEAN' : 'FAILED'} (${grounding.checked} checked) · tie-out ${tieOutState} · values ${values_sha256.slice(0, 12)} · ${ts}`,
+  };
 }
 
 function writeRecord(outDir, record, log) {
@@ -291,6 +333,7 @@ if (invokedDirectly()) {
   }
   const values = argOf(argv, '--values');
   const inputs = argOf(argv, '--inputs');
+  const tieOutPath = argOf(argv, '--tie-out');
   runDealReview({
     reportText: fs.readFileSync(reportPath, 'utf8'),
     nodeValues: values ? JSON.parse(fs.readFileSync(values, 'utf8')) : {},
@@ -298,8 +341,13 @@ if (invokedDirectly()) {
     rounds: Number(argOf(argv, '--rounds')) || 3,
     live: argv.includes('--live'),
     outDir: argOf(argv, '--out'),
+    tieOut: tieOutPath ? JSON.parse(fs.readFileSync(tieOutPath, 'utf8')) : null,
+    requireTieOut: argv.includes('--require-tie-out'),
   }).then((rec) => {
-    process.exit(rec.verdict.startsWith('GO') || rec.status === 'STOPPED-HONESTLY' ? 0 : 1);
+    // 2026-08-25 exit-code fix (John-ratified; was unverified, now CONFIRMED): the old
+    // predicate exited 0 for ANY STOPPED-HONESTLY record — including a FAILED grounding
+    // gate — so a script trusting the exit code waved through an ungrounded report.
+    process.exit(rec.verdict.startsWith('GO') || rec.verdict.startsWith('UNREVIEWED') ? 0 : 1);
   }).catch((err) => {
     console.error(`deal-review: ${err?.message ?? err}`);
     process.exit(1);

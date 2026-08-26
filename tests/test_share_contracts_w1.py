@@ -54,28 +54,34 @@ def test_shipped_capability_matrix_validates():
     ) == []
 
 
-def test_shipped_sources_pin_placeholders_only():
-    problems = sc.validate_sources_pin_doc(
-        sc.load_data("sources_pin"), require_placeholders=True
-    )
-    assert problems == []
+# v1.2.5 (2026-08-25): the shipped freeze records are RELEASED — real pins.
+# The W1 placeholder law ("PLACEHOLDER until concurrent skill-run merge +
+# John go-ahead") was satisfied by the go-ahead recorded in
+# ship_allowed_stamp_text; these tests now pin the RELEASED contract. The
+# placeholder MODE of the validators keeps its own synthetic-doc tests below —
+# the law survives; only the shipped files moved past it.
+def test_shipped_sources_pin_released():
     doc = sc.load_data("sources_pin")
-    assert doc["ship_allowed"] is False
+    assert sc.validate_sources_pin_doc(doc, require_placeholders=False) == []
+    assert doc["ship_allowed"] is True
+    assert "John" in doc["ship_allowed_stamp_text"]
+    for pin in doc["pins"]:
+        assert not sc.is_placeholder(pin["tag"]), pin["repo"]
+        assert not sc.is_placeholder(pin["commit"]), pin["repo"]
 
 
-def test_shipped_freeze_manifest_placeholders_only():
-    problems = sc.validate_freeze_manifest_doc(
-        sc.load_data("freeze_manifest"), require_placeholders=True
-    )
-    assert problems == []
+def test_shipped_freeze_manifest_released():
     doc = sc.load_data("freeze_manifest")
-    assert doc["ship_allowed"] is False
+    assert sc.validate_freeze_manifest_doc(
+        doc, require_placeholders=False
+    ) == []
+    assert doc["ship_allowed"] is True
     for repo, tag in doc["freeze_tags"].items():
-        assert sc.is_placeholder(tag), repo
+        assert not sc.is_placeholder(tag), repo
 
 
 def test_validate_shipped_contracts_all_green():
-    report = sc.validate_shipped_contracts(require_placeholders=True)
+    report = sc.validate_shipped_contracts(require_placeholders=False)
     for name, problems in report.items():
         assert problems == [], "%s: %s" % (name, problems)
 

@@ -1,0 +1,132 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>The Terminal — steward prototype V3</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/shared.css">
+<style>
+  body { font-family: var(--mono); background: #0a0c0f; }
+  .v3wrap { display: flex; flex-direction: column; height: 100vh; }
+  .v3top { padding: 6px 14px; border-bottom: 1px solid #1d232c; color: #8a93a3;
+           font-size: 12.5px; display: flex; gap: 14px; align-items: center; }
+  .v3top .flag { color: #e06c5f; }
+  .scroll { flex: 1; overflow-y: auto; padding: 14px 18px; }
+  .blk { max-width: none; margin-bottom: 10px; }
+  .blk .who { display: inline; margin-right: 8px; }
+  .blk .body { display: inline; font-size: 14px; font-family: var(--mono); }
+  .blk.john .body { color: #efe6cd; }
+  .blk.steward { display: block; }
+  .blk.steward .who { display: block; margin-bottom: 2px; }
+  .blk.steward .body { display: block; }
+  .composer { padding: 8px 14px 12px; border-top: 1px solid #1d232c;
+              background: #0a0c0f; display: flex; gap: 10px; align-items: flex-end; }
+  .prompt { color: #56c17a; padding-bottom: 8px; }
+  .composer textarea { flex: 1; background: transparent; border: none;
+                       color: #d7dde6; font: 14px var(--mono); resize: none;
+                       min-height: 24px; max-height: 40vh; outline: none; }
+  .mapblock { color: #8a93a3; white-space: pre; font-size: 13px;
+              border-left: 2px solid #262e3a; padding-left: 12px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="v3wrap">
+  <div class="v3top">
+    <span class="dot" data-att></span>
+    <span data-name>…</span>
+    <span data-line></span>
+    <span class="flag" data-flagline></span>
+    <span class="spacer" style="flex:1"></span>
+    <span class="busy" data-busy></span>
+    <span data-spend></span>
+    <button data-wake>Wake</button>
+  </div>
+  <div class="scroll"></div>
+  <div class="composer">
+    <span class="prompt">john&gt;</span>
+    <textarea data-say rows="1"
+      placeholder="talk · /map shows the map · Ctrl+Enter sends"></textarea>
+    <button class="send" data-send>Send</button>
+  </div>
+</div>
+<script src="/static/md.js"></script>
+<script src="/static/shared.js"></script>
+<script>
+function mapText(map) {
+  const mark = { done: "x", active: ">", waiting: "!" };
+  let out = "goal: " + (map.goal || "").split("\n")[0] + "\n";
+  out += "steps " + map.steps_done + "/" + map.steps_total + "\n";
+  map.steps.forEach(s => {
+    out += " [" + (mark[s.status] || " ") + "] " + s.name +
+      (s.status === "waiting" && s.waiting_on ? "  <- " + s.waiting_on : "") + "\n";
+  });
+  if (map.heartbeat.human_wait) out += "waiting on you: " + map.heartbeat.human_wait + "\n";
+  return out;
+}
+const IS_GENERAL = new URLSearchParams(location.search).get("general") === "1";
+Proto.init({
+  skipHistory: IS_GENERAL,  // the campaign transcript belongs to the steward
+  johnLabel: "john>", stewardLabel: IS_GENERAL ? "term>" : "ecgberht>",
+  renderMap(map) {
+    if (IS_GENERAL) {
+      document.querySelector("[data-name]").textContent =
+        map.name + " · workbench terminal";
+      document.querySelector("[data-line]").textContent = "";
+      document.querySelector("[data-flagline]").textContent = "";
+      document.title = map.name + " — terminal";
+      return;
+    }
+    document.querySelector("[data-name]").textContent = map.name;
+    const active = map.steps.find(s => s.status === "active");
+    document.querySelector("[data-line]").textContent =
+      "step " + (map.steps_done + 1) + "/" + map.steps_total +
+      (active ? " · " + active.name : "");
+    document.querySelector("[data-flagline]").textContent =
+      map.attention.state === "needs_you" ? "needs you" : "";
+    const att = document.querySelector("[data-att]");
+    att.className = "dot " + (map.attention.state || "unknown");
+  }
+});
+// workbench terminals: seat switch (claude | grok | gemini), handoff-preserving
+if (IS_GENERAL) {
+  const qp = new URLSearchParams(location.search);
+  const args = { dir: qp.get("dir") || "", general: true,
+                 term: qp.get("term") || "" };
+  const sel = document.createElement("select");
+  ["claude", "grok", "gemini"].forEach(c => {
+    const o = document.createElement("option"); o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  });
+  sel.title = "switch this terminal's engine - work is handed off, nothing lost";
+  sel.style.cssText = "background:#1b212b;color:#d7dde6;border:1px solid #262e3a;" +
+    "border-radius:6px;font:12px var(--mono);padding:2px 6px";
+  const wake = document.querySelector("[data-wake]");
+  wake.parentNode.insertBefore(sel, wake);
+  // a workbench terminal is just a CLI - no steward, no Wake button
+  wake.style.display = "none";
+  fetch("/api/state?dir=" + encodeURIComponent(args.dir) + "&general=1&term=" +
+        encodeURIComponent(args.term))
+    .then(r => r.json()).then(st => { sel.value = st.cli || "claude"; });
+  sel.onchange = async () => {
+    const r = await fetch("/api/engine", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ action: "switch", cli: sel.value }, args)) });
+    const j = await r.json();
+    sel.value = j.cli || "claude";
+  };
+}
+// /map command, intercepted locally before send
+const ta = document.querySelector("[data-say]");
+ta.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && ta.value.trim() === "/map") {
+    e.preventDefault(); e.stopImmediatePropagation();
+    ta.value = "";
+    fetch("/api/map").then(r => r.json()).then(m => {
+      const s = document.querySelector(".scroll");
+      const d = document.createElement("div");
+      d.className = "mapblock"; d.textContent = mapText(m);
+      s.appendChild(d); s.scrollTop = s.scrollHeight;
+    });
+  }
+}, true);
+</script>
+</body></html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Steward — V1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/shared.css">
+</head>
+<body>
+<div class="app appx app3">
+  <div class="bar">
+    <span class="dot" data-att></span>
+    <span class="title" data-name>…</span>
+    <span class="spacer"></span>
+    <span class="busy" data-busy></span>
+    <span class="chip" data-spend></span>
+    <button data-drive>▶ Go</button>
+    <button data-theme-toggle title="switch the look">style</button>
+    <button data-boneyard title="archive this effort to the boneyard">🪦</button>
+    <button data-min title="collapse back to the cockpit">—</button>
+  </div>
+
+  <div class="goalbar" data-goalbar title="click to expand or close the goal">
+    <div class="gline">
+      <span class="glabel">Goal</span>
+      <span class="gbrief" data-goalbrief>…</span>
+      <span class="gcaret">▸</span>
+    </div>
+    <div class="gfull">
+      <div data-goalfull></div>
+      <div class="ghist" data-goalhist></div>
+      <div class="gdeliv" data-deliverables></div>
+    </div>
+  </div>
+
+  <div class="leftcol">
+    <div class="rail">
+      <div class="railhead">
+        <h2>The map</h2>
+        <button data-railtoggle title="collapse the map">«</button>
+      </div>
+      <div class="progress" data-progress></div>
+      <ul class="steps" data-steps></ul>
+      <div class="fresh" data-fresh></div>
+      <div class="gaps" data-gaps></div>
+    </div>
+  </div>
+  <div class="railtab" data-railtoggle2>the map</div>
+
+  <div class="main">
+    <div class="openq" data-openq title="the steward is waiting on this — click to answer"></div>
+    <div class="scroll"></div>
+    <div class="composer">
+      <textarea data-say rows="1"
+        placeholder="Talk — dictate with Win+H as long as you like. “go” drives; “pause” stops; “later: …” parks an idea."></textarea>
+      <div class="row">
+        <span class="hint">Ctrl+Enter or Send · Enter makes a new line · dictate with Win+H · never locked, never lost</span>
+        <button class="send" data-send>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="statustab" data-statustoggle>
+    <span class="light orange" data-light2></span>
+    <span>STATUS</span>
+  </div>
+  <div class="rightcol" data-statuspane>
+    <div class="pgrip" data-pgrip title="drag to resize"></div>
+    <div class="popen">
+      <div class="phead2">
+        <span class="light orange" data-light></span>
+        <span data-statetext>…</span>
+        <button data-statustoggle2 title="collapse">»</button>
+      </div>
+      <div class="platest" data-latest></div>
+      <div class="pmsgs" data-msgs></div>
+      <div class="pscroll"></div>
+      <div class="pfiles">
+        <h2>Files produced</h2>
+        <div class="flist" data-flist></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/md.js"></script>
+<script src="/static/shared.js"></script>
+<script>
+Proto.init({ statusPane: true });
+const app = document.querySelector(".app");
+document.querySelectorAll("[data-statustoggle],[data-statustoggle2]").forEach(b =>
+  b.onclick = () => app.classList.toggle("statusopen"));
+const t2 = document.querySelector("[data-railtoggle2]");
+if (t2) t2.onclick = () => app.classList.toggle("railhide");
+// slide the open status pane wider/narrower by its left grip
+const grip = document.querySelector("[data-pgrip]");
+if (grip) grip.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  grip.setPointerCapture(e.pointerId);
+  const move = (ev) => {
+    const w = Math.min(760, Math.max(280, window.innerWidth - ev.clientX));
+    document.documentElement.style.setProperty("--statusw", w + "px");
+  };
+  const up = () => { grip.removeEventListener("pointermove", move);
+                     grip.removeEventListener("pointerup", up); };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", up);
+});
+</script>
+</body></html>

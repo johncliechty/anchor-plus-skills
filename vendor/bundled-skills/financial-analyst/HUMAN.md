@@ -13,7 +13,7 @@
 - You’re looking for market “attractiveness” opinions without your own benchmarks
 
 ## What you get
-- Templates to start from (e.g. VC round comparison, real-estate waterfall)
+- Templates to start from (e.g. VC round comparison, real-estate waterfall, cancer human-capital loss)
 - Exact-decimal dependency graph so inputs recompute cleanly
 - Reports grounded in model nodes (not vibes)
 - Optional synchronized Excel + Python with a machine-checked tie-out

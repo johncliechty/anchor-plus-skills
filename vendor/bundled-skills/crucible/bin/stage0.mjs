@@ -532,6 +532,34 @@ export async function runStage0({
   approved = false,
   log = () => {},
 } = {}) {
+  // NS-01 completion (2026-08-25, John-ratified card; journal 0087): Stage-0 SIZES THE
+  // JOB ITSELF, first line of the run — the band AUTO-APPLIES and ANNOUNCES itself,
+  // never asks (a confirm question would be a fourth gate; Elegance rule 3 — the wire's
+  // confirm-halt is deliberately not thrown). An unsizable intake defaults FULL LOUDLY,
+  // so 0087's silent-FULL tax on small work cannot recur unseen.
+  const triage = assessComplexity({ intent, ...(input || {}) });
+  if (triage.defaultedToFull) {
+    log(`stage0 band: FULL (DEFAULTED — triage could not size this intake: ${triage.rationale || 'no sizing signals'}) — auto-applied, announced not asked`);
+  } else {
+    log(`stage0 band: ${triage.band} (auto — ${triage.rationale || 'triage recommendation'}; tier=${triage.nsTier}) — auto-applied, announced not asked`);
+  }
+  // 2026-08-25 hardening (review finding): the auto-band must also CREATE THE LOCK
+  // RECORD — Stage-2's handoff emit fail-closes on a missing lock, so an auto-banded
+  // run would poison the Foreman handoff downstream. The lock records the auto-apply
+  // honestly (decision=confirm of the shared recommendation; rationale carries AUTO).
+  try {
+    const locked = resolveStage0TriageLock({
+      complexity: triage,
+      confirmedDepth: triage.nsDepth,
+      confirmedTier: triage.nsTier,
+      decision: 'confirm',
+      rationale: `stage0 AUTO-BAND (announced, not asked; Elegance rule 3): ${triage.rationale || 'shared triage recommendation'}`,
+    });
+    triage.lock = locked.lock;
+  } catch (e) {
+    log(`stage0 band: lock record NOT created (${e?.message || e}) — handoff emit will refuse until a lock exists (fail-closed, loud)`);
+  }
+
   const sel = selectTier(input);
   const greenfield = sel.tier === TIERS.GREENFIELD;
   log(`stage0: ${sel.tier} — ${sel.reason}`);
@@ -553,5 +581,7 @@ export async function runStage0({
   // (the normal path) for the user to lock. Drift detection begins after it.
   const lock = lockNorthStar({ framing, ingestGate, salvageAnswer, approved, log });
 
-  return { tier: sel.tier, greenfield, framing, ingest, ingestGate, salvage, lock };
+  // `triage` rides the result so launchers route stage1/stage2 depth from the engine's
+  // own sizing (triage.depth) instead of a hand-set value — never a second rubric.
+  return { tier: sel.tier, greenfield, framing, ingest, ingestGate, salvage, lock, triage };
 }

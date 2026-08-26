@@ -102,7 +102,9 @@ def test_register_populates_tile_and_kanban(server, tmp_path):
     # light, no run metrics). v12 Wave 2 Layout-D: a discovered session is a
     # headline card or a shelf little-tile — both carry the legacy
     # ``tile lane-tile`` alias + ``data-session``/``data-lane``/``data-light``.
-    code, win = _get_text(base + f"/project/{pid}")
+    # (2026-08-25) The Layout-D board lives on the CLASSIC window (?classic=1);
+    # the default /project/ page is the cockpit since the cutover.
+    code, win = _get_text(base + f"/project/{pid}?classic=1")
     assert "imported" in win
     # One imported (grey) tile per discovered lane (3 total). Class order varies
     # by Layout-D variant (``headline tile lane-tile`` / ``minitile tile lane-tile``)

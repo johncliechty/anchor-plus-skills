@@ -100,7 +100,7 @@ something else" — options are a convenience, never a cage).
 
 **Spelling:** **Ecgberht** only (never Expert as product name; Egbert/Ecgbert are historical asides only).
 
-Ecgberht keeps durable campaign memory and cheap portfolio attention so a fresh session knows the north star, active effort, human wait, and best next action — commissioning slice tools without becoming them.
+**North Star (LOCKED — John, 2026-08-25, as written):** Ecgberht keeps durable campaign memory and cheap portfolio attention so a fresh session knows the north star, active effort, human wait, and best next action — commissioning slice tools without becoming them.
 
 > **Humans:** this file is the agent/engine protocol. Templates live under `templates/`; schemas under `schema/`; fixtures under `fixtures/`; CLI under `bin/ecgberht.mjs`.
 
@@ -136,7 +136,7 @@ record it read is planned from the wrong substrate; start over.
 
 CLI: `node bin/ecgberht.mjs <verb> [args…]` (package bin: `ecgberht`).
 
-| Verb | Aliases | Intent (bodies land in later waves) |
+| Verb | Aliases | Intent (bodies BUILT — engine-enforced; "later waves" line retired 2026-08-25) |
 |------|---------|--------------------------------------|
 | `status` | — | Pointer from Strip (+ Face if needed): active effort, human wait, next |
 | `next` | — | N=1 or portfolio next; strip-first rank + why |
@@ -159,6 +159,48 @@ CLI: `node bin/ecgberht.mjs <verb> [args…]` (package bin: `ecgberht`).
 - **Control verbs stay deterministic.** A SHORT utterance (≤ `ACT_MAX_WORDS`) still compiles through the v1 act table (`engine/dialogue.mjs`) — carry on / park that / confirm commission / switch seat. A model never decides to spend or write. A short destructive command ("delete all projects") still refuses and writes nothing.
 - **Everything else is a CONVERSATION.** Free-form speech goes to the steward's **seat model** with the Face, roadmap projection, active step and the open `scaffold_proposal` as context. It answers, asks what it needs, and — when it has enough — emits a typed proposal for review. He refines **by talking**; each re-proposal is a new hash-bound `scaffold_proposal`.
 - **The destructive guard does NOT run on the converse lane.** "Drop that stage" is ordinary editing, and nothing on this lane executes: the seat is read-only and every proposal needs a human hash-bound confirm.
+
+**Campaign standing rules — 2026-08-25 (promoting the steward's OWN journaled laws;
+Elegance rule 9: a correction that lives only in a journal has not been made).**
+
+- **Deliverables register (campaign journal 0010).** Every campaign keeps
+  `DELIVERABLES.md` at its root — one table row (What | Where | Date) per thing a
+  human would open; finals also copied to `deliverables/`. A roadmap step whose
+  done-condition produces a human-facing artifact is NOT done until listed. When
+  John asks "what have we produced / where are the deliverables?", answer FROM
+  this register — titles, one-liners, paths. The cockpit's 📦 tile and goal-bar
+  links read the same file; there is exactly one register.
+- **Read-back gate (campaign journal 0008).** A bare-token answer ("go", "yes",
+  "ok") arriving across a session boundary, after a resume, or after ANY
+  discontinuity is never an approval by itself: read the pending decision back
+  as ONE canonical line and get the yes against that line before spending.
+- **Plain language at WRITE time (campaign journal 0009).** Every string bound
+  for John — the ask sentence, next-recommended, the Face pointer — is written
+  in plain words when it is written; codenames (step ids, K=notation, OSF codes)
+  stay in machine fields only. A sentence John must read that contains a step id
+  is not done being written.
+
+**The Grasscatcher capacity — 2026-08-19 (John's commission).** The grasscatch
+list is a first-class conversational duty, not just a verb. It is the talking
+face of the Rabbit-Catcher and the Parable of the Oranges:
+
+- **Structured entries.** New grasscatch writes are `{text, when (ISO date),
+  source (session/effort), status: caught|revived|dropped}` appended to
+  `strip.json → grasscatch` via the normal Strip path (single writer; legacy
+  bare strings stay valid on read). UI surfaces (the Anchor seal page) render
+  this list read-only.
+- **Catch proactively.** When a described scope splits in two, OFFER the split:
+  do the load-bearing part now, catch the other with its reason and handback
+  shape. When John says "too complicated — simplify," whatever the
+  simplification removes is CAUGHT, never silently dropped. When the steward
+  itself doubts a step ("are you sure you want all of these?"), the doubted
+  steps are offered to the catcher, one line, his call.
+- **Zero-ceremony catch.** An utterance starting "later:" / "grasscatcher:"
+  is caught verbatim in the same turn, and the turn returns to the step in
+  hand — no follow-up questions.
+- **Revive at stand-up.** READ-BEFORE-PLAN includes the grasscatch list; when
+  a caught idea matches the current discussion, surface it — at most ONE per
+  turn, one line, with its date and source.
 
 **E5 — AMENDED 2026-08-05 (John's decision).** The conversation is now KEPT, and is never authoritative.
 
@@ -300,23 +342,11 @@ Distinct from campaign `soft-vet` / `grasscatch` verb receipts. The ledger freez
 - Module: `engine/grasscatcher-ledger.mjs`  
 - Strip labels: `strip.json` → `grasscatch`  
 
-### Stage-2 freeze set (W6)
+### Stage-2 freeze set + canary pack (W6 — enforced in code, prose moved)
 
-Locked artifact set for Foreman without re-litigating architecture: file tree, schemas, fixture matrix, verb contracts, heal law, A1 discovery rules, non-goals. **Depth remains LITE** skill+engine MVP.
-
-- Fixture: `fixtures/stage2-freeze.json`  
-- Module: `engine/stage2-freeze.mjs`  
-- Verification: `engine/verification-pack.mjs` + `engine/canary-pack.mjs`  
-
-### Canary pack (W6)
-
-| Canary | Rule |
-|--------|------|
-| openclaw | no dependency import/require paths |
-| daemon | no createServer / listen loops |
-| compose-only | five skill hooks only (researchPrime/Crucible/Foreman/Gandalf/Jumper) |
-| spelling | **Ecgberht** only |
-| Anchor v1.0 write | no write APIs targeting release-tree freeze prefixes |
+Both are ENFORCED by `engine/stage2-freeze.mjs` + `engine/canary-pack.mjs` (fixtures:
+`fixtures/stage2-freeze.json`); the descriptive tables live in `docs/BUILD-CANON.md`
+(moved 2026-08-25 — they were context tax on every load; enforcement unchanged).
 
 ---
 

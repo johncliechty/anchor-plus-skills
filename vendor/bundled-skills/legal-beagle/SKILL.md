@@ -126,10 +126,16 @@ On any `legal-beagle-Heavy` run (and on request at regular tier when stakes warr
    or flagged [UNVERIFIED], and that jurisdiction + as-of date are established; list violations").
    Record its verdict in the output. agy down ⇒ say so and stamp the run single-family — never
    silently skip.
-3. **The deterministic citation lint** (`node src/citation-lint.js <findings.md> <sources...>`)
-   runs before delivery: it extracts citation-shaped strings from the output and FAILS any that
-   appear in no provided source and carry no `[UNVERIFIED]` tag — Rule 1 as structure, not
-   exhortation.
+3. **The pre-delivery gate is THE ENGINE, gates-only** (retargeted 2026-08-25, John-ratified —
+   the old pointer here named the weak standalone checker, the exact gate a July review
+   condemned, while the strong check sat unused):
+   `node bin/legal-round.mjs --memo <deliverable.md> --sources <file-or-dir> [--sources ...]`
+   With no `--live` it runs the deterministic token + proposition citation gates in seconds,
+   zero model calls, and emits a **RECEIPT** (deliverable hash · gate results · timestamp).
+   **The receipt's footer line goes INTO the deliverable footer — a deliverable without one is
+   visibly unverified.** Every engine run self-records to `journal/runs/`. The standalone
+   `src/citation-lint.js` is DEMOTED: a token-level lint kept only as the engine's internal
+   leg, never the delivery gate by itself.
 
 ## Hard rules (anti-hallucination — these override everything else)
 
@@ -152,9 +158,9 @@ On any `legal-beagle-Heavy` run (and on request at regular tier when stakes warr
 ## The three modes
 
 - **Contract & compliance analysis** — read the provided document; identify missing
-  or risky clauses, jurisdiction/governing-law gaps, and obligations. The rule
-  engine (`src/`) provides keyword-level presence checks for the library's domains;
-  treat its findings as *hints* to verify against the text, not verdicts.
+  or risky clauses, jurisdiction/governing-law gaps, and obligations. Findings come
+  from reading the text itself — there is no rule engine and no domain library
+  (retired 2026-08-24; the old engine was deleted 2026-07-11, John's call).
 - **Case-law synthesis** — extractive only: synthesize holdings from opinions the
   user pastes or that you fetch and quote. Rule 1 applies in full.
 - **Boilerplate drafting** — draft from well-established patterns, flag every
@@ -169,12 +175,15 @@ deleted: its library only ever contained Space Law, so it had zero decision valu
 work (trusts, NDAs, fund docs) — and its expansion path had been a fabrication hazard.
 The four hard rules above ARE the skill; the journals prove they catch real errors.
 
-- `src/citation-lint.js` — the deterministic Rule-1 gate (see Heavy procedure above).
-  The ONLY code. Gate: `node --test test/`.
-- `library/` — a home for future HUMAN-VETTED reference docs (checklists, clause notes),
-  plain markdown/YAML the model reads. Currently: the legacy Space-Law YAML only. Never
-  imply coverage that isn't in this folder. Adding a domain is a RESEARCH task (dated,
-  source-cited, human-vetted) — never machine-generated.
+- `bin/legal-round.mjs` — THE gate surface (2026-08-25): deterministic token + proposition
+  citation gates (gates-only, seconds) + the optional `--live` adversarial round; emits the
+  receipt required in every deliverable footer; self-records runs. Gate: `node --test test/`.
+- `src/citation-lint.js` — DEMOTED: the token-level lint, kept as the engine's internal leg —
+  never the delivery gate by itself (one gate surface; two copies is how the last drift happened).
+- `library/` — RETIRED (2026-08-24 elegance sweep; the legacy Space-Law YAML, its only
+  ever content, is archived). There is no domain library; never imply one. If a domain
+  reference is ever added, it is a RESEARCH task (dated, source-cited, human-vetted) —
+  never machine-generated.
 
 ## Output shape
 

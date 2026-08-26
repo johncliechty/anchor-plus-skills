@@ -7,8 +7,10 @@
 //     prereg-constants.json) — only those earn an INDEPENDENT named-defeater refuter;
 //   • what counts as a NAMED CONCRETE DEFEATER vs a self-rated confidence word — the latter is
 //     NOT a refutation, so the B-honesty canary FAILS / auto-downgrades it;
-//   • the BOUNDED refuter budget R (=3): requesting independent refuters beyond R HALTs the run
-//     for a human (no silent drop); and
+//   • the BOUNDED refuter budget R (=3): at the SEAM level assertRefuterBudget still throws
+//     (the unit tripwire), but the LIVE path (runtime/live-refuter.mjs) pre-flights and FLOORS
+//     excess — top-R refuted, the rest ship SPECULATIVE, each named (2026-08-25, John's ruling:
+//     cost is a pre-flight conversation, never a mid-run wall); and
 //   • the honest un-refuted floor: a finding that did NOT earn an independent refutation ships
 //     SPECULATIVE carrying the "no independent refutation ran" stamp.
 //
@@ -20,8 +22,9 @@
 //     a named concrete defeater (`what_would_refute_it`) plus a `refutation_provenance` proving
 //     an independent refuter ran. A self-rated confidence word ("very confident") is not a
 //     refutation — B-honesty FAILS it (auto-downgrade to SPECULATIVE + stamp).
-//   • BOUNDED BUDGET, NO SILENT DROP. Requesting more than R independent refuters HALTs; it does
-//     not silently take the first R. Below-threshold findings ship SPECULATIVE + the stamp.
+//   • BOUNDED BUDGET, NO SILENT DROP. The seam's assertRefuterBudget throws on excess (unit
+//     tripwire); the live path FLOORS instead of halting — excess elevations ship SPECULATIVE
+//     with a NAMED dispatch entry each (never silently taking the first R, never killing the run).
 //
 // PRINCIPLE-D: the live refuter `agent()` spawn is NOT in the gate. This seam mints the typed
 // refutation ENVELOPE + the budget guard (the deterministic surface); actually dispatching the

@@ -1,5 +1,55 @@
 # Changelog
 
+## v1.2.5 — the steward moves in, and the work shows its receipts (2026-08-25)
+
+The steward cockpit becomes the default project surface, deliverables get a
+single register the whole system answers from, and the elegance-review
+ratifications land across every vendored skill — then the whole batch is
+hardened by three adversarial review passes over its own diffs (11 confirmed
+defects, all fixed before this release).
+
+### Steward cockpit cutover + deliverables surface
+- The cockpit (`steward_cockpit/`) is now the default `/project/` page; the
+  legacy chamber remains behind `?classic=1`. `BUILD_ID` counts the cockpit
+  sources, so an open page self-reloads when they change.
+- **One deliverables register**: an effort's `DELIVERABLES.md` drives a pinned
+  package tile atop the status pane, goal-bar links, and the steward's own
+  answer to "where is the thing you produced." Files serve through a
+  realpath-contained route (escapes 404; html/svg served inert).
+- Delivery receipts: status acks flow to `.ecgberht/delivery.json`
+  (locked read-modify-write, coalesced acks) and flip `channel_verified` on
+  first ack — a render leg the engine can prove, not assume.
+- The pre-restart drain now parks the cockpit's own engines via the service
+  (`POST /api/steward/drain-all`) and names each failure class — never a
+  vacuous empty report.
+
+### The elegance ratifications land in the vendored skills
+- **Crucible** announces its band (auto-band with a loud FULL default) and
+  writes the triage lock record; stage handoffs fail closed without it.
+- **Foreman** gets a 45-minute call-timeout floor, delta-scan transparency,
+  and a sibling-repo cleanliness preflight that survives paths with spaces.
+- **Gandalf** never halts mid-run on budget: pre-flight cost consent, then
+  floor-and-stamp (critical outranks major); refuter kills leave a kill_log.
+- **Jumper** pings its cross-family gate through the named driver (no
+  failover masking a dead channel) and stamps salvage on zero-survivor runs.
+- **Legal-beagle / financial-analyst** emit deterministic gate receipts
+  (hash + checks + timestamp) required in the deliverable footer; the
+  financial chain is thin (one JSON seam, tie-out fail-closed).
+- **Literature-review** pre-flights the seed before seat binding and falls
+  back S2→OpenAlex with the fallback recorded.
+- **researchPrime** mechanizes its field laws (halt-record on violation).
+- Every SKILL.md carries its **North Star (LOCKED)** header — all nine
+  ratified 2026-08-25.
+
+### Still open, by name
+- Foreman checkpoint supervision (Move 6) arms on its next real build run;
+  Jumper's batched thinning funnel on its next run — both trigger-gated.
+- Steward M-batch awaits the author's acceptance pass: High Seat re-route,
+  chamber cut, cockpit-commissioned sentinel coverage.
+- 4 pre-existing `test_cockpit_paradigm2` failures ride the cutover
+  reconciliation; the true-VM install check (Part C) remains staged, with the
+  clean-profile run as the current approximation.
+
 ## v1.2.4 — the elegance cycle: every skill sleeps, the engines stop lying about dead time (2026-08-15)
 
 A portfolio-wide sleep cycle over all 14 bundled skills, commissioned as

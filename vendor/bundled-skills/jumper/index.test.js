@@ -313,7 +313,9 @@ test('Wave 4: DiracTransfer resolves contradictions using TRIZ and maps back to 
   assert.ok(calledPrompt.includes('Dirac Transfer'));
   assert.ok(calledPrompt.includes('trizPrinciplesApplied'));
   assert.ok(calledPrompt.includes('STEER: focus on cache eviction'));
-  assert.deepEqual(calledSchema.required, ['trizPrinciplesApplied', 'analogicalResolution', 'symmetricalResolution', 'resolutionReasoning']);
+  // 2026-08-19: 'deliverable' became REQUIRED in bc8328f (0028 RC-1, the instantiation
+  // law) but this assertion was never updated — the suite has been red since 08-17.
+  assert.deepEqual(calledSchema.required, ['trizPrinciplesApplied', 'analogicalResolution', 'symmetricalResolution', 'resolutionReasoning', 'deliverable']);
   assert.equal(calledDriver, 'override-driver');
 });
 

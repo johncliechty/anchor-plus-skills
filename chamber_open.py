@@ -415,9 +415,142 @@ def seal_open_view(folder) -> dict:
         "progress": {"done": done, "total": len(steps)},
         "live_run": live_run,
         "deliverable": deliverable,
+        # (2026-08-15) THE CONVERSATION SURVIVES A RELOAD. Turns were already
+        # persisted durably by the engine (.ecgberht/conversation-log.json,
+        # append-only under a lock) — the chamber simply never painted them,
+        # so every visit opened on a blank transcript and "go back and forth"
+        # reset to zero. A plain bounded JSON read: no spawn, no model, no
+        # write, so the open path's deterministic-first law still holds.
+        "dialogue": read_conversation_tail(folder),
+        # NOTE: freshness deliberately does NOT ride the view. It is elapsed
+        # time, so it differs between two opens a millisecond apart, and the
+        # open view is contractually deterministic (two opens agree on
+        # everything but the stopwatch — tests/test_chamber_open_w6.py). The
+        # page computes it at render time instead: chamber_page.
         "read_stats": stats,
         "open_ms": (time.perf_counter() - t0) * 1000.0,
     }
+
+
+# The transcript is HISTORY, never authoritative for state — where transcript
+# and ledger disagree the ledger wins (engine/conversation-log.mjs). Painting
+# it is a read-back of what was said, nothing more.
+CONVERSATION_LOG_REL = ".ecgberht/conversation-log.json"
+CONVERSATION_PAINT_LIMIT = 40
+#: How many turns render OPEN on the page. The rest fold behind one divider —
+#: a 41-message campaign opened on 7,215px of hidden scroll, measured.
+CONVERSATION_RECENT = 12
+
+
+# ── Is anything happening in this campaign, and how fresh is what we show? ──
+#
+# (2026-08-15, John) "You should automatically, when you open the project, go
+# look and see if there's a version of the steward project process going… there's
+# work going on in a VS Code session, so Anchor should be able to reflect that…
+# what you've got there when you open MBA Teaching is out of date and I'm not
+# sure why — I don't have a way of updating."
+#
+# Anchor cannot see a Claude Code session it did not start, and it should not
+# pretend to. But the steward writes to the SAME files from any host, so their
+# mtimes are an honest liveness signal: if the conversation log was appended two
+# minutes ago, somebody is talking to this steward right now, wherever they are
+# sitting. That is what this reports — a fact about the files, never a guess
+# about a process.
+
+#: Activity newer than this reads as "a session is live in this project".
+STEWARD_LIVE_WINDOW_S = 20 * 60
+
+#: The files the steward engine writes, whichever host drives it.
+_ACTIVITY_RELS = (
+    ".ecgberht/conversation-log.json",
+    "roadmap.json",
+    ".ecgberht/envelope-ledger.json",
+    ".ecgberht/step-findings.json",
+)
+
+
+def _mtime(path: Path):
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def campaign_freshness(folder, now: float | None = None) -> dict:
+    """What is current, what is stale, and whether someone is working right now.
+
+    Pure stat() reads — no spawn, no model, no write. Returns:
+      ``live``            somebody appended to this campaign inside the window
+      ``last_activity_s`` age of the newest steward write, or None
+      ``talked_s``        age of the newest conversation turn
+      ``plan_s``          age of the newest roadmap write
+      ``sidecar_stale``   the derived projections are OLDER than their source,
+                          i.e. what the page paints is behind the ledger
+    """
+    folder = Path(folder)
+    now = time.time() if now is None else now
+    ages = {}
+    for rel in _ACTIVITY_RELS:
+        m = _mtime(folder / rel)
+        if m is not None:
+            ages[rel] = now - m
+    newest = min(ages.values()) if ages else None
+    sidecar = _mtime(folder / ".anchor/chamber/projections.json")
+    # The sidecar derives from the ROADMAP, not the chat: dialogue paints
+    # directly from its own log, so a conversation turn must never trip the
+    # stale flag — a warn that fires after every chat trains him to ignore
+    # the one real staleness signal (correctness audit P0-3).
+    source = _mtime(folder / "roadmap.json") or 0
+    return {
+        "live": newest is not None and newest <= STEWARD_LIVE_WINDOW_S,
+        "last_activity_s": newest,
+        "talked_s": ages.get(".ecgberht/conversation-log.json"),
+        "plan_s": ages.get("roadmap.json"),
+        "sidecar_stale": bool(sidecar is not None and source and sidecar < source),
+        "sidecar_missing": sidecar is None,
+    }
+
+
+def humanize_age(seconds) -> str:
+    """"3m ago" / "2h ago" / "Aug 7". Vague is fine; wrong is not."""
+    if seconds is None:
+        return "never"
+    s = int(seconds)
+    if s < 90:
+        return "just now"
+    if s < 3600:
+        return "%dm ago" % (s // 60)
+    if s < 86400:
+        return "%dh ago" % (s // 3600)
+    return "%dd ago" % (s // 86400)
+
+
+def read_conversation_tail(folder, limit: int = CONVERSATION_PAINT_LIMIT) -> list:
+    """The last ``limit`` conversation turns, oldest-first, as
+    ``[{role, text}]``. Missing log → ``[]`` (a real empty history).
+    Unreadable/corrupt → ``[]`` as well, but the open is never broken by it:
+    the brief still paints. Bounded and total — never raises."""
+    p = Path(folder) / CONVERSATION_LOG_REL
+    try:
+        if not p.is_file():
+            return []
+        with p.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return []
+    turns = data.get("turns") if isinstance(data, dict) else None
+    if not isinstance(turns, list):
+        return []
+    out = []
+    for t in turns[-max(0, int(limit)):]:
+        if not isinstance(t, dict):
+            continue
+        text = str(t.get("text") or "").strip()
+        if not text:
+            continue
+        role = "john" if str(t.get("role") or "").lower() == "john" else "steward"
+        out.append({"role": role, "text": text})
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -587,13 +720,26 @@ def _render_deliv(view: dict) -> str:
     ) % _esc(desc)
 
 
+def _empty_rail_html() -> str:
+    """An empty rail is a blank 300px column that reads as broken. It is a
+    real state — no scaffolding has been framed yet — so it says so, and says
+    what to do about it."""
+    return ('<div class="fstep"><span class="dot">○</span>'
+            '<div class="nm">No scaffolding yet</div>'
+            '<div class="yield">Say what you want to get done and the steward '
+            'will frame one you can react to. Nothing is written until you '
+            'confirm it.</div></div>')
+
+
 def _render_flow(view: dict) -> str:
     steps_html = "".join(_render_fstep(s) for s in view.get("steps") or [])
+    if not steps_html:
+        steps_html = _empty_rail_html()
     return (
         '<aside class="flow">'
         '<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px">'
         '<h3 style="margin:0;flex:1">The flow</h3>'
-        '<button class="btn gold" style="font-size:10px">Still the plan</button>'
+        '<button class="btn gold" style="font-size:10px" data-still-plan="1">Still the plan</button>'
         '<button class="btn" style="font-size:10px" '
         'data-refine-overlay="1">Refine the plan</button>'
         '</div>'
@@ -636,9 +782,21 @@ def _render_convo(view: dict, steward: dict | None) -> str:
         # AG-NO-RUNNING-STEP (signed): the quiet idle line.
         livestatus = ('<div class="livestatus idle">— idle · no step '
                       'running%s</div>') % _esc(nxt_bit)
+    # (2026-08-15) The persisted transcript paints FIRST, then the brief —
+    # so opening a project resumes the conversation instead of starting one.
+    # .msg.john / .msg.steward are drawn signatures in the signed mockup, so
+    # no amendment is needed; only the COUNT of drawn messages changes.
+    prior = []
+    for turn in (view.get("dialogue") or []):
+        prior.append(
+            '<div class="msg %s"><div class="who">%s</div>%s</div>'
+            % ("john" if turn.get("role") == "john" else "steward",
+               _esc("John" if turn.get("role") == "john" else name),
+               _esc(turn.get("text"))))
     return (
         '<div class="convo">'
         '<div class="msgs">'
+        '%s'
         '<div class="msg steward"><div class="who">%s</div>%s</div>'
         '</div>'
         '%s'
@@ -652,7 +810,8 @@ def _render_convo(view: dict, steward: dict | None) -> str:
         '<button class="btn gold" data-say-send>Say it</button>'
         '</div>'
         '</div>'
-    ) % (_esc(name), _esc(_brief_prose(view, name)), livestatus, _esc(name))
+    ) % ("".join(prior), _esc(name), _esc(_brief_prose(view, name)),
+         livestatus, _esc(name))
 
 
 def _render_degraded(view: dict, steward: dict | None) -> str:
@@ -671,6 +830,11 @@ def _render_degraded(view: dict, steward: dict | None) -> str:
     # AG-DEGRADED-RAIL (signed): drawn degraded rail + the explicit W5
     # rebuild affordance. Painted from the raw ledger; nothing fabricated.
     reasons = ", ".join(deg.get("reasons") or [])
+    # (2026-08-15) THE DEGRADED FACE CAN STILL TALK. It used to paint a
+    # rebuild banner and a grey list — and no say box — so a project whose
+    # projections were never built had NO way to reach the steward at all.
+    # Missing projections make the RAIL unreliable; they say nothing about
+    # whether he can have a conversation. The chamber keeps its convo column.
     return (
         '%s'
         '<div class="degrail">'
@@ -680,10 +844,21 @@ def _render_degraded(view: dict, steward: dict | None) -> str:
         '<span class="sp" style="flex:1"></span>'
         '<button class="btn gold" data-rebuild-command="%s">%s</button>'
         '</div>'
+        '<div class="chamber">'
+        '<aside class="flow">'
+        # The mockup draws the rail heading INSIDE a header row, not as a
+        # direct child of .flow — the C9 edge diff caught the shortcut.
+        '<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px">'
+        '<h3 style="margin:0;flex:1">The flow</h3>'
+        '</div>'
         '%s'
+        '</aside>'
+        '%s'
+        '</div>'
     ) % (_render_dbar(view, steward), _esc(reasons),
          _esc(deg["rebuild"]["command"]), _esc(deg["rebuild"]["label"]),
-         "".join(grey))
+         "".join(grey) or _empty_rail_html(),
+         _render_convo(view, steward))
 
 
 def render_seal_slice_html(view: dict, steward: dict | None = None) -> str:

@@ -102,6 +102,7 @@ ad hoc. Everything below runs on Python stdlib + `openpyxl` (see `requirements.t
 | `agent_interface.py` | `FinancialAnalystAgent` facade — `load_template / set_input / get_value / evaluate / generate_report / compile_excel / compile_python` |
 | `templates/vc_comp.py` | VC round comp: `pre_money_valuation`, `investment_amount` → post-money, dilution, ownership splits |
 | `templates/re_waterfall.py` | RE equity waterfall: `initial_equity`, LP/GP shares, two hurdles + 3-tier promote splits over per-period cash flows |
+| `templates/cancer_human_capital.py` | Cancer working-age productivity (human-capital) loss: per-age earnings/discount lattice → PV of remaining working life, weighted by age-at-death distribution; friction-cost alternative + separate VLY comparator (never summed); BASE/MID/UPSIDE tiers |
 | `compiler_excel.py` / `compiler_python.py` | Compile the SAME graph to a live-formula Excel workbook / a standalone Python model |
 | `report_generator.py` | Grounded markdown/PDF report + an LLM-facing prompt digest, all read off the evaluated graph |
 | `tests/` | pytest suite (`python -m pytest tests/ -q` from this folder) — run it after any engine/template change |
@@ -120,7 +121,7 @@ a.compile_excel("model.xlsx")                  # live-formula workbook
 a.compile_python("model.py")                   # standalone matching model
 ```
 
-Templates: `"vc_comp"` and `"re_waterfall"` (see each template file's signature for
+Templates: `"vc_comp"`, `"re_waterfall"`, and `"cancer_human_capital"` (see each template file's signature for
 its inputs; `re_waterfall` takes `cash_flows=[...]` per period). **Honesty note
 (2026-07-11): the shipped templates are STARTING POINTS at textbook granularity** —
 `vc_comp` has no option-pool shuffle / SAFEs / share counts, `re_waterfall` is one
@@ -168,9 +169,32 @@ The review layer this skill previously only CLAIMED. Runs strictly DOWNSTREAM of
   `researchPrime/bin/live-round-agent.mjs`; `cross_model` is DERIVED from the reached-
   family tracker. No seats ⇒ **honest stop** ("the adversarial review did NOT run") —
   never a fabricated review. Single-family runs carry the shared-blind-spot note.
-- Verdict: `GO` only when grounded AND shark-dry AND judge-lockable. Output:
-  `DEAL-REVIEW.json` + a `journal/runs/` capture.
+- Verdict: at most `GO — awaiting human ack` — the machine's say-so never ships a model;
+  John's sign-off is the real gate. `--tie-out <TIE-OUT.json>` feeds the tie-out record in;
+  `--require-tie-out` makes a GO impossible without a PASSING record. Every run emits a
+  **RECEIPT** (report hash · grounding · tie-out state) — **its footer line goes INTO the
+  deliverable; a deliverable without one is visibly unverified.** Output: `DEAL-REVIEW.json`
+  + a `journal/runs/` capture. Exit 0 ONLY on GO / UNREVIEWED-with-gates-passed (2026-08-25
+  fix: the old exit code blessed a FAILED grounding gate in gates-only mode).
 - Gate: `node --test test/` (deal-review suite is hermetic — stub seats, no .py).
+
+## THE THIN CHAIN (`bin/deal-chain.mjs`, 2026-08-25 — John's call: thin, decision #4)
+
+**The one command that makes "nothing ships without approval of the vetted model" real** —
+evaluate → tie-out → report → review (tie-out record AS INPUT) → HALT for John:
+
+    node bin/deal-chain.mjs --deal <deal.py> --report <report.md> [--rounds 3] [--live] [--out dir]
+
+Fail-closed at every link: a failing tie-out BLOCKS before any model seat is paid; the review
+runs `--require-tie-out`; the receipt rides the footer; exit 0 only on GO/UNREVIEWED-gates-
+passed. **Route every real deal through this chain** — the standing rule the receipt makes
+checkable. The deal script adds one 4-line flag to satisfy the chain contract:
+
+    if '--chain-json' in sys.argv:
+        import json
+        print(json.dumps({'tie_out': agent.tie_out(), 'values': agent.evaluate(),
+                          'inputs': INPUTS}, default=str))
+        raise SystemExit(0)
 
 ## Extending
 
@@ -179,7 +203,7 @@ that returns a `Graph`, plus a branch in `agent_interface.load_template` and a p
 file mirroring `tests/test_vc_comp.py`. Keep every formula a `FormulaNode` (never
 compute outside the graph — that is what guarantees the Excel/Python tie-out).
 
-> **â± STATUS UPDATES TO CHAT:** When running long phases in the background, you MUST arm a 10-minute cadence (`ScheduleWakeup` ~600s) and provide scheduled updates to the user in the LOCKED Status-table format — canonical definition in ONE place: the canonical `AGENTS.md` → "Long-run progress updates" (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer). The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick — the SESSION composes it from this skill's `journal/`.
+> **⏱ STATUS UPDATES TO CHAT:** When running long phases in the background, you MUST arm a 10-minute cadence (`ScheduleWakeup` ~600s) and provide scheduled updates to the user in the LOCKED Status-table format — canonical definition in ONE place: the canonical `AGENTS.md` → "Long-run progress updates" (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer). The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick — the SESSION composes it from this skill's `journal/`.
 
 ## Usage journal (sleep-loop feed — append after every REAL run)
 

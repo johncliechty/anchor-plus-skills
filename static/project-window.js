@@ -7180,6 +7180,8 @@ function _ecgOfferRaise(convo, j, retryText) {
 function _ecgRenderBlockedTurn(convo, blocked) {
   var msg = _ecgEl('div', 'ecg-msg steward blocked');
   msg.appendChild(_ecgEl('div', 'who', '⛔ ' + _ecgStwLabel() + ' — turn blocked'));
+  /* (2026-08-15) The held answer is SHOWN — see _ecgSliceBlockedTurn. */
+  if (blocked.held_say) msg.appendChild(_ecgEl('div', 'bheld', blocked.held_say));
   msg.appendChild(_ecgEl('div', 'bfind',
     (blocked.finding || 'E1-TURN-CLOSE-BLOCKED')
     + ' · a direct question from John lacks a typed answer-reference'));
@@ -7919,6 +7921,16 @@ function _ecgSliceBlockedTurn(root, blocked) {
   who.className = 'who';
   who.textContent = '⛔ ' + _ecgSliceStewardName(root) + ' — turn blocked';
   msg.appendChild(who);
+  /* (2026-08-15) THE HELD ANSWER IS SHOWN. The seat call already ran and was
+     already debited, so the reply exists and John paid for it; withholding it
+     turned a bookkeeping refusal into "the steward ignored me". A guardrail may
+     never be the whole product of a turn. */
+  if (b.held_say) {
+    var held = document.createElement('div');
+    held.className = 'bheld';
+    held.textContent = b.held_say;
+    msg.appendChild(held);
+  }
   var find = document.createElement('div');
   find.className = 'bfind';
   find.textContent = (b.finding || 'E1-TURN-CLOSE-BLOCKED') +
@@ -7956,31 +7968,222 @@ function _ecgSliceSay(root) {
   _ecgSliceMsg(root, 'msg john', 'John', text);
   _ECG_SLICE_TURNS.push({role: 'john', text: text});
   if (_ECG_SLICE_TURNS.length > 24) _ECG_SLICE_TURNS = _ECG_SLICE_TURNS.slice(-24);
-  var thinking = _ecgSliceMsg(root, 'msg steward', name, 'Thinking…');
+  var thinking = _ecgSliceMsg(root, 'msg steward', name, 'Thinking… 0s');
+  _ecgSliceStartClock(thinking);
   _postJson('/api/ecgberht/converse', {
     project_id: PROJECT_ID,
     text: text,
     turns: _ECG_SLICE_TURNS.slice(0, -1)
   }).then(function (r) { return r.json(); }).then(function (j) {
-    if (thinking) thinking.remove();
-    if (j && j.turn_blocked && j.blocked) {
-      _ecgSliceBlockedTurn(root, j.blocked);  // the refusal must be SEEN
-      return;
-    }
-    var say = j && (j.say || j.message || j.user_text);
-    if (j && j.ok && say) {
-      _ECG_SLICE_TURNS.push({role: 'steward', text: String(say)});
-      _ecgSliceMsg(root, 'msg steward', name, say);
-      return;
-    }
-    // Honest failure: say what happened, never dress it up as an answer.
-    _ecgSliceMsg(root, 'msg steward', name,
-      say || (name + " didn't answer — nothing was saved."));
+    if (thinking) { _ecgSliceStopClock(thinking); thinking.remove(); }
+    _ecgSliceTurn(root, j, name);
   }).catch(function () {
-    if (thinking) thinking.remove();
+    if (thinking) { _ecgSliceStopClock(thinking); thinking.remove(); }
     _ecgSliceMsg(root, 'msg steward', name,
       name + " didn't answer — nothing was saved.");
   });
+}
+
+/* ── The turn, RENDERED (2026-08-15, John) ─────────────────────────────────
+   Until now the slice painted `j.say` and dropped everything else on the
+   floor. Every actionable part of a turn — the proposed scaffolding, the
+   commission it wants to launch, the envelope it needs confirmed — was
+   rendered only by the v0 dock painters, which target #ecgConvo: DOM that has
+   not existed since the dock was deleted. So "go ahead" produced prose and
+   nothing to press. This is where a turn becomes something he can act on. */
+
+function _ecgSliceBtn(label, cls, fn) {
+  var b = document.createElement('button');
+  b.className = 'btn' + (cls ? ' ' + cls : '');
+  b.textContent = label;
+  b.addEventListener('click', fn);
+  return b;
+}
+
+function _ecgSliceCard(root, cls, who) {
+  var msgs = root.querySelector('.msgs');
+  if (!msgs) return null;
+  var card = document.createElement('div');
+  card.className = cls;
+  var w = document.createElement('div');
+  w.className = 'who';
+  w.textContent = who;
+  card.appendChild(w);
+  msgs.appendChild(card);
+  msgs.scrollTop = msgs.scrollHeight;
+  return card;
+}
+
+function _ecgSliceLine(parent, text, cls) {
+  var d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = text;
+  parent.appendChild(d);
+  return d;
+}
+
+function _ecgSliceTurn(root, j, name) {
+  if (j && j.turn_blocked && j.blocked) {
+    _ecgSliceBlockedTurn(root, j.blocked);   // the refusal must be SEEN
+    return;
+  }
+  var say = j && (j.say || j.message || j.user_text);
+
+  /* Spend checkpoints. The CAP is earned — it stops real money — but the dock
+     that carried its buttons is gone, so the text said "raise it and we carry
+     on" beside nothing to press. */
+  var code = j && (j.code || j.status_code || j.error);
+  if (code === 'CONVERSE_NO_ENVELOPE' || code === 'CONVERSE_BUDGET_REACHED') {
+    var dc = _ecgSliceCard(root, 'decision', name + ' — needs your go-ahead');
+    if (!dc) return;
+    _ecgSliceLine(dc, say || 'Talking to the steward costs a model call.');
+    var acts = document.createElement('div');
+    acts.className = 'act';
+    var mkSpend = function (label, route) {
+      return _ecgSliceBtn(label, 'gold', function () {
+        var busy = _ecgSliceLine(dc, 'confirming…');
+        _postJson(route, { project_id: PROJECT_ID, who: 'john' })
+          .then(function (r) { return r.json(); })
+          .then(function (k) {
+            busy.textContent = (k && k.ok)
+              ? 'confirmed — say it again and it will run.'
+              : ((k && k.message) || 'that did not take — try again.');
+          })
+          .catch(function () { busy.textContent = 'that did not take — try again.'; });
+      });
+    };
+    acts.appendChild(mkSpend('Yes — spend on this session',
+                             '/api/ecgberht/envelope_confirm'));
+    if (code === 'CONVERSE_BUDGET_REACHED') {
+      acts.appendChild(mkSpend('Raise it and carry on',
+                               '/api/ecgberht/envelope_raise'));
+    }
+    dc.appendChild(acts);
+    return;
+  }
+
+  if (say) {
+    _ECG_SLICE_TURNS.push({ role: 'steward', text: String(say) });
+    _ecgSliceMsg(root, 'msg steward', name, say);
+  }
+
+  /* The ONE open question, drawn as a question rather than buried in prose. */
+  var asks = (j && Array.isArray(j.asks)) ? j.asks.filter(Boolean) : [];
+  if (asks.length) {
+    var ac = _ecgSliceCard(root, 'decision', 'needs your answer');
+    if (ac) for (var a = 0; a < asks.length; a++) _ecgSliceLine(ac, String(asks[a]));
+  }
+
+  /* A PROPOSED SCAFFOLDING. Nothing is written until he confirms — the
+     confirm binds to the proposal hash, so what lands is exactly what he
+     read. This is the "scaffolding shows up and I can react to it" step. */
+  var p = j && j.proposal;
+  if (p && Array.isArray(p.stages || p.steps)) {
+    var stages = p.stages || p.steps;
+    var pc = _ecgSliceCard(root, 'decision', 'proposed scaffolding — nothing written yet');
+    if (!pc) return;
+    if (p.goal) _ecgSliceLine(pc, String(p.goal), 'pgoal');
+    for (var i = 0; i < stages.length; i++) {
+      var s = stages[i] || {};
+      var row = _ecgSliceLine(pc, (i + 1) + '. ' + String(s.name || s.id || 'a stage'), 'pstage');
+      if (s.done_when) _ecgSliceLine(row, 'done when: ' + String(s.done_when), 'pdone');
+      var org = s.oranges;
+      if (Array.isArray(org) && org.length) {
+        _ecgSliceLine(row, 'watch: ' + org.join(' · '), 'porange');
+      }
+    }
+    var fs = j.foresight || p.foresight;
+    if (Array.isArray(fs) && fs.length) {
+      _ecgSliceLine(pc, 'later: ' + fs.join(' · '), 'porange');
+    }
+    var pacts = document.createElement('div');
+    pacts.className = 'act';
+    pacts.appendChild(_ecgSliceBtn('Confirm — make this the roadmap', 'gold', function () {
+      var busy = _ecgSliceLine(pc, 'writing…');
+      _postJson('/api/ecgberht/scaffold_confirm', {
+        project_id: PROJECT_ID, who: 'john',
+        proposal_hash: j.proposal_hash || '', stages: stages
+      }).then(function (r) { return r.json(); }).then(function (k) {
+        if (k && k.ok) {
+          busy.textContent = 'written — the flow on the left is the campaign now.';
+          _ecgSealRepaint();      // the rail must show what he just confirmed
+        } else {
+          busy.textContent = (k && k.message) || 'not written — nothing changed.';
+        }
+      }).catch(function () { busy.textContent = 'not written — nothing changed.'; });
+    }));
+    pacts.appendChild(_ecgSliceBtn('Keep talking', '', function () {
+      _ecgSliceLine(pc, 'left as a draft — say what should change.');
+    }));
+    pc.appendChild(pacts);
+  }
+
+  /* A COMMISSION it wants to run (Gandalf / Crucible / researchPrime /
+     Foreman / Jumper). Propose is read-only; go is the launch. */
+  if (j && j.wants_commission) {
+    var cc = _ecgSliceCard(root, 'decision',
+      'wants to run ' + String(j.commission_skill || 'a skill'));
+    if (!cc) return;
+    if (j.commission_directive) _ecgSliceLine(cc, String(j.commission_directive));
+    var cacts = document.createElement('div');
+    cacts.className = 'act';
+    cacts.appendChild(_ecgSliceBtn('Go', 'pri', function () {
+      var busy = _ecgSliceLine(cc, 'proposing…');
+      _postJson('/api/ecgberht/commission_propose', {
+        project_id: PROJECT_ID, skill: j.commission_skill || null
+      }).then(function (r) { return r.json(); }).then(function (k) {
+        if (!k || !k.ok || !k.proposal) {
+          busy.textContent = (k && k.message) || 'could not propose that run.';
+          return;
+        }
+        busy.textContent = 'launching…';
+        return _postJson('/api/ecgberht/commission_go',
+                         { project_id: PROJECT_ID, proposal: k.proposal })
+          .then(function (r2) { return r2.json(); })
+          .then(function (g) {
+            busy.textContent = (g && g.ok)
+              ? 'running — it shows up as a tile at the top and reports back here.'
+              : ((g && g.message) || 'could not start it.');
+          });
+      }).catch(function () { busy.textContent = 'could not start it.'; });
+    }));
+    cc.appendChild(cacts);
+  }
+
+  if (!say && !(p && (p.stages || p.steps)) && !(j && j.wants_commission)) {
+    /* Never end a turn with nothing on screen. */
+    _ecgSliceMsg(root, 'msg steward', name,
+      (j && (j.message || j.error))
+        ? String(j.message || j.error)
+        : (name + " didn't answer — nothing was saved."));
+  }
+}
+
+/* A turn can take minutes (measured 60-162s; the bridge bound is 240s). A
+   frozen "Thinking…" for four minutes is indistinguishable from a hang, so it
+   counts. */
+function _ecgSliceStartClock(msg) {
+  if (!msg) return;
+  var t0 = Date.now();
+  msg.__ecgClock = setInterval(function () {
+    var s = Math.round((Date.now() - t0) / 1000);
+    var node = msg.lastChild;
+    if (node && node.nodeType === 3) node.nodeValue = 'Thinking… ' + s + 's';
+  }, 1000);
+}
+
+function _ecgSliceStopClock(msg) {
+  if (msg && msg.__ecgClock) { clearInterval(msg.__ecgClock); msg.__ecgClock = null; }
+}
+
+/* After a confirm the rail is stale. Repaint from the server rather than
+   guessing what changed client-side. */
+function _ecgSealRepaint() {
+  var slice = document.getElementById('ecgSealSlice');
+  var host = document.getElementById('ecgSealHost');
+  if (!slice || !host) return;
+  slice.remove();
+  _ecgSealPaintSlice(host);
 }
 
 function _ecgSealPaintSlice(host) {
@@ -7988,7 +8191,14 @@ function _ecgSealPaintSlice(host) {
   fetch('/api/ecgberht/seal_open?project_id=' + encodeURIComponent(PROJECT_ID) + _tokenQ())
     .then(function (r) { return r.json(); })
     .then(function (j) {
-      if (!j || !j.ok || !j.html) return;               // honest: no slice — the legacy path still paints
+      if (!j || !j.ok || !j.html) {
+        /* (2026-08-15) NEVER BAIL TO NOTHING. This used to `return` — the
+           comment promised "the legacy path still paints", and that path was
+           deleted in W2. The result was a chamber that opened to zero pixels
+           on any 401 / bridge failure, which reads exactly like a hang. */
+        _ecgPaintFailure(host, j);
+        return;
+      }
       if (document.getElementById('ecgSealDock')) return; // legacy chamber already hydrated
       if (document.getElementById('ecgSealSlice')) return;
       var slice = document.createElement('div');
@@ -8009,6 +8219,25 @@ function _ecgSealPaintSlice(host) {
         var st = document.createElement('style');
         st.textContent = j.css;
         root.appendChild(st);
+        /* (2026-08-15) Page CSS cannot cross the shadow boundary, so the
+           styles for elements the signed mockup does not draw — the held E1
+           answer, the proposal/commission/spend cards — are injected here,
+           AFTER the signed mockup CSS and never in place of it. The layout
+           rules that once rode along were stage-only and went with the stage. */
+        var st2 = document.createElement('style');
+        st2.textContent =
+          '.bheld{margin:6px 0 4px;padding:8px 10px;border-radius:8px;' +
+          'background:rgba(52,168,83,.07);border-left:2px solid var(--run);' +
+          'font-size:13px;color:var(--text);white-space:pre-wrap}' +
+          '.msg.steward.blocked .bfind,.msg.steward.blocked .bnote{' +
+          'font-size:11px;color:var(--text-dim)}' +
+          '.decision .act{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap}' +
+          '.decision .pgoal{font-weight:600;margin-bottom:6px}' +
+          '.decision .pstage{margin:5px 0 0;font-size:12.5px}' +
+          '.decision .pdone,.decision .porange{font-size:11.5px;' +
+          'color:var(--text-dim);margin-top:1px}' +
+          '.decision .porange{color:var(--ask)}';
+        root.appendChild(st2);
         var wrap = document.createElement('div');
         wrap.innerHTML = j.html;  // server-escaped verbatim-mockup markup
         while (wrap.firstChild) root.appendChild(wrap.firstChild);
@@ -8044,6 +8273,8 @@ function _ecgSealPaintSlice(host) {
           if (ovl) ovl.remove();
           var rvl = root.querySelector('#ecgRefineOverlay');
           if (rvl) rvl.remove();
+          var svl = root.querySelector('#ecgStepOverlay');   // (2026-08-15)
+          if (svl) svl.remove();
           return;
         }
         if (t.getAttribute('data-refine-overlay') != null) {
@@ -8096,6 +8327,18 @@ function _ecgSealPaintSlice(host) {
             .catch(function () { t.disabled = false; });
           return;
         }
+        /* (2026-08-15) CLICK A STEP → ITS DETAIL. Last in the delegation, so
+           every specific control inside a step (runcard links, deliverable
+           buttons) still wins. /api/ecgberht/step_detail has existed for
+           waves with no living caller — the rail it was drawn for never
+           mounted. This is the caller. */
+        var fs = t.closest ? t.closest('[data-step]') : null;
+        if (fs && fs.getAttribute('data-step')) {
+          ev.preventDefault();
+          _ecgStageStepDetail(root, fs.getAttribute('data-step'),
+                              (fs.querySelector('.nm') || {}).textContent || 'this step');
+          return;
+        }
       });
       /* (chamber-m1 W1) Enter in the drawn say input sends the turn — the
          same delegation surface, key leg (click on send, Enter on input). */
@@ -8108,6 +8351,16 @@ function _ecgSealPaintSlice(host) {
         }
       });
       host.appendChild(slice);
+      /* (2026-08-15) OPEN ON THE NEWEST TURN. The server paints the persisted
+         transcript oldest-first, so the chamber opened at the START of the
+         history — measured: 7,215px of conversation hidden below the fold on a
+         41-message campaign. A conversation surface opens where the
+         conversation IS. Done after append so the box has a real height. */
+      var _msgs = root.querySelector('.msgs');
+      if (_msgs) {
+        _msgs.scrollTop = _msgs.scrollHeight;
+        requestAnimationFrame(function () { _msgs.scrollTop = _msgs.scrollHeight; });
+      }
       _ecgSealStartPulsePoll(root, j.view);
       /* 'seal-painted' lands on the FIRST FULL-FRAME COMMIT after the slice
          mounts (double rAF = the painted frame), per the plan's mark law.
@@ -8125,7 +8378,36 @@ function _ecgSealPaintSlice(host) {
         } catch (e) { /* marks unsupported — never break the paint */ }
       }); });
     })
-    .catch(function () { /* deterministic paint unavailable — legacy path continues */ });
+    .catch(function (e) { _ecgPaintFailure(host, { error: String(e && e.message || e) }); });
+}
+
+/* The honest failure face. It says what happened and offers the one move that
+   might fix it — a dead-end with no words is the defect this exists for. */
+function _ecgPaintFailure(host, j) {
+  if (!host || document.getElementById('ecgSealSlice')) return;
+  if (host.querySelector('.ecg-fail')) return;
+  var why = (j && (j.message || j.error)) ? String(j.message || j.error) : 'no reason given';
+  var box = document.createElement('div');
+  box.className = 'ecg-fail';
+  var h = document.createElement('div');
+  h.className = 'ecg-fail-h';
+  h.textContent = 'The chamber could not open.';
+  box.appendChild(h);
+  var p = document.createElement('div');
+  p.className = 'ecg-fail-w';
+  p.textContent = why === 'unauthorized'
+    ? 'unauthorized — this browser has no Anchor token for this origin, so every steward call is refused. Set the token with the 🔑 button in the header, then retry.'
+    : why;
+  box.appendChild(p);
+  var again = document.createElement('button');
+  again.className = 'btn';
+  again.textContent = 'Retry';
+  again.addEventListener('click', function () {
+    box.remove();
+    _ecgSealPaintSlice(host);
+  });
+  box.appendChild(again);
+  host.appendChild(box);
 }
 
 function ecgSealMountInline() {
@@ -8148,4 +8430,120 @@ function ecgSealMountInline() {
     .then(function () { /* data API only — the M1 slice remains on screen */ })
     .catch(function () { /* leave the dashboard untouched */ });
 }
+/* ── THE STAGE (2026-08-15, John) ──────────────────────────────────────────
+   Three additions, all inside the F5 region and all textContent-only:
+   (1) clicking a step in the rail opens its detail and lets him add a note —
+       the endpoints existed, the caller did not;
+   (2) effort tiles with a status light, so more than one steward effort per
+       project is legible at a glance;
+   (3) the chamber mounts on page load instead of on a click, because it is
+       the surface now, not a drawer. */
+
+function _ecgStageEl(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;   // F5: never markup
+  return e;
+}
+
+function _ecgStageStepDetail(root, stepId, stepName) {
+  var old = root.querySelector('#ecgStepOverlay');
+  if (old) old.remove();
+  var ovl = _ecgStageEl('div', 'overlay');
+  ovl.id = 'ecgStepOverlay';
+  var card = _ecgStageEl('div', 'ovcard');
+  var hd = _ecgStageEl('div', 'ovhd');
+  hd.appendChild(_ecgStageEl('span', 'ovti', (stepName || 'this step').trim()));
+  var sp = _ecgStageEl('span', 'sp'); sp.style.flex = '1'; hd.appendChild(sp);
+  var x = _ecgStageEl('button', 'stepx', '×');
+  x.addEventListener('click', function () { ovl.remove(); });
+  hd.appendChild(x);
+  card.appendChild(hd);
+  var body = _ecgStageEl('div', 'ovbody');
+  /* It NEVER opens empty. The detail is a bridge spawn and can take seconds;
+     an empty panel is indistinguishable from a broken one. */
+  body.appendChild(_ecgStageEl('div', 'ovwait', 'reading the step…'));
+  card.appendChild(body);
+  ovl.appendChild(card);
+  /* LIGHT DOM, deliberately. The C9 mockup diff hard-fails any element inside
+     the slice that the signed mockup does not draw ("invented element"), so
+     the panel mounts on the stage OUTSIDE the shadow root. It also means page
+     CSS styles it, which is what we want for a page-level panel. */
+  ovl.addEventListener('click', function (ev) {
+    if (ev.target === ovl) ovl.remove();      // click the scrim to dismiss
+  });
+  document.body.appendChild(ovl);
+
+  fetch('/api/ecgberht/step_detail?project_id=' + encodeURIComponent(PROJECT_ID)
+        + '&step_id=' + encodeURIComponent(stepId) + _tokenQ())
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      body.textContent = '';
+      var d = (j && j.detail) || (j && j.step) || j || {};
+      var rows = [
+        ['intent', d.intent || d.done_when || d.goal],
+        ['status', d.status || d.state],
+        ['skill', d.skill || d.step_type],
+        ['what ran', d.ran || d.run_summary],
+        ['findings', Array.isArray(d.findings) ? d.findings.join(' · ') : d.findings],
+        ['yield', d.yield || d.outcome]
+      ];
+      var any = false;
+      for (var i = 0; i < rows.length; i++) {
+        if (!rows[i][1]) continue;
+        any = true;
+        var r2 = _ecgStageEl('div', 'ovrow');
+        r2.appendChild(_ecgStageEl('span', 'ovk', rows[i][0]));
+        r2.appendChild(_ecgStageEl('span', 'ovv', String(rows[i][1])));
+        body.appendChild(r2);
+      }
+      if (!any) {
+        /* Honest emptiness, never a fabricated narrative. */
+        body.appendChild(_ecgStageEl('div', 'ovwait',
+          (j && j.ok === false && (j.message || j.error))
+            ? String(j.message || j.error)
+            : 'Nothing has been recorded against this step yet.'));
+      }
+      var nl = _ecgStageEl('div', 'ovnote');
+      nl.appendChild(_ecgStageEl('div', 'ovk', 'add a note — it lands on the step'));
+      var ta = document.createElement('textarea');
+      ta.className = 'ovta';
+      ta.placeholder = 'what you want this step to account for…';
+      nl.appendChild(ta);
+      var save = _ecgStageEl('button', 'btn gold', 'Save note');
+      save.addEventListener('click', function () {
+        var txt = (ta.value || '').trim();
+        if (!txt) return;
+        save.disabled = true;
+        save.textContent = 'saving…';
+        _postJson('/api/ecgberht/step_note',
+                  { project_id: PROJECT_ID, step_id: stepId, note: txt })
+          .then(function (r) { return r.json(); })
+          .then(function (k) {
+            save.disabled = false;
+            save.textContent = (k && k.ok) ? 'saved ✓' : 'not saved — try again';
+            if (k && k.ok) ta.value = '';
+          })
+          .catch(function () {
+            save.disabled = false;
+            save.textContent = 'not saved — try again';
+          });
+      });
+      nl.appendChild(save);
+      body.appendChild(nl);
+    })
+    .catch(function () {
+      body.textContent = '';
+      body.appendChild(_ecgStageEl('div', 'ovwait',
+        'Could not read that step just now — the rest of the chamber is unaffected.'));
+    });
+}
+
+/* (2026-08-15) The stage helpers that lived here — effort tiles, the
+   viewport fit, the mount-at-load boot — are DELETED. The stage was an
+   intermediate surface superseded the same day by chamber_page.py, and
+   a superseded surface does not get to sit inert: that is precisely how
+   v0 out-competed M1 for twelve waves. The classic drawer keeps its own
+   click-to-mount path (ecgSealMountInline) unchanged. */
+
 /* F5-CHAMBER-DOM-END — chamber DOM injection law region (steward-chamber W9). */

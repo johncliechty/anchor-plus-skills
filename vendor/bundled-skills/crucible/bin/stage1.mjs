@@ -714,6 +714,11 @@ export async function runMasterPlanLoop({
   depth = null,
   artifactsDir = null,
   capPendingAction = 'stage1-round-cap',
+  // 2026-08-25 (John-ratified card, verified R3 finding): the reused loop hardcoded the
+  // Stage-1 artifact name + halt id, so Stage-2's approval prompt told the user they were
+  // locking "the Master Plan". Callers name what is actually being locked.
+  artifactName = 'the Master Plan',
+  haltStagePrefix = 'stage1',
   statusLog = null,
   statusLabel = 'Crucible plan',
   log = () => {},
@@ -964,12 +969,12 @@ export async function runMasterPlanLoop({
         `human-lockable: The plan is ready for your call. The reviewers have stopped ` +
           `finding problems they agree on${openCount ? `, though ${openCount} single-reviewer ` +
           `concern(s) stay listed for your eyes (OPEN-FINDINGS.json)` : ''}. ` +
-          `Approving locks this draft as the Master Plan; challenging costs another review ` +
+          `Approving locks this draft as ${artifactName}; challenging costs another review ` +
           `round. Recommendation: approve — the concerns left are single-reviewer catches, ` +
           `worth a read but none met the two-reviewer bar; challenge instead if one of them ` +
           `names something you care about. The full draft is on disk (BEST-DRAFT.md). ` +
           `Approve, challenge, or tell me something else?`,
-        'stage1-human-lockable',
+        `${haltStagePrefix}-human-lockable`,
       );
       err.best_draft = bestDraft;
       err.humanLockable = true;
@@ -1099,7 +1104,7 @@ export function approveMasterPlan({ loop, plan = null, approved = false, log = (
       : 'stage1: Master Plan converged model-side — HALT for the user to approve (the convergence authority)');
     throw haltForHuman(
       humanOk && !modelOk
-        ? 'human-lockable plan ready — sharks dry with no ≥2-agree blockers; approve to lock (you are the convergence authority)'
+        ? 'Your call: the plan is human-lockable — review ran dry with no two-reviewer blockers, and you are the deciding authority. Recommendation: approve after a skim of OPEN-FINDINGS.json (single-reviewer catches; DRY does not mean clean). Approve, challenge, or tell me something else?'
         : gate.reason,
       humanOk && !modelOk ? 'stage1-human-lockable-approval' : gate.name,
     );

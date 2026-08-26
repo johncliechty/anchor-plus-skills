@@ -65,7 +65,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { performSnowballSearch, DEFAULT_VENUE_WHITELIST } from '../src/search.mjs';
+import { performSnowballSearch, resolveSeedPaperWithFallback, DEFAULT_VENUE_WHITELIST } from '../src/search.mjs';
 import { normalizeSeedInput } from '../src/seed-adapter.mjs';
 import { dedupeSeedList, seedEntityId, mergeSnowballResults } from '../src/seed-identity.mjs';
 import { runMixedInitiativeGate } from '../src/gate.mjs';
@@ -195,6 +195,43 @@ async function main() {
     console.log(
       `triage: band=${applied.resolved.band} snowballDepth=${opts.snowballDepth} adversarialRounds=${opts.adversarialRounds} source=${applied.resolved.source}`,
     );
+  }
+
+  // ---- 0a. Seed PRE-FLIGHT (2026-08-25, the journal-0004 fix, John-ratified card):
+  // resolve every catalog-id CLI seed's metadata BEFORE binding paid live seats — the
+  // cheapest feasibility check runs first, and its result is REUSED as the snowball
+  // seed load (no second fragile network call). Title-hash seeds have no catalog
+  // identity (pinned in seed-identity.mjs) and are never probed. If EVERY catalog-id
+  // seed fails on BOTH providers, HALT here with a named reason — zero paid capacity
+  // reserved (journal 0004: seats bound, Stage-0 ran, THEN the seed died).
+  const seedPreflight = new Map();       // `${idType}:${id}` -> { paper, provider, fallbackReason? }
+  const seedPreflightFailed = new Set(); // `${idType}:${id}` that failed BOTH providers
+  // --mock-user marks a hermetic/test-ish invocation: probing would burn network and
+  // exit 1 offline (2026-08-25 review fix) — skip with a stamp; the snowball stage's
+  // own fallback still guards a real run that reaches it.
+  const preflightSkipped = Boolean(opts.mockUser);
+  if (preflightSkipped) {
+    console.log('  ~ seed pre-flight SKIPPED (--mock-user run) — stamped; live runs always pre-flight.');
+  } else {
+    const probeSeeds = canonicalSeeds.filter((s) => seedEntityId(s) !== null);
+    let preflightFailures = 0;
+    for (const seed of probeSeeds) {
+      try {
+        const resolved = await resolveSeedPaperWithFallback(seedEntityId(seed));
+        seedPreflight.set(`${seed.idType}:${seed.id}`, resolved);
+        if (resolved.provider !== 's2') {
+          console.log(`  ~ seed ${seed.idType}:${seed.id} pre-flight resolved via OpenAlex fallback (S2 unavailable) — stamped, never silent.`);
+        }
+      } catch (err) {
+        preflightFailures += 1;
+        seedPreflightFailed.add(`${seed.idType}:${seed.id}`);
+        console.log(`  ! seed ${seed.idType}:${seed.id} pre-flight failed on BOTH providers: ${err.message}`);
+      }
+    }
+    if (probeSeeds.length > 0 && preflightFailures === probeSeeds.length) {
+      console.error('HALT before seat binding: every catalog-id seed failed pre-flight resolution (S2 + OpenAlex). No paid capacity was reserved. Check network / S2_API_KEY (env var; raises the S2 rate limit) and retry.');
+      process.exit(1);
+    }
   }
 
   // ---- live seats (or an honest absence of them) ----
@@ -360,6 +397,11 @@ async function main() {
   for (const seed of approvedSeeds) {
     if (seedEntityId(seed) === null) {
       console.log(`  ~ seed ${seed.idType}:${seed.id} ("${seed.title}") has no external catalog identity — kept in the plan, skipped by snowball (no fuzzy resolution).`);
+    } else if (seedPreflightFailed.has(`${seed.idType}:${seed.id}`)) {
+      // 2026-08-25 review fix: a both-providers-dead seed used to be handed to snowball
+      // anyway — refetch, throw, run dies AFTER seats bound + Stage-0 (the exact 0004
+      // class, resurrected for any partial-fail mix). Skip it STAMPED instead.
+      console.log(`  ! seed ${seed.idType}:${seed.id} SKIPPED by snowball — pre-flight failed on BOTH providers (stamped; the run proceeds on the surviving seeds).`);
     } else {
       resolvableSeeds.push(seed);
     }
@@ -371,7 +413,17 @@ async function main() {
     const perSeedRuns = [];
     for (const seed of resolvableSeeds) {
       const entityId = seedEntityId(seed);
-      const result = await performSnowballSearch(entityId, DEFAULT_VENUE_WHITELIST, { depth: opts.snowballDepth });
+      const pf = seedPreflight.get(`${seed.idType}:${seed.id}`);
+      const result = await performSnowballSearch(entityId, DEFAULT_VENUE_WHITELIST, {
+        depth: opts.snowballDepth,
+        // Reuse the pre-flight metadata (0a) — skips the fragile seed-load call entirely.
+        seedPaper: pf?.paper,
+        // 2026-08-25 review fix: a pre-flight OpenAlex fallback must land in the run's
+        // providerFallbacks record too — "recorded, never silent" (journal 0005).
+        seedPaperFallback: pf && pf.provider !== 's2'
+          ? { from: 's2', to: pf.provider, reason: pf.fallbackReason || 'pre-flight fallback' }
+          : null,
+      });
       perSeedRuns.push({ seed, entityId, result });
     }
     const merged = mergeSnowballResults(perSeedRuns, DEFAULT_VENUE_WHITELIST);

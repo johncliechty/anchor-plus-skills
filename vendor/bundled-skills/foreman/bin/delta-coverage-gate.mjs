@@ -36,14 +36,23 @@ export function isTestPath(p) {
     /(^|\/)test_[^/]+\.py$/i.test(p);
 }
 
-/** Strip directories/extensions down to identifier-ish tokens for name matching. */
-function tokensFor(p) {
+/** Strip directories/extensions down to identifier-ish tokens for name matching.
+ *  Exported 2026-08-25 so the wave-engine's pre-existing-test rescue (F2-9 contract)
+ *  matches with EXACTLY the same token rule. */
+export function tokensFor(p) {
   const base = String(p).split(/[\\/]/).pop() || '';
   const stem = base.replace(/\.[a-z0-9]+$/i, '').replace(/^test_/, '');
-  return stem
+  const toks = stem
     .split(/[^a-zA-Z0-9]+/)
     .filter((t) => t.length >= 4)
     .map((t) => t.toLowerCase());
+  if (toks.length) return toks;
+  // 2026-08-25 (journal 0105; found via the 0104 red-suite investigation): a short-stem
+  // file (f1.js, m.py) yielded ZERO tokens and was UNCONDITIONALLY uncovered — no test
+  // could ever rescue it, a false BLOCKER on every wave touching it. Zero tokens now
+  // falls back to the whole stem, so a test named for (or mentioning) the file counts.
+  const whole = stem.toLowerCase();
+  return whole ? [whole] : [];
 }
 
 /**
@@ -77,18 +86,27 @@ export function classifyDelta(changedFiles = []) {
  * @returns {{pass:boolean, severity:'BLOCKER'|'OK', detail:string, uncovered:object[]}}
  */
 export function checkDeltaCoverage({ changedFiles = [], testMentions = '', repoTestConvention = [] } = {}) {
-  const { tests, surfaces } = classifyDelta(changedFiles);
+  const { files, tests, surfaces } = classifyDelta(changedFiles);
+  // 2026-08-25 (journal 0103 item 3, John-ratified card): every verdict carries the SCAN
+  // WINDOW — the halt that never said which files it scanned burned three remedy attempts.
+  const scanned = { files, tests };
 
   if (surfaces.length === 0) {
-    return { pass: true, severity: 'OK', uncovered: [], detail: 'wave adds no surface; delta-coverage not applicable' };
+    return { pass: true, severity: 'OK', uncovered: [], scanned, detail: 'wave adds no surface; delta-coverage not applicable' };
   }
 
   const mentions = String(testMentions).toLowerCase();
   const testTokens = new Set(tests.flatMap(tokensFor));
 
+  // 2026-08-25: SHORT fallback tokens (whole-stem, <4 chars — 'db', 'f1') match on WORD
+  // BOUNDARIES; plain substring let any text containing those letters count as coverage.
+  const mentionHas = (t) =>
+    t.length >= 4 ? mentions.includes(t)
+      : new RegExp(`(^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(mentions);
+
   const uncovered = surfaces.filter(({ file }) => {
     const toks = tokensFor(file);
-    if (toks.some((t) => mentions.includes(t))) return false;   // a test names it
+    if (toks.some(mentionHas)) return false;                    // a test names it
     if (toks.some((t) => testTokens.has(t))) return false;      // a test file is named for it
     return true;
   });
@@ -98,9 +116,13 @@ export function checkDeltaCoverage({ changedFiles = [], testMentions = '', repoT
       pass: true,
       severity: 'OK',
       uncovered: [],
+      scanned,
       detail: `${surfaces.length} surface change(s), each named by a test in this wave`,
     };
   }
+
+  const listCap = (arr, n = 12) =>
+    arr.length <= n ? arr.join(', ') : `${arr.slice(0, n).join(', ')} +${arr.length - n} more (full list in the wave's delta-coverage.json)`;
 
   const conventionNote = repoTestConvention.length
     ? ` This repo's convention is a stub gate per subsystem (e.g. ${repoTestConvention[0]}); a new subsystem without one is an INCOMPLETE wave.`
@@ -110,11 +132,13 @@ export function checkDeltaCoverage({ changedFiles = [], testMentions = '', repoT
     pass: false,
     severity: 'BLOCKER',
     uncovered,
+    scanned,
     detail:
       `${uncovered.length} surface change(s) with no test naming them: ` +
       uncovered.map((u) => `${u.file} (${u.kind})`).join(', ') +
       `. A suite that stays green because the new code is UNTESTED is not evidence.` +
-      conventionNote,
+      conventionNote +
+      ` SCANNED — changed files (${files.length}): ${listCap(files)}; test files read for mentions (${tests.length}): ${tests.length ? listCap(tests) : 'NONE in this wave'}.`,
   };
 }
 

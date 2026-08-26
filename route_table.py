@@ -143,6 +143,11 @@ ROUTES = [
     _r("GET", "/vendor/anchor-term", AUTH_OPEN, match=MATCH_PREFIX),
     _r("GET", "/static", AUTH_OPEN, match=MATCH_PREFIX),
 
+    # The author's signed M1 drawing, served for side-by-side comparison.
+    # Token-authed; the chamber's menu link carries the token. On installs
+    # without the design repo it answers a generic not-on-this-host page.
+    _r("GET", "/mockup", AUTH_TOKEN, match=MATCH_PREFIX),
+
     # ── GET: the live route-table dump (NEW, token-authed) ─────────────────
     _r("GET", "/api/routes", AUTH_TOKEN, handler="handle_routes",
        migrated=True),
@@ -329,6 +334,17 @@ ROUTES = [
        handler="handle_ecgberht_step_detail", migrated=True),
     _r("POST", "/api/ecgberht/step_note", AUTH_TOKEN,
        handler="handle_ecgberht_step_note", migrated=True),
+    # (2026-08-15) "I don't have a way of updating." Recomputes the derived
+    # sidecar from the ledger already on disk — no model, no bridge spawn.
+    _r("POST", "/api/ecgberht/refresh", AUTH_TOKEN,
+       handler="handle_ecgberht_refresh", migrated=True),
+    # (2026-08-15) Multi-seal efforts: threads over the one campaign.
+    _r("GET", "/api/ecgberht/efforts", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_efforts", migrated=True),
+    _r("POST", "/api/ecgberht/effort_act", AUTH_TOKEN,
+       handler="handle_ecgberht_effort_act", migrated=True),
+    _r("GET", "/api/ecgberht/effort_dialogue", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_effort_dialogue", migrated=True),
     _r("GET", "/api/ecgberht/run_pulse", AUTH_TOKEN, match=MATCH_PREFIX,
        handler="handle_ecgberht_run_pulse", migrated=True),
     _r("POST", "/api/ecgberht/high_seat_say", AUTH_TOKEN,

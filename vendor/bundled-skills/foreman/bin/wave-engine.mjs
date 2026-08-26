@@ -39,7 +39,7 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 
 import { HaltError, newCheckpoint, writeCheckpointAtomic, renderDashboard, parseWaves, discoverTestCommand, locateDocs } from './foreman-lib.mjs';
-import { checkDeltaCoverage } from './delta-coverage-gate.mjs';
+import { checkDeltaCoverage, tokensFor as deltaTokensFor } from './delta-coverage-gate.mjs';
 
 // ---------------------------------------------------------------------------
 // Agent-wait heartbeat (0082 P0.3 / 2026-07-24 thrash cleanup)
@@ -1037,7 +1037,8 @@ export function judge(gate, findings) {
   return { go: true, reason: 'gate GREEN and no verified blocking finding', blocking: [] };
 }
 
-// SPIKE(foreman-parallel): A/B toggle for CONCURRENT read-only reviewers (default OFF).
+// SPIKE(foreman-parallel): A/B toggle for CONCURRENT read-only reviewers (default ON;
+// set FOREMAN_CONCURRENT_REVIEW=0 for the historical sequential path).
 // The reviewers are read-only and the finding-merge (collectFindings) keys by stable
 // id, so concurrency is order-independent by construction. Flag OFF ⇒ byte-identical
 // to the historical sequential path. Used only to MEASURE the latency-tail win.
@@ -1329,8 +1330,8 @@ export async function runWave(o) {
     }
 
     // ----- REVIEW: REVIEWER_COUNT independent reviewers (§3) -----
-    // Default SEQUENTIAL. SPIKE(foreman-parallel) A/B: with FOREMAN_CONCURRENT_REVIEW=1
-    // the read-only reviewers run CONCURRENTLY via Promise.allSettled — order-independent
+    // Default CONCURRENT (FOREMAN_CONCURRENT_REVIEW=0 restores the serial path). The
+    // read-only reviewers run via Promise.allSettled — order-independent
     // (collectFindings keys by stable id). A reviewer whose promise REJECTS is mapped to
     // an abstain (answerable:'no') so a degraded run HALTs at the §4.7 ambiguity gate
     // rather than silently passing on one reviewer (never Promise.all, which would drop
@@ -1521,6 +1522,61 @@ export async function runWave(o) {
           testMentions,
           repoTestConvention: ['test/wNN-<subject>.test.mjs'],
         });
+        // F2-9 contract rescue (2026-08-25, journal 0105 — found via the 0104 red-suite
+        // investigation): a wave that CHANGES a source file covered by a PRE-EXISTING,
+        // unchanged test must not block — 0091's law targets surfaces with no test
+        // ANYWHERE, but only in-wave tests were ever read. Bounded repo-test scan; every
+        // rescue is RECORDED in the persisted verdict (never silent).
+        if (!delta.pass && Array.isArray(delta.uncovered) && delta.uncovered.length) {
+          try {
+            const corpus = [];
+            const walk = (dir, depth) => {
+              if (depth > 4 || corpus.length >= 200) return;
+              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (corpus.length >= 200) return;
+                const full = path.join(dir, e.name);
+                if (e.isDirectory()) {
+                  if (/^(node_modules|\.git|\.foreman|dist|build|__pycache__)$/i.test(e.name)) continue;
+                  walk(full, depth + 1);
+                } else if (isTestFile(path.relative(projectDir, full).split(path.sep).join('/'))) {
+                  // (Review fix: raw path.relative gives backslashes on Windows — the
+                  // dir-pattern half of isTestFile never matched, silently shrinking the
+                  // rescue corpus to filename-suffix matches only.)
+                  let text = '';
+                  try { text = fs.readFileSync(full, 'utf8').slice(0, 65536).toLowerCase(); } catch { /* skip */ }
+                  corpus.push({ file: full, stemTokens: deltaTokensFor(full), textLower: text });
+                }
+              }
+            };
+            walk(projectDir, 0);
+            const rescued = [];
+            const stillUncovered = [];
+            // Review fix: SHORT fallback tokens ('db', 'f1') must match on WORD BOUNDARIES —
+            // substring matching let any test containing the letters 'db' rescue db.py,
+            // flipping the gate from never-passes to always-passes for short names.
+            const tokenInText = (text, t) =>
+              t.length >= 4 ? text.includes(t)
+                : new RegExp(`(^|[^a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`, 'i').test(text);
+            for (const u of delta.uncovered) {
+              const toks = deltaTokensFor(u.file);
+              const hit = corpus.find((c) => toks.some((t) => c.stemTokens.includes(t) || tokenInText(c.textLower, t)));
+              if (hit) rescued.push({ ...u, coveredBy: path.relative(projectDir, hit.file) });
+              else stillUncovered.push(u);
+            }
+            if (rescued.length) {
+              delta.rescuedByExistingTests = rescued;
+              delta.uncovered = stillUncovered;
+              const rescueNote = `pre-existing tests cover: ${rescued.map((r) => `${r.file}→${r.coveredBy}`).join(', ')}`;
+              if (!stillUncovered.length) {
+                delta.pass = true;
+                delta.severity = 'OK';
+                delta.detail = `${rescued.length} surface change(s) covered by PRE-EXISTING tests (${rescueNote}) — in-wave scan alone had missed them (F2-9 contract)`;
+              } else {
+                delta.detail += ` RESCUED: ${rescueNote}.`;
+              }
+            }
+          } catch { /* rescue is best-effort; the gate's own verdict stands */ }
+        }
         try {
           fs.writeFileSync(
             path.join(foremanDir, `wave-${wave.n}-delta-coverage.json`),

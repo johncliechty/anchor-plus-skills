@@ -29,6 +29,44 @@ REPO = Path(__file__).resolve().parent.parent
 
 # ── Modules + shipped freeze data ────────────────────────────────────────────
 
+# v1.2.5 (2026-08-25): the SHIPPED freeze records are released (real pins,
+# ship_allowed true, John's go-ahead stamped). The placeholder LAW — nothing
+# ships while placeholders remain / without go-ahead — is still enforced by
+# the code and still tested here, but against these SYNTHETIC pre-release
+# docs, not the shipped files.
+_PLACEHOLDER_SOURCES_DOC = {
+    "schema": "share-sources-pin/v1",
+    "schema_version": 1,
+    "ship_allowed": False,
+    "ship_allowed_stamp_text": (
+        "only after concurrent skill-run merge + John go-ahead"
+    ),
+    "skills_pin": {"tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+    "pins": [
+        {"repo": "anchor", "tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+        {"repo": "trio", "tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+        {"repo": "skill-foundry", "tag": "PLACEHOLDER",
+         "commit": "PLACEHOLDER"},
+    ],
+    "package_versions": {"A": "0.0.0-placeholder", "B": "0.0.0-placeholder"},
+    "scrub_tool_versions": {"vendor_skills.py": "GREEN-share-distro",
+                            "distro.py": "GREEN-share-distro"},
+}
+
+_PLACEHOLDER_FREEZE_DOC = {
+    "schema": "share-freeze-manifest/v1",
+    "schema_version": 1,
+    "ship_allowed": False,
+    "skills_pin": {"tag": "PLACEHOLDER", "commit": "PLACEHOLDER"},
+    "freeze_tags": {
+        "anchor": "PLACEHOLDER",
+        "trio": "PLACEHOLDER",
+        "skill-foundry": "PLACEHOLDER",
+    },
+    "package_matrix_version": "0.0.0-placeholder",
+}
+
+
 def test_w3_modules_importable():
     assert callable(src.write_sources_md)
     assert callable(src.build_attestation)
@@ -42,17 +80,18 @@ def test_w3_modules_importable():
     assert callable(vfm.main)
 
 
-def test_shipped_freeze_and_sources_still_placeholder():
+def test_shipped_freeze_and_sources_released():
     freeze = sc.load_data("freeze_manifest")
     sources = sc.load_data("sources_pin")
-    assert freeze["ship_allowed"] is False
-    assert sources["ship_allowed"] is False
+    assert freeze["ship_allowed"] is True
+    assert sources["ship_allowed"] is True
     assert sc.validate_freeze_manifest_doc(
-        freeze, require_placeholders=True
+        freeze, require_placeholders=False
     ) == []
     assert sc.validate_sources_pin_doc(
-        sources, require_placeholders=True
+        sources, require_placeholders=False
     ) == []
+    assert src.freeze_still_placeholder(sources) is False
 
 
 # ── GWT: dirty tree mid skill-run → publish fails before any write ───────────
@@ -192,7 +231,9 @@ def test_given_sources_md_placeholder_when_verify_then_schema_ok_ship_false(
     tmp_path,
 ):
     """GWT #3: SOURCES for freeze-placeholder build; ship_allowed stays false."""
-    attestation = src.write_sources_md(tmp_path)
+    attestation = src.write_sources_md(
+        tmp_path, dict(_PLACEHOLDER_SOURCES_DOC)
+    )
     path = Path(attestation["path"])
     assert path.is_file()
     body = path.read_text(encoding="utf-8")
@@ -217,7 +258,7 @@ def test_given_sources_md_placeholder_when_verify_then_schema_ok_ship_false(
     assert problems == [], problems
 
     result = vfm.verify_freeze_manifest(
-        freeze_doc=sc.load_data("freeze_manifest"),
+        freeze_doc=dict(_PLACEHOLDER_FREEZE_DOC),
         sources_doc=pin_doc,
         require_placeholders=True,
     )
@@ -229,29 +270,44 @@ def test_given_sources_md_placeholder_when_verify_then_schema_ok_ship_false(
 
 
 def test_verify_freeze_manifest_ship_allowed_false_without_go_ahead():
-    result = vfm.verify_freeze_manifest(require_placeholders=True)
+    # The law, on synthetic pre-release docs: placeholders block ship even
+    # with both go-ahead flags recorded.
+    result = vfm.verify_freeze_manifest(
+        freeze_doc=dict(_PLACEHOLDER_FREEZE_DOC),
+        sources_doc=dict(_PLACEHOLDER_SOURCES_DOC),
+        require_placeholders=True,
+    )
     assert result["ok"] is True
     assert result["ship_allowed"] is False
-    # Even if both go-ahead flags are set, placeholders still block ship.
     result2 = vfm.verify_freeze_manifest(
+        freeze_doc=dict(_PLACEHOLDER_FREEZE_DOC),
+        sources_doc=dict(_PLACEHOLDER_SOURCES_DOC),
         require_placeholders=True,
         concurrent_skill_run_merged=True,
         john_go_ahead=True,
     )
     assert result2["ship_allowed"] is False
     assert result2["freeze_placeholders"] is True
+    # And on the RELEASED shipped docs: real tags verify clean, but the
+    # go-ahead flags must still be recorded per-run — no flags, no ship.
+    released = vfm.verify_freeze_manifest(require_placeholders=False)
+    assert released["ok"] is True
+    assert released["freeze_placeholders"] is False
+    assert released["ship_allowed"] is False
 
 
 def test_verify_freeze_manifest_cli_exits_zero_on_shipped(capsys):
-    rc = vfm.main([])
+    rc = vfm.main(["--allow-real-tags"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "OK" in out
+    # Without the go-ahead flags recorded, ship stays false even on real tags.
     assert "ship_allowed: False" in out or "ship_allowed: false" in out.lower()
 
 
 def test_sources_writer_never_sets_ship_allowed_with_placeholders():
     att = src.build_attestation(
+        dict(_PLACEHOLDER_SOURCES_DOC),
         concurrent_skill_run_merged=True,
         john_go_ahead=True,
     )
@@ -425,14 +481,33 @@ def test_public_tag_blocked_while_placeholders_even_with_canary():
         status_text="",
         public_tag_attempt=True,
         canary_ok=True,
-        sources_doc=sc.load_data("sources_pin"),
-        freeze_doc=sc.load_data("freeze_manifest"),
+        sources_doc=dict(_PLACEHOLDER_SOURCES_DOC),
+        freeze_doc=dict(_PLACEHOLDER_FREEZE_DOC),
     )
     assert codes
     assert (
         "ship_not_allowed" in codes
         or "freeze_placeholders_block_ship" in codes
     )
+
+
+def test_public_tag_allowed_on_released_shipped_docs():
+    # The released counterpart: the SHIPPED v1.2.5 docs (real pins, go-ahead
+    # stamped) clear the same public-tag gates.
+    request = {
+        "artifact_name": "skills-only",
+        "package_id": "A",
+        "skills_subtree_present": True,
+    }
+    codes = pub.evaluate_publish_gates(
+        request,
+        status_text="",
+        public_tag_attempt=True,
+        canary_ok=True,
+        sources_doc=sc.load_data("sources_pin"),
+        freeze_doc=sc.load_data("freeze_manifest"),
+    )
+    assert codes == [], codes
 
 
 # ── Dirty wins over matrix (ordered gates) ───────────────────────────────────

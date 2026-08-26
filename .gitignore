@@ -139,3 +139,9 @@ _archive/share-package-v1-snapshot-2026-08-01/
 # SKILL artifact rather than Anchor source — skill work lives in the skill's own
 # global location, not in this repo.
 skills/
+
+# steward cockpit runtime state (also relocated to the data dir at runtime)
+steward_cockpit/proto-state.json
+steward_cockpit/*.tmp
+steward_cockpit/handoffs/
+steward_cockpit/__pycache__/
