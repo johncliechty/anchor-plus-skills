@@ -77,7 +77,15 @@ RESUME_BRIEF = (
     "his first reply is a bare token (go / yes / ok), read the pending "
     "decision back as ONE canonical line and get his yes against THAT line "
     "before spending anything - a bare token across a session boundary is "
-    "never an approval by itself. Do not start any work until he speaks."
+    "never an approval by itself. Do not start any work until he speaks. "
+    "ATTENTION FLAG (2026-08-25, John saw 'waiting on you' during a live "
+    "run): whenever you commission or observe background work - a "
+    "researchPrime/Foreman/Gandalf run, a long build - write "
+    ".ecgberht/attention.json {\"state\": \"working\", \"reason\": <what is "
+    "running, plain words>} the moment it starts, and set it back to "
+    "needs_you or quiet the moment it lands; the cockpit's state line and "
+    "cadence read ONLY that flag, so an unstamped run looks like idle "
+    "waiting to John."
 )
 
 CONTRACT = (
@@ -322,6 +330,10 @@ class Engine:
         return {
             "alive": self.alive(),
             "busy": self.busy,
+            # commissioned/background work in flight (the attention flag,
+            # disk-true) — WITHOUT this the header pill said "waiting on
+            # you" while a commissioned run worked (John, 2026-08-25)
+            "working_bg": self._working_bg(),
             "light": self.light(),
             "queued": len(self.queue),
             "session_id": self.session_id,

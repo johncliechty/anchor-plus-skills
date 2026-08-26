@@ -718,24 +718,43 @@ setInterval(loadShelves, 20000);
 
 /* ---------- deliverables ---------- */
 async function loadDeliv() {
-  const j = await (await fetch("/api/deliverables?dir=")).json();
+  /* 2026-08-26 (John): this list is the UNION of every effort's curated
+     DELIVERABLES.md register — the reports a human would open (Gandalf reads,
+     researchPrime reports, the special PDFs) — NEVER raw session files;
+     those are computer-facing and live in the workbench file explorer.
+     Text docs open in the rendered report viewer; PDFs/binaries stream
+     through the contained deliverable-file route. */
+  const j = await (await fetch("/api/register-all?dir=")).json();
+  const items = j.items || [];
   const list = document.querySelector("[data-delivlist]");
   list.textContent = "";
-  (j.deliverables || []).forEach(dv => {
+  items.forEach(it => {
     const row = el("div", "frow2");
-    const fn = el("span", "fn", "◇ " + dv.name + (dv.exists ? "" : "  (moved)"));
-    fn.title = dv.path;
-    if (dv.exists) fn.onclick = () => fetch("/api/open", { method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dir: "", path: dv.path }) });
+    const fn = el("span", "fn", "• " + it.what);
+    fn.title = it.path || "";
+    if (it.openable && it.path) {
+      const isText = /\.(md|txt|csv|json|log)$/i.test(it.path);
+      fn.onclick = () => {
+        if (isText) {
+          window.open("/report?dir=" + encodeURIComponent(it.dir || "") +
+                      "&path=" + encodeURIComponent(it.path));
+        } else {
+          window.open("/api/steward/deliverable-file?pid=" +
+            encodeURIComponent(window.STEWARD_PID || "") +
+            "&dir=" + encodeURIComponent(it.dir || "") +
+            "&path=" + encodeURIComponent(it.path) +
+            (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""));
+        }
+      };
+    }
     row.appendChild(fn);
-    row.appendChild(el("span", "fm", dv.effort + " · " + dv.src));
+    row.appendChild(el("span", "fm", (it.effort || "") + (it.date ? " · " + it.date : "")));
     list.appendChild(row);
   });
-  if (!(j.deliverables || []).length)
-    list.appendChild(el("div", "frow2", "nothing produced yet — deliverables appear as sessions write files"));
-  document.querySelector("[data-delivsum]").textContent =
-    (j.deliverables || []).length + " produced";
+  if (!items.length)
+    list.appendChild(el("div", "frow2",
+      "no deliverables registered yet — each effort's steward lists the things worth opening as they land"));
+  document.querySelector("[data-delivsum]").textContent = items.length + " registered";
 }
 
 /* ---------- files: sort · search · drag-drop ---------- */

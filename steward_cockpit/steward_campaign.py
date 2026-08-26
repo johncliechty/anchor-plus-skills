@@ -366,6 +366,10 @@ def read_deliverables(campaign_dir: str):
                           "where_text": where_text,
                           "path": path_rel,
                           "date": date,
+                          # optional 4th column (John, 2026-08-26): which
+                          # roadmap step produced it — a step NUMBER or a
+                          # name fragment; the map embeds the link there
+                          "step": cells[3].strip() if len(cells) > 3 else "",
                           "openable": openable})
         return {"exists": True, "items": items}
     except Exception:

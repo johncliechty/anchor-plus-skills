@@ -1,5 +1,47 @@
 # Changelog
 
+## v1.2.6 — the deliverables surface actually opens (2026-08-26)
+
+Hotfix on v1.2.5, driven by the author's first real day using the
+deliverables surface: every repair below is verified on a live screen, and
+the defect class that caused it — tests pinning one layer below the one the
+page hits — now has dispatch-layer tests standing guard.
+
+### Fixed
+- **Register routing**: the verb "deliverables" was BOTH a project-level and
+  an effort-level route; project routing won, so the register tile read the
+  project root (always empty) and the legacy session-files tab was shadowed.
+  The register is effort-level; the files view is its own verb.
+- **Blank click-throughs**: register links were raw navigations that skipped
+  the page's auth plumbing (no project id, no token → an empty page). Links
+  are now built fully authed; text artifacts open in the rendered report
+  viewer, PDFs inline, other binaries stream through the contained route.
+- **Stale guard test**: `test_reaper_single_source` had been red since the
+  July ship-prep refactor — it counted a call the refactor legitimately
+  removed (the zombie-terminal brief now classifies straight through the
+  shared snapshot, the stricter form of the same rule). The rule it guards
+  was never broken; the counter is corrected and explained in place.
+- **Honest state line**: the header said "awake — waiting on you" while a
+  commissioned background run worked. The engine state now carries the
+  attention flag and the header says so; the steward's standing brief orders
+  the flag stamped the moment background work starts.
+
+### Added
+- **Soft start**: opening a parked effort page wakes the steward — the
+  deterministic pickup (where we left off, the pending question) lands on
+  first poll, then the model's short orientation. Guards: stored-session
+  only, never workbench terminals, never a fresh effort, 60s cooldown.
+- **Project-wide deliverables**: the cockpit's main list is the union of
+  every effort's curated register — reports a human opens, never raw
+  session files.
+- **Per-step embedding**: register rows carry an optional Step column and
+  the plan paints each work product under the roadmap step that produced it.
+
+### Still open, by name
+- Unchanged from v1.2.5: Foreman checkpoint supervision and Jumper's batched
+  funnel arm on their next runs; steward M-batch awaits the author's
+  acceptance pass; the true-VM install check remains staged.
+
 ## v1.2.5 — the steward moves in, and the work shows its receipts (2026-08-25)
 
 The steward cockpit becomes the default project surface, deliverables get a

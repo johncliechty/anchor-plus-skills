@@ -201,8 +201,16 @@ def _effort_dir(proot, rel):
 
 
 # project-level verbs read the whole project; effort-level verbs read one effort
+# (2026-08-25 fix: "deliverables" was BOTH here and an effort-level handler —
+# the project routing won, so the register tile read the project ROOT and the
+# legacy session-files tab got shadowed by the register handler. Two surfaces,
+# one collision, both blank on John's screen while every unit test passed,
+# because the tests pinned handle_get and never this dispatch. The register
+# verb "deliverables" is effort-level; the legacy files-produced view is now
+# its own project verb "session-files".)
 _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
-                  "deliverables", "new_effort", "boneyard_restore"}
+                  "session-files", "register-all", "new_effort",
+                  "boneyard_restore"}
 
 
 def api_get(proot, verb, qs):
@@ -421,8 +429,25 @@ def handle_get(cdir, verb, qs):
         return {"terms": _terms_view(cdir)}, 200
     if verb == "gandalf":
         return {"runs": _gandalf_runs(cdir)}, 200
-    if verb == "deliverables":
+    if verb == "session-files":
+        # legacy project-level view: files WORK SESSIONS wrote (engine state),
+        # distinct from the curated effort register above
         return {"deliverables": _deliverables(cdir)}, 200
+    if verb == "register-all":
+        # project-wide deliverables (John, 2026-08-26): the UNION of every
+        # effort's curated DELIVERABLES.md register — reports a human would
+        # open, never raw session files. Each item carries its effort's rel
+        # so the client can build the contained open link.
+        out = []
+        for e in campaign.discover_efforts(cdir):
+            edir = str(Path(cdir) / e["rel"]) if e["rel"] else cdir
+            d = campaign.read_deliverables(edir)
+            for it in d.get("items", []):
+                row = dict(it)
+                row["effort"] = e["name"]
+                row["dir"] = e["rel"]
+                out.append(row)
+        return {"items": out}, 200
     if verb == "files":
         return _files(cdir, qs.get("sub", ""), qs.get("q", "").strip().lower())
     if verb == "filetext":
@@ -438,6 +463,27 @@ def events(cdir, qs):
         since = int(qs.get("since", "0"))
     except (ValueError, TypeError):
         since = 0
+    # SOFT START (John, 2026-08-26: opened the JCR tile after a restart and
+    # the dialog was EMPTY — no pickup, no pending question). The pickup
+    # machinery all lived inside wake(), but nothing called wake() on OPEN;
+    # before the cutover engines simply stayed alive in RAM, so the gap only
+    # shows after a service restart. Opening the page IS the wake for a
+    # PARKED steward session: resume it so the deterministic pickup lines +
+    # the model's brief orientation land on first poll. Guards: never for
+    # workbench terminals, never for a brand-new effort (no stored session —
+    # a mere page view must not spawn a fresh model session), only on the
+    # open poll (since=0), single-flight via wake()'s own lock, and a 60s
+    # cooldown so a wake that keeps failing can't respawn every poll.
+    if since == 0 and not eng.general and not eng.alive():
+        from steward_cockpit.steward_engine import _read_state_entry
+        now = time.time()
+        if (getattr(eng, "_auto_wake_at", 0) + 60 < now
+                and _read_state_entry(eng.skey()).get("session_id")):
+            eng._auto_wake_at = now
+            try:
+                eng.wake()
+            except Exception:
+                pass
     evs, oldest, gap = eng.events_since(since, timeout=8)
     return {"events": evs, "state": eng.state(), "oldest_seq": oldest,
             "gap": gap, "stamp": campaign.map_stamp(cdir)}, 200

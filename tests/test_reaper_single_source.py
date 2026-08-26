@@ -240,7 +240,14 @@ def test_all_call_sites_use_single_shared_provider():
     assert src.count("reaper.build_snapshot(") == 5
 
     # The owner-set + PID-alive derivations come from the snapshot, not per-site.
-    assert src.count("reaper.live_owner_ids(") >= 4
+    # Count was >= 4 until 2026-08-26. The v1 ship-prep refactor (0d448a6) made
+    # the zombie-terminal brief classify each record straight through the shared
+    # snapshot (classify_record) instead of deriving its own owner set first —
+    # the STRICTER form of this same discipline, one fewer call by design. The
+    # rule this test guards (no per-site owner enumeration) is asserted above by
+    # the zombie_hunter.live_owner_ids / reaper.classify( bans; this line only
+    # counts the remaining legitimate derivations.
+    assert src.count("reaper.live_owner_ids(") >= 3
     assert src.count("reaper.live_pid_ids(") >= 1
 
 

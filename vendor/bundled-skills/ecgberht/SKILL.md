@@ -164,12 +164,28 @@ CLI: `node bin/ecgberht.mjs <verb> [args…]` (package bin: `ecgberht`).
 Elegance rule 9: a correction that lives only in a journal has not been made).**
 
 - **Deliverables register (campaign journal 0010).** Every campaign keeps
-  `DELIVERABLES.md` at its root — one table row (What | Where | Date) per thing a
+  `DELIVERABLES.md` at its root — one table row (What | Where | Date | Step) per thing a
   human would open; finals also copied to `deliverables/`. A roadmap step whose
   done-condition produces a human-facing artifact is NOT done until listed. When
   John asks "what have we produced / where are the deliverables?", answer FROM
   this register — titles, one-liners, paths. The cockpit's 📦 tile and goal-bar
-  links read the same file; there is exactly one register.
+  links read the same file; there is exactly one register. The Step column
+  (optional but PREFER filling it) names the roadmap step that produced the
+  artifact — a step number or a name fragment — and the cockpit embeds the
+  link under that step in the plan, so the work product sits where the work
+  happened.
+  **Who decides what goes in (John, 2026-08-25):** if John calls something a
+  deliverable, it goes in — no debate. Clearly human-facing artifacts (a
+  report, a deck, a final figure, a paper draft) go in proactively without
+  asking. Borderline items: SUGGEST it in one line ("worth listing X as a
+  deliverable?") and let him rule. Intermediates, scratch, logs, and
+  re-runnable outputs stay OUT — the register is the short list of things
+  worth opening, and clutter kills it. Natural deliverables: the REPORTS the
+  big skills produce (researchPrime, Crucible, Foreman, Gandalf, the foundry
+  skills) and anything a work-session/terminal produces that John would read.
+  JOURNAL your register calls — when an include/exclude/suggest decision
+  teaches you something about the boundary, write the refined criterion into
+  a campaign journal entry so the judgment improves instead of resetting.
 - **Read-back gate (campaign journal 0008).** A bare-token answer ("go", "yes",
   "ok") arriving across a session boundary, after a resume, or after ANY
   discontinuity is never an approval by itself: read the pending decision back

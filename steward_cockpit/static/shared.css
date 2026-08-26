@@ -295,3 +295,7 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 
 /* (2026-08-25) The bake-off shells (seal / v2 / v1a / v1b / index) and their
    CSS are GONE — the experiment concluded, v1 + the cockpit won. */
+
+/* per-step deliverable links riding the plan (2026-08-26) */
+.steps li .sdeliv { margin: 3px 0 2px; font-size: 12.5px; }
+.steps li .sdeliv .drow { padding: 1px 0; }

@@ -139,6 +139,55 @@ const Proto = (() => {
      stream through the contained /api/deliverable-file route; entries pointing
      outside the effort render as text, never links. */
   let _delivBusy = false;
+  // per-step embedding (John, 2026-08-26: "embed the work products in the
+  // plan flow"): register rows may carry an optional Step column — a step
+  // NUMBER or a name fragment — and the map paints the link UNDER that step.
+  let _delivItems = [], _lastMap = null;
+  function stepDeliverables(stepName, idx1) {
+    return _delivItems.filter((it) => {
+      const s = (it.step || "").trim();
+      if (!s) return false;
+      if (/^\d+$/.test(s)) return parseInt(s, 10) === idx1;
+      return (stepName || "").toLowerCase().indexOf(s.toLowerCase()) >= 0;
+    });
+  }
+  function paintStepsList(map) {
+    const list = $("[data-steps]");
+    if (!list) return;
+    list.textContent = "";
+    map.steps.forEach((st, i) => {
+      const li = el("li", st.status);
+      const mark = { done: "✓", active: "▶", waiting: "⚑" }[st.status] || "○";
+      li.appendChild(el("span", "mark", mark));
+      const wrap = el("div");
+      wrap.appendChild(el("div", "", st.name));
+      const parts = [];
+      // live feedback rides the map: the active step says what is
+      // happening now; waiting steps say what they wait on
+      if (st.status === "active") {
+        const live = map.attention.state === "working"
+          ? (map.attention.reason || "running now")
+          : (map.heartbeat.next_recommended || "");
+        if (live) parts.push("now: " + live.replace(/\*\*/g, ""));
+      }
+      if (st.status === "waiting" && st.waiting_on)
+        parts.push("waiting on: " + st.waiting_on);
+      if (st.done_when) parts.push("done when: " + st.done_when);
+      if (st.commissioned_as) parts.push("ran as: " + st.commissioned_as);
+      wrap.appendChild(el("div", "why",
+        parts.length ? parts.join("\n") : "details to be added"));
+      const dl = stepDeliverables(st.name, i + 1);
+      if (dl.length) {
+        const box = el("div", "sdeliv");
+        dl.forEach((it) => box.appendChild(delivRow(it)));
+        wrap.appendChild(box);
+      }
+      li.appendChild(wrap);
+      if (st.status === "active") li.classList.add("open");
+      li.onclick = () => li.classList.toggle("open");
+      list.appendChild(li);
+    });
+  }
   async function renderDeliverablesTile() {
     if (_delivBusy) return;
     _delivBusy = true;
@@ -147,6 +196,9 @@ const Proto = (() => {
     catch (e) { _delivBusy = false; return; }
     _delivBusy = false;
     const items = (d && d.items) || [];
+    _delivItems = items;
+    // repaint the plan so step-tagged deliverables land under their steps
+    if (_lastMap) { try { paintStepsList(_lastMap); } catch (e) {} }
     // — the pane tile —
     const s = paneEl();
     if (s) {
@@ -185,13 +237,32 @@ const Proto = (() => {
     const row = el("div", "snow drow");
     if (it.openable && it.path) {
       const a = document.createElement("a");
-      a.textContent = it.what;
-      a.href = api("/api/deliverable-file") + "&path=" + encodeURIComponent(it.path);
-      a.target = "_blank";
-      a.rel = "noopener";
+      a.textContent = "• " + it.what;
+      // 2026-08-26 (John: "I click on them and the page had nothing"): a raw
+      // <a href> NAVIGATES — it never passes through the fetch shim, so the
+      // old api() URL arrived with no /api/steward/ prefix, no pid and no
+      // token → a blank page. Build the FULL authed URL ourselves, and send
+      // text docs (.md/.txt/.csv/.json/.log) through the report VIEWER so
+      // they render human-readable instead of as raw bytes.
+      const dirRel = it.dir !== undefined ? it.dir : DIR;
+      const isText = /\.(md|txt|csv|json|log)$/i.test(it.path);
+      if (isText) {
+        a.href = "#";
+        a.onclick = (ev) => { ev.preventDefault();
+          window.open("/report?dir=" + encodeURIComponent(dirRel) +
+                      "&path=" + encodeURIComponent(it.path)); };
+      } else {
+        a.href = "/api/steward/deliverable-file?pid=" +
+          encodeURIComponent(window.STEWARD_PID || "") +
+          "&dir=" + encodeURIComponent(dirRel) +
+          "&path=" + encodeURIComponent(it.path) +
+          (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+        a.target = "_blank";
+        a.rel = "noopener";
+      }
       row.appendChild(a);
     } else {
-      row.appendChild(document.createTextNode(it.what + (it.path ? " — " + it.path : "")));
+      row.appendChild(document.createTextNode("• " + it.what + (it.path ? " — " + it.path : "")));
     }
     if (it.date) row.appendChild(document.createTextNode(" · " + it.date));
     return row;
@@ -314,6 +385,7 @@ const Proto = (() => {
       else if (!st.alive) txt = "nothing running — asleep; your message wakes it";
       else if (st.busy) txt = "actively running" +
         (busySince ? " — " + Math.round((Date.now() - busySince) / 1000) + "s" : "");
+      else if (st.working_bg) txt = "working in the background — commissioned run in flight, nothing needed from you";
       else txt = "awake — waiting on you";
       stx.textContent = txt;
     }
@@ -386,36 +458,8 @@ const Proto = (() => {
     if (goal) goal.textContent = map.goal || "(no goal recorded)";
     const prog = $("[data-progress]");
     if (prog) prog.textContent = map.steps_done + " of " + map.steps_total + " steps done";
-    const list = $("[data-steps]");
-    if (list) {
-      list.textContent = "";
-      map.steps.forEach(st => {
-        const li = el("li", st.status);
-        const mark = { done: "✓", active: "▶", waiting: "⚑" }[st.status] || "○";
-        li.appendChild(el("span", "mark", mark));
-        const wrap = el("div");
-        wrap.appendChild(el("div", "", st.name));
-        const parts = [];
-        // live feedback rides the map: the active step says what is
-        // happening now; waiting steps say what they wait on
-        if (st.status === "active") {
-          const live = map.attention.state === "working"
-            ? (map.attention.reason || "running now")
-            : (map.heartbeat.next_recommended || "");
-          if (live) parts.push("now: " + live.replace(/\*\*/g, ""));
-        }
-        if (st.status === "waiting" && st.waiting_on)
-          parts.push("waiting on: " + st.waiting_on);
-        if (st.done_when) parts.push("done when: " + st.done_when);
-        if (st.commissioned_as) parts.push("ran as: " + st.commissioned_as);
-        wrap.appendChild(el("div", "why",
-          parts.length ? parts.join("\n") : "details to be added"));
-        li.appendChild(wrap);
-        if (st.status === "active") li.classList.add("open");
-        li.onclick = () => li.classList.toggle("open");
-        list.appendChild(li);
-      });
-    }
+    _lastMap = map;
+    paintStepsList(map);
     const wait = $("[data-wait]");
     if (wait) wait.textContent = map.heartbeat.human_wait || "(nothing)";
     const grass = $("[data-grass]");
