@@ -248,13 +248,30 @@ button.armed { background: #234a2c; border-color: #3b6b46; color: #b5e6c3; }
 .phead2 button { margin-left: auto; padding: 0 8px; }
 .platest { padding: 9px 14px; font-size: 12.5px; color: var(--dim);
            border-bottom: 1px solid var(--line); white-space: pre-wrap; }
-.rightcol .pscroll { flex: 1; min-height: 0; overflow-y: auto;
+/* The status owns the room: it is the only child that GROWS, and both side
+   tiles start closed. min-height stays 0 ON PURPOSE — .rightcol is
+   overflow:hidden with a height:100% column, so a hard floor here would push
+   the files section past the bottom edge where it cannot be scrolled to. The
+   caps below keep the status around half the pane even with both tiles open. */
+.rightcol .pscroll { flex: 1 1 auto; min-height: 0; overflow-y: auto;
                      padding: 10px 14px; font-size: 12.5px; }
 .rightcol .pscroll .blk { margin-bottom: 10px; }
 .rightcol .pscroll .body { font-size: 12.5px; }
 .rightcol .pscroll table { font-size: 11.5px; }
 .rightcol .pscroll .blk.steward.folded .body { max-height: 1.5em;
     overflow: hidden; opacity: .55; cursor: pointer; }
+/* Files: a COLLAPSIBLE tile pinned to the bottom (2026-08-27). It used to be
+   an always-open 26vh block that ate the status pane's room. */
+/* the .flist cap below is the real one — leaving the outer max-height too
+   produced two nested scrollbars on any window under ~1069px (2026-08-27) */
+.pfiles.psect { flex: none; max-height: none; overflow: visible; }
+.pfiles.psect h2 { cursor: pointer; user-select: none; }
+.pfiles.psect h2:hover { color: var(--text); }
+.pfiles.psect h2::before { content: "▾ "; color: var(--faint); }
+.pfiles.psect.folded h2::before { content: "▸ "; }
+.pfiles.psect.folded .flist { display: none; }
+.pfiles.psect .flist { max-height: 18vh; overflow-y: auto; }
+.pcount { color: var(--faint); font-weight: 400; letter-spacing: 0; }
 .pfiles { border-top: 1px solid var(--line); padding: 10px 14px;
           max-height: 26vh; overflow-y: auto; }
 .pfiles h2 { font-size: 10.5px; text-transform: uppercase;
@@ -296,6 +313,40 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 /* (2026-08-25) The bake-off shells (seal / v2 / v1a / v1b / index) and their
    CSS are GONE — the experiment concluded, v1 + the cockpit won. */
 
-/* per-step deliverable links riding the plan (2026-08-26) */
-.steps li .sdeliv { margin: 3px 0 2px; font-size: 12.5px; }
-.steps li .sdeliv .drow { padding: 1px 0; }
+/* per-step deliverables: one blue sentence, two-stage disclosure (2026-08-26) */
+.steps li .sdeliv { margin: 2px 0 0; font-size: 12.5px; }
+.steps li .sdrow .sdone { color: var(--steward); cursor: pointer;
+       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+       padding: 1px 0; }
+.steps li .sdrow .sdone:hover { text-decoration: underline; }
+.steps li .sdrow .sddetail { display: none; color: var(--dim);
+       font-size: 12px; margin: 2px 0 4px 12px; white-space: normal; }
+.steps li .sdrow.open .sddetail { display: block; }
+.steps li .sdrow .sdmeta { color: var(--faint); font-size: 11.5px; }
+.steps li .sdrow .drow { padding: 2px 0 0; }
+
+/* live activity: ONE folding line instead of per-tool chatter (2026-08-26) */
+.blk.act { font-family: var(--mono); font-size: 12px; color: var(--dim);
+       border-left: 2px solid var(--line); padding: 2px 0 2px 8px; }
+.blk.act .acthead { cursor: pointer; }
+.blk.act .acthead:hover { color: var(--text); }
+.blk.act .actbody { display: none; margin-top: 3px; color: var(--faint); }
+.blk.act.open .actbody { display: block; }
+.blk.act .actstep { padding: 1px 0; }
+.blk.act.done { color: var(--faint); }
+
+/* deliverables sit ABOVE the status scrollport in their own slot, so they are
+   always in view and can never paint over the status blocks (2026-08-26) */
+.pdeliv { flex: none; padding: 4px 14px 0; }
+/* the tile is capped when open so it can never crowd out the status */
+.pdeliv .blk.deliv:not(.folded) .body { max-height: 22vh; overflow-y: auto; }
+.pdeliv .blk.deliv { margin-bottom: 8px; }
+/* the tile folds wherever it is mounted: the only fold rule used to be
+   scoped to .pscroll, so in its own slot it rendered permanently open and
+   its header click did nothing (2026-08-26 round 2) */
+.blk.deliv.folded .body { max-height: 1.5em; overflow: hidden; }
+/* folded wins over any mounted max-height above */
+.pdeliv .blk.deliv.folded .body { max-height: 0; overflow: hidden; }
+/* pages with no dedicated slot keep the old in-pane pin */
+.pscroll .blk.deliv { position: sticky; top: 0; z-index: 2;
+       background: var(--panel); }

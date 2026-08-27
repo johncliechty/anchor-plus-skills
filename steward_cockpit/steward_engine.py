@@ -96,11 +96,25 @@ CONTRACT = (
     "files true as you work. Interface contract, earned from the sessions that "
     "worked: (1) conversational replies are a few plain sentences - no headers, "
     "no bullet walls; (2) at most ONE question per turn, asked as the LAST line, "
-    "after your recommendation; (3) decisions come as prose carrying their own "
-    "context - never option dialogs; (4) the 10-minute status is composed by "
+    "after your recommendation; (3) DECISION SHAPE - when something is John's to "
+    "decide, the turn ends in exactly this order, in plain prose: two or three "
+    "sentences of CONTEXT (assume he has been away and holds none of it - what is "
+    "at stake and why it is live now), then what you RECOMMEND with one line of "
+    "why, then the realistic ALTERNATIVES in a phrase each with its trade-off, "
+    "then the QUESTION as the LAST line, answerable in one word. Never an option "
+    "dialog, never a bare question, never machinery vocabulary. The engine checks "
+    "this: a decision turn with no recommendation is sent back once; "
+    "(4) the 10-minute status is composed by "
     "the ENGINE into the status pane from the disk map - never post status "
     "tables into the conversation; when a tick arrives, handle the commit and "
     "carry on; "
+    "(4b) ATTENTION FLAG - whenever you commission or observe background work "
+    "(a researchPrime/Foreman/Gandalf run, a long build), write "
+    ".ecgberht/attention.json {\"state\": \"working\", \"reason\": <what is "
+    "running, in plain words>} the moment it starts and set it back to "
+    "needs_you or quiet the moment it lands. The cockpit's state line and its "
+    "cadence read ONLY that flag, so an unstamped run shows John 'waiting on "
+    "you' while it works; "
     "(5) John dictates - absorb garbled speech without asking him to repeat, and "
     "never make him restate a standing rule; (6) journal and commit as you go; "
     "(7) an idea John wants parked goes to the Strip's grasscatch list the moment "
@@ -259,6 +273,10 @@ class Engine:
         self.seq = 0
         self._human_asked = False   # last human msg ended with "?" (answer-last)
         self._answer_nudged = False
+        # decision-shape nudge: ONE per human decision cycle. A plain bool,
+        # cleared only by a human message — keying it on the question STRING
+        # looped, because the nudge's own re-ask rewords the question.
+        self._decision_nudged = False
         self._tick_count = 0        # for the periodic role re-assert
         self.cond = threading.Condition()
         self.busy = False
@@ -283,7 +301,12 @@ class Engine:
         self.turn_text = ""         # the current turn's streamed text
         self.in_tick = False        # events of a cadence-tick turn are tagged
         self._ticks_pending = 0     # ticks sent mid-turn: the NEXT n turns are tick turns
-        self.files = []             # files the steward touched (Write/Edit)
+        # files the steward touched (Write/Edit). RELOADED from the durable
+        # record (John, 2026-08-26: "you've lost a lot of files"): they were
+        # persisted all along (files[-40:]) but the engine started every boot
+        # with an empty list, so a restart blanked the pane while the record
+        # still held them.
+        self.files = list(stored_entry.get("files") or [])
         self._lock = threading.Lock()
 
     # ---------- events ----------
@@ -342,7 +365,8 @@ class Engine:
             "mode": "fake" if self.fake else self.permission_mode,
             "drive": self.drive,
             "auto_count": self.auto_count,
-            "files": self.files[-12:],
+            # the full durable window, not a 12-line peek (2026-08-26)
+            "files": self.files[-40:],
             "cli": self.cli,
             "john_msgs": self.john_msgs,
             "open_question": self.open_question,
@@ -628,6 +652,8 @@ class Engine:
             # question, the steward's turn must end in prose, not tool calls
             self._human_asked = text.rstrip().endswith("?")
             self._answer_nudged = False
+            # a human message opens a new decision cycle
+            self._decision_nudged = False
             if self.open_question:
                 # only a HUMAN message answers/supersedes the pinned question;
                 # machine sends (drive, grasscatch, gandalf re-run) must not
@@ -755,11 +781,16 @@ class Engine:
             # question-bearing sentence (not just a trailing "?"), so a
             # question mid-paragraph still pins. Tick turns never pin.
             txt = self.turn_text.strip()
+            # did THIS turn ask it? (open_question is sticky across boots and
+            # across a plain prose answer — the decision check must key on the
+            # asking, not on the leftover pin)
+            pinned_now = False
             if not self.in_tick:
                 sentences = [s.strip() for s in
                              re.split(r"(?<=[.!?])\s+", txt) if s.strip().endswith("?")]
                 if sentences:
                     self.open_question = sentences[-1][-280:]
+                    pinned_now = True
             # durable per-session usage + resume/pin state, one locked write
             _update_state(self.skey(), {
                 "usage": {"spend": round(self.spend, 4), "tokens": self.tokens,
@@ -798,6 +829,55 @@ class Engine:
                     self._send_locked("(interface - not John) You ended without "
                                       "answering John in words. Reply now in one "
                                       "or two plain sentences.")
+                return
+            # DECISION SHAPE (John, 2026-08-26: "when I have to make a
+            # decision the agent should always give me context, a brief
+            # summary a human can understand, and a recommendation with
+            # potentially other options ... that seems to have been lost").
+            # Convention -> mechanism, same one-shot pattern as answer-last:
+            # a turn that puts a decision to John (a pinned question) but
+            # carries no recommendation gets ONE nudge to re-frame it.
+            # Guards, each earned from the 2026-08-26 adversarial review:
+            #  - pinned_now: only a question THIS turn asked (open_question is
+            #    sticky across boots; keying on it fired the nudge on every
+            #    wake and after a plain answer);
+            #  - _decision_nudged: a plain one-shot bool cleared ONLY by a
+            #    human message (keying on the question STRING looped forever,
+            #    because the nudge's own re-ask changes the string);
+            #  - no queued human message: John has already spoken, so his
+            #    words supersede the decision — never make him wait behind a
+            #    machine retry.
+            # The whole check happens under ONE lock hold (2026-08-26 round 2).
+            # Reading the queue, releasing, then re-acquiring to send left a
+            # window: busy is cleared before this point, so John pressing Send
+            # during the status write goes straight to stdin (never queued) —
+            # the queue then reads empty and the nudge landed ON TOP of his
+            # answer. `busy` is the real signal: it is True exactly when his
+            # words are already in flight.
+            _nudge = False
+            with self._lock:
+                if (pinned_now and txt and not was_tick
+                        and not self.general
+                        and not self._decision_nudged
+                        and not self.busy and not self.queue
+                        and not _has_recommendation(txt)):
+                    self._decision_nudged = True
+                    _nudge = True
+            if _nudge:
+                # visible, like drive: a billed machine turn is never silent
+                self._emit({"t": "sys", "tick": True,
+                            "text": "decision shape: asked without a "
+                                    "recommendation - sent back once"})
+                with self._lock:
+                    self._send_locked(
+                        "(interface - not John) You put a decision to John "
+                        "without a recommendation. Re-ask it now in his shape, "
+                        "in plain words and nothing else: two or three "
+                        "sentences of context (assume he has been away and "
+                        "holds none of it), then what you RECOMMEND and one "
+                        "line of why, then the realistic alternatives in a "
+                        "phrase each with the trade-off, then the question as "
+                        "the LAST line, answerable in one word.")
                 return
             if txt:
                 self._human_asked = False
@@ -913,7 +993,12 @@ class Engine:
         """Atomically read-modify-write <cdir>/.ecgberht/delivery.json —
         locked, with _save_state's WinError-32 retry (a concurrent reader
         holding the file must delay, never drop, the write)."""
-        with StewardEngine._DELIVERY_LOCK:
+        # NOTE 2026-08-26: this said ``StewardEngine._DELIVERY_LOCK``. The class
+        # is ``Engine`` — so EVERY call raised NameError, swallowed by the
+        # callers' except-blocks: channel_verified never flipped and the ping
+        # counter never counted from the moment the lock was introduced. The
+        # receipt mechanism was reporting success while writing nothing.
+        with Engine._DELIVERY_LOCK:
             f = Path(self.dir) / ".ecgberht" / "delivery.json"
             f.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -1025,6 +1110,33 @@ class Engine:
                         "text": "committed work-in-progress (cadence)"})
         except Exception:
             pass
+
+
+#: Phrases that mark a real recommendation, checked over the TAIL of the turn
+#: only (where the decision lives). Deliberately NARROW after the 2026-08-26
+#: review: a false POSITIVE silently disables the check, which is the
+#: expensive direction. Dropped from an earlier draft: bare "recommended"
+#: (matches "as recommended by the plan") and "my call" (matches the exact
+#: opposite sentence, "that's not my call - it's yours").
+_RECOMMEND_RE = re.compile(
+    r"\b(i\s*(?:'|\u2019)?\s*(?:d|would)?\s*(?:recommend|suggest|propose)"
+    r"|i\s*(?:'|\u2019)?\s*d?\s*lean\s+toward"
+    r"|i\s*(?:'|\u2019)?\s*d?\s*go\s+with"
+    r"|i\s+think\s+we\s+should|my\s+recommendation|my\s+advice\s+is"
+    r"|recommendation\s*[:\u2014-]|the\s+right\s+move\s+is)", re.I)
+
+#: How much of the turn tail counts as "where the decision is stated".
+_RECOMMEND_TAIL = 1200
+
+
+def _has_recommendation(text) -> bool:
+    """True when a decision turn actually carried a recommendation.
+
+    Only the TAIL is searched: a recommendation recorded in the middle of a
+    long working narrative is not a recommendation ABOUT the question being
+    asked at the end.
+    """
+    return bool(_RECOMMEND_RE.search((text or "")[-_RECOMMEND_TAIL:]))
 
 
 def _tool_detail(block):

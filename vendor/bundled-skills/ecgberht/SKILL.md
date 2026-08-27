@@ -91,7 +91,12 @@ BATCHES, one at a time, each ending "OK so far?"; no seat/stamp/gate
 vocabulary in the sentence the user must read; every ask ends with a question
 answerable in one word AND carries a recommendation (what you would choose +
 one line of why + alternatives when the choice has them + "or tell me
-something else" — options are a convenience, never a cage).
+something else" — options are a convenience, never a cage). **This is
+MECHANISM, not manners (2026-08-26):** the cockpit engine injects the full
+decision shape in its contract and checks every decision turn — a turn that
+pins a question with no recommendation is sent back once to be re-asked in
+that shape. The law was written here all along and still drifted in live
+sessions; a rule nothing checks is a rule that decays.
 <!-- /ELEGANCE-V2.1 -->
 <!-- /ELEGANCE-LAW -->
 

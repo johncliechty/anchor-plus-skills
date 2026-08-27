@@ -9,14 +9,14 @@ extraction. The archived commit sha below is the honest provenance.
 | researchPrime | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
 | crucible | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
 | foreman | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
-| gandalf | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| jumper | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| ramanujan | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| legal-beagle | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| literature-review | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| financial-analyst | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| tidy-idy | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| zombie-hunter | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
-| ecgberht | <path> | `4b16c8e3d6fca514051215c1aa6df0e2e3d8d289` |
+| gandalf | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| jumper | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| ramanujan | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| legal-beagle | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| literature-review | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| financial-analyst | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| tidy-idy | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| zombie-hunter | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| ecgberht | <path> | `b9900a353af78b7557663caa92e9cf9f8fd75d99` |
 | drivers | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
-| foundry-triage | <path> Foundry | `03faa0cfb068ea688b2080ab56af23eab8cc2ed8` |
+| foundry-triage | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |

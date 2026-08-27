@@ -2,31 +2,31 @@
  "schema": "share-sources-pin/v1",
  "schema_version": 1,
  "ship_allowed": true,
- "ship_allowed_stamp_text": "ship allowed for v1.2.6: John 2026-08-26 \u2014 'Spin the hotfix' (deliverables-surface repairs verified on his screen first). Scrub gates fail-closed in distro.build_distro.",
+ "ship_allowed_stamp_text": "ship allowed for v1.2.7: John 2026-08-27 \u2014 'you can roll everything into 1.2.7 then we can merge push strip out anything that's personal and commit for sharing with collaborators'. Scrub gates fail-closed in distro.build_distro.",
  "skills_pin": {
-  "tag": "v1.2.6",
-  "commit": "03faa0cfb068"
+  "tag": "v1.2.7",
+  "commit": "b92606015266"
  },
  "pins": [
   {
    "repo": "anchor",
-   "tag": "v1.2.6",
-   "commit": "3f8279580b9e"
+   "tag": "v1.2.7",
+   "commit": "6198a8830912"
   },
   {
    "repo": "trio",
-   "tag": "v1.2.6",
+   "tag": "v1.2.7",
    "commit": "1f3acba2b404"
   },
   {
    "repo": "skill-foundry",
-   "tag": "v1.2.6",
-   "commit": "03faa0cfb068"
+   "tag": "v1.2.7",
+   "commit": "b92606015266"
   }
  ],
  "package_versions": {
-  "A": "1.2.6",
-  "B": "1.2.6"
+  "A": "1.2.7",
+  "B": "1.2.7"
  },
  "scrub_tool_versions": {
   "vendor_skills.py": "GREEN-share-distro",

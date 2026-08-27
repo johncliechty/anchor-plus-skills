@@ -3,19 +3,19 @@
  "schema_version": 1,
  "ship_allowed": true,
  "freeze_commits": {
-  "anchor": "3f8279580b9e",
+  "anchor": "6198a8830912",
   "trio": "1f3acba2b404",
-  "skill-foundry": "03faa0cfb068"
+  "skill-foundry": "b92606015266"
  },
  "freeze_tags": {
-  "anchor": "v1.2.6",
-  "trio": "v1.2.6",
-  "skill-foundry": "v1.2.6"
+  "anchor": "v1.2.7",
+  "trio": "v1.2.7",
+  "skill-foundry": "v1.2.7"
  },
  "skills_pin": {
-  "tag": "v1.2.6",
-  "commit": "03faa0cfb068"
+  "tag": "v1.2.7",
+  "commit": "b92606015266"
  },
- "package_matrix_version": "1.2.6",
- "notes": "v1.2.6 freeze 2026-08-26 (hotfix on v1.2.5). The anchor commit pinned above is the reviewed content commit; the anchor v1.2.6 tag lands on the freeze-record commit that follows it, which adds these freeze records plus the reaper test-count correction and its changelog line. trio and skill-foundry are UNCHANGED from v1.2.5 (same vendored commits, re-tagged v1.2.6). Ecgberht vendored at 4b16c8e3d6fc (tag v1.2.6)."
+ "package_matrix_version": "1.2.7",
+ "notes": "v1.2.7 freeze 2026-08-27. The anchor commit pinned above is the reviewed content commit; the anchor v1.2.7 tag lands on the freeze-record commit that follows it. trio is UNCHANGED from v1.2.5/6 (same vendored commit, re-tagged). skill-foundry b92606015266 adds the two gandalf run journals. Ecgberht vendored at b9900a3 (tag v1.2.7)."
 }

@@ -1189,10 +1189,15 @@ def create_new_folder_project(name: str, parent_path, priority: int = 2,
         entry = _rnd.add_project(name, str(folder), priority=priority,
                                  scaffold=True)
         log_change(f"R&D: created project '{name}' at {folder} (id {entry['id']})")
+        set_project_setup_status(entry["id"], "Setting up the project…")
         try:
-            discover_and_adopt(entry["id"])
+            discover_and_adopt(entry["id"], auto_read=True)
         except Exception:
             pass
+        finally:
+            if str(project_setup_statuses().get(entry["id"], "")).startswith(
+                    "Setting up"):
+                set_project_setup_status(entry["id"], None)
         return {"entry": entry, "folder_created": True,
                 "git_initialized": git_done}
 
@@ -1223,19 +1228,51 @@ def select_existing_project(name: str, folder_path, priority: int = 2) -> dict:
             entry["state"] = _rnd.STATE_PATH_MISSING
         existing = _rnd.group_by_folder().get(str(folder), [])
         log_change(f"R&D: registered project '{name}' at {folder} (id {entry['id']})")
-        # Brownfield: instantly discover + adopt any pre-existing trio artifacts
-        # so the tile/Kanban/home panel populate from disk on register.
+        # Brownfield discover/adopt runs in the BACKGROUND (2026-08-26). It used
+        # to run inline, inside WRITE_LOCK, and it fires the first-scan Gandalf
+        # read — on a large folder (the reported case: 270GB / 25k files) the
+        # POST never got a response, so the dashboard never reloaded, so John
+        # clicked "Create" again and registered a DUPLICATE. Registration is the
+        # only thing the click is waiting for; everything after it is discovery.
         if exists:
-            try:
-                discover_and_adopt(entry["id"])
-            except Exception:
-                pass
+            # Announce BEFORE the thread starts, so the card carries the
+            # message from the first render after the page reloads.
+            set_project_setup_status(
+                entry["id"], "Setting up the project — reading what is here…")
+
+            def _adopt_bg(pid=entry["id"]):
+                try:
+                    # auto_read is back ON for registration (John, 2026-08-27:
+                    # he wants the read, he wanted to be TOLD about it). What
+                    # made this dangerous was never the read itself — it was
+                    # three unannounced swarms at once; the machine-wide
+                    # one-at-a-time cap is what fixed that.
+                    discover_and_adopt(pid, auto_read=True)
+                except Exception:
+                    pass
+                finally:
+                    # clear only OUR "setting up" message: a deferral notice
+                    # written during the read scheduling must survive
+                    if str(project_setup_statuses().get(pid, "")).startswith(
+                            "Setting up"):
+                        set_project_setup_status(pid, None)
+            # Backgrounded in the SERVER; inline under the same flag the rest
+            # of the proactive machinery uses, so the test suite stays
+            # deterministic (a daemon thread writing project state mid-suite
+            # made a neighbouring summary-cache assertion flap).
+            if _PROACTIVE_SUMMARY_ENABLED:
+                try:
+                    threading.Thread(target=_adopt_bg, daemon=True).start()
+                except Exception:
+                    _adopt_bg()
+            else:
+                _adopt_bg()
         return {"entry": entry, "path_exists": exists,
                 "siblings_in_folder": [e for e in existing
                                        if e["id"] != entry["id"]]}
 
 
-def discover_and_adopt(project_id: str) -> dict:
+def discover_and_adopt(project_id: str, auto_read: bool = True) -> dict:
     """One brownfield pipeline: scan -> adopt -> reconcile -> write marker.
 
     Called from register (``add_project`` wiring), open (``GET /project/<id>``),
@@ -1288,7 +1325,13 @@ def discover_and_adopt(project_id: str) -> dict:
     # read. first-run-ONLY (check-and-set BEFORE scheduling — no TOCTOU) + gated
     # by _PROACTIVE_SUMMARY_ENABLED (off in tests) + background daemon. Never
     # blocks the rescan/render path.
-    _trigger_gandalf_first_scan(folder, project_id)
+    # auto_read is a seam, not a policy: registration passes True again as of
+    # 2026-08-27 (John wants the read — it produced a real verdict), and what
+    # keeps it safe is the machine-wide one-at-a-time cap inside the trigger,
+    # not skipping the read. Kept as a parameter so a caller that genuinely
+    # must not spend a read can still say so.
+    if auto_read:
+        _trigger_gandalf_first_scan(folder, project_id)
     return {"ok": True, "scanned": dict(scan.counts), "adopt": adopt,
             "sibling_adopt": sibling, "marker": marker}
 
@@ -1584,6 +1627,48 @@ _GANDALF_FIRSTSCAN_LOCKS = {}
 _GANDALF_INFLIGHT_GUARD = threading.Lock()
 _GANDALF_INFLIGHT = {}
 
+#: Projects whose post-registration setup (brownfield adopt, then the honest
+#: first read) is still running. Surfaced on the dashboard card through the
+#: SAME bulk poll the Gandalf badge uses, so a freshly created project is
+#: never a silent blank tile — the failure that made "+ New project" look
+#: broken and produced duplicate clicks (2026-08-27).
+_PROJECT_SETUP = {}
+_PROJECT_SETUP_GUARD = threading.Lock()
+
+
+def set_project_setup_status(project_id, status):
+    """Set (or clear, with a falsy status) a project's setup message."""
+    with _PROJECT_SETUP_GUARD:
+        if status:
+            _PROJECT_SETUP[project_id] = {"status": str(status),
+                                          "ts": time.time()}
+        else:
+            _PROJECT_SETUP.pop(project_id, None)
+
+
+def _gandalf_inflight_ids():
+    """Projects with a Gandalf read in flight.
+
+    A read is up to a dozen jobs walking the tree for minutes, and it is NOT a
+    managed session — so ``project_move.has_live_sessions`` does not see it and
+    nothing else would stop a ``shutil.move`` out from under it.
+    """
+    with _GANDALF_INFLIGHT_GUARD:
+        return set(_GANDALF_INFLIGHT)
+
+
+def project_setup_statuses():
+    """Live setup messages, dropping anything older than the 30-min sweep."""
+    now = time.time()
+    out = {}
+    with _PROJECT_SETUP_GUARD:
+        for pid, rec in list(_PROJECT_SETUP.items()):
+            if now - rec.get("ts", 0) > 1800:
+                _PROJECT_SETUP.pop(pid, None)
+                continue
+            out[pid] = rec.get("status") or ""
+    return {k: v for k, v in out.items() if v}
+
 
 def _gandalf_firstscan_lock(project_id):
     """Return the per-project first-scan lock (created once)."""
@@ -1613,7 +1698,7 @@ def _gandalf_runner_env():
 
 
 def _trigger_gandalf(folder_path, project_id, *, manual=False, first_scan=False,
-                     tier="standard"):
+                     tier="standard", preclaimed=False):
     """Schedule a Gandalf run in a daemon thread WITHOUT blocking the caller.
 
     Mirrors ``_trigger_project_summary``: snapshots the runner-seam env at
@@ -1643,14 +1728,18 @@ def _trigger_gandalf(folder_path, project_id, *, manual=False, first_scan=False,
     if first_scan and not _PROACTIVE_SUMMARY_ENABLED:
         return False
     # In-flight guard: at most one scheduled-but-unfinished run per project.
-    with _GANDALF_INFLIGHT_GUARD:
-        if project_id in _GANDALF_INFLIGHT:
-            rec = _GANDALF_INFLIGHT[project_id]
-            if isinstance(rec, dict) and time.time() - rec.get("ts", 0) > 1800:
-                _GANDALF_INFLIGHT.pop(project_id, None)
-            else:
-                return False
-        _GANDALF_INFLIGHT[project_id] = {"status": "Starting...", "ts": time.time()}
+    # ``preclaimed`` means the first-scan hook already took this slot under the
+    # global cap's lock — re-checking here would see its own claim and refuse.
+    if not preclaimed:
+        with _GANDALF_INFLIGHT_GUARD:
+            if project_id in _GANDALF_INFLIGHT:
+                rec = _GANDALF_INFLIGHT[project_id]
+                if isinstance(rec, dict) and time.time() - rec.get("ts", 0) > 1800:
+                    _GANDALF_INFLIGHT.pop(project_id, None)
+                else:
+                    return False
+            _GANDALF_INFLIGHT[project_id] = {"status": "Starting...",
+                                             "ts": time.time()}
 
     runner_env = _gandalf_runner_env()
 
@@ -1686,30 +1775,65 @@ def _trigger_gandalf(folder_path, project_id, *, manual=False, first_scan=False,
 def _trigger_gandalf_first_scan(folder_path, project_id):
     """First-scan hook (register/open/rescan). First-run-ONLY, no TOCTOU.
 
-    Check-and-set under a per-project lock BEFORE scheduling: if a prior Gandalf
-    run already exists OR a first-scan run is already in-flight, do nothing.
-    Otherwise schedule exactly one. Gated by ``_PROACTIVE_SUMMARY_ENABLED`` (off
-    in tests) so a bare register/open never spawns a model job. Never raises.
+    Claim-and-hold under ONE lock: expire stale claims, refuse if ANY other
+    project's automatic read is in flight, refuse if this project's already is,
+    else claim the slot. Every early exit after the claim releases it.
+
+    The global cap is the 2026-08-26 fix: the guard used to be per-project, so
+    three registrations in a row started three whole-tree map-reduces at once —
+    each fanning out to ~12 parallel model jobs. That saturated the machine, the
+    create POST couldn't get a response out, and "+ New project" looked broken
+    (which produced the extra clicks that produced the extra swarms). One
+    automatic read at a time, machine-wide; a MANUAL run is never gated by this.
+
+    Gated by ``_PROACTIVE_SUMMARY_ENABLED`` (off in tests) so a bare
+    register/open never spawns a model job. Never raises.
     """
     if not _PROACTIVE_SUMMARY_ENABLED:
         return False
+    with _GANDALF_INFLIGHT_GUARD:
+        for pid, rec in list(_GANDALF_INFLIGHT.items()):
+            # a wedged run whose finally never ran must not suppress every
+            # other project's read until the server restarts
+            if isinstance(rec, dict) and time.time() - rec.get("ts", 0) > 1800:
+                _GANDALF_INFLIGHT.pop(pid, None)
+                continue
+            if pid != project_id:
+                log_change(
+                    f"R&D: deferred the automatic first-scan read for "
+                    f"{project_id} — another project's read is still running "
+                    f"(one at a time keeps the machine usable); the project "
+                    f"window's Gandalf button runs it on demand")
+                # SAY it on the card. Without this the setup message clears
+                # when the read is merely SCHEDULED, so projects 2 and 3 of a
+                # rapid triple-create went silently blank again — the very
+                # failure the setup status exists to prevent.
+                set_project_setup_status(
+                    project_id,
+                    "Read deferred — another project's read is running; "
+                    "use the Gandalf button when you want it")
+            return False
+        _GANDALF_INFLIGHT[project_id] = {"status": "Starting...",
+                                         "ts": time.time()}
+
+    def _release():
+        with _GANDALF_INFLIGHT_GUARD:
+            _GANDALF_INFLIGHT.pop(project_id, None)
+
     lk = _gandalf_firstscan_lock(project_id)
     with lk:
         try:
             if _gandalf.list_runs(folder_path, project_id):
+                _release()
                 return False  # a prior run exists — not a first scan
         except Exception:
+            _release()
             return False
-        # check-and-set the in-flight set under the SAME first-scan lock so two
-        # concurrent rescans can't both pass the prior-run check and schedule.
-        with _GANDALF_INFLIGHT_GUARD:
-            if project_id in _GANDALF_INFLIGHT:
-                rec = _GANDALF_INFLIGHT[project_id]
-                if isinstance(rec, dict) and time.time() - rec.get("ts", 0) > 1800:
-                    _GANDALF_INFLIGHT.pop(project_id, None)
-                else:
-                    return False
-        return _trigger_gandalf(folder_path, project_id, first_scan=True)
+        ok = _trigger_gandalf(folder_path, project_id, first_scan=True,
+                              preclaimed=True)
+        if not ok:
+            _release()
+        return ok
 
 
 def _reconcile_gandalf_boot_runs() -> int:
@@ -2549,6 +2673,11 @@ def render_project_tile_html(entry: dict) -> str:
         f'<span class="rnd-grip" aria-hidden="true" '
         f'title="Drag into a folder">&#8942;&#8942;</span>'
         f'<span class="rnd-dot {dot_cls}" aria-hidden="true"></span>'
+        # setup / read status slot (2026-08-27): the bulk badge poll writes
+        # here, so a freshly created project says what it is doing instead of
+        # sitting blank — the silence that produced duplicate "Create" clicks
+        f'<span class="gandalf-card-status" hidden aria-live="polite">'
+        f'<span class="gcs-spin"></span><span class="gcs-text"></span></span>'
         f'<img class="rnd-seal-ico" src="{_steward_seal_icon_src()}" alt="" '
         f'onerror="this.style.display=\'none\'" />'
         f'<span class="rnd-name">{name}</span>'
@@ -8802,7 +8931,8 @@ function _gandalfCardTokenQ() {{
 }}
 function _gandalfCardApply(statuses) {{
     var any = false;
-    var cards = document.querySelectorAll('.card[data-project-id]');
+    // both tile kinds: the PROJECTS.md .card AND the R&D .rnd-row
+    var cards = document.querySelectorAll('[data-project-id]');
     for (var i = 0; i < cards.length; i++) {{
         var card = cards[i];
         var pid = card.getAttribute('data-project-id');
@@ -8812,9 +8942,14 @@ function _gandalfCardApply(statuses) {{
                  ? statuses[pid] : null;
         if (st) {{
             any = true;
+            // a setup message is already a sentence; only a raw Gandalf
+            // status needs the prefix
+            var label = (st.indexOf('Setting up') === 0
+                         || st.indexOf('Read deferred') === 0)
+                        ? st : 'Gandalf: ' + st;
             var txt = badge.querySelector('.gcs-text');
-            if (txt) txt.textContent = 'Gandalf: ' + st;
-            badge.title = 'Gandalf: ' + st;
+            if (txt) txt.textContent = label;
+            badge.title = label;
             badge.hidden = false;
         }} else {{
             badge.hidden = true;
@@ -8826,7 +8961,7 @@ function _gandalfCardApply(statuses) {{
 }}
 function _gandalfCardTick() {{
     if (document.visibilityState !== 'visible'
-        || !document.querySelector('.card[data-project-id]')) {{
+        || !document.querySelector('[data-project-id]')) {{
         _gandalfCardStop();
         return;
     }}
@@ -8842,7 +8977,7 @@ function _gandalfCardTick() {{
 function _gandalfCardStart() {{
     if (_gandalfCardTimer) return;        // already polling — don't stack intervals
     if (document.visibilityState !== 'visible'
-        || !document.querySelector('.card[data-project-id]')) return;
+        || !document.querySelector('[data-project-id]')) return;
     _gandalfCardTick();                   // immediate first paint
     _gandalfCardTimer = setInterval(_gandalfCardTick, 1000);
 }}
@@ -8854,7 +8989,7 @@ function _gandalfCardStop() {{
 function _gandalfCardProbeTick() {{
     if (_gandalfCardTimer) return;        // already active
     if (document.visibilityState !== 'visible'
-        || !document.querySelector('.card[data-project-id]')) return;
+        || !document.querySelector('[data-project-id]')) return;
     fetch('/api/rnd/gandalf_status_all' + _gandalfCardTokenQ(), {{cache: 'no-store'}})
       .then(function (r) {{ return r.ok ? r.json() : null; }})
       .then(function (d) {{
@@ -10309,6 +10444,31 @@ def handle_new_project(handler, path, body):
     mode = body.get("mode", "existing")
     name = body.get("name", "")
     priority = body.get("priority", 2)
+    # Same name + same folder, already registered → hand back the EXISTING
+    # project instead of minting a twin (2026-08-26: a slow first registration
+    # left the page unreloaded, so a second click produced a duplicate that
+    # looked exactly like the first). Only an exact match short-circuits;
+    # deliberate 1-folder:N-projects still works via a different name.
+    _dup_folder = str(body.get("folder_path", "") or "").strip()
+    if mode in ("existing", "auto") and _dup_folder and name:
+        try:
+            # ACTIVE projects only: group_by_folder includes archived/future/
+            # RETIRED by default, so matching them would hand back a retired
+            # entry forever and make re-registering that name impossible.
+            for _e in _rnd.group_by_folder().get(
+                    str(Path(_dup_folder).expanduser()), []):
+                if _rnd._effective_state(_e) != _rnd.STATE_ACTIVE:
+                    continue
+                if (_e.get("name") or "").strip().lower() == name.strip().lower():
+                    handler._send_json({
+                        "ok": True, "entry": _e, "already_registered": True,
+                        "message": f"'{name}' is already registered for that "
+                                   f"folder — it is on your dashboard "
+                                   f"already, not created twice.",
+                    })
+                    return
+        except Exception:
+            pass   # never block a registration on the duplicate check
     # (2026-08-07, John — High Seat "+ New project") mode 'auto': one folder
     # path decides. Existing folder → brownfield register (discover/adopt +
     # first-scan Gandalf fire inside); missing → create it under its parent.
@@ -16558,6 +16718,17 @@ def handle_move_project(handler, path, body):
         handler._send_json({"ok": False,
                          "error": "move requires confirm:true",
                          "reason": "confirm-required"}, 400)
+    elif pid in project_setup_statuses() or pid in _gandalf_inflight_ids():
+        # A fresh project is still being read/adopted IN this folder; moving
+        # the directory out from under that write is how you get a half-moved
+        # tree (2026-08-27 — setup now runs in the background, so this window
+        # is real). Re-labelling the group (set_group) is unaffected: it never
+        # touches disk.
+        handler._send_json({"ok": False,
+                            "error": "this project is still being set up — "
+                                     "wait for that to finish, then move it "
+                                     "(re-labelling its folder works now)",
+                            "reason": "setup-in-flight"}, 409)
     else:
         try:
             out = _pmove.move_to_group(pid, group)
@@ -17179,6 +17350,11 @@ def handle_gandalf_status_all(handler, path, body):
                 st = rec
             if st:
                 statuses[_pid] = st
+    # A project still being set up reports that instead — it is the honest
+    # answer to "what is this blank new tile doing?", and it precedes the
+    # Gandalf status the same run will report a moment later.
+    for _pid, _msg in project_setup_statuses().items():
+        statuses[_pid] = _msg
     handler._send_json({"ok": True, "statuses": statuses})
 
 

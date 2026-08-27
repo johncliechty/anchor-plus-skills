@@ -113,8 +113,12 @@ const Proto = (() => {
     // Deliverables tile stays pinned FIRST in the pane (2026-08-25, John's ask),
     // and its register refreshes on the same cadence as the status it sits above.
     try {
-      const dt = s.querySelector(".blk.deliv");
-      if (dt && s.firstChild !== dt) s.insertBefore(dt, s.firstChild);
+      // the tile owns [data-delivmount] above this scrollport; only pages
+      // without that slot still need it pinned first INSIDE the pane
+      if (!$("[data-delivmount]")) {
+        const dt = s.querySelector(".blk.deliv");
+        if (dt && s.firstChild !== dt) s.insertBefore(dt, s.firstChild);
+      }
       renderDeliverablesTile();
     } catch (e) { /* no-op */ }
     // Render receipt (2026-08-25; COALESCED same day after review): the status is
@@ -143,6 +147,10 @@ const Proto = (() => {
   // plan flow"): register rows may carry an optional Step column — a step
   // NUMBER or a name fragment — and the map paints the link UNDER that step.
   let _delivItems = [], _lastMap = null;
+  let _delivOpen = (() => {
+    try { return localStorage.getItem("steward_deliv_open") === "1"; }
+    catch (e) { return false; }
+  })();
   function stepDeliverables(stepName, idx1) {
     return _delivItems.filter((it) => {
       const s = (it.step || "").trim();
@@ -151,6 +159,34 @@ const Proto = (() => {
       return (stepName || "").toLowerCase().indexOf(s.toLowerCase()) >= 0;
     });
   }
+  // One blue SENTENCE under its step. Click once → the detail; click the
+  // detail's link → the report itself (John's two-stage disclosure).
+  function stepDelivLine(it) {
+    const row = el("div", "sdrow");
+    const one = (it.what || "").split(" — ")[0].trim() || it.what || "(untitled)";
+    const line = el("div", "sdone", "▸ " + one);
+    const detail = el("div", "sddetail");
+    const full = el("div", "", it.what || "");
+    detail.appendChild(full);
+    if (it.date) detail.appendChild(el("div", "sdmeta", it.date));
+    detail.appendChild(delivRow(it));           // the actual open link
+    const key = (it.dir || "") + "|" + (it.path || it.what || "");
+    if (_openDelivs.has(key)) row.classList.add("open");
+    line.onclick = (ev) => {
+      ev.stopPropagation();
+      row.classList.toggle("open");
+      if (row.classList.contains("open")) _openDelivs.add(key);
+      else _openDelivs.delete(key);
+    };
+    row.appendChild(line);
+    row.appendChild(detail);
+    return row;
+  }
+  // What the USER opened, kept across repaints. paintStepsList rebuilds every
+  // <li> and it runs on every map-stamp change (the steward rewrites the map
+  // constantly) and on every register load — without this, a click collapsed
+  // again within seconds.
+  const _openSteps = new Set(), _openDelivs = new Set();
   function paintStepsList(map) {
     const list = $("[data-steps]");
     if (!list) return;
@@ -160,6 +196,10 @@ const Proto = (() => {
       const mark = { done: "✓", active: "▶", waiting: "⚑" }[st.status] || "○";
       li.appendChild(el("span", "mark", mark));
       const wrap = el("div");
+      // a flex item defaults to min-width:auto, which nowrap text resolves to
+      // the full string width — the rail then grows a horizontal scrollbar
+      // instead of ellipsizing the blue line
+      wrap.style.minWidth = "0";
       wrap.appendChild(el("div", "", st.name));
       const parts = [];
       // live feedback rides the map: the active step says what is
@@ -174,17 +214,29 @@ const Proto = (() => {
         parts.push("waiting on: " + st.waiting_on);
       if (st.done_when) parts.push("done when: " + st.done_when);
       if (st.commissioned_as) parts.push("ran as: " + st.commissioned_as);
-      wrap.appendChild(el("div", "why",
-        parts.length ? parts.join("\n") : "details to be added"));
+      // no filler: a step with nothing recorded shows nothing
+      if (parts.length) wrap.appendChild(el("div", "why", parts.join("\n")));
+      // The plan must stay SCANNABLE (John, 2026-08-26: "it should not open
+      // up and give me all the details ... has to be really tight and tidy").
+      // Three levels, each a deliberate click:
+      //   1. step name (+ a one-SENTENCE blue line per deliverable)
+      //   2. click the step  -> its why/done-when detail
+      //   3. click a deliverable -> its detail, click again -> the report
       const dl = stepDeliverables(st.name, i + 1);
       if (dl.length) {
         const box = el("div", "sdeliv");
-        dl.forEach((it) => box.appendChild(delivRow(it)));
+        dl.forEach((it) => box.appendChild(stepDelivLine(it)));
         wrap.appendChild(box);
       }
       li.appendChild(wrap);
-      if (st.status === "active") li.classList.add("open");
-      li.onclick = () => li.classList.toggle("open");
+      const stepKey = st.name || String(i);
+      if (_openSteps.has(stepKey)) li.classList.add("open");
+      li.onclick = (ev) => {
+        if (ev.target.closest(".sdeliv")) return;   // deliverables own their clicks
+        li.classList.toggle("open");
+        if (li.classList.contains("open")) _openSteps.add(stepKey);
+        else _openSteps.delete(stepKey);
+      };
       list.appendChild(li);
     });
   }
@@ -199,19 +251,40 @@ const Proto = (() => {
     _delivItems = items;
     // repaint the plan so step-tagged deliverables land under their steps
     if (_lastMap) { try { paintStepsList(_lastMap); } catch (e) {} }
-    // — the pane tile —
-    const s = paneEl();
+    // — the tile: its OWN slot above the scrollport when the page provides
+    //   one (never overlaps the status blocks), else the pane as before —
+    const s = $("[data-delivmount]") || paneEl();
     if (s) {
       let tile = s.querySelector(".blk.deliv");
-      const wasOpen = tile ? !tile.classList.contains("folded") : false;
+      // starts CLOSED so the status keeps the room; his choice then sticks
+      const wasOpen = tile ? !tile.classList.contains("folded")
+                           : (_delivOpen === true);
       if (!tile) {
         tile = el("div", "blk steward deliv folded");
         s.insertBefore(tile, s.firstChild);
       } else tile.textContent = "";
       if (wasOpen) tile.classList.remove("folded");
-      const who = el("div", "who", "📦 DELIVERABLES (" + items.length + ") — the things worth opening");
+      // one-line summary in the header, so a folded tile still tells him what
+      // is in there (John, 2026-08-27: "deliverables on top with a little
+      // summary above that")
+      // "newest" must BE the newest: the register is parsed in file order and
+      // its own convention (newest-first) is a convention, not a guarantee —
+      // labelling items[0] as newest silently lied whenever a steward
+      // appended. Pick by date, fall back to file order.
+      const byDate = items.slice().sort((a, b) =>
+        String(b.date || "").localeCompare(String(a.date || "")));
+      const newest = byDate.length
+        ? (byDate[0].what || "").split(" — ")[0].trim() : "";
+      const who = el("div", "who",
+        "📦 DELIVERABLES (" + items.length + ")" +
+        (newest ? " — newest: " + newest : " — nothing registered yet"));
       who.style.cursor = "pointer";
-      who.onclick = () => tile.classList.toggle("folded");
+      who.onclick = () => {
+        tile.classList.toggle("folded");
+        _delivOpen = !tile.classList.contains("folded");
+        try { localStorage.setItem("steward_deliv_open",
+                                   _delivOpen ? "1" : "0"); } catch (e) {}
+      };
       tile.appendChild(who);
       const body = el("div", "body");
       if (!d || !d.exists) {
@@ -268,6 +341,79 @@ const Proto = (() => {
     return row;
   }
 
+  /* ---------- live activity (replaces per-tool chatter) ---------- */
+  let actEl = null, actSteps = [], actStart = 0, actTimer = null, actHome = null;
+  function actLabel() {
+    const secs = actStart ? Math.round((Date.now() - actStart) / 1000) : 0;
+    const last = actSteps.length ? actSteps[actSteps.length - 1] : "";
+    return "⟳ working — " + actSteps.length +
+      (actSteps.length === 1 ? " step" : " steps") +
+      (secs ? " · " + (secs < 90 ? secs + "s" : Math.round(secs / 60) + "m") : "") +
+      (last ? " · " + last : "");
+  }
+  // Drop the live line WITHOUT touching the DOM (used when the transcript is
+  // cleared on an epoch reconnect, and whenever a turn can no longer end).
+  function resetActivity() {
+    if (actTimer) { clearInterval(actTimer); actTimer = null; }
+    // A tick turn's line lives in the STATUS pane, which the reconnect does
+    // not clear. Dropping the pointer there left a node reading "⟳ working"
+    // with no owner and no timer — a permanent false running indicator on the
+    // pane John now sees by default. Finalize it before letting go.
+    if (actEl && actEl.isConnected && actSteps.length) {
+      const n = actSteps.length;
+      actEl.classList.add("done");
+      actEl.querySelector(".acthead").textContent =
+        "✓ " + n + (n === 1 ? " step" : " steps") + " — click to see what it did";
+    }
+    actEl = null; actSteps = []; actStart = 0; actHome = null;
+  }
+  function activity(ev) {
+    const step = (ev.name || "?") + (ev.detail ? " " + ev.detail : "");
+    const s = targetFor(ev);
+    // a tick-tagged tool goes to the status pane, a plain one to the
+    // conversation: never keep appending into a line that lives elsewhere
+    if (actEl && (actHome !== s || !actEl.isConnected)) endActivity(null);
+    actSteps.push(step);
+    if (!actEl) {
+      const stick = atBottom(s);
+      actStart = Date.now();
+      actHome = s;
+      const box = el("div", "blk act");        // capture the ELEMENT, not the
+      const head = el("div", "acthead", "");   // module slot: endActivity nulls
+      const body = el("div", "actbody");       // actEl and the old closure then
+      head.onclick = () => box.classList.toggle("open");  // threw / hit the
+      box.appendChild(head);                   // wrong line
+      box.appendChild(body);
+      s.appendChild(box);
+      actEl = box;
+      pin(s, stick);
+      actTimer = setInterval(() => {
+        if (!actEl || !actEl.isConnected) { resetActivity(); return; }
+        actEl.querySelector(".acthead").textContent = actLabel();
+      }, 1000);
+    }
+    actEl.querySelector(".acthead").textContent = actLabel();
+    actEl.querySelector(".actbody").appendChild(el("div", "actstep", "· " + step));
+    // stay at the bottom: prose blocks land after it, and a live indicator
+    // stranded above the transcript answers nothing. ONLY when the reader is
+    // already pinned to the bottom — relocating the node shifts everything
+    // after it, which yanks the page for someone reading scrollback.
+    const stick = atBottom(s);
+    if (stick && actEl.nextSibling) s.appendChild(actEl);
+    pin(s, stick);
+  }
+  function endActivity(ev) {
+    if (actTimer) { clearInterval(actTimer); actTimer = null; }
+    const box = actEl, n = actSteps.length;
+    actEl = null; actSteps = []; actStart = 0; actHome = null;
+    if (!box || !box.isConnected || !n) return;
+    box.classList.add("done");
+    box.querySelector(".acthead").textContent =
+      "✓ " + n + (n === 1 ? " step" : " steps") +
+      (ev && ev.duration_s ? " · " + (ev.duration_s < 90 ? ev.duration_s + "s"
+        : Math.round(ev.duration_s / 60) + "m") : "") + " — click to see what it did";
+  }
+
   /* ---------- events ---------- */
   function handle(ev) {
     if (ev.t === "delta") {
@@ -286,11 +432,17 @@ const Proto = (() => {
       addBlock("john", opts.johnLabel || "JOHN", ev.text);
       busySince = Date.now();
     } else if (ev.t === "tool") {
+      // ONE live activity line, not a line per call (John, 2026-08-26: the
+      // tool chatter buried what the steward was actually saying, and he
+      // still couldn't tell whether it was running). The line updates in
+      // place, counts the steps, names the current one, and expands to the
+      // full list on click. It IS the running indicator.
       closeCurrent();
-      addLine("tool", "· " + ev.name + (ev.detail ? "  " + ev.detail : ""), ev);
+      activity(ev);
     } else if (ev.t === "turn_end") {
       closeCurrent();
       busySince = null;
+      endActivity(ev);
       addLine("turnend", "· turn done in " + ev.duration_s + "s · $" +
               (ev.cost_usd || 0).toFixed(3), ev);
     } else if (ev.t === "status") {
@@ -300,6 +452,11 @@ const Proto = (() => {
       renderStatus(ev.status);
     } else if (ev.t === "sys") {
       closeCurrent();
+      // a session that ended/slept emits sys, never turn_end — finalize the
+      // live line here or its timer runs for the life of the tab and the next
+      // turn appends into a dead turn's counter
+      if (/session ended|asleep|could not start|CLI not found/i.test(ev.text || ""))
+        endActivity(null);
       // tick-tagged housekeeping (drive continues, cadence commits) rides
       // the status pane; plain sys lines stay in the conversation
       addLine("sys", ev.text, ev.tick ? ev : undefined);
@@ -319,6 +476,7 @@ const Proto = (() => {
         if (ep !== undefined && epoch !== null && ep !== epoch) {
           seq = 0; epoch = ep;
           const s = scrollEl(); if (s) s.textContent = "";
+          resetActivity();   // the live line was just detached with the DOM
           addLine("sys", "— session reconnected —");
           if (!opts.skipHistory) await loadHistory();
           continue;
@@ -407,6 +565,23 @@ const Proto = (() => {
   function renderFiles(files) {
     const list = $("[data-flist]");
     if (!list) return;
+    const cnt = $("[data-filecount]");
+    if (cnt) cnt.textContent = "(" + files.length + ")";
+    const head = $("[data-filestoggle]"), sect = $("[data-filesect]");
+    if (head && sect && !head._wired) {
+      head._wired = true;
+      try {
+        if (localStorage.getItem("steward_files_open") === "1")
+          sect.classList.remove("folded");
+      } catch (e) { /* no-op */ }
+      head.onclick = () => {
+        sect.classList.toggle("folded");
+        try {
+          localStorage.setItem("steward_files_open",
+            sect.classList.contains("folded") ? "0" : "1");
+        } catch (e) { /* no-op */ }
+      };
+    }
     list.textContent = "";
     files.slice().reverse().forEach(f => {
       const row = el("div", "frow");

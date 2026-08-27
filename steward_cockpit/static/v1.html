@@ -73,9 +73,17 @@
       </div>
       <div class="platest" data-latest></div>
       <div class="pmsgs" data-msgs></div>
+      <!-- Pane order + sizing (2026-08-27, John): deliverables on top with a
+           one-line summary, THE STATUS DOMINANT in the middle, files at the
+           bottom. Deliverables and files are collapsible tiles that start
+           CLOSED — click the header to open, click again to close — so the
+           status keeps the room unless he asks for one of them. Only the
+           status section grows (flex:1); the tiles are flex:none and capped
+           even when open, so neither can squeeze the status to nothing. -->
+      <div class="pdeliv" data-delivmount></div>
       <div class="pscroll"></div>
-      <div class="pfiles">
-        <h2>Files produced</h2>
+      <div class="pfiles psect folded" data-filesect>
+        <h2 data-filestoggle>Files produced <span class="pcount" data-filecount></span></h2>
         <div class="flist" data-flist></div>
       </div>
     </div>
@@ -86,8 +94,22 @@
 <script>
 Proto.init({ statusPane: true });
 const app = document.querySelector(".app");
+// The status pane carries the deliverables and the 10-minute status — the two
+// things John asked to be top of mind — so it opens by DEFAULT (2026-08-26:
+// pinning the tile achieved nothing while the whole pane started collapsed).
+// His choice wins after that, and is remembered.
+try {
+  if (localStorage.getItem("steward_status_pane") !== "shut")
+    app.classList.add("statusopen");
+} catch (e) { app.classList.add("statusopen"); }
 document.querySelectorAll("[data-statustoggle],[data-statustoggle2]").forEach(b =>
-  b.onclick = () => app.classList.toggle("statusopen"));
+  b.onclick = () => {
+    app.classList.toggle("statusopen");
+    try {
+      localStorage.setItem("steward_status_pane",
+        app.classList.contains("statusopen") ? "open" : "shut");
+    } catch (e) { /* no-op */ }
+  });
 const t2 = document.querySelector("[data-railtoggle2]");
 if (t2) t2.onclick = () => app.classList.toggle("railhide");
 // slide the open status pane wider/narrower by its left grip

@@ -1,5 +1,61 @@
 # Changelog
 
+## v1.2.7 — the cockpit gets quiet, the plan gets tidy, and work announces itself (2026-08-27)
+
+Three days of the author using the deliverables surface and the steward
+cockpit for real work, then three adversarial review rounds (one cross-family)
+over every diff. Everything below was verified on his screen before release.
+
+### The conversation is readable again
+- **One activity line, not a line per tool call.** A long steward turn used to
+  bury its own prose under dozens of dim tool lines. Now a single folding line
+  counts the steps, names the current one, and ticks its elapsed time — so it
+  doubles as the answer to "is it still running." Click it for the full list.
+- **The state line stops lying.** It said "waiting on you" while commissioned
+  background work ran. The engine now carries the attention flag, and the
+  steward's contract orders that flag stamped the moment background work
+  starts.
+
+### The plan reads at a glance
+Roadmap steps no longer auto-expand and no longer show filler. Each step's
+deliverables appear as one blue sentence; click it for the detail, click the
+link for the report. Register rows carry an optional Step column so a work
+product sits under the step that produced it.
+
+### The status pane is a status pane
+Deliverables on top (folded, with the newest item named in the header),
+**the status in the middle as the only section that grows**, files at the
+bottom. Both side sections fold on a click and remember the choice.
+
+### Work announces itself
+- **Soft start**: opening a parked effort wakes the steward, so the dialog
+  opens with where things stand and any question still waiting.
+- **Project setup**: creating a project lands it immediately and its tile says
+  "Setting up the project — reading what is here…" while the honest first read
+  runs. A deferred read says so too, and points at the manual button.
+- **Decision shape, enforced**: a decision put to the author with no
+  recommendation is sent back once, visibly. The law was written all along —
+  which is exactly why it drifted. A rule nothing checks is a rule that decays.
+
+### Fixed
+- Files produced were persisted but reloaded as an empty list, so every
+  restart blanked the pane.
+- Delivery receipts raised NameError into a swallowing catch for a full
+  release: `channel_verified` never flipped while the call reported success.
+- Registering a project fired an unannounced whole-tree read per click, with a
+  per-project concurrency guard — so repeat clicks stacked model swarms until
+  the machine stopped answering. One automatic read at a time now, machine-
+  wide, off the request path, with an exact-duplicate guard.
+- Deliverable links opened blank pages (they bypassed the page's auth
+  plumbing); text artifacts now render in the report viewer, PDFs inline.
+
+### Still open, by name
+Foreman checkpoint supervision and Jumper's batched funnel arm on their next
+runs. The steward M-batch (High Seat re-route, chamber cut) awaits the
+author's acceptance pass. 21 project-window/steward tests remain red from the
+cockpit cutover reconciliation — unchanged by this release, named here rather
+than quietly carried.
+
 ## v1.2.6 — the deliverables surface actually opens (2026-08-26)
 
 Hotfix on v1.2.5, driven by the author's first real day using the
