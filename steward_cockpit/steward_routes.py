@@ -268,6 +268,10 @@ def _project_post(proot, verb, body):
             return {"ok": False, "error": "bad name"}, 400
         src = Path(proot) / BONEYARD / name
         dst = Path(proot) / name
+        # resting in place (marker) → resurrect by removing the marker
+        if (dst / "ECGBERHT.md").is_file() and campaign.is_retired_in_place(str(dst)):
+            campaign.resurrect_in_place(str(dst))
+            return {"ok": True, "rel": name, "in_place": True}, 200
         if not (src / "ECGBERHT.md").is_file():
             return {"ok": False, "error": "not in the boneyard"}, 404
         if dst.exists():
@@ -335,11 +339,27 @@ def _project_post(proot, verb, body):
         dst = yard / Path(cdir).name
         if dst.exists():
             return {"ok": False, "error": "name collision in the boneyard"}, 409
+        # (2026-09-03, John: "there was an error archiving") Windows refuses
+        # the rename while anything inside is open — a deck in PowerPoint, an
+        # Explorer window, a terminal's cwd, the engine we just stopped still
+        # letting go. Retry briefly; if it still refuses, retire IN PLACE
+        # (marker) — the effort leaves the live list and joins the boneyard
+        # exactly as if moved, and nothing is lost.
+        last = None
+        for _i in range(5):
+            try:
+                Path(cdir).rename(dst)
+                return {"ok": True, "in_place": False}, 200
+            except OSError as e:
+                last = e
+                time.sleep(0.4)
         try:
-            Path(cdir).rename(dst)
+            campaign.retire_in_place(cdir, "folder in use at retire time: %s" % last)
         except OSError as e:
             return {"ok": False, "error": f"could not archive: {e}"}, 500
-        return {"ok": True}, 200
+        return {"ok": True, "in_place": True,
+                "note": "retired in place — a file in it was open, so the folder "
+                        "stayed where it is; it rests in the boneyard all the same"}, 200
     return {"ok": False, "error": "unknown"}, 404
 
 
@@ -438,8 +458,15 @@ def handle_get(cdir, verb, qs):
     if verb == "status":
         # the deterministic two-part 10-minute status, composed FRESH
         # (zero-model) — the same shape the engine's cadence persists to
-        # .ecgberht/status-summary.json; the pane paints it on open
+        # .ecgberht/status-summary.json; the pane paints it on open.
+        # (2026-09-03, John): an effort with NO live engine shows its LAST
+        # recorded update, stamped, rather than a fresh "nothing running" —
+        # ``stale: true`` tells the pane it is looking at the record.
         eng = ENGINES.get(cdir)
+        if eng is None:
+            last = campaign.read_last_status(cdir)
+            if last is not None:
+                return last, 200
         return campaign.compose_status(
             cdir, eng.state() if eng else None), 200
     if verb == "grass":

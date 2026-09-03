@@ -40,6 +40,8 @@
   .efrow .erename { color: var(--faint); flex: none; padding: 0 4px;
                     cursor: pointer; }
   .efrow .erename:hover { color: var(--steward); }
+  .efrow .ebone { flex: none; padding: 0 4px; cursor: pointer; opacity: .55; }
+  .efrow .ebone:hover { opacity: 1; }
   .frow2 { display: flex; align-items: center; gap: 10px; padding: 5px 2px;
            font-size: 13.5px; border-bottom: 1px solid var(--line); }
   .frow2:last-child { border-bottom: none; }
@@ -438,6 +440,24 @@ async function refresh() {
           refresh();
         };
         r.appendChild(rn);
+        // (2026-09-03, John) retire a finished effort from its tile: the
+        // gravestone moves it to the effort boneyard below, where "resurrect"
+        // brings it back — nothing is deleted.
+        const bn = el("span", "ebone", "🪦");
+        bn.title = "retire this effort to the boneyard (resurrect any time)";
+        bn.onclick = async (ev) => {
+          ev.stopPropagation();
+          if (!confirm("Retire \"" + e.name + "\" to the boneyard? It is archived, not deleted — resurrect it from the boneyard below.")) return;
+          const rr = await fetch("/api/boneyard_move", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: e.rel }) });
+          const jj = await rr.json();
+          if (!jj.ok) { alert(jj.error || "could not retire it"); return; }
+          if (fsframe.dataset.rel === e.rel) { fsframe.removeAttribute("src");
+            delete fsframe.dataset.rel; }
+          refresh(); loadShelves();
+        };
+        r.appendChild(bn);
       }
       r.onclick = () => openEffort(e.rel);
       wrap.appendChild(r);
@@ -802,9 +822,10 @@ function renderEbones() {
   rows.forEach(b => {
     const r = el("div", "brow expand");
     r.appendChild(el("div", "bl", "🪦 " + b.name + " · " + b.boneyarded +
-      " · " + b.steps_done + "/" + b.steps_total));
+      " · " + b.steps_done + "/" + b.steps_total +
+      (b.in_place ? " · resting in place (a file in it was open)" : "")));
     const sum = el("div", "bsum", b.goal_brief || "(no goal recorded)");
-    const rb = el("button", "mini", "restore");
+    const rb = el("button", "mini", "resurrect");
     rb.style.marginTop = "6px";
     rb.onclick = async (ev) => {
       ev.stopPropagation();
@@ -812,8 +833,8 @@ function renderEbones() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: b.name }) });
       const jj = await rr.json();
-      if (!jj.ok) alert(jj.error || "could not restore it");
-      loadShelves();
+      if (!jj.ok) alert(jj.error || "could not resurrect it");
+      loadShelves(); refresh();   // the tile comes back at once, not at the next tick
     };
     sum.appendChild(rb);
     r.appendChild(sum);

@@ -1,5 +1,119 @@
 # Changelog
 
+## v1.2.10 — the home becomes the r3 prototype; the status pane becomes a window; restarts stop needing hands (2026-09-03)
+
+John, 2026-09-03: "there was an updated (prototype) for the main dashboard and it
+looks like it never made it into the current version … those tabs were supposed
+to be on the main dashboard. That is a big error." He was right. The r3 home
+(`_mockups/dashboard-v2`, 2026-08-27/28) was praised by the 08-29 review as the
+design contract and then never scheduled; only its Calendar/Email tiles moved,
+into the project cockpit as placeholders (v1.2.8), where he rejected them on
+09-02 — and they were deleted instead of moved. This release closes that.
+
+### The home is the r3 prototype
+- The steward owns the left rail: the move today · due today · coming up ·
+  projects (open / running / need you / folders) · workbench. The old
+  Views / Domains / Domain-balance nav is gone; Inbox, the domain filters and
+  the R&D archive live one click away inside the Tasks and Projects tiles.
+- The steward tile opens with ranked **Needs attention** rows — `home_attention.py`,
+  a deterministic v0 (health check → a session waiting on you → overdue →
+  due today → failed in 7 days); every row says which rule raised it; the
+  steward's own raise queue joins from the badge poll. No hidden score.
+- Tiles in r3 order: Steward · Tasks · Projects · Workbench · **Calendar** ·
+  **Email** · Grasscatcher. Calendar and Email are HOME tiles in an honest
+  not-connected state — nothing is sample data, no account is named, and the
+  one action says "Set up — not yet available" (no connector exists yet; the
+  08-29 email/calendar research says how one must be built).
+- The cuts the prototype made: the stats row, the Completed/Cancelled/Saved
+  header buttons (now counts on the Tasks line), "Click to expand".
+- Pinned by `tests/test_home_r3_2026_09_03.py`; the rearch census re-pinned to
+  ground truth (51) with its artifacts refreshed.
+
+### The cockpit's status pane, per John's look
+- The status is its **own window** below the deliverables tile — it shrinks
+  when the tile opens; nothing slides under it — and its header carries the
+  time of the last update.
+- The 10-minute update renders in John's locked table format (Summary · Effort ·
+  Doing · Status · Tests · Blocker · Procs · Journal · ETA · To do), every row
+  present, an honest dash where the engine has no fact.
+- An effort with no live engine shows its **last recorded update**, stamped
+  and marked as the record, instead of a fresh "nothing running".
+- Deliverables are one line each → click for the description → **Open ↗** in a
+  new window (the same two-stage line the plan's steps already had).
+- The top bar's line is the one-line status of record for the steward run; the
+  goal is one click away inside it.
+
+### Restarts stop needing elevated hands
+- `POST /api/restart` (token-authed): honored only when the process runs under
+  nssm (AppExit=Restart), it answers, drains warm, exits 0 and nssm brings the
+  fresh server up. Refuses (409) when unsupervised, so it can never leave Anchor
+  down. `/api/shutdown` stays removed and there is no UI button.
+
+### Doctor, per John's look (2026-09-03)
+- Issues read in plain words: a title, one sentence, and the raw check text
+  behind "what the check said" (`doctor_plain.py`).
+- **Resolve all** (`POST /api/doctor/resolve_all`): a live re-probe first — when
+  the only failure is the 5 AM self-test failing to reach its own throwaway copy
+  and the live service answers, the check is simply re-run; otherwise ONE doctor
+  session is opened for every issue. Resolve and Resolve all RUN the brief
+  (a settled Enter after the paste); Diagnose stays hands-off.
+- The Doctor chip sits with Update / Hunter / Foundry; the Steward pick sits on
+  the Terminal · Coder · Reviewer · Judge line; open tiles survive the reload a
+  task action triggers ("do not suddenly close the task window").
+
+### Gravestones, and a boneyard that cannot fail
+- Every effort tile in the cockpit ends in a gravestone → the effort boneyard
+  (archived, never deleted); a resting effort offers **resurrect**, which
+  repaints the tiles at once. Every project row under the steward's seal ends
+  in a gravestone → the Archive view (kept).
+- Retiring an effort whose folder Windows holds open (a deck in PowerPoint, an
+  Explorer window, a terminal) no longer fails with "there was an error
+  archiving": after brief rename retries it retires IN PLACE via a marker,
+  leaves the live list and rests in the boneyard all the same; resurrect
+  removes the marker.
+
+### The 5 AM red, root-caused (an Anchor Doctor session, launched from Resolve all)
+- On 13 of the 18 nights before the fix the health check reported
+  `[HTTP endpoints] 0/7 … timed out (20.0s) … WinError 10061`. Reproduced: the
+  server bound AND listened its port ~0.5 s into boot, then ran the boot
+  reconcile (registry PID probes, worktree reap, daemons — 80 s+ under 5 AM
+  load) BEFORE `serve_forever`; every connect in that window queued into a
+  5-slot backlog nobody drained, hung 20 s, and once the backlog was full
+  Windows refused every further connect.
+- Fix: bind early (the single-instance guard is a bind-time property) but
+  `listen()` only when ready — a connect during boot is refused, never queued —
+  with the backlog raised to 64; the health check waits for a REAL HTTP answer
+  (`GET /api/version` → 200), red only after 180 s, a timing WARN over 30 s;
+  `restart_anchor.ps1` waits 180 s for LISTENING. Pinned by
+  `tests/test_boot_readiness.py`.
+
+### The auth walk asserts what it declares
+- `GET /mockup` was declared token-authed since 08-15 but served by a legacy
+  branch that never checked — found the moment the walk ran with a token
+  configured (a Resolve-all rerun inside the live service). Gated now.
+- The nightly walk had been skipping every token row ("38 rows walked,
+  token=unset") because the 5 AM task carries no `ANCHOR_TOKEN`; the health
+  check now mints a per-run token when none is configured (the report says
+  "minted", never the value), so all 220 rows are asserted every night.
+- `tests/test_declared_auth_walk_live_2026_09_03.py` walks every declared token
+  row tokenless against an in-process server and demands 401 — the healthcheck's
+  walk, in the test net, independent of the night's environment.
+
+### The design contract is versioned
+- `_mockups/dashboard-v2` (prototype r3) is tracked as a SCRUBBED copy — every
+  real name, account and task replaced with generic sample text; the author's
+  originals stay beside it git-ignored — with reference renders (default, Tip of
+  the Hat open, phone) and a README marking every element live / projected /
+  sample / future, as the 08-29 addendum's P0 asked. Never in the bundle.
+- The home's red banner speaks plainly: what a click does, nothing about seeds.
+
+### Still open, by name
+- The r3 Doctor rule is half built: Resolve all re-probes live, but opening
+  Doctor on a red banner still starts from a seeded brief rather than probing
+  first, and the receipt in English is not built.
+- Everything in the v1.2.9 list (F1B, Doctor/Zombie Hunter ChatGPT
+  certification, Codex as a Foreman seat).
+
 ## v1.2.9 — the steward's kickoff becomes the work product; the cockpit sheds what it never needed (2026-09-02)
 
 Gate 5 of the ChatGPT-foundation effort, built by Foreman in Ecgberht (nine waves,

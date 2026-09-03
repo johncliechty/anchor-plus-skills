@@ -2683,6 +2683,18 @@ def render_project_tile_html(entry: dict) -> str:
             f'<button class="rnd-mini" onclick="rndBlurb(\'{pid}\')" title="Edit blurb (what this project is)">Blurb</button>'
             f'<button class="rnd-mini" onclick="rndNotes(\'{pid}\')" title="Edit notes">Notes</button>'
         )
+    # (2026-09-03, John) the gravestone at the END of every project row under
+    # the steward's seal: an active project retires to the Archive view (kept,
+    # reviewable — nothing deleted); a resting one offers the way back.
+    if is_active:
+        grave = (f'<button class="rnd-mini rnd-grave" '
+                 f'onclick="event.stopPropagation();rndArchive(\'{pid}\')" '
+                 f'title="Retire this project to the archive (boneyard) — reactivate any time">'
+                 f'&#129702;</button>')
+    else:
+        grave = (f'<button class="rnd-mini rnd-accent rnd-grave" '
+                 f'onclick="event.stopPropagation();rndReactivate(\'{pid}\')" '
+                 f'title="Resurrect: make this project active again">resurrect</button>')
     # Kebab menu holds all lifecycle controls so the row stays thin. The row
     # itself (click anywhere not on the kebab) opens the project window.
     kebab = (
@@ -2725,6 +2737,7 @@ def render_project_tile_html(entry: dict) -> str:
         f'{steward_block}'
         f'<span class="rnd-row-counts">{status}</span>'
         f'{rollup_block}'
+        f'{grave}'
         f'{kebab}'
         f'</div>'
     )
@@ -5762,7 +5775,7 @@ def _model_capability_fields() -> dict:
     }
 
 
-def render_model_prefs_controls() -> str:
+def render_model_prefs_controls(extra_html: str = "") -> str:
     """Compact Terminal / Coder / Reviewer / Judge selects for the home header.
 
     Loads current prefs via GET ``/api/settings`` (token from localStorage, same
@@ -5824,7 +5837,8 @@ def render_model_prefs_controls() -> str:
     )
     sel_style = (
         "background:var(--surface);color:var(--text);border:1px solid var(--border);"
-        "border-radius:6px;padding:2px 6px;font-size:11px;cursor:pointer"
+        "border-radius:6px;padding:2px 6px;font-size:11px;cursor:pointer;"
+        "max-width:132px"  # five picks on ONE line (Terminal · Coder · Reviewer · Judge · Steward)
     )
     lab_style = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap"
     html = (
@@ -5847,6 +5861,7 @@ def render_model_prefs_controls() -> str:
         "data-linked-role='reviewer' aria-describedby='mpCapability' "
         "style=\"%s\">%s</select>"
         "</label>"
+        "%s"
         "<span id='mpStatus' style=\"font-size:10px;opacity:.7\"></span>"
         "<span id='mpCapability' role='status' style=\"font-size:10px;opacity:.72\" "
         "title='Judge follows Reviewer; disabled choices explain transport limits'>%s</span>"
@@ -5854,7 +5869,8 @@ def render_model_prefs_controls() -> str:
     ) % (style, lab_style, sel_style, _opts(dcli, "terminal"),
          lab_style, sel_style, _opts(ccode, "coder"),
          lab_style, sel_style, _opts(rcode, "reviewer"),
-         lab_style, sel_style, _opts(rcode, "judge"), capability_summary)
+         lab_style, sel_style, _opts(rcode, "judge"), extra_html or "",
+         capability_summary)
 
     # Self-contained script: load prefs on DOMContentLoaded; POST on change.
     # Uses X-Anchor-Token for POST and ?token= for GET (dashboard convention).
@@ -7097,9 +7113,142 @@ def restore_task(task_text, from_archive="saved"):
 
 # ── HTML Dashboard Generation ─────────────────────────────────────────
 
+# ── r3 home (2026-09-03) ──────────────────────────────────────────────────────
+# The home page follows the dashboard-v2 prototype (r3, 2026-08-27/28;
+# _mockups/dashboard-v2 + SCORECARD.md): "open Anchor in the morning, see what
+# needs you, act, and leave." The steward owns the left rail (the move today ·
+# due today · coming up · project counts · workbench); the steward tile opens
+# with ranked "needs attention" rows; Calendar and Email are tiles on the HOME
+# (not the project cockpit) in an honest not-connected state — no connector
+# exists yet (plans/2026-08-29-anchor-email-calendar-research), so nothing is
+# sample data and the only action says it is not yet available. Everything here
+# is read-only projection of state the page already has; the ranking is
+# home_attention (deterministic, every row names its rule).
+def _home_r3_parts(tasks, health, steward_label, steward_hs_name,
+                   today=None, now=None):
+    """Return the r3 rail / attention / calendar / email HTML snippets.
+
+    Best-effort at every seam: a registry hiccup degrades one section to an
+    honest line, never the page."""
+    import home_attention as _ha
+    esc = lambda s: html_lib.escape(str(s if s is not None else ""))
+
+    try:
+        sessions = _sessreg.list_sessions()
+    except Exception:
+        sessions = []
+    names, folders, open_n = {}, 0, 0
+    try:
+        for _e in _rnd.list_projects(include_archived=False, include_future=False,
+                                     include_retired=False):
+            if _e.get("id"):
+                names[_e["id"]] = _e.get("name") or _e["id"][:8]
+        open_n = len(names)
+    except Exception:
+        pass
+    try:
+        folders = len(_rnd.group_by_group())
+    except Exception:
+        pass
+
+    rows = _ha.build_attention(tasks=tasks, sessions=sessions, health=health,
+                               today=today, now=now, project_names=names)
+    lead, sub = _ha.the_move(rows, steward_hs_name)
+    counts = _ha.rail_counts(sessions, rows, folders=folders, open_projects=open_n)
+    due, due_more = _ha.due_rows(tasks, today=today)
+    live, live_more = _ha.live_rows(sessions, names)
+
+    # ── rail ──
+    due_html = "".join(
+        '<div class="rrow"><span class="rdot %s"></span><span>%s</span></div>' % (
+            "p1" if d["priority"] == 1 else ("late" if d["overdue"] else "p2"), esc(d["text"]))
+        for d in due) or '<div class="rquiet">nothing due today</div>'
+    if due_more:
+        due_html += '<div class="rmore">+%d more in Tasks</div>' % due_more
+    live_html = "".join(
+        '<div class="rrow"><span class="rlive">&#9679; live</span> <a href="/project/%s" target="_blank" rel="noopener">%s</a></div>' % (
+            esc(l["project_id"]), esc(l["text"])) if l["project_id"] else
+        '<div class="rrow"><span class="rlive">&#9679; live</span> <span>%s</span></div>' % esc(l["text"])
+        for l in live) or '<div class="rquiet">nothing running</div>'
+    if live_more:
+        live_html += '<div class="rmore">+%d more</div>' % live_more
+    rail_html = (
+        '<div class="rail-card rail-move">'
+        '<div class="rlab">%s</div>'
+        '<div class="rtitle">The move today</div>'
+        '<div class="rlead">%s</div>'
+        '<div class="rsub">%s</div>'
+        '</div>'
+        '<div class="rail-card"><div class="rlab">Due today</div>%s</div>'
+        '<div class="rail-card"><div class="rlab">Coming up</div>'
+        '<div class="rquiet">Calendar not connected &mdash; <a href="#tile-cal" onclick="r3Open(\'tile-cal\')">set up</a></div>'
+        '</div>'
+        '<div class="rail-card"><div class="rlab">Projects</div>'
+        '<div class="rgrid">'
+        '<a class="rstat" href="#tile-projects" onclick="r3Open(\'tile-projects\')"><b>%d</b><span>open</span></a>'
+        '<a class="rstat" href="#dashboard-workbench-details" onclick="r3Open(\'dashboard-workbench-details\')"><b class="ok">%d</b><span>running</span></a>'
+        '<a class="rstat" href="#tile-highseat" onclick="r3Open(\'tile-highseat\')"><b class="%s" data-needyou="%d">%d</b><span>need you</span></a>'
+        '<a class="rstat" href="#tile-projects" onclick="r3Open(\'tile-projects\')"><b>%d</b><span>folders</span></a>'
+        '</div></div>'
+        '<div class="rail-card"><div class="rlab">Workbench</div>%s</div>'
+    ) % (esc(steward_label).upper(), esc(lead), esc(sub), due_html,
+         counts["open"], counts["running"],
+         "bad" if counts["need_you"] else "", counts["need_you"], counts["need_you"], counts["folders"],
+         live_html)
+
+    # ── steward tile: needs-attention rows ──
+    if rows:
+        att_rows = "".join(
+            '<a class="att %s" data-rule="%s" href="%s"%s><span class="adot"></span>'
+            '<span class="atext">%s</span><span class="awhy">%s</span>'
+            '<span class="arule">raised by: %s</span></a>' % (
+                esc(r["severity"]), esc(r["rule"]), esc(r["href"]),
+                ' target="_blank" rel="noopener"' if r["href"].startswith("/") else
+                ' onclick="r3Open(\'%s\')"' % esc(r["href"].lstrip("#")),
+                esc(r["text"]), esc(r["why"]), esc(r["rule_label"]))
+            for r in rows)
+        first = rows[0]["text"]
+        att_html = (
+            '<div class="attn" data-attention>'
+            '<div class="attn-head"><b>Needs attention</b>'
+            '<span>say which to act on &mdash; nothing opens until you ask</span></div>'
+            '<div class="attn-rows">%s</div>'
+            '<div class="attn-first">I would take <b>%s</b> first. Or say another.</div>'
+            '</div>' % (att_rows, esc(first)))
+        att_count = "%d need attention &middot; talk below" % len(rows)
+    else:
+        att_html = ('<div class="attn attn-quiet" data-attention>'
+                    'Nothing is waiting on you. Talk below, or say <i>new project</i>.</div>')
+        att_count = "nothing waiting &middot; talk below"
+
+    # ── calendar / email tiles (honest zero state) ──
+    def _conn_tile(tid, glyph, name, what):
+        return (
+            '<details class="dash-tile tile-conn" id="%s">'
+            '<summary><span class="tile-glyph" aria-hidden="true">%s</span> %s'
+            '<span class="tile-count">not connected</span><span class="tile-hint"></span></summary>'
+            '<div class="tile-body">'
+            '<p class="conn-zero">No account is connected, so there is nothing to show &mdash; '
+            'nothing here is sample data.</p>'
+            '<p class="conn-how">Connecting %s means two app registrations (Google, Microsoft) and a '
+            'sign-in per account in a browser Anchor opens. Anchor would read before it ever writes, '
+            'and every send or calendar change would ask you first.</p>'
+            '<div class="conn-providers"><span>Google &middot; Gmail + Calendar</span>'
+            '<span>Microsoft 365 &middot; Outlook + Calendar</span></div>'
+            '<button class="btn btn-sm btn-outline" disabled title="The guided setup is not built yet">'
+            'Set up &mdash; not yet available</button>'
+            '</div></details>' % (tid, glyph, name, what))
+    cal_html = _conn_tile("tile-cal", "&#9638;", "Calendar", "your calendars")
+    mail_html = _conn_tile("tile-mail", "&#9993;", "Email", "your mail")
+
+    return {"rail": rail_html, "attention": att_html, "attention_count": att_count,
+            "calendar": cal_html, "email": mail_html}
+
+
 # ANCHOR[rearch]: GENERATE_HTML — structural anchor (W1); keep UNIQUE, keep
 # directly above the def. The anchor-freshness gate (tools/anchors.py)
 # re-locates this before every extraction wave — no line numbers anywhere.
+
 def generate_html(projects, tasks, inbox):
     """Generate a full standalone HTML dashboard matching the original Anchor style."""
     today_str = datetime.now().strftime("%A, %B %d, %Y")
@@ -7132,9 +7281,12 @@ def generate_html(projects, tasks, inbox):
                     _hb_issue,
                     title="Health check found issues",
                     body=(
+                        # Plain words on the home (r3: "Click: Doctor runs
+                        # itself"): what a click does, nothing about seeds
+                        # or markdown paths.
                         f'on {html_lib.escape(str(report_date))}. '
-                        f'Click to open Doctor and diagnose this issue '
-                        f'(seeded context — not a static markdown path).'
+                        f'Click: Doctor opens with this issue already read; '
+                        f'Resolve all is one click there.'
                     ),
                     style_kind="health",
                 )
@@ -7650,6 +7802,30 @@ def generate_html(projects, tasks, inbox):
         "high_seat_name": steward_hs_name,
     })
 
+    # r3 home parts (rail · needs-attention rows · Calendar/Email zero state).
+    # Best-effort: a failure degrades to honest placeholders, never the page.
+    try:
+        _r3 = _home_r3_parts(tasks, (hr[0], hr[1]) if hr else None,
+                             steward_label, steward_hs_name)
+    except Exception:
+        _r3 = {"rail": '<div class="rail-card"><div class="rquiet">rail unavailable</div></div>',
+               "attention": "", "attention_count": "talk below",
+               "calendar": "", "email": ""}
+    r3_rail_html, r3_attention_html = _r3["rail"], _r3["attention"]
+    r3_attention_count, r3_calendar_html, r3_email_html = _r3["attention_count"], _r3["calendar"], _r3["email"]
+    # Inside the Tasks tile: the views the r3 rail no longer lists (Inbox +
+    # domain filters) stay one click away; the Projects tile keeps the archive.
+    tasks_tile_links_html = (
+        '<a class="tlink" href="#" onclick="event.preventDefault();showView(\'inbox\')">'
+        '&#9993; Inbox <b>%d</b></a>' % len(inbox))
+    for _d in domain_order:
+        if _d in domain_counts or any(p["domain"] == _d for p in projects):
+            tasks_tile_links_html += (
+                '<a class="tlink" href="#" onclick="event.preventDefault();showView(\'%s\')">'
+                '<span class="dot" style="background:%s"></span>%s <b>%d</b></a>' % (
+                    _d, domain_css_colors.get(_d, 'var(--text-dim)'),
+                    domain_labels.get(_d, _d.title()), domain_counts.get(_d, 0)))
+
     # Pre-build balance widget rows (avoid nested f-string issues)
     max_count = max(domain_counts.values()) if domain_counts else 1
     balance_rows = ""
@@ -7951,8 +8127,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 /* ── Dashboard section tiles (2026-07-27) ──────────────────────────────────
    The dashboard body is four collapsible tiles, in this order:
    High Seat · Workbench · Tasks · Projects. Each is a plain <details>, so the
-   open/closed state needs no JS; the hint text flips off the [open] attribute
-   ("Click to expand" → "Click to collapse") rather than lying when open. */
+   open/closed state needs no JS; the hint is a caret that flips off the [open]
+   attribute (r3, 2026-09-03: the click-to-expand copy was cut). */
 .dash-tile {{
     border: 1px solid var(--border); border-radius: 10px;
     background: var(--surface); margin-bottom: 14px; overflow: hidden;
@@ -7969,8 +8145,66 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 .dash-tile .tile-glyph {{ font-size: 18px; line-height: 1; flex: none; }}
 .dash-tile .tile-count {{ font-size: 11px; font-weight: 500; color: var(--text-dim); }}
 .dash-tile .tile-hint {{ margin-left: auto; font-size: 12px; font-weight: 400; color: var(--text-dim); white-space: nowrap; }}
-.dash-tile .tile-hint::after {{ content: "\\25BE Click to expand"; }}
-.dash-tile[open] .tile-hint::after {{ content: "\\25B4 Click to collapse"; }}
+.dash-tile .tile-hint::after {{ content: "\\25BE"; }}
+.dash-tile[open] .tile-hint::after {{ content: "\\25B4"; }}
+.dash-tile .tile-count .tc-link {{ color: var(--text-dim); text-decoration: underline dotted; }}
+.dash-tile .tile-count .tc-link:hover {{ color: var(--text); }}
+.tile-links {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+.tlink {{ display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim);
+          border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; text-decoration: none; }}
+.tlink:hover {{ color: var(--text); background: var(--surface2); }}
+.tlink b {{ font-weight: 600; }}
+.tlink .dot {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
+
+/* ── r3 rail (2026-09-03): the steward owns the left column ─────────────── */
+.rail-home {{ padding: 0 12px; display: flex; flex-direction: column; gap: 10px; }}
+.rail-card {{ border: 1px solid var(--border); border-radius: 9px; background: var(--bg); padding: 10px 12px; }}
+.rail-card .rlab {{ font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-dim); margin-bottom: 6px; }}
+.rail-move {{ border-color: rgba(251,191,36,0.45); }}
+.rail-move .rlab {{ color: var(--warning); }}
+.rail-move .rtitle {{ font-size: 11px; color: var(--warning); margin-bottom: 4px; }}
+.rail-move .rlead {{ font-size: 13.5px; line-height: 1.35; font-weight: 500; }}
+.rail-move .rsub {{ font-size: 11px; color: var(--text-dim); margin-top: 6px; line-height: 1.35; }}
+.rail-card .rrow {{ display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; line-height: 1.3; }}
+.rail-card .rrow a {{ color: var(--text); text-decoration: none; }}
+.rail-card .rrow a:hover {{ text-decoration: underline; }}
+.rail-card .rdot {{ width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--warning); }}
+.rail-card .rdot.p1, .rail-card .rdot.late {{ background: var(--danger); }}
+.rail-card .rlive {{ color: var(--success); font-size: 11px; font-weight: 600; }}
+.rail-card .rquiet, .rail-card .rmore {{ font-size: 12px; color: var(--text-dim); }}
+.rail-card .rquiet a {{ color: var(--accent); }}
+.rail-card .rgrid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }}
+.rail-card .rstat {{ background: var(--surface2); border-radius: 7px; padding: 7px 9px; text-decoration: none; color: var(--text); display: flex; flex-direction: column; }}
+.rail-card .rstat b {{ font-size: 17px; font-weight: 700; }}
+.rail-card .rstat b.ok {{ color: var(--success); }}
+.rail-card .rstat b.bad {{ color: var(--danger); }}
+.rail-card .rstat span {{ font-size: 10.5px; color: var(--text-dim); }}
+.rail-back a {{ font-size: 12px; color: var(--accent); text-decoration: none; }}
+
+/* ── r3 steward tile: needs-attention rows ──────────────────────────────── */
+.attn {{ border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; margin-bottom: 12px; background: var(--bg); }}
+.attn-quiet {{ font-size: 13px; color: var(--text-dim); }}
+.attn-head {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; font-size: 13px; }}
+.attn-head span {{ font-size: 11px; color: var(--text-dim); }}
+.attn-rows {{ display: flex; flex-direction: column; gap: 4px; }}
+.att {{ display: grid; grid-template-columns: 10px 1fr auto; gap: 4px 10px; align-items: center; padding: 6px 8px; border-radius: 7px; text-decoration: none; color: var(--text); background: var(--surface); }}
+.att:hover {{ background: var(--surface2); }}
+.att .adot {{ width: 8px; height: 8px; border-radius: 50%; }}
+.att.red .adot {{ background: var(--danger); }}
+.att.amber .adot {{ background: var(--warning); }}
+.att.blue .adot {{ background: var(--accent); }}
+.att .atext {{ font-size: 13px; font-weight: 500; }}
+.att .awhy {{ font-size: 11px; color: var(--text-dim); grid-column: 2; }}
+.att .arule {{ font-size: 10px; color: var(--text-dim); grid-column: 3; grid-row: 1 / span 2; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }}
+.attn-first {{ font-size: 12.5px; color: var(--text-dim); margin-top: 8px; }}
+.attn-first b {{ color: var(--text); font-weight: 500; }}
+
+/* ── r3 Calendar / Email tiles: honest zero state ───────────────────────── */
+.tile-conn .conn-zero {{ font-size: 13px; margin: 0 0 8px; }}
+.tile-conn .conn-how {{ font-size: 12px; color: var(--text-dim); line-height: 1.45; margin: 0 0 10px; max-width: 70ch; }}
+.tile-conn .conn-providers {{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }}
+.tile-conn .conn-providers span {{ font-size: 11px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; color: var(--text-dim); }}
+.tile-conn button[disabled] {{ opacity: 0.6; cursor: not-allowed; }}
 .dash-tile .tile-body {{ border-top: 1px solid var(--border); padding: 16px 18px; background: var(--bg); }}
 .dash-tile .tile-body > *:first-child {{ margin-top: 0; }}
 .dash-tile .tile-body .section-header {{ margin-top: 22px; }}
@@ -8340,6 +8574,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 .rnd-rows-rolltog b {{ font-size: 10px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-dim); font-weight: 600; cursor: pointer; }}
 .rnd-rows-rolltog b.on {{ background: rgba(108,156,252,.15); color: var(--accent); border-color: var(--accent); }}
 .rnd-kebab {{ flex: 0 0 auto; position: relative; }}
+.rnd-grave {{ flex: 0 0 auto; opacity: .55; padding: 1px 6px; }}
+.rnd-grave:hover {{ opacity: 1; }}
 .rnd-kebab-btn {{ background: transparent; border: 1px solid transparent; color: var(--text-dim); font-size: 16px; line-height: 1; padding: 2px 7px; border-radius: 6px; cursor: pointer; }}
 .rnd-kebab-btn:hover {{ border-color: var(--border); color: var(--text); }}
 .rnd-kebab-menu {{ display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px; flex-direction: column; gap: 4px; min-width: 120px; box-shadow: 0 6px 18px rgba(0,0,0,.4); }}
@@ -8359,30 +8595,15 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
     <div class="gwl-badge">Powered by NextGen Nuclear <svg class="gwl-rad" width="12" height="12" viewBox="0 0 24 24" style="vertical-align:middle" role="img" aria-label="radiation"><circle cx="12" cy="12" r="2.6" fill="#22c55e"/><path fill="#22c55e" d="M13.6 14.77L17.5 21.53A11 11 0 0 1 6.5 21.53L10.4 14.77A3.2 3.2 0 0 0 13.6 14.77ZM8.8 12L1 12A11 11 0 0 1 6.5 2.47L10.4 9.23A3.2 3.2 0 0 0 8.8 12ZM13.6 9.23L17.5 2.47A11 11 0 0 1 23 12L15.2 12A3.2 3.2 0 0 0 13.6 9.23Z"/></svg></div>
     <h1><span>&#9875;</span> Anchor</h1>
     <div class="subtitle">J.C. Liechty — Life Dashboard</div>
-    <div class="nav-section">
-      <h3>Views</h3>
-      <div class="nav-item active" data-view="dashboard" onclick="showView('dashboard')">
-        <span class="dot" style="background:var(--accent)"></span> Dashboard
+    <!-- r3 (2026-09-03): the steward owns the rail — the move today, due
+         today, coming up, project counts, workbench. The old Views/Domains/
+         Domain-balance nav is gone (SCORECARD cuts); Inbox, domain filters and
+         the R&D archive stay one click away inside the Tasks/Projects tiles. -->
+    <div class="rail-home" data-rail>
+      <div class="rail-back" style="display:none" data-railback>
+        <a href="#" onclick="event.preventDefault();showView('dashboard')">&#8592; Dashboard</a>
       </div>
-      <div class="nav-item" data-view="inbox" onclick="showView('inbox')">
-        <span class="dot" style="background:var(--warning)"></span> Inbox <span class="count">{len(inbox)}</span>
-      </div>
-      <div class="nav-item" data-view="rnd" onclick="showView('rnd')">
-        <span class="dot" style="background:#6c9cfc"></span> R&amp;D
-      </div>
-      <div class="nav-item" data-view="rnd-archive" onclick="showView('rnd-archive')">
-        <span class="dot" style="background:var(--text-dim)"></span> R&amp;D Archive
-      </div>
-    </div>
-    <div class="nav-section">
-      <h3>Domains</h3>
-      {nav_items}
-    </div>
-    <div class="balance-widget">
-      <h4>Domain Balance</h4>
-      <div class="balance-bars">
-        {balance_rows}
-      </div>
+      {r3_rail_html}
     </div>
   </nav>
 
@@ -8410,15 +8631,14 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
         <div style="display:flex;align-items:center;gap:8px">
           <h2>Dashboard</h2>
           <button class="btn btn-sm" onclick="refresh()" style="font-size:11px;padding:4px 10px;background:var(--accent)">&#8635; Update</button>
+          <button class="btn btn-sm" id="doctorChip" onclick="window.open('/doctor' + (_anchorToken() ? ('?token=' + encodeURIComponent(_anchorToken())) : ''), '_blank')" style="font-size:11px;padding:4px 10px;background:#131828;border:1px solid #10b981;color:#10b981;font-weight:600;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:6px" title="Anchor Doctor — what the last health run found, and Resolve all">&#10010; Anchor Doctor</button>
           <button class="btn btn-sm" onclick="window.open('/api/rnd/zombie_hunter_report' + (_anchorToken() ? ('?token=' + encodeURIComponent(_anchorToken())) : ''), '_blank')" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--accent);color:var(--text);display:inline-flex;align-items:center;gap:4px;" title="Zombie Hunter Radar"><img src="/vendor/brand/zombie-hunter-radar.jpg" style="width:14px;height:14px;border-radius:2px;" alt="" /> Zombie Hunter</button>
           <button class="btn btn-sm" onclick="window.open('/foundry','_blank')" style="font-size:11px;padding:4px 10px;background:var(--surface2);border:1px solid var(--accent);color:var(--text);display:inline-flex;align-items:center;gap:4px;" title="Skill Foundry — library, knowledge graph, sleep runs"><img src="/vendor/brand/skill-foundry-icon.jpg?v={BUILD_ID}" style="width:14px;height:14px;border-radius:2px;" alt="" /> Skill Foundry</button>
           <!-- Ecgberht High Seat moved out of this button row (2026-07-27): it is
                now the FIRST dashboard tile below, and carries the ⚑ badge with
                it. The badge (raise-queue length) is still the only ambient
                Ecgberht signal anywhere in Anchor. -->
-          <button class="btn btn-sm btn-outline" id="completedBtn" onclick="showView('completed')" style="font-size:11px;padding:4px 10px">&#10003; Completed ({len(done_tasks)})</button>
-          <button class="btn btn-sm btn-outline" onclick="showView('cancelled')" style="font-size:11px;padding:4px 10px;border-color:var(--danger);color:var(--danger)">&#10007; Cancelled ({len(cancelled_tasks)})</button>
-          <button class="btn btn-sm btn-outline" onclick="showView('saved')" style="font-size:11px;padding:4px 10px;border-color:var(--warning);color:var(--warning)">&#128337; Saved ({len(saved_tasks)})</button>
+          <!-- r3: Completed / Cancelled / Saved live on the Tasks tile line now. -->
           <!-- 2026-05-12: Stop button removed. Server lifecycle is owned by
                the NSSM "anchor" service on gwl-server. To restart, run
                `nssm restart anchor` on gwl-server. -->
@@ -8433,17 +8653,11 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          {render_model_prefs_controls()}
-          {render_steward_control()}
-          <button class="btn btn-sm" onclick="window.open('/doctor' + (_anchorToken() ? ('?token=' + encodeURIComponent(_anchorToken())) : ''), '_blank')" style="font-size:12px;padding:4px 10px;background:#131828;border:1px solid #10b981;color:#10b981;font-weight:600;border-radius:6px;cursor:pointer;" title="Anchor Doctor Diagnostic">&#10010; Anchor Doctor</button>
+          <!-- r3 chrome (John, 2026-09-03): the Steward pick rides the
+               Terminal / Coder / Reviewer / Judge line; the Doctor chip sits
+               with Update / Zombie Hunter / Skill Foundry above. -->
+          {render_model_prefs_controls(extra_html=render_steward_control())}
         </div>
-      </div>
-
-      <div class="stats-row">
-        <div class="stat-card"><div class="num">{len([p for p in projects if p["status"]=="active"])}</div><div class="label">Active Projects</div></div>
-        <div class="stat-card"><div class="num">{len(active)}</div><div class="label">Open Tasks</div></div>
-        <div class="stat-card"><div class="num">{len(done_tasks)}</div><div class="label">Completed</div></div>
-        <div class="stat-card"><div class="num">{len(inbox)}</div><div class="label">In Inbox</div></div>
       </div>
 
       <!-- ── Tile 1 · High Seat ───────────────────────────────────────────
@@ -8455,7 +8669,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
         <summary title="{steward_label} — the {steward_hs_name} (all your projects, one place to steer them)">
           <img class="tile-ico" src="{steward_hs_src}" alt="" onerror="this.style.display='none'" />
           {steward_hs_name}
-          <span class="tile-count">{steward_label} &mdash; all your projects, one place to steer them</span>
+          <span class="tile-count">{steward_label} &mdash; {r3_attention_count}</span>
           <span class="ecg-hs-badge" id="ecgHighSeatBadge"></span>
           <!-- The docked-overlay entry point. Ecgberht's frozen HIGH_SEAT_MOUNT
                contract is presentation="docked_overlay" on surface="main_dashboard",
@@ -8469,24 +8683,9 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
                   style="font-size:11px;padding:3px 9px;font-weight:500">&#8599; Dock</button>
           <span class="tile-hint"></span>
         </summary>
-        <div class="tile-body"><div class="ecg-hs-inline" id="ecgHighSeatInline"></div></div>
+        <div class="tile-body">{r3_attention_html}<div class="ecg-hs-inline" id="ecgHighSeatInline"></div></div>
       </details>
 
-      <!-- ── Tile 2 · Workbench ──────────────────────────────────────────── -->
-      <details class="dash-tile" id="dashboard-workbench-details">
-        <summary>
-          <img class="tile-ico" src="/vendor/brand/workbench-icon.jpg?v={BUILD_ID}" alt="" onerror="this.style.display='none'" />
-          Workbench
-          <span class="tile-count">the dashboard's own project cockpit</span>
-          <a class="btn btn-sm btn-outline" href="/project/__dashboard__"
-             target="_blank" rel="noopener" onclick="event.stopPropagation()"
-             style="font-size:11px;padding:3px 9px">Open cockpit</a>
-          <span class="tile-hint"></span>
-        </summary>
-        <div class="tile-body" style="padding:0">
-          <iframe src="/project/__dashboard__?classic=1" style="width:100%; height:1100px; border:none; display:block;"></iframe>
-        </div>
-      </details>
 
       <!-- ── Tile 3 · Tasks ───────────────────────────────────────────────
            One expanded window holding BOTH groups: P1 (+ anything due now) at
@@ -8495,11 +8694,12 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
         <summary>
           <span class="tile-glyph" aria-hidden="true">&#10003;</span>
           Tasks
-          <span class="tile-count">{len(top_tasks)} priority &middot; {len(other_tasks)} other</span>
+          <span class="tile-count">{len(top_tasks)} priority &middot; {len(other_tasks)} other &middot; <a class="tc-link" href="#" onclick="event.preventDefault();event.stopPropagation();showView('completed')">{len(done_tasks)} done</a> &middot; <a class="tc-link" href="#" onclick="event.preventDefault();event.stopPropagation();showView('cancelled')">{len(cancelled_tasks)} cancelled</a> &middot; <a class="tc-link" href="#" onclick="event.preventDefault();event.stopPropagation();showView('saved')">{len(saved_tasks)} saved</a></span>
           <span class="tile-hint"></span>
         </summary>
         <div class="tile-body">
-          <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="tile-links">{tasks_tile_links_html}</div>
             <button class="btn btn-sm" onclick="toggleAddTask()">+ Add Task</button>
           </div>
           <div class="add-task-bar" id="addTaskBar" style="display:none;flex-wrap:wrap">
@@ -8554,6 +8754,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
           <div class="section-header" style="display:flex;align-items:center;gap:8px">
             <h3>R&amp;D Projects</h3>
             <button class="btn btn-sm" onclick="openNewProject()" style="font-size:11px;padding:4px 10px;background:var(--accent)">+ New Project</button>
+            <a class="tlink" href="#" onclick="event.preventDefault();showView('rnd-archive')" style="margin-left:auto">R&amp;D Archive</a>
           </div>
           {rnd_projects_html}
           {f'<div class="section-header"><h3>Priority 1 Projects</h3></div><div class="card-grid">{"".join(project_card(p) for p in p1_projects)}</div>' if p1_projects else ""}
@@ -8561,6 +8762,24 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
         </div>
       </details>
 
+      <!-- ── Tile · Workbench (r3 order: after Projects) ──────────────────────────────────────────── -->
+      <details class="dash-tile" id="dashboard-workbench-details">
+        <summary>
+          <img class="tile-ico" src="/vendor/brand/workbench-icon.jpg?v={BUILD_ID}" alt="" onerror="this.style.display='none'" />
+          Workbench
+          <span class="tile-count">the dashboard's own project cockpit</span>
+          <a class="btn btn-sm btn-outline" href="/project/__dashboard__"
+             target="_blank" rel="noopener" onclick="event.stopPropagation()"
+             style="font-size:11px;padding:3px 9px">Open cockpit</a>
+          <span class="tile-hint"></span>
+        </summary>
+        <div class="tile-body" style="padding:0">
+          <iframe src="/project/__dashboard__?classic=1" style="width:100%; height:1100px; border:none; display:block;"></iframe>
+        </div>
+      </details>
+
+      {r3_calendar_html}
+      {r3_email_html}
       {grass_tile_html}
     </div>
 
@@ -9170,6 +9389,89 @@ function captureItem() {{
 }}
 
 function refresh() {{ window.location.reload(); }}
+function r3RaiseRows(n) {{
+    // The steward's raise queue (⚑ n) as attention rows + rail facts. Ranked
+    // like home_attention: after a health row, before everything else.
+    // Idempotent across badge polls; n == 0 removes the row; null never gets here.
+    var host = document.querySelector('[data-attention]');
+    var old = host ? host.querySelector('.att[data-rule="raise"]') : null;
+    if (old) old.remove();
+    var stat = document.querySelector('[data-needyou]');
+    var base = stat ? parseInt(stat.getAttribute('data-needyou') || '0', 10) : 0;
+    var total = base + (n > 0 ? n : 0);
+    if (stat) {{ stat.textContent = String(total); stat.className = total > 0 ? 'bad' : ''; }}
+    if (!host || !(n > 0)) return;
+    var stw = window.ANCHOR_STEWARD || {{}};
+    var name = stw.high_seat_name || 'High Seat';
+    var text = n === 1 ? 'One decision is waiting on you' : n + ' decisions are waiting on you';
+    var row = document.createElement('a');
+    row.className = 'att red'; row.setAttribute('data-rule', 'raise'); row.href = '#';
+    row.onclick = function (e) {{
+        e.preventDefault();
+        var t = document.getElementById('tile-highseat'); if (t) t.open = true;
+        var d = document.querySelector('.ecg-hs-inline');
+        if (d) {{ try {{ d.scrollIntoView({{ behavior: 'smooth', block: 'start' }}); }} catch (x) {{ d.scrollIntoView(); }} }}
+    }};
+    row.innerHTML = '<span class="adot"></span><span class="atext"></span>'
+        + '<span class="awhy">the steward raised ' + (n === 1 ? 'it' : 'them') + ' — answer below</span>'
+        + '<span class="arule">raised by: steward</span>';
+    row.querySelector('.atext').textContent = text;
+    if (host.classList.contains('attn-quiet')) {{
+        host.classList.remove('attn-quiet');
+        host.innerHTML = '<div class="attn-head"><b>Needs attention</b>'
+            + '<span>say which to act on — nothing opens until you ask</span></div>'
+            + '<div class="attn-rows"></div><div class="attn-first"></div>';
+    }}
+    var rows = host.querySelector('.attn-rows');
+    var health = rows.querySelector('.att[data-rule="health"]');
+    if (health) rows.insertBefore(row, health.nextSibling);
+    else rows.insertBefore(row, rows.firstChild);
+    var cnt = document.querySelector('#tile-highseat .tile-count');
+    if (cnt) {{
+        var k = rows.querySelectorAll('.att').length;
+        cnt.textContent = (stw.label || 'Ecgberht') + ' — ' + k + ' need attention · talk below';
+    }}
+    if (!health) {{
+        var lead = document.querySelector('[data-rail] .rail-move .rlead');
+        if (lead) lead.textContent = text + ' — ' + name + '.';
+        var first = host.querySelector('.attn-first');
+        if (first) {{
+            first.innerHTML = 'I would take <b></b> first. Or say another.';
+            first.querySelector('b').textContent = text.toLowerCase();
+        }}
+    }}
+}}
+// (2026-09-03, John: "when I mark a task as done, do not suddenly close the
+// task window") Every task action reloads the page and <details> tiles start
+// closed, so the tile he was working in vanished. A tile he opened now stays
+// open across reloads (per browser, like the project folders).
+const TILE_OPEN_LS = 'anchor_tiles_open';
+function _tilesOpen() {{
+    try {{ return new Set(JSON.parse(localStorage.getItem(TILE_OPEN_LS) || '[]')); }}
+    catch (e) {{ return new Set(); }}
+}}
+function _wireTileMemory() {{
+    const open = _tilesOpen();
+    document.querySelectorAll('details.dash-tile[id]').forEach(d => {{
+        if (open.has(d.id) && !d.open) d.open = true;
+        d.addEventListener('toggle', () => {{
+            const s = _tilesOpen();
+            if (d.open) s.add(d.id); else s.delete(d.id);
+            try {{ localStorage.setItem(TILE_OPEN_LS, JSON.stringify(Array.from(s))); }} catch (e) {{}}
+        }});
+    }});
+}}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _wireTileMemory);
+else _wireTileMemory();
+function r3Open(id) {{
+    // r3 rail → open the named tile and bring it into view (the rail never
+    // navigates away from the dashboard for an in-page target).
+    showView('dashboard');
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'DETAILS') el.open = true;
+    try {{ el.scrollIntoView({{ behavior: 'smooth', block: 'start' }}); }} catch (e) {{ el.scrollIntoView(); }}
+}}
 
 function toggleAddTask() {{
     const bar = document.getElementById('addTaskBar');
@@ -9184,6 +9486,9 @@ function showView(view) {{
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     const navEl = document.querySelector('.nav-item[data-view="' + view + '"]');
     if (navEl) navEl.classList.add('active');
+    // r3: off the dashboard the rail offers the way back (the old nav is gone)
+    const rb = document.querySelector('[data-railback]');
+    if (rb) rb.style.display = (view === 'dashboard') ? 'none' : 'block';
     // v5 Wave 3: when the R&D view opens, pull the latest rows so a change made
     // in a project window (or another tab) shows up without a manual reload.
     if (view === 'rnd') rndRowsRefresh();
@@ -9715,7 +10020,7 @@ function openProjectWindow(pid) {{
     }}
 }}
 function rndSetPriority(pid, pr) {{ apiCall('/api/rnd/set_priority', {{id: pid, priority: pr}}); }}
-function rndArchive(pid) {{ if (confirm('Archive this project? It moves to the Archive view (kept, reviewable).')) apiCall('/api/rnd/archive_project', {{id: pid}}); }}
+function rndArchive(pid) {{ if (confirm('Retire this project to the archive (boneyard)? It is kept and reviewable — resurrect it any time from the R&D Archive.')) apiCall('/api/rnd/archive_project', {{id: pid}}); }}
 function rndRetire(pid) {{ if (confirm('Retire/cancel this project? It moves to the Archive view as retired.')) apiCall('/api/rnd/retire_project', {{id: pid}}); }}
 function rndReactivate(pid) {{ apiCall('/api/rnd/reactivate_project', {{id: pid}}); }}
 function rndRescan(pid) {{ apiCall('/api/rnd/rescan', {{id: pid}}); }}
@@ -10901,6 +11206,73 @@ def handle_set_notes(handler, path, body):
                             "entry": _rnd.set_notes(pid, body.get("notes", ""))})
     except KeyError:
         handler._send_json({"ok": False, "error": "Not found"}, 404)
+
+
+def _supervisor_parent_name():
+    """Name of this process's parent executable (Windows), '' if unknown.
+
+    Used to prove we run UNDER nssm (AppExit=Restart) before /api/restart is
+    honored — exiting an unsupervised server would just leave it down."""
+    if os.name != "nt":
+        return ""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, os.getppid())  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            n = wintypes.DWORD(1024)
+            if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                return os.path.basename(buf.value).lower()
+        finally:
+            k32.CloseHandle(h)
+    except Exception:
+        return ""
+    return ""
+
+
+def handle_restart(handler, path, body):
+    """POST /api/restart — restart the SUPERVISED server onto the code on disk.
+
+    Token-authed by the route row. This is NOT the removed /api/shutdown: it
+    only works when the process runs under nssm (whose AppExit=Restart brings
+    a fresh server up within seconds), so it can never leave Anchor down. It
+    exists so a redeploy needs no elevated hands (2026-09-03: an unelevated
+    session cannot stop the service's process — access denied). Sequence:
+    answer → run the warm pre-restart drain (best-effort, fail-open, the same
+    one restart_anchor.ps1 runs) → exit 0 → nssm restarts. Refuses (409) when
+    unsupervised; ``force`` overrides that for a caller who has its own
+    supervisor. Answers with the build it is leaving so the caller can poll
+    /api/version for a different one.
+    """
+    parent = _supervisor_parent_name()
+    supervised = parent.startswith("nssm")
+    if not supervised and not body.get("force"):
+        handler._send_json({"ok": False, "error": "not_supervised",
+                            "parent": parent or "unknown", "build": BUILD_ID,
+                            "message": "Not running under nssm — an exit would leave "
+                                       "the server down. Restart it by hand."}, 409)
+        return
+    handler._send_json({"ok": True, "restarting": True, "leaving_build": BUILD_ID,
+                        "parent": parent or "unknown"})
+
+    def _go():
+        time.sleep(0.5)  # let the response flush
+        try:
+            from tools import pre_restart_drain as _drain
+            _drain.drain(summary_timeout=20)
+        except Exception:
+            pass  # fail-open, exactly like restart_anchor.ps1
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
+        os._exit(0)
+
+    threading.Thread(target=_go, name="anchor-restart", daemon=True).start()
 
 
 def handle_settings_get(handler, path, body):
@@ -15479,7 +15851,13 @@ def handle_doctor_session_start(handler, path, body):
     # truthy string such as "false" must not silently turn Diagnose into write.
     resolve = body.get("resolve") is True
     try:
-        if resolve and issue:
+        if resolve and issue and issue.get("all") is True:
+            # (2026-09-03, John) RESOLVE ALL: the seed built by
+            # /api/doctor/resolve_all already lists every open issue and the
+            # live re-probe receipt — it goes in whole (bounded).
+            seed = str(issue.get("message") or "")[:2400] or \
+                "ANCHOR DOCTOR - RESOLVE ALL OPEN ISSUES NOW"
+        elif resolve and issue:
             # (2026-08-07, John) RESOLVE mode: no plan, no wandering diagnose
             # — a SHORT execution brief (short also mangles less on the PTY
             # paste path, bug 0080). The session launches with the normal
@@ -15636,7 +16014,21 @@ def _doctor_stats():
         # has — the newest report's Issues, parsed deterministically — so
         # opening the page answers "what's wrong?" instantly, no model run.
         "issues": _doctor_latest_issues(newest_body or ""),
+        "autofixes": _doctor_latest_section(newest_body or "", "Auto-fixes applied"),
     }
+
+
+def _doctor_latest_section(body, heading):
+    """The newest report's '- ' lines under '## <heading>' — never raises."""
+    try:
+        m = re.search(r"^## %s[^\n]*\n+(.*?)(?=^## |\Z)" % re.escape(heading),
+                      body, re.S | re.M)
+        if not m:
+            return []
+        return [ln.strip()[2:].strip() for ln in m.group(1).splitlines()
+                if ln.strip().startswith("- ")]
+    except Exception:
+        return []
 
 
 def _doctor_latest_issues(body):
@@ -15734,6 +16126,93 @@ def _doctor_hc_cmd():
         import shlex
         return shlex.split(raw, posix=(os.name != "nt"))
     return [sys.executable, str(ANCHOR_DIR / "anchor_healthcheck.py")]
+
+
+def _doctor_live_probe(path, timeout=4.0):
+    """GET one path on the LIVE server. ``ok`` means the server ANSWERED (any
+    HTTP status — 401 on a token route is still an answer); a connection
+    error or timeout is the only failure. Read-only."""
+    import urllib.request
+    import urllib.error
+    t0 = time.time()
+    url = "http://127.0.0.1:%d%s" % (_doctor_live_port(), path)
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="GET"),
+                                    timeout=timeout) as r:
+            code = r.getcode()
+    except urllib.error.HTTPError as exc:
+        code = exc.code
+    except Exception as exc:
+        return {"path": path, "ok": False, "code": None,
+                "error": type(exc).__name__, "ms": int((time.time() - t0) * 1000)}
+    return {"path": path, "ok": True, "code": code,
+            "ms": int((time.time() - t0) * 1000)}
+
+
+def _doctor_live_port():
+    """The port THIS server listens on (the live one the probe should hit)."""
+    try:
+        return int(os.environ.get("ANCHOR_PORT") or 0) or 8777
+    except Exception:
+        return 8777
+
+
+def handle_doctor_resolve_all(handler, path, body):
+    """POST /api/doctor/resolve_all — one click for every open issue (John,
+    2026-09-03). Token-authed by the middleware.
+
+    1. explain the newest report's issues in plain words (doctor_plain);
+    2. re-probe the LIVE server for the GET paths the issues name;
+    3. decide: ``rerun`` (every issue was the self-test failing to reach its
+       target and the live server answers) → start the background health
+       re-run so the report and the banner say what is true now; ``session``
+       → hand back ONE all-issues RESOLVE seed the page starts a doctor
+       session with; ``nothing`` → no open issues.
+    No model runs here; the receipt is real numbers or absent.
+    """
+    import doctor_plain as _dp
+    s = _doctor_stats()
+    explained = _dp.explain_all(s.get("issues") or [], s.get("autofixes") or [])
+    probe = [_doctor_live_probe(p) for p in _dp.probe_targets(explained)] if explained else []
+    decision = _dp.decide(explained, probe)
+    out = {"ok": True, "decision": decision, "issues": explained, "probe": probe}
+    if decision == "rerun":
+        out["rerun"] = _doctor_start_healthcheck_run()
+    elif decision == "session":
+        out["seed_issue"] = {
+            "issueId": "resolve-all", "component": "all", "all": True,
+            "message": _dp.resolve_all_seed(explained, probe, decision),
+            "suggestedChecks": [],
+        }
+    handler._send_json(out)
+
+
+def _doctor_start_healthcheck_run():
+    """Start the background health re-run (the same launch the Diagnostics
+    button uses); returns a small receipt dict. Idempotent while live."""
+    import subprocess
+    with _DOCTOR_HC_LOCK:
+        proc = _DOCTOR_HC.get("proc")
+        if proc is not None and proc.poll() is None:
+            return {"ok": True, "already_running": True}
+        log_path = _doctor_hc_log_path()
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            fh = open(log_path, "wb")
+        except OSError as exc:
+            return {"ok": False, "error": "cannot open run log: %s" % exc}
+        try:
+            proc = subprocess.Popen(
+                _doctor_hc_cmd(), stdout=fh, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, cwd=str(_paths.data_dir()),
+                creationflags=_paths.NO_WINDOW)
+        except OSError as exc:
+            fh.close()
+            return {"ok": False, "error": "failed to launch: %s" % exc}
+        _DOCTOR_HC["proc"] = proc
+        _DOCTOR_HC["fh"] = fh
+        _DOCTOR_HC["started_at"] = time.time()
+        return {"ok": True, "pid": proc.pid, "log": str(log_path)}
 
 
 def handle_doctor_healthcheck_run(handler, path, body):
@@ -16049,6 +16528,35 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   // newest health report. "Resolve this" seeds the doctor session with the
   // one issue — no full re-run, no blank agentic wandering.
   var DOCTOR_ISSUES = __ISSUES_JSON__;
+  // (2026-09-03, John) Resolve all: one click for every open issue. The
+  // server re-probes the live server and decides — a re-run when nothing is
+  // wrong (the banner clears when the report is clean), else ONE doctor
+  // session seeded with all the issues + the probe receipt, and RUN.
+  window.resolveAll = function () {
+    var btn = document.getElementById('resolveAllBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Probing…'; }
+    fetch('/api/doctor/resolve_all', { method: 'POST', headers: hdrs(), body: JSON.stringify(token ? { token: token } : {}) })
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Resolve all'; }
+        if (!p || !p.ok) { term.write('[doctor] Resolve all failed: ' + ((p && p.error) || 'unknown') + '\r\n'); return; }
+        (p.probe || []).forEach(function (q) {
+          term.write('[doctor] live ' + q.path + ': ' + (q.ok ? ('answers (' + q.code + ', ' + q.ms + ' ms)') : ('NO ANSWER - ' + (q.error || ''))) + '\r\n');
+        });
+        if (p.decision === 'rerun') {
+          term.write('[doctor] Every issue was the 5 AM self-test failing to reach its target, and the live server answers now. '
+            + 'Re-running the health check so the report says so; the red banner clears when it is clean.\r\n');
+          if (btn) btn.textContent = 'Re-running…';
+        } else if (p.decision === 'session' && p.seed_issue) {
+          term.write('[doctor] ' + (p.issues || []).length + ' issue(s) need work - starting ONE doctor session for all of them.\r\n');
+          BANNER_ISSUE = p.seed_issue;
+          window.runDiagnose({ fromBanner: true, resolve: true });
+        } else {
+          term.write('[doctor] Nothing open to resolve.\r\n');
+        }
+      })
+      .catch(function (e) { if (btn) { btn.disabled = false; btn.textContent = 'Resolve all'; } term.write('[doctor] Resolve all failed: ' + e + '\r\n'); });
+  };
   window.resolveIssue = function (i) {
     var it = DOCTOR_ISSUES[i];
     if (!it) return;
@@ -16338,23 +16846,43 @@ def _doctor_issues_block_html(s):
     issues = s.get("issues") or []
     if not issues:
         return ""
+    # (2026-09-03, John) plain words first — a title and one sentence of
+    # meaning — with the raw report line behind a disclosure, never lost.
+    import doctor_plain as _dp
+    explained = _dp.explain_all(issues, s.get("autofixes") or [])
     rows = []
-    for i, it in enumerate(issues):
-        comp = html_lib.escape(it.get("component") or "health")
-        detail = html_lib.escape((it.get("detail") or "")[:220])
+    for i, ex in enumerate(explained):
+        title = html_lib.escape(ex.get("title") or "issue")
+        meaning = html_lib.escape(ex.get("meaning") or "")
+        raw = html_lib.escape(ex.get("raw") or "")
         rows.append(
             '<div class="issue-row" style="display:flex;gap:10px;align-items:'
-            'flex-start;margin:6px 0;font-size:13px;line-height:1.45">'
-            f'<div style="flex:1"><b>[{comp}]</b> {detail}</div>'
+            'flex-start;margin:8px 0;font-size:13px;line-height:1.45">'
+            f'<div style="flex:1"><b>{title}</b>'
+            f'<div style="color:#b7bcc7;margin-top:2px">{meaning}</div>'
+            '<details style="margin-top:3px"><summary style="cursor:pointer;'
+            'font-size:11.5px;color:#8b8f9a">what the check said</summary>'
+            f'<div style="font-size:11.5px;color:#8b8f9a;white-space:pre-wrap;'
+            f'word-break:break-word;margin-top:3px">{raw}</div></details></div>'
             f'<button class="btn" onclick="resolveIssue({i})" '
             'style="flex:none">Resolve this</button></div>')
+    n = len(explained)
     return (
         '<div class="card panel" style="border-color:#b45309">'
-        '<h3 style="color:#e0a437">Found by the last health run</h3>'
+        '<div style="display:flex;align-items:center;gap:10px">'
+        '<h3 style="color:#e0a437;margin:0;flex:1">Found by the last health run'
+        f' <span style="color:#8b8f9a;font-weight:400">({n})</span></h3>'
+        '<button class="btn" id="resolveAllBtn" onclick="resolveAll()" '
+        'style="flex:none;background:#b45309;border-color:#b45309" '
+        'title="Re-probe the live server now; if all is well, re-run the check '
+        'so the banner clears; otherwise one doctor session takes every issue">'
+        'Resolve all</button></div>'
         + "".join(rows)
         + '<div class="hint">Parsed from the newest report — no model was '
-          'run to show this. "Resolve this" opens the doctor session '
-          'seeded with the one issue.</div></div>')
+          'run to show this. "Resolve all" re-probes the live server, then '
+          'either re-runs the check (nothing was wrong) or opens ONE doctor '
+          'session for every issue and runs it. "Resolve this" takes one '
+          'issue and runs it.</div></div>')
 
 
 def handle_term_input2(handler, path, body):
@@ -19386,6 +19914,8 @@ _MIGRATED_HANDLERS = {
     "handle_retire_project": handle_retire_project,
     "handle_reactivate_project": handle_reactivate_project,
     "handle_set_notes": handle_set_notes,
+    "handle_restart": handle_restart,
+    "handle_doctor_resolve_all": handle_doctor_resolve_all,
     "handle_settings_get": handle_settings_get,
     "handle_settings_post": handle_settings_post,
     "handle_set_blurb": handle_set_blurb,
@@ -20735,6 +21265,14 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # — back up into the local web page so I can actually see it to
                 # compare." The signed M1 drawing, served next to the real
                 # thing. Read-only, no slots, no state.
+                # (2026-09-03) The route row declares AUTH_TOKEN and the
+                # chamber's link carries the token — but this legacy branch
+                # never checked it, so a tokenless GET served the drawing.
+                # Found by the declared-route auth walk the moment it ran
+                # with a token configured (the 5 AM run never had one).
+                if not self._term_token_ok():
+                    self._send_json({"ok": False, "error": "unauthorized"}, 401)
+                    return
                 _mk = Path(r"C:\dev\Ecgberht\planning"
                            r"\steward-assessment-2026-08-08\mockups.html")
                 if _mk.is_file():
@@ -21014,6 +21552,13 @@ class _QuietDisconnectMixin:
     defects are never hidden.
     """
 
+    # Accept backlog (``listen(N)``). socketserver's default is 5 — and Windows
+    # answers the 6th pending connection with RST (WinError 10061 "actively
+    # refused") whenever the accept loop lags a burst: a browser opening 6+
+    # parallel asset/SSE/WS connections behind a GIL-heavy render. 64 keeps a
+    # burst queued for the accept loop instead of refusing it.
+    request_queue_size = 64
+
     def handle_error(self, request, client_address):
         exc = sys.exc_info()[1]
         if _is_benign_disconnect(exc):
@@ -21076,8 +21621,18 @@ class _QuietThreadingHTTPServer(_QuietDisconnectMixin, ThreadingHTTPServer):
     daemon_threads = True
 
 
-def make_server(host="127.0.0.1", port=8777):
+def make_server(host="127.0.0.1", port=8777, activate=True):
     """Construct + bind the threading HTTP server.
+
+    ``activate=False`` BINDS the port — so the single-instance guard below
+    fires exactly as before (a duplicate's bind still fails) — but does NOT
+    ``listen()`` yet. The caller runs its boot work, then calls
+    ``server.server_activate()`` right before ``serve_forever()``. Until then a
+    client's connect is never accepted or queued — POSIX refuses it, Windows
+    drops the SYN to a bound-but-unlistened port — instead of sitting in a
+    backlog nobody is draining, so "the port accepts connections" means "the
+    server is serving". ``main()`` uses this; tests / the health check keep the
+    default bind+listen construction.
 
     Two distinct bind-failure modes are reconciled here (D4/Wave 2 + Wave 3
     single-instance guard):
@@ -21103,6 +21658,19 @@ def make_server(host="127.0.0.1", port=8777):
     else:
         # Ephemeral port=0 (tests / health check) → unchanged default behavior.
         server_cls = _QuietThreadingHTTPServer
+    if not activate:
+        def _bind_only():
+            # Mirror socketserver's own constructor: bind, and on ANY failure
+            # release the socket before re-raising (bind_with_retry classifies
+            # the OSError — EADDRINUSE → the clean single-instance exit).
+            srv = server_cls((host, port), AnchorHandler, bind_and_activate=False)
+            try:
+                srv.server_bind()
+            except BaseException:
+                srv.server_close()
+                raise
+            return srv
+        return _paths.bind_with_retry(_bind_only)
     return _paths.bind_with_retry(
         lambda: server_cls((host, port), AnchorHandler)
     )
@@ -21173,8 +21741,12 @@ def main():
             pass
         sys.exit(1)
 
+    _boot_t0 = time.time()
     try:
-        server = make_server(bind_host, port)
+        # BIND now (the single-instance guard must fire before any boot work
+        # touches shared state) but LISTEN only after the boot reconcile below
+        # — see the readiness note above ``server.server_activate()``.
+        server = make_server(bind_host, port, activate=False)
     except OSError as exc:
         # Single-instance guard: another healthy Anchor already owns this port.
         # Do NOT retry-forever or fight for the port — exit cleanly so the
@@ -21481,6 +22053,20 @@ def main():
                          int(_ts_auto._autosave_interval()))
     except Exception as e:
         _logger.error(f"session autosave daemon start failed: {e}")
+
+    # READINESS: the port was BOUND at the top of main (single-instance guard)
+    # but NOT listening while the boot reconcile above ran — so a connect in
+    # that window is refused (POSIX) / dropped (Windows) rather than queued
+    # into a backlog nobody drains. (Before this, the port listened from t≈0.5s while the boot
+    # reconcile could run 80s+ under 5 AM load: the health check's probes hung
+    # 20s each, filled the 5-slot backlog, and every later connect got WinError
+    # 10061 until serve_forever finally started — the "0/7 endpoints" red banner.)
+    # listen() now: "accepts connections" == "serving".
+    server.server_activate()
+    _boot_dt = time.time() - _boot_t0
+    _logger.info("Server ready — accepting connections on %s (boot reconcile %.1fs)",
+                 url, _boot_dt)
+    print(f"  Ready — accepting connections (boot reconcile {_boot_dt:.1f}s).")
 
     try:
         server.serve_forever()

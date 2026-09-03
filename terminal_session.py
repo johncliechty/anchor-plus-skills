@@ -34,6 +34,7 @@ import os
 import sys
 import re
 import threading
+import time
 import uuid
 from pathlib import Path, PurePosixPath
 
@@ -1048,7 +1049,79 @@ def start_doctor_session(seed_context=None, backend=None, resolve=False):
             extra_cli_args=extra,
             doctor_mode=mode,
             doctor_posture=posture)
+        # (2026-09-03, John: "it opens a terminal and loads a prompt, but does
+        # nothing … it should also start running the prompt") A RESOLVE brief
+        # is an order to execute, so press Enter for him once the TUI has
+        # settled. Diagnose stays hands-off (read-only, he reads first).
+        if resolve and seed_context and rec and rec.get("session_id"):
+            _auto_submit_seed(rec["session_id"])
         return rec, False
+
+
+#: Auto-submit (doctor RESOLVE): how long after launch before the first Enter,
+#: and how much TUI output must exist first (the engine has drawn its frame).
+AUTO_SUBMIT_SETTLE_SECS = 3.0
+AUTO_SUBMIT_MIN_OUTPUT = 120
+AUTO_SUBMIT_TIMEOUT_SECS = 90.0
+
+
+def _auto_submit_seed(session_id, settle=None, min_output=None, timeout=None,
+                      poll=0.5, second_press_after=4.0, _sync=False):
+    """Press Enter for a RESOLVE doctor session once its TUI has settled.
+
+    The seed is written in one burst right after launch; every engine TUI
+    treats that burst as a PASTE and leaves it sitting in the input box, unsent
+    (John, 2026-09-03). This waits until the PTY has produced real output
+    (the frame is drawn) and ``settle`` seconds have passed, then writes ONE
+    carriage return. If the buffer has not grown afterwards (the first Enter
+    was swallowed while the TUI was still booting), it presses once more after
+    ``second_press_after`` seconds — an Enter on an empty input is a no-op, so
+    the retry can never send a second message. Best-effort, never raises, runs
+    on a daemon thread (``_sync=True`` runs inline for tests). Returns the
+    number of presses (sync) or None.
+    """
+    settle = AUTO_SUBMIT_SETTLE_SECS if settle is None else settle
+    min_output = AUTO_SUBMIT_MIN_OUTPUT if min_output is None else min_output
+    timeout = AUTO_SUBMIT_TIMEOUT_SECS if timeout is None else timeout
+
+    def _text():
+        try:
+            out = _pty.read_since(session_id, 0)
+        except Exception:
+            return None
+        return (out.get("text") or "") if isinstance(out, dict) else ""
+
+    def run():
+        t0 = time.time()
+        presses = 0
+        while time.time() - t0 < timeout:
+            time.sleep(poll)
+            text = _text()
+            if text is None:
+                return presses  # no live PTY — nothing to press on
+            if len(text) < min_output or time.time() - t0 < settle:
+                continue
+            before = len(text)
+            try:
+                _pty.write(session_id, "\r")
+            except Exception:
+                return presses
+            presses += 1
+            time.sleep(second_press_after)
+            after = _text()
+            if after is None or len(after) - before >= 40:
+                return presses  # the model is answering — done
+            try:
+                _pty.write(session_id, "\r")  # swallowed first press; empty-safe
+            except Exception:
+                pass
+            return presses + 1
+        return presses
+
+    if _sync:
+        return run()
+    threading.Thread(target=run, name="doctor-auto-submit", daemon=True).start()
+    return None
 
 
 def _flush_pending_paste(session_id):

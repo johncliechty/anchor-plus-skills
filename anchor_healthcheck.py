@@ -66,8 +66,16 @@ import paths as _paths
 DATA_DIR = _paths.data_dir()
 REPORTS_DIR = _paths.health_reports_dir()
 TEST_PORT = 8778
-SERVER_BOOT_TIMEOUT = 12  # seconds
+# Readiness deadline for the throwaway server. "Boot" = bind + the FULL boot
+# reconcile (registry PID probes, worktree reap, daemons…) — main() only
+# listen()s once that finishes, and under 5 AM load it has taken 80s+. Per the
+# locked severity rule a slow-but-ready boot is a timing WARN (never red); only
+# a server that never becomes ready is a red failure.
+SERVER_READY_TIMEOUT = 180  # seconds — hard (red) deadline
+SERVER_READY_WARN = 30      # seconds — soft budget → non-blocking warn
+SERVER_BOOT_TIMEOUT = SERVER_READY_TIMEOUT  # legacy alias
 SYNTHETIC_TAG = "__healthcheck__"
+_TOKEN_MINTED = False  # set by _ensure_walk_token() — see check_route_table_walk
 TODAY = date.today().isoformat()
 
 _paths.ensure_data_dirs()
@@ -357,6 +365,45 @@ def _port_in_use(port: int) -> bool:
         s.close()
 
 
+def _ensure_walk_token() -> bool:
+    """Mint a per-run ``ANCHOR_TOKEN`` when none is configured. True iff minted.
+
+    (2026-09-03) The declared-route auth walk (W8) can only assert that a
+    token route REJECTS a tokenless request when a token is configured — and
+    the 5 AM task runs without one, so for weeks the walk skipped every token
+    row ("38 rows walked, token=unset") while a Resolve-all rerun inside the
+    live service (which has ANCHOR_TOKEN) walked 220 rows and caught
+    ``/mockup`` serving tokenless. With a minted token the throwaway server is
+    the only thing that sees it, every check already carries the configured
+    token (``_post``/``_get``), and the report only ever says "minted" —
+    never the value. Leaves a configured token untouched.
+    """
+    global _TOKEN_MINTED
+    if _paths.expected_token() is not None:
+        return False
+    import secrets
+    os.environ[_paths.AUTH_TOKEN_ENV] = "hc-" + secrets.token_hex(16)
+    _TOKEN_MINTED = True
+    return True
+
+
+def _http_ready(port: int, timeout: float = 3.0) -> bool:
+    """True once the server ANSWERS HTTP (``GET /api/version`` → 200).
+
+    A bare connect is not readiness: the server binds its port at the top of
+    ``main()`` (single-instance guard) and only ``listen()``s after its boot
+    reconcile — and an HTTP probe is also robust to a listen-early regression
+    (a queued probe is answered the moment ``serve_forever`` starts, instead
+    of a connect-probe reporting "booted" into a backlog nobody drains).
+    """
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/version",
+                                    timeout=timeout) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def _find_free_port(preferred: int) -> int:
     """Return `preferred` if it's free, otherwise an OS-assigned free port."""
     if not _port_in_use(preferred):
@@ -421,14 +468,16 @@ def check_server_and_endpoints(report: Report):
         report.check(name, False, f"could not launch: {e}")
         return None
 
-    # Wait for the server to start serving
+    # Wait for the server to be READY — an actual HTTP answer, not a bare
+    # connect (see _http_ready). The deadline is generous on purpose: the boot
+    # reconcile runs over the LIVE .anchor/ state and is load-sensitive.
     boot_started = time.time()
     booted = False
-    while time.time() - boot_started < SERVER_BOOT_TIMEOUT:
-        if _port_in_use(TEST_PORT):
+    while time.time() - boot_started < SERVER_READY_TIMEOUT:
+        if _http_ready(TEST_PORT):
             booted = True
             break
-        if proc.poll() is not None:  # crashed before binding
+        if proc.poll() is not None:  # crashed before becoming ready
             break
         time.sleep(0.25)
 
@@ -442,10 +491,15 @@ def check_server_and_endpoints(report: Report):
         except Exception:
             pass
         proc.terminate()
-        report.check(name, False, f"did not bind in {SERVER_BOOT_TIMEOUT}s; stderr={err_text[:200]}")
+        report.check(name, False, f"not ready in {SERVER_READY_TIMEOUT}s; stderr={err_text[:200]}")
         return None
 
     report.check(name, True, f"{boot_elapsed:.1f}s")
+    if boot_elapsed > SERVER_READY_WARN:
+        # Timing, not correctness (locked severity rule): a yellow note only.
+        report.warn("server boot speed",
+                    f"slow but OK: ready after {boot_elapsed:.1f}s "
+                    f"(over {SERVER_READY_WARN}s - likely machine load)")
 
     # â”€â”€ Endpoint checks â”€â”€
     base = f"http://127.0.0.1:{TEST_PORT}"
@@ -634,7 +688,8 @@ def check_route_table_walk(report: Report, server_proc):
     else:
         report.check(name, True,
                      f"{walked} declared rows honor their auth policy "
-                     f"(mode={auth_mode}, token={'set' if token else 'unset'})")
+                     f"(mode={auth_mode}, token="
+                     f"{'minted' if _TOKEN_MINTED else 'set' if token else 'unset'})")
 
 
 # â”€â”€ W9 cookie/auth walk + the 20Ã— soak-candidate pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -6713,6 +6768,10 @@ def main():
     # that forgot to fails CLOSED here instead of touching a real user's private
     # transcripts. Process-scoped; the healthcheck process exits at the end.
     os.environ.setdefault("ANCHOR_HEALTHCHECK", "1")
+
+    # (2026-09-03) A token for the throwaway server, so the auth walk
+    # asserts every declared token row every night (see _ensure_walk_token).
+    _ensure_walk_token()
 
     # W1 (rearch 2026-07): opt-in write-site tripwire over the healthcheck's
     # own in-process walks (the v2–v5+ surfaces mutate stubbed .anchor/

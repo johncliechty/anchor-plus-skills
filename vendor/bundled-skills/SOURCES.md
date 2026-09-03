@@ -6,9 +6,9 @@ extraction. The archived commit sha below is the honest provenance.
 
 | Skill | Source | Archived commit |
 |-------|--------|-----------------|
-| researchPrime | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
-| crucible | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
-| foreman | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
+| researchPrime | <path> | `753661d70244e18b3f537c45174a1f081da2d7f4` |
+| crucible | <path> | `753661d70244e18b3f537c45174a1f081da2d7f4` |
+| foreman | <path> | `753661d70244e18b3f537c45174a1f081da2d7f4` |
 | gandalf | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
 | jumper | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
 | ramanujan | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
@@ -17,6 +17,6 @@ extraction. The archived commit sha below is the honest provenance.
 | financial-analyst | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
 | tidy-idy | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
 | zombie-hunter | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
-| ecgberht | <path> | `b168f9bba5ed1816532be31c1e52fe710a2a9dfd` |
-| drivers | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
+| ecgberht | <path> | `c386b58dacb97aac6b8e4b0b63614325961edd5d` |
+| drivers | <path> | `753661d70244e18b3f537c45174a1f081da2d7f4` |
 | foundry-triage | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |

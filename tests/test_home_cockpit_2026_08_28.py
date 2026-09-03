@@ -352,7 +352,12 @@ class HomeAndPrototypeTest(unittest.TestCase):
         })
         self.assertIn("rndRescan(", row)
         self.assertNotIn("rndSetPriority(", row)
-        self.assertNotIn("rndArchive(", row)
+        # (2026-09-03, John) every project row ends in a GRAVESTONE that
+        # retires it to the Archive view (743a3d0); the kebab itself still
+        # carries no Archive / Retire / P1-P2 (the 08-28 cut).
+        kebab = row[row.index('class="rnd-kebab-menu"'):]
+        self.assertNotIn("rndArchive(", kebab)
+        self.assertIn('class="rnd-mini rnd-grave"', row)
         self.assertNotIn("rndRetire(", row)
 
     def test_home_grass_reads_the_synthetic_dashboard_project(self):

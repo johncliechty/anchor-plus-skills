@@ -135,6 +135,10 @@ function ecgHighSeatBadge(done) {
     var n = out.queue_length;
     badge.textContent = '⚑ ' + n;
     badge.className = n > 0 ? 'ecg-hs-badge on' : 'ecg-hs-badge';
+    // r3 home (2026-09-03): the raise queue is the one attention fact the
+    // server render cannot compute without the bridge, so it joins the
+    // "Needs attention" rows and the rail from here, client-side.
+    try { if (typeof window.r3RaiseRows === 'function') window.r3RaiseRows(n); } catch (e) {}
     if (done) done(true);
   });
 }

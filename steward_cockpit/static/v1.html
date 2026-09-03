@@ -21,7 +21,7 @@
 
   <div class="goalbar" data-goalbar title="click to expand or close the goal">
     <div class="gline">
-      <span class="glabel">Goal</span>
+      <span class="glabel" data-goallabel>Goal</span>
       <span class="gbrief" data-goalbrief>…</span>
       <span class="gcaret">▸</span>
     </div>
@@ -76,17 +76,23 @@
         <span data-statetext>…</span>
         <button data-statustoggle2 title="collapse">»</button>
       </div>
-      <div class="platest" data-latest></div>
-      <div class="pmsgs" data-msgs></div>
       <!-- Pane order + sizing (2026-08-27, John): deliverables on top with a
            one-line summary, THE STATUS DOMINANT in the middle, files at the
            bottom. Deliverables and files are collapsible tiles that start
            CLOSED — click the header to open, click again to close — so the
            status keeps the room unless he asks for one of them. Only the
            status section grows (flex:1); the tiles are flex:none and capped
-           even when open, so neither can squeeze the status to nothing. -->
+           even when open, so neither can squeeze the status to nothing.
+           (2026-09-03, John): the status is its OWN bordered window below the
+           deliverables tile — it shrinks when the tile opens, nothing slides
+           under it — and its header carries the time of the last update. -->
       <div class="pdeliv" data-delivmount></div>
-      <div class="pscroll"></div>
+      <div class="pstatus" data-pstatus>
+        <h2 class="pstatushead">Status <span class="pcount" data-statusstamp></span></h2>
+        <div class="platest" data-latest></div>
+        <div class="pmsgs" data-msgs></div>
+        <div class="pscroll"></div>
+      </div>
       <div class="pfiles psect folded" data-filesect>
         <h2 data-filestoggle>Files produced <span class="pcount" data-filecount></span></h2>
         <div class="flist" data-flist></div>

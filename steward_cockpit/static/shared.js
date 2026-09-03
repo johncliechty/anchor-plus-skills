@@ -36,6 +36,9 @@ const Proto = (() => {
      plain "not applied" line; anything else paints nothing. XHR on purpose: the
      client shim rewrites fetch('/api/…') to /api/steward/, and this route is
      Anchor's own GET /api/ecgberht/kickoff_show. Read-only; never throws. */
+  // the one-line status of record shown in the top bar (2026-09-03); once a
+  // status has painted it, map repaints and the kickoff paint leave it alone
+  let _statusLine = "";
   function paintKickoff(briefEl) {
     const box = $("[data-kickoff]");
     if (!box) return;
@@ -63,11 +66,11 @@ const Proto = (() => {
         // the brief line shows the confirmed outcome — the goal in the steward's own words
         if (briefEl) {
           const m = j.rendered.match(/^Outcome:\s*(.+)$/m);
-          if (m && m[1]) briefEl.textContent = m[1].trim();
+          if (m && m[1] && !_statusLine) briefEl.textContent = m[1].trim();
         }
       } else if (j.state === "open" && j.open_draft && j.open_draft.applied === false) {
         box.classList.add("draft");
-        if (briefEl && j.open_draft.goal) briefEl.textContent = "draft, not applied — " + j.open_draft.goal;
+        if (briefEl && j.open_draft.goal && !_statusLine) briefEl.textContent = "draft, not applied — " + j.open_draft.goal;
         box.textContent = "Kickoff draft v" + (j.open_draft.version || "?") +
           " — not applied: " + (j.open_draft.goal || "(no goal in the draft)");
       }
@@ -149,22 +152,69 @@ const Proto = (() => {
       old.onclick = () => old.classList.toggle("folded");
     });
     const b = el("div", "blk steward status");
-    b.appendChild(el("div", "who", "⏱ " + (stat.at || "").slice(-5) + " · STATUS"));
+    const hhmm = (stat.at || "").slice(-5);
+    const who = el("div", "who", "⏱ " + hhmm + " · STATUS");
+    if (stat.stale) who.appendChild(el("span", "stale",
+      " · last update on record — nothing has run since"));
+    b.appendChild(who);
     const body = el("div", "body");
-    (stat.now || []).forEach(l => body.appendChild(el("div", "snow", "now: " + l)));
     const p = stat.plan || {};
-    body.appendChild(el("div", "splan",
-      (p.step || "(no active step)") + " · " + (p.steps_done || 0) + "/" +
-      (p.steps_total || 0) + " done · attention: " + (p.attention || "unknown")));
-    if (p.waiting_on_you)
-      body.appendChild(el("div", "splan sflag", "waiting on you: " + p.waiting_on_you));
-    if (p.next) body.appendChild(el("div", "splan", "next: " + p.next));
+    // John's locked 10-minute format (AGENTS.md status block, 2026-09-03):
+    // every row is present every time; a fact the engine does not have is an
+    // honest dash, never a guess.
+    const goal = (_lastMap && (_lastMap.goal_brief || _lastMap.goal)) || "";
+    const nowLine = (stat.now || []).join(" · ");
+    const seats = (stat.swarm || []).map(x => (x.label || "seat") + " · " + (x.state || "?"));
+    const rows = [
+      ["Summary", goal || "—", !goal],
+      ["Effort", stat.effort || "—", !stat.effort],
+      ["Doing", nowLine || "—", !nowLine],
+      ["Status", hhmm + " · " + (p.step || "(no active step)") + " · " +
+        (p.steps_done || 0) + "/" + (p.steps_total || 0) + " done · attention: " +
+        (p.attention || "unknown"), false],
+      ["Tests", stat.tests || "—", !stat.tests],
+      ["Blocker", p.waiting_on_you ? "waiting on you: " + p.waiting_on_you : "none",
+        false, !!p.waiting_on_you],
+      ["Procs", seats.length ? seats.join(" · ") : "none", false],
+      ["Journal", stat.journal || "—", !stat.journal],
+      ["ETA", stat.eta || "—", !stat.eta],
+      ["To do", [p.next ? "next: " + p.next : ""].concat(
+        (stat.map || []).map(l => "map: " + l)).filter(Boolean).join(" · ") || "—",
+        !p.next && !(stat.map || []).length],
+    ];
+    const tab = el("table", "stab");
+    rows.forEach(([k, v, dim, flag]) => {
+      const tr = el("tr", flag ? "flag" : "");
+      tr.appendChild(el("th", "", k));
+      const td = el("td", dim ? "dim" : "", v);
+      tr.appendChild(td);
+      tab.appendChild(tr);
+    });
+    body.appendChild(tab);
     if (p.goal_reread === false)
       body.appendChild(el("div", "splan sflag", "goal not re-read since last close"));
-    (stat.map || []).forEach(l => body.appendChild(el("div", "splan", "map: " + l)));
     b.appendChild(body);
     s.appendChild(b);
     pin(s, stick);
+    // the window's header carries the time of the last update (idle projects
+    // show their LAST update, stamped, not a fresh blank)
+    const stamp = $("[data-statusstamp]");
+    if (stamp) stamp.textContent = "last update " + hhmm + (stat.stale ? " · idle" : "");
+    // the top bar is the ONE-LINE status of record for this steward run
+    // (John, 2026-09-03); the goal moves inside the bar, one click away
+    try {
+      const brief = $("[data-goalbrief]"), lab = $("[data-goallabel]");
+      if (brief) {
+        let line = (p.steps_done || 0) + "/" + (p.steps_total || 0) + " done";
+        if (p.waiting_on_you) line += " · waiting on you: " + p.waiting_on_you;
+        else if ((stat.now || [])[0]) line += " · " + stat.now[0];
+        if (p.next) line += " · next: " + p.next;
+        if (line.length > 120) line = line.slice(0, 117).replace(/\s+\S*$/, "") + "…";
+        _statusLine = line + (stat.stale ? "  (" + hhmm + ")" : "");
+        brief.textContent = _statusLine;
+        if (lab) lab.textContent = "Status";
+      }
+    } catch (e) { /* no-op */ }
     // Deliverables tile stays pinned FIRST in the pane (2026-08-25, John's ask),
     // and its register refreshes on the same cadence as the status it sits above.
     try {
@@ -225,6 +275,10 @@ const Proto = (() => {
     detail.appendChild(full);
     if (it.date) detail.appendChild(el("div", "sdmeta", it.date));
     detail.appendChild(delivRow(it));           // the actual open link
+    // the detail already carries the full description above; the link itself
+    // just says what it does (2026-09-03)
+    const lnk = detail.querySelector(".drow a");
+    if (lnk) lnk.textContent = "Open ↗" + (it.path ? "  " + it.path : "");
     const key = (it.dir || "") + "|" + (it.path || it.what || "");
     if (_openDelivs.has(key)) row.classList.add("open");
     line.onclick = (ev) => {
@@ -350,7 +404,9 @@ const Proto = (() => {
       } else if (!items.length) {
         body.appendChild(el("div", "snow", "(register is empty)"));
       }
-      items.forEach((it) => body.appendChild(delivRow(it)));
+      // ONE line each (John, 2026-09-03): click → the long description →
+      // click its link → the deliverable opens in a new window
+      items.forEach((it) => body.appendChild(stepDelivLine(it)));
       tile.appendChild(body);
       if (s.firstChild !== tile) s.insertBefore(tile, s.firstChild);
     }
@@ -360,7 +416,7 @@ const Proto = (() => {
       slot.textContent = "";
       if (items.length) {
         slot.appendChild(el("div", "glabel", "Deliverables"));
-        items.forEach((it) => slot.appendChild(delivRow(it)));
+        items.forEach((it) => slot.appendChild(stepDelivLine(it)));
       }
     }
   }
@@ -717,7 +773,7 @@ const Proto = (() => {
     if (opts.renderMap) { opts.renderMap(map); return; }
     // goal tile (one sentence; expands to the full bold-led description)
     const gb = $("[data-goalbrief]");
-    if (gb) gb.textContent = map.goal_brief || "(no goal recorded)";
+    if (gb) gb.textContent = _statusLine || map.goal_brief || "(no goal recorded)";
     const gf = $("[data-goalfull]");
     if (gf) renderRich(gf, map.goal_md || "(no goal recorded)");
     paintKickoff(gb);
