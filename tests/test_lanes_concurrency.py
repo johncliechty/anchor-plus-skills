@@ -76,9 +76,16 @@ def test_ac1_lane_uses_skill_seed_and_project_scoped_output(env, tmp_path):
     data = json.loads(pointer.read_text(encoding="utf-8"))
     assert data["skill"] == "crucible"
     assert data["lane"] == "plan"
-    # The prompt seed mentions the skill intent + the project-scoped output dir.
-    assert "crucible" in data["prompt_seed"].lower()
-    assert str(expected_out) in data["prompt_seed"]
+    # Git-trackable pointer metadata binds the prompt without leaking project
+    # names, prompt text, or absolute user paths into the repository.
+    import hashlib
+    assert data["prompt_sha256"] == hashlib.sha256(
+        rec["relaunch_spec"]["prompt"].encode("utf-8")
+    ).hexdigest()
+    assert "prompt_seed" not in data
+    assert "output_dir" not in data
+    assert "project_id" not in data
+    assert str(folder) not in json.dumps(data)
 
     # NEVER the folder root: no launch pointer-record at the folder root itself.
     assert not (folder / lanes.LAUNCH_RECORD_NAME).exists()

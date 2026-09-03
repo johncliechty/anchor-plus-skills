@@ -51,8 +51,26 @@ import {
   proposeScaffolding,
   findOpenScaffoldProposal,
   DEFAULT_ORANGES_PROMPTS,
-  requireProjectFace,
 } from './scaffolding.mjs';
+import {
+  normalizeKickoffInput,
+  projectKickoff,
+  proposeKickoff,
+  readKickoffLineage,
+} from './kickoff.mjs';
+// Gate 5 / Wave 3: the conversation's kickoff law - question cap, thin-proposal bound,
+// silent bootstrap, and the store as the lineage of record for what the seat synthesizes.
+import {
+  KICKOFF_TALK_CODE,
+  capKickoffQuestions,
+  kickoffNeedsThinProposal,
+  kickoffTalkFailure,
+  kickoffTurnNumber,
+  openKickoffBundle,
+  settleKickoffBootstrap,
+  thinBundleInstruction,
+  usesLegacyRoadmapLane,
+} from './kickoff-conversation.mjs';
 import {
   debitSessionEnvelope,
   readEnvelopeState,
@@ -106,6 +124,7 @@ export const CONVERSE_CODE = Object.freeze({
   REPLY_EMPTY: 'CONVERSE_REPLY_EMPTY',
   PROPOSAL_INVALID: 'CONVERSE_PROPOSAL_INVALID',
   ORANGES_GENERIC: 'CONVERSE_ORANGES_GENERIC',
+  KICKOFF_CORRUPT: 'CONVERSE_KICKOFF_CORRUPT',
   DESTRUCTIVE: 'CONVERSE_DESTRUCTIVE',
 });
 
@@ -128,6 +147,8 @@ export const CONVERSE_TEXT = Object.freeze({
     'The proposed scaffolding did not survive validation, so I am not offering it to you as if it were sound.',
   [CONVERSE_CODE.ORANGES_GENERIC]:
     'The proposal came back with placeholder foresight instead of real anticipation — refused rather than dressed up.',
+  [CONVERSE_CODE.KICKOFF_CORRUPT]:
+    'The kickoff history is inconsistent, so I stopped rather than guess which project intent is current.',
   [CONVERSE_CODE.DESTRUCTIVE]:
     `${SPELLING} will not compile destructive free-form talk. Nothing was deleted and nothing was written.`,
 });
@@ -226,12 +247,31 @@ export function routeUtterance(text, ctx = {}) {
  * @returns {{ ok: boolean, face?: object, roadmap?: object, strip?: object, open_proposal?: object|null }}
  */
 export function loadStewardContext(projectPath) {
-  const face = requireProjectFace(projectPath);
-  if (!face.ok) return { ok: false, code: CONVERSE_CODE.NO_FACE, face_check: face };
-
   const surfaces = loadProjectSurfaces(projectPath);
   const loaded = loadProjectRoadmap(projectPath);
   const roadmap = loaded.exists && loaded.ok ? loaded.roadmap : null;
+  const kickoff = roadmap ? projectKickoff(roadmap) : {
+    ok: true,
+    confirmed: null,
+    open: null,
+  };
+  if (!kickoff.ok) {
+    return {
+      ok: false,
+      code: CONVERSE_CODE.KICKOFF_CORRUPT,
+      kickoff_check: kickoff,
+    };
+  }
+
+  // Gate 5 / Wave 3: the store (<folder>/.ecgberht/kickoff/events.jsonl) is the lineage
+  // of record for the kickoff conversation. A fresh session paints its latest OPEN
+  // version from the store alone; the roadmap-ledger projection is the pre-Gate-5 lane
+  // beside it. A store that cannot be read is reported by its own named row, never
+  // guessed around.
+  const store = readKickoffLineage(surfaces.project_path);
+  if (!store.ok) {
+    return { ok: false, code: store.code, store_check: store };
+  }
 
   // loadProjectSurfaces returns the PARSED Face document ({ok, narrative, raw,
   // strip_fence}), so the narrative is read straight off it.
@@ -286,7 +326,17 @@ export function loadStewardContext(projectPath) {
     projection,
     active_step: active,
     step_gaps: stepGaps,
-    open_proposal: roadmap ? findOpenScaffoldProposal(roadmap) : null,
+    confirmed_kickoff: store.confirmed ?? kickoff.confirmed,
+    open_kickoff: store.open ?? kickoff.open,
+    open_proposal: store.open ?? kickoff.open
+      ?? (roadmap ? findOpenScaffoldProposal(roadmap) : null),
+    kickoff_store: {
+      state: store.state,
+      next_version: store.next_version,
+      prior_confirmed_hash: store.prior_confirmed_hash,
+      proposal_count: store.proposal_count,
+      receipt_count: store.receipt_count,
+    },
     commission_runs,
     step_findings,
     history: history.ok ? history.turns : [],
@@ -439,7 +489,10 @@ export const STEWARD_TALK_INSTRUCTION = [
   'a slow, expensive step. Talking is the default; planning is the exception —',
   'with ONE exception the other way (John, 2026-08-06): when he opens with a RICH',
   'project description, he wants the coarse map FIRST and the questions after.',
-  'Do not interrogate him before showing a map he can react to.',
+  'Do not interrogate him before showing a map he can react to. If the description',
+  'already supplies a goal, finished-state signals, and enough structure to frame',
+  'a useful first slice, set wants_plan true and leave asks empty. A ritual question',
+  'would make a complete opening feel like a form.',
 ].join('\n');
 
 /**
@@ -447,42 +500,70 @@ export const STEWARD_TALK_INSTRUCTION = [
  * by the FRONTIER tier. This is the turn worth waiting for.
  */
 export const STEWARD_PLAN_INSTRUCTION = [
-  `You are ${SPELLING}, John's project steward, framing a campaign scaffolding.`,
+  `You are ${SPELLING}, John's project steward, framing a conversational kickoff synthesis.`,
   '',
-  'You are one reply in the chamber conversation, not a terminal session: never',
+  'You are one reply in the chamber conversation, not a terminal session. Never',
   'mention permission modes, tools, or your harness, and never claim to have',
-  'written or launched anything — the steward\'s machinery writes when John',
-  'confirms, and his confirm IS the go signal.',
+  'written or launched anything. This is a proposal John can revise by talking;',
+  'the machinery applies it only after one explicit confirmation.',
   '',
-  '- A scaffolding is COARSE and deliberately incomplete. Stages get their detail later,',
-  '  by talking, when each becomes the step in hand. Do not demand detail up front.',
-  '- Prefer FEWER, larger stages. Six is usually plenty; twelve is a symptom.',
-  '- Never invent a fact, a date, or a constraint he did not give you.',
+  'KEEP THE CATEGORIES DISTINCT:',
+  '- goal: why the project exists;',
+  '- success_signals: observable evidence that the finished effort worked;',
+  '- work_product.components: stable parts of the thing being delivered;',
+  '- plan_entries: coarse work that creates or validates those parts;',
+  '- integration: how multiple parts become one finished whole and how that join is observed.',
+  'Execution phases such as research, build, integrate, or harden are metadata later;',
+  'they are never substitutes for work-product components.',
   '',
-  'THE PARABLE OF THE ORANGES — this is why he wants you:',
-  'Each stage carries foresight SPECIFIC to that stage: the hidden cost, the decision',
-  'that gets expensive if deferred, the thing that will be true next year. Generic',
-  'prompts ("what would he ask next?") are a failure and will be refused.',
+  'USE ONLY AS MUCH STRUCTURE AS THE EFFORT EARNS:',
+  '- A genuinely simple effort has one component and integration=null.',
+  '- Use multiple components only when parts are independently understandable and',
+  '  their interfaces or assembly matter. Then integration is REQUIRED: typed',
+  '  relationships must cover every component, plus an observable proof and method.',
+  '- Use more plan entries only when order, risk, learning, or independent validation',
+  '  makes them useful. Never pad to a target count.',
+  '- At least one plan entry is an end-to-end slice that touches enough of the real',
+  '  product to prove the whole direction. first_slice_id names the earliest one.',
+  '- Use stable lowercase IDs. Every plan entry names the component IDs it advances.',
+  '- Never invent a fact, date, constraint, or done condition. Never emit a tautology',
+  '  such as "Stage X meets its done-when."',
+  '- If the opening is already rich, asks must be empty. Show the synthesis first;',
+  '  do not add a ceremonial question.',
   '',
   'REPLY FORMAT — reply with ONLY a JSON object, no prose outside it, no code fence:',
   '{',
-  '  "say": "<at most 80 words: what you framed and the one thing to react to>",',
+  '  "say": "<at most 100 words: the synthesis and the one thing worth reacting to>",',
+  '  "asks": [],',
   '  "proposal": {',
-  '    "kind": "scaffolding" | "next_stage",',
-  '    "goal": "<the campaign goal in one line>",',
-  '    "stages": [',
-  '      {"name": "<stage name>", "done_when": "<what makes it done>",',
-  '       "step_type": "RESEARCH" | "PLAN" | "BUILD" | "REVIEW" | null,',
-  '       "oranges": ["<specific foresight for THIS stage>"]}',
+  '    "kind": "kickoff",',
+  '    "goal": "<one line>",',
+  '    "success_signals": ["<observable finished-state signal>"],',
+  '    "material_constraints": ["<only constraints John actually supplied>"],',
+  '    "work_product": {',
+  '      "id": "<stable-id>", "name": "<the one deliverable>",',
+  '      "components": [',
+  '        {"id": "<stable-id>", "name": "<component>",',
+  '         "done_when": "<optional concrete component condition>"}',
+  '      ]',
+  '    },',
+  '    "integration": null | {',
+  '      "summary": "<how the components become the whole>",',
+  '      "relationships": [',
+  '        {"kind": "feeds" | "depends_on" | "assembles_with" | "validates" | "integrates",',
+  '         "component_ids": ["<id>", "<id>"], "description": "<the real join>"}',
+  '      ],',
+  '      "proof": {"observable": "<what a person can observe>",',
+  '                "method": "<how to demonstrate it>"}',
+  '    },',
+  '    "plan_entries": [',
+  '      {"id": "<stable-id>", "name": "<coarse plan entry>",',
+  '       "component_ids": ["<component-id>"], "end_to_end_slice": true | false,',
+  '       "done_when": "<concrete condition>"}',
   '    ],',
-  '    "foresight": ["<campaign-level: what bites later>"]',
+  '    "first_slice_id": "<id of an end_to_end_slice entry>"',
   '  }',
   '}',
-  '',
-  'step_type says which KIND of work the stage is, so the steward can later',
-  'commission the right skill for it (RESEARCH→investigate · PLAN→design/decide',
-  '· BUILD→make the thing · REVIEW→assess). Set it when the stage clearly is one',
-  'of those; null when it is genuinely none of them. Never guess.',
 ].join('\n');
 
 /**
@@ -497,7 +578,13 @@ export const STEWARD_PLAN_INSTRUCTION = [
  */
 export function buildStewardPrompt(context = {}, utterance = '', opts = {}) {
   const instruction = opts.planning ? STEWARD_PLAN_INSTRUCTION : STEWARD_TALK_INSTRUCTION;
-  const lines = [instruction, '', '--- CAMPAIGN CONTEXT ---'];
+  const lines = [instruction];
+  // Gate 5 / Wave 3: on a THIN turn (turn >= KICKOFF_THIN_PROPOSAL_BY_TURN of a sparse
+  // opening, nothing open or confirmed) the planning tier owes the smallest honest bundle.
+  // Deliberately CONDITIONAL, like every other block: no thin turn -> no block -> every
+  // recorded prompt stays byte-identical.
+  if (opts.planning && opts.thin_turn) lines.push('', thinBundleInstruction(opts.thin_turn));
+  lines.push('', '--- CAMPAIGN CONTEXT ---');
 
   const n = context.narrative ?? {};
   lines.push(`North star: ${nonEmptyOr(n.north_star, '(not set)')}`);
@@ -531,6 +618,18 @@ export function buildStewardPrompt(context = {}, utterance = '', opts = {}) {
     }
   } else {
     lines.push('', 'Confirmed roadmap steps: none yet.');
+  }
+
+  const confirmedKickoff = context.confirmed_kickoff;
+  if (confirmedKickoff) {
+    lines.push(
+      '',
+      `CONFIRMED KICKOFF v${confirmedKickoff.version} (authoritative intent):`,
+      `Goal: ${confirmedKickoff.goal}`,
+      `Work product: ${confirmedKickoff.work_product.name}`,
+      `Components: ${confirmedKickoff.work_product.components.map((c) => `${c.id}=${c.name}`).join(' · ')}`,
+      'Do not replace this confirmed version merely because a newer preview is open.',
+    );
   }
 
   // LIVE RUNS ride the prompt so "is it running?" is answered from RECORDS,
@@ -581,7 +680,21 @@ export function buildStewardPrompt(context = {}, utterance = '', opts = {}) {
   // The scaffolding-so-far. This is what makes turn N+1 a REFINEMENT rather than a
   // restart — without it he would have to re-describe the project every time.
   const open = context.open_proposal;
-  if (open && Array.isArray(open.steps) && open.steps.length) {
+  if (open && open.kind === 'kickoff_proposal'
+      && Array.isArray(open.plan_entries) && open.plan_entries.length) {
+    lines.push(
+      '',
+      `KICKOFF SYNTHESIS v${open.version} (not confirmed — he is reacting to this):`,
+      `Goal: ${open.goal}`,
+      `Work product: ${open.work_product.name}`,
+      `Components: ${open.work_product.components.map((c) => `${c.id}=${c.name}`).join(' · ')}`,
+      `Plan entries: ${open.plan_entries.map((entry) => `${entry.id}=${entry.name}`).join(' · ')}`,
+      open.integration
+        ? `Integration: ${open.integration.summary} · proof: ${open.integration.proof.observable}`
+        : 'Integration: not needed; this is a one-component effort.',
+      'If he is refining it, return the WHOLE revised kickoff synthesis with the same stable IDs where meaning did not change.',
+    );
+  } else if (open && Array.isArray(open.steps) && open.steps.length) {
     lines.push('', 'SCAFFOLDING YOU ALREADY PROPOSED (not yet confirmed — he is reacting to this):');
     open.steps.forEach((s, i) => {
       lines.push(`${i + 1}. ${s.name}${s.done_when ? ` — done when: ${s.done_when}` : ''}`);
@@ -811,6 +924,37 @@ export function parseStewardReply(raw) {
     return converseFailure(CONVERSE_CODE.PROPOSAL_INVALID, { error: 'proposal_not_object' });
   }
 
+  const kickoffShaped = p.kind === 'kickoff'
+    || p.work_product != null
+    || p.plan_entries != null
+    || p.success_signals != null;
+  if (kickoffShaped) {
+    // Parse step only: shape and ids, nothing invented. Provenance (which seat
+    // answered) is the host's assertion and is applied when converse() proposes
+    // the bundle; a reply cannot stamp its own provenance.
+    const normalized = normalizeKickoffInput(p);
+    if (!normalized.ok) {
+      return converseFailure(CONVERSE_CODE.PROPOSAL_INVALID, {
+        error: normalized.error ?? 'kickoff_proposal_invalid',
+        kickoff_validation: normalized,
+      });
+    }
+    return {
+      ok: true,
+      reply: {
+        say,
+        asks,
+        gathering: false,
+        answer_references: Array.isArray(obj.answer_references)
+          ? obj.answer_references : [],
+        proposal: {
+          kind: 'kickoff',
+          ...normalized.content,
+        },
+      },
+    };
+  }
+
   const kind = p.kind === 'next_stage' ? 'next_stage' : 'scaffolding';
   const goal = String(p.goal ?? '').trim();
 
@@ -890,6 +1034,15 @@ export function sanitizeSeatMeta(meta = {}) {
     duration_ms: Number(meta?.duration_ms) || 0,
     seat_family: typeof meta?.seat_family === 'string' ? meta.seat_family : null,
     driver: typeof meta?.driver === 'string' ? meta.driver : null,
+    // Audit scalars (2026-08-31 Fable review): what was REQUESTED of the seat and
+    // whether the served family was attested — without them no post-turn audit can
+    // tell an Ultra planning call from a default one, or an attested serve from a
+    // hopeful one. Scalars only; the raw trio receipt stays out of durable events
+    // (it may carry product model ids).
+    reasoning_effort: typeof meta?.reasoning_effort === 'string' ? meta.reasoning_effort : null,
+    orchestration_mode: typeof meta?.orchestration_mode === 'string' ? meta.orchestration_mode : null,
+    served_family: typeof meta?.served_family === 'string' ? meta.served_family : null,
+    served_family_attested: meta?.served_family_attested === true,
   };
   const hits = findProductModelIds(usage);
   return { ok: hits.length === 0, usage, product_model_ids: hits };
@@ -1031,17 +1184,27 @@ export function enforceTurnCompletion(reply, e1) {
  * }} opts
  */
 export async function converse(projectPath, opts = {}) {
-  const utterance = String(opts.utterance ?? '');
+  // 0. MISSING and EMPTY are separate rows (Gate 5 / Wave 3): no utterance at all is not
+  //    the same fact as an utterance with nothing in it, and neither is a seat failure.
+  if (opts.utterance == null) {
+    return kickoffTalkFailure(KICKOFF_TALK_CODE.MISSING, {
+      error: 'utterance_missing',
+      model_called: false,
+    });
+  }
+  const utterance = String(opts.utterance);
 
   // 1. Control verbs never reach a model, and never spend.
   const routed = routeUtterance(utterance, { session: opts.session });
   if (routed.lane === 'refuse') {
-    return converseFailure(
-      routed.reason === 'destructive_free_form'
-        ? CONVERSE_CODE.DESTRUCTIVE
-        : CONVERSE_CODE.REPLY_EMPTY,
-      { error: routed.reason, routed: routed.lane },
-    );
+    if (routed.reason === 'destructive_free_form') {
+      return converseFailure(CONVERSE_CODE.DESTRUCTIVE, { error: routed.reason, routed: routed.lane });
+    }
+    return kickoffTalkFailure(KICKOFF_TALK_CODE.EMPTY, {
+      error: routed.reason,
+      routed: routed.lane,
+      model_called: false,
+    });
   }
   if (routed.lane === 'act') {
     return {
@@ -1056,10 +1219,25 @@ export async function converse(projectPath, opts = {}) {
     };
   }
 
-  // 2. The conversation anchors to a Face.
+  // 2. Rebuild durable context. A Face is a post-confirm projection, not a
+  // brainstorming precondition; an empty project is valid kickoff context.
   const context = loadStewardContext(projectPath);
   if (!context.ok) {
-    return converseFailure(CONVERSE_CODE.NO_FACE, { face_check: context.face_check });
+    if (context.store_check) {
+      // The store's own named row (unreadable / corrupt / bound) rides through unchanged.
+      return {
+        ...context.store_check,
+        say: context.store_check.user_text,
+        lane: 'converse',
+        conversational: true,
+        model_called: false,
+        ledger_write: false,
+        dialogue_persisted: false,
+      };
+    }
+    return converseFailure(context.code ?? CONVERSE_CODE.KICKOFF_CORRUPT, {
+      context_check: context,
+    });
   }
 
   // 3. Seat must be safe BEFORE we send anything anywhere.
@@ -1087,7 +1265,14 @@ export async function converse(projectPath, opts = {}) {
       : { ok: false, skipped: 'no_opener_injected' };
     if (opened.ok) envState = readEnvelopeState(projectPath, {});
   }
-  if (!envState.ok || !envState.live) {
+  // THE SILENT BOOTSTRAP (Gate 5 / Wave 3). A new effort has no Face, no envelope, no
+  // budget - and none of them is a precondition for brainstorming. Nothing is prompted
+  // and nothing is written here: the Face is created ON confirmation and the envelope is
+  // materialized INSIDE the confirmation receipt (Wave 2); until then the turn's spend
+  // rides the result. An envelope that EXISTS keeps its own law below (debit; stop at
+  // the cap and ask).
+  const bootstrap = settleKickoffBootstrap({ face: context.narrative, envelope_state: envState });
+  if ((!envState.ok || !envState.live) && !bootstrap.spend_deferred) {
     // A REACHED CAP IS A CHECKPOINT, NOT A WALL (John, 2026-08-04). Say what has
     // actually been spent and offer to carry on, rather than a bare refusal — the
     // decision to go past it is his, and it stays a human confirmation.
@@ -1191,13 +1376,26 @@ export async function converse(projectPath, opts = {}) {
 
   // PLAN SECOND, RARELY. Only when the conversation earned it does the FRONTIER tier
   // run — the slow, deep, expensive turn — and only that turn may frame a scaffolding.
+  // THE THIN-PROPOSAL BOUND (Gate 5 / Wave 3). By turn KICKOFF_THIN_PROPOSAL_BY_TURN of a
+  // sparse opening - nothing open, nothing confirmed, no roadmap step - the effort owes a
+  // (thin) proposal. If the seat is still only talking, the planning tier runs anyway,
+  // under the thin-bundle block; a thin bundle, never a third question, answers ambiguity.
+  const turnNumber = kickoffTurnNumber(opts.turns);
+  const thinTurn = kickoffNeedsThinProposal({
+    turn_number: turnNumber,
+    open_proposal: context.open_proposal,
+    confirmed_kickoff: context.confirmed_kickoff,
+    step_count: context.projection.length,
+  });
+  const planForced = thinTurn && parsed.reply.wants_plan !== true && !parsed.reply.proposal;
   let planUsage = null;
-  if (parsed.reply.wants_plan === true) {
+  if (parsed.reply.wants_plan === true || planForced) {
     const planPrompt = buildStewardPrompt(context, utterance, {
       turns: opts.turns,
       planning: true,
       plan_brief: parsed.reply.plan_brief,
       e1: opts.e1,
+      thin_turn: thinTurn ? turnNumber : null,
     });
     const planResult = await callSeat(planPrompt, SEAT_ROLE.FRONTIER);
     if (planResult?.ok === true && String(planResult.text ?? '').trim()) {
@@ -1249,6 +1447,39 @@ export async function converse(projectPath, opts = {}) {
   }
   const reply = parsed.reply;
 
+  // THE QUESTION CAP (Gate 5 / Wave 3): at most one natural question per turn, the North
+  // Star's letter. The seat may write more; one is delivered and the rest are reported held.
+  const capped = capKickoffQuestions(reply.asks);
+  reply.asks = capped.asks;
+  const questionsHeld = capped.held.length;
+
+  // ONE debit seam for the closes below. With no envelope at all (a new effort) the spend
+  // is DEFERRED - it rides the result and is materialized inside the confirmation receipt
+  // - never silently dropped and never prompted for.
+  const debitTurn = (suffix) => {
+    if (bootstrap.spend_deferred) {
+      return {
+        ok: true,
+        debited: false,
+        deferred: true,
+        deferred_to: bootstrap.envelope_materialized_in,
+        tokens: meta.usage.tokens,
+        cost_usd: meta.usage.cost_usd,
+      };
+    }
+    return debitSessionEnvelope(projectPath, {
+      kind: 'compile',
+      text: prompt,
+      tokens: meta.usage.tokens || undefined,
+      cost_usd: meta.usage.cost_usd,
+      auth: opts.auth,
+      client_event_id: opts.client_event_id ? `${opts.client_event_id}-${suffix}` : undefined,
+    });
+  };
+  const debitView = (debit) => (debit.deferred
+    ? debit
+    : debit.ok ? { debited: true, shown: debit.shown } : { debited: false, ...debit });
+
   // ── THE E1 TURN-COMPLETION HOOK (steward-e1 W2 — the W8 row) ─────────────
   // The turn attempts to close HERE. Under a RATIFIED bound, an open
   // question id with no typed answer-reference structurally blocks the
@@ -1258,14 +1489,7 @@ export async function converse(projectPath, opts = {}) {
   // — a blocked turn never hides money that left.
   const turnClose = enforceTurnCompletion(reply, opts.e1 ?? null);
   if (turnClose.decision === E1_DECISION.BLOCK) {
-    const debit = debitSessionEnvelope(projectPath, {
-      kind: 'compile',
-      text: prompt,
-      tokens: meta.usage.tokens || undefined,
-      cost_usd: meta.usage.cost_usd,
-      auth: opts.auth,
-      client_event_id: opts.client_event_id ? `${opts.client_event_id}-blocked` : undefined,
-    });
+    const debit = debitTurn('blocked');
     return {
       ok: true,
       lane: 'converse',
@@ -1286,30 +1510,59 @@ export async function converse(projectPath, opts = {}) {
       model_called: true,
       seat: { family: seats.coding_family, driver: seats.coding_driver },
       usage: meta.usage,
-      debit: debit.ok ? { debited: true, shown: debit.shown } : { debited: false, ...debit },
+      debit: debitView(debit),
       steps_written: false,
       ledger_write: false,
       dialogue_persisted: false,
     };
   }
 
+  // THE AMBIGUOUS ROW (Gate 5 / Wave 3): the thin turn came and went and the seat still
+  // has no bundle. Named, with NO question attached (never a third question); the spend
+  // is accounted honestly; nothing is written and the exchange is not recorded as a close.
+  if (thinTurn && !reply.proposal) {
+    const debit = debitTurn('ambiguous');
+    return kickoffTalkFailure(KICKOFF_TALK_CODE.AMBIGUOUS, {
+      error: 'no_bundle_by_thin_turn',
+      turn: turnNumber,
+      turn_number: turnNumber,
+      plan_forced: planForced,
+      held_say: reply.say,
+      questions_held: questionsHeld + reply.asks.length,
+      gathering: true,
+      model_called: true,
+      seat: { family: seats.coding_family, driver: seats.coding_driver },
+      usage: meta.usage,
+      debit: debitView(debit),
+      turn_close: turnClose,
+      steps_written: false,
+      bootstrap,
+    });
+  }
+
   // Record the exchange. Durable, append-only, and NEVER authoritative: this is how
   // John reads back why the plan changed, not where the plan currently stands.
-  const recordTurns = (proposalHash, stageCount = 0) => {
+  const recordTurns = (proposalHash, itemCount = 0, proposalKind = 'scaffold') => {
     const appended = appendConversationTurns(
       projectPath,
       [{ role: 'john', text: utterance }, { role: 'steward', text: reply.say }],
-      { proposal_hash: proposalHash ?? null, at: opts.at },
+      {
+        proposal_hash: proposalHash ?? null,
+        kind: proposalHash ? `${proposalKind}_proposed` : 'conversation',
+        at: opts.at,
+      },
     );
     // Portfolio memory: WHAT THE STEWARD DID, never what the project is. Best-effort —
     // the steward's own bookkeeping must not break a turn John cares about.
     noteStewardEffort({
-      kind: proposalHash ? 'scaffold_proposed' : 'conversation',
+      kind: proposalHash ? `${proposalKind}_proposed` : 'conversation',
       project_path: projectPath,
       project_id: opts.project_id ?? context.strip?.project_id ?? null,
       at: opts.at,
       summary: proposalHash
-        ? `Proposed a ${stageCount}-stage scaffolding`
+        ? proposalKind === 'kickoff'
+          ? `Proposed kickoff synthesis v${reply.proposal?.version ?? 'next'} with ${itemCount} plan entries`
+          : `Proposed a ${itemCount}-stage scaffolding`
         : 'Talked through the project; no proposal yet',
     });
     if (reply.asks?.length) {
@@ -1354,14 +1607,7 @@ export async function converse(projectPath, opts = {}) {
   // 7. No proposal yet — still gathering. Debit the call that was actually made.
   if (!reply.proposal) {
     const logged = recordTurns(null);
-    const debit = debitSessionEnvelope(projectPath, {
-      kind: 'compile',
-      text: prompt,
-      tokens: meta.usage.tokens || undefined,
-      cost_usd: meta.usage.cost_usd,
-      auth: opts.auth,
-      client_event_id: opts.client_event_id ? `${opts.client_event_id}-turn` : undefined,
-    });
+    const debit = debitTurn('turn');
     return {
       ok: true,
       lane: 'converse',
@@ -1369,13 +1615,17 @@ export async function converse(projectPath, opts = {}) {
       asks: reply.asks,
       gathering: true,
       proposal: null,
+      turn_number: turnNumber,
+      questions_held: questionsHeld,
+      plan_forced: planForced,
+      bootstrap,
       // E1 (steward-e1 W2): every converse close carries its turn-close
       // verdict — an unenforceable bound rides BY NAME, never silently open.
       turn_close: turnClose,
       model_called: true,
       seat: { family: seats.coding_family, driver: seats.coding_driver },
       usage: meta.usage,
-      debit: debit.ok ? { debited: true, shown: debit.shown } : { debited: false, ...debit },
+      debit: debitView(debit),
       // Said explicitly rather than left undefined: a talking turn writes no steps, and
       // a caller checking `steps_written === false` deserves a true answer, not absence.
       steps_written: false,
@@ -1399,22 +1649,85 @@ export async function converse(projectPath, opts = {}) {
     };
   }
 
-  // 8. A proposal — emitted through the EXISTING spine path so the confirm side
-  //    (hash-bound, batch, single writer) is reused byte-for-byte.
-  const proposed = proposeScaffolding(projectPath, {
-    goal: reply.proposal.goal,
-    stages: reply.proposal.stages.map((s) => ({
-      name: s.name,
-      done_when: s.done_when,
-      oranges: s.oranges,
-      ...(s.step_type ? { step_type: s.step_type } : {}),
-    })),
-    tokens: meta.usage.tokens || undefined,
-    cost_usd: meta.usage.cost_usd,
-    auth: opts.auth,
-    client_event_id: opts.client_event_id ? `${opts.client_event_id}-propose` : undefined,
-    at: opts.at,
-  });
+  // 8. A proposal. New kickoff synthesis uses its own strict lineage; legacy
+  // scaffolding remains available for recorded replies and established callers.
+  const kickoffProposal = reply.proposal.kind === 'kickoff';
+  let proposed;
+  let legacyRoadmap = null;
+  if (kickoffProposal) {
+    const debit = debitTurn('kickoff-debit');
+    if (!debit.ok) {
+      return {
+        ...debit,
+        lane: 'converse',
+        say: reply.say,
+        asks: reply.asks,
+        model_called: true,
+        conversational: true,
+      };
+    }
+    // THE STORE is the lineage of record (Gate 5 / Wave 2's one store): the WHOLE bundle,
+    // v1 on an empty lineage, superseding at the same version before a confirmation,
+    // v(n+1) after one. The host asserts which seat authored it; nothing else is written.
+    const host = {
+      seat_family: meta.usage.seat_family,
+      driver: meta.usage.driver,
+      source_turn_id: opts.client_event_id ?? null,
+      client_event_id: opts.client_event_id
+        ? `${opts.client_event_id}-kickoff-propose` : undefined,
+      at: opts.at,
+    };
+    proposed = openKickoffBundle(projectPath, {
+      bundle: reply.proposal,
+      ...host,
+      timeoutMs: opts.timeoutMs,
+    });
+    if (proposed.ok && usesLegacyRoadmapLane(context)) {
+      // THE LEGACY LANE: a stood-up campaign (a Face on disk) keeps the pre-Gate-5
+      // roadmap-ledger kickoff path beside the store - the WH4 lane's interaction,
+      // unchanged. Same bundle, same seat lineage, same source turn: the same hash on an
+      // agreeing lineage. A NEW effort never reaches this branch and writes only the store.
+      const mirrored = proposeKickoff(projectPath, {
+        proposal: reply.proposal,
+        project_id: opts.project_id ?? context.strip?.project_id ?? null,
+        ...host,
+      });
+      legacyRoadmap = mirrored.ok
+        ? {
+          written: mirrored.event != null,
+          proposal_hash: mirrored.proposal_hash,
+          diverged: mirrored.proposal_hash !== proposed.proposal_hash,
+        }
+        : { written: false, code: mirrored.code, error: mirrored.error };
+    }
+    if (proposed.ok) {
+      proposed.debit = debit.deferred
+        ? debit
+        : {
+          ok: true,
+          debited: true,
+          shown: debit.shown,
+          cost_usd: debit.shown?.cost_usd ?? debit.pricing?.cost_usd,
+          envelope_id: debit.envelope_id ?? debit.envelope?.envelope_id,
+          pricing: debit.pricing,
+        };
+    }
+  } else {
+    proposed = proposeScaffolding(projectPath, {
+      goal: reply.proposal.goal,
+      stages: reply.proposal.stages.map((s) => ({
+        name: s.name,
+        done_when: s.done_when,
+        oranges: s.oranges,
+        ...(s.step_type ? { step_type: s.step_type } : {}),
+      })),
+      tokens: meta.usage.tokens || undefined,
+      cost_usd: meta.usage.cost_usd,
+      auth: opts.auth,
+      client_event_id: opts.client_event_id ? `${opts.client_event_id}-propose` : undefined,
+      at: opts.at,
+    });
+  }
 
   if (!proposed.ok) {
     return {
@@ -1428,8 +1741,15 @@ export async function converse(projectPath, opts = {}) {
   }
 
   // Tagged with the proposal hash, so the reasoning can be read alongside the exact
-  // scaffolding version it produced — the "how did we get here" John asked for.
-  const logged = recordTurns(proposed.proposal_hash, proposed.proposal.steps.length);
+  // proposal version it produced — the "how did we get here" John asked for.
+  const itemCount = kickoffProposal
+    ? proposed.proposal.plan_entries.length
+    : proposed.proposal.steps.length;
+  const logged = recordTurns(
+    proposed.proposal_hash,
+    itemCount,
+    kickoffProposal ? 'kickoff' : 'scaffold',
+  );
 
   return {
     ok: true,
@@ -1446,8 +1766,28 @@ export async function converse(projectPath, opts = {}) {
     proposal_hash: proposed.proposal_hash,
     proposal_id: proposed.proposal_id,
     proposal_kind: reply.proposal.kind,
-    foresight: reply.proposal.foresight,
-    step_count: proposed.proposal.steps.length,
+    ...(kickoffProposal
+      ? {
+        plan_entry_count: proposed.proposal.plan_entries.length,
+        // What the chamber shows and sends back: the prose John reads and BOTH hashes the
+        // confirmation binds. State is the store's; the roadmap mirror is named beside it.
+        rendered_prose: proposed.rendered_prose,
+        rendered_prose_hash: proposed.rendered_prose_hash,
+        version: proposed.version,
+        prior_confirmed_hash: proposed.prior_confirmed_hash ?? null,
+        supersedes: proposed.supersedes ?? null,
+        kickoff_state: proposed.state,
+        kickoff_phase: proposed.phase,
+        legacy_roadmap: legacyRoadmap,
+        turn_number: turnNumber,
+        questions_held: questionsHeld,
+        plan_forced: planForced,
+        bootstrap,
+      }
+      : {
+        foresight: reply.proposal.foresight,
+        step_count: proposed.proposal.steps.length,
+      }),
     model_called: true,
     seat: { family: seats.coding_family, driver: seats.coding_driver },
     usage: meta.usage,
@@ -1455,9 +1795,13 @@ export async function converse(projectPath, opts = {}) {
     steps_written: false,
     elaborated,
     journaled,
-    ledger_write: false,
+    ledger_write: proposed.event != null,
+    authoritative: false,
+    applied: false,
     dialogue_persisted: logged.ok === true,
-    confirm_hint: 'Nothing is written yet — confirm and these become the campaign roadmap.',
+    confirm_hint: kickoffProposal
+      ? 'This is a preview, not project truth — confirm this exact version to apply it.'
+      : 'Nothing is written yet — confirm and these become the campaign roadmap.',
   };
 }
 

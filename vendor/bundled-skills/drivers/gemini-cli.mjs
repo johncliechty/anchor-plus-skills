@@ -52,10 +52,9 @@
 // Auth posture: the agy LOGIN is the default — this driver passes NO API key. The seam is
 // ENV-GATED (CRUCIBLE_AGENT_LIVE=1 — the same trio-wide gate the Claude driver uses) so an
 // accidental import/test never spawns a real (billable) agent, and STUBBABLE
-// (`makeGeminiCliSeam({ runGemini })`) so tests drive the full schema/retry/abstain logic
+// (`makeGeminiCliSeam({ runGemini })`) so tests drive the full schema/retry/failure logic
 // with zero subprocesses.
 
-import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, readdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import path from 'node:path';
@@ -65,6 +64,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import { HaltError } from '../foreman/bin/foreman-lib.mjs';
 import { extractJson } from './claude.mjs';
+import { isVerificationRole, normalizeRole } from './roles.mjs';
+import { runCliSchemaAttempts } from './cli-schema.mjs';
+import { runCloseBoundProcess } from './subscription-process.mjs';
 
 // agy on-disk layout (validated on this host). The conversation transcript lives under
 // the brain dir keyed by conversation id; the served-model attestation lives in cli.log.
@@ -145,7 +147,7 @@ function familyFromModel(m) {
  */
 export function approvalModeFor({ approvalMode, role, label } = {}) {
   if (approvalMode) return approvalMode;
-  const key = String(role || label || '').toLowerCase().split(/[:#.\s]/)[0];
+  const key = normalizeRole({ role, label });
   if (READONLY_ROLES.has(key)) return 'plan';
   if (EDIT_ROLES.has(key)) return 'auto_edit';
   return DEFAULT_GEMINI_APPROVAL_MODE;
@@ -153,8 +155,8 @@ export function approvalModeFor({ approvalMode, role, label } = {}) {
 
 /** True iff this role/label is a read-only (verification) seat — agy `--readonly`. */
 export function isReadonlyRole({ role, label } = {}) {
-  const key = String(role || label || '').toLowerCase().split(/[:#.\s]/)[0];
-  return READONLY_ROLES.has(key);
+  const key = normalizeRole({ role, label });
+  return isVerificationRole({ role: key, label }) || READONLY_ROLES.has(key);
 }
 
 /**
@@ -456,19 +458,25 @@ export function parseGeminiCliFrames(replyText, {
     requested_model,
     // SR-5 attestation triple — honest fallback (unattested) until proven otherwise below.
     model_served: null,
-    model_family: null,
+    model_family: transportOk ? 'gemini' : null,
     model_attested: false,
     degraded: true,
     multi_model: false,
+    family_attested: transportOk,
   };
 
   if (substituted) {
     // (a) SUBSTITUTED: cli.log named the override agy actually served. We attested what
     // served (that's how we know it substituted), but it is NEVER a success.
-    rec.model_served = served_model;                 // the override label (null only if unflushed)
-    rec.model_family = familyFromModel(served_model);
-    rec.model_attested = true;
-    rec.degraded = false;
+    const attested = typeof served_model === 'string' && served_model.trim().length > 0;
+    const servedFamily = attested ? familyFromModel(served_model) : null;
+    rec.model_served = attested ? served_model : null;
+    rec.model_family = ['claude', 'gemini', 'grok', 'chatgpt'].includes(servedFamily)
+      ? servedFamily
+      : null;
+    rec.family_attested = rec.model_family !== null;
+    rec.model_attested = attested;
+    rec.degraded = !attested;
     rec.ok = false;
     rec.status = 'model_substituted';
   } else if (typeof served_model === 'string' && served_model.length > 0
@@ -515,7 +523,13 @@ export function defaultRunGeminiCli(fullPrompt, label, {
   role,
   approvalMode,
   timeoutMs = DEFAULT_GEMINI_TIMEOUT_MS,
+  signal = null,
   log = () => {},
+  processRunner = runCloseBoundProcess,
+  spawnImpl,
+  spawnSyncImpl,
+  platform = process.platform,
+  killImpl,
 } = {}) {
   if (env.CRUCIBLE_AGENT_LIVE !== '1') {
     throw new HaltError(
@@ -530,130 +544,88 @@ export function defaultRunGeminiCli(fullPrompt, label, {
   // is read from transcript.jsonl below, not stdout.
   const prompt = STEER + String(fullPrompt ?? '');
   const childEnv = Object.assign({}, env, { NO_COLOR: '1', FORCE_COLOR: '0', CI: '1' });
-
-  return new Promise((resolve) => {
-    const logDir = mkdtempSync(path.join(tmpdir(), 'agy-gemini-cli-'));
-    const logPath = path.join(logDir, 'agy.log');
-    const startMs = Date.now();
-    // W0: snapshot cli.log size BEFORE the spawn so the served-model attestation reads
-    // only the region THIS call appends (a concurrent call's line is not mis-attributed).
-    const cliLogBefore = cliLogSize();
-
-    // 2026-07-16 (John-authorized; journal crucible/0004): an oversized prompt is delivered
-    // via a per-call FILE — Windows argv caps ~32KB, and live Item-F Sharks silently died
-    // past it. The file lives in THIS call's private logDir, so no cross-call mixups.
-    let promptFile = null;
-    if (Buffer.byteLength(prompt) > OVERSIZE_PROMPT_ARGV_BYTES) {
-      promptFile = path.join(logDir, 'prompt.md');
-      writeFileSync(promptFile, prompt, 'utf8');
-      log(`${label}: prompt ${Buffer.byteLength(prompt)} bytes > ${OVERSIZE_PROMPT_ARGV_BYTES} argv-safe — delivered via file (short argv pointer)`);
-    }
-
-    const args = buildGeminiCliArgs({ prompt, promptFile, logPath, model: mdl, target, readonly, timeoutMs });
-    // W0: spawn agy DIRECTLY, inheriting the (already-hidden) parent console so any pwsh/cmd
-    // agy spawns for a shell tool attaches to that invisible console instead of a new VISIBLE
-    // one. windowsHide keeps agy itself windowless; NEVER `detached:true` (detaching removes
-    // the console to inherit and makes agy's shells pop NEW windows — John, 2026-07-03). The
-    // STEER prefix already keeps Gemini off the shell entirely.
-    const cmdName = process.platform === 'win32' ? 'agy.exe' : 'agy';
-    const child = spawn(cmdName, args, {
-      cwd: target,
-      env: childEnv,
-      shell: false,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'], // no interactive stdin; print mode emits nothing here
-    });
-
-    const killChild = () => {
-      try {
-        if (process.platform === 'win32' && child.pid) spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f']);
-        else child.kill('SIGKILL');
-      } catch { /* already gone */ }
-    };
-    const onExit = () => killChild();
-    const onSigInt = () => { killChild(); process.exit(130); };
-    process.on('exit', onExit);
-    process.on('SIGINT', onSigInt);
-
-    let stderr = '', settled = false, timedOut = false;
-    const finish = (payload) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      process.removeListener('exit', onExit);
-      process.removeListener('SIGINT', onSigInt);
-      resolve(payload);
-    };
-    const timer = timeoutMs > 0 ? setTimeout(() => {
-      timedOut = true;
-      log(`!! ${label}: agy exceeded ${timeoutMs}ms - killing child`);
-      killChild();
-      finish({ text: '', rec: {
-        label, cli_status: null, ok: false, status: 'timeout',
+  if (signal?.aborted) {
+    return Promise.resolve({ text: '', rec: {
+      label, cli_status: null, ok: false, status: 'aborted', aborted: true,
+      requested_model: mdl, model_served: null, model_family: null,
+      family_attested: false, model_attested: false, degraded: true, cost_usd: null,
+    } });
+  }
+  const logDir = mkdtempSync(path.join(tmpdir(), 'agy-gemini-cli-'));
+  const logPath = path.join(logDir, 'agy.log');
+  const startMs = Date.now();
+  const cliLogBefore = cliLogSize();
+  let promptFile = null;
+  if (Buffer.byteLength(prompt) > OVERSIZE_PROMPT_ARGV_BYTES) {
+    promptFile = path.join(logDir, 'prompt.md');
+    writeFileSync(promptFile, prompt, 'utf8');
+    log(`${label}: prompt delivered via file (${Buffer.byteLength(prompt)} bytes)`);
+  }
+  const args = buildGeminiCliArgs({
+    prompt, promptFile, logPath, model: mdl, target, readonly, timeoutMs,
+  });
+  const cmdName = platform === 'win32' ? 'agy.exe' : 'agy';
+  return processRunner({
+    command: cmdName,
+    args,
+    options: {
+      cwd: target, env: childEnv, shell: false, windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+    signal,
+    timeoutMs,
+    label,
+    log,
+    ...(spawnImpl ? { spawnImpl } : {}),
+    ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
+    platform,
+    ...(killImpl ? { killImpl } : {}),
+  }).then(async (result) => {
+    if (result.terminal !== 'closed' || result.code !== 0) {
+      const status = result.terminal === 'closed' ? 'cli_error' : result.terminal;
+      if (result.stderr) log(`!! ${label}: agy ${status}. stderr=${result.stderr.slice(0, 300)}`);
+      return { text: '', rec: {
+        label, cli_status: result.code, ok: false, status,
+        error: result.error || result.stderr.slice(0, 500),
         requested_model: mdl, model_served: null, model_family: null,
-        model_attested: false, degraded: true, cost_usd: null,
-      } });
-    }, timeoutMs) : null;
-    if (timer && typeof timer.unref === 'function') timer.unref();
-
-    child.stdout.on('data', () => {});                 // print mode emits nothing here
-    child.stderr.on('data', (d) => { stderr += d.toString(); });
-
-    child.on('error', (err) => {
-      finish({ text: '', rec: {
-        label, cli_status: null, ok: false, status: 'transport-error',
-        error: String(err?.message ?? err), requested_model: mdl, model_served: null,
-        model_family: null, model_attested: false, degraded: true, cost_usd: null,
-      } });
+        family_attested: false, model_attested: false, degraded: true,
+        cost_usd: null, timed_out: status === 'timeout', aborted: status === 'aborted',
+        kill_status: result.kill_status,
+      } };
+    }
+    const reply = await readAgyReply(logPath, startMs);
+    const graceMs = Number(env.AGY_ATTEST_GRACE_MS) > 0
+      ? Number(env.AGY_ATTEST_GRACE_MS)
+      : 2000;
+    let cliWindow = null;
+    for (let i = 0; i < 40; i++) {
+      cliWindow = cliLogTailSince(cliLogBefore);
+      if (shouldStopAttestationPoll({
+        cliWindow, requested: mdl, elapsedMs: i * 250, graceMs,
+      })) break;
+      await sleep(250);
+    }
+    const attestation = servedModelFromCliLog(cliWindow, { requested: mdl });
+    const { text, rec } = parseGeminiCliFrames(reply.text, {
+      label,
+      cli_status: result.code,
+      requested_model: mdl,
+      served_model: attestation.served,
+      substituted: attestation.substituted,
     });
-    child.on('close', async (code) => {
-      if (timedOut) return;
-      if (code !== 0) {
-        if (stderr) log(`!! ${label}: agy exit ${code}. stderr=${stderr.slice(0, 300)}`);
-        finish({ text: '', rec: {
-          label, cli_status: code, ok: false, status: 'cli_error',
-          requested_model: mdl, model_served: null, model_family: null,
-          model_attested: false, degraded: true, cost_usd: null,
-        } });
-        return;
-      }
-      // W0: reply from transcript.jsonl (via the log's conversation id); served model from cli.log.
-      const reply = await readAgyReply(logPath, startMs);
-      // W0-fix (2026-07-05): agy writes model lines to cli.log ONLY when it SUBSTITUTES, and
-      // does so slightly async (not flushed by child-close). A CLEAN serve of a known label
-      // writes NOTHING. So poll the appended region up to ~40×/250ms (~10s), stopping early
-      // once THIS call's resolve-failure / override line appears; a known-label clean serve
-      // simply never logs and is attested by absence in servedModelFromCliLog. A `null`
-      // window means cli.log was unreadable this tick — keep polling (no window yet); after
-      // the loop whatever it is (null → UNATTESTED) is passed straight through.
-      // B2 (2026-07-11): a KNOWN label with a readable, evidence-free window stops
-      // after a short straggler grace (attest-by-absence is already decided) instead
-      // of paying the full ~10s on EVERY successful call. Unknown labels still poll
-      // the full window; substitution evidence still stops immediately (tripwire
-      // intact). Grace tunable via AGY_ATTEST_GRACE_MS.
-      const graceMs = Number(env.AGY_ATTEST_GRACE_MS) > 0 ? Number(env.AGY_ATTEST_GRACE_MS) : 2000;
-      let cliWindow = null;
-      for (let i = 0; i < 40; i++) {
-        cliWindow = cliLogTailSince(cliLogBefore);
-        if (shouldStopAttestationPoll({ cliWindow, requested: mdl, elapsedMs: i * 250, graceMs })) break;
-        await sleep(250);
-      }
-      const attest = servedModelFromCliLog(cliWindow, { requested: mdl });
-      const { text, rec } = parseGeminiCliFrames(reply.text, {
-        label, cli_status: code, requested_model: mdl,
-        served_model: attest.served, substituted: attest.substituted,
-      });
-      rec.conversation_id = reply.id;
-      if (!rec.ok) log(`!! ${label}: status=${rec.status} (requested="${mdl}" served="${attest.served ?? 'unattested'}"${attest.substituted ? ' [substituted]' : ''}).`);
-      finish({ text, rec });
-    });
+    rec.conversation_id = reply.id;
+    rec.kill_status = result.kill_status;
+    if (!rec.ok) {
+      log(`!! ${label}: status=${rec.status} (requested="${mdl}" served="${attestation.served ?? 'unattested'}").`);
+    }
+    return { text, rec };
   });
 }
 
 /**
  * Build the `agent()` seam for the Gemini CLI backend. Mirrors claude.mjs's
  * `makeAgentSeam`: structured output is prompt-suffix (the schema is appended, the reply
- * parsed with retry-once-then-ABSTAIN) so behavior matches every other backend.
+ * parsed with retry-once-then-failure) so behavior matches every other backend.
  * @param {object} [o]
  * @param {?Function}[o.runGemini]  injected transport `(prompt,label)=>Promise<{text,rec}>`
  *                                  (omit to use the env-gated live `agy -p`).
@@ -665,69 +637,42 @@ export function defaultRunGeminiCli(fullPrompt, label, {
  * @param {Function}[o.log=()=>{}]
  * @returns {{ agent: (prompt:string, opts?:object)=>Promise<any> }}
  */
-export function makeGeminiCliSeam({
-  runGemini = null,
-  env = process.env,
-  target = process.cwd(),
-  model,
-  role,
-  approvalMode,
-  timeoutMs,
-  log = () => {},
-} = {}) {
+export function makeGeminiCliSeam(options = {}) {
+  const {
+    runGemini = null,
+    env = process.env,
+    target = process.cwd(),
+    model,
+    role,
+    approvalMode,
+    timeoutMs,
+    log = () => {},
+  } = options;
   const run = runGemini
-    || ((prompt, label) => defaultRunGeminiCli(prompt, label, { env, target, model, role, approvalMode, timeoutMs, log }));
+    || ((prompt, label, callOpts = {}) => defaultRunGeminiCli(prompt, label, {
+      ...options, env, target, model: callOpts.model ?? model,
+      role: callOpts.role ?? role, approvalMode,
+      timeoutMs: callOpts.timeoutMs ?? timeoutMs, signal: callOpts.signal, log,
+    }));
 
   async function agent(prompt, opts = {}) {
     const label = opts.label || '(unlabeled)';
-    const schemaSuffix = opts.schema
-      ? `\n\nRespond with ONLY a single raw JSON object (no markdown fences, no prose) ` +
-        `that conforms to this JSON Schema:\n${JSON.stringify(opts.schema)}`
-      : '';
-    const { text, rec } = await run(prompt + schemaSuffix, label);
-    // W0-fix: FAIL CLOSED at the seam. A missing rec or any non-ok rec
-    // (model_substituted / unattested_model / transport / timeout error) must NEVER return
-    // text as a success — a non-attested cross-family result is refused here, on every path.
-    if (!rec || rec.ok === false) {
-      const e = new HaltError(
-        `Gemini attestation/transport failed: ${rec?.status ?? 'no-rec'}`,
-        `served=${JSON.stringify(rec?.model_served ?? null)} attested=${rec?.model_attested ?? false} — refuse to return a non-attested cross-family result`,
-      );
-      e.seat_unavailable = true;              // failover-eligible: requested model was NOT delivered
-      e.requested_model = mdl;
-      e.served_model = rec?.model_served ?? null;
-      throw e;
-    }
-    if (!opts.schema) return text;
-
-    let obj = extractJson(text);
-    if (!obj) {
-      log(`   !! ${label} reply was not valid JSON — retrying once (strict reprompt)`);
-      const strict = `${prompt}\n\nYour previous reply was NOT valid JSON and could not be parsed. ` +
-        `Respond with ONLY a single raw JSON object that conforms to this JSON Schema — ` +
-        `no prose, no markdown fences, nothing else:\n${JSON.stringify(opts.schema)}`;
-      const retry = await run(strict, `${label}#retry`);
-      // Same fail-closed guard on the retry's rec — the reprompt path must not smuggle a
-      // non-attested result back as success either.
-      if (!retry.rec || retry.rec.ok === false) {
-        throw new HaltError(
-          `Gemini attestation/transport failed: ${retry.rec?.status ?? 'no-rec'}`,
-          `served=${JSON.stringify(retry.rec?.model_served ?? null)} attested=${retry.rec?.model_attested ?? false} — refuse to return a non-attested cross-family result`,
-        );
-      }
-      obj = extractJson(retry.text);
-    }
-    if (!obj) {
-      log(`   !! ${label} still unparseable after retry — TRANSPORT FAILURE (abstain; degradable)`);
-      return {
-        answerable: 'no',
-        transport_failed: true,
-        note: `reviewer ${label} response was not parseable JSON after one retry ` +
-          `(transport failure, not a plan problem)`,
-        findings: [],
-      };
-    }
-    return obj;
+    return runCliSchemaAttempts({
+      run,
+      prompt,
+      schema: opts.schema,
+      label,
+      callOpts: {
+        model: opts.model ?? model,
+        role: normalizeRole({ role: opts.role ?? role, label }),
+        timeoutMs: opts.timeoutMs ?? timeoutMs,
+        signal: opts.signal,
+      },
+      driverOpts: opts,
+      familyName: 'Gemini',
+      log,
+      parse: extractJson,
+    });
   }
 
   return { agent };
@@ -745,9 +690,9 @@ export const geminiCliDriver = {
   subAgentCapable: true,
   structuredOutput: 'cli-subagent (prompt-suffix)',
   async runAgent(opts = {}) {
-    const { prompt, schema, label } = opts;
+    const { prompt, schema, label, timeoutMs } = opts;
     const { agent } = makeGeminiCliSeam(opts);
-    return agent(prompt, { schema, label });
+    return agent(prompt, { ...opts, schema, label, timeoutMs });
   },
 };
 

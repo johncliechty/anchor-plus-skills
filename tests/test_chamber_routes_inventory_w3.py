@@ -83,6 +83,34 @@ def test_bridge_verbs_carry_state_changing_truth():
             if not verb["state_changing"]:
                 continue
             exposed = verb.get("exposed_via") or []
+            conv = verb.get("conversational_cli")
+            if not exposed and conv:
+                # A TRUTHFUL non-HTTP exposure (Gate 5 W8): the verb is driven
+                # conversationally / by the bridge CLI only — zero network
+                # exposure by DESIGN, never a not_exposed debt row. The
+                # declaration must name the hermetic bridge-CLI test standing
+                # behind it (and that file must exist), name the driving CLI
+                # flag, and must not double-declare not_exposed.
+                assert "bridge-cli" in str(conv.get("declaration", "")), \
+                    verb["verb"]
+                assert not verb.get("not_exposed"), (
+                    "verb %r declares BOTH conversational_cli and not_exposed"
+                    % verb["verb"])
+                proof = ANCHOR_ROOT / str(conv.get("proven_by", ""))
+                assert proof.is_file(), (
+                    "verb %r conversational_cli.proven_by %r is not a file"
+                    % (verb["verb"], conv.get("proven_by")))
+                assert "--" + verb["verb"] in str(conv.get("cli", "")), (
+                    "verb %r conversational_cli.cli does not name its flag"
+                    % verb["verb"])
+                continue
+            if not exposed and verb.get("not_exposed"):
+                # A DECLARED exception: a bridge mutator no Anchor handler
+                # invokes yet (zero network exposure). The diff guard still
+                # forces its row to exist; the declaration must say why, and
+                # the exposing effort must replace it with exposed_via rows.
+                assert len(str(verb["not_exposed"])) > 40, verb["verb"]
+                continue
             assert exposed, "state-changing verb %r names no exposing route" \
                 % verb["verb"]
             for ref in exposed:

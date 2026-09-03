@@ -2110,15 +2110,32 @@ def attach_cost(folder_path, project_id: str, lane: str, job_id: str,
     refreshed. Returns the updated effort record.
     """
     cost = (job_record or {}).get("cost") or {}
+    raw_total = cost.get("total_cost_usd")
+    preserves_unknown_cost = (
+        raw_total is None and
+        cost.get("cost_state") in ("subscription_covered", "no_seat_started")
+    )
+    if preserves_unknown_cost:
+        total_cost = None
+    else:
+        try:
+            total_cost = float(raw_total or 0.0)
+        except (TypeError, ValueError):
+            total_cost = 0.0
+    cost_block = {
+        "total_cost_usd": total_cost,
+        "duration_ms": int(cost.get("duration_ms", 0) or 0),
+        "input_tokens": int(cost.get("input_tokens", 0) or 0),
+        "cached_input_tokens": int(cost.get("cached_input_tokens", 0) or 0),
+        "output_tokens": int(cost.get("output_tokens", 0) or 0),
+        "total_tokens": int(cost.get("total_tokens", 0) or 0),
+    }
+    for key in ("billing_mode", "cost_state"):
+        if isinstance(cost.get(key), str) and cost[key]:
+            cost_block[key] = cost[key]
     extra = {
         "status": (job_record or {}).get("status"),
-        "cost": {
-            "total_cost_usd": float(cost.get("total_cost_usd", 0.0) or 0.0),
-            "duration_ms": int(cost.get("duration_ms", 0) or 0),
-            "input_tokens": int(cost.get("input_tokens", 0) or 0),
-            "output_tokens": int(cost.get("output_tokens", 0) or 0),
-            "total_tokens": int(cost.get("total_tokens", 0) or 0),
-        },
+        "cost": cost_block,
         "session_id": (job_record or {}).get("session_id"),
         "finished_at": (job_record or {}).get("finished_at"),
         "artifacts": detect_artifacts(folder_path, project_id, lane, job_id),
@@ -2179,11 +2196,48 @@ def _empty_rollup() -> dict:
 
 
 def _add_cost(acc: dict, cost: dict) -> None:
-    acc["total_cost_usd"] += float(cost.get("total_cost_usd", 0.0) or 0.0)
+    raw_total = cost.get("total_cost_usd")
+    billing_mode = cost.get("billing_mode")
+    cost_state = cost.get("cost_state")
+    is_unpriced_subscription = (
+        raw_total is None and
+        cost_state == "subscription_covered"
+    )
+    if raw_total is not None:
+        try:
+            if acc.get("total_cost_usd") is None:
+                acc["total_cost_usd"] = 0.0
+            acc["total_cost_usd"] += float(raw_total)
+            acc["_priced_cost_count"] = acc.get("_priced_cost_count", 0) + 1
+        except (TypeError, ValueError):
+            pass
+    if billing_mode or cost_state:
+        for plural, value in (("billing_modes", billing_mode),
+                              ("cost_states", cost_state)):
+            if isinstance(value, str) and value:
+                values = acc.setdefault(plural, [])
+                if value not in values:
+                    values.append(value)
+                    values.sort()
+    if is_unpriced_subscription:
+        acc["unpriced_subscription_count"] = \
+            acc.get("unpriced_subscription_count", 0) + 1
     acc["duration_ms"] += int(cost.get("duration_ms", 0) or 0)
     acc["input_tokens"] += int(cost.get("input_tokens", 0) or 0)
     acc["output_tokens"] += int(cost.get("output_tokens", 0) or 0)
     acc["total_tokens"] += int(cost.get("total_tokens", 0) or 0)
+
+
+def _finalize_cost_metadata(acc: dict) -> dict:
+    """Finish optional cost-state metadata without changing legacy shapes."""
+    priced = int(acc.pop("_priced_cost_count", 0) or 0)
+    unpriced = int(acc.get("unpriced_subscription_count", 0) or 0)
+    classified = bool(acc.get("billing_modes") or acc.get("cost_states") or unpriced)
+    if classified:
+        acc["priced_cost_count"] = priced
+    if unpriced and priced == 0:
+        acc["total_cost_usd"] = None
+    return acc
 
 
 def effort_cost(effort: dict) -> dict:
@@ -2192,7 +2246,7 @@ def effort_cost(effort: dict) -> dict:
     out = _empty_rollup()
     out["effort_count"] = 1
     _add_cost(out, cost)
-    return out
+    return _finalize_cost_metadata(out)
 
 
 def lane_rollup(folder_path, project_id: str, lane: str) -> dict:
@@ -2211,7 +2265,7 @@ def lane_rollup(folder_path, project_id: str, lane: str) -> dict:
         cost = effort.get("cost") or {}
         _add_cost(acc, cost)
         acc["effort_count"] += 1
-    return acc
+    return _finalize_cost_metadata(acc)
 
 
 #: The lanes whose efforts roll up into the project total.
@@ -2241,14 +2295,30 @@ def project_rollup(project_id: str, folder_path=None) -> dict:
     for lane in ROLLUP_LANES:
         lr = lane_rollup(folder_path, project_id, lane)
         lanes_out[lane] = lr
-        total["total_cost_usd"] += lr["total_cost_usd"]
+        if lr.get("total_cost_usd") is not None:
+            if total.get("total_cost_usd") is None:
+                total["total_cost_usd"] = 0.0
+            total["total_cost_usd"] += float(lr.get("total_cost_usd") or 0.0)
+            if lr.get("effort_count"):
+                total["_priced_cost_count"] = total.get("_priced_cost_count", 0) + \
+                    int(lr.get("priced_cost_count", lr.get("effort_count", 0)) or 0)
+        for plural in ("billing_modes", "cost_states"):
+            for value in (lr.get(plural) or []):
+                values = total.setdefault(plural, [])
+                if value not in values:
+                    values.append(value)
+                    values.sort()
+        if lr.get("unpriced_subscription_count"):
+            total["unpriced_subscription_count"] = \
+                total.get("unpriced_subscription_count", 0) + \
+                int(lr.get("unpriced_subscription_count") or 0)
         total["duration_ms"] += lr["duration_ms"]
         total["input_tokens"] += lr["input_tokens"]
         total["output_tokens"] += lr["output_tokens"]
         total["total_tokens"] += lr["total_tokens"]
         total["effort_count"] += lr["effort_count"]
         total["discovered_count"] += lr["discovered_count"]
-    return {"total": total, "lanes": lanes_out}
+    return {"total": _finalize_cost_metadata(total), "lanes": lanes_out}
 
 
 # ── Project cost/tokens/time rollup over RUN sessions (v4 Wave 3) ───────────
@@ -2327,6 +2397,11 @@ def project_effort_rollup(project_id: str, window: str = WINDOW_LIFETIME,
     cost_usd = 0.0
     wall_clock_ms = 0
     session_count = 0
+    billing_modes = set()
+    cost_states = set()
+    priced_cost_count = 0
+    unpriced_subscription_count = 0
+    seen_cost_records = set()
     for lane in ROLLUP_LANES:
         try:
             lane_sessions = _sessions.list_sessions(folder_path, project_id, lane)
@@ -2344,6 +2419,11 @@ def project_effort_rollup(project_id: str, window: str = WINDOW_LIFETIME,
                     continue
                 if cutoff is not None and _member_when(member) < cutoff:
                     continue
+                member_key = (lane, str(member.get("job_id") or ""))
+                if member_key[1]:
+                    if member_key in seen_cost_records:
+                        continue
+                    seen_cost_records.add(member_key)
                 cost = member.get("cost") or {}
                 m_tokens = int(cost.get("total_tokens", 0) or 0)
                 if not m_tokens:
@@ -2356,19 +2436,39 @@ def project_effort_rollup(project_id: str, window: str = WINDOW_LIFETIME,
                     continue
                 tokens += m_tokens
                 wall_clock_ms += m_wall
-                try:
-                    cost_usd += float(cost.get("total_cost_usd", 0.0) or 0.0)
-                except (TypeError, ValueError):
-                    pass
+                billing_mode = cost.get("billing_mode")
+                cost_state = cost.get("cost_state")
+                if isinstance(billing_mode, str) and billing_mode:
+                    billing_modes.add(billing_mode)
+                if isinstance(cost_state, str) and cost_state:
+                    cost_states.add(cost_state)
+                raw_cost = cost.get("total_cost_usd")
+                if raw_cost is None and cost_state == "subscription_covered":
+                    unpriced_subscription_count += 1
+                elif raw_cost is not None:
+                    try:
+                        cost_usd += float(raw_cost)
+                        priced_cost_count += 1
+                    except (TypeError, ValueError):
+                        pass
                 contributed = True
             if contributed:
                 session_count += 1
-    return {
+    out = {
         "tokens": tokens,
-        "cost_usd": round(cost_usd, 6),
+        "cost_usd": (None if unpriced_subscription_count and not priced_cost_count
+                     else round(cost_usd, 6)),
         "wall_clock_ms": wall_clock_ms,
         "sessions": session_count,
     }
+    if billing_modes or cost_states or unpriced_subscription_count:
+        out.update(
+            billing_modes=sorted(billing_modes),
+            cost_states=sorted(cost_states),
+            priced_cost_count=priced_cost_count,
+            unpriced_subscription_count=unpriced_subscription_count,
+        )
+    return out
 
 
 # ── C9: per-effort auto-commit of the .anchor/ pointer-record ───────────────

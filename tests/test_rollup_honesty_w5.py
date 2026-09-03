@@ -328,9 +328,11 @@ class TestDashboardWiring:
     def test_fmt_rollup_line_subscription_when_no_dollars(self):
         import anchor_gui
         line0 = anchor_gui._fmt_rollup_line(
-            {"tokens": 5000, "cost_usd": 0.0, "wall_clock_ms": 60000,
-             "sessions": 1})
-        # Measured tokens + no engine $ → named (subscription), never $0.00.
+            {"tokens": 5000, "cost_usd": None, "wall_clock_ms": 60000,
+             "sessions": 1, "billing_modes": ["subscription"],
+             "cost_states": ["subscription_covered"],
+             "priced_cost_count": 0, "unpriced_subscription_count": 1})
+        # Explicit subscription state → named subscription, never measured $0.
         assert "(subscription)" in line0
         assert "$0.00" not in line0
         line1 = anchor_gui._fmt_rollup_line(
@@ -338,6 +340,32 @@ class TestDashboardWiring:
              "sessions": 1})
         assert "$1.25" in line1
         assert "(subscription)" not in line1
+
+        unknown = anchor_gui._fmt_rollup_line(
+            {"tokens": 5000, "cost_usd": 0.0, "wall_clock_ms": 60000,
+             "sessions": 1})
+        assert "cost unknown" in unknown
+        assert "(subscription)" not in unknown
+
+        measured_zero = anchor_gui._fmt_rollup_line(
+            {"tokens": 5, "cost_usd": 0.0, "wall_clock_ms": 100,
+             "sessions": 1, "billing_modes": ["metered"],
+             "cost_states": ["engine_reported"], "priced_cost_count": 1})
+        assert "$0.00" in measured_zero
+
+        mixed = anchor_gui._fmt_rollup_line(
+            {"tokens": 50, "cost_usd": 1.25, "wall_clock_ms": 100,
+             "sessions": 2, "billing_modes": ["metered", "subscription"],
+             "cost_states": ["engine_reported", "subscription_covered"],
+             "priced_cost_count": 1, "unpriced_subscription_count": 1})
+        assert "$1.25 measured + subscription" in mixed
+
+        no_seat = anchor_gui._fmt_rollup_line(
+            {"tokens": 0, "cost_usd": None, "wall_clock_ms": 1,
+             "sessions": 1, "cost_states": ["no_seat_started"],
+             "priced_cost_count": 0, "unpriced_subscription_count": 0})
+        assert "no seat started" in no_seat
+        assert "(subscription)" not in no_seat
 
     def test_fmt_rollup_line_empty_and_unmeasured_are_named(self):
         """Optimize-not-lying: never invent subscription/zero as fact."""

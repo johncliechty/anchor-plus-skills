@@ -4,7 +4,7 @@
 // model ids (gemini-1.5-pro, gemini-2.0-flash, models/gemini-…, etc.) on review
 // seats. Review seats resolve via subscription CLI / family labels only:
 //   • driver: 'gemini-cli' (agy-dispatch path) — never raw product model strings
-//   • family: 'gemini' | 'claude' | 'grok' (Anchor coding_family / review_family)
+//   • family: 'chatgpt' | 'claude' | 'gemini' | 'grok' (Anchor preferences)
 //   • lineage tags for multi-agree: 'gemini-cli:0', 'gemini-cli:1', …
 //
 // This is seating hygiene so a skill path cannot hard-code forever-product Gemini
@@ -15,10 +15,10 @@
 export const GEMINI_CLI_DRIVER = 'gemini-cli';
 
 /** Allowed family tokens (Anchor coding_family / review_family values). */
-export const ALLOWED_FAMILIES = Object.freeze(['claude', 'gemini', 'grok']);
+export const ALLOWED_FAMILIES = Object.freeze(['chatgpt', 'claude', 'gemini', 'grok']);
 
 /** Allowed subscription CLI driver tokens for skill seats. */
-export const ALLOWED_DRIVERS = Object.freeze(['claude', 'gemini-cli', 'grok-cli']);
+export const ALLOWED_DRIVERS = Object.freeze(['chatgpt-cli', 'claude', 'gemini-cli', 'grok-cli']);
 
 /**
  * API-style Gemini product-id patterns (banned on review seats).
@@ -90,11 +90,29 @@ export function reviewSeatLineage(index, { driver = GEMINI_CLI_DRIVER, family = 
         `(driver=${JSON.stringify(driver)}, family=${JSON.stringify(family)})`,
     );
   }
-  // Prefer the subscription CLI label; fall back to family:N when driver is non-gemini.
-  if (driver === GEMINI_CLI_DRIVER || family === 'gemini') {
-    return `${GEMINI_CLI_DRIVER}:${index}`;
+  const driverName = typeof driver === 'string' ? driver.trim().toLowerCase() : '';
+  const familyName = typeof family === 'string' ? family.trim().toLowerCase() : '';
+  if (ALLOWED_DRIVERS.includes(driverName)) return `${driverName}:${index}`;
+  if (ALLOWED_FAMILIES.includes(familyName)) return `${familyName}:${index}`;
+  throw new ReviewSeatLabelError(
+    `reviewSeatLineage requires an allowed subscription driver or family; got ` +
+      `(driver=${JSON.stringify(driver)}, family=${JSON.stringify(family)})`,
+  );
+}
+
+/** Derive lineage from the successful final Trio receipt; missing attestation fails closed. */
+export function reviewSeatLineageFromReceipt(index, receipt) {
+  const served = receipt?.served;
+  if (receipt?.schema !== 'trio.seat.v1' || receipt?.ok !== true
+      || served?.family_attested !== true || !served?.family) {
+    throw new ReviewSeatLabelError(
+      'review seat lineage requires a successful trio.seat.v1 receipt with attested served family',
+    );
   }
-  return `${family}:${index}`;
+  return reviewSeatLineage(index, {
+    driver: served.driver ?? null,
+    family: served.family,
+  });
 }
 
 /**
@@ -185,6 +203,7 @@ export function findApiStyleGeminiIdsInSource(source) {
 export default {
   isApiStyleGeminiProductId,
   reviewSeatLineage,
+  reviewSeatLineageFromReceipt,
   assertNoApiStyleGeminiIds,
   assertReviewSeatRoutes,
   findApiStyleGeminiIdsInSource,

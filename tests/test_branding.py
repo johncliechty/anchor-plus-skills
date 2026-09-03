@@ -3,8 +3,8 @@
 Covers the Wave 9 contract (IMPLEMENTATION-PLAN lines 196-219):
   - The served home-page HTML (``generate_html``) includes the vendored GWL mark
     asset reference (``/vendor/brand/gwl-m-icon.svg``), the "Ghost World Labs"
-    wordmark, and a "Powered by NextGen Nuclear" badge; and the favicon
-    ``<link rel="icon">`` points at the GWL SVG.
+    wordmark, and a "Powered by NextGen Nuclear" badge; the tab favicon
+    ``<link rel="icon">`` is the Anchor icon (not the GWL ghost).
   - ``GET /vendor/brand/gwl-m-icon.svg`` over a port-0 server returns 200 with
     content-type ``image/svg+xml`` and the real SVG bytes; a ``../`` traversal
     attempt is blocked (404, does not escape the brand dir / serve paths.py).
@@ -51,15 +51,18 @@ def test_home_page_includes_gwl_lockup_and_badge(env):
     assert "Powered by NextGen Nuclear" in html
 
 
-def test_favicon_link_points_at_gwl_svg(env):
+def test_favicon_link_points_at_anchor_icon(env):
     gui = env
     html = gui.generate_html(*gui.gather_all())
-    # A <link rel="icon"> whose href is the GWL SVG, typed image/svg+xml.
+    # Tab icon is the Anchor, not the GWL ghost (lockup still uses the ghost).
     assert re.search(
-        r'<link rel="icon" href="/vendor/brand/gwl-m-icon\.svg[^"]*" '
-        r'type="image/svg\+xml">',
+        r'<link rel="icon" href="/anchor\.ico[^"]*" type="image/x-icon">',
         html,
-    ), "favicon <link rel=icon> must point at the GWL SVG"
+    ), "favicon <link rel=icon> must point at the Anchor icon"
+    assert not re.search(
+        r'<link rel="icon" href="/vendor/brand/gwl-m-icon\.svg',
+        html,
+    )
 
 
 def test_home_page_has_no_leaked_fstring_braces(env):

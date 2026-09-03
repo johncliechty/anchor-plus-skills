@@ -71,8 +71,8 @@ def test_grass_workbench_default_engine_from_settings(gui_env):
     assert "_defaultCli" in js
     assert "_grassEngine = 'gemini'" not in js
     # The 3-way cycle includes all three engines as SELECTABLE values.
-    assert "'claude', 'gemini', 'grok'" in js or \
-           "['claude', 'gemini', 'grok']" in js
+    assert "'claude', 'gemini', 'grok', 'chatgpt'" in js or \
+           "['claude', 'gemini', 'grok', 'chatgpt']" in js
 
 
 def test_engine_toggle_highlight_defaults_via_settings(gui_env):
@@ -111,8 +111,11 @@ def test_layoutd_launch_controls_use_settings_default(gui_env, tmp_path):
     folder.mkdir()
     pid = rnd_registry.add_project("Proj", str(folder), scaffold=False)["id"]
     html = gui_env.render_project_window_html(pid)
-    # The real research/plan launchers are present ...
-    assert "newEffort('research')" in html
+    # The simple-workbench surface has one General launcher. Trio work is
+    # commissioned through Steward, so retired manual lane launchers stay out.
+    assert "newEffort('general')" in html
+    assert "newEffort('research')" not in html
+    assert "newEffort('plan')" not in html
     # ... and no launch control in the served window pins gemini.
     assert "newTermSession('research','gemini')" not in html
     assert "backend: 'gemini'" not in html

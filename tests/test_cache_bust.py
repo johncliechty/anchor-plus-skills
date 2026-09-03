@@ -67,12 +67,13 @@ def test_open_project_window_versionstamps_url(tmp_path, monkeypatch):
     gui = _reload_gui(tmp_path, monkeypatch)
     html = gui.generate_html(*gui.gather_all())
     assert "openProjectWindow" in html
-    # The window.open URL is version-stamped with the live build id.
+    # The cockpit URL is version-stamped with the live build id.
     assert (
         "'/project/' + encodeURIComponent(pid) + '?v=" + gui.BUILD_ID
     ) in html
-    # The named target is retained (no duplicate windows per project).
-    assert "'anchorproj_' + pid" in html
+    # A new browsing context — never a named target that can reuse home.
+    assert "'_blank'" in html
+    assert "location.href" not in html.split("function openProjectWindow")[1].split("function rndSetPriority")[0]
     # No f-string brace leak.
     assert "{{" not in html
     assert "}}" not in html

@@ -45,6 +45,10 @@ import {
   proposeScaffolding,
   batchConfirmScaffolding,
 } from '../engine/scaffolding.mjs';
+import { showKickoff, replayKickoff } from '../engine/kickoff.mjs';
+// Gate 5 / Wave 3: show and confirm land on the one store (<folder>/.ecgberht/kickoff/
+// events.jsonl); the roadmap projections the chamber paints today are mirrored by name.
+import { confirmKickoffSpoken, showKickoffSpoken } from '../engine/kickoff-conversation.mjs';
 import { converse } from '../engine/steward-conversation.mjs';
 import {
   reconstructStepDetail,
@@ -157,6 +161,11 @@ export function parseBridgeArgs(argv = []) {
       out.scaffoldPreview = argv[++i];
     else if (t === '--scaffold-confirm' && argv[i + 1] != null)
       out.scaffoldConfirm = argv[++i];
+    else if (t === '--kickoff-show') out.kickoffShow = true;
+    else if (t === '--kickoff-confirm' && argv[i + 1] != null)
+      out.kickoffConfirm = argv[++i];
+    else if (t === '--kickoff-replay' && argv[i + 1] != null)
+      out.kickoffReplay = argv[++i];
     else if (t === '--converse' && argv[i + 1] != null) out.converse = argv[++i];
     else if (t === '--turns' && argv[i + 1] != null) out.turns = argv[++i];
     // E1 bound payload (steward-e1 W2): the ratification state + the
@@ -175,6 +184,8 @@ export function parseBridgeArgs(argv = []) {
     else if (t === '--step-note' && argv[i + 1] != null) out.stepNote = argv[++i];
     else if (t === '--note' && argv[i + 1] != null) out.note = argv[++i];
     else if (t === '--who' && argv[i + 1] != null) out.who = argv[++i];
+    else if (t === '--client-event-id' && argv[i + 1] != null)
+      out.clientEventId = argv[++i];
     else if (t === '--envelope-confirm' && argv[i + 1] != null)
       out.envelopeConfirm = argv[++i];
     else if (t === '--envelope-raise' && argv[i + 1] != null)
@@ -374,6 +385,7 @@ export async function buildConversePayload(opts = {}) {
     turns,
     ...(e1 ? { e1 } : {}),
     ...(opts.asOf ? { at: opts.asOf } : {}),
+    ...(opts.clientEventId ? { client_event_id: opts.clientEventId } : {}),
     seatCall: makeSeatCall(),
     // THE BACKGROUND ALLOWANCE. John does not want to approve spend before the steward
     // will say anything — so the first turn opens one silently at the default cap. He
@@ -492,6 +504,75 @@ export function buildEnvelopeRaisePayload(opts = {}) {
     mode: 'envelope-raise',
     ok: raised.ok === true,
     message: raised.message ?? raised.text ?? 'Could not raise the session budget.',
+  };
+}
+
+/** Read confirmed vN and open vN+1 without merging them. */
+export function buildKickoffShowPayload(opts = {}) {
+  if (!opts.project) return { ok: false, error: 'missing_project', mode: 'kickoff-show' };
+  // The pre-Gate-5 roadmap view stays at the top level for the chamber that reads it;
+  // `store` is what a fresh session paints from events.jsonl alone (prose + both hashes).
+  const legacy = showKickoff(opts.project);
+  const store = showKickoffSpoken(opts.project);
+  return { ...legacy, store, mode: 'kickoff-show', ok: legacy.ok === true && store.ok === true };
+}
+
+/** One hash-bound human confirmation of the currently open kickoff version. */
+export function buildKickoffConfirmPayload(opts = {}) {
+  let fields;
+  try {
+    fields = JSON.parse(opts.json);
+  } catch {
+    return {
+      ok: false,
+      mode: 'kickoff-confirm',
+      error: 'kickoff_bad_json',
+      message: 'kickoff-confirm needs JSON { project_path, proposal_hash, prior_confirmed_hash, who }',
+    };
+  }
+  const projectPath = fields.project_path ?? opts.project;
+  if (!projectPath) return { ok: false, error: 'missing_project', mode: 'kickoff-confirm' };
+  // ONE spoken confirmation: the receipt lands on the store bound to BOTH hashes John saw
+  // (a caller that sent only the record hash has the prose hash resolved from that exact
+  // record, and the result says so), then the confirmed bundle is mirrored into the
+  // roadmap / Face / Strip the chamber paints today.
+  const confirmed = confirmKickoffSpoken(projectPath, {
+    proposal_hash: fields.proposal_hash,
+    rendered_prose_hash: fields.rendered_prose_hash,
+    prior_confirmed_hash: fields.prior_confirmed_hash,
+    who: fields.who ?? 'john',
+    client_event_id: fields.client_event_id,
+    project_id: fields.project_id,
+    at: fields.at,
+  });
+  if (confirmed.ok === true && confirmed.already_confirmed !== true) {
+    noteStewardEffort({
+      kind: 'kickoff_confirmed',
+      project_path: projectPath,
+      project_id: fields.project_id ?? null,
+      summary: `Confirmed kickoff v${confirmed.proposal?.version ?? '?'} with ${(confirmed.proposal?.plan_entries ?? []).length} plan entries`,
+    });
+  }
+  return {
+    ...confirmed,
+    mode: 'kickoff-confirm',
+    hash_bound: confirmed.ok === true,
+  };
+}
+
+/** Repair Face/Strip from canonical kickoff truth after a projection crash. */
+export function buildKickoffReplayPayload(opts = {}) {
+  let fields = {};
+  try {
+    fields = opts.json ? JSON.parse(opts.json) : {};
+  } catch {
+    return { ok: false, error: 'kickoff_bad_json', mode: 'kickoff-replay' };
+  }
+  const projectPath = fields.project_path ?? opts.project;
+  if (!projectPath) return { ok: false, error: 'missing_project', mode: 'kickoff-replay' };
+  return {
+    ...replayKickoff(projectPath, { who: fields.who ?? 'john', at: fields.at }),
+    mode: 'kickoff-replay',
   };
 }
 
@@ -640,6 +721,10 @@ export function runBridge(argv = []) {
     return buildEnvelopeConfirmPayload({ json: args.envelopeConfirm, project: args.project });
   if (args.envelopeRaise != null)
     return buildEnvelopeRaisePayload({ json: args.envelopeRaise, project: args.project });
+  if (args.kickoffConfirm != null)
+    return buildKickoffConfirmPayload({ json: args.kickoffConfirm, project: args.project });
+  if (args.kickoffReplay != null)
+    return buildKickoffReplayPayload({ json: args.kickoffReplay, project: args.project });
   if (args.scaffoldConfirm != null)
     return buildScaffoldConfirmPayload({ json: args.scaffoldConfirm, project: args.project });
   if (args.standUpConfirm != null)
@@ -653,6 +738,7 @@ export function runBridge(argv = []) {
         'usage: --project <path> [--speak <text> | --recall <question>] | --stand-up-confirm <json> | --not-now',
     };
   }
+  if (args.kickoffShow) return buildKickoffShowPayload({ project: args.project });
   if (args.scaffoldPreview != null)
     return buildScaffoldPreviewPayload({
       project: args.project,
@@ -686,6 +772,7 @@ export async function runBridgeAsync(argv = []) {
       turns: args.turns,
       who: args.who,
       asOf: args.asOf,
+      clientEventId: args.clientEventId,
     });
   }
   return runBridge(argv);

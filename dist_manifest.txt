@@ -24,6 +24,7 @@ paths.py
 rnd_registry.py
 dir_browser.py
 job_runner.py
+codex_adapter.py
 supervisor.py
 foundry_api.py
 foundry_north_star.py
@@ -282,6 +283,11 @@ steward_cockpit/steward_engine.py
 steward_cockpit/steward_routes.py
 steward_cockpit/steward_campaign.py
 steward_cockpit/fake_claude.py
+# Gate 5 kickoff-synthesis canary (W7 reader + W8 cockpit GET route): the
+# pass-through reader over Ecgberht's projection.json and the read-model
+# kickoff_show endpoint substance. Stdlib-only, read-only by construction.
+steward_cockpit/kickoff_reader.py
+steward_cockpit/kickoff_show_route.py
 steward_cockpit/static/cockpit.html
 steward_cockpit/static/v1.html
 steward_cockpit/static/v3.html
@@ -289,6 +295,8 @@ steward_cockpit/static/report.html
 steward_cockpit/static/shared.js
 steward_cockpit/static/shared.css
 steward_cockpit/static/md.js
+steward_cockpit/static/plate.js
+steward_cockpit/static/tidy-idy-run.js
 
 # ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
 # Stdlib-only: journal (the per-project append-only JSONL event journal — the
@@ -392,6 +400,9 @@ vendor/brand/jarvis-seal-salver.jpg
 # NOTE: the anvil candidate is RESERVED for the future 'anvil'
 # code-validation skill's icon — do not reuse it for the workbench.
 vendor/brand/workbench-icon.jpg
+# Tidy-Idy workbench launcher icon. The cockpit references this directly, so
+# it must ride with the launcher script in the deny-by-default distribution.
+vendor/brand/tidy-idy-icon.jpg
 # Gandalf the White wizard mark (white robes/staff; the Gandalf tab icon + served
 # by /vendor/brand/). Pure-data SVG, no dependency.
 vendor/brand/gandalf-white-icon.svg

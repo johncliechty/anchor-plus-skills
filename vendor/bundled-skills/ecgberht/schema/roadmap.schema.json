@@ -18,15 +18,15 @@
       "description": "Append-only event history; contiguous seq; prior entries must never be rewritten in place",
       "items": {
         "type": "object",
-        "required": ["kind", "step_id"],
+        "required": ["kind"],
         "additionalProperties": true,
         "properties": {
           "seq": { "type": "number", "description": "1-based contiguous append order" },
           "kind": {
             "type": "string",
-            "enum": ["step_create", "step_set", "status_flip", "commission_bind"]
+            "enum": ["step_create", "step_set", "status_flip", "commission_bind", "goal_flip", "kickoff_proposal", "kickoff_confirm"]
           },
-          "step_id": { "type": "string" },
+          "step_id": { "type": ["string", "null"] },
           "at": { "type": "string", "description": "ISO date the event was appended" },
           "name": { "type": "string", "description": "step_create only" },
           "status": {
@@ -36,10 +36,36 @@
           },
           "done_when": { "type": ["string", "null"] },
           "waiting_on": { "type": ["string", "null"] },
+          "part": {
+            "type": ["string", "null"],
+            "description": "step_create: research|slice|rigor|integrate|harden"
+          },
+          "gate": {
+            "type": ["string", "null"],
+            "description": "step_create: command that can fail; required to commission Crucible/Foreman"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["reaffirmed", "rewritten"],
+            "description": "goal_flip only"
+          },
+          "goal_from": { "type": ["string", "null"], "description": "goal_flip prior North Star" },
+          "goal_to": { "type": ["string", "null"], "description": "goal_flip North Star after re-read" },
           "fields": {
             "type": "object",
-            "description": "step_set only; keys limited to name/done_when/waiting_on (status → status_flip; commissioned_as → commission_bind)"
+            "description": "step_set only; execution fields plus kickoff component/slice projection metadata (status → status_flip; commissioned_as → commission_bind)"
           },
+          "component_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "step_create kickoff projection: stable work-product component references"
+          },
+          "end_to_end_slice": {
+            "type": "boolean",
+            "description": "step_create kickoff projection: this plan entry exercises the whole deliverable"
+          },
+          "kickoff_version": { "type": ["integer", "null"] },
+          "kickoff_proposal_hash": { "type": ["string", "null"] },
           "from": { "type": ["string", "null"], "description": "status_flip prior status" },
           "to": {
             "type": "string",
@@ -80,7 +106,16 @@
           },
           "done_when": { "type": ["string", "null"] },
           "waiting_on": { "type": ["string", "null"] },
-          "commissioned_as": { "type": ["string", "null"] }
+          "commissioned_as": { "type": ["string", "null"] },
+          "part": { "type": ["string", "null"] },
+          "gate": { "type": ["string", "null"] },
+          "component_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "end_to_end_slice": { "type": "boolean" },
+          "kickoff_version": { "type": ["integer", "null"] },
+          "kickoff_proposal_hash": { "type": ["string", "null"] }
         }
       }
     }

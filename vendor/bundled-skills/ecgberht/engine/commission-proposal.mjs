@@ -396,6 +396,8 @@ export function selectCommissionableSkill(skillName, table) {
  * + the bare `grok` HTTP driver name that must be refused).
  */
 export const ANCHOR_DEFAULT_CLI_VALUES = Object.freeze([
+  'chatgpt',
+  'chatgpt-cli',
   'claude',
   'gemini',
   'gemini-cli',
@@ -441,13 +443,15 @@ export function mapDefaultCliToSeat(defaultCli) {
   // Already a subscription driver
   if (PRODUCTION_SEAT_DRIVERS.includes(raw) || SUBSCRIPTION_DRIVERS.includes(raw)) {
     const family =
-      raw === 'claude'
-        ? 'claude'
-        : raw === 'grok-cli'
-          ? 'grok'
-          : raw === 'gemini-cli' || raw === 'agy'
-            ? 'gemini'
-            : null;
+      raw === 'chatgpt-cli'
+        ? 'chatgpt'
+        : raw === 'claude'
+          ? 'claude'
+          : raw === 'grok-cli'
+            ? 'grok'
+            : raw === 'gemini-cli' || raw === 'agy'
+              ? 'gemini'
+              : null;
     return {
       ok: true,
       default_cli: raw,
@@ -516,13 +520,15 @@ export function assertDefaultCliMapping(opts = {}) {
     // For family/driver values, resolve seats with coding_family derived from the value
     const familyHint =
       mapped.family ??
-      (value === 'claude'
-        ? 'claude'
-        : value === 'gemini' || value === 'gemini-cli' || value === 'agy'
-          ? 'gemini'
-          : value === 'grok-cli'
-            ? 'grok'
-            : null);
+      (value === 'chatgpt' || value === 'chatgpt-cli'
+        ? 'chatgpt'
+        : value === 'claude'
+          ? 'claude'
+          : value === 'gemini' || value === 'gemini-cli' || value === 'agy'
+            ? 'gemini'
+            : value === 'grok-cli'
+              ? 'grok'
+              : null);
 
     if (!mapped.ok || !familyHint) {
       failures.push({ default_cli: value, mapped });

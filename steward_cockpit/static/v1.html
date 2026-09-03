@@ -26,6 +26,7 @@
       <span class="gcaret">▸</span>
     </div>
     <div class="gfull">
+      <div class="gkick" data-kickoff></div>
       <div data-goalfull></div>
       <div class="ghist" data-goalhist></div>
       <div class="gdeliv" data-deliverables></div>
@@ -34,9 +35,13 @@
 
   <div class="leftcol">
     <div class="rail">
+      <button type="button" class="wptile" data-wptile title="Open the work-product map">
+        <span class="wplab">Work product</span>
+        <span class="wpsum" data-wpsum>no map yet</span>
+      </button>
       <div class="railhead">
-        <h2>The map</h2>
-        <button data-railtoggle title="collapse the map">«</button>
+        <h2>The plan</h2>
+        <button data-railtoggle title="collapse the plan">«</button>
       </div>
       <div class="progress" data-progress></div>
       <ul class="steps" data-steps></ul>
@@ -44,7 +49,7 @@
       <div class="gaps" data-gaps></div>
     </div>
   </div>
-  <div class="railtab" data-railtoggle2>the map</div>
+  <div class="railtab" data-railtoggle2>the plan</div>
 
   <div class="main">
     <div class="openq" data-openq title="the steward is waiting on this — click to answer"></div>
@@ -89,7 +94,23 @@
     </div>
   </div>
 </div>
+<div class="wpmap" data-wpmap hidden>
+  <div class="wpstage">
+    <header class="wphead">
+      <div>
+        <div class="wpeyebrow">Work product</div>
+        <h3 data-wptitle>No plate yet</h3>
+        <p class="wpgoal" data-wpgoal></p>
+      </div>
+      <button type="button" data-wpclose title="close">Close</button>
+    </header>
+    <div class="wpatlas" data-wpatlas hidden></div>
+    <div class="wpflow" data-wpbody></div>
+    <p class="wphint" data-wphint>Parts of the thing you will open.</p>
+  </div>
+</div>
 <script src="/static/md.js"></script>
+<script src="/static/plate.js"></script>
 <script src="/static/shared.js"></script>
 <script>
 Proto.init({ statusPane: true });

@@ -59,6 +59,18 @@ export const WAVE_PYTEST_PATHS = Object.freeze({
   1: [],
   // Wave 4 — Anchor reference commission executor (host contract only).
   4: ['tests/test_commission_executor_w4.py'],
+  // Gate 5 wave 7 — Phase 4.1 Anchor pass-through reader + cross-language
+  // golden contract (steward_cockpit/kickoff_reader.py; Node-writes/Python-reads).
+  7: ['tests/test_kickoff_reader_w7.py'],
+  // Gate 5 wave 8 — Phase 4.2 cockpit GET exposure, inventory truth, and
+  // manifest coverage (steward_cockpit/kickoff_show_route.py endpoint tests +
+  // hermetic bridge-CLI proofs for kickoff-confirm / kickoff-replay).
+  8: ['tests/test_kickoff_cockpit_w8.py'],
+  // Gate 5 wave 9 — Phase 4.3 integrated Ecgberht-to-Anchor canary exit:
+  // the look-staging fixture (five efforts, one corrected, one OPEN) painted
+  // through the pass-through reader and cockpit route after a restart, plus
+  // the final manifest / inventory / reader-golden gate composition checks.
+  9: ['tests/test_kickoff_canary_w9.py'],
   // Wave 13 — S12 status outbox + lease emission (host contract only).
   13: ['tests/test_status_outbox_w13.py'],
 });

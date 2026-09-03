@@ -9,7 +9,7 @@
 // Capability profile: NOT sub-agent-capable (raw HTTP API); structured output is
 // NATIVE — when a `schema` is supplied the request sets
 // `responseMimeType:'application/json'` + `responseSchema`, and the shared seam
-// parses/validates with retry-once-then-ABSTAIN so behavior matches every other
+// parses/validates with retry-once-then-failure so behavior matches every other
 // backend. Selected via `TRIO_DRIVER=gemini`. The key lives in `GEMINI_API_KEY`;
 // with no key and no injected transport the driver HALTs rather than firing a
 // keyless request, so the live smoke test SKIPS when the key is absent — never fails.
@@ -85,7 +85,23 @@ export function makeGeminiTransport({ env = process.env, model, apiKey, fetchImp
       throw new HaltError(`gemini request failed (HTTP ${res.status})`, String(detail).slice(0, 300));
     }
     const data = await res.json();
-    return { text: parseGeminiResponse(data) };
+    const servedModel = typeof data?.modelVersion === 'string' && data.modelVersion.trim()
+      ? data.modelVersion.trim()
+      : null;
+    return {
+      text: parseGeminiResponse(data),
+      rec: {
+        label,
+        ok: true,
+        status: 'success',
+        requested_model: mdl,
+        model_served: servedModel,
+        model_family: 'gemini',
+        family_attested: true,
+        model_attested: servedModel !== null,
+        degraded: servedModel === null,
+      },
+    };
   };
 }
 
@@ -101,7 +117,9 @@ export const geminiDriver = {
   async runAgent(opts = {}) {
     const { prompt, schema, label, log } = opts;
     const transport = makeGeminiTransport(opts);
-    return runWithSchema({ transport, prompt, schema, label, log });
+    return runWithSchema({
+      transport, prompt, schema, label, log, driverOpts: opts, familyName: 'Gemini API',
+    });
   },
 };
 

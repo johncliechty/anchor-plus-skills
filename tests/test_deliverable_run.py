@@ -93,6 +93,33 @@ def test_pick_free_port_refuses_only_8777(preview, monkeypatch):
     assert calls["n"] == 3  # exhausted, never returned 8777
 
 
+def test_health_check_uses_lightweight_version_seam(preview, monkeypatch):
+    seen = []
+
+    class _Proc:
+        @staticmethod
+        def poll():
+            return None
+
+    class _Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def open_url(url, timeout):
+        seen.append((url, timeout))
+        return _Response()
+
+    monkeypatch.setattr(preview.urllib.request, "urlopen", open_url)
+    assert preview._health_check(54321, _Proc(), timeout=1.0) is True
+    assert seen == [("http://127.0.0.1:54321/api/version",
+                     preview._PROBE_TIMEOUT)]
+
+
 # ── start / health-check / stop / reap a REAL preview ───────────────────────
 
 def test_start_preview_then_stop_reaps(preview):

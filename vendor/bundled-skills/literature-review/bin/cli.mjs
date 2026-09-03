@@ -13,8 +13,8 @@
 //   - final ADVERSARIAL pass over the SYNTHESIZED cross-paper ledger through
 //     researchPrime's REAL surface (runGovernedRound: trio ≥2-agree tally, claim_id
 //     identity, inclusion test) — one governed round, honestly stamped as such;
-//   - live model seats via researchPrime's live-round-agent (5:1: reviewers/judge →
-//     Gemini/agy, extraction/synthesizer/copilot → Claude). No live seats bound ⇒
+//   - live model seats via researchPrime's live-round-agent (review roles →
+//     REVIEW_FAMILY, extraction/synthesizer/copilot → CODING_FAMILY). No live seats bound ⇒
 //     the run STOPS after the deterministic stages with an explicit stamp. Nothing
 //     is ever fabricated.
 //
@@ -28,8 +28,8 @@
 //   Seed specs (Wave 10 — replacing the single --seed <pdf-url>): doi:<id>[|title],
 //   pmid:<id>[|title], arxiv:<id>[|title], title:<title>, a doi.org / arxiv.org/abs
 //   identifier URL, or a bare DOI/PMID/arXiv id; anything else is a title-only seed.
-//   LITREVIEW_LIVE=1 (or --live): bind the real cross-family seats (requires agy for
-//   the reviewer/judge seats; HALTs honestly if down).
+//   LITREVIEW_LIVE=1 (or --live): bind the saved coding/review families; a verification
+//   seat without served-model attestation HALTs honestly.
 //
 // Wave 9 (Stage-0 PLAN phase): when --content and/or --intent is given, the run is
 // plan-first — the shared brownfield-intake front-end derives a PlanArtifact, the
@@ -76,7 +76,8 @@ import { buildNormalizedView } from '../src/textNormalization.mjs';
 import { groundQuote } from '../src/quoteExtractor.mjs';
 import { runPostApproveBreadth } from '../src/breadthStage.mjs';
 import { buildBreadthTelemetry } from '../src/breadthTelemetry.mjs';
-import { reviewSeatLineage } from '../src/reviewSeatLabels.mjs';
+import { reviewSeatLineageFromReceipt } from '../src/reviewSeatLabels.mjs';
+import { makeSeatTelemetry, wrapAgentWithSeatTelemetry, seatRecordFields } from '../src/seatTelemetry.mjs';
 import { applyLiteratureReviewTriageLock } from '../src/triage-lock-apply.mjs';
 import { composeLiteratureReviewAdversarialPass } from '../src/adversarial-compose.mjs';
 
@@ -237,11 +238,13 @@ async function main() {
   // ---- live seats (or an honest absence of them) ----
   const LIVE = opts.live || process.env.LITREVIEW_LIVE === '1';
   let agent = null;
+  const seatTelemetry = makeSeatTelemetry();
   if (LIVE) {
     const { buildLiveRoundAgent, makeReachedFamilyTracker } =
-      await import('fil<path>');
+      await import(new URL('../../../../trio/researchPrime/bin/live-round-agent.mjs', import.meta.url));
     const tracker = makeReachedFamilyTracker();
-    agent = await buildLiveRoundAgent({ tracker, env: process.env }); // prefs-aware seats
+    const routed = await buildLiveRoundAgent({ tracker, env: process.env }); // prefs-aware seats
+    agent = wrapAgentWithSeatTelemetry(routed, seatTelemetry);
     console.log('LIVE seats bound from coding/review family prefs (reviewer/judge/debate → REVIEW_FAMILY, synthesizer → CODING_FAMILY).');
   }
 
@@ -496,6 +499,7 @@ async function main() {
   // ---- 6. Final adversarial stage — sole entry: composeLiteratureReviewAdversarialPass
   //      (N = knobs.adversarialRounds invocations; each = RP intake + runGovernedRound; never runEngine) ----
   let adversarial = null;
+  const reviewSeatLabels = [];
   if (synth) {
     const ledgerText = fs.readFileSync(path.join(opts.out, 'assumptions-ledger.md'), 'utf8');
     const northStar = `An honest, source-grounded synthesis of the literature around the seed paper, compared on: ${opts.columns.join(', ')}`;
@@ -520,6 +524,7 @@ async function main() {
       },
       collectReviews: async ({ agent: ag, round }) => {
         return Promise.all(roles.map(async (role, i) => {
+          const label = `litreview-reviewer:${role}:r${round}`;
           const out = await ag([
             `[literature-review final adversarial pass — ${role} · invoke ${round}] Attack this synthesized assumptions ledger.`,
             `For every defect: claim_id = the EXACT id of the ledger assumption you dispute (agreement is keyed on it),`,
@@ -527,13 +532,15 @@ async function main() {
             `NORTH STAR: ${northStar}`,
             `=== LEDGER ===\n${ledgerText}\n=== END ===`,
           ].join('\n'), {
-            label: `litreview-reviewer:${role}:r${round}`, role: 'reviewer',
+            label, role: 'reviewer',
             schema: { type: 'object', required: ['findings'], properties: { findings: { type: 'array' } } },
           });
-          // Wave 5: gemini-cli lineage labels only — never API-style Gemini product ids.
+          const receipt = seatTelemetry.receiptForLabel(label);
+          const lineage = reviewSeatLineageFromReceipt(i, receipt);
+          reviewSeatLabels.push(lineage);
           return {
             reviewer: role,
-            lineage: reviewSeatLineage(i),
+            lineage,
             findings: Array.isArray(out?.findings) ? out.findings : [],
           };
         }));
@@ -569,7 +576,7 @@ async function main() {
         minGroundedClaimsPerPaper: adversarial.floor?.minGroundedClaimsPerPaper,
       },
       rejectedFabricatedQuotes: allRejected,
-      reviewSeatLabels: roles.map((_, i) => reviewSeatLineage(i)),
+      reviewSeatLabels: [...new Set(reviewSeatLabels)],
     }, null, 2));
   }
 
@@ -579,19 +586,22 @@ async function main() {
     result: synth
       ? `synthesized ${synth.ledger.assumptions.length} assumptions; adversarial invokeCount=${adversarial?.invokeCount ?? 0} skipped=${!!adversarial?.skipped}; last=${lastVerdict?.tally?.verdict ?? 'n/a'}; rejected-fabricated=${allRejected.length}`
       : 'no grounded assumptions',
-    crossModel: true,
+    seatTelemetry,
     breadthTelemetry,
   });
 }
 
-function writeRunRecord({ started, t0, opts, result, crossModel, breadthTelemetry = null }) {
+function writeRunRecord({ started, t0, opts, result, crossModel = false, seatTelemetry = null, breadthTelemetry = null }) {
   try {
+    const seatFields = seatTelemetry
+      ? seatRecordFields(seatTelemetry)
+      : { cross_model: Boolean(crossModel), seat_families: [], models: [], tier: crossModel ? 'live-cross-family' : 'deterministic-only' };
     const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const dir = path.join(skillDir, 'journal', 'runs');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, `${started.replace(/[:.]/g, '-')}-${Math.abs(Date.now() % 100000)}.json`),
       JSON.stringify({
-        skill: 'literature-review', tier: crossModel ? 'live-cross-family' : 'deterministic-only',
+        skill: 'literature-review', tier: seatFields.tier,
         started, ended: new Date().toISOString(),
         input: opts.seeds.length ? opts.seeds.join(' ; ') : null,
         params: {
@@ -603,18 +613,16 @@ function writeRunRecord({ started, t0, opts, result, crossModel, breadthTelemetr
           stakes: opts.stakes,
           seedList: opts.seedList,
         },
-        output: opts.out, result, cross_model: crossModel,
-        // Wave 5: family / gemini-cli labels only — no API-style Gemini product ids.
-        models: {
-          review: 'gemini-cli',
-          review_family: 'REVIEW_FAMILY',
-          coding_family: 'CODING_FAMILY',
-        },
+        output: opts.out, result, cross_model: seatFields.cross_model,
+        seat_families: seatFields.seat_families,
+        models: seatFields.models,
         // Wave 5: breadth honesty stamps (from-branches / none / facet errors).
         breadthTelemetry: breadthTelemetry ?? null,
         duration_s: Math.round((Date.now() - t0) / 1000), journal_ref: null,
       }, null, 2) + '\n');
-  } catch { /* best-effort */ }
+  } catch (error) {
+    console.error(`literature-review run record failed: ${error.message}`);
+  }
 }
 
 main().catch((err) => {

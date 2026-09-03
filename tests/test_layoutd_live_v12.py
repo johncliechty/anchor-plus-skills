@@ -243,6 +243,37 @@ def test_effort_rollup_sums_cost_numbers_only(gui_env, tmp_path):
     assert z == {"tokens": 0, "cost_usd": 0.0, "wall_clock_ms": 0}
 
 
+def test_effort_rollup_and_dock_preserve_subscription_state(gui_env, tmp_path):
+    import effort_history as eh
+    import effort_view
+
+    gui = gui_env
+    folder = tmp_path / "SubscriptionRoll"
+    pid = _mkproject(folder, "SubscriptionRoll")["id"]
+    sid = "sess-subscription"
+    eh.record_effort(str(folder), pid, "research", "j-sub", skill="researchPrime",
+                     extra={"session_id": sid, "cost": {
+                         "total_tokens": 55,
+                         "duration_ms": 900,
+                         "total_cost_usd": None,
+                         "billing_mode": "subscription",
+                         "cost_state": "subscription_covered",
+                     }})
+    effort = {"effort_id": sid, "stage_history": [{
+        "stage": "research", "session_id": sid, "store_lane": "research",
+    }]}
+    roll = effort_view.effort_rollup(str(folder), pid, effort)
+    assert roll["tokens"] == 55
+    assert roll["cost_usd"] is None
+    assert roll["cost_states"] == ["subscription_covered"]
+    assert roll["unpriced_subscription_count"] == 1
+
+    html = gui.render_project_window_html(pid)
+    assert "states.indexOf('subscription_covered')" in html
+    assert "money = '(subscription)'" in html
+    assert "money = 'cost unknown'" in html
+
+
 # ── 2. DOM POSITIVE: the dock renders summary ABOVE terminal + controls ──────
 
 def test_dock_summary_above_terminal_dom_order(gui_env, tmp_path):

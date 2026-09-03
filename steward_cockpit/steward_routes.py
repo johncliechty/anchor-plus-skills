@@ -17,9 +17,12 @@ refusal, upload deny-list, link re-assertion). Anchor's token gate is the
 primary auth; these handlers assume an authorized caller.
 """
 import base64
+import hashlib
 import json
 import os
 import re
+import stat
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -43,6 +46,10 @@ MAX_LIVE_ENGINES = 24
 ENGINES = {}
 ENGINES_LOCK = threading.Lock()
 TERMS_LOCK = threading.Lock()
+UPLOAD_LOCK = threading.Lock()
+
+_UPLOAD_MODES = frozenset(("new", "replace", "keepboth"))
+_UPLOAD_TEMP_PREFIX = ".anchor-upload-"
 
 # persona + fake flag injected by anchor_gui at mount time
 CONFIG = {"steward": "Ecgberht", "fake": False, "permission_mode": "bypassPermissions"}
@@ -129,7 +136,8 @@ window.STEWARD_BUILD = %s;
   function auth(o){o=o||{};if(TOK){o.headers=Object.assign({},o.headers||{},{'Authorization':'Bearer '+TOK});}return o;}
   var _f=window.fetch;window.fetch=function(u,o){
     if(typeof u==='string'){
-      if(u.indexOf('/api/')===0){u='/api/steward/'+u.slice(5);
+      if(u.indexOf('/api/rnd/')===0 || u.indexOf('/api/version')===0){o=auth(o);}
+      else if(u.indexOf('/api/')===0){u='/api/steward/'+u.slice(5);
         u+=(u.indexOf('?')<0?'?':'&')+'pid='+encodeURIComponent(window.STEWARD_PID);
         o=auth(o);}
       else if(u.indexOf('/static/')===0){u='/steward-static/'+u.slice(8);}
@@ -211,6 +219,11 @@ def _effort_dir(proot, rel):
 _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
                   "session-files", "register-all", "new_effort",
                   "boneyard_restore"}
+# Files/upload/open are the PROJECT folder, not an effort. The cockpit
+# always sends dir="" — if we resolve that through discover_efforts and the
+# root has no Face, the files tile was an honest empty while the folder
+# was full (2026-08-28).
+_PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open"}
 
 
 def api_get(proot, verb, qs):
@@ -219,7 +232,13 @@ def api_get(proot, verb, qs):
         if cdir is None:
             return {"error": "unknown effort"}, 404
         return events(cdir, qs)
-    if verb in _PROJECT_VERBS or verb in ("terms",):
+    if verb in _PROJECT_VERBS or verb in ("terms",) or verb in _PROJECT_FILE_VERBS:
+        rel = (qs.get("dir") or "").strip()
+        if verb in _PROJECT_FILE_VERBS and rel:
+            cdir = _effort_dir(proot, rel)
+            if cdir is None:
+                return {"error": "unknown effort"}, 404
+            return handle_get(cdir, verb, qs)
         return handle_get(proot, verb, qs)
     cdir = _effort_dir(proot, qs.get("dir", ""))
     if cdir is None:
@@ -231,6 +250,9 @@ def api_post(proot, verb, body):
     if verb in ("new_effort", "boneyard_restore", "boneyard_move",
                 "rename_effort"):
         return _project_post(proot, verb, body)
+    rel = (body.get("dir") or "").strip()
+    if verb in _PROJECT_FILE_VERBS and not rel:
+        return handle_post(proot, verb, body)
     cdir = _effort_dir(proot, body.get("dir", ""))
     if cdir is None:
         return {"ok": False, "error": "unknown effort"}, 404
@@ -351,7 +373,8 @@ def _efforts(cdir):
             "seal_icon": livery.get("seal_icon", ""),
             "seal_name": livery.get("seal_name", "Seal"),
             "seats": campaign.read_seats(),
-            "usage": _usage_rollup(cdir), "efforts": out}
+            "usage": _usage_rollup(cdir), "efforts": out,
+            "plates": campaign.list_plates(cdir)}
 
 
 def _usage_rollup(cdir):
@@ -477,13 +500,17 @@ def events(cdir, qs):
     if since == 0 and not eng.general and not eng.alive():
         from steward_cockpit.steward_engine import _read_state_entry
         now = time.time()
+        entry = _read_state_entry(eng.skey())
+        has_durable_work = (entry.get("session_id")
+                            or entry.get("pending_queue"))
         if (getattr(eng, "_auto_wake_at", 0) + 60 < now
-                and _read_state_entry(eng.skey()).get("session_id")):
+                and has_durable_work):
             eng._auto_wake_at = now
             try:
                 eng.wake()
-            except Exception:
-                pass
+            except Exception as exc:
+                eng._emit({"t": "sys", "text":
+                           "automatic wake failed: " + type(exc).__name__})
     evs, oldest, gap = eng.events_since(since, timeout=8)
     return {"events": evs, "state": eng.state(), "oldest_seq": oldest,
             "gap": gap, "stamp": campaign.map_stamp(cdir)}, 200
@@ -625,7 +652,8 @@ def _files(cdir, sub, q):
     else:
         try:
             for name in sorted(os.listdir(target))[:250]:
-                if name.startswith((".", "_")) or name == "node_modules":
+                if name.startswith(".") or name in ("node_modules", "__pycache__",
+                                                    "vendor"):
                     continue
                 full = os.path.join(target, name)
                 isdir = os.path.isdir(full)
@@ -754,10 +782,74 @@ def handle_post(cdir, verb, body):
     return {"ok": False, "error": "unknown"}, 404
 
 
+def _upload_version(st_):
+    """Return an opaque optimistic-concurrency token for one file identity."""
+    fields = (
+        "v1", getattr(st_, "st_dev", 0), getattr(st_, "st_ino", 0),
+        st_.st_mode, st_.st_size, getattr(st_, "st_mtime_ns", 0),
+        getattr(st_, "st_ctime_ns", 0),
+    )
+    raw = "\0".join(str(value) for value in fields).encode("ascii")
+    return "v1-" + hashlib.sha256(raw).hexdigest()
+
+
+def _upload_snapshot(dst, incoming):
+    """Describe a stable existing target, reading bytes only when sizes match."""
+    for _attempt in range(2):
+        before = dst.stat()
+        version = _upload_version(before)
+        same = False
+        if stat.S_ISREG(before.st_mode) and before.st_size == len(incoming):
+            existing = dst.read_bytes()
+            after = dst.stat()
+            if _upload_version(after) != version:
+                continue
+            same = existing == incoming
+        return ({"ok": False, "exists": True, "name": dst.name,
+                 "same": same, "size": before.st_size,
+                 "mtime": int(before.st_mtime),
+                 "incoming_size": len(incoming), "version": version}, before)
+    raise OSError("target changed while it was being inspected")
+
+
+def _stage_upload(folder, data):
+    """Durably stage bytes beside their destination for atomic publication."""
+    fd, raw_path = tempfile.mkstemp(prefix=_UPLOAD_TEMP_PREFIX, suffix=".tmp",
+                                    dir=folder)
+    stream = None
+    try:
+        stream = os.fdopen(fd, "wb")
+        fd = None
+        with stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        return Path(raw_path)
+    except Exception:
+        if fd is not None:
+            os.close(fd)
+        try:
+            os.unlink(raw_path)
+        except OSError:
+            pass
+        raise
+
+
+def _discard_upload_stage(staged):
+    if staged is None:
+        return
+    try:
+        staged.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def _upload(cdir, body):
     name = Path(str(body.get("name", ""))).name
     mode = body.get("mode", "new")
     sub = str(body.get("sub", "") or "")
+    if not isinstance(mode, str) or mode not in _UPLOAD_MODES:
+        return {"ok": False, "error": "unknown upload mode"}, 400
     if _bad_component(name):
         return {"ok": False, "error": "bad file name"}, 400
     if Path(name).suffix.lower() in DENY_UPLOAD_EXT:
@@ -775,19 +867,99 @@ def _upload(cdir, body):
     if len(data) > 30_000_000:
         return {"ok": False, "error": "over 30 MB"}, 413
     dst = Path(folder) / name
-    if dst.exists() and mode == "new":
-        return {"ok": False, "exists": True, "name": name}, 200
-    if dst.exists() and mode == "keepboth":
-        n = 1
-        while dst.exists():
-            dst = Path(folder) / f"{Path(name).stem} ({n}){Path(name).suffix}"; n += 1
     final = os.path.realpath(dst)
     if final != base and not final.startswith(base + os.sep):
         return {"ok": False, "error": "refused (link escapes effort)"}, 400
     if os.path.islink(dst):
         return {"ok": False, "error": "refused (target is a link)"}, 400
-    dst.write_bytes(data)
-    return {"ok": True, "name": dst.name}, 200
+
+    if mode == "replace":
+        expected = body.get("if_match")
+        if not isinstance(expected, str) or not expected:
+            return {"ok": False, "error":
+                    "replace requires the version from the conflict review"}, 428
+
+    staged = None
+    try:
+        staged = _stage_upload(folder, data)
+    except OSError:
+        return {"ok": False, "error": "couldn't stage that file"}, 500
+
+    published = None
+    try:
+        with UPLOAD_LOCK:
+            # Re-assert link safety after staging, immediately before publish.
+            if os.path.islink(dst):
+                return {"ok": False,
+                        "error": "refused (target is a link)"}, 400
+
+            if mode == "replace":
+                try:
+                    conflict, current = _upload_snapshot(dst, data)
+                except FileNotFoundError:
+                    return {"ok": False, "exists": False,
+                            "error": "the reviewed file is no longer there"}, 412
+                except OSError:
+                    return {"ok": False, "error":
+                            "the file changed while it was being reviewed"}, 409
+                if not stat.S_ISREG(current.st_mode):
+                    return {"ok": False, "exists": True,
+                            "error": "the existing target is not a file"}, 409
+                if expected != conflict["version"]:
+                    conflict["error"] = (
+                        "the file changed after conflict review; review it again")
+                    return conflict, 412
+                os.chmod(staged, stat.S_IMODE(current.st_mode))
+                os.replace(staged, dst)
+                staged = None
+                published = dst
+
+            elif mode == "new":
+                # A hard-link publish is atomic and fails if another caller (or
+                # process) claimed the name; it can never overwrite that file.
+                for _attempt in range(3):
+                    try:
+                        os.link(staged, dst)
+                        published = dst
+                        break
+                    except FileExistsError:
+                        if os.path.islink(dst):
+                            return {"ok": False, "error":
+                                    "refused (target is a link)"}, 400
+                        try:
+                            conflict, _current = _upload_snapshot(dst, data)
+                            return conflict, 200
+                        except FileNotFoundError:
+                            continue
+                        except OSError:
+                            return {"ok": False, "error":
+                                    "the file changed while it was being reviewed"}, 409
+                if published is None:
+                    return {"ok": False, "error":
+                            "the destination kept changing; try again"}, 409
+
+            else:  # keepboth
+                stem, suffix = Path(name).stem, Path(name).suffix
+                candidate = dst
+                number = 1
+                while True:
+                    try:
+                        os.link(staged, candidate)
+                        published = candidate
+                        break
+                    except FileExistsError:
+                        candidate = Path(folder) / f"{stem} ({number}){suffix}"
+                        number += 1
+    except OSError:
+        return {"ok": False, "error": "couldn't save that file"}, 500
+    finally:
+        _discard_upload_stage(staged)
+
+    try:
+        version = _upload_version(published.stat())
+    except OSError:
+        version = ""
+    return {"ok": True, "name": published.name, "version": version}, 200
 
 
 def _validate_effort_name(raw):

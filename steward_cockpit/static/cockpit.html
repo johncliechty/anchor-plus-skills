@@ -3,6 +3,7 @@
 <meta charset="utf-8">
 <title>AI Cockpit — prototype</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/anchor.ico" type="image/x-icon">
 <link rel="stylesheet" href="/static/shared.css">
 <style>
   .cp { max-width: 1080px; margin: 0 auto; padding: 26px 20px 46vh; }
@@ -80,7 +81,13 @@
                          object-fit: cover; }
   .drawer .dhandle .dusage { margin-left: auto; text-transform: none;
                              letter-spacing: 0; font-size: 12px;
-                             color: var(--faint); }
+                             color: var(--faint); padding-right: 52px; }
+  .drawer .tidy-corner { position: absolute; top: 6px; right: 10px; z-index: 4;
+                         background: none; border: none; padding: 0; cursor: pointer;
+                         line-height: 0; border-radius: 10px; }
+  .drawer .tidy-corner img { width: 36px; height: 36px; border-radius: 10px;
+                             object-fit: cover; display: block; }
+  .drawer .tidy-corner:hover img { outline: 2px solid var(--steward); outline-offset: 1px; }
   .tabrow { flex: none; display: none; align-items: center; gap: 6px;
             padding: 6px 20px; border-top: 1px solid var(--line);
             flex-wrap: nowrap; overflow-x: auto; }
@@ -160,6 +167,26 @@
   .dside.wide { width: min(600px, 46%); }
   .dside .box { border: 1px solid var(--line); border-radius: 9px;
                 padding: 10px 12px; margin-bottom: 12px; }
+  .grun { border: 1px solid var(--line); border-radius: 8px;
+          padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+  .grun.open { border-color: var(--steward); }
+  .grun .verdict { font-size: 13px; font-weight: 600; display: block; }
+  .grun .gmeta { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+  .grun .gbody { display: none; margin-top: 8px; }
+  .grun.open .gbody { display: block; }
+  .grun .gcaret { display: inline-block; margin-right: 6px; color: var(--faint); }
+  .grun.open .gcaret { transform: rotate(90deg); }
+  .conflict { position: fixed; inset: 0; z-index: 80; display: none;
+              align-items: center; justify-content: center;
+              background: rgba(0,0,0,.45); }
+  .conflict.on { display: flex; }
+  .conflict .dlg { width: min(420px, 92%); background: var(--panel);
+                   border: 1px solid var(--line); border-radius: 12px;
+                   padding: 18px 20px; }
+  .conflict .dlg h4 { font-size: 15px; margin-bottom: 8px; }
+  .conflict .dlg p { color: var(--dim); font-size: 13px; margin-bottom: 8px; }
+  .conflict .dlg .same { color: var(--steward); font-size: 12.5px; margin-bottom: 10px; }
+  .conflict .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .dside .box h3 { display: flex; align-items: center; gap: 8px;
                    font-size: 11px; text-transform: uppercase;
                    letter-spacing: 1.2px; color: var(--faint);
@@ -180,10 +207,19 @@
     <h1 data-project>…</h1>
     <span class="chips" data-chips></span>
     <span class="chips" style="margin-left:auto">
-      <a href="#" data-theme-toggle>switch the look</a> · <a href="/">⌂ High Seat</a></span>
+      <a href="#" data-theme-toggle>switch the look</a>
+      · <span data-github></span>
+      · <a href="/">⌂ Dashboard</a></span>
     <span class="cptotal" style="flex-basis:100%; text-align:right" data-total></span>
   </div>
   <div class="cpgoal" data-goal></div>
+
+  <button type="button" class="wptile" data-wptile
+          style="width:100%;margin-bottom:16px;text-align:left"
+          title="Open the work-product map">
+    <span class="wplab">Work product</span>
+    <span class="wpsum" data-wpsum>open the map of each key deliverable</span>
+  </button>
 
   <div class="ctile" data-tile-seal>
     <div class="thead"><img data-sealicon alt="" style="display:none">
@@ -192,14 +228,6 @@
     <div class="tbody">
       <div data-efforts></div>
       <div style="margin-top:10px"><button data-newe>＋ New effort</button></div>
-      <div class="subshelf" data-shelf-grass>
-        <div class="sshead" data-grasshead>🌿 Grasscatcher
-          <span class="ssc" data-grasscount></span></div>
-        <div class="ssbody">
-          <input class="search" data-grasssearch placeholder="search caught ideas…">
-          <div data-grasslist></div>
-        </div>
-      </div>
       <div class="subshelf" data-shelf-ebone>
         <div class="sshead" data-ebonehead>🪦 Effort boneyard
           <span class="ssc" data-ebonecount></span></div>
@@ -218,6 +246,10 @@
     <div class="tbody"><div class="chips">Opens the bench below — terminals keep
       themselves saved and restart where they left off.</div></div>
   </div>
+
+  <!-- (2026-09-02, John) the synthetic Calendar/Email surfaces from the v1.2.8 Codex waves
+       were REMOVED from the per-project cockpit: "I don't think that we want email and
+       calendar in the AI Cockpit." Connectors, if ever, belong to the main dashboard. -->
 
   <div class="ctile" data-tile-deliv>
     <div class="thead"><span class="tname">◇ Deliverables</span>
@@ -245,11 +277,26 @@
 </div>
 
 <div class="fswrap" data-fs><iframe data-fsframe></iframe></div>
+<div class="conflict" data-conflict>
+  <div class="dlg">
+    <h4 data-conflict-title>This file already exists</h4>
+    <p data-conflict-msg></p>
+    <div class="same" data-conflict-same></div>
+    <div class="acts">
+      <button data-conflict-replace>Replace</button>
+      <button data-conflict-skip>Skip</button>
+      <button data-conflict-keep>Keep both</button>
+    </div>
+  </div>
+</div>
 
 <div class="drawer" data-drawer>
   <div class="dhandle" data-dhandle>
     <img src="/brand/workbench-icon.jpg" alt="">▾ Workbench — click to collapse back to the tile
-    <span class="dusage" data-dusage></span></div>
+    <span class="dusage" data-dusage></span>
+    <button type="button" class="tidy-corner" data-tidy
+            title="Run Tidy-Idy repo hygiene on this project">
+      <img src="/brand/tidy-idy-icon.jpg" alt="Tidy-Idy"></button></div>
   <div class="tabrow" data-tabrow></div>
   <div class="dbody">
     <div class="dskills">
@@ -261,14 +308,12 @@
     </div>
     <div class="dside">
       <div class="box" data-gbox>
-        <h3 style="cursor:pointer" data-ghead><img src="/brand/gandalf-icon-v5.jpg"
-          alt="">Gandalf <span style="margin-left:auto" data-gwhen></span></h3>
-        <div class="brow" data-gline>(no read yet)</div>
+        <h3><img src="/brand/gandalf-icon-v5.jpg" alt="">Gandalf
+          <span style="margin-left:auto" data-gwhen></span></h3>
+        <div data-gruns><div class="brow">(no read yet)</div></div>
         <div class="gbtns">
-          <button class="mini" data-greport>report</button>
           <button class="mini" data-grerun>re-run</button>
         </div>
-        <div class="gsum" data-gsum></div>
       </div>
       <div class="box"><h3>🪦 Terminal boneyard</h3>
         <input class="search" data-bonesearch placeholder="search…"
@@ -278,7 +323,25 @@
   </div>
 </div>
 
+<div class="wpmap" data-wpmap hidden>
+  <div class="wpstage">
+    <header class="wphead">
+      <div>
+        <div class="wpeyebrow">Work product</div>
+        <h3 data-wptitle>No plate yet</h3>
+        <p class="wpgoal" data-wpgoal></p>
+      </div>
+      <button type="button" data-wpclose title="close">Close</button>
+    </header>
+    <div class="wpatlas" data-wpatlas></div>
+    <div class="wpflow" data-wpbody></div>
+    <p class="wphint" data-wphint>Parts of the thing you will open. Hollow = a reserved hole, not a chore.</p>
+  </div>
+</div>
+
 <script src="/static/md.js"></script>
+<script src="/static/plate.js"></script>
+<script src="/static/tidy-idy-run.js"></script>
 <script>
 "use strict";
 try { document.body.dataset.theme = localStorage.getItem("protoTheme") || "slate"; } catch (e) {}
@@ -329,6 +392,12 @@ async function refresh() {
     wbsum.textContent = "terminals · Gandalf · boneyard\n" + usageLine(j.usage.terms);
     const root = j.efforts.find(e => e.rel === "") || j.efforts[0];
     if (root) document.querySelector("[data-goal]").textContent = root.goal_brief;
+    window._plates = j.plates || [];
+    const psum = document.querySelector("[data-wpsum]");
+    if (psum) psum.textContent = window._plates.length
+      ? (window._plates.length + " map" + (window._plates.length === 1 ? "" : "s")
+         + " — " + window._plates.map(function (p) { return p.title; }).join(" · "))
+      : "no plate authored yet";
     const wrap = document.querySelector("[data-efforts]");
     wrap.textContent = "";
     j.efforts.forEach(e => {
@@ -379,12 +448,42 @@ async function refresh() {
 document.querySelectorAll(".ctile > .thead").forEach(h =>
   h.onclick = () => {
     const tile = h.parentNode;
-    if (tile.dataset.tileWb !== undefined) { openDrawer(); return; }
+    if (tile.dataset.tileWb !== undefined) { toggleDrawer(); return; }
     tile.classList.toggle("open");
     if (tile.dataset.tileFiles !== undefined && tile.classList.contains("open")) loadFiles();
     if (tile.dataset.tileDeliv !== undefined && tile.classList.contains("open")) loadDeliv();
   });
 document.querySelector("[data-tile-seal]").classList.add("open");
+
+(function wirePlate() {
+  const ov = document.querySelector("[data-wpmap]");
+  const tile = document.querySelector("[data-wptile]");
+  const close = document.querySelector("[data-wpclose]");
+  let cur = "";
+  function show(id) {
+    const plates = window._plates || [];
+    const plate = plates.find(p => p.deliverableId === id) || plates[0];
+    cur = plate ? (plate.deliverableId || "") : "";
+    const title = document.querySelector("[data-wptitle]");
+    const sub = document.querySelector("[data-wpgoal]");
+    if (title) title.textContent = (plate && plate.title) || "No plate yet";
+    if (sub) sub.textContent = (plate && plate.subtitle) || "";
+    if (window.DeliverablePlate) {
+      DeliverablePlate.paintAtlas(document.querySelector("[data-wpatlas]"),
+        plates, cur, show);
+      DeliverablePlate.paintPlate(document.querySelector("[data-wpbody]"), plate);
+    }
+    if (ov) ov.hidden = false;
+  }
+  if (tile) tile.onclick = () => show(cur);
+  if (close) close.onclick = () => { if (ov) ov.hidden = true; };
+  if (ov) ov.addEventListener("click", (ev) => {
+    if (ev.target === ov) ov.hidden = true;
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && ov && !ov.hidden) ov.hidden = true;
+  });
+})();
 
 document.querySelector("[data-newe]").onclick = async (ev) => {
   ev.stopPropagation();
@@ -415,10 +514,15 @@ window.addEventListener("message", (ev) => {
 const drawer = document.querySelector("[data-drawer]");
 const dmain = document.querySelector("[data-dmain]");
 let ACTIVE = null;
-function openDrawer() { drawer.classList.add("up"); loadTerms(); }
-document.querySelector("[data-dhandle]").onclick = () => {
+function toggleDrawer() {
   drawer.classList.toggle("up");
   if (drawer.classList.contains("up")) loadTerms();
+}
+function openDrawer() { if (!drawer.classList.contains("up")) toggleDrawer(); }
+document.querySelector("[data-dhandle]").onclick = () => toggleDrawer();
+document.querySelector("[data-tidy]").onclick = (ev) => {
+  ev.stopPropagation();
+  if (typeof tidyIdyRun === "function") tidyIdyRun();
 };
 function showTerm(tid) {
   ACTIVE = tid;
@@ -559,10 +663,9 @@ function showSummary(t) {
   dmain.appendChild(card);
 }
 
-/* ---------- Gandalf: latest read, expand, full report, re-run ---------- */
+/* ---------- Gandalf: dashboard-style expandable summary ---------- */
 function gandalfFinding(summary) {
-  // the FINDING, not the run metadata: first substantive sentence
-  const lines = summary.split("\n").map(l => l.trim());
+  const lines = (summary || "").split("\n").map(l => l.trim());
   for (const l of lines) {
     if (!l || l.startsWith("#") || l.startsWith(">") || l.startsWith("|")) continue;
     const clean = l.replace(/^[-*]\s*/, "").replace(/\*\*/g, "").replace(/`/g, "");
@@ -570,46 +673,57 @@ function gandalfFinding(summary) {
   }
   return "read available — click to expand";
 }
+function renderGandalfRun(run) {
+  const row = el("div", "grun");
+  const top = el("div");
+  top.appendChild(el("span", "gcaret", "▸"));
+  top.appendChild(el("span", "verdict",
+    run.finding || gandalfFinding(run.summary)));
+  row.appendChild(top);
+  row.appendChild(el("div", "gmeta",
+    (run.when || "") + (run.points && run.points.length
+      ? " · " + run.points.length + " points" : "")));
+  const body = el("div", "gbody");
+  if ((run.points || []).length) {
+    const ul = el("ul");
+    run.points.forEach(pt => ul.appendChild(el("li", "", pt)));
+    body.appendChild(ul);
+  }
+  const sum = el("div", "gsum");
+  sum.style.display = "block";
+  if (typeof mdRender === "function") mdRender(sum, run.summary || "");
+  else sum.textContent = run.summary || "";
+  body.appendChild(sum);
+  if (run.report_rel) {
+    const a = el("button", "mini", "Full report");
+    a.onclick = (ev) => {
+      ev.stopPropagation();
+      window.open("/report?dir=&path=" + encodeURIComponent(run.report_rel), "_blank");
+    };
+    body.appendChild(a);
+  }
+  row.appendChild(body);
+  row.onclick = () => {
+    const open = row.classList.toggle("open");
+    document.querySelector(".dside").classList.toggle("wide", open);
+  };
+  return row;
+}
 async function loadGandalf() {
   try {
     const j = await (await fetch("/api/gandalf?dir=")).json();
     const runs = j.runs || [];
-    const latest = runs[0];
     document.querySelector("[data-gwhen]").textContent =
-      latest ? latest.when + " · " + runs.length + " reads" : "";
-    document.querySelector("[data-gline]").textContent = latest
-      ? (latest.finding || gandalfFinding(latest.summary))
-      : "(no read yet — expand to re-run)";
-    const gs = document.querySelector("[data-gsum]");
-    gs.textContent = "";
-    if (latest) {
-      if ((latest.points || []).length) {
-        const h = el("div", "mdh", "What Gandalf found");
-        h.style.fontWeight = "600"; h.style.color = "var(--text)";
-        gs.appendChild(h);
-        const ul = el("ul");
-        ul.style.margin = "6px 0 12px 18px";
-        latest.points.forEach(pt => ul.appendChild(el("li", "", pt)));
-        gs.appendChild(ul);
-      }
-      const h2 = el("div", "mdh", "Executive summary");
-      h2.style.fontWeight = "600"; h2.style.color = "var(--text)";
-      gs.appendChild(h2);
-      const body = el("div");
-      mdRender(body, latest.summary);
-      gs.appendChild(body);
+      runs.length ? runs.length + " read" + (runs.length === 1 ? "" : "s") : "";
+    const host = document.querySelector("[data-gruns]");
+    host.textContent = "";
+    if (!runs.length) {
+      host.appendChild(el("div", "brow", "(no read yet)"));
+      return;
     }
-    const rep = document.querySelector("[data-greport]");
-    rep.style.display = latest && latest.report_rel ? "" : "none";
-    rep.onclick = () => latest && window.open(
-      "/report?dir=&path=" + encodeURIComponent(latest.report_rel), "_blank");
+    runs.forEach(r => host.appendChild(renderGandalfRun(r)));
   } catch (e) {}
 }
-document.querySelector("[data-ghead]").onclick = () => {
-  const open = document.querySelector("[data-gbox]").classList.toggle("gopen");
-  // reading mode: widen into the terminal so the summary reads without scroll
-  document.querySelector(".dside").classList.toggle("wide", open);
-};
 document.querySelector("[data-grerun]").onclick = () => {
   if (!confirm("Commission a fresh Gandalf read of the whole project through the steward?")) return;
   fetch("/api/say", { method: "POST",
@@ -627,25 +741,58 @@ setInterval(loadGandalf, 30000);
 document.querySelector("[data-bonesearch]").addEventListener("input",
   () => { clearTimeout(window._bt); window._bt = setTimeout(loadTerms, 250); });
 
-/* ---------- seal tile shelves: grasscatcher + effort boneyard ---------- */
-let GRASS = [], EBONES = [];
-function renderGrass() {
-  const q = (document.querySelector("[data-grasssearch]").value || "").toLowerCase();
-  const list = document.querySelector("[data-grasslist]");
-  list.textContent = "";
-  const rows = GRASS.filter(g => !q ||
-    (g.text + " " + g.effort + " " + g.when).toLowerCase().includes(q));
-  rows.forEach(g => {
-    const r = el("div", "grassrow2");
-    r.appendChild(el("span", "gw", g.when || ""));
-    r.appendChild(el("span", "gt", g.text));
-    r.appendChild(el("span", "gf", g.effort));
-    list.appendChild(r);
-  });
-  if (!rows.length) list.appendChild(el("div", "grassrow2",
-    q ? "nothing matches" : "nothing caught yet — say “later: …” in any session"));
-  document.querySelector("[data-grasscount]").textContent = GRASS.length + " ideas";
+/* ---------- GitHub (same remote as the project window) ---------- */
+async function loadGithub() {
+  const host = document.querySelector("[data-github]");
+  if (!host) return;
+  host.textContent = "";
+  const pid = window.STEWARD_PID || "";
+  if (!pid) return;
+  try {
+    const j = await (await fetch("/api/rnd/remote_status?project_id=" +
+      encodeURIComponent(pid))).json();
+    if (j && j.linked && j.remote_url) {
+      const a = document.createElement("a");
+      a.href = j.remote_url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "GitHub";
+      host.appendChild(a);
+    } else {
+      const b = document.createElement("a");
+      b.href = "#";
+      b.textContent = "Link GitHub";
+      b.onclick = (ev) => { ev.preventDefault(); linkGithub(); };
+      host.appendChild(b);
+    }
+  } catch (e) {}
 }
+async function linkGithub() {
+  const pid = window.STEWARD_PID || "";
+  if (!pid) return;
+  const value = prompt(
+    "Link GitHub — paste an existing repo URL, or type C to create a new private repo:",
+    "");
+  if (value === null || !String(value).trim()) return;
+  const v = String(value).trim();
+  const payload = (v === "C" || v === "c")
+    ? { project_id: pid, mode: "create", value: "" }
+    : { project_id: pid, mode: "existing", value: v };
+  try {
+    const r = await fetch("/api/rnd/link_github", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!d || !d.ok) { alert((d && (d.error || d.reason)) || "could not link"); return; }
+    loadGithub();
+  } catch (e) { alert("could not link GitHub"); }
+}
+loadGithub();
+
+/* ---------- seal tile: effort boneyard ---------- */
+let EBONES = [];
 function renderEbones() {
   const q = (document.querySelector("[data-ebonesearch]").value || "").toLowerCase();
   const list = document.querySelector("[data-ebonelist]");
@@ -679,18 +826,13 @@ function renderEbones() {
 }
 async function loadShelves() {
   try {
-    GRASS = (await (await fetch("/api/grass")).json()).grass || [];
     EBONES = (await (await fetch("/api/boneyard")).json()).boneyard || [];
-    renderGrass(); renderEbones();
+    renderEbones();
   } catch (e) {}
 }
-document.querySelector("[data-grasshead]").onclick = (ev) => {
-  ev.stopPropagation();
-  document.querySelector("[data-shelf-grass]").classList.toggle("open"); };
 document.querySelector("[data-ebonehead]").onclick = (ev) => {
   ev.stopPropagation();
   document.querySelector("[data-shelf-ebone]").classList.toggle("open"); };
-document.querySelector("[data-grasssearch]").addEventListener("input", renderGrass);
 document.querySelector("[data-ebonesearch]").addEventListener("input", renderEbones);
 loadShelves();
 setInterval(loadShelves, 20000);
@@ -761,11 +903,24 @@ async function loadDeliv() {
 let SUB = "", SORT = "name", FILES = [];
 async function loadFiles() {
   const q = document.querySelector("[data-fsearch]").value.trim();
-  const r = await fetch("/api/files?dir=&sub=" + encodeURIComponent(SUB) +
-                        "&q=" + encodeURIComponent(q));
-  const j = await r.json();
-  FILES = j.entries || [];
-  renderFiles(q);
+  const list = document.querySelector("[data-filelist]");
+  try {
+    const r = await fetch("/api/files?dir=&sub=" + encodeURIComponent(SUB) +
+                          "&q=" + encodeURIComponent(q));
+    const j = await r.json();
+    if (j && j.error) {
+      FILES = [];
+      list.textContent = "";
+      list.appendChild(el("div", "frow2", "could not list files — " + j.error));
+      return;
+    }
+    FILES = j.entries || [];
+    renderFiles(q);
+  } catch (e) {
+    FILES = [];
+    list.textContent = "";
+    list.appendChild(el("div", "frow2", "could not list files"));
+  }
 }
 function renderFiles(q) {
   const crumb = document.querySelector("[data-crumb]");
@@ -786,12 +941,22 @@ function renderFiles(q) {
   rows.forEach(f => {
     const row = el("div", "frow2");
     const fn = el("span", "fn", (f.dir ? "📁 " : "· ") + f.name);
-    fn.onclick = () => {
+    fn.onclick = async () => {
       if (f.dir) { SUB = SUB ? SUB + "/" + f.name : f.name; loadFiles(); }
-      else fetch("/api/open", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dir: "", path: q ? f.name
-          : (SUB ? SUB + "/" : "") + f.name }) });
+      else {
+        const msg = document.querySelector("[data-upmsg]");
+        try {
+          const response = await fetch("/api/open", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: "", path: q ? f.name
+              : (SUB ? SUB + "/" : "") + f.name }) });
+          const result = await response.json();
+          msg.textContent = result.ok ? " · opened " + f.name
+            : " · " + (result.error || "could not open " + f.name);
+        } catch (error) {
+          msg.textContent = " · could not open " + f.name + " (connection failed)";
+        }
+      }
     };
     row.appendChild(fn);
     row.appendChild(el("span", "fm",
@@ -813,39 +978,89 @@ document.querySelector("[data-sort-date]").onclick = (e) => {
   SORT = "date"; e.target.classList.add("on");
   document.querySelector("[data-sort-name]").classList.remove("on"); renderFiles(); };
 
+function fmtSize(n) {
+  n = Number(n) || 0;
+  if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
+  return Math.max(1, Math.round(n / 1024)) + " KB";
+}
+function conflictChoice(file, info) {
+  return new Promise((resolve) => {
+    const box = document.querySelector("[data-conflict]");
+    document.querySelector("[data-conflict-title]").textContent =
+      "“" + file.name + "” is already in this folder";
+    const exist = (info.size ? fmtSize(info.size) : "existing file")
+      + (info.mtime ? " · " + new Date(info.mtime * 1000).toISOString().slice(0, 10) : "");
+    document.querySelector("[data-conflict-msg]").textContent =
+      "Already here: " + exist + ". Incoming: " + fmtSize(file.size) + ".";
+    document.querySelector("[data-conflict-same]").textContent = info.same
+      ? "Same bytes as the file already there — Skip is the usual choice."
+      : "";
+    const done = (mode) => {
+      box.classList.remove("on");
+      resolve(mode);
+    };
+    document.querySelector("[data-conflict-replace]").onclick = () => done("replace");
+    document.querySelector("[data-conflict-skip]").onclick = () => done("skip");
+    document.querySelector("[data-conflict-keep]").onclick = () => done("keepboth");
+    box.classList.add("on");
+  });
+}
 async function uploadOne(file) {
   const msg = document.querySelector("[data-upmsg]");
-  msg.textContent = " · loading " + file.name + "…";
-  const buf = await file.arrayBuffer();
-  let bin = ""; const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.length; i += 0x8000)
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  const b64 = btoa(bin);
-  const send = (mode) => fetch("/api/upload", { method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dir: "", sub: SUB, name: file.name,
-                           data_b64: b64, mode }) }).then(r => r.json());
-  let j = await send("new");
-  if (!j.ok && j.exists) {
-    if (confirm("“" + file.name + "” already exists here. Replace it?")) {
-      j = await send("replace");
-    } else if (confirm("Keep both? (saves as “" + file.name + " (1)”)")) {
-      j = await send("keepboth");
-    } else { msg.textContent = " · skipped " + file.name; return; }
+  if (file.size > 30000000) {
+    msg.textContent = " · " + file.name + " is over the 30 MB limit";
+    return;
   }
-  msg.textContent = j.ok ? " · loaded " + j.name : " · " + (j.error || "failed");
+  try {
+    msg.textContent = " · loading " + file.name + "…";
+    const buf = await file.arrayBuffer();
+    let bin = ""; const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const b64 = btoa(bin);
+    const send = async (mode, ifMatch) => {
+      const response = await fetch("/api/upload", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", sub: SUB, name: file.name,
+          data_b64: b64, mode, if_match: ifMatch || undefined }) });
+      const result = await response.json();
+      result.http_status = response.status;
+      return result;
+    };
+    let result = await send("new");
+    for (let review = 0; !result.ok && result.exists && review < 3; review++) {
+      const choice = await conflictChoice(file, result);
+      if (choice === "skip") {
+        msg.textContent = " · skipped " + file.name;
+        return;
+      }
+      result = await send(choice,
+        choice === "replace" ? result.version : undefined);
+    }
+    msg.textContent = result.ok ? " · loaded " + result.name
+      : " · " + (result.error || "failed");
+  } catch (error) {
+    msg.textContent = " · " + file.name + " failed (connection or read error)";
+  }
 }
 const dz = document.querySelector("[data-dropzone]");
+let uploadQueue = Promise.resolve();
+function enqueueUploads(files) {
+  for (const file of Array.from(files || [])) {
+    uploadQueue = uploadQueue.then(() => uploadOne(file));
+  }
+  uploadQueue = uploadQueue.catch(() => {}).then(() => loadFiles());
+  return uploadQueue;
+}
 dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("hot"); });
 dz.addEventListener("dragleave", () => dz.classList.remove("hot"));
-dz.addEventListener("drop", async (e) => {
+dz.addEventListener("drop", (e) => {
   e.preventDefault(); dz.classList.remove("hot");
-  for (const f of e.dataTransfer.files) await uploadOne(f);
-  loadFiles();
+  enqueueUploads(e.dataTransfer.files);
 });
-document.querySelector("[data-upfile]").addEventListener("change", async (ev) => {
-  for (const f of ev.target.files) await uploadOne(f);
-  ev.target.value = ""; loadFiles();
+document.querySelector("[data-upfile]").addEventListener("change", (ev) => {
+  enqueueUploads(ev.target.files);
+  ev.target.value = "";
 });
 
 refresh();

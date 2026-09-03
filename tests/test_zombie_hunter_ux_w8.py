@@ -47,10 +47,10 @@ def w8env(tmp_path, monkeypatch):
 def test_investigate_three_engines_slim_start(w8env):
     gui = w8env["gui"]
     toggle = gui._w8_engine_toggle(
-        profile={"claude": True, "gemini": True, "grok": True},
+        profile={"claude": True, "gemini": True, "grok": True, "chatgpt": True},
         prefs={"default_cli": "claude"},
     )
-    assert [e["id"] for e in toggle["engines"]] == ["claude", "gemini", "grok"]
+    assert [e["id"] for e in toggle["engines"]] == ["claude", "gemini", "grok", "chatgpt"]
     assert all(e["enabled"] and e["subscriptionCli"] for e in toggle["engines"])
     assert toggle["engines"][1]["transport"] == "agy"
     assert "grok" in toggle["engines"][2]["spawn"] or toggle["engines"][2]["transport"] == "grok-cli"
@@ -79,7 +79,7 @@ def test_investigate_three_engines_slim_start(w8env):
     text = gui._w8_format_investigate_slim_seed_text(slim)
     assert "SLIM SEED" in text and "4242" in text
 
-    for eng in ("claude", "gemini", "grok"):
+    for eng in ("claude", "gemini", "grok", "chatgpt"):
         plan = gui._w8_shared_session_start_plan(
             surface="investigate",
             engine=eng,
@@ -89,7 +89,7 @@ def test_investigate_three_engines_slim_start(w8env):
         assert plan["shell"]["paintFirst"] is True
         assert plan["shell"]["paintBudgetMs"] <= 1000
         assert plan["shell"]["enginePicker"] is True
-        assert len(plan["shell"]["engines"]) == 3
+        assert len(plan["shell"]["engines"]) == 4
         assert plan["seedBeforeSession"] is True
         assert plan["session"]["async"] is True
         assert plan["session"]["cancelable"] is True
@@ -158,7 +158,7 @@ def test_p6_requires_p5_start_plumbing(w8env):
         "doctor_shell_first",
     ):
         assert key in required
-    assert p5["engines"] == ["claude", "gemini", "grok"]
+    assert p5["engines"] == ["claude", "gemini", "grok", "chatgpt"]
     assert "investigate" in p5["surfaces"] and "doctor" in p5["surfaces"]
 
     # Shared helper exists and stamps P5 on every plan (P6 consumers check this).

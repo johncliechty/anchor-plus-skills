@@ -133,7 +133,9 @@ export function makeRubricScorerFromAgent({ agent, model, log = () => {} }) {
       `=== CRITERION (${criterion.id}) ===\n${criterion.statement}`,
       `=== DELIVERABLE ===\n${doc}\n=== END ===`,
     ].join('\n');
-    const out = await agent(prompt, { label: `rubric:${criterion.id}:${model}`, schema: RUBRIC_SCHEMA });
+    const out = await agent(prompt, {
+      label: `rubric:${criterion.id}:${model}`, role: 'judge', schema: RUBRIC_SCHEMA,
+    });
     return { score: Number(out?.score) || 0, citations: Array.isArray(out?.citations) ? out.citations : [] };
   };
 }

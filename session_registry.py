@@ -185,7 +185,8 @@ def is_parked_warm(record_or_status) -> bool:
 BACKEND_CLAUDE = "claude"
 BACKEND_GEMINI = "gemini"
 BACKEND_GROK = "grok"
-VALID_BACKENDS = {BACKEND_CLAUDE, BACKEND_GEMINI, BACKEND_GROK}
+BACKEND_CHATGPT = "chatgpt"
+VALID_BACKENDS = {BACKEND_CLAUDE, BACKEND_GEMINI, BACKEND_GROK, BACKEND_CHATGPT}
 
 
 # ── Persistence ─────────────────────────────────────────────────────────────
@@ -430,6 +431,11 @@ def _normalize(record: dict) -> dict:
     # rollup renders 'partial (gemini segment unmeasured)' instead of a
     # complete-looking Claude-only number. Back-compat: absent → False.
     usage_gemini_segment = bool(record.get("usage_gemini_segment", False))
+    # Anchor Doctor P0: durable reuse identity. Old/unrelated sessions
+    # normalize to empty strings and therefore cannot accidentally match a
+    # requested Doctor mode/posture.
+    doctor_mode = str(record.get("doctor_mode", "") or "")
+    doctor_posture = str(record.get("doctor_posture", "") or "")
     # ── zombie-hunter safe-to-arm, Wave 6: owned-job claim set ──────────────
     # ``owned_job_ids`` is this session's explicit claim over ``job_runner`` job
     # ids — the reference-counted ownership the teardown path (``kill`` /
@@ -510,6 +516,8 @@ def _normalize(record: dict) -> dict:
         "usage_state": usage_state,
         "usage_reason": usage_reason,
         "usage_gemini_segment": usage_gemini_segment,
+        "doctor_mode": doctor_mode,
+        "doctor_posture": doctor_posture,
         # ── telemetry-resume W6: eviction + paste-fallback + orientation ─────
         # ``evicted``/``evicted_at``: the bounded oldest-first parked-worktree
         # eviction reclaims ONLY the worktree; the record stays parked-warm with
@@ -620,7 +628,8 @@ def register_session(project_id, lane, backend=BACKEND_CLAUDE,
                      chain_id=None, grass_origin="",
                      effort_id=None, effort_managed=False,
                      pid=None, proc_create_time=None, crypt_token="",
-                     engine_session_uuid="") -> dict:
+                      engine_session_uuid="", doctor_mode="",
+                      doctor_posture="") -> dict:
     """Register a managed terminal session. Returns the stored record.
 
     ``session_id`` is allocated fresh when not supplied; an explicitly provided
@@ -663,6 +672,10 @@ def register_session(project_id, lane, backend=BACKEND_CLAUDE,
             # Honest Telemetry W4: engine-session UUID captured at launch (the
             # deterministic sidecar correlation). Empty when not captured yet.
             "engine_session_uuid": engine_session_uuid or "",
+            # Anchor Doctor P0: empty on every ordinary/pre-feature session.
+            # Doctor session reuse requires an exact mode/backend/posture tuple.
+            "doctor_mode": doctor_mode or "",
+            "doctor_posture": doctor_posture or "",
         })
         reg[sid] = record
         _save_sessions(reg, _locked=True)
@@ -868,6 +881,8 @@ def update_session(session_id: str, **fields) -> dict:
                "usage_state", "usage_reason",
                # Honest Telemetry W5: durable mixed-session (gemini-segment) marker.
                "usage_gemini_segment",
+               # Anchor Doctor P0: exact durable session-reuse identity.
+               "doctor_mode", "doctor_posture",
                # telemetry-resume W6: bounded oldest-first parked-worktree
                # eviction (worktree reclaimed, everything else survives) +
                # the greet-gate bounded-fallback stamp + the read-only

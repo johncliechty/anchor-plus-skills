@@ -1,8 +1,9 @@
 /**
  * Anchor prefs → subscription seat resolution (W5).
- * Families map to subscription CLIs only (claude / gemini-cli|agy / grok-cli).
+ * Families map to subscription CLIs only (chatgpt-cli / claude / gemini-cli|agy / grok-cli).
  * Never hardcodes product model IDs; never uses XAI_API_KEY HTTP for production seats.
- * Prefs load order: inject → env families → settings/model_prefs paths via env/home.
+ * Prefs load order: injected fixture → settings/model_prefs paths via env/home.
+ * Family-valued environment variables are compatibility outputs, never inputs.
  * No host-absolute path string literals (home from USERPROFILE/HOME only).
  */
 
@@ -11,7 +12,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 /** Allowed family names (not product model IDs). */
-export const SEAT_FAMILIES = Object.freeze(['claude', 'gemini', 'grok']);
+export const SEAT_FAMILIES = Object.freeze(['chatgpt', 'claude', 'gemini', 'grok']);
 
 /**
  * Subscription driver names only.
@@ -19,6 +20,7 @@ export const SEAT_FAMILIES = Object.freeze(['claude', 'gemini', 'grok']);
  * grok → grok-cli (never raw "grok" HTTP + XAI_API_KEY).
  */
 export const SUBSCRIPTION_DRIVERS = Object.freeze([
+  'chatgpt-cli',
   'claude',
   'gemini-cli',
   'agy',
@@ -27,6 +29,7 @@ export const SUBSCRIPTION_DRIVERS = Object.freeze([
 
 /** Drivers allowed on production seats (agy aliases gemini-cli). */
 export const PRODUCTION_SEAT_DRIVERS = Object.freeze([
+  'chatgpt-cli',
   'claude',
   'gemini-cli',
   'agy',
@@ -42,6 +45,7 @@ export function familyToSubscriptionDriver(family) {
   const f = String(family || '')
     .trim()
     .toLowerCase();
+  if (f === 'chatgpt' || f === 'codex') return 'chatgpt-cli';
   if (f === 'claude') return 'claude';
   if (f === 'gemini') return 'gemini-cli';
   // Subscription Grok CLI only — never raw xAI HTTP driver name "grok"
@@ -133,7 +137,9 @@ export function loadAnchorPrefsFromDisk(opts = {}) {
 
 /**
  * Load Anchor model prefs (injectable for unit tests).
- * Resolve order: opts.prefs → env CODING_FAMILY/REVIEW_FAMILY → disk prefs → historical defaults.
+ * Resolve order: opts.prefs → disk prefs → historical defaults.
+ * Family/default CLI environment values are deliberately ignored: Anchor
+ * settings / mirror are the sole durable preference source.
  * @param {{ prefs?: object|null, env?: object, prefsPath?: string|null, readFile?: Function, exists?: Function }} [opts]
  * @returns {{ coding_family: string, review_family: string, default_cli: string|null, source: string, cross_model: boolean }}
  */
@@ -158,22 +164,6 @@ export function loadAnchorPrefs(opts = {}) {
     source = 'inject';
   }
 
-  if (!coding) {
-    coding = normalizeFamily(
-      env.CODING_FAMILY || env.ANCHOR_CODING_FAMILY || '',
-    );
-    if (coding) source = source === 'inject' ? source : 'env';
-  }
-  if (!review) {
-    review = normalizeFamily(
-      env.REVIEW_FAMILY || env.ANCHOR_REVIEW_FAMILY || '',
-    );
-    if (review) source = source === 'inject' ? source : 'env';
-  }
-  if (!default_cli && (env.DEFAULT_CLI || env.ANCHOR_DEFAULT_CLI)) {
-    default_cli = String(env.DEFAULT_CLI || env.ANCHOR_DEFAULT_CLI);
-  }
-
   if (!coding || !review || default_cli == null) {
     const disk = loadAnchorPrefsFromDisk(opts);
     if (disk) {
@@ -186,7 +176,7 @@ export function loadAnchorPrefs(opts = {}) {
       if (default_cli == null && disk.default_cli != null) {
         default_cli = String(disk.default_cli);
       }
-      if (source === 'defaults' || source === 'default' || source === 'env') {
+      if (source === 'defaults' || source === 'default') {
         source = disk.source ? 'disk' : source;
       }
     }
@@ -208,7 +198,7 @@ export function loadAnchorPrefs(opts = {}) {
 
 /**
  * Patterns that look like vendor product model IDs (forbidden on seats).
- * Families (claude/gemini/grok) and drivers (claude/gemini-cli/grok-cli) are NOT matches.
+ * Families (chatgpt/claude/gemini/grok) and their subscription drivers are NOT matches.
  */
 export const PRODUCT_MODEL_ID_PATTERNS = Object.freeze([
   // `fable` added 2026-08-04: the conversational seat's real reply carries
@@ -221,6 +211,7 @@ export const PRODUCT_MODEL_ID_PATTERNS = Object.freeze([
   /models\/gemini/i,
   /grok-[234][\w.-]*/i,
   /grok-beta/i,
+  /gpt-\d[\w.-]*/i,
 ]);
 
 /**

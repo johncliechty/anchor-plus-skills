@@ -45,6 +45,16 @@ export const SEAT_ROLES = Object.freeze([SEAT_ROLE.FRONTIER, SEAT_ROLE.CONVERSAT
  * the alias already resolves to the latest.
  */
 export const FAMILY_TIERS = Object.freeze({
+  // `configured` means THE TRANSPORT DECIDES: Ecgberht names no model and trio's
+  // chatgpt-cli driver selects its own effort-tiered constant (it passes
+  // --ignore-user-config, so the user's Codex config is NOT consulted). The role
+  // distinction Ecgberht controls is reasoning effort: Ultra for frontier
+  // planning, high for conversational turns (scripts/seat-call.mjs).
+  // `configured` is a transport alias, not a product model id.
+  chatgpt: Object.freeze({
+    frontier: 'configured',
+    conversational: 'configured',
+  }),
   claude: Object.freeze({
     frontier: 'fable',
     conversational: 'opus',
@@ -79,7 +89,7 @@ function envOverride(family, role, env) {
  * Returns an HONEST failure rather than a guess when the family is unknown — inventing
  * a model name is exactly the class of silent wrongness this file exists to prevent.
  *
- * @param {string} family claude | gemini | grok
+ * @param {string} family chatgpt | claude | gemini | grok
  * @param {string} role SEAT_ROLE.*
  * @param {{ env?: NodeJS.ProcessEnv }} [opts]
  * @returns {{ ok: true, family: string, role: string, alias: string, source: string }

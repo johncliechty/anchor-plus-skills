@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ecgberht-kickoff-proposal-v0",
+  "title": "Ecgberht conversational kickoff proposal",
+  "description": "One model-authored, non-authoritative kickoff synthesis (kickoff_proposal_v0). It becomes project truth only through a matching kickoff_confirm event. Omission is valid structure: a simple effort is one goal, one component, one plan entry, integration null; the compiler generates nothing (output is a subset of model-authored input). No constraints field (Master Plan cut #1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "kind",
+    "proposal_id",
+    "proposal_hash",
+    "version",
+    "prior_confirmed_hash",
+    "goal",
+    "success_signals",
+    "work_product",
+    "integration",
+    "plan_entries",
+    "first_slice_id",
+    "source_turn",
+    "provenance",
+    "requires_confirm",
+    "confirmed"
+  ],
+  "properties": {
+    "schema": { "const": "ecgberht-kickoff-proposal-v0" },
+    "kind": { "const": "kickoff_proposal" },
+    "proposal_id": { "type": "string", "minLength": 1 },
+    "proposal_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "prior_confirmed_hash": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      ]
+    },
+    "goal": { "type": "string", "minLength": 1 },
+    "success_signals": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "work_product": { "$ref": "#/$defs/workProduct" },
+    "integration": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/integration" }
+      ]
+    },
+    "plan_entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/planEntry" }
+    },
+    "first_slice_id": { "type": "string", "minLength": 1 },
+    "source_turn": { "$ref": "#/$defs/sourceTurn" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "requires_confirm": { "const": true },
+    "confirmed": { "const": false }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "done_when": { "type": ["string", "null"] }
+      }
+    },
+    "workProduct": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "components"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/component" }
+        }
+      }
+    },
+    "relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "component_ids", "description"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["feeds", "depends_on", "assembles_with", "validates", "integrates"]
+        },
+        "component_ids": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "integrationProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observable", "method"],
+      "properties": {
+        "observable": { "type": "string", "minLength": 1 },
+        "method": { "type": "string", "minLength": 1 }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "relationships", "proof"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "relationships": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/relationship" }
+        },
+        "proof": { "$ref": "#/$defs/integrationProof" }
+      }
+    },
+    "planEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "component_ids", "end_to_end_slice", "done_when"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1 },
+        "component_ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "end_to_end_slice": { "type": "boolean" },
+        "done_when": { "type": ["string", "null"] }
+      }
+    },
+    "sourceTurn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "client_event_id", "at"],
+      "properties": {
+        "kind": { "const": "steward_conversation" },
+        "client_event_id": { "type": ["string", "null"] },
+        "at": { "type": ["string", "null"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authored_by", "source", "seat_family", "driver", "model_id_recorded"],
+      "description": "Host-asserted seat lineage. A record without it, or stamped zero_model, does not compile (provenance by refusal).",
+      "properties": {
+        "authored_by": { "const": "model" },
+        "source": { "const": "steward_conversation" },
+        "seat_family": { "type": "string", "minLength": 1 },
+        "driver": { "type": "string", "minLength": 1 },
+        "model_id_recorded": { "const": false }
+      }
+    }
+  }
+}

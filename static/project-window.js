@@ -165,6 +165,7 @@ function _defaultCli() {
 function _engineLabel(eng) {
   if (eng === 'gemini') return '✦ Gemini';
   if (eng === 'grok') return '✦ Grok';
+  if (eng === 'chatgpt') return '✦ ChatGPT';
   return '◆ Claude';
 }
 function _bootSettingsCache() {
@@ -1704,7 +1705,7 @@ function _gandalfRefreshCount() {
 // Tabs + search scope the left list; selecting a .gli loads the right workbench;
 // Develop starts a SEEDED live session in the workbench terminal; a saved
 // refinement appears in the history (grass-<id>/dev-N) and is pullable.
-var _grassEngine = (typeof _defaultCli === 'function' ? _defaultCli() : (window.ANCHOR_DEFAULT_CLI || 'grok'));   // workbench engine toggle (3-way: claude|gemini|grok)
+var _grassEngine = (typeof _defaultCli === 'function' ? _defaultCli() : (window.ANCHOR_DEFAULT_CLI || 'grok'));   // workbench engine toggle (claude|gemini|grok|chatgpt)
 var _grassData = {};            // idea_id -> idea record (from /api/rnd/grass)
 var _grassDevSession = null;    // the active Develop session id (for Save refinement)
 // v10 Wave 3 — per-(idea,lane) develop session id, so each of the TWO terminal
@@ -1893,7 +1894,7 @@ function selectGrassIdea(ideaId) {
   // Engine toggle (Claude / Gemini / Grok) — 3-way cycle for the next session.
   var eng = work.querySelector('.gengtog');
   if (eng) eng.onclick = function () {
-    var order = ['claude', 'gemini', 'grok'];
+    var order = ['claude', 'gemini', 'grok', 'chatgpt'];
     var ix = order.indexOf(_grassEngine);
     _grassEngine = order[(ix < 0 ? 0 : ix + 1) % order.length];
     eng.textContent = _engineLabel(_grassEngine);
@@ -3796,7 +3797,7 @@ function _buildEngineToggle(sessionId, s) {
   var tog = document.createElement('span');
   tog.className = 'engtog';
   tog.title = 'Chosen once; flip to switch this session to another engine.';
-  [['claude', '◆ Claude'], ['gemini', '✦ Gemini'], ['grok', '✦ Grok']].forEach(function (pair) {
+  [['claude', '◆ Claude'], ['gemini', '✦ Gemini'], ['grok', '✦ Grok'], ['chatgpt', '✦ ChatGPT']].forEach(function (pair) {
     var eng = pair[0];
     var b = document.createElement('b');
     b.textContent = pair[1];
@@ -5412,8 +5413,8 @@ function _fmtDockTime(ms) {
 }
 
 // _loadDockMetrics(effortId): fill #dockMetrics with the SELECTED effort's
-// rollup — "Σ <tok> tok · <time> · $<cost>" — from GET /api/rnd/effort_rollup
-// (numbers only; imported/discovered contribute 0, never fabricated). Read-only;
+// rollup — "Σ <tok> tok · <time> · <cost state>" — from the selected-effort
+// endpoint. Subscription-covered work is named; unknown cost never becomes $0.
 // best-effort (any error leaves the placeholder, never throws).
 function _loadDockMetrics(effortId) {
   var el = document.getElementById('dockMetrics');
@@ -5427,9 +5428,22 @@ function _loadDockMetrics(effortId) {
     .then(function (d) {
       if (!d || !d.ok) return;
       var tok = d.tokens || 0;
-      var cost = (d.cost_usd || 0).toFixed(2);
+      var states = d.cost_states || [];
+      var unpriced = d.unpriced_subscription_count || 0;
+      var priced = d.priced_cost_count || 0;
+      var money = 'cost unknown';
+      if (unpriced && priced && d.cost_usd !== null && d.cost_usd !== undefined) {
+        money = '$' + Number(d.cost_usd).toFixed(2) + ' measured + subscription';
+      } else if (unpriced || states.indexOf('subscription_covered') >= 0) {
+        money = '(subscription)';
+      } else if (d.cost_usd !== null && d.cost_usd !== undefined
+                 && (Number(d.cost_usd) > 0 || states.indexOf('engine_reported') >= 0)) {
+        money = '$' + Number(d.cost_usd).toFixed(2);
+      } else if (states.indexOf('no_seat_started') >= 0) {
+        money = 'no seat started';
+      }
       el.textContent = 'Σ ' + tok + ' tok · '
-        + _fmtDockTime(d.wall_clock_ms) + ' · $' + cost;
+        + _fmtDockTime(d.wall_clock_ms) + ' · ' + money;
     })
     .catch(function () {});
 }

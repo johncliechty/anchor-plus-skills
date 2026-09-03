@@ -6,24 +6,23 @@
 // path outside the package. On any machine without that exact directory every
 // real run failed at the driver import.
 //
-// The fix from the inventory's proposed-fix field, implemented here: the driver
-// is resolved from CONFIGURATION or an ENV VAR, and when it cannot be resolved
-// the failure is LOUD at the call site. No absolute path is baked into any
-// stage, and a missing driver can never degrade into a clean-looking empty
-// report (the failure mode this whole tool exists to not have).
+// The shared default is Trio's receipt-bearing runAgent. A legacy driver module
+// remains loadable for old fixtures/config, but production family choice comes
+// from Anchor settings / model_prefs through Trio, never from TRIO_DRIVER text
+// misread as a module path.
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** Env vars consulted, in order, for the driver module location. */
-export const DRIVER_ENV_VARS = Object.freeze(['TIDY_IDY_DRIVER', 'TRIO_DRIVER', 'TRIO_DRIVER_PATH']);
+/** Legacy module-location overrides. TRIO_DRIVER is a driver name, not a path. */
+export const DRIVER_ENV_VARS = Object.freeze(['TIDY_IDY_DRIVER', 'TRIO_DRIVER_PATH']);
 
 /** Thrown when no agent seam can be resolved. Never swallowed. */
 export class AgentSeamUnavailable extends Error {
   constructor(detail) {
     super(
       'No LLM agent seam is available for this run. ' +
-      'Inject one as ctx.agent, or point ' + DRIVER_ENV_VARS.join(' / ') + ' at a driver module exporting makeGeminiCliSeam(). ' +
+      'Inject ctx.agent/runAgent, install the shared Trio sibling, or point ' + DRIVER_ENV_VARS.join(' / ') + ' at a compatible module. ' +
       'Refusing to continue: an unavailable analysis engine must fail LOUDLY, never report a clean project. ' +
       (detail ? `(${detail})` : ''));
     this.name = 'AgentSeamUnavailable';
@@ -53,47 +52,103 @@ export function driverImportSpec(driverPath) {
   return pathToFileURL(path.resolve(raw)).href;
 }
 
+/** Shared Trio location relative to the checked-out Foundry + Trio workspace. */
+export function resolveTrioIndexSpec({ driverPath = null, env = process.env } = {}) {
+  const fromEnv = DRIVER_ENV_VARS.map((key) => env[key])
+    .find((value) => value && String(value).trim());
+  const override = driverPath || fromEnv || null;
+  return override
+    ? driverImportSpec(override)
+    : new URL('../../../../trio/drivers/index.mjs', import.meta.url).href;
+}
+
+/** Tidy's call labels map to the universal Trio role taxonomy. */
+export function roleForTidyCall(callOpts = {}) {
+  if (typeof callOpts.role === 'string' && callOpts.role.trim()) {
+    return callOpts.role.trim().toLowerCase();
+  }
+  const label = String(callOpts.label || '').trim().toLowerCase();
+  if (label.startsWith('compress')) return 'synthesizer';
+  if (label.startsWith('judge')) return 'judge';
+  if (label.startsWith('attacker')) return 'attacker';
+  return 'reviewer';
+}
+
 /**
  * Resolve the agent function for a run.
  *
  * Resolution order (first hit wins):
  *   1. an explicitly injected `agent` (tests, callers, the Wave-5 launcher)
- *   2. `driverPath` from .tidy-idy config / call options
- *   3. one of the DRIVER_ENV_VARS
- * Anything else → AgentSeamUnavailable at the moment the seam is needed.
+ *   2. injected/shared Trio `runAgent`
+ *   3. a legacy compatible module selected by driverPath / DRIVER_ENV_VARS
+ *   4. the shared Trio sibling next to Skill Foundry
  *
- * @param {{agent?: Function, driverPath?: string, model?: string, log?: Function, env?: object}} opts
+ * @param {{agent?: Function, runAgent?: Function, driverPath?: string, model?: string,
+ *   log?: Function, env?: object, target?: string, importModule?: Function,
+ *   onReceipt?: Function}} opts
  * @returns {Function} async (prompt, {schema, label}) => parsed result
  */
-export function resolveAgent({ agent = null, driverPath = null, model = null, log = () => {}, env = process.env } = {}) {
+export function resolveAgent({
+  agent = null,
+  runAgent = null,
+  driverPath = null,
+  model = null,
+  log = () => {},
+  env = process.env,
+  target = process.cwd(),
+  importModule = (spec) => import(spec),
+  onReceipt = null,
+} = {}) {
   if (typeof agent === 'function') return agent;
 
-  const fromEnv = DRIVER_ENV_VARS.map((k) => env[k]).find((v) => v && String(v).trim());
-  const resolvedDriver = driverPath || fromEnv || null;
-
-  if (!resolvedDriver) {
-    // Return a thunk that throws WHEN USED, so a run whose mode never needs an
-    // LLM (advisory / heuristic-only) is not blocked by an absent driver, while
-    // a run that does need one fails loudly at the call site rather than
-    // silently producing nothing.
-    return async () => { throw new AgentSeamUnavailable('no ctx.agent and no driver env var set'); };
-  }
-
-  return async (prompt, callOpts = {}) => {
-    let mod;
-    // Windows drive paths look like URL schemes (`C:\...` matches /^[a-z]+:/i).
-    // Only treat real module URLs as already-specced; always file-URL absolute paths.
-    const spec = driverImportSpec(resolvedDriver);
-    try {
-      mod = await import(spec);
-    } catch (err) {
-      throw new AgentSeamUnavailable(`driver '${resolvedDriver}' could not be imported: ${err.message}`);
+  const spec = resolveTrioIndexSpec({ driverPath, env });
+  let modulePromise = null;
+  const receipts = [];
+  const loadModule = async () => {
+    if (!modulePromise) {
+      modulePromise = Promise.resolve(importModule(spec)).catch((error) => {
+        modulePromise = null;
+        throw new AgentSeamUnavailable(`driver '${spec}' could not be imported: ${error.message}`);
+      });
     }
-    if (typeof mod.makeGeminiCliSeam !== 'function') {
-      throw new AgentSeamUnavailable(`driver '${resolvedDriver}' does not export makeGeminiCliSeam()`);
-    }
-    const chosenModel = model || env.GEMINI_MODEL || env.TRIO_MODEL || mod.DEFAULT_GEMINI_CLI_MODEL;
-    const seam = mod.makeGeminiCliSeam({ model: chosenModel, role: 'review', log });
-    return seam.agent(prompt, callOpts);
+    return modulePromise;
   };
+
+  const resolved = async (prompt, callOpts = {}) => {
+    const mod = typeof runAgent === 'function' ? null : await loadModule();
+    const sharedRunAgent = typeof runAgent === 'function' ? runAgent : mod?.runAgent;
+    const role = roleForTidyCall(callOpts);
+    if (typeof sharedRunAgent === 'function') {
+      return sharedRunAgent({
+        ...callOpts,
+        prompt,
+        role,
+        label: callOpts.label || `tidy-idy:${role}`,
+        model: model || callOpts.model || undefined,
+        freshContext: true,
+        target,
+        env: { ...env, CRUCIBLE_AGENT_LIVE: env.CRUCIBLE_AGENT_LIVE || '1' },
+        log,
+        onReceipt: async (receipt) => {
+          receipts.push(receipt);
+          if (typeof onReceipt === 'function') await onReceipt(receipt);
+          if (typeof callOpts.onReceipt === 'function' && callOpts.onReceipt !== onReceipt) {
+            await callOpts.onReceipt(receipt);
+          }
+        },
+      });
+    }
+
+    // Compatibility only for existing hermetic fixtures/configured modules.
+    if (typeof mod?.makeGeminiCliSeam === 'function') {
+      const chosenModel = model || mod.DEFAULT_GEMINI_CLI_MODEL;
+      const seam = mod.makeGeminiCliSeam({ model: chosenModel, role, log });
+      return seam.agent(prompt, { ...callOpts, role });
+    }
+    throw new AgentSeamUnavailable(
+      `driver '${spec}' exports neither runAgent nor legacy makeGeminiCliSeam()`,
+    );
+  };
+  resolved.receipts = receipts;
+  return resolved;
 }

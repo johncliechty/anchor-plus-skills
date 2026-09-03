@@ -33,8 +33,10 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { SEAT_ROLE, resolveTierAlias } from '../engine/seat-tiers.mjs';
+import { familyToSubscriptionDriver } from '../engine/seating.mjs';
 
 /** Default wall-clock bound for one conversational turn. */
 export const SEAT_TIMEOUT_MS = 180_000;
@@ -341,6 +343,235 @@ export async function callClaudeSeat(prompt, opts = {}) {
   };
 }
 
+// ── ChatGPT / Codex subscription seat ─────────────────────────────────────
+
+/**
+ * Run a ChatGPT-family seat through the installed Codex subscription CLI.
+ * No API key or HTTP fallback exists here. The session is ephemeral, project
+ * rules are not imported into the steward persona, and the sandbox is read-only.
+ * Frontier planning is explicitly Ultra; ordinary conversation uses high effort
+ * to preserve the fast/slow tier distinction without pinning a product model id.
+ *
+ * @param {string} prompt
+ * @param {{ timeoutMs?: number, bin?: string, cwd?: string, model?: string,
+ *           role?: string, env?: NodeJS.ProcessEnv }} [opts]
+ */
+export function buildCodexSeatArgs(opts = {}) {
+  const env = opts.env ?? process.env;
+  const effort = opts.role === SEAT_ROLE.FRONTIER
+    ? (env.ECGBERHT_CHATGPT_FRONTIER_EFFORT || 'ultra')
+    : (env.ECGBERHT_CHATGPT_CONVERSATIONAL_EFFORT || 'high');
+  const args = [
+    'exec',
+    '--ephemeral',
+    '--ignore-rules',
+    '--skip-git-repo-check',
+    '--sandbox', 'read-only',
+    '--color', 'never',
+    '-c', `model_reasoning_effort="${effort}"`,
+  ];
+  // `configured` deliberately delegates model selection to the authenticated
+  // user's Codex config. An explicit env tier override can still name a CLI model.
+  if (opts.model && opts.model !== 'configured') args.push('--model', String(opts.model));
+  if (opts.cwd) args.push('--cd', String(opts.cwd));
+  args.push('-');
+  return { args, effort };
+}
+
+export async function callCodexSeat(prompt, opts = {}) {
+  const env = opts.env ?? process.env;
+  const bin = opts.bin || env.ECGBERHT_CODEX_BIN || 'codex';
+  const { args, effort } = buildCodexSeatArgs(opts);
+
+  const res = await runProcess(bin, args, {
+    timeoutMs: opts.timeoutMs,
+    cwd: opts.cwd,
+    stdin: String(prompt),
+  });
+  if (!res.ok) {
+    const detail = String(res.err || res.out || '').slice(0, 500);
+    return {
+      ok: false,
+      reason: /usage limit|rate limit|quota|resource exhausted/i.test(detail)
+        ? 'usage_limit'
+        : res.reason ?? 'seat_failed',
+      detail,
+      ms: res.ms,
+      reasoning_effort: effort,
+    };
+  }
+  const text = String(res.out ?? '').trim();
+  if (!text) {
+    return { ok: false, reason: 'codex_no_reply', ms: res.ms, reasoning_effort: effort };
+  }
+  return {
+    ok: true,
+    text,
+    meta: {
+      tokens: 0,
+      duration_ms: res.ms,
+      reasoning_effort: effort,
+      subscription_cli: true,
+    },
+  };
+}
+
+// ── Shared Trio seat ──────────────────────────────────────────────────────
+
+/** The shared driver registry next to this installed skill's development root. */
+export function resolveTrioIndexSpec(env = process.env) {
+  const override = String(env.ECGBERHT_TRIO_INDEX || '').trim();
+  if (!override) return new URL('../../trio/drivers/index.mjs', import.meta.url).href;
+  if (/^file:/i.test(override)) return override;
+  return pathToFileURL(path.resolve(override)).href;
+}
+
+async function resolveTrioRunAgent(opts, env) {
+  if (typeof opts.runAgent === 'function') return opts.runAgent;
+  const importer = opts.importTrio ?? ((spec) => import(spec));
+  const mod = await importer(resolveTrioIndexSpec(env));
+  if (typeof mod?.runAgent !== 'function') {
+    throw new TypeError('shared Trio module does not export runAgent');
+  }
+  return mod.runAgent;
+}
+
+function chatgptEffort(role, env) {
+  if (role === SEAT_ROLE.FRONTIER) {
+    // Frontier is Ultra BY LAW; the override may only move sideways-or-up. A stale
+    // env value must not silently downgrade John's planning seat to a cheap effort.
+    const override = String(env.ECGBERHT_CHATGPT_FRONTIER_EFFORT || '').trim().toLowerCase();
+    return override === 'max' ? 'max' : 'ultra';
+  }
+  return env.ECGBERHT_CHATGPT_CONVERSATIONAL_EFFORT || 'high';
+}
+
+// Model-selecting env that trio drivers consult when no explicit model is passed.
+// Ecgberht chooses model/effort BY ROLE through the tier table; a stale machine-wide
+// setx from an old Foreman run must not repin the production Steward seat.
+const MODEL_ENV_SCRUB_EXACT = ['TRIO_MODEL', 'TRIO_TIER', 'CODEX_MODEL', 'CHATGPT_MODEL', 'GEMINI_MODEL', 'GROK_MODEL'];
+function scrubModelEnv(env) {
+  const out = { ...env };
+  for (const key of Object.keys(out)) {
+    if (MODEL_ENV_SCRUB_EXACT.includes(key) || key.startsWith('TRIO_MODEL_')) delete out[key];
+  }
+  return out;
+}
+
+/** The dispatcher's opt-in raw physical-receipt channel (drivers report usage there). */
+const PHYSICAL_RECEIPT_HOOK = Symbol.for('trio.seat.physical-receipt');
+
+/**
+ * Call one Steward seat through Trio's single receipt-bearing dispatcher.
+ * `runAgent` is injectable so gates never touch a subscription CLI. Production
+ * callers reach the same Trio seam used by the other Foundry skills.
+ */
+export async function callTrioSeat(prompt, opts = {}) {
+  const env = opts.env ?? process.env;
+  const family = String(opts.family || '').trim().toLowerCase();
+  const driver = opts.driver || familyToSubscriptionDriver(family);
+  if (!driver) {
+    return {
+      ok: false,
+      reason: 'seat_family_unsupported',
+      detail: `No Trio subscription transport for seat family "${family}".`,
+    };
+  }
+
+  let runAgent;
+  try {
+    runAgent = await resolveTrioRunAgent(opts, env);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: 'trio_adapter_unavailable',
+      detail: String(error?.message ?? error).slice(0, 500),
+    };
+  }
+
+  const seatRole = opts.role === SEAT_ROLE.FRONTIER ? 'synthesizer' : 'orchestrator';
+  const reasoningEffort = family === 'chatgpt' ? chatgptEffort(opts.role, env) : null;
+  const orchestrationMode = family === 'chatgpt' && opts.role === SEAT_ROLE.FRONTIER
+    ? 'ultra'
+    : 'single';
+  const started = Date.now();
+  let receipt = null;
+  // Measured usage rides the raw physical receipts (the public trio.seat.v1 shape is
+  // frozen by strict consumers) — captured here so the debit is real, never invented.
+  let measuredTokens = 0;
+  let measuredCost = 0;
+  try {
+    const text = await runAgent({
+      prompt: String(prompt),
+      driver,
+      role: seatRole,
+      label: `Ecgberht:${opts.role || SEAT_ROLE.CONVERSATIONAL}`,
+      freshContext: true,
+      env: { ...scrubModelEnv(env), CRUCIBLE_AGENT_LIVE: env.CRUCIBLE_AGENT_LIVE || '1' },
+      target: opts.cwd,
+      model: opts.model && opts.model !== 'configured' ? opts.model : undefined,
+      timeoutMs: opts.timeoutMs,
+      sandbox: 'read-only',
+      reasoningEffort,
+      orchestrationMode,
+      [PHYSICAL_RECEIPT_HOOK]: (entry) => {
+        const usage = entry?.receipt?.usage;
+        if (usage && typeof usage === 'object') {
+          measuredTokens += (Number(usage.input_tokens) || 0)
+            + (Number(usage.output_tokens) || 0)
+            + (Number(usage.reasoning_output_tokens) || 0);
+        }
+        const cost = Number(entry?.receipt?.total_cost_usd ?? entry?.receipt?.cost_usd);
+        if (Number.isFinite(cost)) measuredCost += cost;
+      },
+      onReceipt: async (value) => {
+        receipt = value;
+        if (typeof opts.onReceipt === 'function') await opts.onReceipt(value);
+      },
+    });
+    if (!receipt || receipt.schema !== 'trio.seat.v1' || receipt.ok !== true) {
+      return {
+        ok: false,
+        reason: 'trio_receipt_missing',
+        detail: 'Trio returned seat output without a successful trio.seat.v1 receipt.',
+      };
+    }
+    const reply = typeof text === 'string' ? text.trim() : JSON.stringify(text);
+    if (!reply) {
+      return {
+        ok: false,
+        reason: 'seat_no_reply',
+        detail: 'Trio returned an empty Steward reply.',
+        meta: { trio_receipt: receipt },
+      };
+    }
+    return {
+      ok: true,
+      text: reply,
+      meta: {
+        tokens: measuredTokens,
+        cost_usd: measuredCost,
+        duration_ms: Date.now() - started,
+        reasoning_effort: reasoningEffort,
+        orchestration_mode: orchestrationMode,
+        subscription_cli: true,
+        requested_family: family,
+        served_family: receipt.served?.family ?? null,
+        served_family_attested: receipt.served?.family_attested === true,
+        trio_receipt: receipt,
+      },
+    };
+  } catch (error) {
+    const failedReceipt = error?.receipt ?? null;
+    return {
+      ok: false,
+      reason: failedReceipt?.status || error?.seat_status || 'seat_failed',
+      detail: String(error?.message ?? error).slice(0, 500),
+      meta: failedReceipt ? { trio_receipt: failedReceipt } : undefined,
+    };
+  }
+}
+
 // ── Gemini seat (via Skill Foundry's agy-dispatch) ─────────────────────────
 
 /**
@@ -434,21 +665,17 @@ export function makeSeatCall(opts = {}) {
       ...opts,
       cwd: opts.cwd ?? ctx.project_path ?? opts.cwd,
       model: tier.alias,
+      role,
       // Only the planning turn reads the project. Talking turns already carry the
       // scaffolding and history in the prompt, and tool loops are what made turns slow.
       allowTools: role === SEAT_ROLE.FRONTIER,
     };
 
-    let result;
-    if (family === 'gemini') result = await callGeminiSeat(prompt, callOpts);
-    else if (family === 'claude') result = await callClaudeSeat(prompt, callOpts);
-    else {
-      result = {
-        ok: false,
-        reason: 'seat_family_unsupported',
-        detail: `No production transport for seat family "${family}".`,
-      };
-    }
+    const result = await callTrioSeat(prompt, {
+      ...callOpts,
+      family,
+      driver: familyToSubscriptionDriver(family),
+    });
     if (result.ok) {
       result.meta = { ...(result.meta ?? {}), role, tier_alias: tier.alias, tier_source: tier.source };
     }
@@ -467,6 +694,9 @@ export function makeSeatCall(opts = {}) {
         note: 'REAL seat output captured from a live run — replayed by the offline gate.',
         prompt_sha256: hashPrompt(prompt),
         seat_family: family,
+        reasoning_effort: result.meta?.reasoning_effort ?? null,
+        subscription_cli: result.meta?.subscription_cli === true,
+        trio_receipt: result.meta?.trio_receipt ?? null,
         tokens: result.meta?.tokens ?? 0,
         duration_ms: result.meta?.duration_ms ?? 0,
         recorded_at: new Date().toISOString(),

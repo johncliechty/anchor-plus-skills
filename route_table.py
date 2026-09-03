@@ -332,6 +332,11 @@ ROUTES = [
        handler="handle_ecgberht_commission_runs", migrated=True),
     _r("GET", "/api/ecgberht/step_detail", AUTH_TOKEN, match=MATCH_PREFIX,
        handler="handle_ecgberht_step_detail", migrated=True),
+    # (Gate 5 W8) The cockpit's ONLY kickoff exposure: a read-model GET over
+    # the engine-owned projection. Confirm/replay stay conversational /
+    # bridge-CLI (zero network exposure — chamber/routes-inventory.json).
+    _r("GET", "/api/ecgberht/kickoff_show", AUTH_TOKEN, match=MATCH_PREFIX,
+       handler="handle_ecgberht_kickoff_show", migrated=True),
     _r("POST", "/api/ecgberht/step_note", AUTH_TOKEN,
        handler="handle_ecgberht_step_note", migrated=True),
     # (2026-08-15) "I don't have a way of updating." Recomputes the derived

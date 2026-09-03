@@ -8,3 +8,6 @@ foreman-checkpoint.json
 # Durable-write transient artifacts (should never outlive a write).
 .*.tmp-*
 *.lock
+
+# swarm seat look-in litter (lookinAppendix uses a relative heartbeat path → repo root)
+/heartbeat.json

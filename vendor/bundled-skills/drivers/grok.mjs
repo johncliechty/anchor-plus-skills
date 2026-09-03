@@ -6,7 +6,7 @@
 //
 // Capability profile: NOT sub-agent-capable (raw HTTP API); structured output is
 // NATIVE via the OpenAI-compatible `response_format`, parsed/validated by the shared
-// seam (retry-once-then-ABSTAIN). Selected via `TRIO_DRIVER=grok`. With no key and
+// seam (retry-once-then-failure). Selected via `TRIO_DRIVER=grok`. With no key and
 // no injected transport it HALTs rather than firing a keyless request, so the live
 // smoke test SKIPS when the key is absent — it never fails.
 
@@ -24,6 +24,7 @@ export const DEFAULT_GROK_MODEL = 'grok-2-latest';
 export function makeGrokTransport({ env = process.env, model, apiKey, fetchImpl, log } = {}) {
   return makeChatTransport({
     baseUrl: GROK_BASE_URL,
+    family: 'grok',
     apiKey: apiKey ?? env.XAI_API_KEY,
     model: model ?? env.XAI_MODEL ?? env.GROK_MODEL ?? DEFAULT_GROK_MODEL,
     fetchImpl,
@@ -44,7 +45,9 @@ export const grokDriver = {
   async runAgent(opts = {}) {
     const { prompt, schema, label, log } = opts;
     const transport = makeGrokTransport(opts);
-    return runWithSchema({ transport, prompt, schema, label, log });
+    return runWithSchema({
+      transport, prompt, schema, label, log, driverOpts: opts, familyName: 'Grok API',
+    });
   },
 };
 

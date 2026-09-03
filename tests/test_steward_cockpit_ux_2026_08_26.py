@@ -193,6 +193,19 @@ class ClientContractTest(unittest.TestCase):
         self.assertIn("newest: ", self.js,
                       "a closed tile must still say what is in it")
 
+    def test_old_status_replay_cannot_replace_fresh_status(self):
+        self.assertIn('const statusId = String(stat.status_id || "")', self.js)
+        self.assertIn("statusId <= latestStatusId", self.js)
+        self.assertIn("latestStatusId = statusId", self.js)
+        guard = self.js.index("statusId <= latestStatusId")
+        append = self.js.index("s.appendChild(b)", guard)
+        self.assertLess(guard, append)
+
+    def test_held_messages_are_visible_while_the_steward_is_asleep(self):
+        self.assertIn('st.queued + " held"', self.js)
+        self.assertIn('" held message(s) — waking the steward for delivery"',
+                      self.js)
+
 
 if __name__ == "__main__":
     unittest.main()

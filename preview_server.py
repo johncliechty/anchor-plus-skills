@@ -221,14 +221,18 @@ def _spawn_preview(target_path: Path, port: int, cwd, env: dict):
 
 
 def _health_check(port: int, proc, timeout: float) -> bool:
-    """Poll ``http://127.0.0.1:<port>/`` until it answers 200 (bounded).
+    """Poll Anchor's lightweight version seam until it answers 200 (bounded).
 
     Returns True once the preview responds 200. Returns False if the child dies
     first or the timeout elapses (so the caller can reap + report). Never raises
     on a connection error — those are the expected "not up yet" signal.
+
+    Readiness must not render the full home dashboard: its project summaries and
+    Grasscatcher are legitimate application work and can exceed the one-second
+    connection probe while the server itself is already healthy.
     """
     deadline = time.time() + max(0.0, float(timeout))
-    url = f"http://127.0.0.1:{port}/"
+    url = f"http://127.0.0.1:{port}/api/version"
     while time.time() < deadline:
         if proc.poll() is not None:
             return False  # child exited before becoming reachable

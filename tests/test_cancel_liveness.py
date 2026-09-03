@@ -12,6 +12,7 @@ import importlib
 import os
 import subprocess
 import time
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
@@ -85,15 +86,160 @@ def test_ac3_cancel_tree_kill_no_orphan(runner, tmp_path):
 def test_ac3_cancel_already_gone_no_crash(runner):
     rec = runner.launch("research", extra_args=["--lines", "1", "--exit-code", "0"])
     jid = rec["job_id"]
-    runner.wait(jid, timeout=30)  # let it finish naturally first
-    # Cancelling an already-exited job must not crash; status becomes cancelled.
+    before = runner.wait(jid, timeout=30)  # let it finish naturally first
+    # Cancelling an already-terminal job is idempotent: natural completion is
+    # historical truth and must never be rewritten as a user cancellation.
     out = runner.cancel(jid)
     assert out is not None
-    assert out["status"] == runner.STATUS_CANCELLED
+    assert out == before
+    assert out["status"] == runner.STATUS_DONE
+    assert runner.load_record(jid) == before
 
 
 def test_ac3_cancel_unknown_job(runner):
     assert runner.cancel("does-not-exist") is None
+
+
+def test_cancel_fails_closed_on_persisted_pid_creation_time_mismatch(
+        runner, monkeypatch):
+    job_id = "pid-recycle-mismatch"
+    runner._write_record({
+        "job_id": job_id,
+        "pid": 424242,
+        "proc_create_time": 100.0,
+        "status": runner.STATUS_RUNNING,
+    })
+    import proc_probe
+    monkeypatch.setattr(runner, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        proc_probe, "probe_status",
+        lambda _pid: (proc_probe.PROBE_RUNNING, 200.0, "other.exe"),
+    )
+    monkeypatch.setattr(proc_probe, "pid_alive_via_enum", lambda _pid: True)
+
+    def forbidden_kill(*_args, **_kwargs):
+        raise AssertionError("recycled PID must never be killed")
+
+    monkeypatch.setattr(runner, "_tree_kill", forbidden_kill)
+    out = runner.cancel(job_id)
+
+    assert out["status"] == runner.STATUS_RUNNING
+    assert out["cancel_succeeded"] is False
+    assert out["tree_kill_verified"] is False
+    assert out["failure_reason"] == "cancel-pid-identity-unverified"
+
+
+def test_tree_kill_rejects_nonzero_taskkill_exit(runner, monkeypatch):
+    class RunningProc:
+        pid = 515151
+
+        @staticmethod
+        def poll():
+            return None
+
+        @staticmethod
+        def wait(timeout=0):
+            raise subprocess.TimeoutExpired("fake", timeout)
+
+    live = SimpleNamespace(proc=RunningProc(), _h_job=None)
+    monkeypatch.setattr(runner, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        runner.subprocess, "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    )
+
+    assert runner._tree_kill(515151, live=live, expected_create_time=1.0) is False
+
+
+def test_cancel_does_not_claim_success_when_reader_drain_is_unverified(
+        runner, monkeypatch):
+    class RunningProc:
+        pid = 616161
+
+        @staticmethod
+        def poll():
+            return None
+
+        @staticmethod
+        def wait(timeout=0):
+            raise subprocess.TimeoutExpired("fake", timeout)
+
+    class NeverDrains:
+        @staticmethod
+        def wait(timeout=0):
+            return False
+
+    job_id = "drain-unverified"
+    runner._write_record({
+        "job_id": job_id,
+        "pid": RunningProc.pid,
+        "proc_create_time": 100.0,
+        "status": runner.STATUS_RUNNING,
+    })
+    live = SimpleNamespace(
+        proc=RunningProc(), done=NeverDrains(), _h_job=None,
+        _cancel_requested=False,
+    )
+    with runner._LIVE_LOCK:
+        runner._LIVE[job_id] = live
+    monkeypatch.setattr(runner, "_tree_kill", lambda *_args, **_kwargs: True)
+
+    out = runner.cancel(job_id)
+
+    assert out["status"] == runner.STATUS_RUNNING
+    assert out["cancel_succeeded"] is False
+    assert out["tree_kill_verified"] is False
+    assert out["failure_reason"] == "cancel-reader-drain-unverified"
+    assert live._cancel_requested is False
+
+
+def test_cancel_finalize_job_handle_handoff_is_single_owner_and_not_tree_proof(
+        runner, monkeypatch):
+    class ExitedProc:
+        pid = 717171
+
+        @staticmethod
+        def poll():
+            return 1
+
+        @staticmethod
+        def wait(timeout=0):
+            return 1
+
+    job_id = "job-handle-handoff"
+    runner._write_record({
+        "job_id": job_id,
+        "pid": ExitedProc.pid,
+        "status": runner.STATUS_RUNNING,
+        "backend": runner.BACKEND_CLAUDE,
+    })
+    live = SimpleNamespace(
+        proc=ExitedProc(), done=SimpleNamespace(wait=lambda timeout=0: True),
+        _h_job="owned-job-handle", _cancel_requested=True,
+    )
+    with runner._LIVE_LOCK:
+        runner._LIVE[job_id] = live
+
+    import proc_probe
+    closed = []
+    monkeypatch.setattr(proc_probe, "close_handle", lambda handle: closed.append(handle))
+
+    # Finalization observes the pending cancel and must leave the handle for the
+    # cancellation owner instead of racing a close.
+    runner._finalize(job_id, 1, None)
+    assert closed == []
+    assert live._h_job == "owned-job-handle"
+
+    monkeypatch.setattr(runner, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        runner.subprocess, "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1),
+    )
+    # _tree_kill detaches/closes exactly once. Because taskkill failed and
+    # CloseHandle exposes no success bit, an exited root is not tree proof.
+    assert runner._tree_kill(ExitedProc.pid, live=live) is False
+    assert closed == ["owned-job-handle"]
+    assert live._h_job is None
 
 
 def test_ac4_liveness_marks_dead_running_job_interrupted(runner):

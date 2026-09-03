@@ -87,6 +87,88 @@ a { color: var(--steward); text-decoration: none; }
                   border: 1px solid var(--line); border-radius: 6px;
                   padding: 5px 9px; font-size: 13px; }
 .fresh { margin-top: 22px; font-size: 12px; color: var(--faint); }
+
+/* ---------- work-product map (pull-out on the plan rail) ---------- */
+.wptile { display: flex; align-items: baseline; justify-content: space-between;
+          gap: 10px; width: 100%; margin: 0 0 14px; padding: 10px 12px;
+          text-align: left; background: linear-gradient(180deg, #1e2433, var(--panel2));
+          border: 1px solid #3a4258; border-radius: 10px; cursor: pointer;
+          box-shadow: 0 1px 0 rgba(108,156,252,.12) inset; }
+.wptile:hover { border-color: var(--steward); }
+.wplab { font-size: 10.5px; font-weight: 700; letter-spacing: 1.3px;
+         text-transform: uppercase; color: var(--steward); }
+.wpsum { font-size: 12px; color: var(--dim); overflow: hidden;
+         text-overflow: ellipsis; white-space: nowrap; }
+.wpkind { font-size: 10px; letter-spacing: .4px; text-transform: uppercase;
+          color: var(--steward); margin-right: 6px; opacity: .85; }
+.wpmap { position: fixed; inset: 0; z-index: 40; display: flex;
+         align-items: stretch; justify-content: center;
+         background: rgba(8,10,16,.72); padding: 28px 24px; }
+.wpmap[hidden] { display: none; }
+.wpstage { width: min(1080px, 100%); background: var(--panel);
+           border: 1px solid #3a4258; border-radius: 16px; padding: 22px 24px 18px;
+           display: flex; flex-direction: column; min-height: 0;
+           box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+.wphead { display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 16px; margin-bottom: 18px; }
+.wpeyebrow { font-size: 10.5px; letter-spacing: 1.4px; text-transform: uppercase;
+             color: var(--steward); margin-bottom: 4px; }
+.wphead h3 { font-size: 20px; font-weight: 600; }
+.wpgoal { color: var(--dim); font-size: 13.5px; margin-top: 6px; max-width: 46em; }
+.wpflow { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px;
+          flex: 1; min-height: 0; align-items: flex-start; }
+.wpcol { flex: 1 1 180px; min-width: 168px; }
+.wpcolh { font-size: 11px; letter-spacing: 1.1px; text-transform: uppercase;
+          color: var(--faint); margin-bottom: 8px; display: flex;
+          justify-content: space-between; gap: 8px; }
+.wpcard { background: var(--panel2); border: 1px solid var(--line);
+          border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+          cursor: pointer; }
+.wpcard:hover { border-color: var(--dim); }
+.wpcard.on { border-color: var(--steward);
+             box-shadow: 0 0 0 1px rgba(108,156,252,.35); }
+.wpcard .wn { font-size: 13.5px; font-weight: 600; }
+.wpcard .ws { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+.wpcard .wd { display: none; font-size: 12.5px; color: var(--dim);
+              margin-top: 8px; white-space: pre-wrap; }
+.wpcard.on .wd { display: block; }
+.wpcard .wgo { margin-top: 10px; font-size: 12px; }
+.wpcard.done .wn { color: var(--dim); }
+.wpcard.active { border-color: var(--ok); }
+.wphint { font-size: 12px; color: var(--faint); margin-top: 12px; }
+.wpatlas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.plat-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px;
+             border: 1px solid var(--line); background: var(--bg); color: var(--text);
+             cursor: pointer; }
+.plat-chip.on { border-color: var(--steward); color: var(--steward); }
+.wpplat { display: grid; grid-template-columns: minmax(220px, 1fr) 280px;
+          grid-template-rows: auto auto; gap: 18px 28px; align-items: start; }
+.wpspine { display: flex; flex-direction: column; align-items: stretch; }
+.wphang { min-height: 120px; }
+.wpsub { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 14px; }
+.wpsubrow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.plat-cap { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase;
+            color: var(--faint); margin-bottom: 8px; }
+.plat-join { text-align: center; color: var(--steward); font-size: 16px; line-height: 1.4; }
+.plat-iface { font-size: 11px; color: var(--faint); letter-spacing: .4px; }
+.plat-lead { font-size: 11.5px; color: var(--steward); margin-bottom: 6px; }
+.plat-hangwrap { margin-bottom: 14px; }
+.plat-empty { color: var(--faint); font-size: 12.5px; }
+.plat-node { background: var(--panel2); border: 1px solid var(--line);
+             border-radius: 12px; padding: 12px 14px; cursor: pointer; }
+.plat-node:hover { border-color: var(--dim); }
+.plat-node.on { border-color: var(--steward);
+                box-shadow: 0 0 0 1px rgba(108,156,252,.35); }
+.plat-node.socket { border-style: dashed; background: transparent; min-height: 52px; }
+.plat-node.substrate { min-width: 180px; }
+.plat-lab { font-size: 15px; font-weight: 600; }
+.plat-hole { font-size: 12px; color: var(--faint); margin-top: 4px; font-style: italic; }
+.plat-det { display: none; margin-top: 8px; font-size: 12.5px; color: var(--dim); }
+.plat-node.on .plat-det { display: block; }
+.plat-ptr { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
+.plat-child { margin-top: 4px; padding: 4px 8px; border: 1px dashed var(--line);
+              border-radius: 7px; }
+.plat-child.socket { color: var(--faint); }
 .gaps { margin-top: 10px; font-size: 12px; color: var(--warn); }
 
 /* ---------- main column ---------- */
@@ -161,6 +243,15 @@ a { color: var(--steward); text-decoration: none; }
                   font-size: 14px; color: var(--dim); white-space: pre-wrap; }
 .goalbar.open .gfull { display: block; }
 .goalbar.open .gcaret { transform: rotate(90deg); }
+/* Gate 5 kickoff block: the confirmed kickoff paints FIRST in the goal (display precedence);
+   an open draft is one muted "not applied" line; absent when there is no kickoff. */
+.gfull .gkick:empty { display: none; }
+/* compact on purpose (John, 2026-09-02): normal whitespace inside the pre-wrap goal box, tight lines */
+.gfull .gkick { white-space: normal; line-height: 1.35; font-size: 13.5px; }
+.gfull .gkick p, .gfull .gkick ul, .gfull .gkick ol { margin: 2px 0; }
+.gfull .gkick h1, .gfull .gkick h2, .gfull .gkick h3 { font-size: 13px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .6px; color: var(--faint, #888); }
+.gfull .gkick.confirmed { margin: 0 0 10px; padding: 0 0 8px; border-bottom: 1px solid var(--line, #2a2f3d); color: var(--text, inherit); }
+.gfull .gkick.draft { margin: 0 0 10px; padding: 4px 8px; border: 1px dashed var(--faint, #666); border-radius: 6px; color: var(--dim); }
 
 .leftcol { display: flex; flex-direction: column; min-height: 0;
            border-right: 1px solid var(--line); background: var(--panel); }

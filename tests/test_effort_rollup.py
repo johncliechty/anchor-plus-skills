@@ -60,6 +60,43 @@ def _discovered(eh, folder, pid, lane, rel):
         "title": rel, "status": "imported"})
 
 
+def _subscription_effort(eh, folder, pid, lane, job_id, *, tokens, when):
+    eh.record_effort(folder, pid, lane, job_id, skill="researchPrime")
+    eh.attach_cost(folder, pid, lane, job_id, {
+        "status": "done",
+        "finished_at": when,
+        "cost": {
+            "total_cost_usd": None,
+            "billing_mode": "subscription",
+            "cost_state": "subscription_covered",
+            "duration_ms": 250,
+            "input_tokens": tokens - 1,
+            "cached_input_tokens": 3,
+            "output_tokens": 1,
+            "total_tokens": tokens,
+        },
+    })
+    eh._set_created_at(folder, pid, lane, job_id, when)
+
+
+def _no_seat_effort(eh, folder, pid, lane, job_id, *, when):
+    eh.record_effort(folder, pid, lane, job_id, skill="researchPrime")
+    eh.attach_cost(folder, pid, lane, job_id, {
+        "status": "failed",
+        "finished_at": when,
+        "cost": {
+            "total_cost_usd": None,
+            "billing_mode": None,
+            "cost_state": "no_seat_started",
+            "duration_ms": 1,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        },
+    })
+    eh._set_created_at(folder, pid, lane, job_id, when)
+
+
 NOW = 1_900_000_000.0
 DAY = 24 * 60 * 60.0
 
@@ -156,6 +193,51 @@ def test_empty_project_zero(mods, tmp_path):
     pid = _project(rnd, folder)["id"]
     out = eh.project_effort_rollup(pid, "lifetime", now=NOW, folder_path=folder)
     assert out["tokens"] == 0 and out["sessions"] == 0
+
+
+def test_subscription_only_rollup_preserves_null_and_state(mods, tmp_path):
+    rnd, eh, sess = mods
+    folder = tmp_path / "subscription"
+    pid = _project(rnd, folder)["id"]
+    _subscription_effort(eh, folder, pid, "research", "sub-1",
+                         tokens=25, when=NOW - DAY)
+    out = eh.project_effort_rollup(pid, "lifetime", now=NOW,
+                                   folder_path=folder)
+    assert out["tokens"] == 25
+    assert out["cost_usd"] is None
+    assert out["billing_modes"] == ["subscription"]
+    assert out["cost_states"] == ["subscription_covered"]
+    assert out["priced_cost_count"] == 0
+    assert out["unpriced_subscription_count"] == 1
+
+
+def test_no_seat_attempt_is_not_counted_or_rendered_as_subscription(mods, tmp_path):
+    rnd, eh, sess = mods
+    folder = tmp_path / "no-seat"
+    pid = _project(rnd, folder)["id"]
+    _no_seat_effort(eh, folder, pid, "research", "no-seat-1",
+                    when=NOW - DAY)
+    out = eh.project_effort_rollup(pid, "lifetime", now=NOW,
+                                   folder_path=folder)
+    assert out["cost_usd"] == 0.0
+    assert out["cost_states"] == ["no_seat_started"]
+    assert out["unpriced_subscription_count"] == 0
+
+
+def test_mixed_metered_and_subscription_exposes_measured_subtotal(mods, tmp_path):
+    rnd, eh, sess = mods
+    folder = tmp_path / "mixed"
+    pid = _project(rnd, folder)["id"]
+    _run_effort(eh, folder, pid, "build", "metered", tokens=10, cost=1.5,
+                dur_ms=100, when=NOW - DAY)
+    _subscription_effort(eh, folder, pid, "research", "sub-2",
+                         tokens=20, when=NOW - DAY)
+    out = eh.project_effort_rollup(pid, "lifetime", now=NOW,
+                                   folder_path=folder)
+    assert out["tokens"] == 30
+    assert out["cost_usd"] == pytest.approx(1.5)
+    assert out["unpriced_subscription_count"] == 1
+    assert out["priced_cost_count"] == 1
 
 
 def test_folder_path_resolved_from_registry(mods, tmp_path):

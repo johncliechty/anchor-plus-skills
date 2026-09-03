@@ -5,7 +5,7 @@
 // stateless request — exactly researchPrime's "clean isolated call" model.
 // Structured output is NATIVE: when a `schema` is supplied the request asks for
 // JSON mode (`response_format: json_schema`), and the shared seam parses/validates
-// with retry-once-then-ABSTAIN so behavior matches every other backend.
+// with retry-once-then-failure so behavior matches every other backend.
 //
 // Selected via `TRIO_DRIVER=openai` (or `runAgent({ driver:'openai', ... })`). The
 // key lives in `OPENAI_API_KEY` (collaborator env, never committed). With no key
@@ -25,6 +25,7 @@ export const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 export function makeOpenAITransport({ env = process.env, model, apiKey, fetchImpl, log } = {}) {
   return makeChatTransport({
     baseUrl: OPENAI_BASE_URL,
+    family: 'chatgpt',
     apiKey: apiKey ?? env.OPENAI_API_KEY,
     model: model ?? env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
     fetchImpl,
@@ -45,7 +46,9 @@ export const openaiDriver = {
   async runAgent(opts = {}) {
     const { prompt, schema, label, log } = opts;
     const transport = makeOpenAITransport(opts);
-    return runWithSchema({ transport, prompt, schema, label, log });
+    return runWithSchema({
+      transport, prompt, schema, label, log, driverOpts: opts, familyName: 'OpenAI API',
+    });
   },
 };
 

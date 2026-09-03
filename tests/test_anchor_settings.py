@@ -44,6 +44,7 @@ def test_load_defaults_when_missing(settings_env):
     assert "updated_at" in out
     assert out["default_cli"] in s.VALID_CLIS
     assert s.VALID_FAMILIES is s.VALID_CLIS or s.VALID_FAMILIES == s.VALID_CLIS
+    assert "chatgpt" not in s.VALID_REVIEW_FAMILIES
 
 
 def test_load_defaults_when_corrupt(settings_env):
@@ -79,9 +80,15 @@ def test_save_merge_partial(settings_env):
 def test_save_rejects_invalid(settings_env):
     s = settings_env["mod"]
     with pytest.raises(ValueError):
+        s.save_settings(default_cli="not-a-cli")
+    # A valid coding family is still not a valid default terminal CLI until the
+    # ChatGPT terminal bridge lands (a persisted value bricks every terminal open).
+    with pytest.raises(ValueError, match="default_cli"):
         s.save_settings(default_cli="chatgpt")
     with pytest.raises(ValueError):
         s.save_settings(coding_family="not-a-family")
+    with pytest.raises(ValueError, match="review_family"):
+        s.save_settings(review_family="chatgpt")
     # Nothing persisted on rejection.
     assert not s.settings_path().exists() or s.load_settings()["default_cli"] == "grok"
 
@@ -162,4 +169,81 @@ def test_defaults_constant_and_valid_sets(settings_env):
     assert s.DEFAULTS["default_cli"] == "grok"
     assert s.DEFAULTS["coding_family"] == "claude"
     assert s.DEFAULTS["review_family"] == "gemini"
-    assert s.VALID_CLIS == frozenset({"claude", "gemini", "grok"})
+    assert s.VALID_CLIS == frozenset({"claude", "gemini", "grok", "chatgpt"})
+    assert s.VALID_REVIEW_FAMILIES == frozenset({"claude", "gemini", "grok"})
+
+
+def test_mirror_values_preferred_but_primary_path_never_redirects(
+        tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    mirror_dir = home / ".anchor"
+    mirror_dir.mkdir(parents=True)
+    local = tmp_path / "local"
+    local.mkdir()
+    redirected = tmp_path / "redirect" / "settings.json"
+    redirected.parent.mkdir()
+    redirected_text = json.dumps({
+        "default_cli": "claude",
+        "coding_family": "chatgpt",
+        "review_family": "claude",
+        "sentinel": "DO NOT OVERWRITE",
+    }, indent=2) + "\n"
+    redirected.write_text(redirected_text, encoding="utf-8")
+    monkeypatch.delenv("ANCHOR_DATA_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    import importlib
+    import paths
+    import anchor_settings
+    importlib.reload(paths)
+    s = importlib.reload(anchor_settings)
+    monkeypatch.setattr(s._paths, "data_dir", lambda: local)
+
+    mirror = mirror_dir / "model_prefs.json"
+    primary = local / "settings.json"
+    primary.write_text(json.dumps({
+        "default_cli": "claude",
+        "coding_family": "claude",
+        "review_family": "grok",
+        "steward_type": "aladdin",
+    }), encoding="utf-8")
+
+    mirror.write_text(json.dumps({
+        "source": "anchor", "primary_path": str(redirected),
+        "default_cli": "gemini",
+        "coding_family": "chatgpt",
+        "review_family": "chatgpt",  # Invalid reviewer; local value survives.
+    }), encoding="utf-8")
+
+    assert s.settings_path() == primary
+    loaded = s.load_settings()
+    assert loaded["default_cli"] == "gemini"
+    assert loaded["coding_family"] == "chatgpt"
+    assert loaded["review_family"] == "grok"
+    assert loaded["steward_type"] == "aladdin"
+
+    s.save_settings(default_cli="grok")
+    assert redirected.read_text(encoding="utf-8") == redirected_text
+    assert json.loads(primary.read_text(encoding="utf-8"))["default_cli"] == "grok"
+    saved_mirror = json.loads(mirror.read_text(encoding="utf-8"))
+    assert saved_mirror["primary_path"] == str(primary.resolve())
+
+
+def test_explicit_data_dir_is_closed_to_global_mirror(settings_env):
+    s = settings_env["mod"]
+    s.mirror_path().parent.mkdir(parents=True, exist_ok=True)
+    s.mirror_path().write_text(json.dumps({
+        "source": "anchor",
+        "primary_path": str(settings_env["home"] / "elsewhere" / "settings.json"),
+        "default_cli": "chatgpt",
+        "coding_family": "chatgpt",
+        "review_family": "grok",
+    }), encoding="utf-8")
+
+    assert s.settings_path() == settings_env["data"] / "settings.json"
+    loaded = s.load_settings()
+    assert loaded["default_cli"] == "grok"
+    assert loaded["coding_family"] == "claude"
+    assert loaded["review_family"] == "gemini"

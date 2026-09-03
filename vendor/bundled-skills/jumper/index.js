@@ -1,13 +1,21 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import {
   runAgent,
-  makeRoleRoutedAgent,
   loadModelFamilies,
   familyToDriverName,
+  normalizeRole,
+  isVerificationRole,
 } from '../../../trio/drivers/index.mjs';
+import {
+  lookinAppendix,
+  superviseSeat,
+  trailFromFile,
+} from '../../../trio/drivers/swarm-lookin.mjs';
 import { applySeamPass } from '../gandalf/runtime/seam-pass.mjs';
 import { createCommissionLedger } from '../gandalf/seam/commission-ledger.mjs';
 import {
@@ -31,6 +39,513 @@ import {
 
 // Re-export family map for hermetic Gate-3 seating smokes (B3-G3-LITE-SEATING).
 export { familyFromDriver };
+
+const JUMPER_SEATING_SCHEMA = 'jumper.seating.v1';
+const SEAT_FAMILIES = new Set(['claude', 'gemini', 'grok', 'chatgpt']);
+const FIXED_CODING_IDS = new Set([
+  'coding:gandalf-draft',
+  'coding:synthesizer:peterson-input',
+  'coding:peterson',
+  'coding:synthesizer:hesse-input',
+  'coding:gep',
+]);
+
+function combinedSignal(...signals) {
+  const live = signals.filter((signal) => signal && typeof signal === 'object');
+  if (live.length === 0) return undefined;
+  if (live.length === 1) return live[0];
+  return AbortSignal.any(live);
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException('The Jumper dispatch was aborted', 'AbortError');
+}
+
+function dispatchOrder(id) {
+  const fixed = new Map([
+    ['coding:gandalf-draft', 0],
+    ['coding:synthesizer:peterson-input', 1],
+    ['coding:peterson', 2],
+    ['coding:synthesizer:hesse-input', 3],
+    ['coding:gep', 1_000_000],
+  ]);
+  if (fixed.has(id)) return fixed.get(id);
+  const candidate = /^coding:r(\d+):c(\d+):(hesse|synthesizer-dirac|dirac|gate12)$/.exec(id);
+  if (candidate) {
+    const phase = { hesse: 0, 'synthesizer-dirac': 1, dirac: 2, gate12: 3 }[candidate[3]];
+    return 10_000 + Number(candidate[1]) * 1_000 + Number(candidate[2]) * 10 + phase;
+  }
+  const verdict = /^gate3:r(\d+):c(\d+):verdict$/.exec(id);
+  if (verdict) return Number(verdict[1]) * 1_000 + Number(verdict[2]);
+  return 2_000_000;
+}
+
+function cloneDispatchSlots(slots) {
+  return [...slots]
+    .sort((a, b) => dispatchOrder(a.dispatch_id) - dispatchOrder(b.dispatch_id)
+      || a.dispatch_id.localeCompare(b.dispatch_id))
+    .map((slot) => ({
+      dispatch_id: slot.dispatch_id,
+      logical_attempts: slot.logical_attempts.map(({ ordinal, receipt }) => ({
+        ordinal,
+        receipt: normalizeTrioSeatReceipt(receipt),
+      })),
+    }));
+}
+
+function modelSlots(slots) {
+  return slots.map((slot) => ({
+    dispatch_id: slot.dispatch_id,
+    logical_attempts: slot.logical_attempts.map(({ ordinal, receipt }) => {
+      const served = receipt?.served;
+      return {
+        ordinal,
+        driver: served?.driver ?? null,
+        family: served?.family ?? null,
+        model: served?.model ?? null,
+      };
+    }),
+  }));
+}
+
+function receiptFamily(receipt) {
+  return typeof receipt?.served?.family === 'string'
+    ? receipt.served.family.trim().toLowerCase()
+    : null;
+}
+
+function validDispatchId(kind, dispatchId) {
+  if (typeof dispatchId !== 'string' || dispatchId.length === 0 || dispatchId.length > 240) return false;
+  if (kind === 'ping') return dispatchId === 'gate3:ping';
+  if (kind === 'verdict') return /^gate3:r[1-9]\d*:c[1-9]\d*:verdict$/.test(dispatchId);
+  if (kind === 'coding') {
+    return FIXED_CODING_IDS.has(dispatchId)
+      || /^coding:r[1-9]\d*:c[1-9]\d*:(hesse|synthesizer-dirac|dirac|gate12)$/.test(dispatchId);
+  }
+  return false;
+}
+
+function cloneReceipt(receipt) {
+  if (receipt == null) return null;
+  try { return structuredClone(receipt); }
+  catch { return null; }
+}
+
+const TRIO_TOP_KEYS = [
+  'schema', 'ok', 'status', 'label', 'role', 'verification', 'structured',
+  'requested', 'served', 'attempts', 'failover', 'error',
+];
+const TRIO_ATTEMPT_KEYS = [
+  'ordinal', 'kind', 'requested', 'ok', 'status', 'served',
+  'transport_attempts', 'error',
+];
+const TRIO_TRANSPORT_KEYS = [
+  'ordinal', 'kind', 'label', 'ok', 'status', 'provider_status', 'served', 'error',
+];
+const TRIO_REQUESTED_KEYS = ['driver', 'family', 'model'];
+const TRIO_SERVED_KEYS = [
+  'driver', 'family', 'model', 'family_attested', 'model_attested',
+];
+const TRIO_FAILOVER_KEYS = ['allowed', 'used', 'blocked_reason'];
+const TRIO_ERROR_KEYS = ['code', 'message'];
+const REQUESTED_FAMILIES = new Set([...SEAT_FAMILIES, 'unknown']);
+const TOP_STATUSES = new Set([
+  'success', 'success_after_failover', 'seat_unavailable',
+  'verification_fail_closed', 'aborted',
+]);
+const DISPATCH_STATUSES = new Set([
+  'success', 'success_after_schema_reprompt', 'schema_exhausted',
+  'seat_unavailable', 'aborted',
+]);
+const TRANSPORT_STATUSES = new Set([
+  'accepted', 'schema_rejected', 'seat_unavailable', 'aborted',
+]);
+
+function hasExactKeys(value, keys) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function isDenseTuple(value, min = 1, max = 2) {
+  return Array.isArray(value)
+    && value.length >= min
+    && value.length <= max
+    && Array.from({ length: value.length }, (_, index) => Object.hasOwn(value, index))
+      .every(Boolean);
+}
+
+function isBoundedString(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 240
+    && value === value.trim()
+    && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function isErrorInfo(value) {
+  return hasExactKeys(value, TRIO_ERROR_KEYS)
+    && isBoundedString(value.code)
+    && typeof value.message === 'string'
+    && value.message.length <= 500
+    && !/[\u0000-\u001f\u007f]/.test(value.message);
+}
+
+function isRequested(value) {
+  return hasExactKeys(value, TRIO_REQUESTED_KEYS)
+    && isBoundedString(value.driver)
+    && REQUESTED_FAMILIES.has(value.family)
+    && (value.model === null || typeof value.model === 'string');
+}
+
+function isServed(value) {
+  return hasExactKeys(value, TRIO_SERVED_KEYS)
+    && isBoundedString(value.driver)
+    && (value.family === null || SEAT_FAMILIES.has(value.family))
+    && (value.model === null || typeof value.model === 'string')
+    && typeof value.family_attested === 'boolean'
+    && typeof value.model_attested === 'boolean'
+    && value.family_attested === (value.family !== null)
+    && (value.model_attested
+      ? typeof value.model === 'string' && value.model.length > 0
+      : value.model === null);
+}
+
+function sameRequested(left, right) {
+  return left.driver === right.driver
+    && left.family === right.family
+    && left.model === right.model;
+}
+
+function sameServed(left, right) {
+  return left !== null && right !== null
+    && left.driver === right.driver
+    && left.family === right.family
+    && left.model === right.model
+    && left.family_attested === right.family_attested
+    && left.model_attested === right.model_attested;
+}
+
+function isTransportAttempt(value, ordinal) {
+  if (!hasExactKeys(value, TRIO_TRANSPORT_KEYS)
+      || value.ordinal !== ordinal
+      || value.kind !== (ordinal === 1 ? 'initial' : 'schema_reprompt')
+      || !isBoundedString(value.label)
+      || typeof value.ok !== 'boolean'
+      || !TRANSPORT_STATUSES.has(value.status)
+      || !(value.provider_status === null || typeof value.provider_status === 'string')
+      || !(value.served === null || isServed(value.served))
+      || !(value.error === null || isErrorInfo(value.error))
+      || value.ok !== (value.status === 'accepted')) return false;
+  if (value.status === 'accepted') return value.served !== null && value.error === null;
+  if (value.status === 'schema_rejected') {
+    return value.served !== null
+      && value.error?.code === 'schema_nonconforming';
+  }
+  return value.error !== null;
+}
+
+function isDispatcherAttempt(value, ordinal, verification) {
+  if (!hasExactKeys(value, TRIO_ATTEMPT_KEYS)
+      || value.ordinal !== ordinal
+      || value.kind !== (ordinal === 1 ? 'primary' : 'fallback')
+      || !isRequested(value.requested)
+      || typeof value.ok !== 'boolean'
+      || !DISPATCH_STATUSES.has(value.status)
+      || !(value.served === null || isServed(value.served))
+      || !(value.error === null || isErrorInfo(value.error))
+      || !isDenseTuple(value.transport_attempts)
+      || !Array.from(value.transport_attempts)
+        .every((child, index) => isTransportAttempt(child, index + 1))) {
+    return false;
+  }
+  if (value.transport_attempts.length === 2
+      && value.transport_attempts[0].status !== 'schema_rejected') return false;
+  const last = value.transport_attempts[value.transport_attempts.length - 1];
+  if (value.ok) {
+    const expected = value.transport_attempts.length === 2
+      ? 'success_after_schema_reprompt'
+      : 'success';
+    return value.status === expected
+      && last.status === 'accepted'
+      && value.served !== null
+      && sameServed(value.served, last.served)
+      && value.error === null;
+  }
+  if (value.served !== null || value.error === null) return false;
+  if (value.status === 'aborted') return last.status === 'aborted';
+  if (value.status === 'schema_exhausted') {
+    return value.transport_attempts.length === 2
+      && Array.from(value.transport_attempts)
+        .every((child) => child.status === 'schema_rejected');
+  }
+  if (value.status !== 'seat_unavailable'
+      || last.status === 'aborted'
+      || (value.transport_attempts.length === 2
+        && Array.from(value.transport_attempts)
+          .every((child) => child.status === 'schema_rejected'))) return false;
+  if (last.status !== 'accepted') return true;
+  return verification
+    && (!last.served.family_attested || !last.served.model_attested)
+    && value.error.code === 'served_unattested';
+}
+
+function isTrioSeatReceipt(value) {
+  if (!hasExactKeys(value, TRIO_TOP_KEYS)
+      || value.schema !== 'trio.seat.v1'
+      || typeof value.ok !== 'boolean'
+      || !TOP_STATUSES.has(value.status)
+      || !isBoundedString(value.label)
+      || !(value.role === null || typeof value.role === 'string')
+      || normalizeRole({ role: value.role, label: value.label }) !== value.role
+      || typeof value.verification !== 'boolean'
+      || value.verification !== isVerificationRole({ role: value.role, label: value.label })
+      || typeof value.structured !== 'boolean'
+      || !isRequested(value.requested)
+      || !(value.served === null || isServed(value.served))
+      || !isDenseTuple(value.attempts)
+      || !Array.from(value.attempts).every((attempt, index) =>
+        isDispatcherAttempt(attempt, index + 1, value.verification))
+      || !sameRequested(value.requested, value.attempts[0].requested)
+      || !hasExactKeys(value.failover, TRIO_FAILOVER_KEYS)
+      || typeof value.failover.allowed !== 'boolean'
+      || typeof value.failover.used !== 'boolean'
+      || !['verification_seat', 'no_capable_fallback', null].includes(value.failover.blocked_reason)
+      || !(value.error === null || isErrorInfo(value.error))) return false;
+
+  if (!value.structured && Array.from(value.attempts).some((attempt) =>
+    attempt.transport_attempts.length !== 1
+      || Array.from(attempt.transport_attempts)
+        .some((child) => child.status === 'schema_rejected')
+      || ['success_after_schema_reprompt', 'schema_exhausted'].includes(attempt.status))) return false;
+  if (value.failover.allowed !== !value.verification
+      || value.failover.used !== (value.attempts.length === 2)) return false;
+  if (value.verification) {
+    if (value.attempts.length !== 1
+        || value.failover.blocked_reason !== 'verification_seat') return false;
+  } else {
+    const expectedBlocked = value.attempts.length === 1
+      && !value.attempts[0].ok
+      && value.attempts[0].status !== 'aborted'
+      && value.status === 'seat_unavailable'
+      ? 'no_capable_fallback'
+      : null;
+    if (value.failover.blocked_reason !== expectedBlocked) return false;
+  }
+  if (value.attempts.length === 2) {
+    if (value.verification
+        || value.attempts[0].ok
+        || !['schema_exhausted', 'seat_unavailable'].includes(value.attempts[0].status)) return false;
+  }
+
+  const finalAttempt = value.attempts[value.attempts.length - 1];
+  const expectedStatuses = value.attempts.length === 2
+    ? [finalAttempt.ok ? 'success_after_failover'
+      : (finalAttempt.status === 'aborted' ? 'aborted' : 'seat_unavailable')]
+    : (finalAttempt.ok ? ['success']
+      : (finalAttempt.status === 'aborted' ? ['aborted']
+        : (value.verification ? ['verification_fail_closed'] : ['seat_unavailable', 'aborted'])));
+  if (!expectedStatuses.includes(value.status)
+      || value.ok !== ['success', 'success_after_failover'].includes(value.status)) return false;
+  if (value.ok) {
+    return value.served !== null
+      && sameServed(value.served, finalAttempt.served)
+      && value.error === null
+      && (!value.verification
+        || (value.served.family_attested && value.served.model_attested));
+  }
+  return value.served === null
+    && value.error !== null;
+}
+
+function normalizeTrioSeatReceipt(receipt) {
+  const cloned = cloneReceipt(receipt);
+  return isTrioSeatReceipt(cloned) ? cloned : null;
+}
+
+function receiptSupportsIndependence(receipt, verification) {
+  return receipt?.schema === 'trio.seat.v1'
+    && receipt.ok === true
+    && receipt.verification === verification
+    && receipt.failover?.used === false
+    && receipt.served?.family_attested === true
+    && receipt.served?.model_attested === true
+    && typeof receipt.served?.driver === 'string'
+    && receipt.served.driver.trim().length > 0
+    && SEAT_FAMILIES.has(receiptFamily(receipt))
+    && typeof receipt.served?.model === 'string'
+    && receipt.served.model.trim().length > 0;
+}
+
+/**
+ * Mutable run-local ledger whose snapshots are the exact `jumper.seating.v1`
+ * contract. Attempts settle once; a late callback cannot overwrite an aborted
+ * or failed logical receipt.
+ */
+export class JumperSeatingLedger {
+  constructor() {
+    this.coding = [];
+    this.ping = null;
+    this.verdicts = [];
+  }
+
+  _collection(kind) {
+    if (kind === 'coding') return this.coding;
+    if (kind === 'verdict') return this.verdicts;
+    if (kind === 'ping') {
+      if (!this.ping) this.ping = { dispatch_id: 'gate3:ping', logical_attempts: [] };
+      return [this.ping];
+    }
+    throw new TypeError(`unknown Jumper seating collection ${JSON.stringify(kind)}`);
+  }
+
+  begin(kind, dispatchId) {
+    if (!validDispatchId(kind, dispatchId)) {
+      throw new TypeError(`invalid Jumper ${kind} dispatch ID ${JSON.stringify(dispatchId)}`);
+    }
+    const collection = this._collection(kind);
+    let slot = collection.find((entry) => entry.dispatch_id === dispatchId);
+    if (!slot) {
+      slot = { dispatch_id: dispatchId, logical_attempts: [] };
+      collection.push(slot);
+    }
+    if (slot.logical_attempts.length >= 2) {
+      throw new RangeError(`Jumper dispatch ${dispatchId} cannot exceed two logical attempts`);
+    }
+    const attempt = {
+      ordinal: slot.logical_attempts.length + 1,
+      receipt: null,
+      settled: false,
+    };
+    slot.logical_attempts.push(attempt);
+    return { kind, dispatch_id: dispatchId, ordinal: attempt.ordinal, attempt };
+  }
+
+  settle(ref, receipt = null) {
+    if (!ref?.attempt || ref.attempt.settled) return false;
+    ref.attempt.receipt = normalizeTrioSeatReceipt(receipt);
+    ref.attempt.settled = true;
+    return true;
+  }
+
+  snapshot() {
+    const coding = cloneDispatchSlots(this.coding);
+    const verdicts = cloneDispatchSlots(this.verdicts);
+    const ping = this.ping ? cloneDispatchSlots([this.ping])[0] : null;
+    const models = {
+      coding: modelSlots(coding),
+      gate3: {
+        ping: ping ? modelSlots([ping])[0] : null,
+        verdicts: modelSlots(verdicts),
+      },
+    };
+    const codingAttempts = coding.flatMap((slot) => slot.logical_attempts);
+    const verdictAttempts = verdicts.flatMap((slot) => slot.logical_attempts);
+    const pingAttempts = ping?.logical_attempts ?? [];
+    const codingFamilies = new Set();
+    const gate3Families = new Set();
+    const codingOk = codingAttempts.length > 0 && codingAttempts.every(({ receipt }) => {
+      const ok = receiptSupportsIndependence(receipt, false);
+      if (ok) codingFamilies.add(receiptFamily(receipt));
+      return ok;
+    });
+    const gate3Ok = verdictAttempts.length > 0
+      && [...pingAttempts, ...verdictAttempts].every(({ receipt }) => {
+        const ok = receiptSupportsIndependence(receipt, true);
+        if (ok) gate3Families.add(receiptFamily(receipt));
+        return ok;
+      });
+    const disjoint = [...codingFamilies].every((family) => !gate3Families.has(family));
+    return {
+      schema: JUMPER_SEATING_SCHEMA,
+      coding,
+      gate3: { ping, verdicts },
+      models,
+      cross_model: codingOk && gate3Ok && disjoint,
+    };
+  }
+}
+
+export function createJumperSeatingLedger() {
+  return new JumperSeatingLedger();
+}
+
+/** Run one logical Trio dispatch while collecting its final receipt on success or error. */
+export async function runJumperDispatch({
+  ledger,
+  kind,
+  dispatchId,
+  runAgent: dispatchAgent,
+  args,
+  signal = null,
+} = {}) {
+  if (!(ledger instanceof JumperSeatingLedger)) {
+    throw new TypeError('runJumperDispatch requires a JumperSeatingLedger');
+  }
+  if (typeof dispatchAgent !== 'function') {
+    throw new TypeError('runJumperDispatch requires runAgent');
+  }
+  const ref = ledger.begin(kind, dispatchId);
+  const upstreamReceipt = args?.onReceipt;
+  try {
+    const result = await dispatchAgent({
+      ...args,
+      signal: combinedSignal(signal, args?.signal),
+      onReceipt: async (receipt) => {
+        ledger.settle(ref, receipt);
+        if (typeof upstreamReceipt === 'function') await upstreamReceipt(receipt);
+      },
+    });
+    ledger.settle(ref, null);
+    return result;
+  } catch (error) {
+    ledger.settle(ref, error?.receipt ?? null);
+    throw error;
+  }
+}
+
+export function createJumperDispatchAgent({ ledger, kind, dispatchId, runAgent: baseAgent, signal = null }) {
+  return (args) => runJumperDispatch({
+    ledger,
+    kind,
+    dispatchId,
+    runAgent: baseAgent,
+    args,
+    signal,
+  });
+}
+
+/** Per-supervisor-generation heartbeat isolation with a fresh mtime baseline. */
+export function createCandidateHeartbeatTracker({
+  runId,
+  round,
+  candidate,
+  heartbeatDir = path.join(os.tmpdir(), 'jumper-lookin'),
+} = {}) {
+  let active = null;
+  return {
+    activate(attempt) {
+      const dir = path.resolve(heartbeatDir, String(runId));
+      fs.mkdirSync(dir, { recursive: true });
+      active = {
+        path: path.join(dir, `r${round}-c${candidate}-attempt${attempt + 1}.json`),
+        baseline: Date.now(),
+      };
+      return { ...active };
+    },
+    getTrail() {
+      if (!active) return null;
+      const trail = trailFromFile(active.path);
+      return trail && Number.isFinite(trail.mtime) && trail.mtime >= active.baseline
+        ? trail
+        : null;
+    },
+    current() { return active ? { ...active } : null; },
+  };
+}
 
 // 2026-07: the REAL Gandalf protocol, embedded into the commission prompt the way
 // Anchor's integration does it — gandalf's SKILL.md is not auto-discoverable by a
@@ -64,15 +579,18 @@ export class Synthesizer {
    * @param {object} state - Current state of the Tripartite Engine.
    * @returns {Promise<{analysis: string, steeringFlags: string[]}>}
    */
-  async update(state) {
+  async update(state, options = {}) {
     this.history.push(state);
 
+    const monitoring = options.monitoringAppendix || lookinAppendix();
     const systemPrompt = `You are the Jumper Persistent Synthesizer subagent.
 Your role is to oversee the ideation process across three phases (Peterson Query, Hesse Glass Bead, Dirac Transfer).
 You leverage frontier-model intuition to catch blind spots, synthesize cross-domain connections, and inject "steering flags" into the Tripartite Engine.
 
 CRITICAL INSTRUCTION (The Oranges-Lens / Proactive Foresight):
 You are explicitly guided by the Parable of the Oranges. You must exercise deeply contextual foresight.
+${monitoring}
+${options.nudge ? `CURRENT LOOK-IN NUDGE: ${options.nudge}` : ''}
 Do NOT passively watch the frameworks execute or just list literal next steps.
 Instead, anticipate the true underlying needs, look 2-3 steps ahead, and identify high-value, non-obvious connections across domains.
 
@@ -111,7 +629,7 @@ Format your output as a JSON object with:
       required: ["analysis", "steeringFlags"]
     };
 
-    const customRunAgent = this.runAgent || runAgent;
+    const customRunAgent = options.runAgent || this.runAgent || runAgent;
 
     const response = await customRunAgent({
       prompt,
@@ -119,7 +637,8 @@ Format your output as a JSON object with:
       driver: this.driver,
       freshContext: true,
       label: "Synthesizer",
-      role: "synthesizer"
+      role: "synthesizer",
+      signal: options.signal,
     });
 
     return response;
@@ -135,7 +654,7 @@ export class JumperSelfReviewHalt extends Error {
     super(
       `Jumper Gate-3 self-review HALT: the adversarial verifier resolves to driver ${JSON.stringify(driver)} ` +
       `(family ${JSON.stringify(verifierFamily)}), which is the DRAFTER/ideation family ${JSON.stringify(drafterFamily)}. ` +
-      `Gate 3 MUST run on a NON-drafter family (default driver 'gemini-cli'). Route Gate 3 to a different ` +
+      `Gate 3 MUST run on a NON-drafter family selected by Anchor preferences. Route Gate 3 to a different ` +
       `family (JUMPER_GATE3_DRIVER / options.gate3Driver) or change the drafter driver.`
     );
     this.name = 'JumperSelfReviewHalt';
@@ -145,9 +664,9 @@ export class JumperSelfReviewHalt extends Error {
   }
 }
 
-/** Thrown when the default cross-family Gate-3 verifier is unreachable (e.g. Gemini/agy down). Jumper
+/** Thrown when the selected cross-family Gate-3 verifier is unreachable. Jumper
  *  HALTs honestly rather than SILENTLY falling back to a same-family (self-review) gate — down verifier
- *  ⇒ HALT, never Claude self-review (the 5:1 honest-degrade doctrine). */
+ *  ⇒ HALT, never same-family self-review. */
 export class JumperCrossFamilyDegradeHalt extends Error {
   constructor(driver, cause) {
     super(
@@ -159,6 +678,7 @@ export class JumperCrossFamilyDegradeHalt extends Error {
     this.name = 'JumperCrossFamilyDegradeHalt';
     this.driver = driver;
     this.cause = cause;
+    this.receipt = cause?.receipt ?? null;
   }
 }
 
@@ -200,20 +720,14 @@ export function resolveGate3Seating({
   assertIndependent = true,
 } = {}) {
   // Prefs: coding family for drafter/default; review family for Gate-3 verifier (unless pinned).
-  // Historical 5:1 fallback when registry/prefs unavailable.
-  let prefsCoding = 'claude';
-  let prefsReview = 'gemini';
-  let prefsCodingDriver = 'claude';
-  let prefsReviewDriver = 'gemini-cli';
-  try {
-    const fams = loadModelFamilies(env);
-    prefsCoding = fams.coding;
-    prefsReview = fams.review;
-    prefsCodingDriver = familyToDriverName(fams.coding) || 'claude';
-    prefsReviewDriver = familyToDriverName(fams.review) || 'gemini-cli';
-  } catch {
-    /* registry optional — historical 5:1 fallback above */
-  }
+  // The shared resolver owns field-wise settings -> mirror -> historical-default
+  // precedence. Malformed persisted state is a HALT, never an excuse to silently
+  // substitute the historical families here.
+  const fams = loadModelFamilies(env);
+  const prefsCoding = fams.coding;
+  const prefsReview = fams.review;
+  const prefsCodingDriver = familyToDriverName(fams.coding) || 'claude';
+  const prefsReviewDriver = familyToDriverName(fams.review) || 'gemini-cli';
 
   const drafterDriverName = drafterDriver || prefsCodingDriver;
   const drafterFamily = familyFromDriver(drafterDriverName) || prefsCoding;
@@ -295,6 +809,13 @@ async function gradeGandalfDraftCrossFamily(rawDraft, options = {}) {
       if (err instanceof SelfRefutationHalt) throw err;
       refuterAgent = null;
     }
+  }
+  if (refuterAgent && options.signal) {
+    const underlyingRefuter = refuterAgent;
+    refuterAgent = (prompt, agentOptions = {}) => underlyingRefuter(prompt, {
+      ...agentOptions,
+      signal: combinedSignal(options.signal, agentOptions.signal),
+    });
   }
   if (!refuterAgent) {
     return applySeamPass(rawDraft, { resolveCommission }); // honest floor — no independent refuter ran
@@ -414,7 +935,8 @@ ${typeof problemState === 'string' ? problemState : JSON.stringify(problemState,
     driver,
     freshContext: true,
     label: "GandalfDraft",
-    role: "gandalf"
+    role: "gandalf",
+    signal: options.signal,
   });
 
   // W7: the composed Gandalf deep-think lane inherits the cross-family refuter — a Gandalf elevation
@@ -441,7 +963,7 @@ export class PetersonQuery {
    */
   async run(gandalfRead, options = {}) {
     const steeringFlags = options.steeringFlags || [];
-    const customRunAgent = this.runAgent || runAgent;
+    const customRunAgent = options.runAgent || this.runAgent || runAgent;
 
     const systemPrompt = `You are Jumper Phase 1: Peterson Query (Deconstruction & Probe).
 Your role is to deconstruct a problem using the SCAMPER framework, mapping anomalous data, challenging assumptions, and identifying core contradictions.
@@ -463,6 +985,7 @@ ${systemPrompt}
 Structured Gandalf Advisor Read:
 ${JSON.stringify(gandalfRead, null, 2)}
 
+${options.monitoringAppendix ? `${options.monitoringAppendix}\n` : ''}${options.nudge ? `CURRENT LOOK-IN NUDGE: ${options.nudge}\n` : ''}
 ${steeringFlags.length > 0 ? `Active Steering Flags from Synthesizer:\n${steeringFlags.map(flag => `- ${flag}`).join('\n')}\n` : ''}
 Provide your deconstructed problem map.
 Format your output as a JSON object with:
@@ -520,7 +1043,8 @@ Format your output as a JSON object with:
       driver: options.driver || this.driver,
       freshContext: true,
       label: "PetersonQuery",
-      role: "deconstruct"
+      role: "deconstruct",
+      signal: options.signal,
     });
 
     return response;
@@ -550,7 +1074,7 @@ export class HesseGlassBead {
    */
   async run(problemMap, options = {}) {
     const steeringFlags = options.steeringFlags || [];
-    const customRunAgent = this.runAgent || runAgent;
+    const customRunAgent = options.runAgent || this.runAgent || runAgent;
 
     const systemPrompt = `You are Jumper Phase 2: Hesse Glass Bead (Analogical Transfer).
 Your role is to map a deconstructed problem map onto a completely foreign domain structure (e.g., mapping a software issue to a biological system, Renaissance art, music theory, or geological formations) to facilitate lateral, analogical thinking.
@@ -565,6 +1089,7 @@ ${systemPrompt}
 Deconstructed Problem Map:
 ${JSON.stringify(problemMap, null, 2)}
 
+${options.monitoringAppendix ? `${options.monitoringAppendix}\n` : ''}${options.nudge ? `CURRENT LOOK-IN NUDGE: ${options.nudge}\n` : ''}
 ${steeringFlags.length > 0 ? `Active Steering Flags from Synthesizer:\n${steeringFlags.map(flag => `- ${flag}`).join('\n')}\n` : ''}
 Provide your analogical mapping.
 Format your output as a JSON object with:
@@ -618,7 +1143,8 @@ Format your output as a JSON object with:
       driver: options.driver || this.driver,
       freshContext: true,
       label: "HesseGlassBead",
-      role: "analogy"
+      role: "analogy",
+      signal: options.signal,
     });
 
     return response;
@@ -660,7 +1186,7 @@ export class DiracTransfer {
     }
 
     const steeringFlags = runOptions.steeringFlags || [];
-    const customRunAgent = this.runAgent || runAgent;
+    const customRunAgent = runOptions.runAgent || this.runAgent || runAgent;
 
     const systemPrompt = `You are Jumper Phase 3: Dirac Transfer (Symmetry & Resolution).
 Your role is to resolve the contradictions using TRIZ principles and the analogical insights from Phase 2.
@@ -699,6 +1225,7 @@ ${JSON.stringify(analogicalMapping, null, 2)}
 Core Contradictions:
 ${JSON.stringify(coreContradictions, null, 2)}
 
+${runOptions.monitoringAppendix ? `${runOptions.monitoringAppendix}\n` : ''}${runOptions.nudge ? `CURRENT LOOK-IN NUDGE: ${runOptions.nudge}\n` : ''}
 ${steeringFlags.length > 0 ? `Active Steering Flags from Synthesizer:\n${steeringFlags.map(flag => `- ${flag}`).join('\n')}\n` : ''}
 Provide your symmetrical resolution.
 Format your output as a JSON object with:
@@ -729,7 +1256,8 @@ Format your output as a JSON object with:
       driver: runOptions.driver || this.driver,
       freshContext: true,
       label: "DiracTransfer",
-      role: "triz"
+      role: "triz",
+      signal: runOptions.signal,
     });
 
     return response;
@@ -776,7 +1304,7 @@ export class KillFilter {
    */
   async run(concept, options = {}) {
     const runOptions = { ...options };
-    const customRunAgent = this.runAgent || runAgent;
+    const customRunAgent = runOptions.runAgent || this.runAgent || runAgent;
     const driver = runOptions.driver || this.driver;
     // Decision A: expected stage count from depth-locked knobs (CLI passes killGates).
     const expectedKillGates = Number.isInteger(runOptions.killGates)
@@ -837,7 +1365,8 @@ Format your output as a JSON object with:
       driver,
       freshContext: true,
       label: "KillFilterGate1and2",
-      role: "gate"
+      role: "gate",
+      signal: runOptions.signal,
     });
     const res1 = res12?.gate1 ?? { passed: false, reasoning: "Gate 1 verdict missing from the merged reply." };
     // The missing-mapping fail stays DETERMINISTIC — never delegated to the model.
@@ -906,33 +1435,32 @@ Format your output as a JSON object with:
       env: runOptions.env || process.env,
       assertIndependent: true,
     });
-    const { gate3DriverName, drafterDriverName, substrate: gate3Substrate } = seating;
+    const { gate3DriverName, substrate: gate3Substrate } = seating;
 
     // The verifier agent: an injected role-routed stub (tests) wins; else, when a custom runAgent seam
     // is injected, route Gate 3 through it with the cross-family driver (keeps deterministic tests in
-    // control); else (production default) build a real role-routed agent that sends Gate 3 to Gemini.
+    // control); production uses the shared Trio dispatcher with the resolved review-family driver.
     let res3;
     try {
-      if (runOptions.gate3Agent) {
-        res3 = await runOptions.gate3Agent(promptGate3, { role: "gate", label: "KillFilterGate3", schema: schemaGate3 });
-      } else if (customRunAgent !== runAgent) {
-        res3 = await customRunAgent({
-          prompt: promptGate3,
-          schema: schemaGate3,
-          driver: gate3DriverName,
-          freshContext: true,
-          label: "KillFilterGate3",
-          role: "gate"
-        });
-      } else {
-        const gate3Agent = makeRoleRoutedAgent({
-          routes: {
-            gate: { driver: gate3DriverName, model: runOptions.gate3Model ?? null },
-            default: { driver: drafterDriverName },
-          },
-        });
-        res3 = await gate3Agent(promptGate3, { role: "gate", label: "KillFilterGate3", schema: schemaGate3 });
-      }
+      const legacyGate3Agent = runOptions.gate3Agent
+        ? async (agentArgs) => runOptions.gate3Agent(agentArgs.prompt, {
+          role: agentArgs.role,
+          label: agentArgs.label,
+          schema: agentArgs.schema,
+          signal: agentArgs.signal,
+        })
+        : null;
+      const gate3Dispatch = runOptions.gate3RunAgent || legacyGate3Agent || customRunAgent;
+      res3 = await gate3Dispatch({
+        prompt: promptGate3,
+        schema: schemaGate3,
+        driver: gate3DriverName,
+        model: runOptions.gate3Model ?? null,
+        freshContext: true,
+        label: "KillFilterGate3",
+        role: "gate3",
+        signal: runOptions.signal,
+      });
     } catch (err) {
       if (err instanceof JumperSelfReviewHalt || err instanceof SelfRefutationHalt) throw err;
       // Down cross-family verifier ⇒ HALT honestly (never a same-family self-review fallback).
@@ -1031,9 +1559,55 @@ export class Jumper {
    * @returns {Promise<object>} Pipeline execution results.
    */
   async run(problemState, options = {}) {
+    const ledger = options.seatingLedger instanceof JumperSeatingLedger
+      ? options.seatingLedger
+      : createJumperSeatingLedger();
+    try {
+      const result = await this._runPipeline(problemState, { ...options, seatingLedger: ledger });
+      return { ...result, seating: ledger.snapshot() };
+    } catch (caught) {
+      const err = caught && typeof caught === 'object' ? caught : new Error(String(caught));
+      const seating = ledger.snapshot();
+      err.seating = seating;
+      if (err.jumperPartial && typeof err.jumperPartial === 'object') {
+        err.jumperPartial = { ...err.jumperPartial, seating };
+      }
+      throw err;
+    }
+  }
+
+  async _runPipeline(problemState, options = {}) {
     const runOptions = { ...options };
+    const seatingLedger = runOptions.seatingLedger;
     const customRunAgent = runOptions.runAgent || this.runAgent || runAgent;
     const driver = runOptions.driver || this.driver;
+    const rootSignal = runOptions.signal;
+    const runId = runOptions.runId || `${Date.now()}-${process.pid}-${randomUUID()}`;
+    const codingAgent = (dispatchId, signal = rootSignal, baseAgent = customRunAgent) =>
+      createJumperDispatchAgent({
+        ledger: seatingLedger,
+        kind: 'coding',
+        dispatchId,
+        runAgent: baseAgent,
+        signal,
+      });
+    const verdictAgent = (dispatchId, signal = rootSignal) => {
+      const baseAgent = runOptions.gate3Agent
+        ? async (agentArgs) => runOptions.gate3Agent(agentArgs.prompt, {
+          role: agentArgs.role,
+          label: agentArgs.label,
+          schema: agentArgs.schema,
+          signal: agentArgs.signal,
+        })
+        : customRunAgent;
+      return createJumperDispatchAgent({
+        ledger: seatingLedger,
+        kind: 'verdict',
+        dispatchId,
+        runAgent: baseAgent,
+        signal,
+      });
+    };
     // W2 (2026-07-11): the PORTFOLIO is the default — NORTH-STAR.md:7 promises "a
     // portfolio … not a single take-it-or-leave-it idea", and fan-out costs only ~2
     // extra sequential rounds (branches parallelize). Explicit `fanOut: 1` selects
@@ -1042,7 +1616,7 @@ export class Jumper {
       : Number.isInteger(runOptions.fanOut) && runOptions.fanOut > 1 ? Math.min(runOptions.fanOut, 5)
       : 3;
 
-    const synthesizer = new Synthesizer({ driver, runAgent: customRunAgent });
+    const synthesizer = new Synthesizer({ driver });
 
     // P1 2026-07-25 (journals 0005/0004/0007/0011/0014): stage heartbeats. Sparse
     // logging made a healthy long run indistinguishable from a hang and caused a
@@ -1052,7 +1626,12 @@ export class Jumper {
     // Step 1: Run Gandalf to get structured advice. Thread the run options through so the composed
     // deep-think lane inherits the cross-family refuter injection (refuterAgent/ledger/routes) too (W7).
     hb('jumper: gandalf:start');
-    const gandalfRead = await runGandalf(problemState, { ...runOptions, driver, runAgent: customRunAgent });
+    const gandalfRead = await runGandalf(problemState, {
+      ...runOptions,
+      driver,
+      signal: rootSignal,
+      runAgent: codingAgent('coding:gandalf-draft'),
+    });
     hb('jumper: gandalf:done');
     // 2026-08-19 (journal 0031): surface the compose-seam refutation cap in the FINAL
     // output — the stamp must ride the artifact the caller reads, not just stderr.
@@ -1064,29 +1643,39 @@ export class Jumper {
       problem: problemState,
       currentPhase: 'Peterson Query (Input)',
       gandalfRead
+    }, {
+      signal: rootSignal,
+      runAgent: codingAgent('coding:synthesizer:peterson-input'),
     });
     const flags1 = synth1?.steeringFlags || [];
 
     // Step 3: Run Phase 1 - Peterson Query
-    const queryEngine = new PetersonQuery({ driver, runAgent: customRunAgent });
-    const petersonResult = await queryEngine.run(gandalfRead, { ...runOptions, steeringFlags: flags1 });
+    const queryEngine = new PetersonQuery({ driver });
+    const petersonResult = await queryEngine.run(gandalfRead, {
+      ...runOptions,
+      signal: rootSignal,
+      steeringFlags: flags1,
+      runAgent: codingAgent('coding:peterson'),
+    });
 
     // Step 4: Update synthesizer and get steering flags for Phase 2
     const synth2 = await synthesizer.update({
       problem: problemState,
       currentPhase: 'Hesse Glass Bead (Input)',
       problemMap: petersonResult
+    }, {
+      signal: rootSignal,
+      runAgent: codingAgent('coding:synthesizer:hesse-input'),
     });
     // W2: flags carry only the CURRENT round's steering (flags1 already steered
     // Peterson; re-accumulating them inflated every downstream prompt for no lift).
     const flags2 = synth2?.steeringFlags || [];
 
-    const beadEngine = new HesseGlassBead({ driver, runAgent: customRunAgent });
-    const transferEngine = new DiracTransfer({ driver, runAgent: customRunAgent });
+    const beadEngine = new HesseGlassBead({ driver });
+    const transferEngine = new DiracTransfer({ driver });
     // B3 W3: thread killGates from depth-locked CLI so Decision A stage count can match knobs.
     const filterEngine = new KillFilter({
       driver,
-      runAgent: customRunAgent,
       killGates: Number.isInteger(runOptions.killGates) ? runOptions.killGates : undefined,
     });
 
@@ -1107,71 +1696,177 @@ export class Jumper {
     // candidates shared ONE Synthesizer whose history mixed sibling states into every
     // prompt — nondeterministic sibling contamination that broke the "each sibling is
     // blind to the others" invariant; (c) it was 1 sequential call per candidate.
-    const buildCandidate = async (sphereHint, extraFlags = []) => {
+    const buildCandidate = async ({
+      round,
+      candidate,
+      sphereHint,
+      extraFlags = [],
+      checkpoint,
+      nudge = null,
+      attemptSignal = rootSignal,
+      heartbeatPath = null,
+    }) => {
+      const phaseSignal = combinedSignal(rootSignal, attemptSignal);
+      const monitoringAppendix = heartbeatPath
+        ? lookinAppendix({ heartbeatPath, northStar: 'finish this candidate phase without losing committed Hesse/Dirac work' })
+        : null;
       const hesseFlags = [...flags2, ...extraFlags,
         ...(sphereHint ? [`Choose your foreign domain from ${sphereHint} — sibling candidates cover other spheres; do not stray from yours.`] : [])];
-      const hesseResult = await beadEngine.run(petersonResult, { ...runOptions, steeringFlags: hesseFlags });
+      if (!checkpoint.hesse) {
+        const hesseResult = await beadEngine.run(petersonResult, {
+          ...runOptions,
+          signal: phaseSignal,
+          steeringFlags: hesseFlags,
+          monitoringAppendix,
+          nudge,
+          runAgent: codingAgent(`coding:r${round}:c${candidate}:hesse`, phaseSignal),
+        });
+        throwIfAborted(phaseSignal);
+        checkpoint.hesse = hesseResult;
+      }
+      const hesseResult = checkpoint.hesse;
       let flags3 = extraFlags;
       if (!sphereHint) {
-        const synth3 = await synthesizer.update({
-          problem: problemState,
-          currentPhase: 'Dirac Transfer (Input)',
-          analogicalMapping: hesseResult
-        });
-        flags3 = [...(synth3?.steeringFlags || []), ...extraFlags];
+        if (!checkpoint.synthesizerDirac) {
+          const synth3 = await synthesizer.update({
+            problem: problemState,
+            currentPhase: 'Dirac Transfer (Input)',
+            analogicalMapping: hesseResult
+          }, {
+            signal: phaseSignal,
+            monitoringAppendix,
+            nudge,
+            runAgent: codingAgent(`coding:r${round}:c${candidate}:synthesizer-dirac`, phaseSignal),
+          });
+          throwIfAborted(phaseSignal);
+          checkpoint.synthesizerDirac = synth3;
+        }
+        flags3 = [...(checkpoint.synthesizerDirac?.steeringFlags || []), ...extraFlags];
       }
       // 0028 RC-1: thread the VERBATIM problem into Phase 3 and the candidate —
       // before this, no phase after Gandalf knew what the user asked to receive,
       // so every transfer terminated in a framework instead of an artifact.
-      const diracResult = await transferEngine.run(hesseResult, petersonResult.coreContradictions, { ...runOptions, steeringFlags: flags3, problem: problemState });
-      return {
-        ...diracResult,
+      if (!checkpoint.dirac) {
+        const diracResult = await transferEngine.run(hesseResult, petersonResult.coreContradictions, {
+          ...runOptions,
+          signal: phaseSignal,
+          steeringFlags: flags3,
+          problem: problemState,
+          monitoringAppendix,
+          nudge,
+          runAgent: codingAgent(`coding:r${round}:c${candidate}:dirac`, phaseSignal),
+        });
+        throwIfAborted(phaseSignal);
+        checkpoint.dirac = diracResult;
+      }
+      checkpoint.concept ||= {
+        ...checkpoint.dirac,
         analogicalMapping: hesseResult,
         coreContradictions: petersonResult.coreContradictions,
-        problem: problemState
+        problem: problemState,
       };
+      return checkpoint.concept;
     };
 
     // ---- PORTFOLIO MODE (fanOut > 1): tournament over N candidates ----
     if (fanOut > 1) {
-      const runTournament = async (extraFlags = []) => {
-        const candidates = await Promise.all(
-          Array.from({ length: fanOut }, (_, i) => {
-            hb(`jumper: sphere:${i + 1}/${fanOut} candidate start`);
-            return buildCandidate(SPHERES[i % SPHERES.length], extraFlags)
-              .then((c) => { hb(`jumper: sphere:${i + 1}/${fanOut} candidate built (${c?.analogicalMapping?.foreignDomain ?? '?'})`); return c; });
-          }));
+      const runTournament = async (round, extraFlags = []) => {
+        const candidateCheckpoints = Array.from({ length: fanOut }, () => ({}));
+        const candidatePromises = Array.from({ length: fanOut }, (_, i) => {
+          const candidate = i + 1;
+          const checkpoint = candidateCheckpoints[i];
+          const heartbeat = createCandidateHeartbeatTracker({
+            runId,
+            round,
+            candidate,
+            heartbeatDir: runOptions.heartbeatDir,
+          });
+          hb(`jumper: sphere:${candidate}/${fanOut} candidate start`);
+          return superviseSeat({
+            ...(runOptions.supervision || {}),
+            strictAbortJoin: true,
+            getTrail: () => heartbeat.getTrail(),
+            run: ({ attempt, nudge, signal: attemptSignal }) => {
+              const active = heartbeat.activate(attempt);
+              return buildCandidate({
+                round,
+                candidate,
+                sphereHint: SPHERES[i % SPHERES.length],
+                extraFlags,
+                checkpoint,
+                nudge,
+                attemptSignal,
+                heartbeatPath: active.path,
+              });
+            },
+          }).then((concept) => {
+            hb(`jumper: sphere:${candidate}/${fanOut} candidate built (${concept?.analogicalMapping?.foreignDomain ?? '?'})`);
+            return concept;
+          });
+        });
+        const candidateSettled = await Promise.allSettled(candidatePromises);
+        const candidates = candidateSettled
+          .filter((entry) => entry.status === 'fulfilled')
+          .map((entry) => entry.value);
+        const buildFailure = candidateSettled.find((entry) => entry.status === 'rejected');
+        if (buildFailure) {
+          const err = buildFailure.reason;
+          if (err && typeof err === 'object' && !err.jumperPartial) {
+            err.jumperPartial = {
+              stage: 'candidate-build',
+              honesty_stamp: 'NOT FULLY VETTED — candidate construction HALTed; completed phase artifacts are preserved',
+              ...capSpread,
+              candidates,
+              phase_artifacts: candidateCheckpoints.map((entry, i) => ({
+                round,
+                candidate: i + 1,
+                hesse: entry.hesse ?? null,
+                synthesizer_dirac: entry.synthesizerDirac ?? null,
+                dirac: entry.dirac ?? null,
+              })),
+            };
+          }
+          throw err;
+        }
         // 2026-08-19 (journal 0031): a mid-kill-filter HALT (e.g. agy down at Gate 3 →
         // JumperCrossFamilyDegradeHalt) must NEVER destroy the paid candidates — attach
         // them to the error so the CLI can emit an honest "not fully vetted" partial
         // instead of output:null ("a guardrail is never the whole product of a turn").
-        let judged;
-        try {
-          judged = await Promise.all(candidates.map(async (concept, i) => {
-            hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} start`);
-            const filter = await filterEngine.run(concept, runOptions);
-            hb(`jumper: killfilter:candidate ${i + 1}/${candidates.length} ${filter.passed ? 'PASSED all gates' : `KILLED at gate ${filter.failedAtGate}`}`);
-            return { concept, filter };
-          }));
-        } catch (err) {
+        const judgePromises = candidates.map(async (concept, i) => {
+          const candidate = i + 1;
+          hb(`jumper: killfilter:candidate ${candidate}/${candidates.length} start`);
+          const filter = await filterEngine.run(concept, {
+            ...runOptions,
+            signal: rootSignal,
+            runAgent: codingAgent(`coding:r${round}:c${candidate}:gate12`),
+            gate3RunAgent: verdictAgent(`gate3:r${round}:c${candidate}:verdict`),
+          });
+          hb(`jumper: killfilter:candidate ${candidate}/${candidates.length} ${filter.passed ? 'PASSED all gates' : `KILLED at gate ${filter.failedAtGate}`}`);
+          return { concept, filter };
+        });
+        const judgeSettled = await Promise.allSettled(judgePromises);
+        const judgeFailure = judgeSettled.find((entry) => entry.status === 'rejected');
+        if (judgeFailure) {
+          const err = judgeFailure.reason;
           if (err && typeof err === 'object' && !err.jumperPartial) {
             err.jumperPartial = {
               stage: 'kill-filter',
               honesty_stamp: 'NOT FULLY VETTED — the engine HALTed during the kill-filter; '
-                + 'these candidates are raw ideation output that passed NO gates',
+                + 'the raw candidates are preserved, but no partial portfolio is represented as fully gate-approved',
               ...capSpread,
               candidates,
             };
           }
           throw err;
         }
+        const judged = judgeSettled.map((entry) => entry.value);
         return {
           survivors: judged.filter((j) => j.filter.passed),
           killed: judged.filter((j) => !j.filter.passed),
         };
       };
 
-      let { survivors, killed } = await runTournament();
+      let { survivors, killed } = await runTournament(1);
       let retried = false;
       let firstRoundKilled = [];
       if (!survivors.length && runOptions.retryOnKill) {
@@ -1180,7 +1875,7 @@ export class Jumper {
         retried = true;
         firstRoundKilled = killed;
         const lessons = killed.map((k) => `A prior candidate was KILLED at gate ${k.filter.failedAtGate}: ${String(k.filter.rejectionReason || '').slice(0, 300)}`);
-        ({ survivors, killed } = await runTournament(lessons));
+        ({ survivors, killed } = await runTournament(2, lessons));
       }
 
       // 0028 RC-3: the killLog covers EVERY round — the retry used to discard
@@ -1216,7 +1911,12 @@ export class Jumper {
         (b.concept?.analogicalMapping?.structuralMapping?.length ?? 0) -
         (a.concept?.analogicalMapping?.structuralMapping?.length ?? 0));
       const top = survivors[0];
-      const gep = await this._generateGEP(top.concept, customRunAgent, driver);
+      const gep = await this._generateGEP(
+        top.concept,
+        codingAgent('coding:gep'),
+        driver,
+        rootSignal,
+      );
       return {
         passed: true,
         fanOut,
@@ -1236,16 +1936,35 @@ export class Jumper {
     }
 
     // ---- LEGACY SINGLE-CANDIDATE PATH (fanOut = 1; unchanged behavior) ----
-    const concept = await buildCandidate(null);
-    const filterResult = await filterEngine.run(concept, runOptions);
+    const buildLegacyCandidate = (round, extraFlags = []) => buildCandidate({
+      round,
+      candidate: 1,
+      sphereHint: null,
+      extraFlags,
+      checkpoint: {},
+      attemptSignal: rootSignal,
+    });
+    const judgeLegacyCandidate = (concept, round) => filterEngine.run(concept, {
+      ...runOptions,
+      signal: rootSignal,
+      runAgent: codingAgent(`coding:r${round}:c1:gate12`),
+      gate3RunAgent: verdictAgent(`gate3:r${round}:c1:verdict`),
+    });
+    const concept = await buildLegacyCandidate(1);
+    const filterResult = await judgeLegacyCandidate(concept, 1);
 
     if (!filterResult.passed) {
       if (runOptions.retryOnKill) {
         const lesson = `A prior candidate was KILLED at gate ${filterResult.failedAtGate}: ${String(filterResult.rejectionReason || '').slice(0, 300)}`;
-        const concept2 = await buildCandidate(null, [lesson]);
-        const filter2 = await filterEngine.run(concept2, runOptions);
+        const concept2 = await buildLegacyCandidate(2, [lesson]);
+        const filter2 = await judgeLegacyCandidate(concept2, 2);
         if (filter2.passed) {
-          const gep2 = await this._generateGEP(concept2, customRunAgent, driver);
+          const gep2 = await this._generateGEP(
+            concept2,
+            codingAgent('coding:gep'),
+            driver,
+            rootSignal,
+          );
           return { passed: true, retried: true, ...capSpread, concept: concept2, gateLogs: filter2.gateLogs, groundingExecutionProtocol: gep2 };
         }
       }
@@ -1260,7 +1979,12 @@ export class Jumper {
     }
 
     // Step 9: Format the output into the Grounding Execution Protocol
-    const gepResult = await this._generateGEP(concept, customRunAgent, driver);
+    const gepResult = await this._generateGEP(
+      concept,
+      codingAgent('coding:gep'),
+      driver,
+      rootSignal,
+    );
 
     return {
       passed: true,
@@ -1272,7 +1996,7 @@ export class Jumper {
   }
 
   /** Grounding Execution Protocol generation (shared by both pipeline modes). */
-  async _generateGEP(concept, customRunAgent, driver) {
+  async _generateGEP(concept, customRunAgent, driver, signal = null) {
     const systemPromptGEP = `You are Jumper Grounding Execution Protocol Generator.
 Your role is to format the approved symmetrical resolution into a Grounding Execution Protocol: a concrete, step-by-step test plan to validate the idea in reality.
 
@@ -1330,7 +2054,8 @@ Generate the Grounding Execution Protocol to validate this resolution.`;
       driver,
       freshContext: true,
       label: "GroundingExecutionProtocol",
-      role: "ground"
+      role: "ground",
+      signal,
     });
   }
 }
@@ -1339,5 +2064,3 @@ export async function jumper(problemState, options = {}) {
   const engine = new Jumper(options);
   return engine.run(problemState, options);
 }
-
-

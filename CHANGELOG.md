@@ -1,5 +1,100 @@
 # Changelog
 
+## v1.2.9 — the steward's kickoff becomes the work product; the cockpit sheds what it never needed (2026-09-02)
+
+Gate 5 of the ChatGPT-foundation effort, built by Foreman in Ecgberht (nine waves,
+final gate 1240/1240) with the thin Anchor canary landing here. John's look on
+2026-09-02: "looks good for Gate 5."
+
+### Kickoff synthesis, visible in the cockpit
+- `steward_cockpit/kickoff_reader.py` — a PASS-THROUGH reader of Ecgberht's
+  `.ecgberht/kickoff/projection.json` (never derives a second truth); a
+  Node-writes/Python-reads golden test pins the byte contract.
+- `GET /api/ecgberht/kickoff_show?pid=&effort=` (`steward_cockpit/kickoff_show_route.py`)
+  — read-only; the routes inventory now names real exposure for all three kickoff
+  verbs (`kickoff-confirm` / `kickoff-replay` are conversational via the bridge CLI,
+  proven by hermetic bridge tests; no `not_exposed` rows remain).
+- The effort view's Goal bar paints the confirmed kickoff — the engine's rendered
+  prose through the one markdown renderer — or an open draft marked "not applied";
+  the confirmed outcome becomes the one-line brief. Closed by default, compact.
+  (The build shipped reader + route with no UI call; a real-browser check caught it.)
+- Restart canary (`tests/test_kickoff_canary_w9.py`) + look staging
+  (`Ecgberht/scripts/kickoff-look-staging.mjs`) — five synthetic efforts, one
+  corrected once, one left open.
+
+### Subtraction, at John's word
+- The synthetic Calendar/Email surfaces and their setup dialog are REMOVED from the
+  per-project cockpit ("we don't want email and calendar in the AI Cockpit").
+- Project folders on the home page open CLOSED; the ones you open are remembered.
+
+### Truth fixes
+- Cancelling a job record that never got a child process commits an honest
+  `cancelled` (already in v1.2.8's ledger; retained).
+- Known red unchanged from v1.2.8 (the 08-29 set); the Gate 5 files added 20 tests, all green.
+
+### Still open, by name (not in this release)
+- ChatGPT as the steward's terminal (F1B) — the UI refuses `default_cli=chatgpt` with a reason.
+- Anchor Doctor and Zombie Hunter with ChatGPT — suites green, **not certified** (no Codex canary exists).
+- Codex as Foreman's build seat — parked (Windows sandbox fixed in trio; Codex declines Claude-tool-shaped execute prompts).
+- The stale-server repair script verifies inside the ~60 s startup window ("STILL STALE" while the new build is still starting) — wait for `/api/version` instead.
+
+## v1.2.8 — ChatGPT joins as the fourth family, and the cockpit becomes the front door (2026-08-31)
+
+Built by a ChatGPT/Codex controller over four waves, then finished under a
+Claude Fable completion run: the blocker it could not clear was a compiler
+bug in the in-progress kickoff work (ids silently renamed), not fixture
+drift; the prepared three-reviewer adversarial review then ran and its
+findings were repaired. Committed on `release/v1.2.8`, fast-forwarded onto
+master, then the full 4,000-test net was run on master before this entry.
+
+### Four roles, one honest capability matrix
+- The home page exposes **Terminal · Coder · Reviewer · Judge**, driven by
+  one API capability schema so server and browser tell the same truth.
+- **ChatGPT is a Coder** when the Codex CLI is installed — a sandboxed,
+  Job-Object-contained, receipt-honest transport (`codex_adapter.py`) that
+  records the *requested* model and effort (Sol, Ultra) and never invents the
+  served model.
+- **Terminal says "bridge pending"** rather than launching a bare Codex PTY;
+  a saved `default_cli=chatgpt` is refused until the bridge lands (a persisted
+  value used to brick every terminal open).
+- **Reviewer/Judge stay fail-closed for ChatGPT** — request configuration is
+  not attestation of the served family. Judge follows `review_family`.
+
+### The cockpit is the project page
+Plain `/project/<id>` — the dashboard included — opens the AI cockpit;
+`?classic=1` remains the explicit escape to the slim window. Calendar and
+Email appear as two honestly empty synthetic surfaces with a local-only
+guided-setup preview; no network, provider, credential, or storage path.
+
+### Truth fixes surfaced by the review and the full net
+- A saved model preference can no longer silently revert: `save_settings`
+  re-reads after writing and flags `mirror_out_of_sync`.
+- An engine resolution that would have run an unsandboxed bare `codex`
+  raises instead.
+- An imported (brownfield) effort's cost reads **unknown**, never a
+  fabricated `$0.00`.
+- Cancelling a job record that never got a child process now commits an
+  honest `cancelled` (verification `no-process-recorded`) with its journal
+  event, instead of leaving the job "running" forever; recycled-PID
+  protection is unchanged.
+- The living routes inventory carries rows for the three new Ecgberht
+  kickoff verbs; the two mutators declare that no Anchor handler invokes
+  them yet — the Gate 5 canary must replace that declaration with routes.
+
+### Known red, carried honestly
+The full net on master: **3,871 passed · 112 failed · 15 skipped**, of
+which 106 are the pre-existing 08-29 set (project-window/steward cutover
+debt awaiting the author's acceptance pass, chamber routes-inventory
+guards red since v1.2.7, Playwright flows, foundry GUI journeys) — 4 of
+those now pass — and one order-dependent test
+(`test_session_summary_endpoint_generating_fallback`) passes in isolation.
+Nothing was deselected.
+
+### Not in this release
+The ChatGPT Steward-cockpit bridge (F1B), Doctor and Zombie Hunter ChatGPT
+certification, and the conversational kickoff synthesis (Gate 5) follow as
+their own Foundry cycles. `_mockups/dashboard-v2` stays untracked.
+
 ## v1.2.7 — the cockpit gets quiet, the plan gets tidy, and work announces itself (2026-08-27)
 
 Three days of the author using the deliverables surface and the steward

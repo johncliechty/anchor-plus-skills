@@ -50,6 +50,11 @@ export const ROADMAP_SCHEMA_ID = 'ecgberht-roadmap-v0';
  * Wave 14 (v4): reflection_receipt / next_stage_proposal — gate decision 4
  * zero-model emit at validated handback (project-level; no step fold).
  * Wave 16 (v5): attention_projection_published — altitude contract (project-level).
+ * Wave 17 (v6): goal_flip — re-read the North Star when a step closes
+ * (steward slice loop, 2026-08-28). part/gate ride on steps, not a new file.
+ * Wave 18 (v7): kickoff_proposal / kickoff_confirm — one versioned,
+ * hash-confirmed kickoff lineage. Both are project-level; confirmed plan
+ * entries project onto ordinary roadmap steps with component references.
  */
 export const ROADMAP_EVENT_KINDS = Object.freeze([
   'step_create',
@@ -68,6 +73,9 @@ export const ROADMAP_EVENT_KINDS = Object.freeze([
   'reflection_receipt',
   'next_stage_proposal',
   'attention_projection_published',
+  'goal_flip',
+  'kickoff_proposal',
+  'kickoff_confirm',
 ]);
 
 /** Project-level kinds that do not fold into roadmap_projection steps. */
@@ -84,6 +92,9 @@ export const ROADMAP_PROJECT_LEVEL_KINDS = Object.freeze([
   'reflection_receipt',
   'next_stage_proposal',
   'attention_projection_published',
+  'goal_flip',
+  'kickoff_proposal',
+  'kickoff_confirm',
 ]);
 
 /** Named bound — appends beyond this refuse with events-bound-exceeded. */
@@ -107,6 +118,21 @@ export const ROADMAP_PROJECTION_FIELDS = Object.freeze([
   'done_when',
   'waiting_on',
   'commissioned_as',
+  'part',
+  'gate',
+  'component_ids',
+  'end_to_end_slice',
+  'kickoff_version',
+  'kickoff_proposal_hash',
+]);
+
+/** Execution-phase tags. They are not the work-product component map. */
+export const ROADMAP_PART_TAGS = Object.freeze([
+  'research',
+  'slice',
+  'rigor',
+  'integrate',
+  'harden',
 ]);
 
 /**
@@ -117,6 +143,12 @@ export const ROADMAP_SET_FIELDS = Object.freeze([
   'name',
   'done_when',
   'waiting_on',
+  'part',
+  'gate',
+  'component_ids',
+  'end_to_end_slice',
+  'kickoff_version',
+  'kickoff_proposal_hash',
 ]);
 
 /** Receipt fields a status_flip event must carry (when defaults to event.at). */
@@ -195,15 +227,41 @@ export function emptyRoadmap(project_id = null) {
  * Normalize a projection step to the locked field set (stable order).
  * @param {object} step
  */
+export function normalizePartTag(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  return ROADMAP_PART_TAGS.includes(v) ? v : null;
+}
+
 export function normalizeProjectionStep(step = {}) {
-  return {
+  const gate = step.gate;
+  const hasKickoffProjection = Array.isArray(step.component_ids)
+    || step.end_to_end_slice != null
+    || step.kickoff_version != null
+    || step.kickoff_proposal_hash != null;
+  const componentIds = Array.isArray(step.component_ids)
+    ? [...new Set(step.component_ids.map(String).filter(Boolean))]
+    : [];
+  const normalized = {
     id: step.id ?? null,
     name: step.name ?? null,
     status: step.status ?? null,
     done_when: step.done_when ?? null,
     waiting_on: step.waiting_on ?? null,
     commissioned_as: step.commissioned_as ?? null,
+    part: normalizePartTag(step.part),
+    gate: typeof gate === 'string' && gate.trim() ? gate.trim() : null,
   };
+  if (hasKickoffProjection) {
+    normalized.component_ids = componentIds;
+    normalized.end_to_end_slice = step.end_to_end_slice === true;
+    normalized.kickoff_version = Number.isInteger(step.kickoff_version)
+      ? step.kickoff_version : null;
+    normalized.kickoff_proposal_hash = typeof step.kickoff_proposal_hash === 'string'
+      && step.kickoff_proposal_hash.trim()
+      ? step.kickoff_proposal_hash.trim()
+      : null;
+  }
+  return normalized;
 }
 
 /**
@@ -245,14 +303,35 @@ export function buildRoadmapProjection(events = []) {
         return;
       }
       const status = ROADMAP_STEP_STATUSES.includes(ev.status) ? ev.status : 'planned';
-      steps.set(id, {
+      if (ev.part != null && !normalizePartTag(ev.part)) {
+        issues.push({ code: 'unknown_part_tag', at_index: idx, step_id: id, part: ev.part });
+      }
+      const created = {
         id,
         name: ev.name,
         status,
         done_when: ev.done_when ?? null,
         waiting_on: ev.waiting_on ?? null,
         commissioned_as: null,
-      });
+        part: normalizePartTag(ev.part),
+        gate: typeof ev.gate === 'string' && ev.gate.trim() ? ev.gate.trim() : null,
+      };
+      if (Array.isArray(ev.component_ids)
+          || ev.end_to_end_slice != null
+          || ev.kickoff_version != null
+          || ev.kickoff_proposal_hash != null) {
+        created.component_ids = Array.isArray(ev.component_ids)
+          ? [...new Set(ev.component_ids.map(String).filter(Boolean))]
+          : [];
+        created.end_to_end_slice = ev.end_to_end_slice === true;
+        created.kickoff_version = Number.isInteger(ev.kickoff_version)
+          ? ev.kickoff_version : null;
+        created.kickoff_proposal_hash = typeof ev.kickoff_proposal_hash === 'string'
+          && ev.kickoff_proposal_hash.trim()
+          ? ev.kickoff_proposal_hash.trim()
+          : null;
+      }
+      steps.set(id, created);
       return;
     }
 
@@ -274,6 +353,39 @@ export function buildRoadmapProjection(events = []) {
             message:
               'status requires status_flip (+ receipt); commissioned_as requires commission_bind',
           });
+          continue;
+        }
+        if (key === 'part') {
+          if (fields.part != null && !normalizePartTag(fields.part)) {
+            issues.push({ code: 'unknown_part_tag', at_index: idx, step_id: id, part: fields.part });
+          }
+          step.part = normalizePartTag(fields.part);
+          continue;
+        }
+        if (key === 'gate') {
+          const g = fields.gate;
+          step.gate = typeof g === 'string' && g.trim() ? g.trim() : null;
+          continue;
+        }
+        if (key === 'component_ids') {
+          step.component_ids = Array.isArray(fields.component_ids)
+            ? [...new Set(fields.component_ids.map(String).filter(Boolean))]
+            : [];
+          continue;
+        }
+        if (key === 'end_to_end_slice') {
+          step.end_to_end_slice = fields.end_to_end_slice === true;
+          continue;
+        }
+        if (key === 'kickoff_version') {
+          step.kickoff_version = Number.isInteger(fields.kickoff_version)
+            ? fields.kickoff_version : null;
+          continue;
+        }
+        if (key === 'kickoff_proposal_hash') {
+          step.kickoff_proposal_hash = typeof fields.kickoff_proposal_hash === 'string'
+            && fields.kickoff_proposal_hash.trim()
+            ? fields.kickoff_proposal_hash.trim() : null;
           continue;
         }
         step[key] = fields[key];
@@ -328,7 +440,8 @@ export function buildRoadmapProjection(events = []) {
       return;
     }
 
-    // Project-level kinds (scaffold_proposal, face_*, elaboration_*): ledger
+    // Project-level kinds (scaffold/kickoff proposal and confirm, face_*,
+    // elaboration_*): ledger
     // history only — no roadmap_projection fold. Detail is reconstructed by
     // the owning surface (Face compile / progressive elaboration).
     if (ROADMAP_PROJECT_LEVEL_KINDS.includes(kind)) {

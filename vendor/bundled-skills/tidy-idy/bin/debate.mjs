@@ -119,9 +119,13 @@ export async function runDebate(projectPath, suspects, options = {}) {
   // machine-local path baked into this file.
   const agentFn = resolveAgent({
     agent: options.agent,
+    runAgent: options.runAgent,
     driverPath: options.driverPath,
     model: options.model,
     log,
+    env: options.env || process.env,
+    target: projectPath,
+    onReceipt: options.onSeatReceipt,
   });
 
   // Chunking suspects (clamped between 5 and 10 to satisfy "max 5-10 files per batch")

@@ -93,6 +93,16 @@ export async function runOrchestration(targetDir, options = {}) {
   const totals = { removed: [], protectedSkips: [], skipped: [], failed: [], compression: [] };
   const execFn = options.exec || execAsync;
 
+  // Seat receipts from every stage feed the run record's cross_model/models truth.
+  // Before 2026-08-31 the record asserted `cross_model: true` as a literal with no
+  // receipt behind it — the exact unattested-verification claim the seam forbids.
+  const seatReceipts = [];
+  const noteSeatReceipt = (receipt) => {
+    if (receipt && typeof receipt === 'object') seatReceipts.push(receipt);
+    if (typeof options.onSeatReceipt === 'function') return options.onSeatReceipt(receipt);
+    return undefined;
+  };
+
   // Per-project pipeline — ISOLATED: a refusal/failure skips THIS project only.
   for (const project of projects) {
     const projectPath = project.path;
@@ -102,11 +112,15 @@ export async function runOrchestration(targetDir, options = {}) {
       await runHygieneCheck(projectPath, { ...options, throwOnError: true });
 
       // B. Batched analysis (LOUD on failure — never a clean-looking empty result)
-      const suspects = await runAnalysis(projectPath, { ...options, northStarFile, throwOnError: true });
+      const suspects = await runAnalysis(projectPath, {
+        ...options, northStarFile, throwOnError: true, onSeatReceipt: noteSeatReceipt,
+      });
       await fs.writeFile(path.join(stateDir, 'suspects_batch.json'), JSON.stringify(suspects, null, 2), 'utf8');
 
       // C. Single-pass adversarial debate (attacker + judge, structured)
-      const judgments = await runDebate(projectPath, suspects, { ...options, northStarFile, throwOnError: true });
+      const judgments = await runDebate(projectPath, suspects, {
+        ...options, northStarFile, throwOnError: true, onSeatReceipt: noteSeatReceipt,
+      });
       await fs.writeFile(path.join(stateDir, 'judgments.json'), JSON.stringify(judgments, null, 2), 'utf8');
 
       // D. REMOVE + commit (git is the archive)
@@ -117,7 +131,9 @@ export async function runOrchestration(targetDir, options = {}) {
 
       // E. Context compression, then COMMIT its edits (the run leaves the tree clean —
       //    the old flow dirtied the repo and blocked the next scheduled run).
-      const compression = await runCompression(projectPath, { ...options, throwOnError: true });
+      const compression = await runCompression(projectPath, {
+        ...options, throwOnError: true, onSeatReceipt: noteSeatReceipt,
+      });
       totals.compression.push(compression);
       try {
         const { stdout: dirty } = await execFn('git status --porcelain', { cwd: path.resolve(projectPath) });
@@ -170,6 +186,24 @@ ${projects.map(p => `- \`${p.path}\``).join('\n')}
 
   outputStream.write(report);
 
+  // cross_model/models are DERIVED from attested trio.seat.v1 receipts — never
+  // asserted. A failover-substituted serve is excluded (a real call, but not
+  // evidence of cross-family review); no receipts ⇒ cross_model false.
+  const attestedServes = seatReceipts.filter((r) => r?.schema === 'trio.seat.v1'
+    && r.ok === true && r.served?.family_attested === true && r.served.family
+    && r.failover?.used !== true);
+  const seatFamilies = [...new Set(attestedServes
+    .map((r) => String(r.served.family).toLowerCase()))].sort();
+  const servedModels = [...new Map(attestedServes.map((r) => {
+    const value = {
+      family: String(r.served.family).toLowerCase(),
+      driver: r.served.driver ?? null,
+      model: r.served.model_attested === true ? r.served.model ?? null : null,
+      model_attested: r.served.model_attested === true,
+    };
+    return [JSON.stringify(value), value];
+  })).values()];
+
   // Run capture is for REAL runs — tests/harnesses pass captureRuns:false so the
   // training feed never carries mock-run records (provenance discipline).
   if (options.captureRuns !== false) await writeRunRecord({
@@ -178,7 +212,8 @@ ${projects.map(p => `- \`${p.path}\``).join('\n')}
     params: { projects: projects.length },
     output: '(report to stdout; state in <target>/.tidy-idy)',
     result: `removed ${totals.removed.length} · protected ${totals.protectedSkips.length} · skippedProjects ${totals.failed.length}`,
-    cross_model: true, models: null,
+    cross_model: seatFamilies.length > 1,
+    models: servedModels.length ? servedModels : null,
     duration_s: Math.round((Date.now() - t0) / 1000), journal_ref: null,
   });
 

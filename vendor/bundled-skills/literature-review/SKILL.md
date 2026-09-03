@@ -127,7 +127,7 @@ The pipeline, in order — each stage honest about what ran:
    grouping, CORROBORATED upgrades → `assumptions-ledger.{json,md}` + `parameterized-matrix.json`.
 6. **Adversarial governed pass(es)** over the synthesized ledger through researchPrime's REAL
    surface (`composeLiteratureReviewAdversarialPass` → `runGovernedRound`: trio tally, claim_id
-   agreement, inclusion test, Judge) — reviewers route cross-family (Gemini via agy). Invocation
+   agreement, inclusion test, Judge) — roles route through the saved coding/review families. Invocation
    count `N = knobs.adversarialRounds` from `@foundry/triage` (never `runEngine`). Stamped
    honestly as N governed rounds, never passed off as a converged multi-round researchPrime product
    run (commission researchPrime itself when you need that).
@@ -145,9 +145,9 @@ Depth locks come **only** from `@foundry/triage` (`literatureReviewKnobs` / live
 
 **Honesty posture:** without `--live`/`LITREVIEW_LIVE=1` the run STOPS after stage 3 with an
 explicit "extraction/verification did NOT run" stamp — deterministic outputs only, nothing
-invented. With live seats, the model split is the 5:1 (extraction/copilot → Claude;
-reviewers/judge → Gemini; agy down ⇒ honest HALT). Every run auto-writes a `journal/runs/`
-training record; status cadence per the block below.
+invented. With live seats, extraction/copilot follow `coding_family`; reviewers/judge follow
+`review_family`. Same-family is stamped honestly; unattested verification HALTs. Every run
+auto-writes a receipt-derived `journal/runs/` training record; status cadence per the block below.
 
 > **⏱ STATUS UPDATES TO CHAT:** When running long phases in the background, you MUST arm a 10-minute cadence (`ScheduleWakeup` ~600s) and provide scheduled updates to the user in the LOCKED Status-table format — canonical definition in ONE place: the canonical `AGENTS.md` → "Long-run progress updates" (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer). The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick — the SESSION composes it from this skill's `journal/`.
 

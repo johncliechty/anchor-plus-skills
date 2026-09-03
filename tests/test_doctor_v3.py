@@ -46,6 +46,7 @@ import importlib
 import io
 import json
 import re
+import threading
 from pathlib import Path
 
 import pytest
@@ -309,11 +310,15 @@ def test_doctor_session_start_stubbed_seeded_readonly(denv, monkeypatch):
     assert sess["project_id"] == DOCTOR_PID
     assert sess["backend"] == "claude"
     assert sess["status"] == denv["reg"].STATUS_RUNNING
+    assert sess["mode"] == denv["ts"].DOCTOR_MODE_DIAGNOSE
+    assert sess["posture"] == denv["ts"].DOCTOR_POSTURE_READ_ONLY
     # SAFE projection: never worktree_path / branch / seed text.
     assert "worktree_path" not in sess and "branch" not in sess
 
     rec = denv["reg"].get_session(sid)
     assert rec is not None and rec.get("seeded") is True
+    assert rec["doctor_mode"] == denv["ts"].DOCTOR_MODE_DIAGNOSE
+    assert rec["doctor_posture"] == denv["ts"].DOCTOR_POSTURE_READ_ONLY
     seed = rec.get("seed_text", "")
     # Seed content: latest report + fresh doctor output + severity rule +
     # capability list — and ASCII-safe end to end.
@@ -361,6 +366,98 @@ def test_doctor_session_start_attaches_never_stacks(denv, monkeypatch):
     assert len(running) == 1, "a second start must never stack a duplicate"
 
 
+def test_doctor_same_key_concurrent_start_is_singleflight(denv, monkeypatch):
+    _claude_only(monkeypatch)
+    barrier = threading.Barrier(3)
+    results = []
+    errors = []
+
+    def _start():
+        barrier.wait()
+        try:
+            results.append(denv["ts"].start_doctor_session(
+                seed_context="doctor concurrency fixture", backend="claude"))
+        except Exception as exc:  # surfaced below with full repr
+            errors.append(exc)
+
+    workers = [threading.Thread(target=_start) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    barrier.wait()
+    for worker in workers:
+        worker.join(timeout=10)
+        assert not worker.is_alive(), "Doctor start lock deadlocked"
+
+    assert errors == []
+    assert len(results) == 2
+    assert len({rec["session_id"] for rec, _attached in results}) == 1
+    assert sorted(attached for _rec, attached in results) == [False, True]
+    assert len(denv["pty"].live_sessions()) == 1
+
+
+def test_doctor_reuse_key_separates_diagnose_from_resolve(denv, monkeypatch):
+    """Mode and posture are part of reuse identity: read-only Diagnose can
+    never attach to write-enabled Resolve, or the reverse."""
+    _claude_only(monkeypatch)
+    code_d, diagnose = _post(
+        denv["gui"], "/api/doctor/session_start", {"backend": "claude"})
+    assert code_d == 200 and diagnose["ok"] is True
+    assert diagnose["attached"] is False
+
+    issue = {"message": "repair the fixture", "component": "doctor-test"}
+    code_r, resolve = _post(
+        denv["gui"], "/api/doctor/session_start",
+        {"backend": "claude", "resolve": True, "issue": issue})
+    assert code_r == 200 and resolve["ok"] is True
+    assert resolve["attached"] is False
+    assert resolve["session"]["session_id"] != diagnose["session"]["session_id"]
+    assert resolve["session"]["mode"] == denv["ts"].DOCTOR_MODE_RESOLVE
+    assert resolve["session"]["posture"] == \
+        denv["ts"].DOCTOR_POSTURE_WRITE_ENABLED
+
+    d_child = denv["pty"]._LIVE[diagnose["session"]["session_id"]]
+    r_child = denv["pty"]._LIVE[resolve["session"]["session_id"]]
+    assert "--permission-mode" in d_child.cmd
+    assert "--permission-mode" not in r_child.cmd
+
+    # Each repeated request returns only its own exact-key session even though
+    # the other posture remains live and the Resolve row is newer.
+    _, diagnose_again = _post(
+        denv["gui"], "/api/doctor/session_start", {"backend": "claude"})
+    _, resolve_again = _post(
+        denv["gui"], "/api/doctor/session_start",
+        {"backend": "claude", "resolve": True, "issue": issue})
+    assert diagnose_again["attached"] is True
+    assert diagnose_again["session"]["session_id"] == \
+        diagnose["session"]["session_id"]
+    assert resolve_again["attached"] is True
+    assert resolve_again["session"]["session_id"] == \
+        resolve["session"]["session_id"]
+
+
+def test_doctor_reuse_key_checks_backend_and_posture(denv, monkeypatch):
+    monkeypatch.setenv("ANCHOR_CLAUDE_AVAILABLE", "1")
+    monkeypatch.setenv("ANCHOR_GEMINI_AVAILABLE", "1")
+    _, claude = _post(
+        denv["gui"], "/api/doctor/session_start", {"backend": "claude"})
+    _, gemini = _post(
+        denv["gui"], "/api/doctor/session_start", {"backend": "gemini"})
+    assert claude["attached"] is False and gemini["attached"] is False
+    assert claude["session"]["session_id"] != gemini["session"]["session_id"]
+
+    # Even a row whose mode/backend match is not reusable if its durable
+    # posture does not. This simulates legacy/corrupt metadata fail-closed.
+    sid = claude["session"]["session_id"]
+    denv["reg"].update_session(
+        sid, doctor_posture=denv["ts"].DOCTOR_POSTURE_WRITE_ENABLED)
+    _, fresh = _post(
+        denv["gui"], "/api/doctor/session_start", {"backend": "claude"})
+    assert fresh["attached"] is False
+    assert fresh["session"]["session_id"] != sid
+    assert fresh["session"]["posture"] == \
+        denv["ts"].DOCTOR_POSTURE_READ_ONLY
+
+
 def test_doctor_stale_running_row_is_reconciled_not_attached(denv, monkeypatch):
     """A registry row claiming RUNNING with a dead PTY is honestly re-statused
     (never 'attached' to); the next start opens a FRESH live session."""
@@ -390,6 +487,35 @@ def test_doctor_engine_gemini_only_drives_on_gemini(denv, monkeypatch):
     child = denv["pty"]._LIVE[sess["session_id"]]
     assert "--approval-mode" in child.cmd
     assert child.cmd[child.cmd.index("--approval-mode") + 1] == "plan"
+
+
+def test_doctor_diagnose_unsupported_engine_fails_closed_before_pty(
+        denv, monkeypatch):
+    """Grok is selectable elsewhere, but Doctor must not guess a read-only
+    flag. An unsupported Diagnose contract refuses before any paid PTY starts."""
+    monkeypatch.setenv("ANCHOR_CLAUDE_AVAILABLE", "0")
+    monkeypatch.setenv("ANCHOR_GEMINI_AVAILABLE", "0")
+    monkeypatch.setenv("ANCHOR_GROK_AVAILABLE", "1")
+    code, payload = _post(
+        denv["gui"], "/api/doctor/session_start", {"backend": "grok"})
+    assert code == 400
+    assert payload["ok"] is False
+    assert "no explicitly tested read-only argv contract" in payload["error"]
+    assert _doctor_records(denv["reg"]) == []
+    assert denv["pty"].live_sessions() == []
+
+
+def test_doctor_truthy_resolve_string_cannot_enable_write_posture(
+        denv, monkeypatch):
+    _claude_only(monkeypatch)
+    code, payload = _post(
+        denv["gui"], "/api/doctor/session_start",
+        {"backend": "claude", "resolve": "false"})
+    assert code == 200 and payload["ok"] is True
+    assert payload["session"]["mode"] == denv["ts"].DOCTOR_MODE_DIAGNOSE
+    assert payload["session"]["posture"] == denv["ts"].DOCTOR_POSTURE_READ_ONLY
+    child = denv["pty"]._LIVE[payload["session"]["session_id"]]
+    assert "--permission-mode" in child.cmd
 
 
 def test_doctor_engine_neither_is_honest_unavailable(denv, monkeypatch):
@@ -615,6 +741,34 @@ def test_doctor_page_terminal_wired_to_wave2_session(denv):
     assert "/api/rnd/term_ws" in html
     assert "/api/rnd/term_stream2" in html
     assert "/api/rnd/term_input2" in html
+
+
+def test_opening_doctor_never_starts_a_model(denv, monkeypatch):
+    """Plain and banner-seeded page opens may run deterministic reads only;
+    neither path may invoke the paid session-start action without a click."""
+    _claude_only(monkeypatch)
+    _write_report(
+        denv["data"], name="2026-07-16.md",
+        body=_report_body(status_ok=False))
+
+    code, html = _get(
+        denv["gui"],
+        "/doctor?diagnose=1&issueId=ZH_HEALTH_CHECK_ISSUES"
+        "&message=health+failed&component=health-check")
+    assert code == 200
+    assert _doctor_records(denv["reg"]) == []
+    assert denv["pty"].live_sessions() == []
+
+    # Pin the actual browser boot block: status fetch + context preload are
+    # allowed, but no runDiagnose invocation occurs before its click handler is
+    # defined. The resolveIssue call lives in an explicit button handler above.
+    template = denv["gui"]._DOCTOR_PAGE_TEMPLATE
+    boot = template.split("fetch(tq('/api/doctor/status')", 1)[1]
+    boot = boot.split("window.runDiagnose = function", 1)[0]
+    assert "window.runDiagnose(" not in boot
+    assert "/api/doctor/session_start" not in boot
+    assert "NEVER starts a paid model" in template
+    assert "Click Diagnose to start a model session" in boot
 
 
 # ── /api/doctor/status — the card-refresh data is real ───────────────────────

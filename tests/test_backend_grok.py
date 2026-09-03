@@ -23,6 +23,7 @@ def stack(tmp_path, monkeypatch):
     monkeypatch.setenv("ANCHOR_CLAUDE_AVAILABLE", "1")
     monkeypatch.setenv("ANCHOR_GEMINI_AVAILABLE", "1")
     monkeypatch.setenv("ANCHOR_GROK_AVAILABLE", "1")
+    monkeypatch.setenv("ANCHOR_CHATGPT_AVAILABLE", "0")
 
     import paths
     importlib.reload(paths)
@@ -71,6 +72,7 @@ def test_resolve_engine_cmd_which(stack, monkeypatch):
             return fake
         return None
 
+    monkeypatch.delenv("ANCHOR_ENGINE_CMD", raising=False)
     monkeypatch.setattr("shutil.which", _which)
     assert ts._resolve_engine_cmd("grok") == fake
 
@@ -82,6 +84,7 @@ def test_resolve_engine_cmd_home_bin(stack, monkeypatch):
     grok_exe = grok_bin / "grok.exe"
     grok_exe.write_text("", encoding="utf-8")
 
+    monkeypatch.delenv("ANCHOR_ENGINE_CMD", raising=False)
     monkeypatch.setattr("shutil.which", lambda name: None)
     resolved = ts._resolve_engine_cmd("grok")
     assert Path(resolved) == grok_exe
@@ -89,6 +92,7 @@ def test_resolve_engine_cmd_home_bin(stack, monkeypatch):
 
 def test_resolve_engine_cmd_fallback_name(stack, monkeypatch):
     ts = stack["ts"]
+    monkeypatch.delenv("ANCHOR_ENGINE_CMD", raising=False)
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert ts._resolve_engine_cmd("grok") == "grok"
 
@@ -164,5 +168,5 @@ def test_last_engine_defaults_to_settings(stack):
 def test_unknown_backend_error_mentions_grok(stack):
     ts = stack["ts"]
     with pytest.raises(ts.TerminalSessionError) as ei:
-        ts._check_engine_allowed("research", "chatgpt")
+        ts._check_engine_allowed("research", "not-an-engine")
     assert "grok" in str(ei.value)

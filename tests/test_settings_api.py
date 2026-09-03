@@ -23,6 +23,10 @@ def settings_stack(tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.delenv("ANCHOR_TOKEN", raising=False)
+    monkeypatch.setenv("ANCHOR_CLAUDE_AVAILABLE", "1")
+    monkeypatch.setenv("ANCHOR_GEMINI_AVAILABLE", "1")
+    monkeypatch.setenv("ANCHOR_GROK_AVAILABLE", "1")
+    monkeypatch.setenv("ANCHOR_CHATGPT_AVAILABLE", "1")
 
     import paths
     importlib.reload(paths)
@@ -94,6 +98,12 @@ def test_handle_settings_get_returns_defaults(settings_stack):
     assert isinstance(h._payload.get("env"), dict)
     assert h._payload["env"]["ANCHOR_DEFAULT_CLI"] == "grok"
     assert "CROSS_MODEL" in h._payload["env"]
+    caps = h._payload["model_capabilities"]
+    assert caps["schema"] == "anchor.model-role-capabilities.v1"
+    assert caps["roles"]["coder"]["families"]["chatgpt"]["selectable"] is True
+    assert caps["roles"]["terminal"]["families"]["chatgpt"]["selectable"] is False
+    assert caps["roles"]["reviewer"]["families"]["chatgpt"]["selectable"] is False
+    assert caps["roles"]["judge"]["setting"] == "review_family"
 
 
 def test_handle_settings_post_merge_and_reload(settings_stack):
@@ -118,12 +128,13 @@ def test_handle_settings_post_merge_and_reload(settings_stack):
     assert h3._payload["review_family"] == "grok"
     assert h3._payload["cross_model"] is False
     assert h3._payload["default_cli"] == "claude"  # still preserved
+    assert "model_capabilities" in h3._payload
 
 
 def test_handle_settings_post_rejects_invalid(settings_stack):
     gui = settings_stack["gui"]
     h = _FakeHandler()
-    gui.handle_settings_post(h, "/api/settings", {"default_cli": "chatgpt"})
+    gui.handle_settings_post(h, "/api/settings", {"default_cli": "not-a-cli"})
     assert h._code == 400
     assert h._payload["ok"] is False
     assert "invalid" in (h._payload.get("error") or "").lower()

@@ -25,6 +25,34 @@
 // `agent()` (text by default; the validated object when a `schema` is passed).
 
 import path from 'node:path';
+import fs from 'node:fs';
+import { lookinAppendix, superviseSeat, trailFromFile } from '../../drivers/swarm-lookin.mjs';
+
+// 2026-09-01 (Gate 5 wave 1, proven live): every Foreman seat was supervised with NO heartbeat
+// trail and the supervisor's defaults (90 s check-in + 60 s grace), so "silence is death"
+// degenerated into a 3-minute WALL-CLOCK kill of seats that were working (27 tool calls at
+// 180 s), respawned once, killed again, run THREW. The seat is told to write a heartbeat; the
+// orchestrator must READ it from the same path — and reset it per seat so a stale file from the
+// previous seat cannot count as this seat's silence. Windows are sized to real build work; the
+// driver's per-call timeout (45 min) stays the dead-process backstop.
+function seatHeartbeatPath(ctx) {
+  const root = ctx?.projectDir ? path.resolve(ctx.projectDir) : process.cwd();
+  return path.join(root, '.foreman', 'seat-heartbeat.json');
+}
+function resetSeatHeartbeat(ctx) {
+  const hb = seatHeartbeatPath(ctx);
+  try { fs.mkdirSync(path.dirname(hb), { recursive: true }); } catch { /* best effort */ }
+  try { fs.unlinkSync(hb); } catch { /* absent is the desired state */ }
+  return hb;
+}
+function seatWindows(env = process.env) {
+  const num = (k, d) => (Number(env[k]) > 0 ? Number(env[k]) : d);
+  return {
+    checkInMs: num('FOREMAN_SEAT_CHECKIN_MS', 10 * 60 * 1000),
+    silentKillMs: num('FOREMAN_SEAT_SILENT_KILL_MS', 5 * 60 * 1000),
+    deadIdleMs: num('FOREMAN_SEAT_DEAD_IDLE_MS', 30 * 60 * 1000),
+  };
+}
 
 // JSON Schema the REVIEW agent is forced to emit (mirrors the engine's finding
 // shape). Passed to the injected agent() as opts.schema in production.
@@ -142,6 +170,7 @@ function executePrompt(ctx) {
     `missing, a prerequisite is absent) or believe it is ALREADY DONE, do NOT`,
     `quietly finish with no changes — state the blocker/claim explicitly as your`,
     `final message; the orchestrator's guards, not you, decide how to proceed.`,
+    lookinAppendix({ heartbeatPath: seatHeartbeatPath(ctx) }),
   ].join('\n');
 }
 
@@ -180,6 +209,7 @@ function reviewPrompt(ctx, gate) {
     `API not behaving as assumed) — distinct from mere ambiguity — you MAY attach a`,
     `plan_amendment {proposed_diff, rationale}; the orchestrator will HALT for human`,
     `approval and will NEVER apply it autonomously.`,
+    lookinAppendix({ heartbeatPath: seatHeartbeatPath(ctx) }),
   ].join(' ');
 }
 
@@ -191,6 +221,7 @@ function fixPrompt(ctx, gate, findings) {
     `turns the gate GREEN; the orchestrator — not you — re-runs the gate to verify.`,
     `Do NOT run any git commands, terminal commands, or tests yourself. The orchestrator owns all testing and version control.`,
     `TESTS ARE FROZEN. Do not modify test files to force a pass. You may NEVER use pytest.skip, @pytest.mark.skip, or pytest.importorskip on failing tests. Solve the root cause in the product code.`,
+    lookinAppendix({ heartbeatPath: seatHeartbeatPath(ctx) }),
   ].join(' ');
 }
 
@@ -206,7 +237,12 @@ export function makeAgentDriver({ agent }) {
     // TRIO_MODEL_<ROLE>, resolved inside the drivers) is reachable on the build path:
     // execute/fix pin to the strongest coder, review can fan out to another family.
     async execute(ctx) {
-      const out = await agent(executePrompt(ctx), { label: `execute:w${ctx.wave.n}`, role: 'execute' });
+      const hb = resetSeatHeartbeat(ctx);
+      const out = await superviseSeat({
+        run: () => agent(executePrompt(ctx), { label: `execute:w${ctx.wave.n}`, role: 'execute' }),
+        getTrail: () => trailFromFile(hb),
+        ...seatWindows(),
+      });
       // 0102: a dead agent (typed { agent_failed } marker from the transport) must
       // never be labeled "complete" — forward the failure so the engine HALTs.
       if (out && typeof out === 'object' && out.agent_failed) {
@@ -215,10 +251,15 @@ export function makeAgentDriver({ agent }) {
       return { note: 'agent execute complete', raw: out };
     },
     async review(ctx, gate) {
-      const out = await agent(reviewPrompt(ctx, gate), {
-        label: `review:w${ctx.wave.n}#${ctx.reviewerIndex}`,
-        schema: REVIEW_SCHEMA,
-        role: 'review',
+      const hb = resetSeatHeartbeat(ctx);
+      const out = await superviseSeat({
+        run: () => agent(reviewPrompt(ctx, gate), {
+          label: `review:w${ctx.wave.n}#${ctx.reviewerIndex}`,
+          schema: REVIEW_SCHEMA,
+          role: 'review',
+        }),
+        getTrail: () => trailFromFile(hb),
+        ...seatWindows(),
       });
       return {
         reviewer: `reviewer-${ctx.reviewerIndex}`,
@@ -238,7 +279,12 @@ export function makeAgentDriver({ agent }) {
       };
     },
     async fix(ctx, gate, findings) {
-      const out = await agent(fixPrompt(ctx, gate, findings), { label: `fix:w${ctx.wave.n}.${ctx.iteration}`, role: 'fix' });
+      const hb = resetSeatHeartbeat(ctx);
+      const out = await superviseSeat({
+        run: () => agent(fixPrompt(ctx, gate, findings), { label: `fix:w${ctx.wave.n}.${ctx.iteration}`, role: 'fix' }),
+        getTrail: () => trailFromFile(hb),
+        ...seatWindows(),
+      });
       if (out && typeof out === 'object' && out.agent_failed) {
         return { note: `agent fix DIED (${out.exit_class})`, agent_failed: out };
       }

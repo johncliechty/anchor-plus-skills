@@ -22,6 +22,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { lookinAppendix, superviseSeat } from '../../drivers/swarm-lookin.mjs';
+
+/** Wall-clock window a trail-less (read-only, one-shot) Shark seat may stay silent
+ *  before it is declared dead. Override: CRUCIBLE_SHARK_SEAT_WINDOW_MS. */
+export const SHARK_SEAT_WINDOW_MS = 15 * 60 * 1000;
 
 import { HaltError, REVIEW_SCHEMA } from './crucible-lib.mjs';
 import { collectFindings } from '../../foreman/bin/wave-engine.mjs';
@@ -326,6 +331,8 @@ function sharkPrompt(role, angle, northStar, draft, research = null,
     `=== DRAFT UNDER REVIEW ===`,
     String(draft),
     `=== END DRAFT ===`,
+    ``,
+    lookinAppendix({ northStar }),
   ].join('\n');
 }
 
@@ -401,13 +408,28 @@ export function makeSharkDriver({ agent } = {}) {
       const lens = angle ?? angleForShark(round, SHARK_ROLES.findIndex((r) => r.role === role.role));
       
       const markdownFirst = draft.length > 20000;
-      
-      const out = await agent(
-        sharkPrompt(role, lens, northStar, draft, research, { priorBlockerIds, changelog, markdownFirst }), {
-          label: `shark:${role.role}:r${round}`,
-          role: 'shark',
-          schema: markdownFirst ? undefined : SHARK_SCHEMA,
-        });
+
+      // 2026-09-01 (Gate 5 Stage 2, Ecgberht): a Shark is a one-shot read-only seat
+      // with NO heartbeat trail, so the look-in supervisor's "silence is death"
+      // degenerated into a 90s+60s WALL-CLOCK kill — every reviewer slower than
+      // ~3 min was declared dead (child left running, reply discarded) and the
+      // round reported DRY with 0/2 answerable. Stage 1 merely squeaked under it.
+      // A trail-less seat is given a window sized to a real review instead; the
+      // driver's own per-call timeout stays the dead-process backstop.
+      const seatWindowMs = Number(process.env.CRUCIBLE_SHARK_SEAT_WINDOW_MS) > 0
+        ? Number(process.env.CRUCIBLE_SHARK_SEAT_WINDOW_MS)
+        : SHARK_SEAT_WINDOW_MS;
+      const out = await superviseSeat({
+        run: () => agent(
+          sharkPrompt(role, lens, northStar, draft, research, { priorBlockerIds, changelog, markdownFirst }), {
+            label: `shark:${role.role}:r${round}`,
+            role: 'shark',
+            schema: markdownFirst ? undefined : SHARK_SCHEMA,
+          }),
+        checkInMs: seatWindowMs,
+        silentKillMs: 60 * 1000,
+        deadIdleMs: seatWindowMs,
+      });
 
       let answerable, note, findings;
       if (markdownFirst) {

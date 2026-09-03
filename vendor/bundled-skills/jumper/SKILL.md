@@ -106,12 +106,13 @@ node bin/jumper-run.mjs --problem "<statement>" --depth FULL --fan-out <ideaRoun
   engine never starts. Recovery: omit `--fan-out` or pass the equal value.
 - **killGates floor:** every depth keeps `killGates ≥ 3` (never thinned). Pre-run refuse below floor
   (`JumperKillGatesFloorHalt`); engine does not start.
-- **Model seats are pre-decided** (invocation discipline): drafter/ideation = Claude; Gate 3 =
-  Gemini via agy (`JUMPER_GATE3_DRIVER` overrides the driver, never the independence rule).
+- **Model seats are pre-decided** (invocation discipline): Anchor's coding family owns
+  drafting/ideation and its review family owns Gate 3. `JUMPER_GATE3_DRIVER` may
+  retarget the review driver, but never the independence rule.
 - **HALTs are honest outcomes, not bugs — and a HALT never destroys paid work (2026-08-19,
   journal 0031)**: `JumperSelfReviewHalt` = Gate 3 resolved to the drafter family (fixed at
-  PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any paid seat; fix
-  model prefs or pass `--no-live-refuter` for an honest single-family run);
+  PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any paid seat;
+  select an independent review family or explicitly retarget `JUMPER_GATE3_DRIVER`);
   `JumperCrossFamilyDegradeHalt` = agy down (Jumper NEVER silently self-reviews — rerun when agy
   is back; if candidates were already built, the CLI emits them to `--output` stamped
   **NOT FULLY VETTED** instead of nothing). `RefuterBudgetHalt` no longer kills a composed run
@@ -119,7 +120,8 @@ node bin/jumper-run.mjs --problem "<statement>" --depth FULL --fan-out <ideaRoun
   at the budget (prereg R=3, or `--budget N`) — the first R firing elevations are refuted for
   real, the excess floor to SPECULATIVE with the "no independent refutation ran" stamp, and the
   output carries `refutation_capped` naming the numbers. Standalone gandalf keeps its HALT.
-  `--no-live-refuter` floors ALL elevations to SPECULATIVE honestly.
+  `--no-live-refuter` floors Gandalf elevations to SPECULATIVE honestly; it does
+  **not** disable Jumper's Gate-3 kill-filter, its liveness ping, or its seating check.
 - **Watch the heartbeats** (2026-07-25): the CLI streams `jumper: gandalf:start|done`,
   `sphere:i/n`, `killfilter:candidate i/n …` to stderr — a healthy long run is visibly moving;
   silence for many minutes is the anomaly (journal 0014's false-DONE came from this blindness).

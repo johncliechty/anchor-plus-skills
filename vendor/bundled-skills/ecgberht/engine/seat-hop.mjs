@@ -1,7 +1,7 @@
 /**
  * TW4 — Seat hop (Master Plan R2 §4.4).
  *
- * Titlebar seat switcher wired to Anchor prefs (claude/gemini/grok).
+ * Titlebar seat switcher wired to Anchor prefs (chatgpt/claude/gemini/grok).
  * A seat hop is a NON-EVENT with a receipt: `seat_hop` who/when/from→to.
  * The ledger is the transition document — the next turn continues from
  * Face / Strip / Roadmap / packet with NO re-brief and no chat-history
@@ -48,6 +48,7 @@ export function driverToFamily(driver) {
   const d = String(driver || '')
     .trim()
     .toLowerCase();
+  if (d === 'chatgpt-cli' || d === 'chatgpt' || d === 'codex') return 'chatgpt';
   if (d === 'claude') return 'claude';
   if (d === 'gemini-cli' || d === 'agy' || d === 'gemini') return 'gemini';
   if (d === 'grok-cli' || d === 'grok') return 'grok';
@@ -56,16 +57,15 @@ export function driverToFamily(driver) {
 
 /**
  * Current seat family from Anchor prefs (injectable for tests).
- * Order: explicit prefs.seat_family → default_cli driver → coding_family.
+ * Order: coding_family → default_cli driver. This mirrors the family actually
+ * passed to Steward's model call; a stale terminal default may never mislabel it.
  * @param {{ prefs?: object|null, env?: object, prefsPath?: string|null }} [opts]
  * @returns {string}
  */
 export function currentSeatFamily(opts = {}) {
-  const explicit = normalizeFamily(opts.prefs?.seat_family);
-  if (explicit) return explicit;
   const prefs = loadAnchorPrefs(opts);
   const viaDefaultCli = driverToFamily(prefs.default_cli);
-  return viaDefaultCli ?? prefs.coding_family ?? 'claude';
+  return prefs.coding_family ?? viaDefaultCli ?? 'claude';
 }
 
 /**
@@ -215,7 +215,8 @@ export function titlebarSeatOptions(opts = {}) {
 }
 
 /**
- * Persist the selected seat back to Anchor prefs (default_cli + seat_family).
+ * Persist the selected Steward seat back to Anchor prefs. `coding_family` is
+ * the actual runtime route; `default_cli` and `seat_family` retain UI/legacy parity.
  * Path resolves via injectable prefsPath or env/home candidates — no
  * host-absolute literals. All IO is injectable for tests.
  * @param {{
@@ -249,6 +250,7 @@ export function persistSeatToAnchorPrefs(opts = {}) {
   }
   const next = {
     ...current,
+    coding_family: opts.family,
     default_cli: opts.driver,
     seat_family: opts.family,
   };
@@ -298,7 +300,7 @@ export function applyTitlebarSeatSwitch(opts = {}) {
 }
 
 /**
- * Closed verb body: `seat-hop --seat <claude|gemini|grok> --who <name>`.
+ * Closed verb body: `seat-hop --seat <chatgpt|claude|gemini|grok> --who <name>`.
  * The titlebar switcher calls the same path (CLI parity).
  * @param {object} opts parsed verb options + injectors
  */
@@ -311,7 +313,7 @@ export function verbSeatHop(opts = {}) {
       error: 'seat_target_required',
       spelling: SPELLING,
       families: [...SEAT_FAMILIES],
-      usage: 'seat-hop --seat <claude|gemini|grok> [--who <name>] [--when <iso>]',
+      usage: 'seat-hop --seat <chatgpt|claude|gemini|grok> [--who <name>] [--when <iso>]',
       message:
         'seat-hop requires --seat <family> (the titlebar switcher passes the selected family).',
     };

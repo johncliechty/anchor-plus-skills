@@ -1,7 +1,7 @@
 """W9 / SC7 — Clickable health + reaper-health banners → Doctor seed.
 
-Named tests from IMPLEMENTATION-PLAN Wave 9:
-  - test_health_banner_doctor_seed (1:1 fields + async start attempted)
+Named tests from IMPLEMENTATION-PLAN Wave 9, tightened by Doctor P0:
+  - test_health_banner_doctor_seed (1:1 fields + click-required start policy)
   - cross-surface fail-SAFE with dual-write rule (banner seed ≠ scare RED)
 
 Hermetic: tmp ANCHOR_DATA_DIR; never touches live :8777 / real CLIs.
@@ -82,6 +82,8 @@ def test_health_banner_doctor_seed(w9env):
     assert not re.search(r"health_reports[/\\].*\.md", nav["href"], re.I)
     assert "issueId=" in nav["href"]
     assert "diagnose=1" in nav["href"]
+    assert nav["diagnoseRequested"] is True
+    assert nav["autoDiagnose"] is False
     qs = parse_qs(urlparse(nav["href"]).query)
     assert qs.get("issueId", [""])[0] == health["issueId"]
     assert qs.get("message", [""])[0] == health["message"]
@@ -103,13 +105,16 @@ def test_health_banner_doctor_seed(w9env):
     chain = gui._w9_build_reaper_health_banner_issue({"kind": "chain-tampered"})
     assert chain["issueId"] == "ZH_REAPER_CHAIN_TAMPERED"
 
-    # Async diagnose start attempted when engine enabled
+    # Context is ready when an engine is enabled, but opening the page does not
+    # start a model. The authenticated POST remains click-only.
     attempt = gui._w9_attempt_async_banner_diagnose_start(health, engine="claude")
-    assert attempt["attempted"] is True
-    assert attempt["async"] is True
+    assert attempt["attempted"] is False
+    assert attempt["async"] is False
+    assert attempt["requiresOperatorClick"] is True
     assert attempt["ok"] is True
     assert attempt["failureNonBlocking"] is True
     assert attempt["uiUsable"] is True
+    assert attempt["session"] is None
     assert attempt["seed"]["issueId"] == health["issueId"]
     assert attempt["seedOneToOne"]["ok"] is True
 
@@ -117,7 +122,9 @@ def test_health_banner_doctor_seed(w9env):
     assert plan["canStart"] is True
     assert plan["session"]["async"] is True
     assert plan["session"]["failureNonBlocking"] is True
-    assert plan["session"].get("attemptAsyncDiagnose") is True
+    assert plan["session"].get("attemptAsyncDiagnose") is False
+    assert plan["session"].get("requiresOperatorClick") is True
+    assert plan["session"].get("startWhen") == "operator_diagnose_click"
     assert plan["bannerOneToOne"]["ok"] is True
     assert plan["navigation"]["isMarkdownPath"] is False
     assert plan["p6BannerDoctor"]["version"] == gui._W9_BANNER_DOCTOR_SEED_VERSION
@@ -127,7 +134,8 @@ def test_health_banner_doctor_seed(w9env):
         health, engine="claude", force_fail=True, fail_reason="simulated_start_timeout"
     )
     assert failed["ok"] is False
-    assert failed["attempted"] is True
+    assert failed["attempted"] is False
+    assert failed["requiresOperatorClick"] is True
     assert failed["uiUsable"] is True
     assert failed["failureNonBlocking"] is True
     assert failed["session"] is None
@@ -150,7 +158,7 @@ def test_health_banner_doctor_seed(w9env):
     assert "See <code" not in html
     assert 'role="button"' in html
 
-    # Doctor page template: parses banner query + auto-diagnose attempt
+    # Doctor page template parses banner context and keeps start click-only.
     src = Path(gui.__file__).read_text(encoding="utf-8", errors="replace")
     assert "BANNER_ISSUE" in src
     assert "parseBannerIssueFromQuery" in src or "Banner seed loaded (W9/SC7)" in src

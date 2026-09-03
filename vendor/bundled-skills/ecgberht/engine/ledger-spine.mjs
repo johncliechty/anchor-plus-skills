@@ -76,8 +76,10 @@ const ROADMAP_FILE_NAME = SPINE_LEDGER_FILE;
  * v4: + reflection_receipt / next_stage_proposal (Wave 14 — gate decision 4
  *     zero-model emit at validated handback)
  * v5: + attention_projection_published (Wave 16 — altitude contract / criterion 12)
+ * v6: + goal_flip (Wave 17 — steward slice loop; re-read the North Star on close)
+ * v7: + kickoff_proposal / kickoff_confirm (Wave 18 — conversational kickoff lineage)
  */
-export const ROADMAP_EVENT_KINDS_VERSION = 5;
+export const ROADMAP_EVENT_KINDS_VERSION = 7;
 
 /**
  * Kinds admitted at the current version. Mirror of roadmap.mjs ROADMAP_EVENT_KINDS.
@@ -85,6 +87,8 @@ export const ROADMAP_EVENT_KINDS_VERSION = 5;
  * Wave 12 (v3): elaboration_* progressive-elaboration events.
  * Wave 14 (v4): reflection_receipt / next_stage_proposal (gate decision 4).
  * Wave 16 (v5): attention_projection_published (altitude contract).
+ * Wave 17 (v6): goal_flip (steward slice loop).
+ * Wave 18 (v7): kickoff_proposal / kickoff_confirm (versioned human confirmation).
  */
 export const SPINE_EVENT_KINDS = Object.freeze([
   'step_create',
@@ -103,6 +107,9 @@ export const SPINE_EVENT_KINDS = Object.freeze([
   'reflection_receipt',
   'next_stage_proposal',
   'attention_projection_published',
+  'goal_flip',
+  'kickoff_proposal',
+  'kickoff_confirm',
 ]);
 
 // ── Typed-store allow-list ─────────────────────────────────────────────────

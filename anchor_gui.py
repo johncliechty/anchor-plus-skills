@@ -1336,6 +1336,47 @@ def discover_and_adopt(project_id: str, auto_read: bool = True) -> dict:
             "sibling_adopt": sibling, "marker": marker}
 
 
+_PROJECT_OPEN_DISCOVERY_LOCK = threading.Lock()
+_PROJECT_OPEN_DISCOVERY_INFLIGHT = set()
+
+
+def _start_project_open_discovery(project_id: str, *, authorized: bool) -> bool:
+    """Start at most one authenticated open-scan for ``project_id``.
+
+    A document GET used to mint an unbounded daemon thread before its token
+    check. Besides allowing unauthenticated writes/bootstrap, repeated opens
+    could fan out the same expensive scan. Returns ``True`` only when this call
+    actually starts a worker; failures and duplicates are honest ``False``.
+    """
+    pid = str(project_id or "").strip()
+    if not authorized or not pid or pid == "__dashboard__":
+        return False
+    with _PROJECT_OPEN_DISCOVERY_LOCK:
+        if pid in _PROJECT_OPEN_DISCOVERY_INFLIGHT:
+            return False
+        _PROJECT_OPEN_DISCOVERY_INFLIGHT.add(pid)
+
+    def _run():
+        try:
+            discover_and_adopt(pid)
+        except Exception as exc:
+            _logger.error("project-open discovery failed for %s: %s", pid, exc)
+        finally:
+            with _PROJECT_OPEN_DISCOVERY_LOCK:
+                _PROJECT_OPEN_DISCOVERY_INFLIGHT.discard(pid)
+
+    try:
+        threading.Thread(target=_run, daemon=True,
+                         name="discover-" + pid[:24]).start()
+        return True
+    except Exception as exc:
+        with _PROJECT_OPEN_DISCOVERY_LOCK:
+            _PROJECT_OPEN_DISCOVERY_INFLIGHT.discard(pid)
+        _logger.error("project-open discovery could not start for %s: %s",
+                      pid, exc)
+        return False
+
+
 #: Proactive project-summary generation is OFF by default so importing the module
 #: and calling endpoints in unit tests never spawns a background model job. The
 #: live server turns it ON in ``main()``; a test can opt in via the env flag
@@ -2496,14 +2537,17 @@ def _steward_status_tile_line(entry: dict) -> str:
     steward engine's cadence writes — so peeking at the dashboard shows the
     10-minute summary without opening the project. Zero scans (the GET /
     perf invariant holds), honest empty when the project has no cockpit
-    campaign or the file is stale (>1 day); never fabricated."""
+    campaign; after 15 minutes the row names the status as stale instead of
+    replaying yesterday's activity as current truth."""
     folder = (entry.get("folder_path") or "").strip()
     if not folder:
         return ""
     f = Path(folder) / ".ecgberht" / "status-summary.json"
     try:
-        if time.time() - f.stat().st_mtime > 86400:
-            return ""
+        age_seconds = time.time() - f.stat().st_mtime
+        if age_seconds > 900:
+            return "steward status stale · last update %d minutes ago" % max(
+                15, int(age_seconds // 60))
         data = json.loads(f.read_text(encoding="utf-8"))
     except Exception:
         return ""
@@ -2624,19 +2668,13 @@ def render_project_tile_html(entry: dict) -> str:
     )
 
     is_active = state in ("active", "path-missing")
-    p1on = " rnd-pr-on" if pr == 1 else ""
-    p2on = " rnd-pr-on" if pr == 2 else ""
     rescan_btn = (f'<button class="rnd-mini" onclick="rndRescan(\'{pid}\')" '
                   f'title="Re-scan the folder for trio artifacts">Rescan</button>')
     if is_active:
         lifecycle = (
-            f'<button class="rnd-mini{p1on}" onclick="rndSetPriority(\'{pid}\',1)" title="Priority 1">P1</button>'
-            f'<button class="rnd-mini{p2on}" onclick="rndSetPriority(\'{pid}\',2)" title="Priority 2">P2</button>'
             f'{rescan_btn}'
             f'<button class="rnd-mini" onclick="rndBlurb(\'{pid}\')" title="Edit blurb (what this project is)">Blurb</button>'
             f'<button class="rnd-mini" onclick="rndNotes(\'{pid}\')" title="Edit notes">Notes</button>'
-            f'<button class="rnd-mini" onclick="rndArchive(\'{pid}\')" title="Archive (shelve, reviewable)">Archive</button>'
-            f'<button class="rnd-mini rnd-danger" onclick="rndRetire(\'{pid}\')" title="Retire / cancel">Retire</button>'
         )
     else:
         lifecycle = (
@@ -2681,7 +2719,6 @@ def render_project_tile_html(entry: dict) -> str:
         f'<img class="rnd-seal-ico" src="{_steward_seal_icon_src()}" alt="" '
         f'onerror="this.style.display=\'none\'" />'
         f'<span class="rnd-name">{name}</span>'
-        f'<span class="rnd-badge rnd-p{pr}">P{pr}</span>'
         f'<span class="rnd-badge rnd-state-{state}">{state}</span>'
         f'{summary_block}'
         f'{activity_block}'
@@ -2690,6 +2727,52 @@ def render_project_tile_html(entry: dict) -> str:
         f'{rollup_block}'
         f'{kebab}'
         f'</div>'
+    )
+
+
+def _home_grass_tile_html() -> str:
+    """Render the canonical Dashboard Grasscatcher on the home page.
+
+    The home request reads only ``__dashboard__``'s dedicated effort-history
+    store.  It must not rediscover every Steward effort in the workspace as an
+    empty-state fallback: that is a second source of truth and makes first paint
+    proportional to the number of sibling directories.
+    """
+    ideas = []
+    try:
+        # ``__dashboard__`` is a synthetic project returned by ``get_project``;
+        # it is deliberately absent from ``list_projects``.  Looking for it in
+        # the registry therefore made the home tile permanently empty even when
+        # the workspace Grasscatcher contained ideas.
+        e = _rnd.get_project("__dashboard__") or {}
+        pid = e.get("id") or ""
+        folder = e.get("folder_path") or ""
+        if pid and folder:
+            ideas = _eh.grass_workbench_data(folder, pid) or []
+    except Exception:
+        ideas = []
+    rows = []
+    for i in ideas[:40]:
+        title = html_lib.escape(str(i.get("title") or i.get("text") or "(untitled)"))
+        when = html_lib.escape(str(i.get("when") or i.get("created_at") or ""))
+        src = html_lib.escape(str(i.get("source") or i.get("status") or ""))
+        rows.append(
+            f'<div class="grass-home-row">'
+            f'<span class="gh-when">{when}</span>'
+            f'<span class="gh-text">{title}</span>'
+            f'<span class="gh-src">{src}</span></div>'
+        )
+    body = "".join(rows) if rows else (
+        '<div class="empty-msg">Nothing caught yet — say “later: …” in a session.</div>'
+    )
+    n = len(ideas)
+    return (
+        f'<details class="dash-tile" id="tile-grass">'
+        f'<summary><span class="tile-glyph" aria-hidden="true">&#127793;</span> '
+        f'Grasscatcher'
+        f'<span class="tile-count">{n} idea{"s" if n != 1 else ""}</span>'
+        f'<span class="tile-hint"></span></summary>'
+        f'<div class="tile-body">{body}</div></details>'
     )
 
 
@@ -2755,13 +2838,18 @@ def _render_group_folders(groups: dict) -> str:
                       if fpath else '')
         drop_hint = ('<span class="rnd-fdrop-hint">drop here to remove '
                      'from a folder</span>' if is_ungrouped else '')
+        # (2026-09-01, John) Folders open CLOSED by default — opening the Projects
+        # tile used to fan out every project in every folder. The server renders
+        # the collapsed state (no flash of expanded rows before JS runs); the JS
+        # re-opens only the folders John opened last time (localStorage, see
+        # rndToggleFolder / the restore loop keyed on RND_FOLDER_LS).
         folders.append(
-            f'<div class="rnd-folder" data-group="{name_attr}" '
+            f'<div class="rnd-folder rnd-collapsed" data-group="{name_attr}" '
             f'data-ungrouped="{"1" if is_ungrouped else "0"}">'
             f'<div class="rnd-folder-head" '
             f'onclick="rndToggleFolder(this)" role="button" tabindex="0" '
             f'title="Collapse / expand folder">'
-            f'<span class="rnd-tw" aria-hidden="true">▾</span>'
+            f'<span class="rnd-tw" aria-hidden="true">▸</span>'
             f'<span class="rnd-fname">{name_esc}</span>'
             f'<span class="rnd-fcount">({len(entries)})</span>'
             f'{path_block}'
@@ -3002,7 +3090,20 @@ def _gather_project_efforts(folder_path, project_id):
                 if idea_text:
                     sub = idea_text
             cost = (eff.get("cost") or {})
-            cost_usd = float(cost.get("total_cost_usd", 0.0) or 0.0)
+            raw_cost = cost.get("total_cost_usd")
+            try:
+                cost_usd = float(raw_cost) if raw_cost is not None else None
+            except (TypeError, ValueError):
+                cost_usd = None
+            if cost.get("cost_state") == "subscription_covered":
+                cost_label = "(subscription)"
+            elif cost.get("cost_state") == "no_seat_started":
+                cost_label = "no seat started"
+            elif cost_usd is not None and (
+                    cost_usd > 0 or cost.get("cost_state") == "engine_reported"):
+                cost_label = f"${cost_usd:.4f}"
+            else:
+                cost_label = ""
             views.append({
                 "job_id": jid,
                 "trio_lane": trio_lane,
@@ -3016,7 +3117,8 @@ def _gather_project_efforts(folder_path, project_id):
                 "age": _fmt_age(eff.get("created_at")),
                 "skill": skill,
                 "sub": sub,
-                "cost_usd": 0.0 if discovered else cost_usd,
+                "cost_usd": None if discovered else cost_usd,
+                "cost_label": "" if discovered else cost_label,
                 "discovered": discovered,
                 "artifact_path": eff.get("artifact_path", "") if discovered else "",
                 "title": eff.get("title", "") if discovered else "",
@@ -3084,8 +3186,9 @@ def _render_effort_card(ev, store_lane, project_id):
         pill = (f"<span class='statepill {ev['pill_cls']}'>{dot}"
                 f"{html_lib.escape(ev['pill_lbl'])}</span>")
     cost_bit = ""
-    if ev["cost_usd"] > 0:
-        cost_bit = (f"<span class='ecost'>${ev['cost_usd']:.4f}</span>")
+    if ev.get("cost_label"):
+        cost_bit = (f"<span class='ecost'>"
+                    f"{html_lib.escape(ev['cost_label'])}</span>")
     # Classes + data hooks. A live/needs-input card is clickable to attach the
     # console; a done card links to its report.
     cls = "effort"
@@ -5173,13 +5276,17 @@ def _fmt_rollup_line(roll: dict) -> str:
     Honesty rules (optimize-not-lying):
     - Zero activity (no sessions, no tokens, no wall clock) → named empty state,
       never ``0 tok · (subscription)``.
-    - ``$`` is shown ONLY when the engine reported a nonzero ``cost_usd``.
-    - ``(subscription)`` only when tokens were actually measured and cost is 0
-      (Max-subscription path) — never inferred from a bare zero cost alone.
+    - ``$`` is shown only for an engine-reported numeric cost.
+    - ``(subscription)`` requires the explicit ``subscription_covered`` state;
+      it is never inferred from tokens plus a numeric zero.
     - Sessions with no token measurement use ``0 tok measured`` / ``cost unknown``.
     """
     toks = int(roll.get("tokens", 0) or 0)
-    cost = float(roll.get("cost_usd", 0.0) or 0.0)
+    raw_cost = roll.get("cost_usd")
+    try:
+        cost = float(raw_cost) if raw_cost is not None else None
+    except (TypeError, ValueError):
+        cost = None
     ms = int(roll.get("wall_clock_ms", 0) or 0)
     n = int(roll.get("sessions", 0) or 0)
     if n <= 0 and toks <= 0 and ms <= 0:
@@ -5200,10 +5307,18 @@ def _fmt_rollup_line(roll: dict) -> str:
     # host the per-message sidecar carries no dollar figure, so a *measured*
     # session renders ``… (subscription)`` — Anchor never computes a dollar
     # figure of its own. (See NORTH-STAR-AMENDMENT.md "No-own-pricing-table".)
-    if cost > 0:
-        money = f"${cost:.2f}"
-    elif toks > 0:
+    states = set(roll.get("cost_states") or [])
+    no_seat = "no_seat_started" in states
+    unpriced_subscriptions = int(roll.get("unpriced_subscription_count", 0) or 0)
+    priced_count = int(roll.get("priced_cost_count", 0) or 0)
+    if unpriced_subscriptions and priced_count and cost is not None:
+        money = f"${cost:.2f} measured + subscription"
+    elif unpriced_subscriptions or "subscription_covered" in states:
         money = "(subscription)"
+    elif cost is not None and (cost > 0 or "engine_reported" in states):
+        money = f"${cost:.2f}"
+    elif no_seat:
+        money = "no seat started"
     else:
         money = "cost unknown"
     # When only wall-clock exists (Grok unmeasured / wall-only rows), be explicit.
@@ -5551,8 +5666,104 @@ def render_steward_control() -> str:
     return html + script
 
 
+_MODEL_PREF_ROLES = {
+    "terminal": "default_cli",
+    "coder": "coding_family",
+    "reviewer": "review_family",
+    # Judge is a distinct visible role, but the universal seating law gives
+    # verification one authoritative family preference.
+    "judge": "review_family",
+}
+_MODEL_PREF_FAMILIES = (
+    ("claude", "Claude"),
+    ("gemini", "Gemini"),
+    ("grok", "Grok"),
+    ("chatgpt", "ChatGPT"),
+)
+
+
+def model_role_capabilities(profile=None) -> dict:
+    """Return honest dashboard availability for each visible agentic role.
+
+    This reports transport truth without creating another setting.  Codex can
+    drive coding/orchestration when its subscription CLI is present.  Its
+    interactive terminal bridge is unfinished, and reviewer/judge stay
+    fail-closed because current receipts do not attest the served model.
+    """
+    if profile is None:
+        try:
+            profile = _lanes.detect_host_profile()
+        except Exception:
+            profile = {}
+    available = {
+        family: bool((profile or {}).get(family))
+        for family, _label in _MODEL_PREF_FAMILIES
+    }
+    roles = {}
+    for role, setting in _MODEL_PREF_ROLES.items():
+        families = {}
+        for family, label in _MODEL_PREF_FAMILIES:
+            present = available[family]
+            selectable = present
+            status = "ready" if present else "unavailable"
+            reason = (
+                "%s subscription CLI is ready on this host." % label
+                if present else
+                "%s subscription CLI is not detected on this host." % label
+            )
+            if family == "chatgpt" and present and role == "terminal":
+                selectable = False
+                status = "bridge_pending"
+                reason = (
+                    "Interactive ChatGPT terminal is not ready: the persistent "
+                    "Codex exec/resume bridge is still pending, so no seat starts."
+                )
+            elif family == "chatgpt" and present and role == "coder":
+                status = "available_unattested"
+                reason = (
+                    "ChatGPT is ready as the Codex coding/orchestration driver "
+                    "with Ultra requested; served-model identity is not attested."
+                )
+            elif family == "chatgpt" and present and role in ("reviewer", "judge"):
+                selectable = False
+                status = "verification_unattested"
+                reason = (
+                    "ChatGPT verification is unavailable: the current Codex "
+                    "transport does not attest the served model, so this seat "
+                    "fails closed."
+                )
+            families[family] = {
+                "label": label,
+                "available": present,
+                "selectable": selectable,
+                "status": status,
+                "reason": reason,
+            }
+        roles[role] = {"setting": setting, "families": families}
+    return {
+        "schema": "anchor.model-role-capabilities.v1",
+        "profile": available,
+        "judge_follows": "reviewer",
+        "roles": roles,
+    }
+
+
+def _model_capability_fields() -> dict:
+    """Settings-API fields shared by GET, POST, and no-op POST."""
+    try:
+        profile = _lanes.detect_host_profile()
+    except Exception:
+        profile = {
+            family: False for family, _label in _MODEL_PREF_FAMILIES
+        }
+    return {
+        "host_profile": profile,
+        "model_capabilities": model_role_capabilities(profile),
+    }
+
+
 def render_model_prefs_controls() -> str:
-    """Compact Default-terminal / Coding / Review family selects for the home header.
+    """Compact Terminal / Coder / Reviewer / Judge selects for the home header.
 
     Loads current prefs via GET ``/api/settings`` (token from localStorage, same
     pattern as other dashboard token-gated reads) and POSTs on change. Dark-theme
@@ -5568,14 +5779,44 @@ def render_model_prefs_controls() -> str:
     dcli = html_lib.escape(str(s.get("default_cli") or "grok"), quote=True)
     ccode = html_lib.escape(str(s.get("coding_family") or "claude"), quote=True)
     rcode = html_lib.escape(str(s.get("review_family") or "gemini"), quote=True)
+    capabilities = model_role_capabilities()
 
-    def _opts(selected: str) -> str:
+    def _opts(selected: str, role: str) -> str:
         parts = []
-        for val, lab in (("claude", "Claude"), ("gemini", "Gemini"),
-                         ("grok", "Grok")):
+        families = capabilities["roles"][role]["families"]
+        for val, lab in _MODEL_PREF_FAMILIES:
+            cap = families[val]
             sel = " selected" if val == selected else ""
-            parts.append("<option value='%s'%s>%s</option>" % (val, sel, lab))
+            disabled = " disabled" if not cap["selectable"] else ""
+            shown = lab
+            if val == "chatgpt":
+                suffix = {
+                    "bridge_pending": "terminal bridge pending",
+                    "available_unattested": "coder ready",
+                    "verification_unattested": "verification unavailable",
+                    "unavailable": "unavailable",
+                }.get(cap["status"], cap["status"])
+                shown = "%s &mdash; %s" % (lab, suffix)
+            elif not cap["selectable"]:
+                shown = "%s &mdash; unavailable" % lab
+            parts.append(
+                "<option value='%s' data-label='%s' data-status='%s' "
+                "data-reason=\"%s\"%s%s>%s</option>" % (
+                    val,
+                    html_lib.escape(lab, quote=True),
+                    html_lib.escape(str(cap["status"]), quote=True),
+                    html_lib.escape(str(cap["reason"]), quote=True),
+                    sel, disabled, shown,
+                )
+            )
         return "".join(parts)
+
+    chatgpt_ready = capabilities["roles"]["coder"]["families"]["chatgpt"]["available"]
+    capability_summary = (
+        "ChatGPT: coder ready &middot; terminal bridge pending &middot; "
+        "verification unavailable"
+        if chatgpt_ready else "ChatGPT unavailable on this host"
+    )
 
     style = (
         "display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;"
@@ -5588,21 +5829,32 @@ def render_model_prefs_controls() -> str:
     lab_style = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap"
     html = (
         "<div id='modelPrefs' class='model-prefs' style=\"%s\" "
-        "title='Interactive default terminal + coding/review model families'>"
-        "<label style=\"%s\">Default terminal "
-        "<select id='mpDefaultCli' data-key='default_cli' style=\"%s\">%s</select>"
+        "title='Terminal, coding, and verification model families'>"
+        "<label style=\"%s\">Terminal "
+        "<select id='mpDefaultCli' data-key='default_cli' data-role='terminal' "
+        "aria-describedby='mpCapability' style=\"%s\">%s</select>"
         "</label>"
-        "<label style=\"%s\">Coding "
-        "<select id='mpCoding' data-key='coding_family' style=\"%s\">%s</select>"
+        "<label style=\"%s\">Coder "
+        "<select id='mpCoding' data-key='coding_family' data-role='coder' "
+        "aria-describedby='mpCapability' style=\"%s\">%s</select>"
         "</label>"
-        "<label style=\"%s\">Review "
-        "<select id='mpReview' data-key='review_family' style=\"%s\">%s</select>"
+        "<label style=\"%s\">Reviewer "
+        "<select id='mpReview' data-key='review_family' data-role='reviewer' "
+        "aria-describedby='mpCapability' style=\"%s\">%s</select>"
+        "</label>"
+        "<label style=\"%s\" title='Judge follows Reviewer by the seating law'>Judge "
+        "<select id='mpJudge' data-key='review_family' data-role='judge' "
+        "data-linked-role='reviewer' aria-describedby='mpCapability' "
+        "style=\"%s\">%s</select>"
         "</label>"
         "<span id='mpStatus' style=\"font-size:10px;opacity:.7\"></span>"
+        "<span id='mpCapability' role='status' style=\"font-size:10px;opacity:.72\" "
+        "title='Judge follows Reviewer; disabled choices explain transport limits'>%s</span>"
         "</div>"
-    ) % (style, lab_style, sel_style, _opts(dcli),
-         lab_style, sel_style, _opts(ccode),
-         lab_style, sel_style, _opts(rcode))
+    ) % (style, lab_style, sel_style, _opts(dcli, "terminal"),
+         lab_style, sel_style, _opts(ccode, "coder"),
+         lab_style, sel_style, _opts(rcode, "reviewer"),
+         lab_style, sel_style, _opts(rcode, "judge"), capability_summary)
 
     # Self-contained script: load prefs on DOMContentLoaded; POST on change.
     # Uses X-Anchor-Token for POST and ?token= for GET (dashboard convention).
@@ -5623,17 +5875,70 @@ def render_model_prefs_controls() -> str:
     var el = document.getElementById('mpStatus');
     if (el) el.textContent = m || '';
   }
+  function optionLabel(cap, base) {
+    if (!cap) return base;
+    if (base === 'ChatGPT') {
+      var suffix = {
+        bridge_pending: 'terminal bridge pending',
+        available_unattested: 'coder ready',
+        verification_unattested: 'verification unavailable',
+        unavailable: 'unavailable'
+      }[cap.status] || cap.status;
+      return base + ' — ' + suffix;
+    }
+    return cap.selectable ? base : (base + ' — unavailable');
+  }
+  function applyCapabilities(caps) {
+    if (!caps || !caps.roles) return;
+    window.ANCHOR_MODEL_CAPABILITIES = caps;
+    var roleIds = {
+      terminal: 'mpDefaultCli', coder: 'mpCoding',
+      reviewer: 'mpReview', judge: 'mpJudge'
+    };
+    Object.keys(roleIds).forEach(function (role) {
+      var el = document.getElementById(roleIds[role]);
+      var families = caps.roles[role] && caps.roles[role].families;
+      if (!el || !families) return;
+      Array.prototype.forEach.call(el.options, function (opt) {
+        var cap = families[opt.value];
+        if (!cap) return;
+        var base = opt.getAttribute('data-label') || opt.textContent;
+        opt.disabled = !cap.selectable;
+        opt.setAttribute('data-status', cap.status || '');
+        opt.setAttribute('data-reason', cap.reason || '');
+        opt.textContent = optionLabel(cap, base);
+      });
+    });
+    var note = document.getElementById('mpCapability');
+    var chat = caps.roles.coder && caps.roles.coder.families.chatgpt;
+    if (note && chat) {
+      note.textContent = chat.available
+        ? 'ChatGPT: coder ready · terminal bridge pending · verification unavailable'
+        : 'ChatGPT unavailable on this host';
+    }
+  }
+  function showReason(el) {
+    if (!el) return;
+    var opt = el.options[el.selectedIndex];
+    var note = document.getElementById('mpCapability');
+    if (note && opt && opt.getAttribute('data-reason')) {
+      note.textContent = opt.getAttribute('data-reason');
+    }
+  }
   function apply(d) {
     if (!d) return;
     var map = {
-      default_cli: 'mpDefaultCli',
-      coding_family: 'mpCoding',
-      review_family: 'mpReview'
+      default_cli: ['mpDefaultCli'],
+      coding_family: ['mpCoding'],
+      review_family: ['mpReview', 'mpJudge']
     };
     Object.keys(map).forEach(function (k) {
-      var el = document.getElementById(map[k]);
-      if (el && d[k]) el.value = d[k];
+      map[k].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && d[k]) el.value = d[k];
+      });
     });
+    applyCapabilities(d.model_capabilities);
     if (d.default_cli) window.ANCHOR_DEFAULT_CLI = d.default_cli;
     if (d.coding_family) window.ANCHOR_CODING_FAMILY = d.coding_family;
     if (d.review_family) window.ANCHOR_REVIEW_FAMILY = d.review_family;
@@ -5672,10 +5977,11 @@ def render_model_prefs_controls() -> str:
       .catch(function () { setStatus('error'); });
   }
   function wire() {
-    ['mpDefaultCli', 'mpCoding', 'mpReview'].forEach(function (id) {
+    ['mpDefaultCli', 'mpCoding', 'mpReview', 'mpJudge'].forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener('change', function () { save(el); });
+      el.addEventListener('change', function () { showReason(el); save(el); });
+      el.addEventListener('focus', function () { showReason(el); });
     });
     load();
   }
@@ -6115,11 +6421,29 @@ _PROJECT_WINDOW_JS = (STATIC_DIR / PROJECT_WINDOW_JS_ASSET).read_text(encoding="
 
 def _fmt_cost(rollup: dict) -> str:
     """Render a one-line cost/time/tokens summary from a rollup dict."""
-    cost = rollup.get("total_cost_usd", 0.0) or 0.0
+    raw_cost = rollup.get("total_cost_usd")
+    try:
+        cost = float(raw_cost) if raw_cost is not None else None
+    except (TypeError, ValueError):
+        cost = None
+    unpriced = int(rollup.get("unpriced_subscription_count", 0) or 0)
+    priced = int(rollup.get("priced_cost_count", 0) or 0)
+    states = set(rollup.get("cost_states") or [])
+    no_seat = "no_seat_started" in states
+    if unpriced and priced and cost is not None:
+        money = f"${cost:.4f} measured + subscription"
+    elif unpriced or "subscription_covered" in states:
+        money = "(subscription)"
+    elif cost is not None and (cost > 0 or "engine_reported" in states):
+        money = f"${cost:.4f}"
+    elif no_seat:
+        money = "no seat started"
+    else:
+        money = "cost unknown"
     dur_ms = rollup.get("duration_ms", 0) or 0
     toks = rollup.get("total_tokens", 0) or 0
     secs = dur_ms / 1000.0
-    return (f"${cost:.4f} · {secs:.1f}s · {toks:,} tok "
+    return (f"{money} · {secs:.1f}s · {toks:,} tok "
             f"({rollup.get('effort_count', 0)} effort"
             f"{'s' if rollup.get('effort_count', 0) != 1 else ''})")
 
@@ -6175,48 +6499,28 @@ def project_tasks(project_id: str) -> list:
 
 
 def render_project_tasks_html(project_id: str) -> str:
-    """Render the linked-tasks strip inside the project window (v2 Wave 4 / §G).
+    """Linked tasks for the project window — read-only.
 
-    Surfaces the existing ``link_task`` capability: lists every active task whose
-    ``Project: <id>`` matches, each with an Unlink affordance, plus a "Link task"
-    button that calls the existing ``/api/rnd/link_task`` endpoint. Replaces the
-    old dead-end "no tasks linked yet" message with a working strip.
+    Link / add-to-task-list controls were dropped (2026-08-28): the home
+    Tasks tile is the place to edit, wait, cancel, or change priority.
     """
-    pid_attr = html_lib.escape(project_id, quote=True)
-    link_btn = (f"<button class='rnd-mini' data-project=\"{pid_attr}\" "
-                f"onclick=\"rndLinkTask(this)\" "
-                f"title='Link an existing task to this project'>+ Link task"
-                f"</button>")
-    header = (f"<h2 style='display:flex;align-items:center;gap:10px'>Tasks "
-              f"{link_btn}</h2>")
     tasks = project_tasks(project_id)
+    header = "<h2>Tasks</h2>"
     if not tasks:
         return (header + "<p class='rnd-empty-tasks' style='color:#8a90a2'>"
-                "No tasks linked to this project yet. Use "
-                "<strong>+ Link task</strong> above (or "
-                "<code>anchor.py link \"task\" --project &lt;id&gt;</code>).</p>")
+                "No tasks on this project. Use the Tasks tile on the dashboard.</p>")
     rows = []
     for t in tasks:
         mark = "✓" if t.get("done") else "○"
-        txt_raw = t.get("text", "")
-        txt = html_lib.escape(txt_raw)
-        txt_attr = html_lib.escape(txt_raw, quote=True)
+        txt = html_lib.escape(t.get("text", ""))
         dom = html_lib.escape(t.get("domain", ""))
         pr = t.get("priority", 2)
-        # Task identity rides via data- attributes (entity-decoded by the
-        # browser), NOT as an inline JS string arg — so text with apostrophes,
-        # quotes, &, <, > round-trips verbatim to /api/rnd/link_task.
-        unlink = (f"<button class='rnd-mini rnd-unlink' "
-                  f"data-task=\"{txt_attr}\" data-project=\"{pid_attr}\" "
-                  f"onclick=\"rndUnlinkTask(this)\" "
-                  f"title='Unlink this task'>Unlink</button>")
         rows.append(
             f"<li class='linked-task' style='display:flex;align-items:center;"
             f"gap:8px;margin-bottom:5px'>"
             f"<span style='color:#6c9cfc'>{mark}</span> {txt} "
             f"<span style='color:#8a90a2;font-size:12px'>"
-            f"(P{pr} · {dom})</span>"
-            f"<span style='margin-left:auto'>{unlink}</span></li>"
+            f"(P{pr} · {dom})</span></li>"
         )
     return (header + "<ul style='list-style:none;padding:0'>"
             + "".join(rows) + "</ul>")
@@ -6814,8 +7118,8 @@ def generate_html(projects, tasks, inbox):
 
     # ── Health banner (W9 / SC7) ──
     # Clickable → Doctor with 1:1 issue seed (issueId, message, component,
-    # lastError, suggestedChecks) + async diagnose attempt. NOT a static
-    # markdown path to health_reports/*.md.
+    # lastError, suggestedChecks), preloaded without a model start. NOT a
+    # static markdown path to health_reports/*.md.
     health_banner_html = ""
     hr = latest_health_report()
     if hr is not None:
@@ -7286,6 +7590,16 @@ def generate_html(projects, tasks, inbox):
     except Exception:
         rnd_archive_html = ('<div class="rnd-projects"><p class="rnd-empty">'
                             'Archive unavailable.</p></div>')
+    try:
+        grass_tile_html = _home_grass_tile_html()
+    except Exception:
+        grass_tile_html = (
+            '<details class="dash-tile" id="tile-grass"><summary>'
+            '<span class="tile-glyph">&#127793;</span> Grasscatcher'
+            '<span class="tile-count">unavailable</span></summary>'
+            '<div class="tile-body"><div class="empty-msg">'
+            'Grasscatcher unavailable.</div></div></details>'
+        )
 
     # Projects-tile summary line. The markdown PROJECTS.md count alone reads "0
     # active" on a dashboard full of R&D work, so the tile counts what it
@@ -7382,7 +7696,7 @@ def generate_html(projects, tasks, inbox):
                 "done_count": str(len(done_tasks)),
                 "cancelled_count": str(len(cancelled_tasks)),
                 "saved_count": str(len(saved_tasks)),
-                "model_flex_badge": render_model_flex_badge(),
+                "model_flex_badge": "",
                 "today_str": today_str,
                 "top_done": str(top_done),
                 "top_total": str(len(top_tasks)),
@@ -7414,9 +7728,8 @@ def generate_html(projects, tasks, inbox):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Anchor Dashboard — J.C. Liechty</title>
-<link rel="icon" href="/vendor/brand/gwl-m-icon.svg?v={BUILD_ID}" type="image/svg+xml">
-<link rel="icon" href="/anchor.ico?v=2026-05-11" type="image/x-icon">
-<link rel="icon" href="/anchor.png?v=2026-05-11" type="image/png" sizes="256x256">
+<link rel="icon" href="/anchor.ico?v={BUILD_ID}" type="image/x-icon">
+<link rel="icon" href="/anchor.png?v={BUILD_ID}" type="image/png" sizes="256x256">
 <link rel="apple-touch-icon" href="/anchor-touch.png?v=2026-05-11">
 <style>
 :root {{
@@ -7667,6 +7980,12 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 .dash-tile.tile-seat {{ border-color: rgba(224,164,55,0.45); }}
 .dash-tile.tile-seat > summary {{ font-size: 18px; padding: 16px 18px; color: #e0a437; }}
 .dash-tile.tile-seat .tile-ico {{ width: 44px; height: 44px; border-radius: 6px; }}
+.grass-home-row {{ display: flex; gap: 10px; align-items: baseline; padding: 6px 2px;
+  font-size: 13px; border-bottom: 1px solid var(--border); }}
+.grass-home-row:last-child {{ border-bottom: none; }}
+.grass-home-row .gh-when {{ color: var(--text-dim); font-size: 11.5px; width: 88px; flex: none; }}
+.grass-home-row .gh-text {{ flex: 1; }}
+.grass-home-row .gh-src {{ color: var(--text-dim); font-size: 11.5px; flex: none; }}
 /* The High Seat rendered INSIDE its tile rather than as a floating dock. */
 .ecg-hs-inline {{ color: var(--text); font-size: 13px; }}
 
@@ -8114,7 +8433,6 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          {render_model_flex_badge()}
           {render_model_prefs_controls()}
           {render_steward_control()}
           <button class="btn btn-sm" onclick="window.open('/doctor' + (_anchorToken() ? ('?token=' + encodeURIComponent(_anchorToken())) : ''), '_blank')" style="font-size:12px;padding:4px 10px;background:#131828;border:1px solid #10b981;color:#10b981;font-weight:600;border-radius:6px;cursor:pointer;" title="Anchor Doctor Diagnostic">&#10010; Anchor Doctor</button>
@@ -8160,10 +8478,13 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
           <img class="tile-ico" src="/vendor/brand/workbench-icon.jpg?v={BUILD_ID}" alt="" onerror="this.style.display='none'" />
           Workbench
           <span class="tile-count">the dashboard's own project cockpit</span>
+          <a class="btn btn-sm btn-outline" href="/project/__dashboard__"
+             target="_blank" rel="noopener" onclick="event.stopPropagation()"
+             style="font-size:11px;padding:3px 9px">Open cockpit</a>
           <span class="tile-hint"></span>
         </summary>
         <div class="tile-body" style="padding:0">
-          <iframe src="/project/__dashboard__" style="width:100%; height:1100px; border:none; display:block;"></iframe>
+          <iframe src="/project/__dashboard__?classic=1" style="width:100%; height:1100px; border:none; display:block;"></iframe>
         </div>
       </details>
 
@@ -8239,6 +8560,8 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
           {f'<div class="section-header"><h3>Priority 2+ Projects</h3></div><div class="card-grid">{"".join(project_card(p) for p in p2_projects)}</div>' if p2_projects else ""}
         </div>
       </details>
+
+      {grass_tile_html}
     </div>
 
     <!-- Completed view -->
@@ -9367,15 +9690,29 @@ function promoteProject(b64) {{ apiCall('/api/promote_project', {{name: dec(b64)
 function demoteProject(b64) {{ apiCall('/api/demote_project', {{name: dec(b64)}}); }}
 
 // ── R&D project lifecycle (rich tiles) ──
-// Open a project in ITS OWN window, named per-project: if that window is already
-// open, this focuses it instead of opening a duplicate (multiple projects at a
-// time, but one window each). The URL is version-stamped with the build id so a
-// project window left open across a DEPLOY no longer matches the new URL and the
-// browser re-navigates (reloads) it — otherwise a same-name/same-URL window is
-// merely focused (no re-fetch) and would show stale pre-deploy HTML.
+// Open the AI cockpit as a DIFFERENT web page. Open one same-origin blank tab,
+// sever its opener, then navigate it. Passing `noopener` in the feature string
+// can make a successful window.open return null; treating that as "blocked"
+// and clicking a fallback link opened TWO cockpits in affected browsers.
 function openProjectWindow(pid) {{
-    var w = window.open('/project/' + encodeURIComponent(pid) + '?v={BUILD_ID}', 'anchorproj_' + pid);
-    if (w) {{ try {{ w.focus(); }} catch (e) {{}} }}
+    if (!pid) return false;
+    var url = '/project/' + encodeURIComponent(pid) + '?v={BUILD_ID}';
+    var w = null;
+    try {{ w = window.open('about:blank', '_blank'); }} catch (e) {{ w = null; }}
+    if (!w || w === window) {{
+        showToast('The browser blocked the cockpit page — allow popups and try again');
+        return false;
+    }}
+    try {{
+        w.opener = null;
+        w.location.replace(url);
+        w.focus();
+        return true;
+    }} catch (e) {{
+        try {{ w.close(); }} catch (_ignored) {{}}
+        showToast('The cockpit page could not be opened');
+        return false;
+    }}
 }}
 function rndSetPriority(pid, pr) {{ apiCall('/api/rnd/set_priority', {{id: pid, priority: pr}}); }}
 function rndArchive(pid) {{ if (confirm('Archive this project? It moves to the Archive view (kept, reviewable).')) apiCall('/api/rnd/archive_project', {{id: pid}}); }}
@@ -9448,15 +9785,17 @@ function rndBlurb(pid) {{
 // ── v9 Wave 3 — project FOLDERS (group field; collapsible; drag-to-group) ──
 // Organization only — NOTHING moves on disk this wave (that's Wave 4). Dragging
 // a row into a folder header just sets the project's `group` via set_group.
-var RND_FOLDER_LS = 'anchor_rnd_folder_collapsed';
-function _rndCollapsedSet() {{
+// (2026-09-01, John) Folders are CLOSED by default; localStorage remembers the
+// folders he OPENED (new key — the old "collapsed" set is simply orphaned).
+var RND_FOLDER_LS = 'anchor_rnd_folder_open';
+function _rndCollapsedSet() {{  // name kept for the callers; it is now the OPEN set
     try {{ return JSON.parse(localStorage.getItem(RND_FOLDER_LS) || '[]') || []; }}
     catch (e) {{ return []; }}
 }}
 function _rndSaveCollapsed(arr) {{
     try {{ localStorage.setItem(RND_FOLDER_LS, JSON.stringify(arr || [])); }} catch (e) {{}}
 }}
-// Collapse / expand one folder, persisting the state by group name.
+// Collapse / expand one folder, persisting the OPEN state by group name.
 function rndToggleFolder(headEl) {{
     var folder = headEl && headEl.closest ? headEl.closest('.rnd-folder') : null;
     if (!folder) return;
@@ -9466,8 +9805,8 @@ function rndToggleFolder(headEl) {{
     var g = folder.getAttribute('data-group') || '';
     var set = _rndCollapsedSet();
     var i = set.indexOf(g);
-    if (collapsed && i < 0) set.push(g);
-    else if (!collapsed && i >= 0) set.splice(i, 1);
+    if (!collapsed && i < 0) set.push(g);
+    else if (collapsed && i >= 0) set.splice(i, 1);
     _rndSaveCollapsed(set);
 }}
 // "+ New folder" — name a group and assign the FIRST ungrouped project to it,
@@ -9657,17 +9996,16 @@ function rndFolderInit() {{
                 }});
             }})(rows[i]);
         }}
-        // Drop targets + restore collapse state.
+        // Drop targets + restore OPEN state (default: every folder closed).
         var folders = list.querySelectorAll('.rnd-folder');
-        var collapsed = _rndCollapsedSet();
+        var opened = _rndCollapsedSet();
         for (var j = 0; j < folders.length; j++) {{
             _rndWireFolderDrop(folders[j]);
             var g = folders[j].getAttribute('data-group') || '';
-            if (collapsed.indexOf(g) >= 0) {{
-                folders[j].classList.add('rnd-collapsed');
-                var tw = folders[j].querySelector('.rnd-tw');
-                if (tw) tw.textContent = '\\u25B8';  // ▸
-            }}
+            var isOpen = opened.indexOf(g) >= 0;
+            folders[j].classList.toggle('rnd-collapsed', !isOpen);
+            var tw = folders[j].querySelector('.rnd-tw');
+            if (tw) tw.textContent = isOpen ? '\\u25BE' : '\\u25B8';  // ▾ / ▸
         }}
         // Re-surface any pending (empty, not-yet-populated) folders from a prior
         // "+ New folder" that has no project yet.
@@ -9870,10 +10208,10 @@ function addTaskDomain(domain) {{
 <script>{_ZOMBIE_SPEND_ALERT_JS}</script>
 <!-- Ecgberht High Seat overlay (TW6): host + static assets. The overlay
      renders the engine view model only; closing it writes nothing. -->
-<link rel="stylesheet" href="/static/high-seat.css?v={BUILD_ID}">
+<link rel="stylesheet" href="/static/high-seat.css?v={static_asset_version('high-seat.css')}">
 <div id="ecgHighSeatHost"></div>
 <script>window.ANCHOR_STEWARD = {steward_boot_json};</script>
-<script src="/static/high-seat.js?v={BUILD_ID}"></script>
+<script src="/static/high-seat.js?v={static_asset_version('high-seat.js')}"></script>
 </body>
 </html>'''
 
@@ -10570,7 +10908,7 @@ def handle_settings_get(handler, path, body):
 
     Token-authed by the route row. Returns load_settings() fields plus
     ``env`` (export_env_overrides), ``cross_model`` (coding ≠ review family),
-    and a cheap host-capability profile when available.
+    plus the host profile and per-role capability matrix.
     """
     settings = _aset.load_settings()
     payload = {
@@ -10583,11 +10921,8 @@ def handle_settings_get(handler, path, body):
         # hardcoding the persona set client-side.
         "stewards": _aset.STEWARDS,
         "steward": _aset.steward_profile(settings),
+        **_model_capability_fields(),
     }
-    try:
-        payload["host_profile"] = _lanes.detect_host_profile()
-    except Exception:
-        pass
     handler._send_json(payload)
 
 
@@ -10595,6 +10930,8 @@ def handle_settings_post(handler, path, body):
     """POST /api/settings — merge partial model prefs; return full settings.
 
     Accepts any of ``default_cli``, ``coding_family``, ``review_family``.
+    Judge intentionally persists through ``review_family`` and the response's
+    capability matrix tells the UI which role/provider choices are selectable.
     Invalid values → 400. Token-authed by the route row (mutating).
     """
     body = body or {}
@@ -10611,6 +10948,7 @@ def handle_settings_post(handler, path, body):
             **settings,
             "env": _aset.export_env_overrides(),
             "cross_model": _aset.families_are_cross_model(),
+            **_model_capability_fields(),
         })
         return
     try:
@@ -10623,6 +10961,7 @@ def handle_settings_post(handler, path, body):
         **settings,
         "env": _aset.export_env_overrides(),
         "cross_model": _aset.families_are_cross_model(),
+        **_model_capability_fields(),
     })
 
 
@@ -10715,12 +11054,18 @@ def handle_effort_rollup(handler, path, body):
             roll = _effview.effort_rollup(folder, pid, effort)
         except Exception:
             pass
-        handler._send_json({
+        response = {
             "ok": True,
             "tokens": int(roll.get("tokens", 0) or 0),
-            "cost_usd": float(roll.get("cost_usd", 0.0) or 0.0),
+            "cost_usd": (None if roll.get("cost_usd") is None
+                         else float(roll.get("cost_usd") or 0.0)),
             "wall_clock_ms": int(roll.get("wall_clock_ms", 0) or 0),
-        })
+        }
+        for key in ("billing_modes", "cost_states", "priced_cost_count",
+                    "unpriced_subscription_count"):
+            if key in roll:
+                response[key] = roll[key]
+        handler._send_json(response)
 
 
 def handle_boneyard(handler, path, body):
@@ -11929,6 +12274,26 @@ def handle_ecgberht_step_detail(handler, path, body):
         return
     out = _ecgberht_bridge(["--project", folder, "--step-detail", step_id])
     handler._send_json(out, 200 if out.get("ok") else 502)
+
+
+def handle_ecgberht_kickoff_show(handler, path, body):
+    """GET /api/ecgberht/kickoff_show?pid=&effort= — read-only kickoff view.
+
+    Gate 5 W8: the cockpit's ONLY kickoff exposure. The effort rel resolves
+    through the steward cockpit's existing _effort_dir guard (unknown effort
+    refused before any read); the answer is the Wave 7 pass-through reader's
+    read-model row. No bridge spawn, no mutation path — confirm/replay stay
+    conversational / bridge-CLI verbs with zero network exposure.
+    """
+    q = parse_qs(urlparse(handler.path).query)
+    pid = (q.get("pid", [""])[0] or q.get("project_id", [""])[0] or "").strip()
+    folder, err, status = _ecgberht_project_folder(pid)
+    if err is not None:
+        handler._send_json(err, status)
+        return
+    from steward_cockpit.kickoff_show_route import kickoff_show
+    out, code = kickoff_show(folder, q.get("effort", [""])[0])
+    handler._send_json(out, code)
 
 
 def handle_ecgberht_step_note(handler, path, body):
@@ -13759,7 +14124,7 @@ def handle_term_set_engine(handler, path, body):
                          "error": "session and engine required"}, 400)
     elif engine not in _termsess.VALID_BACKENDS:
         handler._send_json({"ok": False,
-                         "error": "invalid engine (expected claude|gemini|grok)",
+                         "error": "invalid engine (expected claude|gemini|grok|chatgpt)",
                          "reason": "invalid-engine"}, 400)
     elif _termsess.get_session(session) is None:
         handler._send_json({"ok": False,
@@ -13784,7 +14149,7 @@ def handle_switch_terminal_engine(handler, path, body):
                          "error": "session and engine required"}, 400)
     elif engine not in _termsess.VALID_BACKENDS:
         handler._send_json({"ok": False,
-                         "error": "invalid engine (expected claude|gemini|grok)",
+                         "error": "invalid engine (expected claude|gemini|grok|chatgpt)",
                          "reason": "invalid-engine"}, 400)
     elif _termsess.get_session(session) is None:
         handler._send_json({"ok": False,
@@ -14053,7 +14418,7 @@ def _zombie_scan_and_skill_briefing():
 # grok.exe -p). Dead toggle forbidden; unhealthy engine disabled with health.
 # Doctor: shell first, no blocking auto-session. Slim Investigate seed by default.
 
-_W8_ENGINE_IDS = ("claude", "gemini", "grok")
+_W8_ENGINE_IDS = ("claude", "gemini", "grok", "chatgpt")
 _W8_SHELL_PAINT_BUDGET_MS = 1000
 _W8_FIRST_PROMPT_BUDGET_MS = 15_000
 _W8_P5_PLUMBING = {
@@ -14082,6 +14447,8 @@ def _w8_normalize_engine(raw):
         return "gemini"
     if e in ("grok-cli", "grok.exe"):
         return "grok"
+    if e in ("codex", "chatgpt-cli", "codex.exe"):
+        return "chatgpt"
     if e in _W8_ENGINE_IDS:
         return e
     return None
@@ -14093,7 +14460,7 @@ def _w8_engine_toggle(profile=None, prefs=None, last_used=None):
         try:
             profile = _lanes.detect_host_profile()
         except Exception:
-            profile = {"claude": False, "gemini": False, "grok": False}
+            profile = {"claude": False, "gemini": False, "grok": False, "chatgpt": False}
     prefs = prefs or {}
     engines = []
     for eid in _W8_ENGINE_IDS:
@@ -14102,6 +14469,7 @@ def _w8_engine_toggle(profile=None, prefs=None, last_used=None):
             "claude": ("claude", "claude"),
             "gemini": ("agy", "agy"),
             "grok": ("grok-cli", "grok.exe -p"),
+            "chatgpt": ("chatgpt-cli", "codex exec"),
         }[eid]
         health = "healthy" if available else "unavailable (subscription CLI not detected)"
         engines.append({
@@ -14366,8 +14734,8 @@ def handle_zh_engines(handler, path, body):
 
 # ── W9 / SC7 — clickable health + reaper-health banners → Doctor seed ──────
 # Banner click opens Doctor with 1:1 fields (issueId, exact message, component,
-# lastError, suggestedChecks). Async diagnose start attempted when engine
-# enabled; failure surfaces health and leaves UI usable. Never a markdown path.
+# lastError, suggestedChecks). Opening Doctor only preloads that context; an
+# operator click is required before any model start. Never a markdown path.
 
 _W9_BANNER_SEED_FIELDS = (
     "issueId", "message", "component", "lastError", "suggestedChecks",
@@ -14544,13 +14912,19 @@ def _w9_assert_banner_seed_one_to_one(banner_issue, doctor_seed):
 
 
 def _w9_build_doctor_navigation_from_banner(issue, token=None, auto_diagnose=True):
-    """Doctor href with 1:1 query seed — never health_reports/*.md."""
+    """Doctor href with 1:1 query seed; model start always needs a click.
+
+    ``auto_diagnose`` is retained as a compatibility name for callers that want
+    the ``diagnose=1`` context marker. The marker now means "Diagnose requested"
+    only; opening the URL never starts a model.
+    """
     n = _w9_normalize_banner_issue(issue)
     if not n:
         return {
             "ok": False, "href": "/doctor", "path": "/doctor",
             "isMarkdownPath": False, "markdownPath": None,
-            "autoDiagnose": False, "issue": None, "error": "no_issue",
+            "autoDiagnose": False, "diagnoseRequested": False,
+            "issue": None, "error": "no_issue",
         }
     from urllib.parse import urlencode
     q = {
@@ -14573,7 +14947,8 @@ def _w9_build_doctor_navigation_from_banner(issue, token=None, auto_diagnose=Tru
         "path": "/doctor",
         "isMarkdownPath": False,
         "markdownPath": None,
-        "autoDiagnose": bool(auto_diagnose),
+        "autoDiagnose": False,
+        "diagnoseRequested": bool(auto_diagnose),
         "query": q,
         "issue": _w9_extract_banner_seed_fields(n),
         "bannerSurface": n.get("bannerSurface"),
@@ -14582,7 +14957,7 @@ def _w9_build_doctor_navigation_from_banner(issue, token=None, auto_diagnose=Tru
 
 
 def _w9_build_banner_diagnose_plan(issue, engine=None, profile=None):
-    """Session-start plan for banner→Doctor with 1:1 seed + async diagnose markers."""
+    """Banner-to-Doctor seed plan; session start requires operator action."""
     n = _w9_normalize_banner_issue(issue)
     plan = _w8_shared_session_start_plan(
         surface="doctor", engine=engine, issue=n)
@@ -14607,8 +14982,9 @@ def _w9_build_banner_diagnose_plan(issue, engine=None, profile=None):
     }
     if plan.get("canStart"):
         plan["session"] = dict(plan.get("session") or {})
-        plan["session"]["attemptAsyncDiagnose"] = True
-        plan["session"]["startWhen"] = "banner_click_diagnose"
+        plan["session"]["attemptAsyncDiagnose"] = False
+        plan["session"]["requiresOperatorClick"] = True
+        plan["session"]["startWhen"] = "operator_diagnose_click"
         plan["session"]["failureNonBlocking"] = True
         plan["session"]["async"] = True
     return plan
@@ -14616,7 +14992,12 @@ def _w9_build_banner_diagnose_plan(issue, engine=None, profile=None):
 
 def _w9_attempt_async_banner_diagnose_start(issue, engine=None, force_fail=False,
                                            fail_reason=None, profile=None):
-    """Contract for async diagnose attempt; failure leaves UI usable."""
+    """Compatibility projection for the retired page-open start attempt.
+
+    This function is intentionally read-only: it never starts a process and now
+    reports ``attempted=False``. The authenticated session-start POST is the only
+    paid launch path, after an operator click.
+    """
     plan = _w9_build_banner_diagnose_plan(issue, engine=engine, profile=profile)
     if force_fail or not plan.get("canStart"):
         reason = (
@@ -14625,8 +15006,9 @@ def _w9_attempt_async_banner_diagnose_start(issue, engine=None, force_fail=False
         )
         return {
             "ok": False,
-            "attempted": bool(force_fail),
-            "async": True,
+            "attempted": False,
+            "async": False,
+            "requiresOperatorClick": True,
             "failureNonBlocking": True,
             "uiUsable": True,
             "health": {
@@ -14642,23 +15024,18 @@ def _w9_attempt_async_banner_diagnose_start(issue, engine=None, force_fail=False
         }
     return {
         "ok": True,
-        "attempted": True,
-        "async": True,
+        "attempted": False,
+        "async": False,
+        "requiresOperatorClick": True,
         "failureNonBlocking": True,
         "uiUsable": True,
         "health": {
             "status": "healthy",
-            "message": "async diagnose start attempted with banner seed",
+            "message": "diagnose context ready; operator click required",
             "engine": plan.get("engine"),
         },
         "plan": plan,
-        "session": {
-            "status": "starting",
-            "async": True,
-            "cancelable": True,
-            "engine": plan.get("engine"),
-            "issueId": (plan.get("bannerIssue") or {}).get("issueId"),
-        },
+        "session": None,
         "seed": plan.get("seed"),
         "seedOneToOne": plan.get("bannerOneToOne"),
         "error": None,
@@ -14747,6 +15124,9 @@ def handle_doctor_banner_seed(handler, path, body):
         "oneToOne": plan.get("bannerOneToOne"),
         "navigation": plan.get("navigation"),
         "diagnosePlan": plan,
+        "diagnoseStartPolicy": attempt,
+        # Back-compatible field name; its payload now honestly says
+        # attempted:false and requiresOperatorClick:true.
         "asyncDiagnoseAttempt": attempt,
         "bannerDoctorVersion": _W9_BANNER_DOCTOR_SEED_VERSION,
         "notMarkdownPath": True,
@@ -15095,7 +15475,9 @@ def handle_doctor_session_start(handler, path, body):
             "swarm_ratio": plan.get("swarm_ratio"),
             "reason": plan.get("reason", ""),
         }
-    resolve = bool(body.get("resolve"))
+    # Only the JSON boolean true requests write-enabled Resolve posture. A
+    # truthy string such as "false" must not silently turn Diagnose into write.
+    resolve = body.get("resolve") is True
     try:
         if resolve and issue:
             # (2026-08-07, John) RESOLVE mode: no plan, no wandering diagnose
@@ -15147,6 +15529,8 @@ def handle_doctor_session_start(handler, path, body):
             "status": rec.get("status", ""),
             "label": rec.get("label", ""),
             "created_at": rec.get("created_at"),
+            "mode": rec.get("doctor_mode", ""),
+            "posture": rec.get("doctor_posture", ""),
         },
         "engine": engine_meta,
         "engineToggle": start_plan.get("engineToggle"),
@@ -15586,10 +15970,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   var sendChain = Promise.resolve();
   var sessionId = null;
   var ZH_ENG = 'claude';
-  var ZH_ENG_HEALTH = { claude: true, gemini: true, grok: true };
+  var ZH_ENG_HEALTH = { claude: true, gemini: true, grok: true, chatgpt: true };
   function paintEng() {
-    ['claude','gemini','grok'].forEach(function (e) {
-      var id = e === 'claude' ? 'engC' : (e === 'gemini' ? 'engG' : 'engK');
+    ['claude','gemini','grok','chatgpt'].forEach(function (e) {
+      var id = e === 'claude' ? 'engC' : (e === 'gemini' ? 'engG' : (e === 'grok' ? 'engK' : 'engChat'));
       var el = document.getElementById(id);
       if (!el) return;
       var ok = ZH_ENG_HEALTH[e] !== false;
@@ -15676,7 +16060,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     };
     window.runDiagnose({ fromBanner: true, resolve: true });
   };
-  var AUTO_DIAGNOSE = false;
+  var REQUESTED_DIAGNOSE = false;
   (function parseBannerIssueFromQuery() {
     try {
       var sp = new URLSearchParams(location.search);
@@ -15686,7 +16070,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       var lastError = sp.get('lastError') || '';
       var checksRaw = sp.get('suggestedChecks') || '';
       var suggestedChecks = checksRaw ? checksRaw.split('|').filter(Boolean) : [];
-      AUTO_DIAGNOSE = sp.get('diagnose') === '1' || sp.get('autoDiagnose') === '1';
+      REQUESTED_DIAGNOSE = sp.get('diagnose') === '1' || sp.get('autoDiagnose') === '1';
       if (issueId || message || component || lastError || suggestedChecks.length) {
         BANNER_ISSUE = {
           issueId: issueId || null,
@@ -15709,12 +16093,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       }
     } catch (e) {
       BANNER_ISSUE = null;
-      AUTO_DIAGNOSE = false;
+      REQUESTED_DIAGNOSE = false;
     }
   })();
 
-  // Shell-first: load engine health ONLY (never auto session_start on plain open).
-  // Banner navigation with diagnose=1 may attempt async diagnose after engines paint.
+  // Shell-first: load deterministic status/engine health only. Opening this
+  // page NEVER starts a paid model, including banner URLs with diagnose=1.
   fetch(tq('/api/doctor/status'), { headers: getHdrs() })
     .then(function (r) { return r.json(); })
     .then(function (s) {
@@ -15723,30 +16107,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
         if (s.defaultEngine) ZH_ENG = s.defaultEngine;
       }
       paintEng();
-      // W9: banner click with diagnose=1 → attempt async session start with seed.
-      if (AUTO_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] !== false) {
-        term.write('[doctor] Banner diagnose path: attempting async session start…\\r\\n');
-        window.runDiagnose({ fromBanner: true });
-      } else if (AUTO_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] === false) {
+      // Banner URLs preload context but require a human click before spending.
+      if (REQUESTED_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] !== false) {
+        term.write('[doctor] Banner context is ready. Click Diagnose to start a model session.\\r\\n');
+      } else if (REQUESTED_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] === false) {
         term.write('[doctor] Banner diagnose deferred — engine ' + ZH_ENG + ' disabled with health; shell usable.\\r\\n');
       } else if (!BANNER_ISSUE && DOCTOR_ISSUES.length && ZH_ENG_HEALTH[ZH_ENG] !== false) {
-        // (2026-08-07, John) Opening the doctor PLAINLY while the health
-        // banner is red behaves exactly like clicking the banner: the top
-        // issue loads into the terminal unasked.
+        // Deterministically preload the top report issue, but do not spend.
         BANNER_ISSUE = {
           issueId: 'report-issue-0',
           message: '[' + (DOCTOR_ISSUES[0].component || 'health') + '] ' + DOCTOR_ISSUES[0].detail,
           component: DOCTOR_ISSUES[0].component || '',
           suggestedChecks: []
         };
-        term.write('[doctor] Health issues found — loading the top one (same as the banner click). '
-          + 'Use "Resolve this" above to FIX it.\\r\\n');
-        window.runDiagnose({ fromBanner: true });
+        term.write('[doctor] Health issue loaded without starting a model. '
+          + 'Click Diagnose, or use "Resolve this" above.\\r\\n');
       }
     })
     .catch(function () {
       paintEng();
-      if (AUTO_DIAGNOSE && BANNER_ISSUE) {
+      if (REQUESTED_DIAGNOSE && BANNER_ISSUE) {
         term.write('[doctor] Engine health probe failed (non-blocking); shell usable. Click Diagnose when ready.\\r\\n');
       }
     });
@@ -16808,15 +17188,19 @@ def handle_launch_lane(handler, path, body):
     # Launch a trio lane (research|plan|build) for a project. Returns a
     # clean JSON error (not a 500) for an unknown project / invalid lane
     # / a concurrency refusal (same-lane-busy or folder-build-lock).
-    # Headless jobs keep lanes.DEFAULT_BACKEND (claude) when omitted —
-    # only interactive terminals use settings default_cli.
+    # Preserve omission so lanes.launch_lane resolves the canonical saved
+    # coding_family. An explicit backend remains authoritative for this effort.
     pid = body.get("project_id", "")
     lane = body.get("lane", "")
-    backend = body.get("backend") or _lanes.DEFAULT_BACKEND
+    raw_backend = body.get("backend")
+    backend = (raw_backend.strip() or None
+               if isinstance(raw_backend, str) else raw_backend)
     if lane not in _lanes.LANES:
         handler._send_json({"ok": False, "error": f"invalid lane: {lane}",
                          "reason": "invalid-lane"}, 400)
-    elif backend not in _termsess.VALID_BACKENDS:
+    elif backend is not None and (
+            not isinstance(backend, str) or
+            backend not in _termsess.VALID_BACKENDS):
         handler._send_json({"ok": False,
                          "error": f"invalid engine: {backend}",
                          "reason": "invalid-engine"}, 400)
@@ -17923,9 +18307,9 @@ function resumeSession(sessionId, btn) {
   });
 }
 var ZH_ENG = 'claude';
-var ZH_ENG_HEALTH = { claude: true, gemini: true, grok: true };
+var ZH_ENG_HEALTH = { claude: true, gemini: true, grok: true, chatgpt: true };
 function paintZhEng() {
-  ['claude','gemini','grok'].forEach(function(e) {
+  ['claude','gemini','grok','chatgpt'].forEach(function(e) {
     var el = document.getElementById('zh-eng-' + e);
     if (!el) return;
     var ok = ZH_ENG_HEALTH[e] !== false;
@@ -19065,6 +19449,7 @@ _MIGRATED_HANDLERS = {
     "handle_ecgberht_commission_watch": handle_ecgberht_commission_watch,
     "handle_ecgberht_commission_runs": handle_ecgberht_commission_runs,
     "handle_ecgberht_step_detail": handle_ecgberht_step_detail,
+    "handle_ecgberht_kickoff_show": handle_ecgberht_kickoff_show,
     "handle_ecgberht_step_note": handle_ecgberht_step_note,
     "handle_ecgberht_refresh": handle_ecgberht_refresh,
     "handle_ecgberht_efforts": handle_ecgberht_efforts,
@@ -20364,10 +20749,12 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # Opening a brownfield project DISCOVERS + ADOPTS its on-disk
                 # trio artifacts so the Kanban/tile/home panel populate (Wave 6).
                 pid = urlparse(self.path).path[len("/project/"):].strip("/")
-                try:
-                    discover_and_adopt(pid)
-                except Exception:
-                    pass  # discovery is best-effort; never block the view
+                # Authenticate BEFORE any scan/bootstrap mutation, then use a
+                # per-project singleflight worker so repeated page opens cannot
+                # fan out an unbounded set of directory scans.
+                _project_authed = self._term_token_ok()
+                _start_project_open_discovery(
+                    pid, authorized=_project_authed)
                 # (2026-08-25) THE CUTOVER — THE COCKPIT IS THE PAGE (John
                 # approved 2026-08-25 after his first live run). Same URL,
                 # same click from the High Seat. The chamber PAGE moves
@@ -20379,17 +20766,17 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # recurrence instruments (test_chamber_m1_survives_w1 /
                 # test_chamber_first_paint_w6) guard that surface through
                 # this flag. ?cockpit=1 is still accepted (bookmarked beta
-                # links) — it is simply the default now. __dashboard__ keeps
-                # the slim project window because the home page IFRAMES it
-                # as the Workbench tile (a cockpit nested in the dashboard
-                # is what slim mode was invented to stop).
+                # links) — it is simply the default now, including for the
+                # synthetic dashboard project. The home page's embedded
+                # Workbench requests ?classic=1 explicitly to remain slim;
+                # its Open cockpit link gets this primary surface.
                 _qp = parse_qs(urlparse(self.path).query)
                 _flag = lambda k: _qp.get(k, [""])[0] in ("1", "true", "yes")
                 _chamber = _flag("chamber")
                 _classic = _flag("classic")
-                if pid == "__dashboard__" or _classic:
+                if _classic:
                     self._send_html(render_project_window_html(pid))
-                elif not self._term_token_ok():
+                elif not _project_authed:
                     # (2026-08-15, security audit P0) The steward transcript
                     # is private; the /project/ row is historically open.
                     # When a token is configured, a tokenless document GET
@@ -20473,6 +20860,13 @@ class AnchorHandler(BaseHTTPRequestHandler):
     def do_POST(self):
       try:
         content_len = int(self.headers.get("Content-Length", 0))
+        # Reject an oversized cockpit upload before reading/base64-decoding its
+        # body. The route's decoded-file ceiling is 30 MB; 41 MB safely covers
+        # base64 plus the small JSON envelope without buffering arbitrary data.
+        if (urlparse(self.path).path == "/api/steward/upload"
+                and content_len > 41_000_000):
+            self._send_json({"ok": False, "error": "over 30 MB"}, 413)
+            return
         body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
 
         # Contract-versioning shim (re-architecture 2026-07 · W2). A browser

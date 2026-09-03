@@ -50,7 +50,8 @@ export async function findNorthStar(rootPath, { fs = fsp } = {}) {
  *
  * @param {{rootPath: string, mode?: string, agent?: Function, git?: object|null,
  *   reportDir?: string, hermetic?: boolean, runId?: string, log?: Function,
- *   execFile?: Function, env?: object, now?: Function}} opts
+ *   execFile?: Function, env?: object, now?: Function, runAgent?: Function,
+ *   driverPath?: string, model?: string, onSeatReceipt?: Function}} opts
  */
 export async function createContext(opts = {}) {
   const rootPath = path.resolve(opts.rootPath);
@@ -120,10 +121,14 @@ export async function createContext(opts = {}) {
     execFile: audit.execFile,
     agent: resolveAgent({
       agent: opts.agent,
+      runAgent: opts.runAgent,
       driverPath: opts.driverPath || (config.run && config.run.driver) || null,
       model: opts.model || null,
       log,
       env: opts.env || process.env,
+      target: rootPath,
+      importModule: opts.importModule,
+      onReceipt: opts.onSeatReceipt,
     }),
     log,
     now,

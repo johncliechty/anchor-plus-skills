@@ -72,6 +72,11 @@ export async function runCompression(projectPath, options = {}) {
     agent: options.agent,
     driverPath: options.driverPath,
     model: options.model,
+    // The seam defaults target to process.cwd(); the seat's cwd/edit scope must be
+    // the project being tidied, not wherever the orchestrator was launched from.
+    target: projectPath,
+    env: options.env,
+    onReceipt: options.onSeatReceipt,
     log,
   });
 

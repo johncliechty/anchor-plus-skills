@@ -323,9 +323,10 @@ def test_row_lifecycle_controls_in_kebab(env, tmp_path):
     assert f'id="rnd-kebab-{pid}"' in row
     assert "rndToggleKebab(" in row
     # The actual lifecycle endpoints are still wired (inside the kebab menu).
-    for fn in ("rndSetPriority(", "rndRescan(", "rndBlurb(", "rndNotes(",
-               "rndArchive(", "rndRetire("):
+    for fn in ("rndRescan(", "rndBlurb(", "rndNotes("):
         assert fn in row
+    for fn in ("rndSetPriority(", "rndArchive(", "rndRetire("):
+        assert fn not in row
 
 
 def test_row_per_lane_mini_counts_present(env, tmp_path):

@@ -151,9 +151,13 @@ export async function runAnalysis(projectPath, options = {}) {
     // LOUDLY at the call site instead of at an import of <path>
     const agentFn = resolveAgent({
       agent: options.agent,
+      runAgent: options.runAgent,
       driverPath: options.driverPath,
       model: options.model,
       log,
+      env: options.env || process.env,
+      target: projectPath,
+      onReceipt: options.onSeatReceipt,
     });
 
     // C9: analysis is BATCHED by total bytes (the debate stage always was; the

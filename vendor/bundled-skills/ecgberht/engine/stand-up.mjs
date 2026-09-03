@@ -228,6 +228,7 @@ export function fillFaceTemplate(template, fields = {}) {
  *   who?: string, when?: string,
  *   surfaces?: object|null, write?: boolean,
  *   face_template?: string, strip_template?: object,
+ *   receipt_note?: string,
  * }} opts
  */
 export function confirmStandUp(opts = {}) {
@@ -287,7 +288,9 @@ export function confirmStandUp(opts = {}) {
     as_of,
     who,
     when: as_of,
-    note: 'stand-up: North Star set by the human, never invented',
+    note: nonEmpty(opts.receipt_note)
+      ? opts.receipt_note.trim()
+      : 'stand-up: North Star set by the human, never invented',
   };
   const validated = validateReceipt(receipt);
   if (!validated.ok) {

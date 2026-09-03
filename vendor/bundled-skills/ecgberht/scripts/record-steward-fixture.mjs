@@ -57,7 +57,7 @@ const t1 = await converse(dir, {
   seatCall: makeSeatCall(),
   client_event_id: 'record-t1',
 });
-process.stdout.write(`turn 1: ok=${t1.ok} stages=${t1.step_count ?? 0} ${t1.code ?? ''}\n`);
+process.stdout.write(`turn 1: ok=${t1.ok} plan_entries=${t1.plan_entry_count ?? 0} ${t1.code ?? ''}\n`);
 if (!t1.ok) process.exit(1);
 
 const t2 = await converse(dir, {
@@ -67,8 +67,10 @@ const t2 = await converse(dir, {
   seatCall: makeSeatCall(),
   client_event_id: 'record-t2',
 });
-process.stdout.write(`turn 2: ok=${t2.ok} stages=${t2.step_count ?? 0} ${t2.code ?? ''}\n`);
+process.stdout.write(`turn 2: ok=${t2.ok} plan_entries=${t2.plan_entry_count ?? 0} ${t2.code ?? ''}\n`);
 if (!t2.ok) process.exit(1);
 
 process.stdout.write(`recorded -> ${OUT_DIR}\n`);
-process.stdout.write(`turn2 stages: ${t2.proposal.steps.map((s) => s.name).join(' | ')}\n`);
+process.stdout.write(
+  `turn2 plan entries: ${(t2.proposal?.plan_entries ?? []).map((entry) => entry.name).join(' | ')}\n`,
+);

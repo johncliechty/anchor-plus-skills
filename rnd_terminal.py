@@ -97,6 +97,14 @@ def start_terminal(project_id, lane, backend=_jr.DEFAULT_BACKEND,
     backend = backend or _jr.DEFAULT_BACKEND
     ld = _lanes.get_lane(lane)                     # KeyError for an invalid lane
     _lanes.check_engine_allowed(lane, backend)     # engine policy
+    if backend == getattr(_jr, "BACKEND_CHATGPT", "chatgpt"):
+        raise _lanes.EngineNotAllowedError(
+            lane, backend,
+            message=(
+                "chatgpt-gated-bridge-pending: interactive R&D terminals require "
+                "the persistent Codex exec/resume cockpit bridge; no seat was started"
+            ),
+        )
     project = _rnd.get_project(project_id)
     if project is None:
         raise KeyError(project_id)

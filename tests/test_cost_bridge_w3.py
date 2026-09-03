@@ -11,6 +11,7 @@ launch_lane jobs (those carrying project_id + folder_path) that captured a
 result envelope.
 """
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -106,3 +107,138 @@ def test_rollup_nonzero_after_bridge(env):
     roll = eh.project_effort_rollup(pid)
     assert roll["tokens"] > 0 and roll["cost_usd"] > 0.0, \
         f"rollup still zero after bridge alone: {roll}"
+
+
+def test_chatgpt_subscription_null_and_labels_survive_job_to_effort_and_rollup(env):
+    import anchor_gui
+    import codex_adapter as ca
+    import effort_history as eh
+    import job_runner as jr
+
+    pid, folder = env["pid"], env["folder"]
+    jid = "job-chatgpt-subscription"
+    prompt = "subscription cost must remain unknown"
+    parsed = {
+        "thread_id": "thread-subscription",
+        "usage": {"input_tokens": 90, "cached_input_tokens": 40,
+                  "output_tokens": 10},
+        "event_count": 3,
+        "malformed_count": 0,
+    }
+    executable = Path(ca.resolve_codex_cmd()).resolve()
+    provenance = ca.inspect_executable(str(executable))
+    assert provenance.get("ok") is True
+    preflight = {
+        "executable_path": str(executable),
+        "executable_fingerprint": provenance["executable_fingerprint"],
+        "executable_provenance_verified": True,
+        "executable_provenance_kind": provenance["executable_provenance_kind"],
+        "executable_signer_subject": provenance.get("executable_signer_subject"),
+        "executable_signer_certificate_sha256": provenance.get(
+            "executable_signer_certificate_sha256"),
+        "signer_image_binding_verified": bool(
+            provenance.get("signer_image_binding_verified")),
+        "signature_revocation_freshness": provenance[
+            "signature_revocation_freshness"],
+        "executable_handle_guarded_through_spawn": True,
+        "preexecution_child_image_attested": False,
+        "transport_actual": "codex-cli",
+        "cli_version": "codex-cli test",
+        "auth_kind": "chatgpt_subscription",
+        "auth_probe_at": "2026-08-30T15:00:00+00:00",
+        "subscription_auth": True,
+        "model_capability_verified": True,
+        "ultra_capability_verified": True,
+        "codex_home": ca.subscription_only_env()["CODEX_HOME"],
+        "user_config_ignored": True,
+        "critical_overrides_enforced": True,
+        "config_guard_verified": True,
+        "runtime_guard_rechecked": True,
+        "child_env_allowlist_verified": True,
+        "rules_ignored": True,
+        "agents_disabled": True,
+        "network_disabled": True,
+        "extra_writable_roots_disabled": True,
+        "hosted_tools_disabled": True,
+        "mcp_servers_disabled": True,
+        "projects_table_replaced": True,
+        "api_key_env_scrubbed": True,
+    }
+    if ca.os.name == "nt":
+        preflight.update(
+            containment_kind="windows_job", complete_tree_containment=True,
+            windows_job_policy_verified=True,
+            windows_job_assignment_verified=True,
+            windows_job_membership_verified=True,
+            windows_process_handle_verified=True,
+            windows_primary_thread_verified=True,
+            windows_process_resumed=True,
+            windows_execution_possible=True,
+            windows_job_empty_verified=True,
+            root_exit_verified=True,
+        )
+    else:
+        preflight.update(
+            containment_kind="posix_process_group_degraded",
+            complete_tree_containment=False,
+        )
+    preflight.update(
+        preflight_probe_count=3,
+        preflight_containment_kind=(
+            "windows_job" if ca.os.name == "nt"
+            else "posix_process_group_degraded"),
+        preflight_complete_tree_containment=(ca.os.name == "nt"),
+        preflight_no_inference_verified=True,
+        preflight_no_network_intent_verified=True,
+        preflight_output_limits_verified=True,
+        preflight_output_drain_verified=True,
+        preflight_root_exit_verified=True,
+        preflight_windows_job_policy_verified=(ca.os.name == "nt"),
+        preflight_windows_job_assignment_verified=(ca.os.name == "nt"),
+        preflight_windows_job_membership_verified=(ca.os.name == "nt"),
+        preflight_windows_process_handle_verified=(ca.os.name == "nt"),
+        preflight_windows_primary_thread_verified=(ca.os.name == "nt"),
+        preflight_windows_process_resumed=(ca.os.name == "nt"),
+        preflight_windows_job_empty_verified=(ca.os.name == "nt"),
+        preflight_process_group_kill_verified=None,
+    )
+    receipt = ca.build_receipt(
+        status="success", prompt=prompt, sandbox="read-only",
+        preflight=preflight, parsed=parsed, exit_code=0, seat_started=True,
+        expected_artifact_paths=[], artifact_hashes={},
+        artifact_contract_verified=True, output_drain_verified=True,
+        output_limits_verified=True, output_eof_verified=True,
+        stdin_write_verified=True, stdin_close_verified=True,
+        native_stdout_bytes=64, native_stderr_bytes=0,
+    )
+    envelope = ca.normalized_result("ok", receipt, 1234, False)
+    jr._write_record(_job_rec(
+        jid, backend="chatgpt", project_id=pid, folder_path=folder,
+        relaunch_spec={
+            "prompt": prompt, "permission_mode": "plan",
+            "output_dir": folder,
+            "expected_artifacts": [],
+        },
+    ))
+    jr._finalize(jid, 0, result_envelope=envelope)
+
+    job = jr.load_record(jid)
+    assert job["status"] == jr.STATUS_DONE
+    assert job["cost"]["total_cost_usd"] is None
+    assert job["cost"]["billing_mode"] == "subscription"
+    assert job["cost"]["cost_state"] == "subscription_covered"
+
+    effort = eh.load_effort(folder, pid, "research", jid)
+    cost = effort["cost"]
+    assert cost["total_cost_usd"] is None
+    assert cost["billing_mode"] == "subscription"
+    assert cost["cost_state"] == "subscription_covered"
+    assert cost["cached_input_tokens"] == 40
+
+    roll = eh.project_effort_rollup(pid, folder_path=folder)
+    assert roll["cost_usd"] is None
+    assert roll["cost_states"] == ["subscription_covered"]
+    assert roll["unpriced_subscription_count"] == 1
+    rendered = anchor_gui._fmt_rollup_line(roll)
+    assert "(subscription)" in rendered
+    assert "$0.00" not in rendered

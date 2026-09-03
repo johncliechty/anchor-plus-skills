@@ -6,16 +6,18 @@
 //
 // Capability: subAgentCapable true — spawns a fresh `grok.exe` process per call (same
 // shape as claude-cli / gemini-cli). Structured output: schema appended to the prompt +
-// JSON parse with retry-once-then-ABSTAIN (mirrors makeAgentSeam in claude.mjs).
+// JSON parse with retry-once-then-failure (mirrors makeAgentSeam in claude.mjs).
 //
 // Live gate: CRUCIBLE_AGENT_LIVE=1 (same as Claude/Gemini CLI seats).
 
-import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { HaltError } from '../foreman/bin/foreman-lib.mjs';
 import { extractJson } from './claude.mjs';
+import { isVerificationRole, normalizeRole } from './roles.mjs';
+import { conformsJsonSchema, runCliSchemaAttempts } from './cli-schema.mjs';
+import { runCloseBoundProcess } from './subscription-process.mjs';
 
 // Live catalog (this host, 2026-07-22): `grok models` → default grok-4.5.
 // Prefer null (omit --model) so the logged-in CLI default always wins unless env pins.
@@ -65,7 +67,13 @@ export function defaultRunGrokCli(fullPrompt, label, {
   model = null,
   role = null,
   timeoutMs = (Number(env.GROK_CLI_TIMEOUT_MS) || DEFAULT_GROK_CLI_TIMEOUT_MS),
+  signal = null,
   log = () => {},
+  processRunner = runCloseBoundProcess,
+  spawnImpl,
+  spawnSyncImpl,
+  platform = process.platform,
+  killImpl,
 } = {}) {
   if (env.CRUCIBLE_AGENT_LIVE !== '1') {
     throw new HaltError(
@@ -73,159 +81,125 @@ export function defaultRunGrokCli(fullPrompt, label, {
       'set CRUCIBLE_AGENT_LIVE=1 to spawn a real `grok -p` sub-agent (subscription), or inject runGrokCli',
     );
   }
-  return new Promise((resolve) => {
-    const isWin = process.platform === 'win32';
-    const cmdName = isWin ? 'grok.exe' : 'grok';
-    // Prefer argv prompt when short; long prompts via --prompt-file to avoid ENAMETOOLONG.
-    const useFile = Buffer.byteLength(fullPrompt, 'utf8') > 24000;
-    const args = ['--output-format', 'plain'];
-    const mdl = resolveGrokCliModel({ model, role, env });
-    if (mdl) args.push('--model', mdl);
-    // Permission mode for agentic seats (Foreman/Crucible edits). Override via env.
-    const perm = env.GROK_CLI_PERMISSION_MODE || 'acceptEdits';
-    if (perm) args.push('--permission-mode', perm);
-
-    let tmpPath = null;
-    if (useFile) {
-      tmpPath = path.join(os.tmpdir(), `grok-cli-prompt-${process.pid}-${Date.now()}.txt`);
-      fs.writeFileSync(tmpPath, fullPrompt, 'utf8');
-      args.push('--prompt-file', tmpPath);
-    } else {
-      args.push('-p', fullPrompt);
-    }
-
-    const child = spawn(cmdName, args, {
+  const cmdName = platform === 'win32' ? 'grok.exe' : 'grok';
+  const args = ['--output-format', 'plain'];
+  const mdl = resolveGrokCliModel({ model, role, env });
+  if (mdl) args.push('--model', mdl);
+  const perm = isVerificationRole({ role, label })
+    ? 'plan'
+    : (env.GROK_CLI_PERMISSION_MODE || 'acceptEdits');
+  if (perm) args.push('--permission-mode', perm);
+  if (signal?.aborted) {
+    return Promise.resolve({ text: '', rec: {
+      label, cli_status: null, ok: false, status: 'aborted', aborted: true,
+      requested_model: mdl, model_served: null, model_family: null,
+      family_attested: false, model_attested: false, degraded: true,
+    } });
+  }
+  const useFile = Buffer.byteLength(fullPrompt, 'utf8') > 24000;
+  let tmpPath = null;
+  if (useFile) {
+    tmpPath = path.join(os.tmpdir(), `grok-cli-prompt-${process.pid}-${Date.now()}.txt`);
+    fs.writeFileSync(tmpPath, fullPrompt, 'utf8');
+    args.push('--prompt-file', tmpPath);
+  } else {
+    args.push('-p', fullPrompt);
+  }
+  return processRunner({
+    command: cmdName,
+    args,
+    options: {
       cwd: target,
       env: { ...env, NO_COLOR: '1', CI: '1' },
       shell: false,
       windowsHide: true,
-    });
-
-    const killChild = () => {
-      try {
-        if (process.platform === 'win32') {
-          spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true });
-        } else {
-          child.kill('SIGKILL');
-        }
-      } catch { /* best-effort */ }
-    };
-
-    let out = '';
-    let stderr = '';
-    let timedOut = false;
-    let timer = null;
-    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-      timer = setTimeout(() => {
-        timedOut = true;
-        log(`!! ${label}: Grok CLI timeout (${Math.round(timeoutMs / 60000)}m) — killing child`);
-        killChild();
-      }, timeoutMs);
-      if (typeof timer.unref === 'function') timer.unref();
+    },
+    signal,
+    timeoutMs,
+    label,
+    log,
+    ...(spawnImpl ? { spawnImpl } : {}),
+    ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
+    platform,
+    ...(killImpl ? { killImpl } : {}),
+  }).then((result) => {
+    if (tmpPath) {
+      try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
     }
-
-    child.stdout.on('data', (d) => { out += d.toString(); });
-    child.stderr.on('data', (d) => { stderr += d.toString(); });
-    child.on('error', (err) => {
-      if (timer) clearTimeout(timer);
-      log(`!! ${label}: failed to spawn grok: ${err.message}`);
-      resolve({
-        text: '',
-        rec: { label, ok: false, status: 'spawn_error', error: String(err.message), timed_out: false },
-      });
-    });
-    child.on('close', (code) => {
-      if (timer) clearTimeout(timer);
-      if (tmpPath) {
-        try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
-      }
-      const text = String(out || '').trim();
-      const rec = {
-        label,
-        cli_status: code,
-        ok: code === 0 && text.length > 0 && !timedOut,
-        status: timedOut ? 'timeout' : (code === 0 ? (text ? 'success' : 'no_reply') : 'cli_error'),
-        model_served: mdl || 'session-default',
-        model_family: 'grok',
-        model_attested: true,
-        timed_out: timedOut,
-      };
-      if (!rec.ok) {
-        log(`!! ${label}: grok-cli exit=${code} timedOut=${timedOut} stderr=${stderr.slice(0, 300)}`);
-      }
-      resolve({ text, rec });
-    });
+    const text = String(result.stdout || '').trim();
+    const status = result.terminal !== 'closed'
+      ? result.terminal
+      : result.code === 0
+        ? (text ? 'success' : 'no_reply')
+        : 'cli_error';
+    const ok = status === 'success';
+    const rec = {
+      label,
+      cli_status: result.code,
+      ok,
+      status,
+      error: ok ? undefined : (result.error || result.stderr.slice(0, 500)),
+      requested_model: mdl,
+      // Plain Grok output exposes no served model. Never stamp a session default.
+      model_served: null,
+      model_family: ok ? 'grok' : null,
+      family_attested: ok,
+      model_attested: false,
+      degraded: true,
+      timed_out: status === 'timeout',
+      aborted: status === 'aborted',
+      kill_status: result.kill_status,
+    };
+    if (!ok) log(`!! ${label}: grok-cli ${status}. stderr=${result.stderr.slice(0, 300)}`);
+    return { text, rec };
   });
 }
 
 /**
- * Required-boolean conformance for a parsed reply against the call's JSON Schema:
- * every `required` property the schema types as boolean must BE a boolean on the
- * object. Schemas with no required booleans (shark/reviewer shapes) trivially
- * conform — this gate exists for verdict schemas like Jumper Gate-3's `passed`.
- * PURE + exported for the driver test gate.
+ * Compatibility export for callers of the former required-boolean predicate.
+ * It now delegates to the same recursive schema predicate every CLI seam uses.
  */
-export function conformsRequiredBooleans(obj, schema) {
-  if (!obj || typeof obj !== 'object') return false;
-  const req = Array.isArray(schema?.required) ? schema.required : [];
-  return req.every((k) =>
-    schema?.properties?.[k]?.type !== 'boolean' || typeof obj[k] === 'boolean');
-}
+// Backwards-compatible export name; every CLI seam now uses the same validator.
+export { conformsJsonSchema as conformsRequiredBooleans };
 
 /**
- * Agent seam: optional schema → JSON parse with one strict retry then ABSTAIN object.
+ * Agent seam: optional schema → JSON parse with one strict retry then failure.
  *
  * 2026-08-20 (Jumper gate-3 repair): the strict retry now ALSO fires when the first
  * reply PARSES but lacks a schema-required boolean (e.g. no boolean `passed`).
  * Before, a parsed-but-shapeless reply was returned WITHOUT any retry — the live
  * grok seat never got its second chance and Jumper HALTed on a nonconforming
  * verdict. Still exactly ONE retry total; still NEVER a verdict invented from
- * prose: a reply that stays shapeless after the retry is returned as-is for the
- * caller's own honesty gate, and a reply that stays unparseable abstains.
+ * prose: any reply that remains nonconforming after the retry fails.
  */
-export function makeGrokCliAgentSeam({
-  runGrokCli = null,
-  env = process.env,
-  target = process.cwd(),
-  log = () => {},
-} = {}) {
+export function makeGrokCliAgentSeam(options = {}) {
+  const {
+    runGrokCli = null,
+    env = process.env,
+    target = process.cwd(),
+    log = () => {},
+  } = options;
   const run = runGrokCli || ((prompt, label, callOpts = {}) =>
-    defaultRunGrokCli(prompt, label, { env, target, log, ...callOpts }));
+    defaultRunGrokCli(prompt, label, { ...options, env, target, log, ...callOpts }));
 
   async function agent(prompt, opts = {}) {
     const label = opts.label || '(unlabeled)';
-    const callOpts = { model: opts.model, role: opts.role };
-    const schemaSuffix = opts.schema
-      ? `\n\nRespond with ONLY a single raw JSON object (no markdown fences, no prose) ` +
-        `that conforms to this JSON Schema:\n${JSON.stringify(opts.schema)}`
-      : '';
-    const { text } = await run(prompt + schemaSuffix, label, callOpts);
-    if (!opts.schema) return text;
-
-    let obj = extractJson(text);
-    if (!obj || !conformsRequiredBooleans(obj, opts.schema)) {
-      const why = !obj
-        ? 'was NOT valid JSON and could not be parsed'
-        : 'parsed as JSON but did not carry the schema-required boolean field(s) as booleans';
-      log(`   !! ${label} reply ${!obj ? 'was not valid JSON' : 'parsed but was nonconforming (missing required boolean)'} — retrying once (strict reprompt)`);
-      const strict = `${prompt}\n\nYour previous reply ${why}. ` +
-        `Respond with ONLY a single raw JSON object that conforms to this JSON Schema — ` +
-        `no prose, no markdown fences, nothing else:\n${JSON.stringify(opts.schema)}`;
-      const retryObj = extractJson((await run(strict, `${label}#retry`, callOpts)).text);
-      // Prefer the retry's parse; if the retry came back unparseable, keep the
-      // first parse (when one exists) — never trade a real object for nothing.
-      obj = retryObj ?? obj;
-    }
-    if (!obj) {
-      log(`   !! ${label} still unparseable after retry — TRANSPORT FAILURE (abstain; degradable)`);
-      return {
-        answerable: 'no',
-        transport_failed: true,
-        note: `reviewer ${label} response was not parseable JSON after one retry (transport failure, not a plan problem)`,
-        findings: [],
-      };
-    }
-    return obj;
+    return runCliSchemaAttempts({
+      run,
+      prompt,
+      schema: opts.schema,
+      label,
+      callOpts: {
+        model: opts.model,
+        role: normalizeRole({ role: opts.role, label }),
+        timeoutMs: opts.timeoutMs,
+        signal: opts.signal,
+      },
+      driverOpts: opts,
+      familyName: 'Grok',
+      log,
+      parse: extractJson,
+    });
   }
 
   return { agent };
@@ -236,9 +210,9 @@ export const grokCliDriver = {
   subAgentCapable: true,
   structuredOutput: 'cli-subagent (prompt-suffix + json parse)',
   async runAgent(opts = {}) {
-    const { prompt, schema, label, model, role, log } = opts;
+    const { prompt, schema, label, model, role, log, timeoutMs } = opts;
     const { agent } = makeGrokCliAgentSeam(opts);
-    return agent(prompt, { schema, label, model, role });
+    return agent(prompt, { ...opts, schema, label, model, role, timeoutMs });
   },
 };
 

@@ -6,17 +6,17 @@ extraction. The archived commit sha below is the honest provenance.
 
 | Skill | Source | Archived commit |
 |-------|--------|-----------------|
-| researchPrime | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
-| crucible | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
-| foreman | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
-| gandalf | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| jumper | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| ramanujan | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| legal-beagle | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| literature-review | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| financial-analyst | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| tidy-idy | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| zombie-hunter | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
-| ecgberht | <path> | `b9900a353af78b7557663caa92e9cf9f8fd75d99` |
-| drivers | <path> | `1f3acba2b404435049830df88b3ebe8a62ac1f18` |
-| foundry-triage | <path> Foundry | `b92606015266ee4f1e7e4f8133f31726257cbeef` |
+| researchPrime | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
+| crucible | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
+| foreman | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
+| gandalf | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| jumper | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| ramanujan | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| legal-beagle | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| literature-review | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| financial-analyst | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| tidy-idy | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| zombie-hunter | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |
+| ecgberht | <path> | `b168f9bba5ed1816532be31c1e52fe710a2a9dfd` |
+| drivers | <path> | `03d1630e9935ddc9d6dc9d81c31cd7d12db41f80` |
+| foundry-triage | <path> Foundry | `5b04d34143cc744a40b21c4f285cc76ff12c3f66` |

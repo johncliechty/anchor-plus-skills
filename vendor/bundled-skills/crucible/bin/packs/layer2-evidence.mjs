@@ -35,7 +35,9 @@ export function makeEntailFromAgent({ agent, model, log = () => {} }) {
       ``,
       `=== CLAIM ===\n${claim.text}\n=== SOURCE TEXT ===\n${source?.text ?? '(source text unavailable)'}\n=== END ===`,
     ].join('\n');
-    const out = await agent(prompt, { label: `entail:${claim.id}:${model}`, schema: ENTAILMENT_SCHEMA });
+    const out = await agent(prompt, {
+      label: `entail:${claim.id}:${model}`, role: 'judge', schema: ENTAILMENT_SCHEMA,
+    });
     return { entailed: out?.entailed === true, rationale: out?.rationale ?? '' };
   };
 }

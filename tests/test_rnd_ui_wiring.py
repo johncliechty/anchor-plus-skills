@@ -497,13 +497,12 @@ def test_project_window_has_lane_controls_and_panel_terminal(gui_env):
         html = gui.render_project_window_html(proj["id"])
     # v12 Wave 2 Layout-D: the per-lane "+ new <lane>" board launchers are RETIRED
     # (the start path moves to the W10 "+ New effort" flow). The live-terminal
-    # start path itself survives: the masthead "Open terminal" general session
-    # (newTermSession → term_start) is still wired, and the W10 "+ New research"
-    # (#newResearchBtn) / "+ New plan/build" (#newPlanBuildBtn) controls are the
-    # effort-start entry points.
-    assert "newEffort('general')" in html or "newGeneral(" in html
-    assert "id='newResearchBtn'" in html  # v12 W10 refine: + New research
-    assert "id='newPlanBuildBtn'" in html  # v12 W10 refine: + New plan/build
+    # start path itself survives through the one General-session control.
+    # Research/plan/build work is commissioned through Steward.
+    assert "id='newGeneralBtn'" in html
+    assert "newEffort('general')" in html
+    assert "id='newResearchBtn'" not in html
+    assert "id='newPlanBuildBtn'" not in html
     assert "/api/rnd/term_start" in html
     # Terminal substrate: a LIVE session mounts the REAL xterm.js terminal inside
     # its inline panel over the v3 transport. v4.1: the v2 console-drawer REPL
@@ -592,14 +591,29 @@ def test_tile_has_lifecycle_controls_and_multiwindow_open(gui_env):
             "function openProjectWindow",
             # the kebab that holds the lifecycle controls
             'class="rnd-kebab"', "rndToggleKebab",
-            # at least the lifecycle controls themselves
-            "rndSetPriority", "rndArchive", "rndRetire", "rndNotes",
+            # Rescan stays; P1/P2/Archive/Retire left the home kebab (2026-08-28)
+            "rndRescan", "rndNotes",
             "function rndNotes", 'id="view-rnd-archive"',
             "showView('rnd-archive')"):
         assert needle in html, "page missing: " + needle
-    # window.open with a per-project NAME => focus-existing, one window per project
-    assert "'anchorproj_'" in html
+    # A new tab/page — never a named target that can reuse the dashboard.
+    assert "'_blank'" in html
+    assert "'anchorproj_'" not in html
     assert "{{" not in html and "}}" not in html
+
+
+def test_high_seat_opens_projects_in_own_window_not_dashboard():
+    """High Seat used to set location.href / named window.open to /project/,
+    which replaced the home dashboard and froze it. Contract: a real new page
+    (target=_blank), never this tab."""
+    src = (Path(__file__).resolve().parent.parent / "static" / "high-seat.js"
+           ).read_text(encoding="utf-8")
+    assert "function _ecgHsOpenProject" in src
+    assert "openProjectWindow(" not in src
+    assert "'_blank'" in src
+    assert "target = '_blank'" in src
+    assert "window.location.href = '/project/'" not in src
+    assert "anchorproj_" not in src
 
 
 # ── Wave 4 (v3) — read-only term_sessions endpoint (repopulate-from-registry) ─

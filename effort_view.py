@@ -591,6 +591,10 @@ def effort_rollup(folder_path, project_id, effort) -> dict:
     tokens = 0
     cost_usd = 0.0
     wall_clock_ms = 0
+    billing_modes = set()
+    cost_states = set()
+    priced_cost_count = 0
+    unpriced_subscription_count = 0
     seen = set()  # (store_lane, job_id) — dedup across overlapping pairs
     for store_lane, sid in pairs:
         try:
@@ -614,12 +618,32 @@ def effort_rollup(folder_path, project_id, effort) -> dict:
                             + int(cost.get("output_tokens", 0) or 0))
             tokens += m_tokens
             wall_clock_ms += int(cost.get("duration_ms", 0) or 0)
-            try:
-                cost_usd += float(cost.get("total_cost_usd", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                pass
-    return {
+            billing_mode = cost.get("billing_mode")
+            cost_state = cost.get("cost_state")
+            if isinstance(billing_mode, str) and billing_mode:
+                billing_modes.add(billing_mode)
+            if isinstance(cost_state, str) and cost_state:
+                cost_states.add(cost_state)
+            raw_cost = cost.get("total_cost_usd")
+            if raw_cost is None and cost_state == "subscription_covered":
+                unpriced_subscription_count += 1
+            elif raw_cost is not None:
+                try:
+                    cost_usd += float(raw_cost)
+                    priced_cost_count += 1
+                except (TypeError, ValueError):
+                    pass
+    out = {
         "tokens": tokens,
-        "cost_usd": round(cost_usd, 6),
+        "cost_usd": (None if unpriced_subscription_count and not priced_cost_count
+                     else round(cost_usd, 6)),
         "wall_clock_ms": wall_clock_ms,
     }
+    if billing_modes or cost_states or unpriced_subscription_count:
+        out.update(
+            billing_modes=sorted(billing_modes),
+            cost_states=sorted(cost_states),
+            priced_cost_count=priced_cost_count,
+            unpriced_subscription_count=unpriced_subscription_count,
+        )
+    return out

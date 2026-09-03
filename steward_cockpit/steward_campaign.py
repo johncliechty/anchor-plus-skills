@@ -12,12 +12,49 @@ painted entirely from these four files (plus the conversation log tail):
 Unreadable or absent files produce honest gaps, never invented state.
 """
 import json
+import math
 import os
 import re
 import time
 from pathlib import Path
 
 TAIL_TURNS = 40
+SWARM_HEARTBEAT_LEASE_SECONDS = 90
+ATTENTION_WORKING_GRACE_SECONDS = 120
+_SWARM_HEARTBEAT_NAME = re.compile(
+    r"^heartbeat-r\d+-[A-Za-z0-9][A-Za-z0-9_-]*\.json$", re.I)
+# The flag John actually sees. Missing/garbage files are quiet, never "unknown"
+# (2026-08-25 friction: status line read "attention: unknown").
+_ATTENTION_STATES = frozenset({
+    "working", "needs_you", "deliverable_ready", "blocked", "idle", "quiet",
+})
+# Scoping tags — the product map is derived from these (not a second file).
+_PART_TAGS = ("research", "slice", "rigor", "integrate", "harden")
+
+
+def _normalize_attention(raw, error=""):
+    if raw is None and error == "absent":
+        return {"state": "quiet", "reason": "", "source_state": "absent"}
+    if not isinstance(raw, dict):
+        return {"state": "unknown",
+                "reason": error or "invalid attention record",
+                "source_state": "unknown"}
+    state = str(raw.get("state") or "quiet").strip().lower()
+    if state not in _ATTENTION_STATES:
+        return {"state": "unknown",
+                "reason": "invalid attention state: " + state,
+                "source_state": state}
+    return {
+        "state": state,
+        "reason": str(raw.get("reason") or ""),
+        "source_state": state,
+        "state_since": raw.get("state_since"),
+        "updated_at": raw.get("updated_at") or raw.get("at"),
+        "failure_code": raw.get("failure_code"),
+        "schema": raw.get("schema"),
+        "provenance": (raw.get("provenance")
+                       if isinstance(raw.get("provenance"), list) else []),
+    }
 
 
 def _read_json(path: Path):
@@ -147,6 +184,7 @@ def read_map(campaign_dir: str):
 
     # --- Roadmap: the steps ---
     steps = []
+    goal_flips = []
     roadmap, err = _read_json(root / "roadmap.json")
     if err:
         gaps.append(f"roadmap.json {err}")
@@ -160,6 +198,10 @@ def read_map(campaign_dir: str):
                     gaps.append("no projection - showing newest proposal (drafts)")
                     break
         for s in proj:
+            part = str(s.get("part") or "").strip().lower()
+            if part not in _PART_TAGS:
+                part = ""
+            gate = str(s.get("gate") or "").strip()
             steps.append({
                 "id": s.get("id") or s.get("step_id") or "",
                 "name": s.get("name") or "(unnamed)",
@@ -167,7 +209,11 @@ def read_map(campaign_dir: str):
                 "done_when": s.get("done_when") or "",
                 "waiting_on": s.get("waiting_on"),
                 "commissioned_as": s.get("commissioned_as"),
+                "part": part,
+                "gate": gate,
             })
+        goal_flips = [ev for ev in (roadmap.get("roadmap_events") or [])
+                      if ev.get("kind") == "goal_flip"]
 
     done = sum(1 for s in steps if s["status"] == "done")
 
@@ -187,11 +233,30 @@ def read_map(campaign_dir: str):
     grasscatch = strip.get("grasscatch", []) or []
 
     # --- Attention flag ---
-    att, err = _read_json(root / ".ecgberht" / "attention.json")
-    attention = {"state": "unknown", "reason": ""}
-    if att:
-        attention = {"state": att.get("state", "unknown"),
-                     "reason": att.get("reason", "")}
+    attention_path = root / ".ecgberht" / "attention.json"
+    att, err = _read_json(attention_path)
+    attention = _normalize_attention(att, err)
+    attention_age = _age(attention_path)
+    attention["age_seconds"] = attention_age
+    # The typed Ecgberht attention cell is edge-triggered, so its mtime alone
+    # is not a heartbeat. Give a newly written working edge a short grace; once
+    # that expires, only a fresh supervised-seat trail can keep "working" live.
+    # Otherwise false liveness becomes an explicit stale state and cannot keep
+    # the cockpit awake forever.
+    if attention["state"] == "working":
+        failure_code = str(attention.get("failure_code") or "")
+        has_fresh_owner = any(
+            seat.get("state") == "fresh"
+            for seat in read_swarm_trails(str(root))
+        )
+        expired = (attention_age is None
+                   or attention_age >= ATTENTION_WORKING_GRACE_SECONDS)
+        if failure_code == "ATTENTION_STALE" or (expired and not has_fresh_owner):
+            attention["state"] = "stale"
+            attention["reason"] = (
+                "attention working edge has no fresh owner heartbeat")
+            attention["lease_seconds"] = ATTENTION_WORKING_GRACE_SECONDS
+        attention["fresh_owner"] = has_fresh_owner
 
     # --- Freshness ---
     freshness = {
@@ -222,6 +287,15 @@ def read_map(campaign_dir: str):
     except Exception:
         pass
 
+    last_flip = goal_flips[-1] if goal_flips else None
+    last_done = next((s for s in reversed(steps) if s["status"] == "done"), None)
+    last_done_id = last_done["id"] if last_done else ""
+    last_flip_step = str((last_flip or {}).get("step_id") or "")
+    # No close yet → nothing to re-read. A close without a matching goal_flip
+    # is the Math Review hole (goal frozen after the slice that falsified it).
+    goal_reread = (not last_done_id) or (
+        bool(last_flip) and last_flip_step == last_done_id)
+
     return {
         "dir": str(root),
         "name": root.name,
@@ -231,6 +305,11 @@ def read_map(campaign_dir: str):
         "steps": steps,
         "steps_done": done,
         "steps_total": len(steps),
+        "map": derive_product_map(steps),
+        "work_map": work_product_map(steps),
+        "plate": read_plate(str(root)),
+        "goal_flips": goal_flips,
+        "goal_reread": goal_reread,
         "heartbeat": heartbeat,
         "human_wait_face": human_wait_face,
         "grasscatch": grasscatch,
@@ -250,6 +329,97 @@ do does did done more most other some such only also than then there
 """.split())
 
 
+_PART_LABELS = {
+    "research": "Background",
+    "slice": "The product",
+    "rigor": "Prove it",
+    "integrate": "Join",
+    "harden": "Finish",
+}
+
+
+def read_plate(campaign_dir: str):
+    """Authored anatomy of one deliverable. Missing file → None (never invent from the plan)."""
+    path = Path(campaign_dir) / "anatomy.json"
+    data, err = _read_json(path)
+    if err or not isinstance(data, dict) or not data.get("parts"):
+        return None
+    return data
+
+
+def list_plates(project_dir: str):
+    """One plate per effort that has anatomy.json."""
+    plates = []
+    seen = set()
+    for e in discover_efforts(project_dir):
+        edir = str(Path(project_dir) / e["rel"]) if e["rel"] else project_dir
+        pl = read_plate(edir)
+        if not pl:
+            continue
+        key = pl.get("deliverableId") or e["rel"] or e["name"]
+        if key in seen:
+            continue
+        seen.add(key)
+        pl = dict(pl)
+        pl["effort"] = e["rel"]
+        plates.append(pl)
+    return plates
+
+
+def work_product_map(steps):
+    """Backbone of the *deliverable* (Patton: flow across, detail down).
+    Same steps as the plan — grouped, not a second store."""
+    groups = []
+    seen = set()
+    for tag in _PART_TAGS:
+        items = [s for s in (steps or []) if s.get("part") == tag]
+        if not items:
+            continue
+        for s in items:
+            seen.add(s.get("id"))
+        done = sum(1 for s in items if s.get("status") == "done")
+        groups.append({
+            "tag": tag,
+            "label": _PART_LABELS.get(tag, tag),
+            "done": done,
+            "total": len(items),
+            "steps": items,
+        })
+    rest = [s for s in (steps or []) if s.get("id") not in seen]
+    if rest:
+        done = sum(1 for s in rest if s.get("status") == "done")
+        groups.append({
+            "tag": "",
+            "label": "Outline",
+            "done": done,
+            "total": len(rest),
+            "steps": rest,
+        })
+    return groups
+
+
+def derive_product_map(steps):
+    """Product map = tagged roadmap steps. Not a second file."""
+    lines = []
+    seen = set()
+    for tag in _PART_TAGS:
+        for s in steps or []:
+            if s.get("part") == tag:
+                seen.add(s.get("id"))
+                bit = tag + ": " + (s.get("name") or "(unnamed)")
+                bit += " (" + (s.get("status") or "") + ")"
+                if s.get("gate"):
+                    bit += " · gate"
+                elif tag in ("slice", "rigor", "integrate", "harden"):
+                    bit += " · no gate"
+                lines.append(bit)
+    for s in steps or []:
+        if s.get("id") not in seen:
+            lines.append("untagged: " + (s.get("name") or "(unnamed)")
+                         + " (" + (s.get("status") or "") + ")")
+    return lines
+
+
 def suggest_effort_name(goal_brief, limit=4):
     """A short human effort name derived from the GOAL (zero-model, instant —
     John 2026-08-25: 'when I do the rename can the steward give a
@@ -260,6 +430,127 @@ def suggest_effort_name(goal_brief, limit=4):
     picked = [w for w in words if w.lower() not in _NAME_STOP][:limit]
     name = " ".join(picked).strip()[:40].strip()
     return name if len(name) >= 3 else ""
+
+
+def read_swarm_trails(campaign_dir: str):
+    """Scoped, lease-aware heartbeat files from supervised swarm seats.
+
+    Trio's shared swarm-lookin contract treats 90 seconds without a refreshed
+    trail as death. The cockpit mirrors that boundary: stale or malformed
+    files remain visible as evidence, but are never presented as live work.
+    """
+    root = Path(campaign_dir)
+    candidates = []
+    for folder in (root, root / ".ecgberht"):
+        if not folder.is_dir():
+            continue
+        try:
+            names = list(folder.iterdir())
+        except OSError:
+            continue
+        for p in names:
+            if not p.is_file():
+                continue
+            if not _SWARM_HEARTBEAT_NAME.fullmatch(p.name):
+                continue
+            file_age = _age(p)
+            label = re.sub(r"^heartbeat-r\d+-", "", p.stem,
+                           flags=re.I) or p.stem
+            try:
+                raw = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                candidates.append({"label": label, "doing": "",
+                                   "why": "", "next": "",
+                                   "load_bearing": None, "rabbit": None,
+                                   "state": "unknown",
+                                   "age": _humanize(file_age),
+                                   "age_seconds": file_age,
+                                   "reason": "unreadable heartbeat",
+                                   "valid": False, "source": str(p)})
+                continue
+            valid = (
+                isinstance(raw, dict)
+                and all(isinstance(raw.get(k), str)
+                        for k in ("doing", "why", "next"))
+                and isinstance(raw.get("load_bearing"), bool)
+                and isinstance(raw.get("rabbit"), bool)
+                and isinstance(raw.get("ts"), (str, int, float))
+                and not isinstance(raw.get("ts"), bool)
+                and str(raw.get("ts")).strip() != ""
+            )
+            if not valid:
+                candidates.append({"label": label, "doing": "",
+                                   "why": "", "next": "",
+                                   "load_bearing": None, "rabbit": None,
+                                   "state": "unknown",
+                                   "age": _humanize(file_age),
+                                   "age_seconds": file_age,
+                                   "reason": "invalid heartbeat schema",
+                                   "valid": False, "source": str(p)})
+                continue
+            # Trio's supervisor uses Number(ts) as milliseconds and falls back
+            # to file mtime when ts is non-numeric. Mirror that clock exactly;
+            # touching an old numeric payload must not resurrect a dead seat.
+            payload_ms = None
+            try:
+                parsed = float(raw["ts"])
+                if math.isfinite(parsed) and parsed != 0:
+                    payload_ms = parsed
+            except (TypeError, ValueError, OverflowError):
+                pass
+            if payload_ms is None:
+                age_seconds = file_age
+                clock_source = "mtime"
+            else:
+                age_seconds = time.time() - (payload_ms / 1000.0)
+                clock_source = "payload"
+            state = ("fresh" if age_seconds is not None
+                      and age_seconds < SWARM_HEARTBEAT_LEASE_SECONDS
+                      else "stale")
+            candidates.append({
+                "label": label,
+                "doing": raw["doing"],
+                "why": raw["why"],
+                "next": raw["next"],
+                "load_bearing": raw["load_bearing"],
+                "rabbit": raw["rabbit"],
+                "state": state,
+                "age": _humanize(age_seconds),
+                "age_seconds": age_seconds,
+                "reason": ("" if state == "fresh" else
+                           "heartbeat lease expired"),
+                "clock_source": clock_source,
+                "clock_skew_seconds": (round(-age_seconds, 3)
+                                       if age_seconds is not None
+                                       and age_seconds < 0 else 0),
+                "valid": True,
+                "source": str(p),
+            })
+
+    # Root and .ecgberht can contain copies of the same supervised seat. One
+    # identity produces one row: newest valid evidence wins; an invalid copy
+    # can never hide an older valid trail. Keep duplicate provenance visible
+    # in the structured record for diagnosis without painting two live seats.
+    grouped = {}
+    for item in candidates:
+        grouped.setdefault(item["label"].casefold(), []).append(item)
+    found = []
+    for items in grouped.values():
+        valid_items = [item for item in items if item["valid"]]
+        pool = valid_items or items
+        winner = min(
+            pool,
+            key=lambda item: (float("inf") if item["age_seconds"] is None
+                              else item["age_seconds"]),
+        )
+        winner = dict(winner)
+        winner["duplicate_sources"] = len(items)
+        winner["sources"] = sorted(item["source"] for item in items)
+        winner.pop("valid", None)
+        winner.pop("source", None)
+        found.append(winner)
+    found.sort(key=lambda seat: seat["label"].casefold())
+    return found
 
 
 def compose_status(campaign_dir: str, engine_state=None):
@@ -286,30 +577,70 @@ def compose_status(campaign_dir: str, engine_state=None):
         if st.get("queued"):
             line += " · %d queued" % st["queued"]
         now_lines.append(line)
+    elif st.get("queued"):
+        now_lines.append("steward idle · %d held message(s)" % st["queued"])
     if m["attention"]["state"] == "working":
         run = (m["attention"]["reason"] or "").strip() \
             or "commissioned work in flight"
         if active and active.get("commissioned_as"):
             run += " · as " + str(active["commissioned_as"])
         now_lines.append(run)
+    swarm = read_swarm_trails(campaign_dir)
+    swarm_notes = []
+    for seat in swarm:
+        if seat.get("state") == "stale":
+            swarm_notes.append(seat["label"] + " · stale heartbeat · "
+                               + seat.get("age", "unknown age"))
+            continue
+        if seat.get("state") != "fresh":
+            swarm_notes.append(seat["label"] + " · heartbeat unknown · "
+                               + seat.get("reason", "invalid"))
+            continue
+        line = seat["label"] + " · " + (seat["doing"] or "silent")
+        if seat.get("rabbit"):
+            line += " · rabbit"
+        elif seat.get("load_bearing") is False:
+            line += " · not load-bearing"
+        else:
+            line += " · on path"
+        now_lines.append(line)
     if not now_lines:
-        now_lines.append("nothing running - "
-                         + ("waiting on you"
-                            if m["attention"]["state"] == "needs_you"
-                            else "quiet"))
+        attention_label = {
+            "needs_you": "waiting on you",
+            "deliverable_ready": "deliverable ready",
+            "blocked": "blocked",
+            "stale": "attention stale - live owner unconfirmed",
+            "unknown": "attention unknown",
+        }.get(m["attention"]["state"], "quiet")
+        now_lines.append("nothing running - " + attention_label)
+    now_lines.extend(swarm_notes)
+    if active and active.get("part"):
+        plan_step = active["part"] + ": " + active["name"]
+    else:
+        plan_step = active["name"] if active else "(no active step)"
     plan = {
-        "step": active["name"] if active else "(no active step)",
+        "step": plan_step,
         "steps_done": m["steps_done"],
         "steps_total": m["steps_total"],
         "waiting_on_you": (m["heartbeat"]["human_wait"] or "")
                           .split("·")[0].strip(),
         "next": (m["heartbeat"]["next_recommended"] or "").strip(),
         "attention": m["attention"]["state"],
+        "goal_reread": m.get("goal_reread", True),
     }
+    if not m.get("goal_reread", True):
+        now_lines.append("goal not re-read since last close")
+    if active and active.get("part") in ("slice", "rigor", "integrate", "harden") \
+            and not active.get("gate") and active.get("commissioned_as"):
+        now_lines.append("commissioned without a gate command")
     out = {"at": time.strftime("%Y-%m-%d %H:%M"),
+           "status_id": f"{time.time_ns():020d}",
            "effort": m["name"],
            "now": now_lines,
-           "plan": plan}
+           "plan": plan,
+           "map": m.get("map") or [],
+           "work_map": m.get("work_map") or [],
+           "swarm": swarm}
     # Deliverables count rides the universal status shape (2026-08-25, John's ask —
     # journal 0010: "where is the thing I paid for?"). Count only; the list itself
     # is the deliverables verb / tile.
@@ -512,7 +843,7 @@ def map_stamp(campaign_dir: str):
     for rel in ("ECGBERHT.md", "roadmap.json", "strip.json",
                 ".ecgberht/attention.json"):
         try:
-            stamp.append(int((root / rel).stat().st_mtime))
+            stamp.append((root / rel).stat().st_mtime_ns)
         except OSError:
             stamp.append(0)
     return "-".join(map(str, stamp))

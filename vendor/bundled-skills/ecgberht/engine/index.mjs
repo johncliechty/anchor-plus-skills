@@ -233,6 +233,8 @@ export {
   ROADMAP_STEP_STATUSES,
   ROADMAP_PROJECTION_FIELDS,
   ROADMAP_SET_FIELDS,
+  ROADMAP_PART_TAGS,
+  normalizePartTag,
   FLIP_RECEIPT_FIELDS,
   ROADMAP_SINGLE_WRITER,
   parseRoadmap,
@@ -625,6 +627,212 @@ export {
   scanForChatTurns,
   readRoadmapLedgerBytes,
 } from './scaffolding.mjs';
+
+// Wave 18 — conversational kickoff synthesis: proposal → hash confirmation → projection
+// Gate 5 W1 — the record law (engine/kickoff-record.mjs) rides through the same seam.
+export {
+  KICKOFF_PROPOSAL_SCHEMA,
+  KICKOFF_PROPOSAL_KIND,
+  KICKOFF_RELATIONSHIP_KINDS,
+  KICKOFF_FORBIDDEN_FIELDS,
+  KICKOFF_CODE,
+  KICKOFF_TEXT,
+  kickoffFailure,
+  kickoffFailureTable,
+  canonicalKickoffBytes,
+  hashKickoffPayload,
+  kickoffHashBody,
+  recomputeKickoffHash,
+  resolveKickoffProvenance,
+  validateKickoffContent,
+  validateKickoffProposal,
+  normalizeKickoffInput,
+  compileKickoffProposal,
+  renderKickoffProposal,
+  projectKickoff,
+  showKickoff,
+  proposeKickoff,
+  confirmKickoff,
+  replayKickoff,
+  kickoffShow,
+  kickoffConfirm,
+  kickoffReplay,
+  // Gate 5 W2 - the lifecycle on the one store (engine/kickoff-lifecycle.mjs)
+  KICKOFF_DIR_REL,
+  KICKOFF_EVENTS_FILE,
+  KICKOFF_EVENTS_REL,
+  KICKOFF_EVENTS_MAX_BYTES,
+  KICKOFF_RECEIPT_SCHEMA,
+  KICKOFF_EVENT_KIND,
+  KICKOFF_STATE,
+  KICKOFF_APPEND_PRIMITIVE,
+  KICKOFF_LOCK_HELPER,
+  kickoffEventsPath,
+  kickoffLifecycleFailureTable,
+  projectKickoffLineage,
+  readKickoffLineage,
+  openKickoffProposal,
+  reproposeKickoff,
+  confirmKickoffProposal,
+  deriveConfirmedKickoff,
+} from './kickoff.mjs';
+
+// Gate 5 W2 - THE execution-leak sentinel (one mechanism behind every no-execution assertion)
+export {
+  EXECUTION_SEAMS,
+  SENTINEL_DEFAULT_ALLOW,
+  SENTINEL_MAX_FILES,
+  SENTINEL_CODE,
+  SENTINEL_TEXT,
+  sentinelText,
+  captureTree,
+  diffTrees,
+  isAllowedPath,
+  armExecutionLeakSentinel,
+  withExecutionLeakSentinel,
+} from './execution-leak-sentinel.mjs';
+
+// Gate 5 W3 - the conversation's kickoff law (engine/kickoff-conversation.mjs): question
+// cap, thin-proposal bound, silent bootstrap, spoken confirm/show on the one store
+export {
+  KICKOFF_QUESTION_CAP,
+  KICKOFF_THIN_PROPOSAL_BY_TURN,
+  KICKOFF_CONVERSATION_ALLOW,
+  KICKOFF_FACE_CREATED_ON,
+  KICKOFF_ENVELOPE_MATERIALIZED_IN,
+  KICKOFF_TALK_CODE,
+  KICKOFF_TALK_TEXT,
+  THIN_BUNDLE_INSTRUCTION,
+  kickoffTalkFailure,
+  kickoffConversationFailureTable,
+  kickoffTurnNumber,
+  capKickoffQuestions,
+  kickoffNeedsThinProposal,
+  thinBundleInstruction,
+  settleKickoffBootstrap,
+  usesLegacyRoadmapLane,
+  openKickoffBundle,
+  confirmKickoffSpoken,
+  showKickoffSpoken,
+} from './kickoff-conversation.mjs';
+
+// Gate 5 W4 - confirmed-lineage projection writer and Face derivation
+// (engine/kickoff-projection.mjs): projection.json + face.md re-derived from the
+// latest confirmed receipt; an OPEN draft rides only in the open_draft summary.
+export {
+  KICKOFF_PROJECTION_SCHEMA,
+  KICKOFF_PROJECTION_FILE,
+  KICKOFF_PROJECTION_REL,
+  KICKOFF_FACE_FILE,
+  KICKOFF_FACE_REL,
+  KICKOFF_FACE_SEMANTICS,
+  KICKOFF_PROJECTION_CODE,
+  KICKOFF_PROJECTION_TEXT,
+  KICKOFF_PROJECTION_ATOMIC_WRITE,
+  KICKOFF_PROJECTION_LOCK_HELPER,
+  kickoffProjectionPath,
+  kickoffFacePath,
+  kickoffProjectionFailure,
+  kickoffProjectionFailureTable,
+  deriveKickoffProjection,
+  writeKickoffProjection,
+  readKickoffProjection,
+  readKickoffFace,
+} from './kickoff-projection.mjs';
+
+// Gate 5 W5 - silent bootstrap and projection precedence (engine/kickoff-display.mjs):
+// confirmed intent first; the tag-derived map is fallback ONLY (visibly marked, never
+// merged, retirement written); new kickoff paths never write anatomy.json.
+export {
+  KICKOFF_DISPLAY_SOURCE,
+  KICKOFF_DISPLAY_CODE,
+  KICKOFF_DISPLAY_TEXT,
+  KICKOFF_FALLBACK_MARKER,
+  TAG_MAP_FALLBACK_RETIREMENT,
+  KICKOFF_ANATOMY_FILE,
+  KICKOFF_ANATOMY_GUARD,
+  guardKickoffWriteTarget,
+  kickoffDisplayFailure,
+  kickoffDisplayFailureTable,
+  deriveKickoffTagMap,
+  selectKickoffDisplay,
+} from './kickoff-display.mjs';
+
+// Gate 5 W6 - fixture proof, live-seat recording, and completion evidence.
+// The five representative efforts + the readable-distinction law (one function, shared
+// by the hermetic suite, the live replay, and the final wave's staging for John).
+export {
+  KICKOFF_PROSE_LABELS,
+  KICKOFF_SCHEMA_WORDS,
+  KICKOFF_EFFORT_FIXTURES,
+  kickoffEffortFixture,
+  readableDistinctionReport,
+} from './kickoff-effort-fixtures.mjs';
+
+// The ONE authorized production-seat recording, as law: named failure rows, one retry,
+// bounded cost, never a fabricated tape, hermetic replay thereafter.
+export {
+  KICKOFF_LIVE_TAPE_REL,
+  LIVE_SEAT_OPENING,
+  LIVE_SEAT_FOLLOWUP,
+  LIVE_SEAT_AS_OF,
+  LIVE_SEAT_TURN_IDS,
+  LIVE_SEAT_PRODUCTION_SEATS,
+  LIVE_SEAT_MAX_ATTEMPTS,
+  LIVE_SEAT_MAX_TURNS_PER_ATTEMPT,
+  LIVE_SEAT_MAX_SEAT_CALLS,
+  LIVE_SEAT_CALL_TIMEOUT_MS,
+  LIVE_SEAT_MAX_TOTAL_MS,
+  LIVE_TAPE_MAX_BYTES,
+  KICKOFF_LIVE_CODE,
+  KICKOFF_LIVE_ROW,
+  KICKOFF_LIVE_TEXT,
+  kickoffLiveSeatFailure,
+  kickoffLiveSeatFailureTable,
+  classifyLiveSeatFailure,
+  recordKickoffLiveSession,
+  verifyKickoffTape,
+} from './kickoff-live-seat.mjs';
+
+// ONE completion journal, id resolved at write time, every North-Star criterion tagged
+// hermetic / live-seat / John's screen (screen-only criteria tagged, never claimed).
+export {
+  KICKOFF_COMPLETION_SLUG,
+  KICKOFF_EVIDENCE_TAG,
+  KICKOFF_NORTH_STAR_EVIDENCE,
+  KICKOFF_HUMAN_STEPS,
+  KICKOFF_JOURNAL_CODE,
+  KICKOFF_JOURNAL_TEXT,
+  resolveNextJournalId,
+  findKickoffCompletionJournal,
+  renderKickoffCompletionJournal,
+  writeKickoffCompletionJournal,
+} from './kickoff-completion-journal.mjs';
+
+// Gate 5 W9 - Phase 4.3: the OPEN-state read-model persistence seam (the last
+// integration piece the Anchor pass-through canary reads) and the HALT record
+// that ends the effort's machine phase in a halt for John.
+export {
+  KICKOFF_OPEN_PROJECTION_STATE,
+  KICKOFF_OPEN_PROJECTION_ATOMIC_WRITE,
+  KICKOFF_OPEN_PROJECTION_LOCK_HELPER,
+  KICKOFF_READ_MODEL_ANSWER,
+  deriveKickoffOpenProjection,
+  persistKickoffReadModel,
+  kickoffOpenProjectionFailureTable,
+} from './kickoff-open-projection.mjs';
+export {
+  KICKOFF_HALT_RECORD_REL,
+  KICKOFF_LOOK_STAGING_COMMAND,
+  KICKOFF_LOOK_EFFORT_PLAN,
+  KICKOFF_VISUAL_CLAIMS,
+  KICKOFF_FAILURE_ROUTING,
+  KICKOFF_HALT_CODE,
+  KICKOFF_HALT_TEXT,
+  kickoffHaltRecordFailureTable,
+  renderKickoffHaltRecord,
+  writeKickoffHaltRecord,
+} from './kickoff-halt-record.mjs';
 
 // Wave 10 — Face compile projection (Master-Plan P4 restored)
 export {

@@ -31,6 +31,42 @@ function _ecgHsTok() {
   } catch (e) { return ''; }
 }
 
+/** Build a same-origin project PAGE URL. Page navigation authenticates with
+ *  Anchor's HttpOnly cookie, so the shared-secret token must never ride in the
+ *  address bar, history, referrer, or copied links. */
+function _ecgHsProjectUrl(pid, hash) {
+  var q = '';
+  try {
+    if (window.ANCHOR_BUILD)
+      q = '?v=' + encodeURIComponent(String(window.ANCHOR_BUILD));
+  } catch (e) { /* no-op */ }
+  return '/project/' + encodeURIComponent(pid) + q + (hash ? hash : '');
+}
+
+/** Open the AI cockpit as a DIFFERENT web page. Never this dashboard tab.
+ *  Do NOT call openProjectWindow — the dashboard copy can still be a named
+ *  window.open that reuses home. Always _blank here. */
+function _ecgHsOpenProject(pid, hash, reservedWindow) {
+  if (!pid) return false;
+  var url = _ecgHsProjectUrl(pid, hash);
+  var w = reservedWindow || null;
+  if (!w) {
+    try { w = window.open('about:blank', '_blank'); } catch (e) { w = null; }
+  }
+  if (w && w !== window && !w.closed) {
+    try {
+      w.opener = null;
+      w.location.replace(url);
+      w.focus();
+    } catch (e) {
+      try { w.close(); } catch (_ignored) { /* no-op */ }
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 function _ecgHsGet(path, done, fail) {
   fetch(path + _ecgHsTok())
     .then(function (r) { return r.json(); })
@@ -231,14 +267,11 @@ function _ecgHsRenderPacket(body, pid, payload) {
 var _ECG_HS_RAISED_ANCHOR_ID = null;
 
 function ecgHsBringUp(body, pid) {
-  // (2026-08-07, John opened a "chamber empty … nothing here yet" overlay on
-  // the deck project.) The RICH chamber lives on the project page — when the
-  // raised project maps to an Anchor id, go THERE (#seal auto-opens it)
-  // instead of the thin packet overlay. The overlay stays as the fallback
-  // for a raise we cannot map.
-  if (_ECG_HS_RAISED_ANCHOR_ID) {
-    window.location.href = '/project/' +
-      encodeURIComponent(_ECG_HS_RAISED_ANCHOR_ID) + '#seal';
+  // The steward lives on the project page (cockpit). Always a new page —
+  // never an in-dashboard overlay that looks like an open and then freezes.
+  var id = _ECG_HS_RAISED_ANCHOR_ID || pid;
+  if (id) {
+    _ecgHsOpenProject(id);
     return;
   }
   _ecgHsGet('/api/ecgberht/bring_up?project_id=' + encodeURIComponent(pid), function (out) {
@@ -246,7 +279,6 @@ function ecgHsBringUp(body, pid) {
       _ecgHsReply(body, "I couldn't open that: " + ((out && (out.error || out.message)) || 'no response'));
       return;
     }
-    // S0-E5: same overlay, no second window — the altitude hop is a non-event.
     _ecgHsRenderPacket(body, pid, out);
   });
 }
@@ -264,6 +296,18 @@ function _ecgHsProjectCreateCard(host, pc) {
   var acts = _ecgHsEl('div', 'ecg-hs-actions');
   var go = _ecgHsEl('button', 'ecg-hs-btn pri', 'Create it');
   go.onclick = function () {
+    // Reserve the page while this click still carries a user gesture. The
+    // project id arrives after fetch, when browsers normally block popups.
+    var pending = null;
+    try { pending = window.open('about:blank', '_blank'); } catch (e) { pending = null; }
+    if (pending && pending !== window) {
+      try {
+        pending.opener = null;
+        pending.document.title = 'Creating Anchor project…';
+      } catch (e) { /* no-op */ }
+    } else {
+      pending = null;
+    }
     go.disabled = true;
     go.textContent = 'Creating…';
     fetch('/api/rnd/new_project', {
@@ -273,18 +317,33 @@ function _ecgHsProjectCreateCard(host, pc) {
     }).then(function (r) { return r.json(); }).then(function (j) {
       var entry = j && j.entry;
       if (!j || j.ok === false || !entry) {
+        if (pending) { try { pending.close(); } catch (e) { /* no-op */ } }
         go.disabled = false;
         go.textContent = 'Create it';
         _ecgHsReply(card, 'Could not create it: ' +
           ((j && (j.message || j.error)) || 'no response') + ' — nothing was made.');
         return;
       }
-      _ecgHsReply(card, 'Created — opening its steward. ' +
-        (j.path_existed
-          ? 'Existing material found; the first Gandalf read starts on its own.'
-          : 'Fresh folder scaffolded.'));
-      window.location.href = '/project/' + encodeURIComponent(entry.id) + '#seal';
+      var opened = pending ? _ecgHsOpenProject(entry.id, '', pending) : false;
+      var note = j.path_existed
+        ? 'Existing material found; the first Gandalf read starts on its own.'
+        : 'Fresh folder scaffolded.';
+      if (opened) {
+        _ecgHsReply(card, 'Created — opening its cockpit in a new page. ' + note);
+      } else {
+        var hold = _ecgHsEl('div', 'note', 'Created — the browser blocked the new page. ' + note);
+        var a = document.createElement('a');
+        a.href = '/project/' + encodeURIComponent(entry.id);
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = 'Open it';
+        a.className = 'ecg-hs-btn pri';
+        hold.appendChild(document.createTextNode(' '));
+        hold.appendChild(a);
+        card.appendChild(hold);
+      }
     }).catch(function () {
+      if (pending) { try { pending.close(); } catch (e) { /* no-op */ } }
       go.disabled = false;
       go.textContent = 'Create it';
       _ecgHsReply(card, 'That didn’t go through — nothing was made.');
@@ -331,8 +390,8 @@ function _ecgHsRenderHighSeat(body, vm) {
     // IT (not just the project) is how John answers the skill directly.
     if (rb.session_id && rb.project_id) {
       raiseActs.push({ label: 'Open the session', onclick: function () {
-        window.location.href = '/project/' + encodeURIComponent(rb.project_id) +
-          '#session=' + encodeURIComponent(rb.session_id);
+        _ecgHsOpenProject(rb.project_id,
+          '#session=' + encodeURIComponent(rb.session_id));
       } });
     }
     raiseActs.push(
@@ -370,8 +429,18 @@ function _ecgHsRenderHighSeat(body, vm) {
   if (!activeTiles.length) { activeTiles = allTiles; quietTiles = []; }
   var tiles = _ecgHsEl('div', 'ecg-hs-tiles');
   var renderTile = function (t, host) {
-    var tile = _ecgHsEl('div', 'ecg-hs-tile' + (t.dimmed ? ' dim' : '') +
-      (t.anchor_project_id ? ' clickable' : ''));
+    var cls = 'ecg-hs-tile' + (t.dimmed ? ' dim' : '') +
+      (t.anchor_project_id ? ' clickable' : '');
+    var tile;
+    if (t.anchor_project_id) {
+      tile = _ecgHsEl('a', cls);
+      tile.href = _ecgHsProjectUrl(t.anchor_project_id, '');
+      tile.target = '_blank';
+      tile.rel = 'noopener noreferrer';
+      tile.title = 'Open this project’s AI cockpit in a new page';
+    } else {
+      tile = _ecgHsEl('div', cls);
+    }
     var nm = _ecgHsEl('div', 'nm');
     var ico = document.createElement('img');
     ico.src = _ecgHsStwSealSrc();
@@ -394,13 +463,6 @@ function _ecgHsRenderHighSeat(body, vm) {
     }
     if (t.spend_line) tile.appendChild(_ecgHsEl('div', 'hs-spend', t.spend_line));
     tile.appendChild(_ecgHsEl('div', 'pill' + (t.state_kind === 'raised' ? ' raised' : ''), t.state_pill));
-    if (t.anchor_project_id) {
-      tile.onclick = function () {
-        window.location.href = '/project/' +
-          encodeURIComponent(t.anchor_project_id) + '#seal';
-      };
-      tile.title = 'Open this project’s steward';
-    }
     host.appendChild(tile);
   };
   activeTiles.forEach(function (t) { renderTile(t, tiles); });

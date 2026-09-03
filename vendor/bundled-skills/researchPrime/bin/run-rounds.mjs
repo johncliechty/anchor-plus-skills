@@ -18,8 +18,11 @@
 //       { round, northStar, stakes:{...}|tier,
 //         reviews:[{reviewer,angle,lineage,findings:[{claim_id?,topic,severity,traces_to_north_star,message}]}],
 //         adjudications:{ judge:{...}, synthesizer:{...}, debate:{...} } }   (replay mode)
-//   RESEARCHPRIME_LIVE_ROUND=1  -> reviewer/debate/judge seats go LIVE to Gemini via agy
-//     (5:1; agy down => honest HaltError, never Claude self-review).
+//   RESEARCHPRIME_LIVE_ROUND=1  -> reviewer/debate/judge seats go LIVE via family prefs
+//     (agy down => honest HaltError, never silent self-review). Vacant reviews[]
+//     SPAWN the G3 panel through that agent (journal 0057/0058) — do not paste.
+//     Supplied non-vacant reviews still win (replay / resume). Artifact path on
+//     the round input must be ABSOLUTE (journal 0002).
 //   --max-rounds (default 8, env RESEARCHPRIME_MAX_ROUNDS): the HARD round budget — at
 //     the cap the run stops with an honest NOT-CONVERGED state file; it never loops
 //     unbounded and never fabricates convergence.
@@ -37,6 +40,12 @@ import {
   countUnresolvedHighSeverity,
   isDryRound,
   isEmptyRound,
+  isVacantReviews,
+  runPanelRound,
+  normalizePanelFindings,
+  countSurvivingPanel,
+  DEFAULT_CHECKIN_MS,
+  DEFAULT_DEAD_IDLE_MS,
 } from './round.mjs';
 import { runGovernedRound } from './governor.mjs';
 import { deriveGovernorContract } from './formal-governor.mjs';
@@ -52,8 +61,27 @@ import {
   SINGLE_FAMILY_ROUTES,
 } from './live-round-agent.mjs';
 import { resolveBandRoundBudget } from './intake.mjs';
+import { makeReliableAgent } from '../../drivers/reliability.mjs';
 
-export async function runRounds(runDir, { maxRounds = null, env = process.env, log = console.log } = {}) {
+function resolveRoundArtifact(inp, runDir) {
+  const raw = inp?.artifact ?? inp?.artifactPath ?? inp?.artifact_path ?? null;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const p = raw.trim();
+  if (path.win32.isAbsolute(p) || path.posix.isAbsolute(p)) return p;
+  const joined = path.resolve(runDir, p);
+  if (path.win32.isAbsolute(joined) || path.posix.isAbsolute(joined)) return joined;
+  return null;
+}
+
+function writeHaltRecord(runDir, reason, extra = {}) {
+  try {
+    fs.writeFileSync(path.join(runDir, 'HALT-RECORD.json'), JSON.stringify({
+      status: 'HALTED', reason, timestamp: new Date().toISOString(), ...extra,
+    }, null, 2));
+  } catch { /* record is best-effort; the halt itself is the law */ }
+}
+
+export async function runRounds(runDir, { maxRounds = null, env = process.env, log = console.log, agent: injectedAgent = null, spawnPanel = false } = {}) {
   const started = new Date().toISOString();
   const t0 = Date.now();
 
@@ -201,17 +229,110 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
 
   const reached = makeReachedFamilyTracker();
   const LIVE_ROUND = env.RESEARCHPRIME_LIVE_ROUND === '1';
-  const liveAgent = LIVE_ROUND
-    ? await buildLiveRoundAgent({ tracker: reached, env }) // prefs-aware (CODING/REVIEW_FAMILY)
-    : null;
+  const spawn = spawnPanel === true || LIVE_ROUND || env.RESEARCHPRIME_SPAWN_PANEL === '1';
+  let liveAgent = injectedAgent;
+  if (!liveAgent && LIVE_ROUND) {
+    liveAgent = await buildLiveRoundAgent({ tracker: reached, env }); // prefs-aware (CODING/REVIEW_FAMILY)
+  }
   if (LIVE_ROUND) {
     log('LIVE cross-family round: seats from coding/review family prefs (omit routes → ~/.anchor/model_prefs.json).');
   }
+  if (spawn) {
+    log('PANEL SPAWN on: vacant reviews[] will be filled by the G3 swarm (not pasted).');
+  }
 
   for (const inp of inputs) {
-    const agent = LIVE_ROUND
+    const agent = liveAgent
       ? liveAgent
       : instrumentRoundAgent({ agent: replayAgent(inp.adjudications ?? {}), routes: SINGLE_FAMILY_ROUTES, tracker: reached });
+    let reviews = inp.reviews;
+    let panelSpawned = false;
+    let panelSource = null;
+    if (spawn && isVacantReviews(reviews)) {
+      const sidecar = path.join(runDir, `round-${inp.round}-spawned-reviews.json`);
+      if (fs.existsSync(sidecar)) {
+        let saved;
+        try { saved = JSON.parse(fs.readFileSync(sidecar, 'utf8')); } catch {
+          writeHaltRecord(runDir, `PANEL SPAWN HALT: ${sidecar} is not valid JSON`);
+          throw new HaltError(`PANEL SPAWN HALT: ${sidecar} is not valid JSON`);
+        }
+        if (!Array.isArray(saved?.reviews)) {
+          writeHaltRecord(runDir, `PANEL SPAWN HALT: ${sidecar} missing reviews[]`);
+          throw new HaltError(`PANEL SPAWN HALT: ${sidecar} missing reviews[]`);
+        }
+        try {
+          reviews = saved.reviews.map((r) => ({
+            ...r,
+            findings: normalizePanelFindings(r?.findings),
+          }));
+        } catch (e) {
+          writeHaltRecord(runDir, e.message);
+          throw e;
+        }
+        if (countSurvivingPanel(reviews) === 0) {
+          const msg = `PANEL SPAWN HALT round ${inp.round}: sidecar has zero surviving seats — not a dry round`;
+          writeHaltRecord(runDir, msg);
+          throw new HaltError(msg);
+        }
+        panelSpawned = true;
+        panelSource = 'sidecar';
+        log(`round ${inp.round}: panel loaded from sidecar (no re-spend)`);
+      } else {
+        const artifact = resolveRoundArtifact(inp, runDir);
+        if (!artifact) {
+          const msg = `PANEL SPAWN HALT round ${inp.round}: vacant reviews require an ABSOLUTE artifact path on the round input (artifact / artifactPath) — the swarm reads the file; it does not accept pasted findings (journals 0002, 0057, 0058)`;
+          writeHaltRecord(runDir, msg);
+          throw new HaltError(msg);
+        }
+        try {
+          // Stamp REVIEW_FAMILY, never reached.families()[0] (sorted — would
+          // label grok reviewers as claude and kill G9 / GATE-1). Claude
+          // adversarial 2026-08-27.
+          const reviewFam = String(env.REVIEW_FAMILY || env.ANCHOR_REVIEW_FAMILY || '')
+            .trim().toLowerCase() || null;
+          const checkInMs = Number(env.RESEARCHPRIME_PANEL_CHECKIN_MS);
+          const deadIdleMs = Number(env.RESEARCHPRIME_PANEL_DEAD_MS);
+          const silentKillMs = Number(env.RESEARCHPRIME_PANEL_SILENT_KILL_MS);
+          const panelAgent = makeReliableAgent({ agent, maxAttempts: 2 });
+          reviews = await runPanelRound({
+            agent: panelAgent,
+            round: inp.round,
+            focus: inp.focus ?? null,
+            artifact,
+            northStar: inp.northStar ?? null,
+            lineage: reviewFam,
+            heartbeatDir: runDir,
+            checkInMs: Number.isFinite(checkInMs) && checkInMs > 0 ? checkInMs : DEFAULT_CHECKIN_MS,
+            silentKillMs: Number.isFinite(silentKillMs) && silentKillMs > 0 ? silentKillMs : undefined,
+            deadIdleMs: Number.isFinite(deadIdleMs) && deadIdleMs > 0 ? deadIdleMs : DEFAULT_DEAD_IDLE_MS,
+          });
+          if (!reviewFam) {
+            const fams = reached.families();
+            if (fams.length === 1) {
+              for (const r of reviews) if (!r.lineage) r.lineage = fams[0];
+            }
+          }
+          if (countSurvivingPanel(reviews) === 0) {
+            const faults = reviews.map((r) => r?.panel_fault || r?.note).filter(Boolean);
+            const msg = `PANEL SPAWN HALT round ${inp.round}: zero surviving seats — ${faults.join(' | ') || 'all abstained'} (hung/timeout seats abstain; a panel that looked at nothing is not a dry round)`;
+            writeHaltRecord(runDir, msg);
+            throw new HaltError(msg);
+          }
+        } catch (e) {
+          writeHaltRecord(runDir, e.message);
+          throw e;
+        }
+        panelSpawned = true;
+        panelSource = 'spawned';
+        fs.writeFileSync(sidecar, JSON.stringify({
+          spawned: true,
+          artifact,
+          reviews,
+          timestamp: new Date().toISOString(),
+        }, null, 2));
+        log(`round ${inp.round}: spawned G3 panel (${reviews.length} reviewers) → ${path.basename(sidecar)}`);
+      }
+    }
     // P0 2026-07-25 (T9): route through the GOVERNED round, not bare orchestrateRound.
     // The governor was computed + logged but gated nothing: judge/synthesizer were
     // hard-true at every tier (SKILL.md:94's "tier low fires ZERO" promise was false),
@@ -223,7 +344,7 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       stakes: tier,
       round: inp.round,
       northStar: inp.northStar,
-      reviews: inp.reviews,
+      reviews,
       priorBlockerIds: [...priorBlockerIds],
       includeDebate: includeAdjudication,
     });
@@ -240,6 +361,11 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       verdict: result.tally.verdict,
       dry,
       empty,
+      panelSpawned,
+      panelSource,
+      panelSize: panelSpawned ? (reviews?.length ?? 0) : null,
+      panelSurviving: panelSpawned ? countSurvivingPanel(reviews) : null,
+      panelDegraded: panelSpawned ? countSurvivingPanel(reviews) < (reviews?.length ?? 0) : false,
       governor: {
         tier: result.tier,
         skipped: result.skipped === true,
@@ -260,7 +386,7 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     };
     roundResults.push(result);
     fs.writeFileSync(path.join(runDir, `round-${result.round}-result.json`), JSON.stringify(summary, null, 2));
-    log(`round ${result.round}: ${result.tally.verdict} | dry=${dry} empty=${empty}${result.skipped ? ' | SKIPPED (zero-AXIS, crit-4)' : ''} | counts=${JSON.stringify(result.counts)} | newBlockers=${result.tally.newBlockers.length} | dryStreak=${obs.dryStreak}/${thresholds.N} emptyStreak=${obs.emptyStreak} | converged=${obs.converged}${obs.mode ? ` (${obs.mode})` : ''}`);
+    log(`round ${result.round}: ${result.tally.verdict} | dry=${dry} empty=${empty}${result.skipped ? ' | SKIPPED (zero-AXIS, crit-4)' : ''}${panelSpawned ? ` | panel=${panelSource}` : ''} | counts=${JSON.stringify(result.counts)} | newBlockers=${result.tally.newBlockers.length} | dryStreak=${obs.dryStreak}/${thresholds.N} emptyStreak=${obs.emptyStreak} | converged=${obs.converged}${obs.mode ? ` (${obs.mode})` : ''}`);
     if (obs.converged) break; // convergence reached — no need to consume further inputs
   }
 
@@ -357,7 +483,7 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       JSON.stringify({
         skill: 'researchPrime', tier: LIVE_ROUND ? 'live-cross-family' : 'replay',
         started, ended: new Date().toISOString(),
-        input: runDir, params: { maxRounds: cap, live: LIVE_ROUND, stakesTier: tier },
+        input: runDir, params: { maxRounds: cap, live: LIVE_ROUND, spawnPanel: spawn, stakesTier: tier },
         output: finalState.converged ? path.join(runDir, 'DELIVERABLE-ENGINE.json') : path.join(runDir, 'RUN-STATE.json'),
         result: finalState.converged ? `converged (${convergence.mode})` : (capped ? 'round budget hit — honest stop' : 'not converged — awaiting next round'),
         cross_model: deliverable?.cross_model ?? (substrateFamilies.length > 1),

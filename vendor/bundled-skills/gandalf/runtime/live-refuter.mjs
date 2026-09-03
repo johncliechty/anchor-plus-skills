@@ -40,6 +40,12 @@ import {
   computeResultDigest,
   composeRefutationProvenance,
 } from '../seam/refute.mjs';
+// NOTE (2026-08-31 Fable review): refuters are READ-ONLY verification seats (agy
+// --readonly), so they CANNOT write the heartbeat file the swarm look-in supervisor
+// reads — wired blind, superviseSeat killed healthy slow refuters at wall-clock and
+// respawned a second paid call while the first still ran. The look-in (appendix +
+// supervisor) is therefore unwired on this path; the driver's own timeout bounds a
+// hung seat. Re-wire only with a heartbeat channel a read-only seat can actually use.
 
 /** The drafter family (who authored the drafted claims) and the refuter family (who runs the
  *  independent refutation) for the reference W3 topology: Claude drafts, Gemini refutes. */

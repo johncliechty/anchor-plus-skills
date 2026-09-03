@@ -9,19 +9,20 @@
 //
 // A STUB role-routed agent is injected throughout — ZERO live `agy` calls (the live proof is the human's).
 
-// Hermeticity pin (P1 2026-07-25): host model prefs (e.g. coding=review=grok in
-// ~/.anchor/model_prefs.json) made Gate-3 seating resolve SAME-family, so the
-// engine's (correct) JumperSelfReviewHalt failed 9 suite tests on such hosts.
-// Pin independent families — env outranks the prefs file — so the suite is
-// hermetic everywhere. The engine refusal itself stays covered by the tests
-// that pin same-family deliberately.
-process.env.CODING_FAMILY = 'claude';
-process.env.REVIEW_FAMILY = 'gemini';
+// Hermeticity pin (P1 2026-07-25): host model prefs must not choose these test
+// seats, and family-value environment variables are intentionally ignored by
+// the shared resolver. Each seating test therefore passes explicit driver
+// inputs; the self-review refusal remains covered by a deliberately equal pair.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { KillFilter, runGandalf, JumperSelfReviewHalt } from './index.js';
+import {
+  KillFilter,
+  runGandalf,
+  JumperSelfReviewHalt,
+  JumperCrossFamilyDegradeHalt,
+} from './index.js';
 
 // ── Gate 3: cross-family by default ──────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ function drafterSeam() {
   return { agent, calls };
 }
 
-test('W7 Gate-3: routes to a Gemini (non-drafter) family BY DEFAULT via a dedicated role-routed agent', async () => {
+test('W2 Gate-3: routes to the explicit independent review driver under role gate3', async () => {
   const { agent: drafterAgent, calls: drafterCalls } = drafterSeam(); // drafter driver defaults to claude
   const gate3Calls = [];
   const gate3Agent = async (prompt, opts) => {
@@ -57,20 +58,76 @@ test('W7 Gate-3: routes to a Gemini (non-drafter) family BY DEFAULT via a dedica
     return { passed: true, reasoning: 'cross-family adversary found no structural gap' };
   };
 
-  const filter = new KillFilter({ runAgent: drafterAgent });
-  const result = await filter.run(VALID_CONCEPT, { gate3Agent }); // no gate3Driver set ⇒ DEFAULT cross-family
+  const filter = new KillFilter({ runAgent: drafterAgent, driver: 'claude' });
+  const result = await filter.run(VALID_CONCEPT, {
+    gate3Agent,
+    gate3Driver: 'gemini-cli',
+    env: {},
+  });
 
   assert.equal(result.passed, true);
   assert.equal(result.gateLogs.length, 3);
-  // Gate 3 ran on the injected cross-family agent (NOT the drafter seam), under the 'gate' role.
+  // Gate 3 ran on the injected cross-family agent (NOT the drafter seam), under the closed verification role.
   assert.equal(gate3Calls.length, 1, 'Gate 3 dispatched to the cross-family agent exactly once');
-  assert.equal(gate3Calls[0].role, 'gate');
+  assert.equal(gate3Calls[0].role, 'gate3');
   assert.equal(gate3Calls[0].label, 'KillFilterGate3');
-  // The substrate log stamps the cross-family default (Gemini).
+  // The substrate log stamps the explicit independent review driver.
   assert.equal(result.gateLogs[2].substrate, 'cross-family:gemini-cli');
   // Gates 1 & 2 ran on the drafter seam as ONE merged call; the drafter seam NEVER ran Gate 3 (no self-review).
   assert.ok(drafterCalls.some((c) => c.label === 'KillFilterGate1and2'));
+  assert.equal(drafterCalls.find((c) => c.label === 'KillFilterGate1and2').role, 'gate');
   assert.ok(!drafterCalls.some((c) => c.label === 'KillFilterGate3'));
+});
+
+test('W2 Gate-3: failed final Trio receipt survives JumperCrossFamilyDegradeHalt', async () => {
+  const failedReceipt = {
+    schema: 'trio.seat.v1',
+    ok: false,
+    status: 'verification_fail_closed',
+    label: 'KillFilterGate3',
+    role: 'gate3',
+    verification: true,
+    structured: true,
+    requested: { driver: 'gemini-cli', family: 'gemini', model: null },
+    served: null,
+    attempts: [{
+      ordinal: 1,
+      kind: 'primary',
+      requested: { driver: 'gemini-cli', family: 'gemini', model: null },
+      ok: false,
+      status: 'seat_unavailable',
+      served: null,
+      transport_attempts: [{
+        ordinal: 1,
+        kind: 'initial',
+        label: 'KillFilterGate3',
+        ok: false,
+        status: 'seat_unavailable',
+        provider_status: null,
+        served: null,
+        error: { code: 'seat_unavailable', message: 'review seat unavailable' },
+      }],
+      error: { code: 'seat_unavailable', message: 'review seat unavailable' },
+    }],
+    failover: { allowed: false, used: false, blocked_reason: 'verification_seat' },
+    error: { code: 'seat_unavailable', message: 'review seat unavailable' },
+  };
+  const { agent: drafterAgent } = drafterSeam();
+  const filter = new KillFilter({ runAgent: drafterAgent, driver: 'claude' });
+  const gate3RunAgent = async () => {
+    const err = new Error('review seat unavailable');
+    err.receipt = failedReceipt;
+    throw err;
+  };
+  await assert.rejects(
+    filter.run(VALID_CONCEPT, { gate3RunAgent, gate3Driver: 'gemini-cli', env: {} }),
+    (err) => {
+      assert.ok(err instanceof JumperCrossFamilyDegradeHalt);
+      assert.equal(err.receipt, failedReceipt);
+      assert.equal(err.cause.receipt, failedReceipt);
+      return true;
+    },
+  );
 });
 
 test('W7 Gate-3: self-review HALTs — a verifier resolving to the drafter (claude) family is refused', async () => {
@@ -78,7 +135,7 @@ test('W7 Gate-3: self-review HALTs — a verifier resolving to the drafter (clau
   const filter = new KillFilter({ runAgent: drafterAgent, driver: 'claude' });
   await assert.rejects(
     // verifier driver forced to claude = the drafter family ⇒ self-review ⇒ HALT (before any dispatch).
-    filter.run(VALID_CONCEPT, { gate3Driver: 'claude' }),
+    filter.run(VALID_CONCEPT, { gate3Driver: 'claude', env: {} }),
     JumperSelfReviewHalt,
   );
 });

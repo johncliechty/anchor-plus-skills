@@ -207,7 +207,7 @@ export function appendConversationTurns(projectPath, turns, opts = {}) {
           role: t.role,
           text: t.text,
           at,
-          // Ties a turn to the scaffolding version it produced, so the evolution of the
+          // Ties a turn to the proposal version it produced, so the evolution of the
           // plan can be read alongside the reasoning that drove it.
           ...(opts.proposal_hash ? { proposal_hash: opts.proposal_hash } : {}),
           ...(opts.kind ? { kind: opts.kind } : {}),
@@ -276,6 +276,9 @@ export function summarizeConversation(projectPath, opts = {}) {
 
   const recentN = Math.max(1, Number(opts.recent) || 3);
   const hashes = new Set(turns.map((t) => t.proposal_hash).filter(Boolean));
+  const proposalLabel = turns.some((turn) => turn.kind === 'kickoff_proposed')
+    ? 'kickoff version'
+    : 'scaffolding version';
   const last = turns[turns.length - 1];
   const johnTurns = turns.filter((t) => t.role === 'john').length;
 
@@ -285,12 +288,12 @@ export function summarizeConversation(projectPath, opts = {}) {
     turn_count: turns.length,
     john_turns: johnTurns,
     steward_turns: turns.length - johnTurns,
-    /** How many distinct scaffolding versions this conversation produced. */
+    /** How many distinct typed proposal versions this conversation produced. */
     proposal_versions: hashes.size,
     first_at: turns[0].at ?? null,
     last_at: last.at ?? null,
     headline:
-      `${turns.length} turns · ${hashes.size} scaffolding version`
+      `${turns.length} turns · ${hashes.size} ${proposalLabel}`
       + `${hashes.size === 1 ? '' : 's'}`,
     recent: turns.slice(-recentN).map((t) => ({
       role: t.role,

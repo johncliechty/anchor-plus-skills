@@ -32,6 +32,7 @@ across-folder builds serialized by the folder-build lock).
 Stdlib only. No third-party imports.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -62,6 +63,7 @@ SKILL_BUILD = "foreman"
 BACKEND_CLAUDE = _jr.BACKEND_CLAUDE
 BACKEND_GEMINI = _jr.BACKEND_GEMINI
 BACKEND_GROK = _jr.BACKEND_GROK
+BACKEND_CHATGPT = getattr(_jr, "BACKEND_CHATGPT", "chatgpt")
 DEFAULT_BACKEND = _jr.DEFAULT_BACKEND
 
 #: Lanes on which a ``gemini`` backend REQUEST is accepted at the launch
@@ -129,7 +131,9 @@ class LaneDef:
 _SEED_RESEARCH = (
     "Run the researchPrime skill for project {name!r} (folder {folder}). "
     "Write all research artifacts under the project-scoped output directory "
-    "{output_dir}. This lane runs to completion with no interactive gate; do "
+    "{output_dir}. The required human-readable deliverable is exactly "
+    "{output_dir}/report.md; completion requires creating or materially updating "
+    "that file. This lane runs to completion with no interactive gate; do "
     "not mutate the working tree. "
     "If the folder {folder} already contains a project or codebase, treat this as "
     "a brownfield investigation: first inventory what already exists (source "
@@ -265,18 +269,21 @@ def _write_launch_record(output_dir: Path, project_id: str, lane: str,
     the folder root. It is a lightweight JSON pointer-record (the heavy engine
     artifacts are written by the engine itself into the same dir under a real
     ``claude``; under the mock runner this stub stands in for that on-disk
-    presence). Written under ``paths.WRITE_LOCK``.
+    presence). Because pointer records are intentionally git-trackable, they
+    contain no project name, prompt text, or absolute path; the prompt is bound
+    only by SHA-256. Written under ``paths.WRITE_LOCK``.
     """
     with _paths.WRITE_LOCK:
         output_dir.mkdir(parents=True, exist_ok=True)
         rec = {
+            "schema_version": 2,
             "job_id": job_id,
-            "project_id": project_id,
             "lane": lane,
             "skill": skill,
             "backend": backend,
-            "prompt_seed": prompt_seed,
-            "output_dir": str(output_dir),
+            "prompt_sha256": hashlib.sha256(
+                (prompt_seed or "").encode("utf-8")
+            ).hexdigest(),
             "launched_at": time.time(),
         }
         p = output_dir / LAUNCH_RECORD_NAME
@@ -286,13 +293,13 @@ def _write_launch_record(output_dir: Path, project_id: str, lane: str,
 
 
 def check_engine_allowed(lane: str, backend: str) -> None:
-    """Enforce the engine policy: Gemini restricted; Claude/Grok anywhere.
+    """Enforce the first-stage engine-name/lane allow policy.
 
     Raises :class:`EngineNotAllowedError` if ``backend == "gemini"`` and ``lane``
-    is not in ``GEMINI_LANES`` (research, general, plan, build). Claude and Grok
-    are always allowed on every lane (Grok is a terminal peer, not under the
-    Gemini lane restrictions). Job-layer plan/build drivers still prefer Claude
-    via :func:`select_engine_plan`.
+    is not in ``GEMINI_LANES`` (research, general, plan, build). Claude, Grok,
+    and ChatGPT pass this coarse policy on every lane. Capability-aware routing
+    in :func:`select_engine_plan` then refuses ChatGPT plan/build until the
+    persistent cockpit bridge exists, and refuses unsupported headless Grok.
     """
     if backend == BACKEND_GEMINI and lane not in GEMINI_LANES:
         raise EngineNotAllowedError(lane, backend)
@@ -316,6 +323,7 @@ def check_engine_allowed(lane: str, backend: str) -> None:
 ENGINE_STATUS_OK = "ok"
 ENGINE_STATUS_REQUIRES_CLAUDE = "requires_claude"
 ENGINE_STATUS_UNAVAILABLE = "unavailable"
+ENGINE_STATUS_BRIDGE_PENDING = "chatgpt_gated_bridge_pending"
 
 #: The 5:1 Claude-orchestrates-Gemini swarm ratio (locked decision #10). The
 #: fan-out itself lives in the SKILLS (agy-dispatch), never the job_runner; this
@@ -329,6 +337,10 @@ SWARM_RATIO = "5:1"
 #: (Distinct from :data:`GEMINI_LANES`, which is the per-panel engine-toggle
 #: allow-policy used when BOTH subscriptions are present.)
 GEMINI_RUNNABLE_LANES = frozenset((LANE_RESEARCH, "general"))
+# The hardened one-shot adapter currently has one server-owned write contract:
+# research/report.md. General is a persistent cockpit surface and must remain
+# bridge-pending until the tested exec/resume transport replaces the bare PTY.
+CHATGPT_RUNNABLE_LANES = frozenset((LANE_RESEARCH,))
 
 #: Env seams to force host-capability detection deterministically (used by the
 #: gate to construct Claude-only / Gemini-only / both / Grok profiles without
@@ -337,6 +349,7 @@ GEMINI_RUNNABLE_LANES = frozenset((LANE_RESEARCH, "general"))
 CLAUDE_AVAILABLE_ENV = "ANCHOR_CLAUDE_AVAILABLE"
 GEMINI_AVAILABLE_ENV = "ANCHOR_GEMINI_AVAILABLE"
 GROK_AVAILABLE_ENV = "ANCHOR_GROK_AVAILABLE"
+CHATGPT_AVAILABLE_ENV = "ANCHOR_CHATGPT_AVAILABLE"
 
 
 def _env_override(env, name):
@@ -400,13 +413,28 @@ def _grok_available(env) -> bool:
     return grok_exe.is_file()
 
 
+def _chatgpt_available(env) -> bool:
+    """Whether the Codex / ChatGPT subscription CLI is usable on this host."""
+    ov = _env_override(env, CHATGPT_AVAILABLE_ENV)
+    if ov is not None:
+        return ov
+    if shutil.which("codex"):
+        return True
+    local = env.get("LOCALAPPDATA") or ""
+    if local:
+        p = Path(local) / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe"
+        if p.is_file():
+            return True
+    home = env.get("HOME") or env.get("USERPROFILE") or str(Path.home())
+    return (Path(home) / ".codex" / "bin" / "codex.exe").is_file()
+
+
 def detect_host_profile(env=None) -> dict:
     """Probe the host for which engine subscriptions are available.
 
-    Returns ``{"claude": bool, "gemini": bool, "grok": bool}`` where ``claude``
-    is the Claude Code driver, ``gemini`` is the ``agy-dispatch`` / Gemini swarm
-    substrate, and ``grok`` is the Grok CLI. ``env`` defaults to ``os.environ``
-    and is the seam through which the gate forces a profile deterministically.
+    Returns ``{"claude": bool, "gemini": bool, "grok": bool, "chatgpt": bool}``.
+    ``env`` defaults to ``os.environ`` and is the seam through which the gate
+    forces a profile deterministically.
     """
     if env is None:
         env = os.environ
@@ -414,30 +442,39 @@ def detect_host_profile(env=None) -> dict:
         "claude": _claude_available(env),
         "gemini": _gemini_available(env),
         "grok": _grok_available(env),
+        "chatgpt": _chatgpt_available(env),
     }
 
 
-def select_engine_plan(lane: str, profile=None, env=None) -> dict:
+def select_engine_plan(lane: str, profile=None, env=None,
+                       preferred_backend=None, review_family=None) -> dict:
     """The honest per-lane execution plan for a host-capability profile (#10).
 
-    Given a ``lane`` and a host ``profile`` (``{"claude": bool, "gemini": bool,
-    "grok": bool}``; detected via :func:`detect_host_profile` when omitted),
-    return a plan dict::
+    Given a ``lane`` and a host profile (detected via
+    :func:`detect_host_profile` when omitted), return a plan dict. A supplied
+    ``preferred_backend`` is authoritative; the historical Claude/Gemini
+    fallback applies only to legacy callers that supply no preference::
 
         {
           "lane": <lane>,
-          "profile": {"claude": bool, "gemini": bool, "grok": bool},
-          "driver": "claude" | "gemini" | None,   # engine that drives the lane
+          "profile": {"claude": bool, "gemini": bool, "grok": bool,
+                      "chatgpt": bool},
+          "preferred_driver": <saved/explicit family> | None,
+          "actual_driver": <family actually selected> | None,
+          "driver": "claude" | "gemini" | "chatgpt" | None,
           "swarm": "gemini" | None,               # 5:1 skill-layer swarm engine
           "swarm_ratio": "5:1" | None,
-          "status": "ok" | "requires_claude" | "unavailable",
+          "status": "ok" | "requires_claude" | "unavailable" |
+                    "chatgpt_gated_bridge_pending",
           "spawns_gemini": bool,   # will this plan spawn ANY agy/Gemini process?
           "reason": <str>,
         }
 
-    Policy (locked #10, never cross-calling). Job-layer drivers stay Claude/
-    Gemini; Grok is an interactive terminal peer (surfaced in ``profile``) and
-    does not change this plan:
+    Preference-aware requests never silently cross-call another provider.
+    ChatGPT drives one-shot research/general when available and returns a typed
+    bridge-pending refusal for plan/build. Grok remains an interactive terminal
+    peer without a headless adapter. For legacy callers without a preference,
+    locked policy #10 remains:
 
     - **Both** Claude+Gemini → the default driver is **Claude**, with **Gemini
       available as the 5:1 skill-layer swarm**.
@@ -453,19 +490,81 @@ def select_engine_plan(lane: str, profile=None, env=None) -> dict:
     has_claude = bool(profile.get("claude"))
     has_gemini = bool(profile.get("gemini"))
     has_grok = bool(profile.get("grok"))
+    has_chatgpt = bool(profile.get("chatgpt"))
 
     plan = {
         "lane": lane,
         "profile": {
             "claude": has_claude, "gemini": has_gemini, "grok": has_grok,
+            "chatgpt": has_chatgpt,
         },
+        "preferred_driver": preferred_backend,
+        "actual_driver": None,
+        "review_family": review_family,
+        "cross_model": (bool(review_family and preferred_backend)
+                        and review_family != preferred_backend),
+        "degraded": False,
         "driver": None,
         "swarm": None,
         "swarm_ratio": None,
         "status": ENGINE_STATUS_UNAVAILABLE,
         "spawns_gemini": False,
+        "spawns_chatgpt": False,
         "reason": "",
     }
+
+    # Preference-aware path. Explicit requests and the canonical saved coding
+    # family never silently cross-call another provider. The no-preference path
+    # below retains the historical Claude/Gemini fallback for old callers.
+    if preferred_backend:
+        if preferred_backend == BACKEND_CHATGPT:
+            if not has_chatgpt:
+                plan["reason"] = "ChatGPT subscription CLI is not ready on this host."
+                return plan
+            if lane not in CHATGPT_RUNNABLE_LANES:
+                plan.update(
+                    status=ENGINE_STATUS_BRIDGE_PENDING,
+                    reason=(
+                        "chatgpt-gated-bridge-pending: {} requires the persistent "
+                        "Codex exec/resume cockpit bridge; no seat was started"
+                    ).format(lane),
+                )
+                return plan
+            plan.update(
+                driver=BACKEND_CHATGPT, actual_driver=BACKEND_CHATGPT,
+                status=ENGINE_STATUS_OK, spawns_chatgpt=True, degraded=True,
+                reason=("ChatGPT subscription driver (Codex Sol, Ultra requested; "
+                        "served model is not attested by current Codex JSONL)."),
+            )
+            return plan
+        if preferred_backend == BACKEND_CLAUDE:
+            if not has_claude:
+                plan["reason"] = "Saved Claude coding preference is unavailable on this host."
+                return plan
+            plan.update(
+                driver=BACKEND_CLAUDE, actual_driver=BACKEND_CLAUDE,
+                status=ENGINE_STATUS_OK,
+                reason="Claude drives this explicitly selected lane.",
+            )
+            return plan
+        if preferred_backend == BACKEND_GEMINI:
+            if not has_gemini:
+                plan["reason"] = "Saved Gemini coding preference is unavailable on this host."
+                return plan
+            plan.update(
+                driver=BACKEND_GEMINI, actual_driver=BACKEND_GEMINI,
+                status=ENGINE_STATUS_OK, spawns_gemini=True,
+                reason="Gemini drives this explicitly selected lane.",
+            )
+            return plan
+        if preferred_backend == BACKEND_GROK:
+            plan["reason"] = (
+                "Grok is an interactive terminal peer; Anchor has no headless "
+                "Grok job adapter for this lane."
+            )
+            return plan
+        plan["reason"] = "Unknown preferred engine %r." % preferred_backend
+        return plan
 
     if not has_claude and not has_gemini:
         plan["reason"] = "No Claude or Gemini subscription detected on this host."
@@ -508,7 +607,7 @@ def select_engine_plan(lane: str, profile=None, env=None) -> dict:
 
 
 def launch_lane(project_id: str, lane: str, env=None, job_id: str = None,
-                extra_args=None, backend=DEFAULT_BACKEND) -> dict:
+                extra_args=None, backend=None) -> dict:
     """Launch a trio lane for a registered project under the frozen policy.
 
     Steps:
@@ -539,21 +638,46 @@ def launch_lane(project_id: str, lane: str, env=None, job_id: str = None,
     ``EngineNotAllowedError`` if the engine policy refuses the launch, or
     ``job_runner.LaneBusyError`` if the concurrency policy refuses it.
     """
+    review_family = None
+    if backend is None:
+        try:
+            import anchor_settings as _aset
+            backend = _aset.get_coding_family()
+            review_family = _aset.get_review_family()
+        except Exception as exc:
+            raise EngineNotAllowedError(
+                lane, "settings-unavailable",
+                message=(
+                    "coding-family-unavailable: Anchor could not load the "
+                    "authoritative model preference; no fallback seat was started"
+                ),
+            ) from exc
     backend = backend or DEFAULT_BACKEND
     ld = get_lane(lane)
-    # Engine policy: Gemini only on research; Claude anywhere. Checked before any
-    # subprocess is spawned so a refused launch leaves no side effects.
+    # Coarse engine-name policy. Checked before any subprocess is spawned so a
+    # refused launch leaves no side effects.
     check_engine_allowed(lane, backend)
-    # Honest host-capability fallback (locked decision #10): refuse a lane THIS
-    # host cannot actually run BEFORE spawning anything, rather than crashing
-    # mid-run. select_engine_plan is the single source of that policy (both /
-    # claude-only / gemini-only / neither); consulting it here is what enforces
-    # the honest fallback at the launch boundary — not only in the UI badge. On
-    # any host with a Claude subscription every lane is OK, so this is a no-op
-    # there; it only bites a Claude-less host asking for a Claude-only lane
-    # (plan/build ⇒ requires_claude) or a host with neither engine (⇒
-    # unavailable), surfaced as a clean EngineNotAllowedError, never a 500.
-    host_plan = select_engine_plan(lane)
+    if backend == BACKEND_CHATGPT and env:
+        raise ValueError(
+            "chatgpt-env-overlay-refused: ChatGPT launch environment is owned "
+            "by Anchor's Codex adapter"
+        )
+    if backend == BACKEND_CHATGPT and extra_args:
+        raise ValueError(
+            "chatgpt-extra-args-refused: safety and target arguments are owned "
+            "by Anchor's Codex adapter"
+        )
+    # Capability-aware plan: the saved/explicit family is authoritative and an
+    # unavailable or not-yet-bridged seat is refused before launch. Legacy
+    # no-preference callers retain the locked Claude/Gemini fallback in
+    # select_engine_plan; launch_lane always supplies its resolved preference.
+    effective_env = dict(os.environ)
+    if env:
+        effective_env.update(env)
+    host_plan = select_engine_plan(
+        lane, env=effective_env, preferred_backend=backend,
+        review_family=review_family,
+    )
     if host_plan["status"] != ENGINE_STATUS_OK:
         raise EngineNotAllowedError(lane, backend, message=host_plan["reason"])
     project = _rnd.get_project(project_id)
@@ -599,6 +723,11 @@ def launch_lane(project_id: str, lane: str, env=None, job_id: str = None,
         cwd=folder_path or None, extra_args=extra_args, env=env,
         job_id=job_id, backend=backend, prompt=prompt_seed,
         output_dir=output_dir, gated=gated,
+        expected_artifacts=(
+            ("report.md",)
+            if backend == BACKEND_CHATGPT and lane == LANE_RESEARCH
+            else None
+        ),
     )
     jid = rec["job_id"]
 

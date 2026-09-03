@@ -95,11 +95,12 @@ PORTFOLIO_BRAND_ICON_MAP = {
 LIVE_PROBES_ENV = "ANCHOR_SHARE_LIVE_PROBES"
 
 # Production seat families (subscription CLIs — not API keys).
-SEAT_FAMILIES = ("claude", "gemini", "grok")
+SEAT_FAMILIES = ("claude", "gemini", "grok", "chatgpt")
 SEAT_TRANSPORTS = {
     "claude": "claude",
     "gemini": "agy-dispatch/agy",
     "grok": "grok.exe -p",
+    "chatgpt": "codex.exe exec",
 }
 OPENAI_FAMILY = "openai"
 OPENAI_STATUS = "coming-soon-disabled"
@@ -323,6 +324,19 @@ def _grok_known_path(env) -> str | None:
     return None
 
 
+def _codex_known_path(env) -> str | None:
+    local = env.get("LOCALAPPDATA") or ""
+    if local:
+        p = Path(local) / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe"
+        if p.is_file():
+            return str(p)
+    home = env.get("USERPROFILE") or env.get("HOME") or str(Path.home())
+    p = Path(home) / ".codex" / "bin" / "codex.exe"
+    if p.is_file():
+        return str(p)
+    return None
+
+
 # ── Preflight collision scan ─────────────────────────────────────────────────
 
 def preflight_collision_scan(
@@ -444,6 +458,8 @@ def _path_for_family(family: str, env, which_fn) -> str | None:
         return which_fn("agy") or which_fn("gemini") or _agy_known_path(env)
     if family == "grok":
         return which_fn("grok") or _grok_known_path(env)
+    if family == "chatgpt":
+        return which_fn("codex") or _codex_known_path(env)
     return None
 
 
@@ -476,6 +492,12 @@ def _session_visible_heuristic(family: str, path: str | None, env) -> bool:
             home / ".grok" / "credentials.json",
             home / ".grok" / "config.json",
             home / ".grok",
+        ]
+        return any(m.exists() for m in markers) or bool(path)
+    if family == "chatgpt":
+        markers = [
+            home / ".codex" / "auth.json",
+            home / ".codex",
         ]
         return any(m.exists() for m in markers) or bool(path)
     return False

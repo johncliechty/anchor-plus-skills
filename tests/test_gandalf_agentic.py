@@ -153,6 +153,10 @@ def test_agentic_timeout_treekills_and_fails_honestly(gandalf, project, monkeypa
     orig_load = gandalf._jr.load_record
     monkeypatch.setattr(gandalf._jr, "load_record",
                         lambda jid: {**(orig_load(jid) or {}), "status": "running"})
+    # This test intentionally holds the synthetic job in a non-terminal state.
+    # Bound that simulated timeout explicitly instead of inheriting the
+    # production Heavy ceiling (900s x 2.5).
+    monkeypatch.setenv("ANCHOR_GANDALF_TIMEOUT_HEAVY", "0.05")
     out = gandalf.run_gandalf(str(folder), pid, tier="heavy")
     assert out["ok"] is False
     assert str(out.get("reason") or "").startswith("agentic-run-incomplete")

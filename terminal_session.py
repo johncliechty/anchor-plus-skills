@@ -129,7 +129,7 @@ ENGINE_POINTER_NAME = "engine.json"
 
 # ── Per-project last-used engine persistence (v4 Wave 2) ─────────────────────
 #
-# The chosen engine (claude|gemini|grok) is selected ONCE per session, but a
+# The chosen engine (claude|gemini|grok|chatgpt) is selected ONCE per session, but a
 # project "remembers" its last-used engine so a fresh session defaults to it.
 # Persisted as ``{"last_engine": "<engine>"}`` in ``engine.json`` under the
 # per-project store dir — the SAME ``<folder>/.anchor/projects/<id>/`` directory
@@ -391,9 +391,15 @@ def _check_engine_allowed(lane, backend):
     lane; otherwise it only validates the backend is a recognized engine. Raises
     :class:`TerminalSessionError` for a disallowed engine / unknown backend.
     """
-    if backend not in VALID_BACKENDS:
+    if not isinstance(backend, str) or backend not in VALID_BACKENDS:
         raise TerminalSessionError(
-            "unknown backend %r (expected claude|gemini|grok)" % (backend,))
+            "unknown backend %r (expected claude|gemini|grok|chatgpt)" % (backend,))
+    if backend == _reg.BACKEND_CHATGPT:
+        raise TerminalSessionError(
+            "chatgpt-gated-bridge-pending: ChatGPT is visible as a saved "
+            "preference, but interactive terminal start/switch requires the "
+            "persistent Codex exec/resume cockpit bridge; no PTY was started"
+        )
     if _lanes is not None:
         try:
             _lanes.check_engine_allowed(lane, backend)
@@ -442,7 +448,7 @@ _UNSET = object()
 ENGINE_CMD_ENV = "ANCHOR_ENGINE_CMD"
 
 #: Basenames that mean "a real, billable engine binary".
-_LIVE_ENGINE_BASENAMES = frozenset({"claude", "gemini", "agy", "grok"})
+_LIVE_ENGINE_BASENAMES = frozenset({"claude", "gemini", "agy", "grok", "codex"})
 
 
 def assert_not_live_engine_under_test(argv) -> None:
@@ -498,6 +504,25 @@ def _resolve_engine_cmd(engine: str) -> str:
         if grok_exe.is_file():
             return str(grok_exe)
         return "grok"
+    if engine == getattr(_reg, "BACKEND_CHATGPT", "chatgpt"):
+        which = shutil.which("codex")
+        if which:
+            return which
+        local = os.environ.get("LOCALAPPDATA", "")
+        if local:
+            codex_exe = Path(local) / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe"
+            if codex_exe.is_file():
+                return str(codex_exe)
+        home_codex = Path.home() / ".codex" / "bin" / "codex.exe"
+        if home_codex.is_file():
+            return str(home_codex)
+        # No bare-name fallback here: a bare `codex` spawn would carry none of the
+        # adapter's sandbox/target/provenance controls. _check_engine_allowed gates
+        # this engine off earlier today; if that gate is ever lifted, an absent
+        # binary must still fail closed rather than open an unsandboxed seat.
+        raise TerminalSessionError(
+            "chatgpt-terminal-binary-missing: no codex executable found; "
+            "the ChatGPT terminal seat stays closed")
     return engine
 
 
@@ -558,7 +583,8 @@ def _engine_launch_argv(cmd, backend, engine_uuid):
 def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
                   parent_session_id=None, paste_prompt=None, grass_origin=None,
                   effort_id=None, effort_managed=False, actor=None,
-                  extra_cli_args=None, lean_worktree=False):
+                  extra_cli_args=None, lean_worktree=False,
+                  doctor_mode="", doctor_posture=""):
     """Start a live, worktree-isolated, registered terminal session.
 
     Resolves ``project_id`` in ``rnd_registry``, mints ONE session id, creates a
@@ -620,6 +646,10 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     ``--permission-mode plan`` posture. Appended AFTER the session-uuid pin and
     BEFORE the gemini ``-i`` seed injection; every existing caller omits it
     (default ``None`` → argv unchanged).
+
+    ``doctor_mode`` and ``doctor_posture`` are empty for ordinary callers. The
+    Doctor entry point supplies them so its reuse identity is registered in the
+    same atomic record write as the PTY session.
 
     Returns the registry record (incl. ``session_id``). Raises
     :class:`TerminalSessionError` for an unknown project or a disallowed engine.
@@ -779,6 +809,8 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
                 # Honest Telemetry W4: the engine session UUID captured at launch
                 # ("" when the backend/seam could not pin it → uncorrelated).
                 engine_session_uuid=stored_engine_uuid,
+                doctor_mode=doctor_mode,
+                doctor_posture=doctor_posture,
             ),
             correlation_id=(chain_id or sid),
             folder_path=proj.get("folder_path", ""),
@@ -903,6 +935,11 @@ DOCTOR_PROJECT_ID = "__doctor__"
 DOCTOR_LANE = "general"
 DOCTOR_LABEL = "doctor"
 
+DOCTOR_MODE_DIAGNOSE = "diagnose"
+DOCTOR_MODE_RESOLVE = "resolve"
+DOCTOR_POSTURE_READ_ONLY = "read-only"
+DOCTOR_POSTURE_WRITE_ENABLED = "write-enabled"
+
 #: Read-only engine posture per backend (plan §W2: the engine CLI is launched
 #: in READ-ONLY plan permission mode — diagnostics inspect the live folder but
 #: can never mutate it). claude: ``--permission-mode plan`` (verified-real
@@ -914,15 +951,23 @@ DOCTOR_READONLY_CLI_ARGS = {
     _reg.BACKEND_GEMINI: ("--approval-mode", "plan"),
 }
 
+# Serialize match-or-start so simultaneous Doctor requests cannot both observe
+# an empty key and mint duplicate paid sessions.
+_DOCTOR_START_LOCK = threading.Lock()
 
-def live_doctor_session():
-    """Return the LIVE doctor session's registry record, or ``None``.
+
+def live_doctor_session(mode=None, backend=None, posture=None):
+    """Return the LIVE Doctor session matching the requested reuse key.
 
     LIVE means the record is RUNNING **and** its PTY is actually attached in
     this process. A row that claims RUNNING with no live PTY is a stale
     leftover (e.g. from a prior server instance); it is honestly re-statused
     DONE here (best-effort) so a later start can never "attach" to a corpse.
-    Never raises.
+    When any of ``mode`` / ``backend`` / ``posture`` is supplied it must match
+    exactly. A legacy unkeyed record or a write-enabled Resolve session can
+    never satisfy a read-only Diagnose request. With no filters the legacy
+    inspection behavior (return any live Doctor session) is retained. Never
+    raises.
     """
     try:
         running = _reg.list_sessions(project_id=DOCTOR_PROJECT_ID,
@@ -938,6 +983,12 @@ def live_doctor_session():
         if not sid:
             continue
         if sid in live:
+            if mode is not None and rec.get("doctor_mode", "") != mode:
+                continue
+            if backend is not None and rec.get("backend", "") != backend:
+                continue
+            if posture is not None and rec.get("doctor_posture", "") != posture:
+                continue
             return rec
         try:  # stale RUNNING row, PTY gone → honest terminal status
             _reg.update_session(sid, status=_reg.STATUS_DONE)
@@ -949,15 +1000,18 @@ def live_doctor_session():
 def start_doctor_session(seed_context=None, backend=None, resolve=False):
     """Start (or attach to) THE doctor agentic session (doctor V3 Wave 2).
 
-    Returns ``(record, attached)``. Idempotent: while one doctor session is
-    LIVE a second start ATTACHES to it — the existing record is returned with
-    ``attached=True`` and a duplicate is never stacked. Otherwise a fresh
-    session starts through the existing substrate (:func:`start_session`) under
+    Returns ``(record, attached)``. Idempotent per exact
+    ``(mode, backend, posture)`` key: a second matching start attaches, while a
+    Diagnose request never reuses Resolve (or another backend/posture).
+    Otherwise a fresh session starts through the existing substrate
+    (:func:`start_session`) under
     the reserved ``__doctor__`` pseudo-project: bare ``general`` lane (the
     briefing is the ``seed_context``, delivered once by the seed-once
     mechanism), cwd = the live Anchor folder (no worktree), and the engine CLI
-    in READ-ONLY plan permission mode (:data:`DOCTOR_READONLY_CLI_ARGS`) —
-    UNLESS ``resolve=True`` (2026-08-07, John: "when you hit resolve this it
+    in READ-ONLY plan permission mode (:data:`DOCTOR_READONLY_CLI_ARGS`). A
+    Diagnose backend absent from that explicitly tested table is refused before
+    launch. The only exception to read-only posture is ``resolve=True``
+    (2026-08-07, John: "when you hit resolve this it
     should actually … resolve it, not do a plan"): a RESOLVE session launches
     with the engine's normal write posture so it can actually fix the issue.
     Output/input ride the EXISTING term_ws / term_stream2 / term_input2 /
@@ -965,16 +1019,36 @@ def start_doctor_session(seed_context=None, backend=None, resolve=False):
     transport. The caller resolves ``backend`` honestly via
     ``lanes.select_engine_plan`` (default claude).
     """
-    existing = live_doctor_session()
-    if existing is not None:
-        return existing, True
     backend = backend or _reg.BACKEND_CLAUDE
-    extra = [] if resolve else list(DOCTOR_READONLY_CLI_ARGS.get(backend, ()))
-    rec = start_session(
-        DOCTOR_PROJECT_ID, DOCTOR_LANE, backend=backend, label=DOCTOR_LABEL,
-        seed_context=seed_context,
-        extra_cli_args=extra)
-    return rec, False
+    mode = DOCTOR_MODE_RESOLVE if resolve else DOCTOR_MODE_DIAGNOSE
+    posture = (DOCTOR_POSTURE_WRITE_ENABLED if resolve
+               else DOCTOR_POSTURE_READ_ONLY)
+
+    if resolve:
+        extra = []
+    else:
+        # Fail closed. Presence in this table means the exact argv contract is
+        # covered by a behavioral test. Grok and partial Codex/ChatGPT support
+        # deliberately have no guessed safety flags here.
+        readonly_contract = DOCTOR_READONLY_CLI_ARGS.get(backend)
+        if not readonly_contract:
+            raise TerminalSessionError(
+                "Doctor Diagnose refused for backend %r: no explicitly tested "
+                "read-only argv contract" % (backend,))
+        extra = list(readonly_contract)
+
+    with _DOCTOR_START_LOCK:
+        existing = live_doctor_session(
+            mode=mode, backend=backend, posture=posture)
+        if existing is not None:
+            return existing, True
+        rec = start_session(
+            DOCTOR_PROJECT_ID, DOCTOR_LANE, backend=backend, label=DOCTOR_LABEL,
+            seed_context=seed_context,
+            extra_cli_args=extra,
+            doctor_mode=mode,
+            doctor_posture=posture)
+        return rec, False
 
 
 def _flush_pending_paste(session_id):
@@ -1338,9 +1412,9 @@ def switch_engine(session_id, engine, seed_context=None):
     backend / a disallowed lane+engine combination (engine policy is enforced
     BEFORE the old PTY is reaped, so a refused switch never disturbs the session).
     """
-    if engine not in VALID_BACKENDS:
+    if not isinstance(engine, str) or engine not in VALID_BACKENDS:
         raise TerminalSessionError(
-            "unknown backend %r (expected claude|gemini|grok)" % (engine,))
+            "unknown backend %r (expected claude|gemini|grok|chatgpt)" % (engine,))
 
     record = _reg.get_session(session_id)
     if record is None:
@@ -1353,14 +1427,17 @@ def switch_engine(session_id, engine, seed_context=None):
     prior_seeded = bool(record.get("seeded", False))
     prior_seed_text = record.get("seed_text", "") or ""
 
+    # Policy precedes every session prerequisite. In particular, ChatGPT must
+    # always return the F1B bridge-pending refusal and never fall through to a
+    # bare PTY or a misleading missing-worktree error.
+    _check_engine_allowed(lane, engine)
+
     if not worktree_path:
         raise TerminalSessionError(
             "session %s has no worktree to relaunch in" % (session_id,))
 
     # Enforce the lane/engine policy BEFORE touching the live PTY — a refused
     # switch (e.g. gemini on a plan/build lane) leaves the session exactly as-is.
-    _check_engine_allowed(lane, engine)
-
     # v13 W7: BEFORE reaping the source PTY, capture a best-effort, time-bounded
     # handoff summary off the LIVE session (the PTY is still attached here). An
     # explicit caller ``seed_context`` wins; otherwise generate it from the live

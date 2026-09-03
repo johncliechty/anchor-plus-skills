@@ -166,20 +166,31 @@ Gather evidence; record each item in the evidence ledger with its origin(s) and 
 
 ### ENGINE mode (Node available)
 
-**Operator recipe (T9, 2026-07-11 — THE canonical way to run rounds; no per-run harness authoring):**
-1. Make a run dir; write `round-1-input.json`: `{ round, northStar, stakes, reviews:[{reviewer, angle,
-   lineage, findings:[{claim_id?, topic, severity, traces_to_north_star, message}]}], adjudications?:{...} }`.
-   When the reviewed artifact carries claim ids, reviewers MUST set `claim_id` (agreement keys on it — G6).
+**Operator recipe (T9, 2026-07-11; panel spawn 2026-08-27 — THE canonical way to run rounds; no per-run harness authoring):**
+1. Make a run dir; write `round-1-input.json`. **Live (the real path):** `{ round, northStar, stakes,
+   artifact: "<ABSOLUTE path to the thing under review>", reviews: [] }`. The engine SPAWNS the G3
+   panel (Skeptic / Contrarian / Analyst, concurrent, review-family seats) and writes
+   `round-N-spawned-reviews.json`. Do **not** paste reviewer findings — that was journal 0057's hole.
+   **Replay / resume:** supply a non-vacant `reviews:[{reviewer, angle, lineage, findings:[…]}]` and
+   the panel is not re-fired (sidecar also skips re-spend). When the reviewed artifact carries claim
+   ids, reviewers MUST set `claim_id` (agreement keys on it — G6).
    FIELD LAWS (each burned a real round — **ENGINE-ENFORCED since 2026-08-25**: run-rounds
    HALTs loudly at input load on any violation, one line naming the exact field; these lines
    remain as the WHY): `traces_to_north_star` is the STRING `'yes'`/`'no'`, never a boolean —
-   booleans silently demote EVERY finding (2026-08-15). Reviewer prompts hand agy ABSOLUTE
-   artifact paths (0002); a ```-fenced agy reply pasted as data is a transcription defect —
-   strip the fence (0052). agy takes `--model "<label form>"` and no permission flags (0048).
+   booleans silently demote EVERY finding (2026-08-15; live panel coerces booleans then HALTs on
+   anything else). Reviewer prompts hand agy ABSOLUTE artifact paths (0002); a ```-fenced agy reply
+   pasted as data is a transcription defect — strip the fence (0052). agy takes `--model "<label
+   form>"` and no permission flags (0048).
 2. `node bin/run-rounds.mjs <runDir> [--max-rounds N]` — replay mode by default (recorded adjudications);
-   `RESEARCHPRIME_LIVE_ROUND=1` routes reviewer/debate/judge LIVE to Gemini via agy (5:1; agy down ⇒
-   honest HALT, never self-review). `--max-rounds` (default 8) is a HARD budget — the cap stops honestly
-   with open blockers in `RUN-STATE.json`, never an unbounded loop.
+   `RESEARCHPRIME_LIVE_ROUND=1` routes reviewer/debate/judge LIVE via family prefs and, when
+   `reviews` are vacant, **spawns the panel** (agy down ⇒ honest HALT, never self-review).
+   Hung/thrown seats ABSTAIN (the other two keep going). The orchestrator LOOKS IN
+   (heartbeat trail + RC-6 + elegance) — a talking seat is not killed for wall-clock.
+   Silence is death: spawned seats MUST heartbeat; a silent seat is looked into, then
+   killed and respawned once; a second silence is fatal. Zero survivors HALT — that is
+   not a dry round.
+   `--max-rounds` (default 8) is a HARD budget — the cap stops honestly with open blockers in
+   `RUN-STATE.json`, never an unbounded loop.
 3. Fix blockers, add `round-<N+1>-input.json`, re-run. Convergence = dry streak N, OR N+1 consecutive
    genuinely-empty rounds = **CLEAN convergence** (explicit stamp, distinct from DRY — a defect-free
    artifact converges honestly instead of pressuring reviewers into filler nits).

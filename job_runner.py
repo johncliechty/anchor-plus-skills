@@ -30,9 +30,12 @@ keyed by ``job_id`` is sufficient.
 Stdlib only. No third-party imports.
 """
 
+import hashlib
 import json
 import os
+import re
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -43,6 +46,7 @@ from pathlib import Path
 
 import paths as _paths
 import journal as _journal
+import codex_adapter as _codex
 
 # ── Constants ──────────────────────────────────────────────────────────────
 
@@ -62,16 +66,32 @@ RUNNER_CMD_ENV = "ANCHOR_RUNNER_CMD"
 #: prompt as a stream-json user message on stdin).
 DEFAULT_RUNNER_CMD = "claude -p --output-format stream-json"
 
-#: Engine backends. Claude is the default for all core tasks. Gemini is supported
-#: via the Gandalf architecture integration (or specifically configured lanes). The runner command for each is resolved by
-#: :func:`resolve_runner_cmd`. ``ANCHOR_RUNNER_CMD`` (the test indirection point)
-#: ALWAYS wins, regardless of backend, so the mock runner drives every test.
+#: Engine backends. Claude is the historical default; saved Anchor preferences
+#: select the family at the lane boundary. ``ANCHOR_RUNNER_CMD`` remains the
+#: Claude/Gemini test seam. ChatGPT always uses its dedicated receipt-bearing
+#: adapter seam so a generic runner cannot impersonate a subscription seat.
 BACKEND_CLAUDE = "claude"
 BACKEND_GEMINI = "gemini"
 BACKEND_GROK = "grok"
+BACKEND_CHATGPT = "chatgpt"
+VALID_BACKENDS = frozenset((
+    BACKEND_CLAUDE, BACKEND_GEMINI, BACKEND_GROK, BACKEND_CHATGPT,
+))
+CHATGPT_ONESHOT_LANES = frozenset(("research",))
+_CHATGPT_MAX_TOKEN_FIELD = int(_codex.MAX_NATIVE_TOKEN_COUNT)
+_CHATGPT_MAX_TOKEN_SUM = _CHATGPT_MAX_TOKEN_FIELD * 5
+_CHATGPT_MAX_EVENTS = 10_000_000
+_CHATGPT_MAX_THREAD_ID_CHARS = 200
 #: Jobs keep Claude as the default backend; interactive terminals read
 #: ``anchor_settings.get_default_cli()`` (default ``grok``) instead.
 DEFAULT_BACKEND = BACKEND_CLAUDE
+
+
+def _require_backend(backend) -> str:
+    """Return one exact backend string or raise a typed boundary refusal."""
+    if not isinstance(backend, str) or backend not in VALID_BACKENDS:
+        raise ValueError("unknown backend %r" % (backend,))
+    return backend
 
 #: Env var overriding the Gemini runner command. When unset,
 #: :data:`DEFAULT_GEMINI_CMD` is used. Spike finding (2026-06-09): ``gemini -p``
@@ -96,6 +116,13 @@ DEFAULT_BACKEND = BACKEND_CLAUDE
 GEMINI_CMD_ENV = "ANCHOR_GEMINI_CMD"
 DEFAULT_GEMINI_CMD = (
     "gemini --skip-trust -p --output-format stream-json --approval-mode auto_edit"
+)
+
+#: Receipt-bearing ChatGPT adapter shipped with this exact Anchor checkout.
+#: Tests monkeypatch this module constant directly; production environment
+#: variables cannot replace the adapter and impersonate a subscription seat.
+CODEX_ADAPTER_PATH = str(
+    (Path(__file__).resolve().parent / "codex_adapter.py").resolve()
 )
 
 #: Long-poll ceiling (seconds). Production default per the frozen design; the
@@ -204,7 +231,7 @@ class _LiveJob:
     """Runtime handle for a job owned by *this* server process."""
 
     __slots__ = ("job_id", "proc", "ring", "reader", "log_path", "lock", "done",
-                 "gated", "_h_job")
+                 "gated", "_h_job", "_cancel_requested")
 
     def __init__(self, job_id, proc, log_path, gated=False):
         self.job_id = job_id
@@ -218,6 +245,9 @@ class _LiveJob:
         # stdout line to the gate adapter so an AskUserQuestion frame surfaces as
         # awaiting-input state in production (NOT just in hand-injected tests).
         self.gated = gated
+        # Cancellation is a two-phase transition: request + verified tree
+        # termination/drain, then (and only then) durable ``cancelled``.
+        self._cancel_requested = False
 
 
 # ── Persistence ─────────────────────────────────────────────────────────────
@@ -419,13 +449,84 @@ def _build_gemini_argv(prompt, output_dir, gated, permission_mode=None) -> list:
     return argv
 
 
-def build_backend_argv(backend, prompt, output_dir, gated, permission_mode=None) -> list:
+def _normalize_expected_artifacts(expected_artifacts) -> list:
+    """Return a bounded, target-relative artifact contract.
+
+    ChatGPT workspace-write jobs are accepted only when the caller names the
+    exact files that constitute completion.  Validation happens again in the
+    adapter, but this parent-side copy keeps malformed contracts from creating
+    a job record or starting a subscription seat.
+    """
+    if expected_artifacts is None:
+        return []
+    if isinstance(expected_artifacts, (str, bytes)):
+        raise ValueError("chatgpt-artifact-contract-invalid: expected a path list")
+    try:
+        values = list(expected_artifacts)
+    except TypeError as exc:
+        raise ValueError(
+            "chatgpt-artifact-contract-invalid: expected a path list"
+        ) from exc
+    if not values:
+        return []
+    try:
+        return list(_codex._normalize_expected_artifacts(
+            Path(__file__).resolve().parent, values))
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "chatgpt-artifact-contract-invalid: non-portable path contract"
+        ) from exc
+
+
+def _build_chatgpt_argv(prompt, output_dir, gated, permission_mode=None,
+                        expected_artifacts=None) -> list:
+    """Build Anchor's safe one-shot ChatGPT subscription adapter command.
+
+    Codex reads the prompt from stdin, so neither ``prompt`` nor project content
+    enters argv. Artifact-producing research needs ``workspace-write`` inside the
+    validated project cwd; advisor/diagnostic calls explicitly request ``plan``
+    and remain read-only. Claude's kept-open AskUserQuestion protocol is not
+    equivalent to one-shot Codex, so gated lanes fail before any process starts.
+    """
+    if gated:
+        raise ValueError(
+            "chatgpt-gated-bridge-pending: ChatGPT plan/build requires the "
+            "persistent Codex exec/resume cockpit bridge; no seat was started"
+        )
+    if not output_dir:
+        raise ValueError("chatgpt-target-required: a project-scoped output directory is required")
+    target = Path(output_dir).resolve()
+    if not target.is_dir():
+        raise ValueError("chatgpt-target-required: output directory does not exist: %s" % target)
+    adapter = CODEX_ADAPTER_PATH
+    sandbox = "read-only" if permission_mode == "plan" else "workspace-write"
+    expected = _normalize_expected_artifacts(expected_artifacts)
+    if sandbox == "workspace-write" and not expected:
+        raise ValueError(
+            "chatgpt-artifact-contract-required: workspace-write requires "
+            "explicit expected artifact paths"
+        )
+    if sandbox == "read-only" and expected:
+        raise ValueError(
+            "chatgpt-artifact-contract-invalid: read-only jobs cannot expect writes"
+        )
+    argv = [sys.executable, adapter, "--sandbox", sandbox,
+            "--target", str(target)]
+    for rel in expected:
+        argv.extend(("--expected-artifact", rel))
+    return argv
+
+
+def build_backend_argv(backend, prompt, output_dir, gated, permission_mode=None,
+                       expected_artifacts=None) -> list:
     """Build the VALID production argv for a backend + lane shape.
 
     Used only on the override-UNSET (real-CLI) path. Dispatches to the
-    per-backend builder. ``gated`` is falsy for research, ``"plan"``/``"build"``
-    (truthy) for the gated lanes (claude only — gemini is research-only).
+    per-backend builder. ``gated`` is falsy for one-shot research/general jobs
+    and truthy for persistent plan/build sessions. ChatGPT gated jobs refuse
+    here until Anchor has a tested Codex exec/resume bridge.
     """
+    backend = _require_backend(backend)
     if backend == BACKEND_GROK:
         # Interactive Grok terminals are supported via terminal_session; headless
         # job_runner has no tool-capable Grok argv builder yet. Refuse honestly
@@ -435,6 +536,11 @@ def build_backend_argv(backend, prompt, output_dir, gated, permission_mode=None)
             "use an interactive Grok terminal (terminal_session) or set "
             "coding_family/review_family for trio seat routing instead"
         )
+    if backend == BACKEND_CHATGPT:
+        return _build_chatgpt_argv(
+            prompt, output_dir, gated, permission_mode=permission_mode,
+            expected_artifacts=expected_artifacts,
+        )
     if backend == BACKEND_GEMINI:
         return _build_gemini_argv(prompt, output_dir, gated, permission_mode=permission_mode)
     return _build_claude_argv(prompt, output_dir, gated, permission_mode=permission_mode)
@@ -442,26 +548,33 @@ def build_backend_argv(backend, prompt, output_dir, gated, permission_mode=None)
 
 def resolve_runner_cmd(extra_args=None, backend=DEFAULT_BACKEND,
                        prompt=None, output_dir=None, gated=False,
-                       permission_mode=None) -> list:
+                       permission_mode=None, expected_artifacts=None) -> list:
     """Resolve the runner command as an argv list, honoring the engine backend.
 
-    Resolution order (CRITICAL — the test indirection must always win):
-    1. ``ANCHOR_RUNNER_CMD`` set → use it **for any backend** (this is how the
-       whole test suite drives the mock ``tests/fake_claude.py`` regardless of
-       which engine a launch selected). The base mock command is used as-is; if a
+    Resolution order (CRITICAL — transport identity must remain truthful):
+    1. ChatGPT always resolves through its dedicated receipt-bearing adapter;
+       generic runner overrides and arbitrary trailing args cannot impersonate it.
+    2. ``ANCHOR_RUNNER_CMD`` set → use it for Claude/Gemini (this is how the
+       legacy suite drives ``tests/fake_claude.py``). The command is used as-is; if a
        ``prompt`` is supplied it is appended as a trailing arg the mock tolerates
        via ``parse_known_args`` (so tests still drive the mock and the prompt
        never leaks into a real CLI). ``extra_args`` (test flags like ``--lines``)
        are appended last. Never broken by the per-backend builders.
-    2. else (override unset → a REAL launch): build a VALID per-backend, per-lane
+    3. else (override unset → a REAL launch): build a VALID per-backend, per-lane
        argv via :func:`build_backend_argv` — but only when a ``prompt`` is
        supplied (a real lane launch always supplies one). When no ``prompt`` is
        supplied (e.g. an engine-selector test inspecting only the command SHAPE),
        fall back to the per-backend default command constant so its shape is
        observable. ``extra_args`` are appended in both sub-cases.
     """
+    backend = _require_backend(backend)
+    if backend == BACKEND_CHATGPT and extra_args:
+        raise ValueError(
+            "chatgpt-extra-args-refused: safety and target arguments are owned "
+            "by Anchor's Codex adapter"
+        )
     override = os.environ.get(RUNNER_CMD_ENV)
-    if override and override.strip():
+    if override and override.strip() and backend != BACKEND_CHATGPT:
         # Test indirection: the mock runner drives every test. Use the override
         # base verbatim; append the prompt (mock ignores it) so the gated/stdin
         # path is exercised without a real CLI, then the test's extra_args.
@@ -470,16 +583,26 @@ def resolve_runner_cmd(extra_args=None, backend=DEFAULT_BACKEND,
             argv = argv + [prompt]
     elif prompt is not None:
         # Real launch: construct a valid per-backend argv from scratch.
-        argv = build_backend_argv(backend, prompt, output_dir, gated,
-                                  permission_mode=permission_mode)
+        argv = build_backend_argv(
+            backend, prompt, output_dir, gated,
+            permission_mode=permission_mode,
+            expected_artifacts=expected_artifacts,
+        )
     else:
         # Shape-only resolution (no prompt): return the per-backend default base.
         if backend == BACKEND_GEMINI:
             gem = os.environ.get(GEMINI_CMD_ENV)
             raw = gem if (gem and gem.strip()) else DEFAULT_GEMINI_CMD
+        elif backend == BACKEND_CHATGPT:
+            argv = _build_chatgpt_argv(
+                None, output_dir, gated, permission_mode=permission_mode,
+                expected_artifacts=expected_artifacts,
+            )
+            raw = None
         else:
             raw = DEFAULT_RUNNER_CMD
-        argv = _shlex_split(raw)
+        if raw is not None:
+            argv = _shlex_split(raw)
     if extra_args:
         argv = argv + list(extra_args)
     return argv
@@ -521,7 +644,7 @@ def _relaunch_env_seed(env) -> dict:
 def _build_relaunch_spec(lane, cwd, prompt, output_dir, gated,
                          permission_mode, backend, env,
                          project_id=None, folder_path=None,
-                         command=None) -> dict:
+                         command=None, expected_artifacts=None) -> dict:
     """Everything a guarded launch needs to start an equivalent job (Wave 1).
 
     Persisted on the job record at launch time so an ``interrupted`` job can be
@@ -543,6 +666,7 @@ def _build_relaunch_spec(lane, cwd, prompt, output_dir, gated,
         "gated": gated,
         "permission_mode": permission_mode,
         "backend": backend,
+        "expected_artifacts": _normalize_expected_artifacts(expected_artifacts),
         "env_keys": _relaunch_env_seed(env),
         "project_id": project_id,
         "folder_path": str(folder_path) if folder_path else None,
@@ -556,7 +680,8 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
            job_id: str = None, backend=DEFAULT_BACKEND,
            prompt=None, output_dir=None, gated=False,
            permission_mode=None, project_id=None, folder_path=None,
-           command=None, kill_on_job_close: bool = True) -> dict:
+           command=None, kill_on_job_close: bool = True,
+           expected_artifacts=None) -> dict:
     """Launch a server-owned job. Returns the job record.
 
     ``command`` (foundry-v2 Wave 7 — the control-plane dispatch seam): when
@@ -571,10 +696,12 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
     The record holds at least ``{job_id, lane, pid, status, log_path, backend}``.
     stdout is streamed by a daemon reader thread into a durable log file *and* an
     in-memory ring buffer. ``cwd`` is the project working directory; ``env`` is
-    merged onto the current environment. ``backend`` ∈ {"claude","gemini"}
-    selects the engine command (resolved by :func:`resolve_runner_cmd`); it is
-    recorded on the job so the UI/history can show which engine ran the effort.
-    ``ANCHOR_RUNNER_CMD``, when set, still overrides the command for any backend.
+    merged onto the current environment. ``backend`` selects Claude, Gemini,
+    or the one-shot ChatGPT subscription adapter (Grok headless jobs still
+    refuse). It is recorded on the job so the UI/history can show which engine
+    ran the effort.
+    ``ANCHOR_RUNNER_CMD`` remains a Claude/Gemini test seam. ChatGPT always uses
+    the pinned sibling adapter and requires its complete receipt.
 
     ``prompt`` (the natural-language lane seed), ``output_dir`` (project-scoped),
     and ``gated`` (falsy for research; ``"plan"``/``"build"`` for the gated lanes)
@@ -588,8 +715,11 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
     them; a direct call may leave them ``None``.
 
     Stdin handling (D / SETUP §5):
-    - NON-GATED (research) **or** no prompt: ``stdin=DEVNULL`` (unchanged Wave-4
-      contract — the prompt, if any, is on argv).
+    - NON-GATED Claude/Gemini (research) **or** no prompt: ``stdin=DEVNULL``;
+      their prompt remains on the established backend argv.
+    - NON-GATED ChatGPT: ``stdin=PIPE``; the raw prompt is written once and the
+      pipe is closed. The adapter then forwards it to ``codex exec ... -`` so
+      project content never appears in process arguments.
     - GATED (plan/build, claude only): ``stdin=PIPE`` kept OPEN for the job's
       lifetime, and the INITIAL prompt is written as a stream-json user message
       (claude's ``--input-format stream-json`` consumes the prompt from stdin,
@@ -602,7 +732,78 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
       tool_result, so the model re-asks in plain text and we answer with a
       stream-json user TEXT turn — best-effort continuation, not guaranteed.
     """
-    backend = backend or DEFAULT_BACKEND
+    backend = _require_backend(DEFAULT_BACKEND if backend is None else backend)
+    if backend == BACKEND_CHATGPT and lane not in CHATGPT_ONESHOT_LANES:
+        # The lane is authoritative only at this public launch boundary. Command
+        # resolution deliberately has no lane input and therefore must not infer
+        # one. Until F1B lands, only the bounded one-shot research adapter may run.
+        raise ValueError(
+            "chatgpt-gated-bridge-pending: %s requires the persistent Codex "
+            "exec/resume cockpit bridge; no seat was started" % (lane,)
+        )
+    if backend == BACKEND_CHATGPT and command:
+        # This guard MUST precede job-id allocation, directory pinning, log
+        # creation, and record/journal writes. A generic control-plane command
+        # cannot impersonate the receipt-bearing ChatGPT adapter.
+        raise ValueError(
+            "chatgpt-command-override-refused: ChatGPT transport is owned by "
+            "Anchor's Codex adapter"
+        )
+    if backend == BACKEND_CHATGPT and env:
+        # Caller overlays can redirect HOME/CODEX_HOME/LOCALAPPDATA/PATH and
+        # make the adapter execute or load attacker-selected state before a
+        # parent receipt could reject it. ChatGPT inherits only Anchor's host
+        # environment plus the internally-derived preference markers below.
+        raise ValueError(
+            "chatgpt-env-overlay-refused: ChatGPT launch environment is owned "
+            "by Anchor's Codex adapter"
+        )
+    if backend == BACKEND_CHATGPT and extra_args:
+        raise ValueError(
+            "chatgpt-extra-args-refused: safety and target arguments are owned "
+            "by Anchor's Codex adapter"
+        )
+    if backend == BACKEND_CHATGPT:
+        if not cwd or not output_dir:
+            raise ValueError(
+                "chatgpt-target-required: project cwd and project-scoped output "
+                "directory are required"
+            )
+        project_root = Path(cwd).resolve()
+        target = Path(output_dir).resolve()
+        if not project_root.is_dir() or not target.is_dir():
+            raise ValueError(
+                "chatgpt-target-required: project cwd and output directory must exist"
+            )
+        try:
+            target.relative_to(project_root)
+        except ValueError as exc:
+            raise ValueError(
+                "chatgpt-target-outside-project: %s is outside %s" %
+                (target, project_root)
+            ) from exc
+    if backend == BACKEND_CHATGPT and gated:
+        raise ValueError(
+            "chatgpt-gated-bridge-pending: ChatGPT plan/build requires the "
+            "persistent Codex exec/resume cockpit bridge; no seat was started"
+        )
+    normalized_expected_artifacts = _normalize_expected_artifacts(expected_artifacts)
+    if backend == BACKEND_CHATGPT:
+        read_only = permission_mode == "plan"
+        if not read_only and not normalized_expected_artifacts:
+            raise ValueError(
+                "chatgpt-artifact-contract-required: workspace-write requires "
+                "explicit expected artifact paths"
+            )
+        if read_only and normalized_expected_artifacts:
+            raise ValueError(
+                "chatgpt-artifact-contract-invalid: read-only jobs cannot expect writes"
+            )
+    elif normalized_expected_artifacts:
+        raise ValueError(
+            "chatgpt-artifact-contract-invalid: expected artifacts are owned "
+            "by the ChatGPT adapter"
+        )
     job_id = job_id or uuid.uuid4().hex
     # Pin this job's storage dir for its lifetime (resolved now, once).
     pinned = jobs_dir()
@@ -620,22 +821,26 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
     else:
         argv = resolve_runner_cmd(extra_args, backend=backend, prompt=prompt,
                                   output_dir=output_dir, gated=gated,
-                                  permission_mode=permission_mode)
+                                  permission_mode=permission_mode,
+                                  expected_artifacts=normalized_expected_artifacts)
 
     full_env = dict(os.environ)
-    if backend == BACKEND_GEMINI:
-        full_env["TRIO_DRIVER"] = "gemini-cli-native"
+    if env and backend != BACKEND_CHATGPT:
+        full_env.update(env)
     # Propagate Anchor model-family prefs so foundry/trio seats (and any agent
     # reading CODING_FAMILY / REVIEW_FAMILY) honor the dashboard knobs.
-    # Pre-set env always wins over settings (caller / setx override).
+    # Saved settings are authoritative and overwrite stale process/setx values.
     try:
         import anchor_settings as _aset
         for _k, _v in _aset.export_env_overrides().items():
-            full_env.setdefault(_k, _v)
+            full_env[_k] = _v
     except Exception:
         pass
-    if env:
-        full_env.update(env)
+    if backend == BACKEND_GEMINI:
+        full_env["TRIO_DRIVER"] = "gemini-cli-native"
+    elif backend == BACKEND_CHATGPT:
+        full_env["TRIO_DRIVER"] = "chatgpt-cli"
+        full_env = _codex.subscription_only_env(full_env)
     
     crypt_token = uuid.uuid4().hex
     full_env["ANCHOR_SESSION_ID_CRYPT_TOKEN"] = crypt_token
@@ -650,10 +855,9 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
         creationflags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                          | _paths.NO_WINDOW)
 
-    # Gated lanes need a kept-open stdin PIPE so the initial prompt + the gate
-    # answer can be written into the live session. Non-gated lanes keep the
-    # original DEVNULL contract.
-    use_stdin_pipe = bool(gated)
+    # Gated Claude lanes keep stdin open for the initial prompt + gate answer.
+    # One-shot ChatGPT gets a PIPE only long enough to deliver its raw prompt.
+    use_stdin_pipe = bool(gated) or backend == BACKEND_CHATGPT
     proc = subprocess.Popen(
         argv,
         cwd=str(cwd) if cwd else None,
@@ -670,6 +874,9 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
         encoding="utf-8",
         errors="replace",
         creationflags=creationflags,
+        # Own the adapter group on POSIX so cancellation cannot target Anchor's
+        # server group. The adapter relays SIGTERM into Codex's child group.
+        start_new_session=(os.name != "nt"),
     )
 
     live = _LiveJob(job_id, proc, lp, gated=gated)
@@ -693,7 +900,13 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
     # For a gated lane, deliver the initial prompt as a stream-json user turn on
     # stdin and register the (kept-open) pipe with the gate adapter so a later
     # answer writes into the SAME session. Deferred import avoids a cycle.
-    if use_stdin_pipe and proc.stdin is not None:
+    if backend == BACKEND_CHATGPT and proc.stdin is not None:
+        try:
+            proc.stdin.write(prompt or "")
+            proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+    elif use_stdin_pipe and proc.stdin is not None:
         try:
             if prompt:
                 proc.stdin.write(_stream_json_user_turn(prompt))
@@ -717,7 +930,7 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
     # (direct launch() or launch_guarded()) participates. Cleared on exit by
     # _finalize/cancel via _mirror_session_status (the finally-reset).
     _register_swarm_session(job_id, proc.pid, proc_create_time, crypt_token,
-                            cwd=cwd)
+                            cwd=cwd, backend=backend)
 
     rec = {
         "job_id": job_id,
@@ -738,7 +951,8 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
         # when the launch came through launch_guarded().
         "relaunch_spec": _build_relaunch_spec(
             lane, cwd, prompt, output_dir, gated, permission_mode, backend, env,
-            project_id=project_id, folder_path=folder_path, command=command),
+            project_id=project_id, folder_path=folder_path, command=command,
+            expected_artifacts=normalized_expected_artifacts),
     }
     # W13 (C3): journal the launch. Use the project_id/folder_path PARAMETERS
     # (a guarded launch passes them) — the rec dict carries them only inside
@@ -922,18 +1136,39 @@ def _cost_from_envelope(env: dict) -> dict:
         out = int(out)
     except (TypeError, ValueError):
         out = 0
-    try:
-        cost = float(env.get("total_cost_usd") or 0.0)
-    except (TypeError, ValueError):
-        cost = 0.0
+    billing_mode = env.get("billing_mode") or \
+        (env.get("model_receipt") or {}).get("billing_mode")
+    cost_state = env.get("cost_state") or \
+        (env.get("model_receipt") or {}).get("cost_state")
+    raw_cost = env.get("total_cost_usd")
+    if raw_cost is not None and not billing_mode and not cost_state:
+        # The engine supplied a dollar field (including a genuine zero), so it is
+        # measured rather than inferred from Anchor's own pricing table.
+        billing_mode = "metered"
+        cost_state = "engine_reported"
+    if raw_cost is None and cost_state in (
+            "subscription_covered", "no_seat_started"):
+        cost = None
+    else:
+        try:
+            cost = float(raw_cost or 0.0)
+        except (TypeError, ValueError):
+            cost = 0.0
     try:
         dur = int(env.get("duration_ms") or 0)
     except (TypeError, ValueError):
         dur = 0
+    try:
+        cached_inp = int(usage.get("cached_input_tokens") or 0)
+    except (TypeError, ValueError):
+        cached_inp = 0
     return {
         "total_cost_usd": cost,
+        "billing_mode": billing_mode,
+        "cost_state": cost_state,
         "duration_ms": dur,
         "input_tokens": inp,
+        "cached_input_tokens": cached_inp,
         "output_tokens": out,
         "total_tokens": inp + out,
         "session_id": env.get("session_id"),
@@ -951,7 +1186,7 @@ def _cost_from_envelope(env: dict) -> dict:
 # finished OR crashed swarm child is never left looking orphaned.
 
 def _register_swarm_session(job_id, pid, proc_create_time, crypt_token,
-                            cwd=None) -> None:
+                            cwd=None, backend=DEFAULT_BACKEND) -> None:
     """Register a spawned swarm job in ``session_registry`` (hunter-sweepable).
 
     Stamps the EXACT identity ``zombie_hunter.classify`` requires — ``pid``,
@@ -965,6 +1200,7 @@ def _register_swarm_session(job_id, pid, proc_create_time, crypt_token,
         _sr.register_session(
             project_id="",
             lane=SWARM_LANE,
+            backend=backend,
             status=_sr.STATUS_RUNNING,
             session_id=job_id,
             worktree_path=str(cwd) if cwd else "",
@@ -974,6 +1210,1229 @@ def _register_swarm_session(job_id, pid, proc_create_time, crypt_token,
         )
     except Exception:  # pragma: no cover - registry is best-effort
         pass
+
+
+_MODEL_RECEIPT_FIELDS = frozenset((
+    "family_requested", "backend_requested", "transport_requested",
+    "transport_actual", "executable_path", "executable_sha256",
+    "executable_provenance_verified", "executable_provenance_kind",
+    "executable_signer_subject", "executable_signer_certificate_sha256",
+    "signer_image_binding_verified",
+    "signature_revocation_freshness",
+    "executable_handle_guarded_through_spawn",
+    "preexecution_child_image_attested", "cli_version", "auth_kind",
+    "auth_probe_at", "subscription_auth", "requested_model",
+    "requested_effort", "requested_orchestration_mode",
+    "orchestration_mode_served", "model_capability_verified",
+    "ultra_capability_verified", "sandbox_requested",
+    "approval_policy_requested", "model_provider_requested", "codex_home",
+    "config_sha256",
+    "user_config_loaded", "user_config_ignored", "critical_overrides_enforced",
+    "config_guard_verified", "runtime_guard_rechecked",
+    "child_env_allowlist_verified", "rules_ignored", "agents_disabled",
+    "network_disabled", "extra_writable_roots_disabled",
+    "hosted_tools_disabled", "mcp_servers_disabled", "projects_table_replaced",
+    "thread_id", "duration_ms", "tree_kill_verified",
+    "process_group_kill_verified", "output_drain_verified",
+    "output_limits_verified", "output_eof_verified",
+    "stdin_write_verified", "stdin_close_verified",
+    "output_overflow_kind", "native_stdout_bytes", "native_stderr_bytes",
+    "preflight_probe_count", "preflight_containment_kind",
+    "preflight_complete_tree_containment",
+    "preflight_no_inference_verified",
+    "preflight_no_network_intent_verified",
+    "preflight_output_limits_verified",
+    "preflight_output_drain_verified", "preflight_root_exit_verified",
+    "preflight_windows_job_policy_verified",
+    "preflight_windows_job_assignment_verified",
+    "preflight_windows_job_membership_verified",
+    "preflight_windows_process_handle_verified",
+    "preflight_windows_primary_thread_verified",
+    "preflight_windows_process_resumed",
+    "preflight_windows_job_empty_verified",
+    "preflight_process_group_kill_verified",
+    "containment_kind", "complete_tree_containment",
+    "windows_job_policy_verified", "windows_job_assignment_verified",
+    "windows_job_membership_verified", "windows_process_handle_verified",
+    "windows_primary_thread_verified", "windows_process_resumed",
+    "windows_execution_possible", "windows_job_empty_verified",
+    "root_exit_verified",
+    "exit_code", "status",
+    "timed_out", "aborted", "seat_started", "fallback_from", "fallback_to", "cross_model",
+    "billing_mode", "cost_state", "model_served", "reasoning_served",
+    "model_attested", "degraded", "api_key_env_scrubbed", "prompt_sha256",
+    "event_count", "malformed_count", "tool_error_count",
+    "artifact_write_observed", "artifact_scan_complete",
+    "usage", "artifact_paths",
+    "expected_artifact_paths", "artifact_contract_verified",
+    "artifact_mutation_verified", "artifact_hashes", "artifact_evidence",
+    "error",
+))
+
+_CHATGPT_USAGE_FIELDS = (
+    "input_tokens", "cached_input_tokens", "cache_write_input_tokens",
+    "output_tokens", "reasoning_output_tokens",
+)
+
+
+def _chatgpt_telemetry_within_bounds(usage, event_count, malformed_count,
+                                     tool_error_count) -> bool:
+    """Bound hostile-child integer telemetry before persistence/aggregation."""
+    if (not isinstance(usage, dict) or
+            set(usage) != set(_CHATGPT_USAGE_FIELDS)):
+        return False
+    if any(type(usage.get(key)) is not int or usage[key] < 0 or
+           usage[key] > _CHATGPT_MAX_TOKEN_FIELD
+           for key in _CHATGPT_USAGE_FIELDS):
+        return False
+    if sum(usage[key] for key in _CHATGPT_USAGE_FIELDS) > _CHATGPT_MAX_TOKEN_SUM:
+        return False
+    counts = (event_count, malformed_count, tool_error_count)
+    if any(type(value) is not int or value < 0 or
+           value > _CHATGPT_MAX_EVENTS for value in counts):
+        return False
+    if malformed_count > event_count or tool_error_count > event_count:
+        return False
+    return True
+
+
+def _valid_chatgpt_thread_id(value, allow_none=False) -> bool:
+    """Accept only a small printable ASCII opaque id at the trust boundary."""
+    if value is None:
+        return bool(allow_none)
+    return bool(
+        isinstance(value, str) and
+        len(value) <= _CHATGPT_MAX_THREAD_ID_CHARS and
+        re.fullmatch(r"[A-Za-z0-9._:-]+", value)
+    )
+
+
+def _receipt_matches_required(receipt, required) -> bool:
+    """Match fixed receipt values without allowing bool/int aliases."""
+    for key, expected in required.items():
+        if key not in receipt:
+            return False
+        observed = receipt.get(key)
+        if type(expected) in (bool, int) and type(observed) is not type(expected):
+            return False
+        if observed != expected:
+            return False
+    return True
+
+_CHATGPT_NO_SEAT_FAILURES = frozenset((
+    "adapter_error", "executable_unavailable", "config_guard_failed",
+    "preflight_timeout", "preflight_failed", "version_probe_failed",
+    "subscription_auth_required", "catalog_probe_failed",
+    "capability_unavailable", "spawn_error", "spawn_aborted",
+    "signal_guard_unavailable", "executable_provenance_failed",
+    "runtime_guard_failed", "config_guard_changed",
+    "executable_guard_changed", "security_guard_failed",
+    "artifact_contract_required", "artifact_scan_incomplete",
+    "containment_assignment_failed",
+    "preflight_command_refused", "preflight_containment_failed",
+    "preflight_spawn_error", "preflight_cleanup_failed",
+    "preflight_output_limit_exceeded", "preflight_aborted",
+    "preflight_process_tree_straggler",
+    "signal_guard_restore_failed",
+))
+_CHATGPT_SEAT_FAILURES = frozenset((
+    "usage_limit", "auth_error", "cli_error", "protocol_error", "no_reply",
+    "timeout", "aborted", "kill_failed", "spawn_error", "spawn_aborted",
+    "signal_guard_unavailable",
+    "signal_guard_restore_failed", "artifact_scan_incomplete",
+    "artifact_required",
+    "containment_assignment_failed", "process_tree_straggler",
+    "output_limit_exceeded", "protocol_limit_exceeded",
+    "output_drain_failed", "stdin_write_failed",
+))
+
+
+def _model_receipt_from_envelope(envelope):
+    """Copy only the stable, non-secret receipt contract from a child result."""
+    if not isinstance(envelope, dict):
+        return None
+    raw = envelope.get("model_receipt")
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for key in _MODEL_RECEIPT_FIELDS:
+        if key not in raw:
+            continue
+        value = raw.get(key)
+        if value is None or isinstance(value, (str, int, float, bool)):
+            out[key] = value
+    usage = raw.get("usage")
+    if isinstance(usage, dict):
+        clean_usage = {}
+        for key in _CHATGPT_USAGE_FIELDS:
+            try:
+                clean_usage[key] = int(usage.get(key) or 0)
+            except (TypeError, ValueError):
+                clean_usage[key] = 0
+        out["usage"] = clean_usage
+    for field in ("artifact_paths", "expected_artifact_paths"):
+        values = raw.get(field)
+        if isinstance(values, list):
+            try:
+                clean = _normalize_expected_artifacts(values)
+            except ValueError:
+                clean = None
+            if clean is not None and clean == values:
+                out[field] = clean
+    hashes = raw.get("artifact_hashes")
+    if isinstance(hashes, dict) and len(hashes) <= 32:
+        clean_hashes = {}
+        for key, value in hashes.items():
+            if (not isinstance(key, str) or not isinstance(value, str) or
+                    len(value) != 64 or
+                    any(ch not in "0123456789abcdef" for ch in value)):
+                clean_hashes = None
+                break
+            clean_hashes[key] = value
+        if clean_hashes is not None:
+            out["artifact_hashes"] = clean_hashes
+    evidence = raw.get("artifact_evidence")
+    if isinstance(evidence, dict) and len(evidence) <= 32:
+        clean_evidence = {}
+        for key, value in evidence.items():
+            if (not isinstance(key, str) or not isinstance(value, dict) or
+                    set(value) != {"sha256", "size", "device", "inode"}):
+                clean_evidence = None
+                break
+            digest = value.get("sha256")
+            size = value.get("size")
+            device = value.get("device")
+            inode = value.get("inode")
+            if (not isinstance(digest, str) or len(digest) != 64 or
+                    any(ch not in "0123456789abcdef" for ch in digest) or
+                    type(size) is not int or size < 0 or
+                    size > int(getattr(_codex, "MAX_ARTIFACT_BYTES", 64 * 1024 * 1024)) or
+                    type(device) is not int or device < 0 or
+                    type(inode) is not int or inode < 0):
+                clean_evidence = None
+                break
+            clean_evidence[key] = {
+                "sha256": digest, "size": size,
+                "device": device, "inode": inode,
+            }
+        if clean_evidence is not None:
+            out["artifact_evidence"] = clean_evidence
+    return out
+
+
+def _artifact_contract_from_record(record, expected_sandbox):
+    """Return the server-owned canonical completion paths or ``None``."""
+    spec = ((record or {}).get("relaunch_spec") or {})
+    raw = spec.get("expected_artifacts")
+    if raw is None:
+        raw = []
+    if not isinstance(raw, list):
+        return None
+    try:
+        clean = _normalize_expected_artifacts(raw)
+    except ValueError:
+        return None
+    if clean != raw:
+        return None
+    if expected_sandbox == "workspace-write" and not clean:
+        return None
+    if expected_sandbox == "read-only" and clean:
+        return None
+    return clean
+
+
+def _hash_current_artifact(output_root, relative):
+    """Hash one nonempty regular file beneath the pinned output root."""
+    try:
+        root = Path(output_root).resolve(strict=True)
+        candidate = root / relative
+        if candidate.is_symlink():
+            return None
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(root)
+        if not resolved.is_file():
+            return None
+        limit = int(getattr(_codex, "MAX_ARTIFACT_SCAN_BYTES", 512 * 1024 * 1024))
+        size = resolved.stat().st_size
+        if size <= 0 or size > limit:
+            return None
+        digest = hashlib.sha256()
+        seen = 0
+        with resolved.open("rb") as fh:
+            before = os.fstat(fh.fileno())
+            while True:
+                chunk = fh.read(1024 * 1024)
+                if not chunk:
+                    break
+                seen += len(chunk)
+                if seen > limit:
+                    return None
+                digest.update(chunk)
+            after = os.fstat(fh.fileno())
+        if (seen <= 0 or before.st_size != seen or after.st_size != seen or
+                getattr(before, "st_mtime_ns", None) !=
+                getattr(after, "st_mtime_ns", None)):
+            return None
+        return digest.hexdigest()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _current_artifact_snapshot(output_root, relatives):
+    """Re-attest named artifacts while holding the exact workspace root."""
+    guard = None
+    result = None
+    try:
+        root = Path(output_root).resolve(strict=True)
+        guard = _codex._open_guarded_directory(root)
+        identity = _codex._guarded_directory_identity(guard, root)
+        snapshot, complete = _codex._expected_artifact_snapshot(
+            root, tuple(relatives), identity)
+        if complete and _codex._workspace_root_matches(root, identity):
+            result = snapshot
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+        result = None
+    finally:
+        if guard is not None:
+            try:
+                guard.close()
+            except BaseException:
+                result = None
+    return result
+
+
+def _valid_current_chatgpt_provenance(receipt) -> bool:
+    """Independently bind child provenance claims to the current Codex image."""
+    if not isinstance(receipt, dict):
+        return False
+    if receipt.get("config_sha256") is not None or \
+            receipt.get("user_config_loaded") is not False:
+        return False
+    try:
+        expected_executable = Path(_codex.resolve_codex_cmd()).resolve(strict=True)
+        actual_executable = Path(receipt.get("executable_path") or "").resolve(
+            strict=True)
+        current = _codex.inspect_executable(str(expected_executable))
+        clean_env = _codex.subscription_only_env()
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+        return False
+    if (os.path.normcase(str(actual_executable)) !=
+            os.path.normcase(str(expected_executable)) or
+            not isinstance(current, dict) or current.get("ok") is not True):
+        return False
+    fingerprint = current.get("executable_fingerprint") or {}
+    fields = {
+        "executable_sha256": fingerprint.get("sha256"),
+        "executable_provenance_kind": current.get(
+            "executable_provenance_kind"),
+        "executable_signer_subject": current.get("executable_signer_subject"),
+        "executable_signer_certificate_sha256": current.get(
+            "executable_signer_certificate_sha256"),
+        "signer_image_binding_verified": bool(
+            current.get("signer_image_binding_verified")),
+        "signature_revocation_freshness": current.get(
+            "signature_revocation_freshness"),
+        "codex_home": clean_env.get("CODEX_HOME"),
+    }
+    return bool(
+        receipt.get("executable_provenance_verified") is True and
+        all(receipt.get(key) == value for key, value in fields.items())
+    )
+
+
+_CHATGPT_CONTAINMENT_BOOL_FIELDS = (
+    "complete_tree_containment", "windows_job_policy_verified",
+    "windows_job_assignment_verified", "windows_job_membership_verified",
+    "windows_process_handle_verified", "windows_primary_thread_verified",
+    "windows_process_resumed", "windows_execution_possible",
+    "windows_job_empty_verified", "root_exit_verified",
+)
+
+_CHATGPT_PREFLIGHT_BOOL_FIELDS = (
+    "preflight_complete_tree_containment",
+    "preflight_no_inference_verified",
+    "preflight_no_network_intent_verified",
+    "preflight_output_limits_verified",
+    "preflight_output_drain_verified", "preflight_root_exit_verified",
+    "preflight_windows_job_policy_verified",
+    "preflight_windows_job_assignment_verified",
+    "preflight_windows_job_membership_verified",
+    "preflight_windows_process_handle_verified",
+    "preflight_windows_primary_thread_verified",
+    "preflight_windows_process_resumed",
+    "preflight_windows_job_empty_verified",
+)
+
+_CHATGPT_RUNTIME_IO_FIELDS = (
+    "output_limits_verified", "output_eof_verified",
+    "stdin_write_verified", "stdin_close_verified",
+)
+
+
+def _valid_chatgpt_io_shape(receipt) -> bool:
+    if any(receipt.get(key) is not None and type(receipt.get(key)) is not bool
+           for key in _CHATGPT_RUNTIME_IO_FIELDS):
+        return False
+    overflow = receipt.get("output_overflow_kind")
+    if overflow not in (None, "stdout", "stderr", "aggregate"):
+        return False
+    stdout_bytes = receipt.get("native_stdout_bytes")
+    stderr_bytes = receipt.get("native_stderr_bytes")
+    return bool(
+        type(stdout_bytes) is int and 0 <= stdout_bytes <=
+        int(getattr(_codex, "MAX_NATIVE_STDOUT_BYTES", 32 * 1024 * 1024)) + 1 and
+        type(stderr_bytes) is int and 0 <= stderr_bytes <=
+        int(getattr(_codex, "MAX_NATIVE_STDERR_BYTES", 8 * 1024 * 1024)) + 1
+    )
+
+
+def _valid_chatgpt_preflight_shape(receipt) -> bool:
+    count = receipt.get("preflight_probe_count")
+    kind = receipt.get("preflight_containment_kind")
+    group = receipt.get("preflight_process_group_kill_verified")
+    return bool(
+        type(count) is int and 0 <= count <= 3 and
+        kind in (None, "windows_job", "posix_process_group_degraded") and
+        all(type(receipt.get(key)) is bool
+            for key in _CHATGPT_PREFLIGHT_BOOL_FIELDS) and
+        (group is None or type(group) is bool)
+    )
+
+
+def _valid_chatgpt_success_preflight(receipt) -> bool:
+    if not _valid_chatgpt_preflight_shape(receipt):
+        return False
+    common = (
+        receipt.get("preflight_probe_count") == 3 and
+        receipt.get("preflight_no_inference_verified") is True and
+        receipt.get("preflight_no_network_intent_verified") is True and
+        receipt.get("preflight_output_limits_verified") is True and
+        receipt.get("preflight_output_drain_verified") is True and
+        receipt.get("preflight_root_exit_verified") is True
+    )
+    if not common:
+        return False
+    windows_fields = (
+        "preflight_windows_job_policy_verified",
+        "preflight_windows_job_assignment_verified",
+        "preflight_windows_job_membership_verified",
+        "preflight_windows_process_handle_verified",
+        "preflight_windows_primary_thread_verified",
+        "preflight_windows_process_resumed",
+        "preflight_windows_job_empty_verified",
+    )
+    if os.name == "nt":
+        return bool(
+            receipt.get("preflight_containment_kind") == "windows_job" and
+            receipt.get("preflight_complete_tree_containment") is True and
+            all(receipt.get(key) is True for key in windows_fields) and
+            receipt.get("preflight_process_group_kill_verified") is None
+        )
+    return bool(
+        receipt.get("preflight_containment_kind") ==
+        "posix_process_group_degraded" and
+        receipt.get("preflight_complete_tree_containment") is False and
+        all(receipt.get(key) is False for key in windows_fields) and
+        receipt.get("preflight_process_group_kill_verified") is None
+    )
+
+
+def _valid_chatgpt_success_io(receipt) -> bool:
+    if not _valid_chatgpt_io_shape(receipt):
+        return False
+    stdout_bytes = receipt["native_stdout_bytes"]
+    stderr_bytes = receipt["native_stderr_bytes"]
+    return bool(
+        all(receipt.get(key) is True for key in _CHATGPT_RUNTIME_IO_FIELDS) and
+        receipt.get("output_overflow_kind") is None and
+        stdout_bytes <= int(getattr(
+            _codex, "MAX_NATIVE_STDOUT_BYTES", 32 * 1024 * 1024)) and
+        stderr_bytes <= int(getattr(
+            _codex, "MAX_NATIVE_STDERR_BYTES", 8 * 1024 * 1024)) and
+        stdout_bytes + stderr_bytes <= int(getattr(
+            _codex, "MAX_NATIVE_OUTPUT_BYTES", 36 * 1024 * 1024))
+    )
+
+
+def _valid_chatgpt_no_seat_io(receipt) -> bool:
+    return bool(
+        _valid_chatgpt_io_shape(receipt) and
+        all(receipt.get(key) is None for key in _CHATGPT_RUNTIME_IO_FIELDS) and
+        receipt.get("output_overflow_kind") is None and
+        receipt.get("native_stdout_bytes") == 0 and
+        receipt.get("native_stderr_bytes") == 0
+    )
+
+
+def _valid_chatgpt_no_seat_preflight(receipt, status) -> bool:
+    if not _valid_chatgpt_preflight_shape(receipt):
+        return False
+    count = receipt["preflight_probe_count"]
+    kind = receipt.get("preflight_containment_kind")
+    windows_fields = (
+        "preflight_windows_job_policy_verified",
+        "preflight_windows_job_assignment_verified",
+        "preflight_windows_job_membership_verified",
+        "preflight_windows_process_handle_verified",
+        "preflight_windows_primary_thread_verified",
+        "preflight_windows_process_resumed",
+        "preflight_windows_job_empty_verified",
+    )
+    if count == 0:
+        return bool(
+            kind is None and
+            all(receipt.get(key) is False
+                for key in _CHATGPT_PREFLIGHT_BOOL_FIELDS) and
+            receipt.get("preflight_process_group_kill_verified") is None
+        )
+    expected_kind = ("windows_job" if os.name == "nt"
+                     else "posix_process_group_degraded")
+    if (kind != expected_kind or
+            receipt.get("preflight_no_inference_verified") is not True or
+            receipt.get("preflight_no_network_intent_verified") is not True):
+        return False
+    if os.name == "nt":
+        if receipt.get("preflight_process_group_kill_verified") is not None:
+            return False
+    elif (receipt.get("preflight_complete_tree_containment") is not False or
+            any(receipt.get(key) is not False for key in windows_fields)):
+        return False
+    if status == "preflight_output_limit_exceeded":
+        return bool(
+            receipt.get("preflight_output_limits_verified") is False and
+            receipt.get("preflight_output_drain_verified") is True and
+            receipt.get("preflight_root_exit_verified") is True
+        )
+    if status == "preflight_cleanup_failed":
+        # This is a negative result, never an upgrade to a usable seat. The
+        # producer also uses it when the final Job handle close fails, or when
+        # degraded POSIX group cleanup cannot be proven, neither of which has a
+        # separate positive receipt field. Preserve that honest refusal even if
+        # root exit and pipe drain were otherwise observed.
+        return True
+    if status == "preflight_containment_failed":
+        return receipt.get("preflight_complete_tree_containment") is False
+    if status == "preflight_spawn_error":
+        return bool(
+            receipt.get("preflight_output_drain_verified") is False and
+            receipt.get("preflight_root_exit_verified") is False)
+    if status in ("preflight_timeout", "preflight_aborted",
+                  "preflight_process_tree_straggler"):
+        return bool(
+            receipt.get("preflight_output_limits_verified") is True and
+            receipt.get("preflight_output_drain_verified") is True and
+            receipt.get("preflight_root_exit_verified") is True)
+    if (receipt.get("preflight_output_limits_verified") is not True or
+            receipt.get("preflight_output_drain_verified") is not True or
+            receipt.get("preflight_root_exit_verified") is not True):
+        return False
+    if os.name == "nt":
+        return bool(
+            receipt.get("preflight_complete_tree_containment") is True and
+            all(receipt.get(key) is True for key in windows_fields))
+    return True
+
+
+def _valid_chatgpt_failure_io(receipt, status) -> bool:
+    if not _valid_chatgpt_io_shape(receipt):
+        return False
+    limits = receipt.get("output_limits_verified")
+    eof = receipt.get("output_eof_verified")
+    drain = receipt.get("output_drain_verified")
+    write = receipt.get("stdin_write_verified")
+    close = receipt.get("stdin_close_verified")
+    overflow = receipt.get("output_overflow_kind")
+    stdout_bytes = receipt["native_stdout_bytes"]
+    stderr_bytes = receipt["native_stderr_bytes"]
+    stdout_limit = int(getattr(
+        _codex, "MAX_NATIVE_STDOUT_BYTES", 32 * 1024 * 1024))
+    stderr_limit = int(getattr(
+        _codex, "MAX_NATIVE_STDERR_BYTES", 8 * 1024 * 1024))
+    aggregate_limit = int(getattr(
+        _codex, "MAX_NATIVE_OUTPUT_BYTES", 36 * 1024 * 1024))
+    if status == "output_limit_exceeded":
+        overflow_matches = (
+            (overflow == "stdout" and stdout_bytes > stdout_limit) or
+            (overflow == "stderr" and stderr_bytes > stderr_limit) or
+            (overflow == "aggregate" and
+             stdout_bytes + stderr_bytes > aggregate_limit)
+        )
+        return bool(
+            limits is False and overflow_matches and eof is True and
+            drain is True)
+    if status == "output_drain_failed":
+        return bool(
+            overflow is None and (drain is False or eof is False))
+    if status == "stdin_write_failed":
+        return bool(
+            limits is True and eof is True and drain is True and
+            overflow is None and (write is False or close is False))
+    if status == "protocol_limit_exceeded":
+        return bool(
+            limits is True and eof is True and drain is True and
+            write is True and close is True and overflow is None and
+            stdout_bytes <= stdout_limit and stderr_bytes <= stderr_limit and
+            stdout_bytes + stderr_bytes <= aggregate_limit)
+    if status in ("timeout", "aborted"):
+        return bool(
+            limits is True and eof is True and drain is True and
+            close is True and overflow is None)
+    if status == "kill_failed":
+        return True
+    return bool(
+        limits is True and eof is True and drain is True and
+        write is True and close is True and overflow is None and
+        stdout_bytes <= stdout_limit and stderr_bytes <= stderr_limit and
+        stdout_bytes + stderr_bytes <= aggregate_limit
+    )
+
+
+def _valid_chatgpt_success_containment(receipt) -> bool:
+    """Require platform-accurate process-tree evidence for a successful seat."""
+    if any(type(receipt.get(key)) is not bool
+           for key in _CHATGPT_CONTAINMENT_BOOL_FIELDS):
+        return False
+    if (receipt.get("tree_kill_verified") is not None or
+            receipt.get("process_group_kill_verified") is not None or
+            receipt.get("output_drain_verified") is not True):
+        return False
+    if os.name == "nt":
+        return bool(
+            receipt.get("containment_kind") == "windows_job" and
+            all(receipt.get(key) is True for key in (
+                "complete_tree_containment", "windows_job_policy_verified",
+                "windows_job_assignment_verified",
+                "windows_job_membership_verified",
+                "windows_process_handle_verified",
+                "windows_primary_thread_verified", "windows_process_resumed",
+                "windows_execution_possible", "windows_job_empty_verified",
+                "root_exit_verified",
+            ))
+        )
+    return bool(
+        receipt.get("containment_kind") == "posix_process_group_degraded" and
+        receipt.get("complete_tree_containment") is False and
+        all(receipt.get(key) is False for key in (
+            "windows_job_policy_verified", "windows_job_assignment_verified",
+            "windows_job_membership_verified", "windows_process_handle_verified",
+            "windows_primary_thread_verified", "windows_process_resumed",
+            "windows_execution_possible", "windows_job_empty_verified",
+            "root_exit_verified",
+        ))
+    )
+
+
+def _valid_chatgpt_failure_containment(receipt, status, seat_started) -> bool:
+    """Validate partial/terminal containment facts without upgrading failures."""
+    if any(type(receipt.get(key)) is not bool
+           for key in _CHATGPT_CONTAINMENT_BOOL_FIELDS):
+        return False
+    group_verified = receipt.get("process_group_kill_verified")
+    if group_verified is not None and type(group_verified) is not bool:
+        return False
+    kind = receipt.get("containment_kind")
+    if kind not in (None, "windows_job", "posix_process_group_degraded"):
+        return False
+    if os.name == "nt":
+        if group_verified is not None or kind == "posix_process_group_degraded":
+            return False
+        if seat_started:
+            if (kind != "windows_job" or
+                    receipt.get("windows_job_policy_verified") is not True or
+                    receipt.get("windows_job_assignment_verified") is not True or
+                    receipt.get("windows_job_membership_verified") is not True or
+                    receipt.get("windows_process_handle_verified") is not True or
+                    receipt.get("windows_primary_thread_verified") is not True or
+                    receipt.get("windows_execution_possible") is not True or
+                    receipt.get("complete_tree_containment") is not True):
+                return False
+            if status != "kill_failed" and (
+                    receipt.get("windows_job_empty_verified") is not True or
+                    receipt.get("root_exit_verified") is not True):
+                return False
+        else:
+            if (receipt.get("windows_process_resumed") is not False or
+                    receipt.get("windows_execution_possible") is not False):
+                return False
+            if kind is None and any(receipt.get(key) is not False for key in (
+                    "complete_tree_containment", "windows_job_policy_verified",
+                    "windows_job_assignment_verified",
+                    "windows_job_membership_verified",
+                    "windows_process_handle_verified",
+                    "windows_primary_thread_verified",
+                    "windows_job_empty_verified", "root_exit_verified")):
+                return False
+        return True
+    if (kind == "windows_job" or
+            any(receipt.get(key) is not False for key in (
+                "complete_tree_containment", "windows_job_policy_verified",
+                "windows_job_assignment_verified",
+                "windows_job_membership_verified",
+                "windows_process_handle_verified",
+                "windows_primary_thread_verified", "windows_process_resumed",
+                "windows_execution_possible", "windows_job_empty_verified",
+                "root_exit_verified"))):
+        return False
+    if seat_started:
+        return kind == "posix_process_group_degraded"
+    # POSIX stamps the intended process-group boundary before Popen. A spawn
+    # failure therefore has no seat but can honestly retain that degraded kind.
+    return kind in (None, "posix_process_group_degraded")
+
+
+def _valid_chatgpt_success_envelope(envelope, record,
+                                    adapter_exit_code) -> bool:
+    """Fail closed unless a ChatGPT job proves the dedicated adapter contract."""
+    if type(adapter_exit_code) is not int or adapter_exit_code != 0:
+        return False
+    if not isinstance(envelope, dict) or envelope.get("type") != "result":
+        return False
+    if envelope.get("subtype") != "success":
+        return False
+    if envelope.get("is_error") is not False:
+        return False
+    if not isinstance(envelope.get("result"), str) or not envelope["result"].strip():
+        return False
+    receipt = envelope.get("model_receipt")
+    if not isinstance(receipt, dict):
+        return False
+    if any(key not in receipt for key in
+           (_MODEL_RECEIPT_FIELDS - {"error"})):
+        return False
+    spec = ((record or {}).get("relaunch_spec") or {})
+    expected_sandbox = (
+        "read-only" if spec.get("permission_mode") == "plan"
+        else "workspace-write"
+    )
+    required = {
+        "family_requested": BACKEND_CHATGPT,
+        "backend_requested": BACKEND_CHATGPT,
+        "transport_requested": "codex-cli",
+        "transport_actual": "codex-cli",
+        "auth_kind": "chatgpt_subscription",
+        "subscription_auth": True,
+        "requested_model": _codex.CODEX_MODEL,
+        "requested_effort": _codex.CODEX_EFFORT,
+        "requested_orchestration_mode": "ultra",
+        "orchestration_mode_served": None,
+        "model_capability_verified": True,
+        "ultra_capability_verified": True,
+        "sandbox_requested": expected_sandbox,
+        "approval_policy_requested": "never",
+        "model_provider_requested": "openai",
+        "config_sha256": None,
+        "user_config_loaded": False,
+        "user_config_ignored": True,
+        "critical_overrides_enforced": True,
+        "config_guard_verified": True,
+        "runtime_guard_rechecked": True,
+        "child_env_allowlist_verified": True,
+        "rules_ignored": True,
+        "agents_disabled": True,
+        "network_disabled": True,
+        "extra_writable_roots_disabled": True,
+        "hosted_tools_disabled": True,
+        "mcp_servers_disabled": True,
+        "projects_table_replaced": True,
+        "executable_provenance_verified": True,
+        "executable_handle_guarded_through_spawn": True,
+        "preexecution_child_image_attested": False,
+        "status": "success",
+        "seat_started": True,
+        "exit_code": 0,
+        "timed_out": False,
+        "aborted": False,
+        "fallback_from": None,
+        "fallback_to": None,
+        "cross_model": None,
+        "billing_mode": "subscription",
+        "cost_state": "subscription_covered",
+        "model_served": None,
+        "reasoning_served": None,
+        "model_attested": False,
+        "degraded": True,
+        "api_key_env_scrubbed": True,
+        "artifact_scan_complete": True,
+    }
+    if not _receipt_matches_required(receipt, required):
+        return False
+    security_flags = (
+        "user_config_loaded", "user_config_ignored",
+        "critical_overrides_enforced",
+        "config_guard_verified", "runtime_guard_rechecked",
+        "child_env_allowlist_verified", "rules_ignored", "agents_disabled",
+        "network_disabled", "extra_writable_roots_disabled",
+        "hosted_tools_disabled", "mcp_servers_disabled",
+        "projects_table_replaced", "executable_provenance_verified",
+        "signer_image_binding_verified",
+        "executable_handle_guarded_through_spawn",
+        "preexecution_child_image_attested", "api_key_env_scrubbed",
+        "artifact_contract_verified", "artifact_mutation_verified",
+        *_CHATGPT_CONTAINMENT_BOOL_FIELDS,
+    )
+    if any(type(receipt.get(key)) is not bool for key in security_flags):
+        return False
+    if (envelope.get("billing_mode") != receipt.get("billing_mode") or
+            envelope.get("cost_state") != receipt.get("cost_state") or
+            envelope.get("total_cost_usd") is not None):
+        return False
+    if (not _valid_current_chatgpt_provenance(receipt) or
+            not _valid_chatgpt_success_containment(receipt) or
+            not _valid_chatgpt_success_preflight(receipt) or
+            not _valid_chatgpt_success_io(receipt)):
+        return False
+    prompt = spec.get("prompt")
+    if not isinstance(prompt, str):
+        return False
+    expected_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if receipt.get("prompt_sha256") != expected_hash:
+        return False
+    thread_id = receipt.get("thread_id")
+    if (not _valid_chatgpt_thread_id(thread_id) or
+            envelope.get("session_id") != thread_id):
+        return False
+    usage = receipt.get("usage")
+    envelope_usage = envelope.get("usage")
+    if (not isinstance(usage, dict) or not isinstance(envelope_usage, dict) or
+            set(usage) != set(_CHATGPT_USAGE_FIELDS) or
+            set(envelope_usage) != set(_CHATGPT_USAGE_FIELDS)):
+        return False
+    if envelope_usage != usage:
+        return False
+    duration = envelope.get("duration_ms")
+    receipt_duration = receipt.get("duration_ms")
+    max_duration = (int(getattr(_codex, "DEFAULT_TIMEOUT_SECONDS", 2700)) + 60) * 1000
+    if (type(duration) is not int or type(receipt_duration) is not int or
+            duration != receipt_duration or duration < 0 or
+            duration > max_duration):
+        return False
+    if (not _chatgpt_telemetry_within_bounds(
+            usage, receipt.get("event_count"),
+            receipt.get("malformed_count"),
+            receipt.get("tool_error_count")) or
+            receipt["event_count"] < 3):
+        return False
+
+    expected_artifacts = _artifact_contract_from_record(record, expected_sandbox)
+    artifacts = receipt.get("artifact_paths")
+    receipt_expected = receipt.get("expected_artifact_paths")
+    artifact_hashes = receipt.get("artifact_hashes")
+    artifact_evidence = receipt.get("artifact_evidence")
+    mutation_verified = receipt.get("artifact_mutation_verified")
+    contract_verified = receipt.get("artifact_contract_verified")
+    if (expected_artifacts is None or not isinstance(artifacts, list) or
+            not isinstance(receipt_expected, list) or
+            not isinstance(artifact_hashes, dict) or
+            not isinstance(artifact_evidence, dict) or
+            type(mutation_verified) is not bool or
+            type(contract_verified) is not bool or
+            mutation_verified is not contract_verified or
+            receipt_expected != expected_artifacts):
+        return False
+    if expected_sandbox == "read-only":
+        return bool(
+            receipt.get("artifact_write_observed") is False and
+            mutation_verified is False and
+            not artifacts and not artifact_hashes and not artifact_evidence and
+            not expected_artifacts
+        )
+    if (receipt.get("artifact_write_observed") is not True or
+            mutation_verified is not True or
+            artifacts != expected_artifacts or
+            set(artifact_hashes) != set(expected_artifacts) or
+            set(artifact_evidence) != set(expected_artifacts)):
+        return False
+    output_raw = spec.get("output_dir")
+    if not isinstance(output_raw, str):
+        return False
+    output_root = Path(output_raw).resolve()
+    current_evidence = _current_artifact_snapshot(output_root, expected_artifacts)
+    if current_evidence is None or current_evidence != artifact_evidence:
+        return False
+    return all(
+        artifact_hashes.get(rel) == artifact_evidence[rel].get("sha256")
+        for rel in expected_artifacts
+    )
+
+
+def _valid_chatgpt_failure_envelope(envelope, record,
+                                    adapter_exit_code=None) -> bool:
+    """Validate an adapter error receipt without weakening success acceptance.
+
+    Failure envelopes may carry useful no-seat/quota/termination evidence, but
+    they cross the same hostile child boundary as success. Only the adapter's
+    closed status vocabulary and internally-consistent, prompt-bound telemetry
+    are accepted. Dollar cost is always unpriced/null.
+    """
+    if (not isinstance(envelope, dict) or envelope.get("type") != "result" or
+            envelope.get("subtype") != "error" or
+            envelope.get("is_error") is not True or
+            not isinstance(envelope.get("result"), str)):
+        return False
+    if (adapter_exit_code is not None and
+            (type(adapter_exit_code) is not int or adapter_exit_code == 0)):
+        return False
+    receipt = envelope.get("model_receipt")
+    if not isinstance(receipt, dict):
+        return False
+    if any(key not in receipt for key in _MODEL_RECEIPT_FIELDS):
+        return False
+    status = receipt.get("status")
+    seat_started = receipt.get("seat_started")
+    if type(seat_started) is not bool:
+        return False
+    allowed = (_CHATGPT_SEAT_FAILURES if seat_started
+               else _CHATGPT_NO_SEAT_FAILURES)
+    if status not in allowed:
+        return False
+    if (not _valid_chatgpt_io_shape(receipt) or
+            not _valid_chatgpt_preflight_shape(receipt)):
+        return False
+
+    spec = ((record or {}).get("relaunch_spec") or {})
+    expected_sandbox = (
+        "read-only" if spec.get("permission_mode") == "plan"
+        else "workspace-write"
+    )
+    required = {
+        "family_requested": BACKEND_CHATGPT,
+        "backend_requested": BACKEND_CHATGPT,
+        "transport_requested": "codex-cli",
+        "requested_model": _codex.CODEX_MODEL,
+        "requested_effort": _codex.CODEX_EFFORT,
+        "requested_orchestration_mode": "ultra",
+        "orchestration_mode_served": None,
+        "sandbox_requested": expected_sandbox,
+        "approval_policy_requested": "never",
+        "model_provider_requested": "openai",
+        "config_sha256": None,
+        "user_config_loaded": False,
+        "fallback_from": None,
+        "fallback_to": None,
+        "cross_model": None,
+        "model_served": None,
+        "reasoning_served": None,
+        "model_attested": False,
+        "degraded": True,
+    }
+    if not _receipt_matches_required(receipt, required):
+        return False
+    security_flags = (
+        "user_config_loaded", "user_config_ignored",
+        "critical_overrides_enforced",
+        "config_guard_verified", "runtime_guard_rechecked",
+        "child_env_allowlist_verified", "rules_ignored", "agents_disabled",
+        "network_disabled", "extra_writable_roots_disabled",
+        "hosted_tools_disabled", "mcp_servers_disabled",
+        "projects_table_replaced", "executable_provenance_verified",
+        "signer_image_binding_verified",
+        "executable_handle_guarded_through_spawn",
+        "preexecution_child_image_attested", "api_key_env_scrubbed",
+        "artifact_contract_verified", "artifact_mutation_verified",
+        *_CHATGPT_CONTAINMENT_BOOL_FIELDS,
+    )
+    if any(type(receipt.get(key)) is not bool for key in security_flags):
+        return False
+    auth_probe_at = receipt.get("auth_probe_at")
+    if (not isinstance(auth_probe_at, str) or not auth_probe_at.strip() or
+            len(auth_probe_at) > 80 or "\n" in auth_probe_at or
+            "\r" in auth_probe_at):
+        return False
+    subscription_auth = receipt.get("subscription_auth")
+    if (receipt.get("transport_actual") not in (None, "codex-cli") or
+            receipt.get("auth_kind") not in (None, "chatgpt_subscription") or
+            (subscription_auth is not None and
+             type(subscription_auth) is not bool) or
+            type(receipt.get("model_capability_verified")) is not bool or
+            type(receipt.get("ultra_capability_verified")) is not bool or
+            type(receipt.get("config_guard_verified")) is not bool or
+            type(receipt.get("critical_overrides_enforced")) is not bool):
+        return False
+    if (receipt["critical_overrides_enforced"] and
+            not receipt["config_guard_verified"]):
+        return False
+    if (receipt["ultra_capability_verified"] and
+            not receipt["model_capability_verified"]):
+        return False
+    if ((receipt.get("subscription_auth") is True) !=
+            (receipt.get("auth_kind") == "chatgpt_subscription")):
+        return False
+    cli_version = receipt.get("cli_version")
+    if (cli_version is not None and
+            (not isinstance(cli_version, str) or len(cli_version) > 200 or
+             "\n" in cli_version or "\r" in cli_version)):
+        return False
+    error = receipt.get("error")
+    if not isinstance(error, str) or not error.strip() or len(error) > 500:
+        return False
+
+    prompt = spec.get("prompt")
+    if not isinstance(prompt, str):
+        return False
+    expected_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    if receipt.get("prompt_sha256") != expected_hash:
+        return False
+
+    executable = receipt.get("executable_path")
+    if status in ("adapter_error", "executable_unavailable"):
+        if executable is not None:
+            return False
+    else:
+        try:
+            expected_executable = Path(_codex.resolve_codex_cmd()).resolve()
+            actual_executable = Path(executable or "").resolve()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return False
+        if (os.path.normcase(str(actual_executable)) !=
+                os.path.normcase(str(expected_executable))):
+            return False
+    if receipt.get("executable_provenance_verified") is True:
+        if not _valid_current_chatgpt_provenance(receipt):
+            return False
+    elif (any(receipt.get(key) is not None for key in (
+            "executable_sha256", "executable_provenance_kind",
+            "executable_signer_subject",
+            "executable_signer_certificate_sha256",
+            "signature_revocation_freshness")) or
+            receipt.get("signer_image_binding_verified") is not False):
+        return False
+    if (receipt.get("runtime_guard_rechecked") is True and
+            (receipt.get("user_config_ignored") is not True or
+             receipt.get("executable_provenance_verified") is not True)):
+        return False
+
+    usage = receipt.get("usage")
+    envelope_usage = envelope.get("usage")
+    if (not isinstance(usage, dict) or not isinstance(envelope_usage, dict) or
+            set(usage) != set(_CHATGPT_USAGE_FIELDS) or
+            set(envelope_usage) != set(_CHATGPT_USAGE_FIELDS) or
+            envelope_usage != usage):
+        return False
+    duration = envelope.get("duration_ms")
+    receipt_duration = receipt.get("duration_ms")
+    max_duration = (int(getattr(_codex, "DEFAULT_TIMEOUT_SECONDS", 2700)) + 60) * 1000
+    if (type(duration) is not int or type(receipt_duration) is not int or
+            duration != receipt_duration or duration < 0 or
+            duration > max_duration):
+        return False
+    if envelope.get("total_cost_usd") is not None:
+        return False
+
+    thread_id = receipt.get("thread_id")
+    if not _valid_chatgpt_thread_id(thread_id, allow_none=True):
+        return False
+    if envelope.get("session_id") != thread_id:
+        return False
+    if not _chatgpt_telemetry_within_bounds(
+            usage, receipt.get("event_count"),
+            receipt.get("malformed_count"), receipt.get("tool_error_count")):
+        return False
+    native_exit = receipt.get("exit_code")
+    if native_exit is not None and type(native_exit) is not int:
+        return False
+    tree_kill_verified = receipt.get("tree_kill_verified")
+    if (type(receipt.get("timed_out")) is not bool or
+            type(receipt.get("aborted")) is not bool or
+            (tree_kill_verified is not None and
+             type(tree_kill_verified) is not bool)):
+        return False
+    if not _valid_chatgpt_failure_containment(receipt, status, seat_started):
+        return False
+
+    if seat_started:
+        if (not _valid_chatgpt_success_preflight(receipt) or
+                not _valid_chatgpt_failure_io(receipt, status)):
+            return False
+        if (receipt.get("transport_actual") != "codex-cli" or
+                receipt.get("auth_kind") != "chatgpt_subscription" or
+                receipt.get("subscription_auth") is not True or
+                receipt.get("model_capability_verified") is not True or
+                receipt.get("ultra_capability_verified") is not True or
+                receipt.get("config_guard_verified") is not True or
+                receipt.get("user_config_ignored") is not True or
+                receipt.get("runtime_guard_rechecked") is not True or
+                receipt.get("child_env_allowlist_verified") is not True or
+                receipt.get("critical_overrides_enforced") is not True or
+                receipt.get("rules_ignored") is not True or
+                receipt.get("agents_disabled") is not True or
+                receipt.get("network_disabled") is not True or
+                receipt.get("extra_writable_roots_disabled") is not True or
+                receipt.get("hosted_tools_disabled") is not True or
+                receipt.get("mcp_servers_disabled") is not True or
+                receipt.get("projects_table_replaced") is not True or
+                receipt.get("executable_provenance_verified") is not True or
+                receipt.get("signer_image_binding_verified") is not
+                (os.name == "nt") or
+                receipt.get("executable_handle_guarded_through_spawn") is not True or
+                receipt.get("preexecution_child_image_attested") is not False or
+                receipt.get("api_key_env_scrubbed") is not True or
+                receipt.get("billing_mode") != "subscription" or
+                receipt.get("cost_state") != "subscription_covered" or
+                envelope.get("billing_mode") != "subscription" or
+                envelope.get("cost_state") != "subscription_covered"):
+            return False
+    else:
+        if (not _valid_chatgpt_no_seat_io(receipt) or
+                not _valid_chatgpt_no_seat_preflight(receipt, status) or
+                native_exit is not None or thread_id is not None or
+                any(usage.values()) or receipt.get("event_count") != 0 or
+                receipt.get("malformed_count") != 0 or
+                receipt.get("tool_error_count") != 0 or
+                receipt.get("billing_mode") is not None or
+                receipt.get("cost_state") != "no_seat_started" or
+                envelope.get("billing_mode") is not None or
+                envelope.get("cost_state") != "no_seat_started"):
+            return False
+
+    timed_out = receipt["timed_out"]
+    aborted = receipt["aborted"]
+    tree_verified = receipt.get("tree_kill_verified")
+    group_verified = receipt.get("process_group_kill_verified")
+    drain_verified = receipt.get("output_drain_verified")
+    if drain_verified is not None and type(drain_verified) is not bool:
+        return False
+    if status == "timeout":
+        if (not timed_out or aborted or tree_verified is not True or
+                drain_verified is not True):
+            return False
+    elif status == "aborted":
+        if (timed_out or not aborted or tree_verified is not True or
+                drain_verified is not True):
+            return False
+    elif status == "spawn_aborted":
+        if (timed_out or not aborted or
+                (seat_started and (tree_verified is not True or
+                                   drain_verified is not True)) or
+                (not seat_started and
+                 (tree_verified is not None or drain_verified is not None))):
+            return False
+    elif status == "spawn_error" and seat_started:
+        if (timed_out or aborted or tree_verified is not True or
+                drain_verified is not True):
+            return False
+    elif status == "kill_failed":
+        if tree_verified is not False:
+            return False
+    elif status == "containment_assignment_failed":
+        if (timed_out or aborted or tree_verified not in (None, True) or
+                ((tree_verified is True) != (drain_verified is True))):
+            return False
+    elif status == "process_tree_straggler":
+        if (not seat_started or timed_out or aborted or
+                tree_verified is not True or drain_verified is not True):
+            return False
+    elif status == "output_limit_exceeded":
+        termination_verified = bool(
+            tree_verified is True or
+            (os.name == "nt" and
+             receipt.get("windows_job_empty_verified") is True and
+             receipt.get("root_exit_verified") is True))
+        if os.name != "nt":
+            termination_verified = group_verified is True
+        if (not seat_started or timed_out or aborted or
+                not termination_verified or drain_verified is not True):
+            return False
+    elif status == "output_drain_failed":
+        if (not seat_started or timed_out or aborted or
+                drain_verified is not False):
+            return False
+    elif status == "protocol_limit_exceeded":
+        if not seat_started or timed_out or aborted or tree_verified is not None:
+            return False
+    elif status == "stdin_write_failed":
+        cleanup_verified = tree_verified in (None, True)
+        if os.name != "nt" and tree_verified is False:
+            cleanup_verified = group_verified is True
+        if not seat_started or timed_out or aborted or not cleanup_verified:
+            return False
+    elif status == "signal_guard_unavailable":
+        if (seat_started and (tree_verified is not True or
+                              drain_verified is not True)) or \
+                (not seat_started and tree_verified is not None):
+            return False
+    elif status == "signal_guard_restore_failed":
+        if tree_verified not in (None, True):
+            return False
+    elif status == "artifact_scan_incomplete":
+        # A pre-seat fingerprint operation may be interrupted. It still starts
+        # no model and preserves the negative scan result; post-seat artifact
+        # scans never replace an authoritative cancellation status.
+        if timed_out or tree_verified is not None or (seat_started and aborted):
+            return False
+    elif timed_out or aborted or tree_verified is not None:
+        return False
+    if (seat_started and status not in ("kill_failed", "output_drain_failed") and
+            drain_verified is not True):
+        return False
+    if (not seat_started and drain_verified is not None and
+            status != "containment_assignment_failed"):
+        return False
+
+    expected_artifacts = _artifact_contract_from_record(record, expected_sandbox)
+    artifacts = receipt.get("artifact_paths")
+    receipt_expected = receipt.get("expected_artifact_paths")
+    artifact_hashes = receipt.get("artifact_hashes")
+    artifact_evidence = receipt.get("artifact_evidence")
+    contract_verified = receipt.get("artifact_contract_verified")
+    mutation_verified = receipt.get("artifact_mutation_verified")
+    if (expected_artifacts is None or not isinstance(artifacts, list) or
+            not isinstance(receipt_expected, list) or
+            not isinstance(artifact_hashes, dict) or
+            not isinstance(artifact_evidence, dict) or
+            receipt_expected != expected_artifacts or
+            type(contract_verified) is not bool or
+            type(mutation_verified) is not bool or
+            contract_verified is not mutation_verified):
+        return False
+    if (type(receipt.get("artifact_write_observed")) is not bool or
+            type(receipt.get("artifact_scan_complete")) is not bool or
+            receipt["artifact_write_observed"] != bool(artifacts)):
+        return False
+    expected_scan_complete = status != "artifact_scan_incomplete"
+    if not seat_started and (artifacts or receipt["artifact_write_observed"] or
+                             receipt["artifact_scan_complete"] is not
+                             expected_scan_complete or
+                             artifact_hashes or artifact_evidence or
+                             mutation_verified):
+        return False
+    if expected_sandbox == "read-only":
+        if (artifacts or receipt["artifact_write_observed"] or artifact_hashes or
+                artifact_evidence or mutation_verified):
+            return False
+    else:
+        output_raw = spec.get("output_dir")
+        if not isinstance(output_raw, str):
+            return False
+        output_root = Path(output_raw).resolve()
+        if (any(rel not in expected_artifacts for rel in artifacts) or
+                any(rel not in expected_artifacts for rel in artifact_hashes) or
+                any(rel not in expected_artifacts for rel in artifact_evidence) or
+                set(artifact_hashes) != set(artifact_evidence)):
+            return False
+        if artifact_evidence:
+            current_evidence = _current_artifact_snapshot(
+                output_root, tuple(artifact_evidence))
+            if current_evidence is None or current_evidence != artifact_evidence:
+                return False
+        if any(artifact_hashes.get(rel) != value.get("sha256")
+               for rel, value in artifact_evidence.items()):
+            return False
+        should_verify = bool(
+            receipt["artifact_scan_complete"] and
+            artifacts == expected_artifacts and
+            set(artifact_evidence) == set(expected_artifacts)
+        )
+        if mutation_verified is not should_verify:
+            return False
+    if (status == "artifact_required" and
+            (expected_sandbox != "workspace-write" or contract_verified or
+             receipt["artifact_scan_complete"] is not True)):
+        return False
+    if (status == "artifact_scan_incomplete" and
+            (expected_sandbox != "workspace-write" or
+             receipt["artifact_scan_complete"] is not False)):
+        return False
+    return True
 
 
 def _mirror_session_status(job_id, job_status) -> None:
@@ -1007,19 +2466,27 @@ def _mirror_session_status(job_id, job_status) -> None:
 def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
     """Record the terminal status once the process exits.
 
-    Cancellation may have already set the status to ``cancelled``; do not
-    clobber a terminal status that was set deliberately. If a ``result``
-    envelope was captured from the stream (Wave 7), stamp its cost/usage/
-    duration onto the record regardless of the terminal status (a cancelled
-    job may still have emitted a partial result envelope before the kill).
+    ChatGPT child telemetry crosses a hostile process boundary: validate the
+    complete adapter envelope before deriving or persisting cost, receipt,
+    session, or usage-ledger data. Cancellation is two-phase; while a verified
+    cancel is pending, record only the observed process exit and let
+    :func:`cancel` choose the durable terminal state after tree/drain checks.
     """
+    # Transfer Job Object ownership under the same lock cancellation uses. If a
+    # cancel is pending, cancel/_tree_kill owns the handle; otherwise finalizer
+    # detaches and closes it exactly once. This prevents a double-close/reused-
+    # handle race when process exit and cancellation cross.
+    h_job = None
     with _LIVE_LOCK:
         live = _LIVE.get(job_id)
-    if live and getattr(live, "_h_job", None) is not None:
+        if (live is not None and
+                not getattr(live, "_cancel_requested", False)):
+            h_job = getattr(live, "_h_job", None)
+            live._h_job = None
+    if h_job is not None:
         try:
             import proc_probe
-            proc_probe.close_handle(live._h_job)
-            live._h_job = None
+            proc_probe.close_handle(h_job)
         except Exception:
             pass
 
@@ -1027,9 +2494,26 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
         rec = load_record(job_id)
         if rec is None:
             return
-        if result_envelope is not None:
+        is_chatgpt = rec.get("backend") == BACKEND_CHATGPT
+        success_ok = (not is_chatgpt or
+                      _valid_chatgpt_success_envelope(
+                          result_envelope, rec, adapter_exit_code=exit_code,
+                      ))
+        failure_ok = bool(
+            is_chatgpt and _valid_chatgpt_failure_envelope(
+                result_envelope, rec, adapter_exit_code=exit_code,
+            )
+        )
+        trusted_envelope = bool(
+            result_envelope is not None and
+            (not is_chatgpt or success_ok or failure_ok)
+        )
+        if trusted_envelope:
             cost = _cost_from_envelope(result_envelope)
             rec["cost"] = cost
+            model_receipt = _model_receipt_from_envelope(result_envelope)
+            if model_receipt is not None:
+                rec["model_receipt"] = model_receipt
             if cost.get("session_id") and not rec.get("session_id"):
                 rec["session_id"] = cost["session_id"]
             # Honest Telemetry W4 — job_runner unification: route this durable
@@ -1045,6 +2529,18 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
                     _usage_cap.ingest_job_cost(euuid, cost, job_id)
             except Exception:
                 pass
+        if failure_ok:
+            raw_receipt = result_envelope["model_receipt"]
+            rec["adapter_failure_status"] = raw_receipt["status"]
+            rec["failure_reason"] = raw_receipt["status"]
+            rec["failure_detail"] = raw_receipt["error"]
+        if live is not None and getattr(live, "_cancel_requested", False):
+            # Do not claim cancellation yet. The cancel caller still has to
+            # prove tree termination and wait for this reader to drain.
+            rec["exit_code"] = exit_code
+            rec.setdefault("finished_at", time.time())
+            _write_record(rec)
+            return
         if rec.get("status") in (STATUS_CANCELLED, STATUS_INTERRUPTED):
             # Terminal status already chosen (cancel / reconciliation). Keep it,
             # just stamp the exit code + finish time.
@@ -1056,12 +2552,26 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
             return
         rec["exit_code"] = exit_code
         rec["finished_at"] = time.time()
-        rec["status"] = STATUS_DONE if exit_code == 0 else STATUS_FAILED
-        _journal.emit_safe(rec.get("project_id") or "", _journal.EV_JOB_FINISHED, correlation_id=job_id, folder_path=rec.get("folder_path"), payload={"job_id": job_id, "status": rec.get("status")})
+        if is_chatgpt:
+            if not success_ok and not failure_ok:
+                # Never derive even a reason string from the untrusted child.
+                rec["failure_reason"] = "chatgpt-valid-receipt-required"
+        final_status = (STATUS_DONE
+                        if exit_code == 0 and success_ok else STATUS_FAILED)
+        rec["status"] = final_status
+        _journal.emit_safe(
+            rec.get("project_id") or "", _journal.EV_JOB_FINISHED,
+            correlation_id=job_id, folder_path=rec.get("folder_path"),
+            payload={
+                "job_id": job_id,
+                "status": rec.get("status"),
+                "failure_reason": rec.get("failure_reason"),
+            },
+        )
         _write_record(rec)
     # Mirror the terminal status onto the swarm session (gandalf finally analog),
     # OUTSIDE the write lock the registry takes its own lock internally.
-    _mirror_session_status(job_id, STATUS_DONE if exit_code == 0 else STATUS_FAILED)
+    _mirror_session_status(job_id, final_status)
 
     # Followup Wave 3: BRIDGE the captured cost/tokens/duration onto the project
     # EFFORT pointer-record, so the per-project / per-effort rollups (which read
@@ -1451,6 +2961,34 @@ def relaunch(job_id: str) -> dict:
                 and not gate.get("delivered_at")):
             prompt = _ga.append_gate_answer_context(prompt, gate)
 
+    record_backend = rec.get("backend")
+    spec_backend = spec.get("backend")
+    receipt = rec.get("model_receipt")
+    if not isinstance(receipt, dict):
+        receipt = {}
+    provider_evidence = (
+        ("record", record_backend),
+        ("spec", spec_backend),
+        ("receipt-backend", receipt.get("backend_requested")),
+        ("receipt-family", receipt.get("family_requested")),
+    )
+    present_backends = []
+    for source, value in provider_evidence:
+        if value is None:
+            continue
+        if not isinstance(value, str) or value not in VALID_BACKENDS:
+            return {"ok": False,
+                    "reason": "relaunch-unknown-%s:%r" % (source, value)}
+        present_backends.append(value)
+    if len(set(present_backends)) > 1:
+        return {"ok": False, "reason": "relaunch-backend-conflict"}
+    preserved_backend = present_backends[0] if present_backends else DEFAULT_BACKEND
+    if preserved_backend == BACKEND_CHATGPT and (
+            spec_backend != BACKEND_CHATGPT or
+            "expected_artifacts" not in spec):
+        return {"ok": False,
+                "reason": "chatgpt-relaunch-spec-incomplete"}
+
     try:
         new_rec = launch_guarded(
             spec.get("lane"),
@@ -1458,15 +2996,22 @@ def relaunch(job_id: str) -> dict:
             folder_path=folder_path,
             cwd=spec.get("cwd"),
             env=spec.get("env_keys") or None,
-            backend=spec.get("backend") or DEFAULT_BACKEND,
+            backend=preserved_backend,
             prompt=prompt,
             output_dir=spec.get("output_dir"),
             gated=spec.get("gated") or False,
             permission_mode=spec.get("permission_mode"),
             command=spec.get("command") or None,
+            expected_artifacts=spec.get("expected_artifacts"),
         )
     except LaneBusyError as e:
         return {"ok": False, "reason": str(e.reason), "holder": e.holder}
+    except ValueError as exc:
+        # Persisted legacy/tampered ChatGPT specs can lack the now-required
+        # artifact contract (or carry an unsafe path). Relaunch is an API seam:
+        # return a typed refusal rather than escalating the validation error to
+        # an HTTP 500 or guessing a completion file from stale state.
+        return {"ok": False, "reason": str(exc)[:500]}
     # Link both ways on disk (each side under the write lock).
     _update_record(job_id, relaunched_as=new_rec["job_id"])
     new_rec = _update_record(new_rec["job_id"], relaunch_of=job_id)
@@ -1485,66 +3030,299 @@ def relaunch(job_id: str) -> dict:
 # ── Cancel (tree-kill) ───────────────────────────────────────────────────────
 
 def cancel(job_id: str) -> dict:
-    """Tree-kill a job and mark it ``cancelled``.
+    """Cancel after ownership, tree termination, and drain are verified.
 
-    Uses ``taskkill /T /F /PID <pid>`` on Windows to reap the full process tree
-    (children + grandchildren — spike-proven). On POSIX, falls back to killing
-    the process group. An already-gone process is tolerated (no crash). The
-    status is set to ``cancelled`` regardless, so an external cancel is honestly
-    recorded even if the process raced to exit first.
-
-    Returns the updated record (or ``None`` if the job is unknown).
+    A persisted PID is not authority to kill: after a restart it may have been
+    recycled. A live ``Popen`` establishes identity; otherwise Windows must
+    match the recorded creation time before a kill. POSIX unowned live PIDs fail
+    closed. Already-terminal records and PIDs proven absent remain idempotent.
     """
     rec = load_record(job_id)
     if rec is None:
         return None
+    if rec.get("status") in TERMINAL_STATUSES:
+        # Terminal truth is immutable. A retained Popen whose poll() is no
+        # longer None proves only that the child exited; it does not turn an
+        # already-completed/failed/interrupted job into a user cancellation.
+        return rec
 
     pid = rec.get("pid")
-    # Set the terminal status FIRST so the reader's _finalize() does not clobber
-    # it with done/failed when the pipe closes after the kill.
-    _journal.emit_safe((load_record(job_id) or {}).get("project_id") or "", _journal.EV_JOB_CANCELLED, correlation_id=job_id, folder_path=(load_record(job_id) or {}).get("folder_path"), payload={"job_id": job_id})
-    _update_record(job_id, status=STATUS_CANCELLED)
-    # Clear the swarm session out of RUNNING immediately (covers the no-live-reader
-    # case where _finalize never runs — e.g. cancelling a job from a prior process).
-    _mirror_session_status(job_id, STATUS_CANCELLED)
-
-    if pid:
-        _tree_kill(pid)
-
-    # Give the reader thread a moment to drain + finalize the exit code.
     with _LIVE_LOCK:
         live = _LIVE.get(job_id)
+        identity = _cancel_identity_state(rec, live)
+        if identity == "owned-running" and live is not None:
+            # Claim cancellation + Job Object ownership atomically against the
+            # finalizer's handle-detach decision.
+            live._cancel_requested = True
+    if identity == "gone":
+        return _commit_cancelled(
+            job_id, rec,
+            "no-process-recorded" if pid is None else "already-gone")
+    if identity != "owned-running":
+        return _update_record(
+            job_id,
+            cancel_succeeded=False,
+            tree_kill_verified=False,
+            failure_reason="cancel-pid-identity-unverified",
+            cancel_failed_at=time.time(),
+        )
+
+    kill_ok = _tree_kill(
+        pid, live=live, expected_create_time=rec.get("proc_create_time"),
+    )
+    drained = (live.done.wait(timeout=10) if live is not None
+               else _pid_proven_absent(pid))
+    if kill_ok and drained:
+        return _commit_cancelled(job_id, rec, "tree-kill-and-drain")
+
     if live is not None:
-        live.done.wait(timeout=10)
+        # A failed cancel must not strand later natural finalization in the
+        # pending state. If the reader drained, the root ended but the full
+        # process tree was not proven reaped: record ``interrupted``.
+        live._cancel_requested = False
+    direct_dead = _direct_process_dead(pid, live=live, timeout=0)
+    failed_status = STATUS_INTERRUPTED if drained or direct_dead else rec.get("status")
+    failed = _update_record(
+        job_id,
+        status=failed_status,
+        cancel_succeeded=False,
+        tree_kill_verified=False,
+        failure_reason=("cancel-reader-drain-unverified"
+                        if kill_ok and not drained
+                        else "cancel-tree-termination-unverified"),
+        cancel_failed_at=time.time(),
+    )
+    if failed_status == STATUS_INTERRUPTED:
+        _mirror_session_status(job_id, STATUS_INTERRUPTED)
+    return failed
 
-    return load_record(job_id)
+
+def _commit_cancelled(job_id, record, verification) -> dict:
+    """Persist the terminal cancellation transition after positive proof."""
+    _journal.emit_safe(
+        (record or {}).get("project_id") or "", _journal.EV_JOB_CANCELLED,
+        correlation_id=job_id, folder_path=(record or {}).get("folder_path"),
+        payload={"job_id": job_id, "verification": verification},
+    )
+    out = _update_record(
+        job_id,
+        status=STATUS_CANCELLED,
+        cancel_succeeded=True,
+        termination_verified=True,
+        tree_kill_verified=(True if verification == "tree-kill-and-drain"
+                            else None),
+        cancel_verification=verification,
+        cancelled_at=time.time(),
+        failure_reason=None,
+    )
+    _mirror_session_status(job_id, STATUS_CANCELLED)
+    return out
 
 
-def _tree_kill(pid) -> None:
-    """Kill a process tree by PID, tolerating an already-dead process."""
+def _same_creation_time(observed, expected, tolerance=2.0) -> bool:
+    """Match observed and recorded PID creation times without coercion gaps."""
+    if (isinstance(observed, bool) or isinstance(expected, bool) or
+            not isinstance(observed, (int, float)) or
+            not isinstance(expected, (int, float))):
+        return False
+    return abs(float(observed) - float(expected)) <= float(tolerance)
+
+
+def _pid_proven_absent(pid) -> bool:
+    """Return true only when the OS positively proves no process has ``pid``."""
     try:
         pid = int(pid)
     except (TypeError, ValueError):
-        return
+        return False
+    if pid <= 0:
+        return False
     if os.name == "nt":
         try:
-            subprocess.run(
+            import proc_probe
+            return proc_probe.pid_alive_via_enum(pid) is False
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except (OSError, PermissionError):
+        return False
+    return False
+
+
+def _direct_process_dead(pid, live=None, timeout=3.0) -> bool:
+    """Verify the direct process exited; never infer death from a kill call."""
+    proc = getattr(live, "proc", None) if live is not None else None
+    if proc is not None:
+        try:
+            if proc.poll() is not None:
+                return True
+            proc.wait(timeout=max(0.0, float(timeout)))
+            return True
+        except (AttributeError, OSError, subprocess.SubprocessError):
+            return False
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while True:
+        if _pid_proven_absent(pid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _cancel_identity_state(record, live=None) -> str:
+    """Classify cancellation authority as owned-running, gone, or unsafe."""
+    raw_pid = (record or {}).get("pid")
+    if raw_pid is None:
+        # No process identity was ever recorded. Launch stamps the real pid in
+        # the SAME write as the running record (see the launch path), so a
+        # pid-less non-terminal record can only be a job that never got a
+        # child: nothing to kill, no recycled-PID risk, cancel is honest.
+        return "gone"
+    try:
+        pid = int(raw_pid)
+    except (TypeError, ValueError):
+        return "unsafe"
+    if pid <= 0:
+        return "unsafe"
+
+    proc = getattr(live, "proc", None) if live is not None else None
+    if proc is not None:
+        if getattr(proc, "pid", None) != pid:
+            return "unsafe"
+        try:
+            return "gone" if proc.poll() is not None else "owned-running"
+        except (AttributeError, OSError):
+            return "unsafe"
+
+    # A durable terminal record was written only after this runner observed the
+    # direct process exit. Do not touch a potentially recycled PID.
+    if (record or {}).get("status") in TERMINAL_STATUSES:
+        return "gone"
+
+    if os.name != "nt":
+        return "gone" if _pid_proven_absent(pid) else "unsafe"
+
+    try:
+        import proc_probe
+        status, observed_ct, _image = proc_probe.probe_status(pid)
+        expected_ct = (record or {}).get("proc_create_time")
+        if status in (proc_probe.PROBE_RUNNING, proc_probe.PROBE_EXITED):
+            if not _same_creation_time(observed_ct, expected_ct):
+                return "unsafe"
+            return ("owned-running" if status == proc_probe.PROBE_RUNNING
+                    else "gone")
+        return "gone" if proc_probe.pid_alive_via_enum(pid) is False else "unsafe"
+    except Exception:
+        return "unsafe"
+
+
+def _posix_group_dead(pgid, timeout=3.0) -> bool:
+    deadline = time.monotonic() + max(0.0, float(timeout))
+    while True:
+        try:
+            os.killpg(int(pgid), 0)
+        except ProcessLookupError:
+            return True
+        except (OSError, PermissionError):
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _tree_kill(pid, live=None, expected_create_time=None) -> bool:
+    """Kill and verify a process tree; false means the outcome is uncertain."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+
+    if os.name == "nt":
+        # Atomically detach the handle so _finalize can never close the same
+        # numeric HANDLE concurrently (a double-close can hit a reused handle).
+        h_job = None
+        if live is not None:
+            with _LIVE_LOCK:
+                h_job = getattr(live, "_h_job", None)
+                live._h_job = None
+        result = None
+        try:
+            result = subprocess.run(
                 ["taskkill", "/T", "/F", "/PID", str(pid)],
                 capture_output=True, text=True, timeout=15,
                 creationflags=_paths.NO_WINDOW,
             )
         except (OSError, subprocess.SubprocessError):
-            # Process already gone / taskkill unavailable — not fatal.
-            pass
-        return
-    # POSIX best-effort: kill the process group, then the pid.
-    try:
-        os.killpg(os.getpgid(pid), 9)
-    except (OSError, ProcessLookupError):
+            result = None
+        root_dead = _direct_process_dead(pid, live=live, timeout=5)
+        if not root_dead and expected_create_time is not None:
+            try:
+                import proc_probe
+                root_dead = proc_probe.confirmed_dead(pid, expected_create_time)
+            except Exception:
+                root_dead = False
+        # Close the detached Job Object as leak reduction. close_handle() does
+        # not expose CloseHandle's success bit, so root death after this call is
+        # NOT accepted as proof that descendants were reaped.
+        if h_job is not None:
+            try:
+                import proc_probe
+                proc_probe.close_handle(h_job)
+            except Exception:
+                pass
+        return bool(result is not None and result.returncode == 0 and root_dead)
+
+    proc = getattr(live, "proc", None) if live is not None else None
+    identity_safe = proc is not None and getattr(proc, "pid", None) == pid
+    if identity_safe:
         try:
-            os.kill(pid, 9)
+            pgid = os.getpgid(pid)
         except (OSError, ProcessLookupError):
+            return _direct_process_dead(pid, live=live, timeout=0)
+        # launch() uses start_new_session=True. Never signal Anchor's own or an
+        # unrelated process group if that invariant is not observable.
+        if pgid != pid:
+            return False
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            return _direct_process_dead(pid, live=live, timeout=0)
+        except (OSError, PermissionError):
+            return False
+        if (_direct_process_dead(pid, live=live, timeout=3) and
+                _posix_group_dead(pgid, timeout=1)):
+            return True
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
             pass
+        except (OSError, PermissionError):
+            return False
+        return (_direct_process_dead(pid, live=live, timeout=5) and
+                _posix_group_dead(pgid, timeout=5))
+
+    # Compatibility for direct, freshly-owned helper processes outside _LIVE:
+    # kill only the PID. Group killing is reserved for a positively-owned
+    # session leader, so this path can never hit Anchor's process group.
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except (OSError, PermissionError):
+        return False
+    if _direct_process_dead(pid, timeout=1):
+        return True
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except (OSError, PermissionError):
+        return False
+    return _direct_process_dead(pid, timeout=3)
 
 
 # ── Concurrency policy: same-lane serialize + folder-build lock (Wave 6) ─────
@@ -1667,7 +3445,8 @@ def launch_guarded(lane: str, project_id: str, folder_path, cwd=None,
                    extra_args=None, env=None, job_id: str = None,
                    backend=DEFAULT_BACKEND, prompt=None, output_dir=None,
                    gated=False, permission_mode=None, command=None,
-                   kill_on_job_close: bool = True) -> dict:
+                   kill_on_job_close: bool = True,
+                   expected_artifacts=None) -> dict:
     """Launch a job under the Wave-6 concurrency policy.
 
     Policy (frozen design — MASTER-PLAN "Lanes & concurrency"):
@@ -1730,7 +3509,8 @@ def launch_guarded(lane: str, project_id: str, folder_path, cwd=None,
                      output_dir=output_dir, gated=gated,
                      permission_mode=permission_mode,
                      project_id=project_id, folder_path=folder_path,
-                     command=command, kill_on_job_close=kill_on_job_close)
+                     command=command, kill_on_job_close=kill_on_job_close,
+                     expected_artifacts=expected_artifacts)
         jid = rec["job_id"]
         _ACTIVE_LANE[(project_id, lane)] = jid
         if lane == BUILD_LANE:

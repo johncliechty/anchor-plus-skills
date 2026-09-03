@@ -124,5 +124,8 @@ def test_discovered_card_not_done_and_not_live(gui, tmp_path):
     assert v["is_live"] is False
     assert v["is_done"] is False
     assert v["ver"] == ""
-    assert v["cost_usd"] == 0.0
+    # v1.2.8 honesty contract: an imported effort was never metered by Anchor,
+    # so its cost is UNKNOWN (None) — never a fabricated $0.00 — and no label.
+    assert v["cost_usd"] is None
+    assert v["cost_label"] == ""
     assert v["artifact_path"] == "planning/MASTER-PLAN.md"

@@ -29,6 +29,7 @@
 // (the same canonical package-map route the engine + verify-core use). This module re-homes NO trio
 // logic; it composes the trio makers behind researchPrime's verification-round seams.
 
+import path from 'node:path';
 import { TRIO_SURFACE } from './engine.mjs';
 import {
   meetsQuorum,
@@ -39,6 +40,14 @@ import {
 import { committedLineages } from './lineage-enum.mjs';
 import { loadPreregistration } from './preregistration.mjs';
 import { makeReliableAgent } from '../../drivers/reliability.mjs';
+import {
+  superviseSeat,
+  lookinAppendix,
+  trailFromFile,
+  DEFAULT_CHECKIN_MS,
+  DEFAULT_DEAD_IDLE_MS,
+  DEFAULT_SILENT_KILL_MS,
+} from '../../drivers/swarm-lookin.mjs';
 
 // Reused trio symbols (the frozen contract surface, bin/contract.mjs). G3/G5/G6 ride on the trio
 // tally + roster; G4 on the Judge; the active Synthesizer on makeSynthesizer.
@@ -477,46 +486,156 @@ export async function orchestrateRound({
 // plan-level Shark prompt; verification reviewers need a different one) — but the ROSTER and the
 // angle rotation are the trio's, reused not forked. A `focus` hint (the Synthesizer's steer) is
 // surfaced to the panel so steered and control runs differ ONLY by whether steering is carried.
-function reviewerPrompt(role, { round, angle, focus }) {
+/**
+ * True when the engine must spawn the G3 panel rather than adjudicate supplied
+ * reviews: missing/non-array, empty array, or every reviewer has zero findings.
+ * (journal 0057 — empty findings arrays used to mean "operator will paste".)
+ */
+export function isVacantReviews(reviews) {
+  if (!Array.isArray(reviews) || reviews.length === 0) return true;
+  return reviews.every((r) => !Array.isArray(r?.findings) || r.findings.length === 0);
+}
+
+/**
+ * Coerce a live-panel finding onto the field-law surface: traces_to_north_star
+ * is the STRING 'yes'/'no' (booleans coerced — they silently demoted every
+ * finding when left as booleans, 2026-08-15). Anything else HALTs; never default
+ * a missing trace to 'yes' (that would inflate AXIS).
+ */
+export function normalizePanelFindings(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((f, i) => {
+    if (!f || typeof f !== 'object') {
+      throw new HaltError(`panel finding [${i}] is not an object`);
+    }
+    let t = f.traces_to_north_star;
+    if (t === true || t === 'true') t = 'yes';
+    else if (t === false || t === 'false') t = 'no';
+    if (t !== 'yes' && t !== 'no') {
+      throw new HaltError(
+        `panel finding [${i}] traces_to_north_star must be the STRING 'yes' or 'no' (booleans coerced), got ${JSON.stringify(f.traces_to_north_star)}`,
+      );
+    }
+    const topic = typeof f.topic === 'string' && f.topic.trim() ? f.topic.trim() : `finding-${i + 1}`;
+    const message = typeof f.message === 'string' && f.message.trim() ? f.message.trim() : topic;
+    return { ...f, topic, message, traces_to_north_star: t, severity: f.severity ?? 'MINOR' };
+  });
+}
+
+function reviewerPrompt(role, { round, angle, focus, artifact, northStar, heartbeatPath }) {
   return [
     `[researchPrime G3 verification reviewer — ${role.role} (${role.persona}); angle ${angle}]`,
     `round ${round}: independently verify the claims and report any defect you can substantiate.`,
+    artifact ? `ARTIFACT (absolute path — read this file, do not guess): ${artifact}` : null,
+    northStar ? `NORTH STAR: ${northStar}` : null,
     // G6 identity discipline: agreement is keyed on claim_id FIRST (falling back to
     // the topic slug only when no id exists). Three reviewers wording the same claim
     // three ways defeated the >=2-agree quorum once (journal 0001) — never again.
     `For EVERY finding: when the claim you dispute carries an id in the artifact, set`,
     `claim_id to that EXACT id (agreement across reviewers is keyed on it); always also`,
     `set topic to a short stable phrase naming the issue.`,
+    `Return JSON { findings: [{ claim_id?, topic, severity, traces_to_north_star, message }] }.`,
+    `traces_to_north_star MUST be the STRING "yes" or "no", never a boolean.`,
+    `If you find nothing AXIS-serving, return { findings: [] } — an empty look is honest.`,
     focus ? `STEER (Synthesizer): press hardest on — ${focus}` : `(no steering hint this round)`,
-  ].join('\n');
+    lookinAppendix({ heartbeatPath, northStar }),
+  ].filter(Boolean).join('\n');
 }
 
-async function runPanelRound({ agent, round, focus, onCall }) {
-  // 2026-07 efficiency: the fresh-context reviewers run CONCURRENTLY (Promise.all
-  // — identical failure semantics to the old serial loop: any rejection aborts
-  // the round; result order stays role order). Call count/onCall are unchanged,
-  // preserving measureSteering's matched-budget guarantee. Set
-  // RESEARCHPRIME_CONCURRENT_PANEL=0 to restore the serial path.
-  const jobs = SHARK_ROLES.map((role, i) => ({ role, angle: angleForShark(round, i) }));
-  const dispatch = ({ role, angle }) => {
-    if (onCall) onCall();
-    return agent(reviewerPrompt(role, { round, angle, focus }), {
-      label: `reviewer:${role.role}:r${round}`,
-      role: 'reviewer',
-      round,
-      angle,
-      focus: focus ?? null,
-    }).then((out) => ({
-      reviewer: role.role, angle,
-      findings: Array.isArray(out?.findings) ? out.findings : [],
-    }));
+export { DEFAULT_CHECKIN_MS, DEFAULT_DEAD_IDLE_MS, DEFAULT_SILENT_KILL_MS };
+
+export function panelSeatAbstain(job, err) {
+  const msg = (err && (err.message || String(err))) || 'rejected';
+  return {
+    reviewer: job.role.role,
+    angle: job.angle,
+    lineage: null,
+    answerable: 'no',
+    panel_fault: msg,
+    note: `shark ${job.role.role} abstained (${msg})`,
+    findings: [],
   };
+}
+
+/** Seats that actually looked — not timed out, not thrown, not abstain-stamped. */
+export function countSurvivingPanel(reviews) {
+  if (!Array.isArray(reviews)) return 0;
+  return reviews.filter((r) => r && r.answerable !== 'no' && !r.panel_fault).length;
+}
+
+/**
+ * Spawn the heterogeneous G3 reviewer panel through the injected agent seam.
+ * Reuses SHARK_ROLES + angleForShark (not a second roster). Concurrent by
+ * default; RESEARCHPRIME_CONCURRENT_PANEL=0 restores serial (measureSteering
+ * matched-budget). Live path: run-rounds calls this when reviews are vacant.
+ *
+ * Swarm look-in (journal 0059/0060/0061): one hung/thrown shark ABSTAINS.
+ * Time-since-start is not a kill IF the seat is heartbeating. Silence is.
+ * Look in first; still silent → kill and respawn once. A talking seat that
+ * goes quiet dies on deadIdleMs. LOOKIN when the seat admits a rabbit hole.
+ */
+export async function runPanelRound({
+  agent, round, focus, onCall, artifact, northStar, lineage,
+  checkInMs = DEFAULT_CHECKIN_MS,
+  deadIdleMs = DEFAULT_DEAD_IDLE_MS,
+  silentKillMs = DEFAULT_SILENT_KILL_MS,
+  heartbeatDir = null,
+  onLookin = null,
+} = {}) {
+  if (typeof agent !== 'function') {
+    throw new HaltError('runPanelRound requires an agent() function', 'pass the injected seam: { agent }');
+  }
+  if (artifact) {
+    if (typeof artifact !== 'string' || !(path.win32.isAbsolute(artifact) || path.posix.isAbsolute(artifact))) {
+      throw new HaltError(
+        `runPanelRound artifact must be an ABSOLUTE path (journal 0002), got ${JSON.stringify(artifact)}`,
+      );
+    }
+  }
+  const jobs = SHARK_ROLES.map((role, i) => ({ role, angle: angleForShark(round, i) }));
+  const runSeat = async (job) => {
+    if (onCall) onCall();
+    const hb = heartbeatDir
+      ? path.join(heartbeatDir, `heartbeat-r${round}-${job.role.role}.json`)
+      : null;
+    try {
+      const prompt = reviewerPrompt(job.role, {
+        round, angle: job.angle, focus, artifact, northStar, heartbeatPath: hb,
+      });
+      const out = await superviseSeat({
+        run: ({ nudge } = {}) => agent(nudge ? `${nudge}\n\n${prompt}` : prompt, {
+          label: `reviewer:${job.role.role}:r${round}`,
+          role: 'reviewer',
+          round,
+          angle: job.angle,
+          focus: focus ?? null,
+        }),
+        getTrail: hb ? () => trailFromFile(hb) : () => null,
+        checkInMs,
+        silentKillMs,
+        deadIdleMs,
+        northStar,
+        task: artifact,
+        onLookin,
+      });
+      return {
+        reviewer: job.role.role,
+        angle: job.angle,
+        lineage: lineage ?? null,
+        findings: normalizePanelFindings(Array.isArray(out?.findings) ? out.findings : []),
+      };
+    } catch (err) {
+      return panelSeatAbstain(job, err);
+    }
+  };
+
   if (process.env.RESEARCHPRIME_CONCURRENT_PANEL === '0') {
     const reviews = [];
-    for (const job of jobs) reviews.push(await dispatch(job));
+    for (const job of jobs) reviews.push(await runSeat(job));
     return reviews;
   }
-  return Promise.all(jobs.map(dispatch));
+  const settled = await Promise.allSettled(jobs.map(runSeat));
+  return settled.map((s, i) => s.status === 'fulfilled' ? s.value : panelSeatAbstain(jobs[i], s.reason));
 }
 
 /**

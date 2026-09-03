@@ -84,6 +84,7 @@ def test_launch_persists_complete_relaunch_spec_field_by_field(runner, tmp_path)
         "gated": False,
         "permission_mode": "plan",
         "backend": "claude",
+        "expected_artifacts": [],
         "env_keys": {"FAKE_CLAUDE_LINES": "1"},
         # A direct (unguarded) launch has no policy context to persist.
         "project_id": None,

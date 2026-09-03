@@ -129,18 +129,34 @@ CONTRACT = (
     "and report 'your overhead this session: N' at campaign close or whenever he "
     "asks - the target is zero; (12) commit as you go IS enforced: every cadence "
     "tick that finds the working tree dirty gets a commit with a sensible "
-    "message before you continue."
+    "message before you continue; "
+    "(13) SLICE LOOP (2026-08-28): you own the overall plan. Tag every roadmap "
+    "step with part=research|slice|rigor|integrate|harden (the product map is "
+    "those tags, not a second file). Pass 1 of a new effort: a substantial draft "
+    "covering the whole map; later passes: small slices in this session. You have "
+    "NO Shark swarm — that is Crucible, only when commissioned. "
+    "Commission Crucible or Foreman only when this session cannot hold the work "
+    "AND the step has a gate command (a runner that can fail: tests, render-to-PNG, "
+    "a certify script). After EVERY close including research, re-read the North "
+    "Star and append a goal_flip event {verdict: reaffirmed|rewritten, goal_from, "
+    "goal_to, step_id, receipt}; if rewritten, update the Face. Then recommend "
+    "whether to move on; he decides. The cockpit Work product tile is the "
+    "living map of the deliverable — same steps as the plan."
 )
 
 STAND_UP_NEW = (
     "This is a BRAND-NEW effort: the campaign record here is an empty stub. "
     "Invoke the ecgberht skill now and stand up as the steward. John will "
-    "describe what he wants in his next message. When he does: first reflect it "
-    "back - 'Here is what I think your goal is' - one sentence plus bold-lead "
-    "bullets - and ask him to verify; once he verifies, write the Face and "
-    "propose the roadmap steps (the map) for his confirmation per the engine's "
-    "confirm law; when both are verified, wait for his go. Right now, greet him "
-    "with ONE sentence inviting him to describe the effort. Do nothing else yet."
+    "describe what he wants in ordinary conversation — he may not have a "
+    "crisp goal yet. When he does: propose a one-sentence goal (labelled as "
+    "a proposal he can edit) and a coarse WORK-PRODUCT MAP of the thing he "
+    "will actually deliver (paper sections, slide blocks, a software flow), "
+    "tagged research|slice|rigor|integrate|harden. Keep the map thin if the "
+    "whole effort fits in one sitting. Ask him to correct goal and map. Once "
+    "he confirms, write the Face and the tagged roadmap. Then produce a "
+    "substantial first draft covering the map unless it fits in one sitting. "
+    "Right now, greet him with ONE sentence inviting him to describe the "
+    "effort. Do nothing else yet."
 )
 
 # (2026-08-25) The status-table demand is GONE from the tick: the engine now
@@ -175,19 +191,28 @@ def _save_state(state):
     # atomic: write a temp then os.replace, so a reader never sees a half file.
     # On Windows os.replace raises WinError 32 if the destination is open in a
     # concurrent reader - retry briefly rather than silently drop the write.
+    tmp = None
     try:
-        tmp = STATE_FILE.with_suffix(".tmp")
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = STATE_FILE.with_name(
+            STATE_FILE.name + ".%s.%s.tmp" %
+            (os.getpid(), threading.get_ident()))
         tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
         for attempt in range(6):
             try:
                 os.replace(tmp, STATE_FILE)
-                return
+                return True
             except PermissionError:
                 time.sleep(0.05)
-        # last resort: a direct write is better than losing the update
-        STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        return False
     except Exception:
-        pass
+        return False
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def _read_all_state():
@@ -207,9 +232,9 @@ def _update_state(key, patch):
         try:
             state = _load_state()
         except Exception:
-            return  # present-but-corrupt: do not overwrite good-but-unparsed data
+            return False  # present-but-corrupt: preserve it for inspection
         state.setdefault(key, {}).update(patch)
-        _save_state(state)
+        return _save_state(state)
 
 
 def _read_state_entry(key):
@@ -280,7 +305,9 @@ class Engine:
         self._tick_count = 0        # for the periodic role re-assert
         self.cond = threading.Condition()
         self.busy = False
-        self.queue = []             # messages waiting for the turn to end
+        # never-lose: restore undelivered words from the durable record so a
+        # park/crash cannot drop what he already typed (2026-08-27).
+        self.queue = list(stored_entry.get("pending_queue") or [])
         self.session_id = None
         self.spend = 0.0
         self.tokens = 0
@@ -298,6 +325,9 @@ class Engine:
         self.woke_at = 0.0
         self.john_msgs = 0          # ease-metric floor: his message count
         self.open_question = stored_entry.get("open_question", "")
+        self.open_question_kind = stored_entry.get("open_question_kind", "")
+        if self.open_question and not self.open_question_kind:
+            self.open_question_kind = _question_kind(self.open_question)
         self.turn_text = ""         # the current turn's streamed text
         self.in_tick = False        # events of a cadence-tick turn are tagged
         self._ticks_pending = 0     # ticks sent mid-turn: the NEXT n turns are tick turns
@@ -308,6 +338,7 @@ class Engine:
         # still held them.
         self.files = list(stored_entry.get("files") or [])
         self._lock = threading.Lock()
+        self._status_lock = threading.Lock()
 
     # ---------- events ----------
     def _emit(self, ev):
@@ -370,6 +401,7 @@ class Engine:
             "cli": self.cli,
             "john_msgs": self.john_msgs,
             "open_question": self.open_question,
+            "open_question_kind": self.open_question_kind,
             "epoch": self.epoch,
         }
 
@@ -396,6 +428,9 @@ class Engine:
 
     def _wake_locked(self, fresh, seed):
         entry = _read_state_entry(self.skey())
+        held = list(entry.get("pending_queue") or [])
+        if held and not self.queue:
+            self.queue = held
         stored = None if fresh else entry.get("session_id")
         # a stored id from a --fake run must never be handed to the real CLI
         if stored and self.fake != bool(str(stored).startswith("fake-")):
@@ -457,12 +492,15 @@ class Engine:
                 _update_state(self.skey(), {"session_id": None})
                 self._emit({"t": "sys", "text":
                             "stored session could not resume - starting fresh"})
+                if not self.general:
+                    self._emit_resume_pickup(entry)
                 return self._wake_locked(fresh=True, seed=seed)
         threading.Thread(target=self._read_stdout, args=(proc,), daemon=True).start()
         threading.Thread(target=self._read_stderr, args=(proc,), daemon=True).start()
         threading.Thread(target=self._ticker, args=(proc,), daemon=True).start()
         # NOTE: the caller (wake) already holds self._lock, so every send here
         # must be _send_locked - calling _send would re-acquire and deadlock
+        initial_prompt = None
         if resuming:
             self._emit({"t": "sys", "text": ("terminal" if self.general else "steward")
                         + " awake - resuming the last session"})
@@ -472,15 +510,16 @@ class Engine:
             # deep campaign-memory discipline can't have drifted away).
             if not self.general:
                 self._emit_resume_pickup(entry)
-                self._send_locked(RESUME_BRIEF)
+                initial_prompt = RESUME_BRIEF
         elif seed:
-            self._send_locked(seed)
+            initial_prompt = seed
         elif self.general:
             self._emit({"t": "sys", "text": "workbench terminal awake"})
-            self._send_locked("This is the project workbench terminal - a general "
-                              "work session in this folder, NOT the steward (no "
-                              "campaign duties). John directs; skills are invoked on "
-                              "his word. Confirm readiness in one short line.")
+            initial_prompt = (
+                "This is the project workbench terminal - a general work "
+                "session in this folder, NOT the steward (no campaign duties). "
+                "John directs; skills are invoked on his word. Confirm "
+                "readiness in one short line.")
         else:
             try:
                 from steward_cockpit import steward_campaign as campaign
@@ -489,42 +528,64 @@ class Engine:
                 is_new = False
             if is_new:
                 self._emit({"t": "sys", "text": "steward awake - new effort; describe what you want"})
-                self._send_locked(STAND_UP_NEW)
+                initial_prompt = STAND_UP_NEW
             else:
                 self._emit({"t": "sys", "text": "steward awake - standing up (reading the campaign record)"})
-                self._send_locked(STAND_UP)
+                initial_prompt = STAND_UP
+        if initial_prompt is not None and not self._send_locked(initial_prompt):
+            self.broken = True
+            self._emit({"t": "sys", "text":
+                        "initial steward prompt was not delivered - session "
+                        "closed instead of reporting a false wake"})
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            self._kill_tree(proc)
+            self.proc = None
+            self.busy = False
+            return False, "initial prompt delivery failed"
         return True, "awake"
 
     def _emit_resume_pickup(self, entry):
-        """Deterministic context on wake (John, 2026-08-25: 'when I start up
-        the session, I need some context') — where we left off, composed from
-        the durable record: zero-model, instant, can't drift. The model's own
-        pickup (RESUME_BRIEF) streams right behind it."""
-        bits = []
-        if entry.get("last_used"):
-            bits.append("last talked " + str(entry["last_used"]))
+        """Deterministic context on wake — Last / Plan / Goal / Open, before
+        any model turn. Zero-model, from the durable record."""
+        last = (entry.get("last_text") or "").strip()
+        when = (entry.get("last_used") or "").strip()
+        if last:
+            outcome = last.replace("\n", " ")[-180:]
+            if when:
+                outcome = when + " — " + outcome
+        elif when:
+            outcome = "last talked " + when
+        else:
+            outcome = "no prior reply on record"
+        plan = "no active step"
+        goal_line = "no goal on record"
         try:
             from steward_cockpit import steward_campaign as campaign
             m = campaign.read_map(self.dir)
             active = next((s for s in m["steps"] if s["status"] == "active"),
                           None)
             if active:
-                bits.append("step %d/%d · %s" % (
+                tag = (active.get("part") or "").strip()
+                name = active["name"]
+                plan = "step %d/%d · %s" % (
                     min(m["steps_done"] + 1, m["steps_total"]),
-                    m["steps_total"], active["name"]))
-            wait = (m["heartbeat"]["human_wait"] or "").split("·")[0].strip()
-            if wait:
-                bits.append("waiting on you: " + wait)
+                    m["steps_total"], (tag + ": " + name) if tag else name)
+            brief = (m.get("goal_brief") or "").strip()
+            if brief:
+                goal_line = brief
+                if m.get("goal_reread") is False:
+                    goal_line += " — not re-read since last close"
         except Exception:
             pass
-        if bits:
-            self._emit({"t": "sys", "text": "picking up - " + " · ".join(bits)})
-        last = (entry.get("last_text") or "").strip()
-        if last:
-            self._emit({"t": "sys", "text": "last reply ended: …" + last[-200:]})
-        if self.open_question:
-            self._emit({"t": "sys", "text": "⚑ still waiting on your answer: "
-                                            + self.open_question})
+        q = (self.open_question or "").strip()
+        open_line = ("waiting on you: " + q) if q else "nothing waiting on you"
+        self._emit({"t": "sys", "text": "Last time: " + outcome})
+        self._emit({"t": "sys", "text": "Plan: " + plan})
+        self._emit({"t": "sys", "text": "Goal: " + goal_line})
+        self._emit({"t": "sys", "text": "Open: " + open_line})
 
     def stop(self):
         # commit-as-you-go covers an explicit Sleep / shutdown too (finding #4
@@ -545,12 +606,29 @@ class Engine:
         # turn-boundary can't re-set busy=True after we cleared it
         with self._lock:
             self.busy = False
-            for pending in self.queue:
-                self._emit({"t": "sys", "text":
-                            "not delivered (session closed) - copy it back in: "
-                            + pending[:120]})
-            self.queue = []
+            self._hold_queue("session closed")
         self._emit({"t": "sys", "text": "steward asleep"})
+
+    def _persist_queue(self):
+        """Caller holds self._lock. True only when words are durable."""
+        return _update_state(
+            self.skey(), {"pending_queue": list(self.queue)}) is True
+
+    def _hold_queue(self, reason):
+        """Session ending: persist undelivered words. Never drop them.
+        Caller holds self._lock."""
+        persisted = self._persist_queue()
+        n = len(self.queue)
+        if n and not persisted:
+            self.broken = True
+            self._emit({"t": "sys", "text":
+                        "queue persistence failed - held words remain in "
+                        "memory, but disk durability is not confirmed"})
+        if n:
+            self._emit({"t": "sys", "text":
+                        "held %d queued message(s) (%s) — will deliver on wake"
+                        % (n, reason)})
+        return persisted
 
     def _kill_tree(self, proc):
         # cmd /c wraps the real CLI on Windows; kill the whole tree, not the shim
@@ -639,32 +717,63 @@ class Engine:
             ok, why = self.wake()
             if not ok:
                 return {"ok": False, "error": why}
-        if human:
-            low = text.lower().rstrip(".!")
-            if low == "go" or low.startswith("go "):
-                self.drive = True
-                self.auto_count = 0
-            elif low in ("pause", "stop", "hold") or low.startswith("pause "):
-                self.drive = False
-            self.last_say = time.time()
-            self.john_msgs += 1
-            # answer-last enforcement (audit gap #3): if John literally asks a
-            # question, the steward's turn must end in prose, not tool calls
-            self._human_asked = text.rstrip().endswith("?")
-            self._answer_nudged = False
-            # a human message opens a new decision cycle
-            self._decision_nudged = False
-            if self.open_question:
-                # only a HUMAN message answers/supersedes the pinned question;
-                # machine sends (drive, grasscatch, gandalf re-run) must not
-                self.open_question = ""
-                _update_state(self.skey(), {"open_question": ""})
-        self._emit({"t": "john" if human else "sys", "text": text})
-        # hold the lock across the busy-check AND the send, so a turn boundary
-        # can't slip a drive-continue between the check and the write
+
+        # One ingress transaction: update the human/control state, append the
+        # visible event, and either queue or write stdin under the same lock as
+        # result-boundary arbitration. A displayed human turn therefore can
+        # never be followed by an automatic nudge/drive write before it lands.
         with self._lock:
+            control = ""
+            if human:
+                # Only bare UI commands are controls. "go with option B" and
+                # "hold on" are substantive words, not drive switches.
+                low = text.lower().rstrip(".!").strip()
+                if low == "go":
+                    self.drive = True
+                    self.auto_count = 0
+                    control = "go"
+                elif low in ("pause", "stop", "hold"):
+                    self.drive = False
+                    control = "pause"
+                self.last_say = time.time()
+                self.john_msgs += 1
+                self._human_asked = text.rstrip().endswith("?")
+                self._answer_nudged = False
+                self._decision_nudged = False
+
+                if self.open_question:
+                    kind = (self.open_question_kind
+                            or _question_kind(self.open_question))
+                    if control and kind != "drive_offer":
+                        # Drive is an interface command, not an answer. Never
+                        # put a bare approval-shaped token on model stdin.
+                        self._emit({"t": "john", "text": text})
+                        self._emit({"t": "sys", "text":
+                                    ("drive armed" if control == "go"
+                                     else "drive paused")
+                                    + " - still waiting on: "
+                                    + self.open_question})
+                        return {"ok": True, "queued": False,
+                                "control_only": True}
+                    self.open_question = ""
+                    self.open_question_kind = ""
+                    _update_state(self.skey(), {
+                        "open_question": "",
+                        "open_question_kind": "",
+                    })
+
+            self._emit({"t": "john" if human else "sys", "text": text})
             if self.busy:
                 self.queue.append(text)
+                if not self._persist_queue():
+                    self.queue.pop()
+                    self.broken = True
+                    self._emit({"t": "sys", "text":
+                                "queue persistence failed - your text was "
+                                "not accepted; please retry after storage "
+                                "is healthy"})
+                    return {"ok": False,
+                            "error": "could not durably queue your text"}
                 self._emit({"t": "sys", "text": "queued - the steward is mid-turn; it will be delivered next"})
                 return {"ok": True, "queued": True}
             ok = self._send_locked(text)
@@ -716,11 +825,8 @@ class Engine:
         # user was promised, rather than orphaning it (same as stop())
         with self._lock:
             self.busy = False
-            for pending in self.queue:
-                self._emit({"t": "sys", "text":
-                            "not delivered (session ended) - copy it back in: "
-                            + pending[:120]})
-            self.queue = []
+            self._hold_queue("session ended")
+        self._status_update(emit=True)
 
     def _read_stderr(self, proc):
         tail = []
@@ -781,94 +887,75 @@ class Engine:
             # question-bearing sentence (not just a trailing "?"), so a
             # question mid-paragraph still pins. Tick turns never pin.
             txt = self.turn_text.strip()
-            # did THIS turn ask it? (open_question is sticky across boots and
-            # across a plain prose answer — the decision check must key on the
-            # asking, not on the leftover pin)
-            pinned_now = False
-            if not self.in_tick:
-                sentences = [s.strip() for s in
-                             re.split(r"(?<=[.!?])\s+", txt) if s.strip().endswith("?")]
-                if sentences:
-                    self.open_question = sentences[-1][-280:]
-                    pinned_now = True
-            # durable per-session usage + resume/pin state, one locked write
-            _update_state(self.skey(), {
-                "usage": {"spend": round(self.spend, 4), "tokens": self.tokens,
-                          "secs": int(self.secs), "turns": self.turns},
-                "last_text": txt[:240],
-                "last_used": time.strftime("%Y-%m-%d %H:%M"),
-                "cli": self.cli,
-                "open_question": self.open_question,
-                "epoch": self.epoch,
-            })
-            self.busy = False
-            self._emit({"t": "turn_end",
-                        "cost_usd": round(cost, 4),
-                        "duration_s": round((ev.get("duration_ms") or 0) / 1000),
-                        "tick": self.in_tick})
-            # keep the universal status file fresh at every turn boundary so
-            # the dashboard tile never shows a stale 'running' (persist only —
-            # no pane block per conversational turn)
-            self._status_update(emit=False)
-            # tick bookkeeping under the lock - the ticker increments
-            # _ticks_pending from another thread (avoid a lost update that
-            # would mistag a tick turn as a normal one)
+
+            # The complete result boundary is one arbitration transaction.
+            # Exactly one next writer wins: an already accepted human message,
+            # one machine nudge, auto-drive, or idle. Status I/O happens only
+            # after this decision, so it cannot open an overtaking window.
             with self._lock:
+                if proc is not self.proc:
+                    return
                 was_tick = self.in_tick
+                pinned_now = False
+                if not was_tick:
+                    sentences = [s.strip() for s in
+                                 re.split(r"(?<=[.!?])\s+", txt)
+                                 if s.strip().endswith("?")]
+                    if sentences:
+                        self.open_question = sentences[-1][-280:]
+                        self.open_question_kind = _question_kind(
+                            self.open_question)
+                        pinned_now = True
+
+                _update_state(self.skey(), {
+                    "usage": {"spend": round(self.spend, 4),
+                              "tokens": self.tokens,
+                              "secs": int(self.secs),
+                              "turns": self.turns},
+                    # The outcome is the conclusion, not the opening of a long
+                    # reply. Pickup already applies its own display bound.
+                    "last_text": txt[-240:],
+                    "last_used": time.strftime("%Y-%m-%d %H:%M"),
+                    "cli": self.cli,
+                    "open_question": self.open_question,
+                    "open_question_kind": self.open_question_kind,
+                    "epoch": self.epoch,
+                })
+                self.busy = False
+                self._emit({"t": "turn_end",
+                            "cost_usd": round(cost, 4),
+                            "duration_s": round(
+                                (ev.get("duration_ms") or 0) / 1000),
+                            "tick": was_tick})
                 self.in_tick = self._ticks_pending > 0
                 self._ticks_pending = max(0, self._ticks_pending - 1)
-            # answer-last: John asked a literal question and this turn produced
-            # only tool calls (no prose) - inject a one-shot prose nudge before
-            # anything idles or drives (the failure that recurred 3x in the
-            # gold session; convention -> mechanism)
-            if (self._human_asked and not txt and not was_tick
-                    and not self._answer_nudged and not self.general):
-                self._answer_nudged = True
-                self._human_asked = False
-                with self._lock:
-                    self._send_locked("(interface - not John) You ended without "
-                                      "answering John in words. Reply now in one "
-                                      "or two plain sentences.")
-                return
-            # DECISION SHAPE (John, 2026-08-26: "when I have to make a
-            # decision the agent should always give me context, a brief
-            # summary a human can understand, and a recommendation with
-            # potentially other options ... that seems to have been lost").
-            # Convention -> mechanism, same one-shot pattern as answer-last:
-            # a turn that puts a decision to John (a pinned question) but
-            # carries no recommendation gets ONE nudge to re-frame it.
-            # Guards, each earned from the 2026-08-26 adversarial review:
-            #  - pinned_now: only a question THIS turn asked (open_question is
-            #    sticky across boots; keying on it fired the nudge on every
-            #    wake and after a plain answer);
-            #  - _decision_nudged: a plain one-shot bool cleared ONLY by a
-            #    human message (keying on the question STRING looped forever,
-            #    because the nudge's own re-ask changes the string);
-            #  - no queued human message: John has already spoken, so his
-            #    words supersede the decision — never make him wait behind a
-            #    machine retry.
-            # The whole check happens under ONE lock hold (2026-08-26 round 2).
-            # Reading the queue, releasing, then re-acquiring to send left a
-            # window: busy is cleared before this point, so John pressing Send
-            # during the status write goes straight to stdin (never queued) —
-            # the queue then reads empty and the nudge landed ON TOP of his
-            # answer. `busy` is the real signal: it is True exactly when his
-            # words are already in flight.
-            _nudge = False
-            with self._lock:
-                if (pinned_now and txt and not was_tick
-                        and not self.general
-                        and not self._decision_nudged
-                        and not self.busy and not self.queue
-                        and not _has_recommendation(txt)):
+
+                # Human ingress always outranks automatic retries/drive.
+                if self.queue:
+                    queued = self.queue[0]
+                    if self._send_locked(queued):
+                        self.queue.pop(0)
+                    if not self._persist_queue():
+                        self.broken = True
+                        self._emit({"t": "sys", "text":
+                                    "queue state could not be persisted after "
+                                    "delivery - delivery is uncertain across "
+                                    "a restart"})
+                elif (self._human_asked and not txt and not was_tick
+                      and not self._answer_nudged and not self.general):
+                    self._answer_nudged = True
+                    self._human_asked = False
+                    self._send_locked(
+                        "(interface - not John) You ended without answering "
+                        "John in words. Reply now in one or two plain "
+                        "sentences.")
+                elif (pinned_now and txt and not was_tick
+                      and not self.general and not self._decision_nudged
+                      and not _has_recommendation(txt)):
                     self._decision_nudged = True
-                    _nudge = True
-            if _nudge:
-                # visible, like drive: a billed machine turn is never silent
-                self._emit({"t": "sys", "tick": True,
-                            "text": "decision shape: asked without a "
-                                    "recommendation - sent back once"})
-                with self._lock:
+                    self._emit({"t": "sys", "tick": True,
+                                "text": "decision shape: asked without a "
+                                        "recommendation - sent back once"})
                     self._send_locked(
                         "(interface - not John) You put a decision to John "
                         "without a recommendation. Re-ask it now in his shape, "
@@ -878,28 +965,34 @@ class Engine:
                         "line of why, then the realistic alternatives in a "
                         "phrase each with the trade-off, then the question as "
                         "the LAST line, answerable in one word.")
-                return
-            if txt:
-                self._human_asked = False
-            with self._lock:
-                queued = self.queue.pop(0) if self.queue else None
-                if queued is not None:
-                    self._send_locked(queued)
-            if queued is None:
-                self._maybe_drive(was_tick)
+                else:
+                    if txt:
+                        self._human_asked = False
+                    self._maybe_drive_locked(was_tick, txt)
+
+            # Persist the post-arbitration truth (including a just-started
+            # queued/nudge/drive turn) without holding the stdin arbiter lock.
+            self._status_update(emit=False)
 
     # ---------- proactive drive ----------
     DRIVE_CAP = 50
 
     def _maybe_drive(self, was_tick=False):
-        """After a turn ends with nothing queued: if drive is armed, keep the
-        steward moving - unless it just asked John something, the campaign
-        flag says needs_you, or the cap is reached. Mechanism, not manners."""
-        if not self.drive or not self.alive():
+        """Compatibility wrapper for tests/callers outside turn arbitration."""
+        with self._lock:
+            return self._maybe_drive_locked(was_tick, self.turn_text.strip())
+
+    def _maybe_drive_locked(self, was_tick=False, completed_text=""):
+        """Choose and send one drive continuation while holding ``_lock``.
+
+        Human ingress, queued text, nudges, and drive all share this arbiter;
+        drive must never stack onto an already accepted turn.
+        """
+        if self.busy or self.queue or not self.drive or not self.alive():
             return
         if was_tick:
             return   # a cadence-tick turn is not a step - never counts as drive
-        txt = self.turn_text.strip()
+        txt = (completed_text or "").strip()
         if self.open_question or txt.endswith("?"):
             # the pin already carries the question - don't double-announce
             return
@@ -922,9 +1015,10 @@ class Engine:
         self.auto_count += 1
         self._emit({"t": "sys", "tick": True,
                     "text": f"drive: continuing ({self.auto_count})"})
-        self._send("(drive - not John) Continue. Next step per the plan; stop "
-                   "only for a decision that is genuinely John's, and if you "
-                   "stop, end with the question.")
+        self._send_locked(
+            "(drive - not John) Continue. Next step per the plan; stop only "
+            "for a decision that is genuinely John's, and if you stop, end "
+            "with the question.")
 
     # ---------- cadence ----------
     def _working_bg(self):
@@ -950,39 +1044,61 @@ class Engine:
         project tile read — and (emit=True) sent as a 'status' event the
         client routes to the status pane only, never the conversation."""
         if self.general:
-            return
-        try:
-            from steward_cockpit import steward_campaign as campaign
-            status = campaign.compose_status(self.dir, self.state())
-        except Exception:
-            return
-        try:
-            f = Path(self.dir) / ".ecgberht" / "status-summary.json"
-            f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".tmp")
-            tmp.write_text(json.dumps(status, indent=2), encoding="utf-8")
-            os.replace(tmp, f)
-        except Exception:
-            pass
-        # Notification-budget counter (2026-08-25 elegance S-batch, B6 bar:
-        # "quiet" must be MEASURABLE): count each transition INTO needs_you —
-        # the only unsolicited attention ping this engine makes — per local
-        # day, durably in .ecgberht/delivery.json. Data only; no UI yet (the
-        # main-dashboard attention row is its own parked prototype effort).
-        try:
-            cur = str(((status.get("plan") or {}).get("attention")) or "")
-            prev = getattr(self, "_last_attention_state", None)
-            self._last_attention_state = cur
-            if cur == "needs_you" and prev not in (None, "needs_you"):
-                self._delivery_patch(lambda d: d.update(
-                    pings={"date": time.strftime("%Y-%m-%d"),
-                           "count": (d.get("pings", {}).get("count", 0) + 1
-                                     if d.get("pings", {}).get("date") == time.strftime("%Y-%m-%d")
-                                     else 1)}))
-        except Exception:
-            pass
-        if emit:
-            self._emit({"t": "status", "status": status})
+            return False
+        # Compose, persist, and emit one generation under one lock. A ticker
+        # and a result boundary can request status concurrently; neither may
+        # overwrite or replay an older truth after the newer one.
+        with self._status_lock:
+            try:
+                from steward_cockpit import steward_campaign as campaign
+                status = campaign.compose_status(self.dir, self.state())
+            except Exception as exc:
+                self._emit({"t": "sys", "tick": True,
+                            "text": "status compose failed: "
+                                    + type(exc).__name__})
+                return False
+
+            persisted = False
+            tmp = None
+            try:
+                f = Path(self.dir) / ".ecgberht" / "status-summary.json"
+                f.parent.mkdir(parents=True, exist_ok=True)
+                tmp = f.with_name(
+                    f.name + ".%s.%s.tmp" %
+                    (os.getpid(), threading.get_ident()))
+                tmp.write_text(json.dumps(status, indent=2) + "\n",
+                               encoding="utf-8")
+                os.replace(tmp, f)
+                persisted = True
+            except Exception as exc:
+                self._emit({"t": "sys", "tick": True,
+                            "text": "status persistence failed: "
+                                    + type(exc).__name__})
+            finally:
+                if tmp is not None:
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            # Notification-budget counter (2026-08-25 elegance S-batch, B6
+            # bar): count each transition INTO needs_you per local day.
+            try:
+                cur = str(((status.get("plan") or {}).get("attention")) or "")
+                prev = getattr(self, "_last_attention_state", None)
+                self._last_attention_state = cur
+                if cur == "needs_you" and prev not in (None, "needs_you"):
+                    self._delivery_patch(lambda d: d.update(
+                        pings={"date": time.strftime("%Y-%m-%d"),
+                               "count": (
+                                   d.get("pings", {}).get("count", 0) + 1
+                                   if d.get("pings", {}).get("date")
+                                   == time.strftime("%Y-%m-%d") else 1)}))
+            except Exception:
+                pass
+            if emit:
+                self._emit({"t": "status", "status": status})
+            return persisted
 
     # ---------- delivery receipts (2026-08-25 elegance S-batch) ----------
     #: One lock for ALL delivery.json RMWs (review finding #3: concurrent acks +
@@ -1127,6 +1243,22 @@ _RECOMMEND_RE = re.compile(
 
 #: How much of the turn tail counts as "where the decision is stated".
 _RECOMMEND_TAIL = 1200
+
+
+_DRIVE_OFFER_RE = re.compile(
+    r"^(?:shall i drive|shall i keep going|should i keep going|"
+    r"do you want me to (?:drive|keep going)|"
+    r"would you like me to (?:drive|keep going))\?$", re.I)
+
+
+def _question_kind(question) -> str:
+    """Classify the pinned question without substring false positives.
+
+    A drive offer is deliberately a tiny exact grammar. Substantive questions
+    that merely contain words such as "continue" always remain decisions.
+    """
+    normalized = re.sub(r"\s+", " ", (question or "").strip())
+    return "drive_offer" if _DRIVE_OFFER_RE.fullmatch(normalized) else "decision"
 
 
 def _has_recommendation(text) -> bool:

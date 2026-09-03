@@ -161,10 +161,10 @@ export const ACT_TABLE = Object.freeze([
     invariants: Object.freeze({ non_event: true, no_rebrief: true }),
     patterns: Object.freeze([
       /\bswitch (?:the )?seat\b/i,
-      /\bswitch (?:seat )?to (?:the )?(claude|gemini|grok)\b/i,
+      /\bswitch (?:seat )?to (?:the )?(chatgpt|codex|claude|gemini|grok)\b/i,
       /\bseat[- ]hop\b/i,
       /\bhop (?:the )?seat\b/i,
-      /\buse (?:the )?(claude|gemini|grok) seat\b/i,
+      /\buse (?:the )?(chatgpt|codex|claude|gemini|grok) seat\b/i,
     ]),
   }),
   Object.freeze({
@@ -255,8 +255,8 @@ export function refuseWithProposal(text, opts = {}) {
 function extractActArgs(act, text) {
   const args = {};
   if (act === 'switch_seat') {
-    const m = text.match(/\b(claude|gemini|grok)\b/i);
-    if (m) args.seat = m[1].toLowerCase();
+    const m = text.match(/\b(chatgpt|codex|claude|gemini|grok)\b/i);
+    if (m) args.seat = m[1].toLowerCase() === 'codex' ? 'chatgpt' : m[1].toLowerCase();
   }
   if (act === 'refine_goal') {
     const m = text.match(

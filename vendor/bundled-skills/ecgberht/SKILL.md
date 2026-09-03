@@ -155,14 +155,14 @@ CLI: `node bin/ecgberht.mjs <verb> [args…]` (package bin: `ecgberht`).
 | `brief` | — | Decision Packet (Q1–Q12 deterministic retrieval; Phase A zero model calls; `seen` receipt delta anchor; cached projection) |
 | `commission-propose` | — | Steward proposes a commission for a Roadmap step (skill + depth defaults; requires confirm — not a mode picker) |
 | `commission-confirm` | — | Confirm proposal → job `queued` composing Anchor job_runner; `commission_bind` + Strip append (M2 lifecycle `queued→running→done\|failed\|orphaned\|reaped`; abnormal exit → `commission_abnormal` receipt) |
-| `seat-hop` | — | Switch seat (claude/gemini/grok) wired to Anchor prefs; `seat_hop` receipt who/when/from→to; non-event — next turn continues from Face/Strip/Roadmap/packet, no re-brief |
+| `seat-hop` | — | Switch seat (chatgpt/claude/gemini/grok) wired to Anchor prefs; `seat_hop` receipt who/when/from→to; non-event — next turn continues from Face/Strip/Roadmap/packet, no re-brief |
 
 **Law:** unknown verb → structured refuse (`error: unknown_verb`). No open plugin dispatch. No daemon/listen loop.
 
 **Dialogue — CONVERSATIONAL since 2026-08-04.** Talk is routed by `routeUtterance` (`engine/steward-conversation.mjs`), not by a regex table alone:
 
 - **Control verbs stay deterministic.** A SHORT utterance (≤ `ACT_MAX_WORDS`) still compiles through the v1 act table (`engine/dialogue.mjs`) — carry on / park that / confirm commission / switch seat. A model never decides to spend or write. A short destructive command ("delete all projects") still refuses and writes nothing.
-- **Everything else is a CONVERSATION.** Free-form speech goes to the steward's **seat model** with the Face, roadmap projection, active step and the open `scaffold_proposal` as context. It answers, asks what it needs, and — when it has enough — emits a typed proposal for review. He refines **by talking**; each re-proposal is a new hash-bound `scaffold_proposal`.
+- **Everything else is a CONVERSATION.** Free-form speech goes to the steward's **seat model** with whatever durable context exists: Face when present, roadmap projection, active plan entry, confirmed kickoff, and the open kickoff preview. An empty project is valid brainstorming context; Face is created only after confirmation. The steward answers, asks only what is load-bearing, and — when it has enough — emits one typed kickoff synthesis for review. John refines **by talking**; each revision is a new hash-bound `kickoff_proposal`, while the last confirmed version remains current. The legacy `scaffold_proposal` reader remains for existing campaigns.
 - **The destructive guard does NOT run on the converse lane.** "Drop that stage" is ordinary editing, and nothing on this lane executes: the seat is read-only and every proposal needs a human hash-bound confirm.
 
 **Campaign standing rules — 2026-08-25 (promoting the steward's OWN journaled laws;
@@ -200,6 +200,26 @@ Elegance rule 9: a correction that lives only in a journal has not been made).**
   in plain words when it is written; codenames (step ids, K=notation, OSF codes)
   stay in machine fields only. A sentence John must read that contains a step id
   is not done being written.
+- **Kickoff synthesis + work-product map (2026-08-30).** After a rich project
+  description, show one compact proposal containing the goal, observable
+  success signals, one deliverable, its stable components, a coarse plan, the
+  first end-to-end slice, and — only for a genuinely multi-component product —
+  typed relationships plus observable integration proof. Do not ask a ritual
+  question first. The whole proposal is editable by talking and becomes truth
+  only through one hash-bound `kickoff_confirm`. A confirmed vN remains current
+  while vN+1 is merely open. The cockpit **Work product** tile reads confirmed
+  kickoff components; it never reconstructs product structure from workflow tags.
+- **Slice loop (2026-08-28, hardened workflow).** Steward owns the overall plan.
+  Tag every roadmap step `part=research|slice|rigor|integrate|harden` (and a
+  `gate` command when the step will be commissioned). These tags describe how
+  execution proceeds; they are metadata, never work-product components and never
+  the product map. Default: do a small slice in this
+  session. **No in-process Shark swarm** (`in_process_shark_tank: false`); that
+  is Crucible, only when commissioned. Commission Crucible/Foreman only when
+  the session cannot hold the work AND the step has a `gate` (a command that
+  can fail). After EVERY close, including research, append a `goal_flip`
+  (`reaffirmed` or `rewritten`) and update the Face if rewritten; then recommend
+  whether to move on — he decides.
 
 **The Grasscatcher capacity — 2026-08-19 (John's commission).** The grasscatch
 list is a first-class conversational duty, not just a verb. It is the talking
@@ -228,12 +248,12 @@ face of the Rabbit-Catcher and the Parable of the Oranges:
 | store | what it holds | authoritative for project state? |
 |---|---|---|
 | Strip receipts / roadmap events / Face | project **state** | **yes — these are the only ones** |
-| `.ecgberht/conversation-log.json` (per project) | what was **said**, each turn tagged with the scaffolding version it produced | no |
+| `.ecgberht/conversation-log.json` (per project) | what was **said**, each turn tagged with the proposal version it produced | no |
 | `~/.ecgberht/portfolio-ledger.json` | what the steward **did**, across all projects | no |
 
-Why: the roadmap already records *what* the scaffolding was at each turn (every re-proposal is its own `scaffold_proposal` event), but not *why* it changed. Why the amendment is narrow: E5 existed to stop two sources of truth for project state drifting apart — that is still prevented. The transcript can never `mint_step`, `flip_status`, `authorize_spend` or `commission`; the portfolio ledger **refuses** any record carrying `status`/`goal`/`steps`/`next_action`; and **where they disagree with the ledger, the ledger wins.** Both are enforced structurally (`assertTranscriptNonAuthoritative`, `assertRecordsNoProjectState`) and by the amended second-task-DB canary, which now has red cases for an authoritative transcript and for one allowed to mint a step. The CLI's own `--resume` stays unused — model-side session state would be a memory nobody can audit.
+Why: the roadmap records *what* each kickoff proposal contained, but not *why* it changed. Only a matching `kickoff_confirm` makes one version authoritative; the conversation never does. Why the amendment is narrow: E5 existed to stop two sources of truth for project state drifting apart — that is still prevented. The transcript can never `mint_step`, `flip_status`, `authorize_spend` or `commission`; the portfolio ledger **refuses** any record carrying `status`/`goal`/`steps`/`next_action`; and **where they disagree with confirmed kickoff/roadmap truth, the ledger wins.** Both are enforced structurally (`assertTranscriptNonAuthoritative`, `assertRecordsNoProjectState`) and by the amended second-task-DB canary, which now has red cases for an authoritative transcript and for one allowed to mint a step. The CLI's own `--resume` stays unused — model-side session state would be a memory nobody can audit.
 
-**The High Seat shows both:** `bringItUp` carries the project's conversation summary (turns, scaffolding versions, recent exchanges); `assembleHighSeat` carries `steward_efforts` — activity per project, and which projects have gone quiet.
+**The High Seat shows both:** `bringItUp` carries the project's conversation summary (turns, proposal versions, recent exchanges); `assembleHighSeat` carries `steward_efforts` — activity per project, and which projects have gone quiet.
 
 **Seat + spend.** `scripts/seat-call.mjs` owns the transport (engine law: nothing under `engine/` may spawn). The model is chosen by ROLE, never by name — `engine/seat-tiers.mjs` maps `frontier` (planning) and `conversational` (one tier below, talking) to CLI **aliases**, so new model releases are picked up with no code change; a test fails the build if a version number appears there. Talking turns get **no tools** (fast); only the planning turn reads the project. A **background allowance** opens itself on the first turn — no approval gate — capped at **$50 of MEASURED spend** with **unlimited turns**; reaching the cap stops the steward and offers to raise it.
 
@@ -282,8 +302,8 @@ The Roadmap is engine truth via append-only events + a derived projection. Face 
 
 | Surface | Rule |
 |---------|------|
-| `roadmap_events[]` | Append-only history (`step_create` · `step_set` · `status_flip` · `commission_bind`); prior entries never rewritten |
-| `roadmap_projection` | **Derived-only** step list (`id, name, status, done_when, waiting_on, commissioned_as`) rebuilt from the event fold; direct writes rejected |
+| `roadmap_events[]` | Append-only history (`step_create` · `step_set` · `status_flip` · `commission_bind` · `goal_flip` · `kickoff_proposal` · `kickoff_confirm`); prior entries never rewritten |
+| `roadmap_projection` | **Derived-only** execution list (`id, name, status, done_when, waiting_on, commissioned_as, part, gate`) plus confirmed kickoff references (`component_ids, end_to_end_slice, kickoff_version, kickoff_proposal_hash`); direct writes rejected |
 | Status flip | Requires a receipt (`who`/`why`) on the `status_flip` event — flip without receipt = refuse write / reject on validate |
 | Silent rewrite | Stored projection that disagrees with the event fold → structured reject (`roadmap_silent_rewrite`); **heal** rebuilds projection from events (events untouched) |
 | Face-only prose | `roadmap-show` / `status` return an **empty projection + honest gap** (`face_prose_only`) — steps are never invented from prose |
@@ -312,9 +332,9 @@ Anti-starvation: `negative_heartbeat`, `anti_starvation_age_days`. Module: `engi
 ## Seating (Anchor prefs only)
 
 - Resolve seats from Anchor model prefs: `coding_family` / `review_family` / `default_cli` (mirror: model prefs file under the Anchor data dir — never hardcode host home paths in engine logic).
-- Map families to **subscription** drivers only (claude / gemini-cli|agy / grok-cli).
+- Map families to **subscription** drivers only (chatgpt-cli / claude / gemini-cli|agy / grok-cli).
 - Stamp `cross_model` honestly when same-family.
-- **Forbidden:** hardcoded Claude/Gemini/Grok product model IDs in skill prose or engine; raw `XAI_API_KEY` HTTP path for production seats.
+- **Forbidden:** hardcoded ChatGPT/Claude/Gemini/Grok product model IDs in skill prose or engine; raw API-key HTTP paths for production seats.
 - Module: `engine/seating.mjs`.
 
 ### Commission adapters (compose-only)

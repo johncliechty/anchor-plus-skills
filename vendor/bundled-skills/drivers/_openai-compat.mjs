@@ -11,7 +11,7 @@ import { HaltError } from '../foreman/bin/foreman-lib.mjs';
  * Build the `{ url, init }` for an OpenAI-compatible Chat Completions request. When
  * `schema` is supplied, native structured output (JSON mode) is requested via
  * `response_format: { type:'json_schema', ... }` so the reply is constrained to the
- * schema; the shared seam still parses/validates and retries-then-abstains.
+ * schema; the shared seam still parses/validates and retries once before failure.
  */
 export function buildChatRequest({ prompt, schema, model, apiKey, baseUrl }) {
   const body = {
@@ -60,7 +60,15 @@ async function safeText(res) {
  * @param {string}   [o.keyName]    env var name, for the "not set" HALT message
  * @param {Function} [o.log]
  */
-export function makeChatTransport({ baseUrl, apiKey, model, fetchImpl, keyName = 'API key', log = () => {} } = {}) {
+export function makeChatTransport({
+  baseUrl,
+  apiKey,
+  model,
+  family = null,
+  fetchImpl,
+  keyName = 'API key',
+  log = () => {},
+} = {}) {
   if (!apiKey && !fetchImpl) {
     throw new HaltError(
       `${keyName} is not set`,
@@ -77,6 +85,22 @@ export function makeChatTransport({ baseUrl, apiKey, model, fetchImpl, keyName =
       throw new HaltError(`chat request failed (HTTP ${res.status})`, String(detail).slice(0, 300));
     }
     const data = await res.json();
-    return { text: parseChatResponse(data) };
+    const servedModel = typeof data?.model === 'string' && data.model.trim()
+      ? data.model.trim()
+      : null;
+    return {
+      text: parseChatResponse(data),
+      rec: {
+        label,
+        ok: true,
+        status: 'success',
+        requested_model: model ?? null,
+        model_served: servedModel,
+        model_family: family,
+        family_attested: family === 'chatgpt' || family === 'grok',
+        model_attested: servedModel !== null,
+        degraded: servedModel === null,
+      },
+    };
   };
 }
