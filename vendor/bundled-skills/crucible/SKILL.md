@@ -231,9 +231,10 @@ user is the final convergence authority**.
 - `bin/stage0.mjs` / `bin/stage1.mjs` / `bin/stage2.mjs` — the three stage protocols.
 - `bin/band-profile.mjs` — LITE / SPIKE-FIRST / FULL ceremony profiles (cf-slick; depth → real path).
 - `bin/enhanced.mjs` / `bin/remote.mjs` — the CROSS-FAMILY verification seam (builds the
-  live role-routed agent: Gemini Sharks/Judge, Claude steering — the 5:1 split, via the
-  shared `makeRoleRoutedAgent` + gemini-cli tier ladder) + the push-at-approval-gates
-  GitHub remote (never auto-pushes).
+  live role-routed agent from the Anchor dashboard prefs: Sharks/Judge on `review_family`,
+  steering on `coding_family` — `buildDefaultCrucibleRoutes` → the shared
+  `makeRoleRoutedAgent`; same family on both ⇒ honest `cross_model:false`) + the
+  push-at-approval-gates GitHub remote (never auto-pushes).
 - `bin/docs.mjs` — the living-doc + version-control layer.
 - `bin/self-run.mjs` — the dogfood self-run (drives Stage 0→1→2, proves convergence +
   HALT/resume, emits a zero-HALT doc-trio) — also the runnable entrypoint.
@@ -246,10 +247,11 @@ user is the final convergence authority**.
 ## How to invoke — the OPERATOR RUNBOOK (2026-07-11; a live session drives THIS, never an improvised protocol)
 
 1. **Bind the live seam.** `CRUCIBLE_AGENT_LIVE=1`; build the cross-family agent via
-   `buildLiveCrucibleAgent()` (`bin/enhanced.mjs` — Gemini Sharks/Judge, Claude steering, the 5:1
-   split, Gemini cap 2). Pass its ROUTES into the loop (`runMasterPlanLoop({ ..., routes })`) so the
-   Judge's stamp derives from where the judge role ACTUALLY dispatches (T7) — the default same-model
-   Judge persona is the agy-down fallback, not the normal path.
+   `buildLiveCrucibleAgent()` (`bin/enhanced.mjs` — Sharks/Judge on the dashboard's `review_family`,
+   steering on `coding_family`; never a hardwired family — 2026-09-04). Pass its ROUTES into the loop
+   (`runMasterPlanLoop({ ..., routes })`) so the Judge's stamp derives from where the judge role
+   ACTUALLY dispatches (T7) — the default same-model Judge persona is the seat-down fallback, not
+   the normal path.
 2. **Stage 0** → `runStage0`/protocol: complexity triage AUTO-BANDS (announced, never asked —
    2026-08-25) + writes the triage lock; frame; candidate North Star. **Gate ergonomics (John's
    locked preferences — SCOPE RECONCILED 2026-08-25):** the 07-16 show-the-artifact rule and the

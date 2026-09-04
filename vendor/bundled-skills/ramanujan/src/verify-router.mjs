@@ -319,6 +319,8 @@ async function verifyCrossFamilyCorroboration(claim, rctx) {
     rerun: cf.rerun,
     probeTrust: cf.probeTrust,
     families: cf.families,
+    frontier: cf.frontier, // (2026-09-04) the resolved seat identity {family, model}
+    author: cf.author,
   });
   if (result.status === CROSS_FAMILY_STATUS.CORROBORATED) {
     // PER-VERIFIER lift (v3): a frontier-Gemini result lifts to CORROBORATED; the ollama fallback lifts

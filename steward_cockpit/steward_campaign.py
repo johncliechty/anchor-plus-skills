@@ -699,14 +699,24 @@ def read_deliverables(campaign_dir: str):
             what, where_text, date = cells[0], cells[1], cells[2]
             path_rel, openable = None, False
             m_bt = re.search(r"`([^`]+)`", where_text)
-            if m_bt:
-                cand = m_bt.group(1).strip()
+            # (2026-09-04) a register row written without backticks (the
+            # Fractal Orthogonal Basis effort: "report/DRAFT-v1.md") must still
+            # open: fall back to the cell's first token that names a file.
+            cand_plain = None
+            if not m_bt:
+                for tok in where_text.replace(",", " ").split():
+                    tok = tok.strip().strip("()[]")
+                    if "/" in tok or "." in tok:
+                        cand_plain = tok
+                        break
+            if m_bt or cand_plain:
+                cand = (m_bt.group(1).strip() if m_bt else cand_plain)
                 try:
                     real = os.path.realpath(str(Path(campaign_dir) / cand))
                     if (real == cdir_real
                             or real.startswith(cdir_real + os.sep)) \
                             and os.path.isfile(real):
-                        path_rel = os.path.relpath(real, cdir_real)
+                        path_rel = os.path.relpath(real, cdir_real).replace(os.sep, "/")
                         openable = True
                     else:
                         path_rel = cand

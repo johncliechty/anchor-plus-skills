@@ -121,11 +121,15 @@ On any `legal-beagle-Heavy` run (and on request at regular tier when stakes warr
    (fresh context, sources required). Run them IN PARALLEL. This is the proven pattern — the
    estate-tax run (journal 0001) used 3 such reviewers and caught a wrong reporter citation and
    a non-precedential-authority overclaim that the base pass missed.
-2. **The Gemini citation seat.** Dispatch the draft findings + the full source list to Gemini via
-   agy-dispatch (`--readonly`; prompt: "verify EVERY citation is grounded in the provided sources
-   or flagged [UNVERIFIED], and that jurisdiction + as-of date are established; list violations").
-   Record its verdict in the output. agy down ⇒ say so and stamp the run single-family — never
-   silently skip.
+2. **The citation seat — the dashboard's review family (2026-09-04, John: seats are what the
+   Anchor dashboard selects, universally).** Dispatch the draft findings + the full source list to
+   the `review_family` seat (Anchor data-dir `settings.json` → `~/.anchor/model_prefs.json`; the
+   trio drivers resolve the transport: chatgpt → `codex exec`, grok → `grok.exe -p`, gemini →
+   `agy`, claude → `claude.exe`) in a read-only posture; prompt: "verify EVERY citation is grounded
+   in the provided sources or flagged [UNVERIFIED], and that jurisdiction + as-of date are
+   established; list violations". Record its verdict in the output. `review_family` equal to the
+   author's family ⇒ still run it, stamp `cross_model:false`. Seat down ⇒ say so and stamp the run
+   single-family — never silently skip. Never a family nobody selected.
 3. **The pre-delivery gate is THE ENGINE, gates-only** (retargeted 2026-08-25, John-ratified —
    the old pointer here named the weak standalone checker, the exact gate a July review
    condemned, while the strong check sat unused):

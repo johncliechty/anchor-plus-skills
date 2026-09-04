@@ -149,10 +149,35 @@ generated triage block `foundry/triage/generated/ramanujan.triage-block.md` (reg
 ## Cross-family second opinion (stakes-gated)
 
 When stakes ≥ medium (a result the user will build on, publish, or spend against), on any `-Heavy`
-run, or on request: dispatch the core claim + your derivation to Gemini via agy-dispatch
-(`--readonly`; "attempt to refute this derivation; return the strongest concrete objection").
-Report agreement/disagreement honestly. agy down ⇒ say so; never silently skip, never present a
-single-family check as cross-family.
+run, or on request: dispatch the core claim + your derivation to the **cross-family seat** with
+"attempt to refute this derivation; return the strongest concrete objection". Report agreement and
+disagreement honestly. Seat down ⇒ say so; never silently skip, never present a single-family check
+as cross-family.
+
+**Which family sits in the seat — the Anchor dashboard decides (John, 2026-09-04; a correction
+promoted here so it is LOADED, not journaled):**
+
+1. Read the prefs the way the trio drivers do: Anchor data-dir `settings.json` → `~/.anchor/model_prefs.json`
+   (`coding_family`, `review_family`). Never a hardcoded family, never a stale `TRIO_DRIVER_*` setx.
+2. The seat is the configured family that is **not your own** — `review_family` first (the check seat
+   under the Universal Seating Law), then `coding_family`. You are Claude, so with
+   `coding_family: chatgpt` / `review_family: claude` the seat is **ChatGPT**.
+3. If every configured family is your own, there is **no** cross-family seat: say so and stamp the
+   run `cross_model: false`. Do not reach for a family nobody selected.
+4. **Gemini via `agy` only when a pref names gemini.** It is not the default dispatcher for this check
+   (the 2026-09-04 journal 0003 run went to Gemini on the old prose while the dashboard said ChatGPT —
+   that is the error this rule closes).
+
+| Seat family | Transport (subscription login — never an API key) |
+|---|---|
+| chatgpt | `codex exec --sandbox read-only --ephemeral - < prompt.txt` (trio `chatgpt-cli`) |
+| grok | `grok.exe -p --permission-mode plan` (trio `grok-cli`) |
+| gemini | `agy -p` through `agy-dispatch` / trio `gemini-cli` (label, never an API-style id) |
+| claude | `claude.exe -p` — legal only when the claim's author is another family |
+
+The certifier engine resolves the same seat in code (`src/seat.mjs` → the trio drivers'
+`loadModelFamilies`; the transports are pinned in `tools.manifest.json`), so the fast path and the
+engine cannot disagree. The run record's `models.second_family` is the seat that ACTUALLY answered.
 
 ## The certifier engine — one command for the arithmetic slice (2026-07-25)
 

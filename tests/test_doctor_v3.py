@@ -768,7 +768,8 @@ def test_opening_doctor_never_starts_a_model(denv, monkeypatch):
     assert "window.runDiagnose(" not in boot
     assert "/api/doctor/session_start" not in boot
     assert "NEVER starts a paid model" in template
-    assert "Click Diagnose to start a model session" in boot
+    # (2026-09-03) Doctor probes first on open; a MODEL session still waits for the click.
+    assert "No model starts until you click." in boot
 
 
 # ── /api/doctor/status — the card-refresh data is real ───────────────────────

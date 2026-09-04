@@ -1,5 +1,74 @@
 # Changelog
 
+## v1.2.11 — seats are what the dashboard selects, everywhere; deliverables open well; Doctor probes first; sessions advance in the background (2026-09-04)
+
+John's day of use after v1.2.10: a math-research run went to Gemini (whose
+subscription was stopped on 08-31) because the Ramanujan skill had it
+hardwired; a PowerPoint deliverable opened as raw bytes; and two design rules
+he stated — the seats every skill uses are whatever the Anchor dashboard
+selects, and a running session must not depend on any device keeping a page
+open — were only partly true in the code. This release closes all of it.
+
+### The dashboard's seats are universal
+- `lanes.selected_families()` reads the dashboard's Terminal / Coder /
+  Reviewer selection (default_cli / coding_family / review_family) — the one
+  source. The no-preference engine plan reads it: a Gemini swarm exists only
+  when a selected family IS gemini; an installed-but-unselected agy is never
+  spawned. The classic project window's badge says what was selected
+  ("Coder Chatgpt · Reviewer Claude"), never what happens to be installed.
+- The Doctor and Zombie-Hunter engine pickers offer an engine only when it is
+  installed AND selected on the dashboard; otherwise it is shown disabled with
+  that reason. A picker defaults to the Terminal role, then the Coder family.
+  The hunter GUI is spawned with the same prefs env every seat gets.
+- Vendored skills re-pinned to the hardened sources: **Ramanujan** resolves its
+  cross-family seat from the dashboard prefs through the trio drivers
+  (review_family first, then coding_family, never the author's own; gemini
+  only when named; none → `cross_model:false`, honestly) — `src/seat.mjs`,
+  `tools.manifest.json` (`primary: "prefs"`, transports pinned for
+  claude / gemini / grok / chatgpt); legal-beagle, gandalf and jumper prose
+  stop naming Gemini or agy as the seat; crucible / foreman / researchPrime
+  runbooks say what their engines do: review_family reviews, coding_family
+  codes (the trio's documented no-prefs fallback — a host with no Anchor
+  settings and no mirror — is unchanged; it never fires where a dashboard
+  exists).
+
+### Sessions continue when your device does not
+- Sessions already live on the server (PUTER never sleeps); a closed browser
+  only detaches. But the registry reconcile, restart recovery, plan→build
+  auto-advance and in-session stage progress ran ONLY inside the project
+  window's poll. They now also run on a server ticker every
+  `ANCHOR_RECONCILE_TICK_S` seconds (default 60), so a planning session that
+  finishes with no browser open advances by itself; reopening any device
+  shows what happened.
+- Named limit: the server host itself must stay up. A service restart still
+  parks live terminals warm (resume on reopen) and a parked steward effort
+  wakes on the next page open.
+
+### Deliverables open well
+- Every deliverable is served under its honest content type: PDF and images
+  inline; Word / PowerPoint / Excel as a stdlib text-preview page
+  (`office_preview.py` — paragraphs, headings, lists, tables, slides in order
+  with titles / bullets / notes, sheets as tables) with a download that opens
+  the native app; unknown types download under their own name; html/svg stay
+  inert. Register rows written without backticks still open; a designed
+  title slide with no placeholders still shows its title; slide-number chrome
+  is dropped.
+- The cockpit's Reader typesets `$…$` and `$$…$$` with the vendored KaTeX.
+
+### Doctor probes first (the r3 Doctor rule)
+- A red banner is already a diagnosis on disk. Opening Doctor now READS the
+  newest report, says its issues in plain words, PROBES the live server for
+  the paths they name, and decides by itself: when every issue was the 5 AM
+  self-test failing to reach its own throwaway copy while the live server
+  answers, it re-runs the health check itself (no model, no cost) and the
+  banner clears when the report is clean; anything still real is named and
+  waits for your click. `GET /api/doctor/probe` (token, read-only) carries
+  the decision; Resolve all shares the same probe. The cut the scorecard
+  named — the required Diagnose click when a health issue already exists —
+  is made. Pinned by `tests/test_doctor_probe_on_open_2026_09_03.py`.
+- The home banner says what a click does: "Doctor reads it, probes the live
+  server, and re-runs the check itself when the failure is gone."
+
 ## v1.2.10 — the home becomes the r3 prototype; the status pane becomes a window; restarts stop needing hands (2026-09-03)
 
 John, 2026-09-03: "there was an updated (prototype) for the main dashboard and it

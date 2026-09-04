@@ -1597,10 +1597,18 @@ def _ensure_zh_node_server(wait_s=10.0):
         try:
             if os.path.exists(_ZH_NODE_SERVER_PATH):
                 creationflags = 0x08000000 if sys.platform.startswith("win") else 0
+                # (2026-09-04) the hunter's engine picker reads the dashboard's
+                # families (ANCHOR_DEFAULT_CLI / CODING_FAMILY / REVIEW_FAMILY) —
+                # hand it the same prefs env every spawned seat gets.
+                try:
+                    _zh_env = {**os.environ, **_aset.export_env_overrides()}
+                except Exception:
+                    _zh_env = None
                 subprocess.Popen(
                     ["node", _ZH_NODE_SERVER_PATH],
                     creationflags=creationflags,
                     cwd=os.path.dirname(_ZH_NODE_SERVER_PATH),
+                    env=_zh_env,
                 )
                 _logger.info("ensure_zh_node: launched server.js on port %s", _ZH_NODE_PORT)
             else:
@@ -5515,7 +5523,7 @@ def _parked_worktree_stamp() -> str:
         return ""
 
 
-def render_model_flex_badge(env=None) -> str:
+def render_model_flex_badge(env=None, families=None) -> str:
     """Header badge surfacing the host's model-flex posture (Wave 8, #10).
 
     Reads the host-capability profile (``lanes.detect_host_profile``) and shows,
@@ -5530,13 +5538,28 @@ def render_model_flex_badge(env=None) -> str:
     """
     prof = _lanes.detect_host_profile(env)
     has_c, has_g = bool(prof.get("claude")), bool(prof.get("gemini"))
-    if has_c and has_g:
+    # (2026-09-04, John) the badge says what the DASHBOARD selected — the seats every
+    # skill uses — never what happens to be installed.
+    try:
+        fams = families if isinstance(families, dict) else _lanes.selected_families(env)
+    except Exception:
+        fams = {"coding": "claude", "review": "claude", "default_cli": "claude", "selected": {"claude"}}
+    gemini_selected = "gemini" in (fams.get("selected") or set())
+    if has_c and has_g and gemini_selected:
         label = "&#9670; Claude driver &middot; &#10022; Gemini swarm %s" % (
             html_lib.escape(_lanes.SWARM_RATIO))
-        title = ("Both subscriptions: Claude drives every lane; Gemini runs the "
-                 "skill-layer %s swarm (agy-dispatch). Never cross-called." %
+        title = ("Both subscriptions and gemini selected on the dashboard: Claude drives every "
+                 "lane; Gemini runs the skill-layer %s swarm (agy-dispatch). Never cross-called." %
                  _lanes.SWARM_RATIO)
         cls = "mflex-both"
+    elif has_c and (fams.get("coding") != "claude" or fams.get("review") != "claude"):
+        label = "&#9670; Coder %s &middot; Reviewer %s" % (
+            html_lib.escape(str(fams.get("coding", "claude")).capitalize()),
+            html_lib.escape(str(fams.get("review", "claude")).capitalize()))
+        title = ("Seats as selected on the dashboard: coding family %s, review family %s "
+                 "(terminal %s). Every skill reads these; nothing else is spawned." % (
+                     fams.get("coding"), fams.get("review"), fams.get("default_cli")))
+        cls = "mflex-claude"
     elif has_c:
         label = "&#9670; Claude only"
         title = ("Claude-only host: Claude drives every lane; no agy/Gemini "
@@ -7285,8 +7308,8 @@ def generate_html(projects, tasks, inbox):
                         # itself"): what a click does, nothing about seeds
                         # or markdown paths.
                         f'on {html_lib.escape(str(report_date))}. '
-                        f'Click: Doctor opens with this issue already read; '
-                        f'Resolve all is one click there.'
+                        f'Click: Doctor reads it, probes the live server, and '
+                        f're-runs the check itself when the failure is gone.'
                     ),
                     style_kind="health",
                 )
@@ -14833,17 +14856,38 @@ def _w8_engine_toggle(profile=None, prefs=None, last_used=None):
             profile = _lanes.detect_host_profile()
         except Exception:
             profile = {"claude": False, "gemini": False, "grok": False, "chatgpt": False}
-    prefs = prefs or {}
+    prefs = dict(prefs or {})
+    # (2026-09-04, John) an engine is offered only when it is installed AND the
+    # dashboard selects its family (Terminal / Coder / Reviewer) — an installed
+    # CLI whose subscription was dropped must not appear as a live choice.
+    if not prefs.get("_selected"):
+        try:
+            fams = _lanes.selected_families()
+            prefs.setdefault("default_cli", fams["default_cli"])
+            prefs.setdefault("coding_family", fams["coding"])
+            prefs.setdefault("review_family", fams["review"])
+            prefs["_selected"] = set(fams["selected"])
+        except Exception:
+            prefs["_selected"] = {"claude"}
+    selected = {_w8_normalize_engine(x) for x in prefs["_selected"] if x}
+    selected.discard(None)
     engines = []
     for eid in _W8_ENGINE_IDS:
         available = bool(profile.get(eid))
+        chosen = eid in selected
         transport = {
             "claude": ("claude", "claude"),
             "gemini": ("agy", "agy"),
             "grok": ("grok-cli", "grok.exe -p"),
             "chatgpt": ("chatgpt-cli", "codex exec"),
         }[eid]
-        health = "healthy" if available else "unavailable (subscription CLI not detected)"
+        if not available:
+            health = "unavailable (subscription CLI not detected)"
+        elif not chosen:
+            health = "installed, but not selected on the dashboard (Terminal / Coder / Reviewer)"
+        else:
+            health = "healthy"
+        enabled = available and chosen
         engines.append({
             "id": eid,
             "label": eid.capitalize() if eid != "gemini" else "Gemini",
@@ -14851,8 +14895,9 @@ def _w8_engine_toggle(profile=None, prefs=None, last_used=None):
             "spawn": transport[1],
             "subscriptionCli": True,
             "available": available,
-            "enabled": available,
-            "disabled": not available,
+            "selected": chosen,
+            "enabled": enabled,
+            "disabled": not enabled,
             "health": health,
             "firstPromptBudgetMs": _W8_FIRST_PROMPT_BUDGET_MS,
         })
@@ -14862,10 +14907,15 @@ def _w8_engine_toggle(profile=None, prefs=None, last_used=None):
     if last and last in healthy:
         default = last
     else:
+        # (2026-09-04) a picker starts a TERMINAL, so the dashboard's Terminal role
+        # (default_cli) wins; the Coder family is the fallback.
         family = _w8_normalize_engine(
-            prefs.get("coding_family") or prefs.get("default_cli"))
+            prefs.get("default_cli") or prefs.get("coding_family"))
+        alt = _w8_normalize_engine(prefs.get("coding_family"))
         if family and family in healthy:
             default = family
+        elif alt and alt in healthy:
+            default = alt
         elif healthy:
             default = healthy[0]
     return {
@@ -16157,6 +16207,37 @@ def _doctor_live_port():
         return 8777
 
 
+def _doctor_probe_state():
+    """Read the newest report, explain its issues in plain words
+    (doctor_plain), re-probe the LIVE server for the GET paths they name,
+    and decide (``rerun`` / ``session`` / ``nothing``). READ-ONLY — the
+    shared first half of ``handle_doctor_probe`` (what Doctor does on open)
+    and ``handle_doctor_resolve_all`` (what the button does)."""
+    import doctor_plain as _dp
+    s = _doctor_stats()
+    explained = _dp.explain_all(s.get("issues") or [], s.get("autofixes") or [])
+    probe = [_doctor_live_probe(p) for p in _dp.probe_targets(explained)] if explained else []
+    decision = _dp.decide(explained, probe)
+    return s, explained, probe, decision
+
+
+def handle_doctor_probe(handler, path, body):
+    """GET /api/doctor/probe — what Doctor does the moment it opens on a red
+    banner (the r3 Doctor rule, 2026-09-03): a health issue is already a
+    diagnosis on disk, so READ it, say it in plain words, PROBE the live
+    server now for the paths it names, and DECIDE — changing nothing here.
+    The page then re-runs the check by itself when the decision is ``rerun``
+    (no model, no cost; the banner clears when the report is clean) and
+    otherwise says what is still wrong and waits for your click — opening a
+    page never starts a model session. Token-authed by the route row.
+    Read-only: no re-run, no session, no seed.
+    """
+    s, explained, probe, decision = _doctor_probe_state()
+    handler._send_json({"ok": True, "decision": decision, "issues": explained,
+                        "probe": probe, "last_run": s.get("last_run"),
+                        "status": s.get("status")})
+
+
 def handle_doctor_resolve_all(handler, path, body):
     """POST /api/doctor/resolve_all — one click for every open issue (John,
     2026-09-03). Token-authed by the middleware.
@@ -16171,10 +16252,7 @@ def handle_doctor_resolve_all(handler, path, body):
     No model runs here; the receipt is real numbers or absent.
     """
     import doctor_plain as _dp
-    s = _doctor_stats()
-    explained = _dp.explain_all(s.get("issues") or [], s.get("autofixes") or [])
-    probe = [_doctor_live_probe(p) for p in _dp.probe_targets(explained)] if explained else []
-    decision = _dp.decide(explained, probe)
+    s, explained, probe, decision = _doctor_probe_state()
     out = {"ok": True, "decision": decision, "issues": explained, "probe": probe}
     if decision == "rerun":
         out["rerun"] = _doctor_start_healthcheck_run()
@@ -16443,8 +16521,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   // ── W8/SC6 shell-first doctor terminal (NO auto session_start on load) ──
   var term = new Terminal({ convertEol: true, fontSize: 13, theme: { background: '#0c0e14' }, scrollback: 5000 });
   term.open(document.getElementById('terminal'));
-  term.write('[doctor] Shell ready (≤1s). Pick Claude / Gemini / Grok, then Diagnose.\\r\\n');
-  term.write('[doctor] No auto-session — page stays usable without multi-minute blank wait.\\r\\n');
+  term.write('[doctor] Shell ready (≤1s). Pick Claude / Gemini / Grok, then Diagnose.\r\n');
+  term.write('[doctor] No auto-session — page stays usable without multi-minute blank wait.\r\n');
   var activeWs = null;
   var sendChain = Promise.resolve();
   var sessionId = null;
@@ -16465,7 +16543,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   }
   window.pickDoctorEng = function (e) {
     if (ZH_ENG_HEALTH[e] === false) {
-      term.write('[doctor] ' + e + ' disabled (unhealthy).\\r\\n');
+      term.write('[doctor] ' + e + ' disabled (unhealthy).\r\n');
       return;
     }
     ZH_ENG = e;
@@ -16590,13 +16668,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
           markdownPath: null,
           isMarkdownPath: false
         };
-        term.write('[doctor] Banner seed loaded (W9/SC7) — not a markdown path.\\r\\n');
-        term.write('[doctor] issueId: ' + (BANNER_ISSUE.issueId || '(none)') + '\\r\\n');
-        if (BANNER_ISSUE.message) term.write('[doctor] message: ' + BANNER_ISSUE.message + '\\r\\n');
-        if (BANNER_ISSUE.component) term.write('[doctor] component: ' + BANNER_ISSUE.component + '\\r\\n');
-        if (BANNER_ISSUE.lastError) term.write('[doctor] lastError: ' + BANNER_ISSUE.lastError + '\\r\\n');
+        term.write('[doctor] Banner seed loaded (W9/SC7) — not a markdown path.\r\n');
+        term.write('[doctor] issueId: ' + (BANNER_ISSUE.issueId || '(none)') + '\r\n');
+        if (BANNER_ISSUE.message) term.write('[doctor] message: ' + BANNER_ISSUE.message + '\r\n');
+        if (BANNER_ISSUE.component) term.write('[doctor] component: ' + BANNER_ISSUE.component + '\r\n');
+        if (BANNER_ISSUE.lastError) term.write('[doctor] lastError: ' + BANNER_ISSUE.lastError + '\r\n');
         if (BANNER_ISSUE.suggestedChecks.length) {
-          term.write('[doctor] suggestedChecks: ' + BANNER_ISSUE.suggestedChecks.join('; ') + '\\r\\n');
+          term.write('[doctor] suggestedChecks: ' + BANNER_ISSUE.suggestedChecks.join('; ') + '\r\n');
         }
       }
     } catch (e) {
@@ -16604,6 +16682,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       REQUESTED_DIAGNOSE = false;
     }
   })();
+
+  // (2026-09-03) The r3 Doctor rule: a red banner is already a diagnosis on
+  // disk. Opening Doctor READS it, PROBES the live server now, and when every
+  // issue was the 5 AM self-test failing to reach its own copy while the live
+  // server answers, re-runs the check ITSELF so the banner clears - no click,
+  // no model. Only a real, still-failing issue waits for you (Resolve all).
+  var PROBED_ON_OPEN = false;
+  function probeOnOpen() {
+    if (PROBED_ON_OPEN) return;
+    PROBED_ON_OPEN = true;
+    term.write('[doctor] Reading the newest report and probing the live server now.\r\n');
+    fetch(tq('/api/doctor/probe'), { headers: getHdrs() })
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        if (!p || !p.ok) { term.write('[doctor] Probe failed: ' + ((p && p.error) || 'unknown') + '\r\n'); return; }
+        (p.issues || []).forEach(function (it, i) {
+          term.write('[doctor] issue ' + (i + 1) + ': ' + (it.title || 'issue') + '\r\n');
+        });
+        (p.probe || []).forEach(function (q) {
+          term.write('[doctor] live ' + q.path + ': ' + (q.ok ? ('answers (' + q.code + ', ' + q.ms + ' ms)') : ('NO ANSWER - ' + (q.error || ''))) + '\r\n');
+        });
+        if (p.decision === 'rerun') {
+          term.write('[doctor] Every issue was the 5 AM self-test failing to reach its own copy, and the live server answers now. '
+            + 'Re-running the health check myself; the red banner clears when the report is clean.\r\n');
+          window.runDiagnostics();
+        } else if (p.decision === 'session') {
+          term.write('[doctor] ' + (p.issues || []).length + ' issue(s) still real. Resolve all starts ONE doctor session for them (a model session) - your click.\r\n');
+        } else {
+          term.write('[doctor] Nothing open in the newest report.\r\n');
+        }
+      })
+      .catch(function (e) { term.write('[doctor] Probe failed (non-blocking): ' + e + '\r\n'); });
+  }
 
   // Shell-first: load deterministic status/engine health only. Opening this
   // page NEVER starts a paid model, including banner URLs with diagnose=1.
@@ -16615,11 +16726,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
         if (s.defaultEngine) ZH_ENG = s.defaultEngine;
       }
       paintEng();
-      // Banner URLs preload context but require a human click before spending.
+      // Banner URLs preload context but require a human click before a MODEL
+      // spends. What does NOT wait for a click: reading the report and probing
+      // the live server (probeOnOpen, the r3 Doctor rule).
       if (REQUESTED_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] !== false) {
-        term.write('[doctor] Banner context is ready. Click Diagnose to start a model session.\\r\\n');
+        term.write('[doctor] Banner issue read. No model starts until you click.\r\n');
       } else if (REQUESTED_DIAGNOSE && BANNER_ISSUE && ZH_ENG_HEALTH[ZH_ENG] === false) {
-        term.write('[doctor] Banner diagnose deferred — engine ' + ZH_ENG + ' disabled with health; shell usable.\\r\\n');
+        term.write('[doctor] Banner diagnose deferred - engine ' + ZH_ENG + ' disabled with health; shell usable.\r\n');
       } else if (!BANNER_ISSUE && DOCTOR_ISSUES.length && ZH_ENG_HEALTH[ZH_ENG] !== false) {
         // Deterministically preload the top report issue, but do not spend.
         BANNER_ISSUE = {
@@ -16628,25 +16741,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
           component: DOCTOR_ISSUES[0].component || '',
           suggestedChecks: []
         };
-        term.write('[doctor] Health issue loaded without starting a model. '
-          + 'Click Diagnose, or use "Resolve this" above.\\r\\n');
+        term.write('[doctor] Health issue loaded without starting a model.\r\n');
       }
+      if (BANNER_ISSUE || DOCTOR_ISSUES.length) probeOnOpen();
     })
     .catch(function () {
       paintEng();
       if (REQUESTED_DIAGNOSE && BANNER_ISSUE) {
-        term.write('[doctor] Engine health probe failed (non-blocking); shell usable. Click Diagnose when ready.\\r\\n');
+        term.write('[doctor] Engine health probe failed (non-blocking); shell usable. Click Diagnose when ready.\r\n');
       }
     });
 
   window.runDiagnose = function (opts) {
     opts = opts || {};
     if (sessionId) {
-      term.write('[doctor] Session already live.\\r\\n');
+      term.write('[doctor] Session already live.\r\n');
       return;
     }
     if (ZH_ENG_HEALTH[ZH_ENG] === false) {
-      term.write('[doctor] Engine ' + ZH_ENG + ' disabled with health — pick another.\\r\\n');
+      term.write('[doctor] Engine ' + ZH_ENG + ' disabled with health — pick another.\r\n');
       return;
     }
     var btn = document.getElementById('diagnoseBtn');
@@ -16670,25 +16783,25 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
           var eng = document.getElementById('termEngine');
           if (eng && p.session.backend) eng.textContent = p.session.backend + (p.attached ? ' (reattached)' : '');
           term.write('[doctor] Session started async on ' + (p.session.backend || ZH_ENG)
-            + (opts.fromBanner ? ' (banner seed)' : '') + (opts.resolve ? ' (RESOLVE mode)' : '') + '.\\r\\n');
+            + (opts.fromBanner ? ' (banner seed)' : '') + (opts.resolve ? ' (RESOLVE mode)' : '') + '.\r\n');
           if (p.attached && opts.resolve) {
             term.write('[doctor] NOTE: attached to an EXISTING session (its posture stands). '
-              + 'Kill it and click Resolve this again for a fresh execution session.\\r\\n');
+              + 'Kill it and click Resolve this again for a fresh execution session.\r\n');
           }
           attach();
         } else {
           var status = (p && p.status) || 'error';
           var reason = (p && (p.reason || p.error)) || 'unknown';
           // Failure surfaces health; UI stays usable (SC7).
-          term.write('[doctor] Diagnose failed (non-blocking): ' + status + ' — ' + reason + '\\r\\n');
-          term.write('[doctor] Shell remains usable; try another engine or fix CLI health.\\r\\n');
+          term.write('[doctor] Diagnose failed (non-blocking): ' + status + ' — ' + reason + '\r\n');
+          term.write('[doctor] Shell remains usable; try another engine or fix CLI health.\r\n');
           var h = document.getElementById('engHealth');
           if (h) h.textContent = 'start failed: ' + reason;
         }
       })
       .catch(function (e) {
         if (btn) { btn.disabled = false; btn.textContent = 'Diagnose'; }
-        term.write('[doctor] session start failed (non-blocking): ' + e + '\\r\\n');
+        term.write('[doctor] session start failed (non-blocking): ' + e + '\r\n');
         var h = document.getElementById('engHealth');
         if (h) h.textContent = 'start failed (non-blocking)';
       });
@@ -19397,6 +19510,124 @@ def handle_usage_ledger(handler, path, body):
     handler._send_json({"ok": True, "usage": usage})
 
 
+def _reconcile_sessions_tick(pid=None):
+    """Reconcile the registry against the LIVE PTY set and run every advance that
+    depends on it (restart recovery, reconcile->auto-advance, in-session stage
+    progress, summarize-on-finish). Best-effort, fully guarded, idempotent.
+
+    (2026-09-04, John: "the session should continue running in the background ...
+    we should not be tied to whether a particular device is up and has an Anchor
+    webpage active") This used to run ONLY inside the project window's session-list
+    poll, so a planning session that finished while no browser was open did not
+    advance until someone opened the page. The server now ticks it itself
+    (``_start_reconcile_ticker``); the poll still calls it for immediacy.
+    """
+    with _RECONCILE_TICK_LOCK:
+        # v6 Wave 9 (polish 3): wire the reconcile→auto-advance into the
+        # project-window refresh/poll path. Before listing, reconcile the
+        # registry against the LIVE PTY set: a managed planning session
+        # whose process is gone is re-statused DONE and (idempotently)
+        # auto-advanced to ONE linked build — so a planning session that
+        # DIED (not just an explicit hard-kill) advances on the next
+        # refresh. Idempotent on parent_session_id → repeated polls are
+        # no-ops. Best-effort + fully guarded: an error here NEVER breaks
+        # the (read-only) session list response. live_session_ids MUST be
+        # passed (the function default treats NO session as live, which
+        # would wrongly mark live ones stale).
+        try:
+            live = list(_termsess._pty.live_sessions())
+            # v12 Wave 8 — restart recovery MUST run BEFORE reconcile
+            # (Reviewer W8-R2-01): reconcile_and_advance blanket-marks every
+            # RUNNING-but-PTY-gone session DONE (no effort exemption), and
+            # recover only acts on RUNNING records — so recover has to claim
+            # an ``effort_managed`` effort whose PTY is gone FIRST (persist
+            # its active stage's worktree docs [no reap], mark the stage entry
+            # 'interrupted' [≠ done/failed], re-status IDLE so it is honestly
+            # not-running + reopenable; NEVER auto-spawns/advances) — otherwise
+            # reconcile would mark it DONE and its uncommitted docs would be
+            # LOST. Once recover sets it IDLE, the reconcile pass below leaves
+            # it alone (it only re-statuses RUNNING-but-gone). Best-effort +
+            # fully guarded: an error here NEVER breaks the read-only list.
+            try:
+                _termsess.recover_interrupted_efforts(
+                    live_session_ids=live)
+            except Exception:
+                pass
+            _rec_out = _termsess.reconcile_and_advance(
+                live_session_ids=live)
+            # v12 Wave 7 — REWIRE: an ``effort_managed`` effort does NOT
+            # use the legacy reconcile→auto_advance_planning_to_build mint
+            # (which is gated off for it anyway). Instead, on the SAME
+            # refresh poll, run the on-disk-only ``detect_stage_progress``
+            # over the project's LIVE efforts — it auto-advances IN-SESSION
+            # on a committed plan-set / build signal (ZERO PTY bytes,
+            # idempotent, mints nothing). Legacy sessions stay on the
+            # reconcile_and_advance path above. Best-effort + fully guarded
+            # (never breaks the read-only session-list response).
+            try:
+                for _er in _termsess.list_sessions(
+                        project_id=pid or None):
+                    if not isinstance(_er, dict):
+                        continue
+                    if not _er.get("effort_managed"):
+                        continue
+                    if _er.get("status") != _termsess._reg.STATUS_RUNNING:
+                        continue
+                    try:
+                        _termsess.detect_stage_progress(
+                            _er.get("session_id"),
+                            project_id=_er.get("project_id") or None)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # v7 Wave 2: any session newly re-statused DONE by the
+            # reconcile-dead path gets a background session-summary
+            # scheduled (best-effort, non-blocking, idempotent — a cached
+            # one is skipped, so repeated polls don't re-run the model).
+            # Never breaks the read-only session-list response.
+            try:
+                marked = ((_rec_out or {}).get("reconcile", {})
+                          or {}).get("marked", []) or []
+                for _sid in marked:
+                    _r = _termsess.get_session(_sid)
+                    if _r is None:
+                        continue
+                    _trigger_session_summary_on_finish(
+                        _r.get("project_id"), _r.get("lane"), _sid)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
+_RECONCILE_TICK_LOCK = threading.Lock()
+_RECONCILE_TICK_DEFAULT_S = 60
+
+
+def _start_reconcile_ticker(interval_s=None):
+    """Daemon thread: ``_reconcile_sessions_tick()`` every ``interval_s`` (env
+    ``ANCHOR_RECONCILE_TICK_S``, default 60; ``0`` disables). Never raises."""
+    try:
+        interval = int(os.environ.get("ANCHOR_RECONCILE_TICK_S", "") or (interval_s or _RECONCILE_TICK_DEFAULT_S))
+    except (TypeError, ValueError):
+        interval = _RECONCILE_TICK_DEFAULT_S
+    if interval <= 0:
+        return None
+
+    def _run():
+        while True:
+            time.sleep(interval)
+            try:
+                _reconcile_sessions_tick(None)
+            except Exception:
+                pass
+
+    t = threading.Thread(target=_run, name="anchor-reconcile-tick", daemon=True)
+    t.start()
+    return t
+
+
 def handle_term_sessions(handler, path, body):
     # Read-only: managed terminal sessions for a project — the
     # repopulate-from-registry hook the cockpit tiles row paints from
@@ -19413,82 +19644,7 @@ def handle_term_sessions(handler, path, body):
     # chain. Still SAFE: worktree_path / branch are NEVER included.
     q = parse_qs(urlparse(handler.path).query)
     pid = (q.get("project_id", [""])[0] or "").strip()
-    # v6 Wave 9 (polish 3): wire the reconcile→auto-advance into the
-    # project-window refresh/poll path. Before listing, reconcile the
-    # registry against the LIVE PTY set: a managed planning session
-    # whose process is gone is re-statused DONE and (idempotently)
-    # auto-advanced to ONE linked build — so a planning session that
-    # DIED (not just an explicit hard-kill) advances on the next
-    # refresh. Idempotent on parent_session_id → repeated polls are
-    # no-ops. Best-effort + fully guarded: an error here NEVER breaks
-    # the (read-only) session list response. live_session_ids MUST be
-    # passed (the function default treats NO session as live, which
-    # would wrongly mark live ones stale).
-    try:
-        live = list(_termsess._pty.live_sessions())
-        # v12 Wave 8 — restart recovery MUST run BEFORE reconcile
-        # (Reviewer W8-R2-01): reconcile_and_advance blanket-marks every
-        # RUNNING-but-PTY-gone session DONE (no effort exemption), and
-        # recover only acts on RUNNING records — so recover has to claim
-        # an ``effort_managed`` effort whose PTY is gone FIRST (persist
-        # its active stage's worktree docs [no reap], mark the stage entry
-        # 'interrupted' [≠ done/failed], re-status IDLE so it is honestly
-        # not-running + reopenable; NEVER auto-spawns/advances) — otherwise
-        # reconcile would mark it DONE and its uncommitted docs would be
-        # LOST. Once recover sets it IDLE, the reconcile pass below leaves
-        # it alone (it only re-statuses RUNNING-but-gone). Best-effort +
-        # fully guarded: an error here NEVER breaks the read-only list.
-        try:
-            _termsess.recover_interrupted_efforts(
-                live_session_ids=live)
-        except Exception:
-            pass
-        _rec_out = _termsess.reconcile_and_advance(
-            live_session_ids=live)
-        # v12 Wave 7 — REWIRE: an ``effort_managed`` effort does NOT
-        # use the legacy reconcile→auto_advance_planning_to_build mint
-        # (which is gated off for it anyway). Instead, on the SAME
-        # refresh poll, run the on-disk-only ``detect_stage_progress``
-        # over the project's LIVE efforts — it auto-advances IN-SESSION
-        # on a committed plan-set / build signal (ZERO PTY bytes,
-        # idempotent, mints nothing). Legacy sessions stay on the
-        # reconcile_and_advance path above. Best-effort + fully guarded
-        # (never breaks the read-only session-list response).
-        try:
-            for _er in _termsess.list_sessions(
-                    project_id=pid or None):
-                if not isinstance(_er, dict):
-                    continue
-                if not _er.get("effort_managed"):
-                    continue
-                if _er.get("status") != _termsess._reg.STATUS_RUNNING:
-                    continue
-                try:
-                    _termsess.detect_stage_progress(
-                        _er.get("session_id"),
-                        project_id=_er.get("project_id") or None)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # v7 Wave 2: any session newly re-statused DONE by the
-        # reconcile-dead path gets a background session-summary
-        # scheduled (best-effort, non-blocking, idempotent — a cached
-        # one is skipped, so repeated polls don't re-run the model).
-        # Never breaks the read-only session-list response.
-        try:
-            marked = ((_rec_out or {}).get("reconcile", {})
-                      or {}).get("marked", []) or []
-            for _sid in marked:
-                _r = _termsess.get_session(_sid)
-                if _r is None:
-                    continue
-                _trigger_session_summary_on_finish(
-                    _r.get("project_id"), _r.get("lane"), _sid)
-        except Exception:
-            pass
-    except Exception:
-        pass
+    _reconcile_sessions_tick(pid)
     try:
         recs = _termsess.list_sessions(project_id=pid or None)
     except Exception:
@@ -19916,6 +20072,7 @@ _MIGRATED_HANDLERS = {
     "handle_set_notes": handle_set_notes,
     "handle_restart": handle_restart,
     "handle_doctor_resolve_all": handle_doctor_resolve_all,
+    "handle_doctor_probe": handle_doctor_probe,
     "handle_settings_get": handle_settings_get,
     "handle_settings_post": handle_settings_post,
     "handle_set_blurb": handle_set_blurb,
@@ -20207,6 +20364,10 @@ class AnchorHandler(BaseHTTPRequestHandler):
             # Deliverable file streaming (2026-08-25): the routes layer returns a
             # {__file__, __ctype__} marker (containment already enforced there);
             # everything else stays JSON.
+            if code == 200 and isinstance(obj, dict) and "__html__" in obj:
+                # (2026-09-04) a rendered preview page (Office deliverables)
+                self._send_html(obj["__html__"])
+                return
             if code == 200 and isinstance(obj, dict) and "__file__" in obj:
                 try:
                     with open(obj["__file__"], "rb") as fh:
@@ -20215,7 +20376,8 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     self.send_header("Content-Type", obj.get("__ctype__", "application/octet-stream"))
                     self.send_header("X-Content-Type-Options", "nosniff")
                     self.send_header("Content-Disposition",
-                                     'inline; filename="%s"' % os.path.basename(obj["__file__"]).replace('"', ''))
+                                     '%s; filename="%s"' % (obj.get("__disposition__") or "inline",
+                                                            os.path.basename(obj["__file__"]).replace('"', '')))
                     self.send_header("Cache-Control", "no-store")
                     self.send_header("Content-Length", str(len(raw)))
                     self.end_headers()
@@ -22048,6 +22210,11 @@ def main():
         # never loses more than one interval of work and is warm-restartable. One
         # main-process-owned daemon; spawns no subprocess (no console popups).
         import terminal_session as _ts_auto
+        # (2026-09-04) sessions advance in the background, not only under a browser poll
+        try:
+            _start_reconcile_ticker()
+        except Exception:
+            pass
         if _ts_auto.start_autosave_daemon():
             _logger.info("session autosave heartbeat started (interval %ss)",
                          int(_ts_auto._autosave_interval()))

@@ -21,6 +21,7 @@ anchor_gui.py
 anchor_md.py
 anchor_healthcheck.py
 doctor_plain.py
+office_preview.py
 home_attention.py
 paths.py
 rnd_registry.py

@@ -55,9 +55,15 @@ def test_default_engine_is_claude(lanes):
 
 # ── STUB GATE #1: both subscriptions → Claude driver + Gemini swarm ──────────
 
+# (2026-09-04, John) the no-preference plan reads the DASHBOARD: the swarm exists only when a
+# selected family is gemini — so the historic expectation passes explicit families.
+GEMINI_SELECTED = {"default_cli": "claude", "coding": "claude", "review": "gemini", "selected": {"claude", "gemini"}}
+CLAUDE_SELECTED = {"default_cli": "claude", "coding": "claude", "review": "claude", "selected": {"claude"}}
+
+
 def test_both_default_driver_is_claude_with_gemini_swarm(lanes):
     for lane in TRIO_LANES:
-        plan = lanes.select_engine_plan(lane, profile=BOTH)
+        plan = lanes.select_engine_plan(lane, profile=BOTH, families=GEMINI_SELECTED)
         assert plan["status"] == lanes.ENGINE_STATUS_OK
         assert plan["driver"] == "claude"          # Claude is the default driver
         assert plan["swarm"] == "gemini"           # Gemini available for the swarm
@@ -139,7 +145,8 @@ def _badge(monkeypatch, claude, gemini):
     importlib.reload(_lanes)
     import anchor_gui
     importlib.reload(anchor_gui)
-    return anchor_gui.render_model_flex_badge()
+    fams = GEMINI_SELECTED if gemini else CLAUDE_SELECTED
+    return anchor_gui.render_model_flex_badge(families=fams)
 
 
 def test_badge_both_shows_the_5to1_split(monkeypatch):

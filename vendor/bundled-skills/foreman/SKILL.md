@@ -415,9 +415,9 @@ drive only the model steps via the `agent()` seam.
    `--resume` to continue from a checkpoint).
 3. **Drive it with live sub-agents** using the robust wrapper script:
    `powershell -File <skill>/bin/go.ps1 -Project <projectDir> [-Resume]`
-   The script automatically handles stale locks and executes through the backend registry (supporting `claude` or `gemini-cli`). To use Gemini for the WHOLE run, set `$env:TRIO_DRIVER="gemini-cli"` and `$env:GEMINI_MODEL="gemini-3.1-pro"` (or your current session's active model) before invoking `go.ps1`. The wrapper also requires `$env:CRUCIBLE_AGENT_LIVE="1"` to allow live billable agents.
-4. **Per-role model routing (the standing 5:1 doctrine — Claude codes, Gemini reviews).**
-   Add a `"models"` block to the project's `foreman.config.json`:
+   The script automatically handles stale locks and executes through the backend registry (every subscription driver: `claude`, `chatgpt-cli`, `grok-cli`, `gemini-cli`). Seats come from the **Anchor dashboard** (`coding_family` → execute/fix, `review_family` → review; Anchor data-dir `settings.json` → `~/.anchor/model_prefs.json`) — a `TRIO_DRIVER` env is a per-run override, never the source. The wrapper also requires `$env:CRUCIBLE_AGENT_LIVE="1"` to allow live billable agents.
+4. **Per-role model routing (the coding family codes, the review family reviews — whatever the dashboard selects; 2026-09-04).**
+   The dashboard prefs seat every role by default. To pin MODELS per role for one project, add a `"models"` block to the project's `foreman.config.json` (the example shows a gemini review seat; use the driver of the family the dashboard selects):
    ```json
    { "models": { "execute": "claude:claude-fable-5", "fix": "claude:claude-fable-5", "review": "gemini-cli:gemini-3.1-pro" } }
    ```

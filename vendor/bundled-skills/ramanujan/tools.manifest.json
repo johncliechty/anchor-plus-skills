@@ -2,7 +2,7 @@
   "$schema_version": "phasef-tools-manifest/1",
   "pinned": "2026-06-22",
   "host": "win32",
-  "comment": "Wave-1 (F0) PINNED external-tool manifest. Local certifiers (lean, z3, ollama) are referenced by ABSOLUTE path (never PATH); the cross-family class is GEMINI-PRIMARY via the agy CLI (kind=cli-agy, no HTTP endpoint / no key — reached by driver_ref through the agy login) + ollama-FALLBACK. The F0 probe spawns each local tool from a clean shell (no shell interpolation), runs the cross-family PRIMARY (Gemini via agy) FIRST, and runs each tool's per-class integrity sentinels before any certifier is trusted. Local paths verified on this host 2026-06-22; cross-family moved to the agy transport 2026-07-06.",
+  "comment": "Wave-1 (F0) PINNED external-tool manifest. Local certifiers (lean, z3, ollama) are referenced by ABSOLUTE path (never PATH). (2026-09-04, John) The cross-family PRIMARY seat is whichever family the Anchor dashboard prefs configure — review_family first, then coding_family, never the author's own; gemini ONLY when a pref names it (src/seat.mjs, reading the prefs through <path> loadModelFamilies). This manifest pins the TRANSPORT for every family a pref may name (tools.claude / gemini / grok / chatgpt: driver_ref + run_export) + the ollama-FALLBACK. The F0 probe runs the resolved PRIMARY seat first and each tool's integrity sentinels before any certifier is trusted. Local paths verified on this host 2026-06-22; cross-family moved to the agy transport 2026-07-06; seat resolution moved to Anchor prefs 2026-09-04.",
   "tool_lane_env": "RAMANUJAN_TOOL_TESTS",
   "wall_clock_budget_ms": {
     "smoke_reachable": 30000,
@@ -14,18 +14,22 @@
     "probe_total": 1200000
   },
   "cross_family": {
-    "primary": "gemini",
+    "primary": "prefs",
     "fallback": "ollama",
     "frontier_rung": "CORROBORATED",
     "fallback_rung": "PLAUSIBILITY-CORROBORATED",
     "hard_fault_rung": "CONJECTURAL",
-    "tiers": { "frontier": "gemini", "fallback": "ollama" },
-    "note": "Substrate (2026-07): cross-family certification is GEMINI-PRIMARY via the agy CLI (frontier LABEL \"Gemini 3.1 Pro (High)\") with ollama-FALLBACK. The F0 probe runs the PRIMARY first; a Gemini that is unreachable / times out / errors, OR that agy SUBSTITUTES or cannot ATTEST (served != the requested LABEL — the silent-Flash tripwire), is QUARANTINED and the probe falls back to ollama (stamping tier=fallback => PLAUSIBILITY-CORROBORATED). If the ollama fallback ALSO fails its sentinel, the cross-family lift HARD-FAULTS to CONJECTURAL (the system NEVER runs with an un-probed cross-family backend). The frontier CORROBORATED rung is enabled ONLY after a passing FRONTIER-CANARY SELF-TEST (a real agy round-trip whose INDEPENDENT re-run reproduces the normalized VERDICT — verdict-level, never an answer/transcript hash) from the ATTESTED frontier LABEL."
+    "tiers": {
+      "frontier": "prefs",
+      "fallback": "ollama"
+    },
+    "note": "Substrate (2026-09-04): cross-family certification runs on the PREFS-RESOLVED seat (frontier tier, rung CORROBORATED after the frontier-canary self-test reproduces the normalized VERDICT) with ollama-FALLBACK (tier=fallback => PLAUSIBILITY-CORROBORATED). A seat that is unreachable / times out / errors / is unconfigured, OR whose driver SUBSTITUTES or cannot ATTEST the served model, is QUARANTINED and the probe falls back; if the fallback ALSO fails its sentinel, the lift HARD-FAULTS to CONJECTURAL (never an un-probed backend, never a same-family pass).",
+    "primary_resolution": "Anchor prefs (data-dir settings.json -> ~/.anchor/model_prefs.json): the configured family among review_family / coding_family that is not the author's; none -> no seat (cross_model:false, honest) -> the ollama fallback tier"
   },
   "tools": {
     "gemini": {
       "class": "probabilistic",
-      "role": "F1-cross-family-PRIMARY",
+      "role": "F1-cross-family-seat (only when a pref names gemini)",
       "kind": "cli-agy",
       "driver_ref": "<path>",
       "model": "Gemini 3.1 Pro (High)",
@@ -34,14 +38,59 @@
       "rung": "CORROBORATED",
       "temperature": 0,
       "request_timeout_ms": 60000,
-      "note": "Cross-family PRIMARY (2026-07): the frontier Google family via the Antigravity CLI `agy` (genuinely generator-INDEPENDENT of Claude). NO HTTP endpoint and NO API key — agy is reached through the user LOGIN, addressed by a human LABEL (\"Gemini 3.1 Pro (High)\", NEVER an API-style id, which agy silently degrades to Flash), via the proven transport at driver_ref (<path> `agy -p` with served-model ATTESTATION (served==requested) and a no-shell steer. Deterministic-enough decoding at the verdict level (the frontier-canary self-test reproduces the normalized VERDICT, never a token/transcript hash). This replaces the DEAD Gemini HTTP API (generativelanguage.googleapis.com, at $0/429). The live seam is env-gated (CRUCIBLE_AGENT_LIVE=1); the fast `node --test` gate injects a stub and spawns no agy. The model LABEL here MUST byte-match cross-family-verifier.mjs FRONTIER_MODEL or the frontier CORROBORATED rung silently degrades to fallback."
+      "note": "The gemini seat (used ONLY when review_family or coding_family names gemini): the Antigravity CLI `agy` through the user LOGIN, addressed by a human LABEL (never an API-style id, which agy silently degrades to Flash), via the proven transport at driver_ref with served-model ATTESTATION. Env-gated (CRUCIBLE_AGENT_LIVE=1); the fast `node --test` gate injects a stub and spawns no agy.",
+      "run_export": "defaultRunGeminiCli"
+    },
+    "grok": {
+      "class": "probabilistic",
+      "kind": "cli-driver",
+      "tier": "frontier",
+      "rung": "CORROBORATED",
+      "temperature": 0,
+      "role": "F1-cross-family-seat (when a pref names grok)",
+      "driver_ref": "<path>",
+      "run_export": "defaultRunGrokCli",
+      "model": "grok-4.5",
+      "family": "grok",
+      "request_timeout_ms": 600000,
+      "note": "The Grok seat: the subscription Grok Build CLI (`grok.exe -p`, plan permission mode for a refuter) — never the raw xAI HTTP API. Env-gated (CRUCIBLE_AGENT_LIVE=1)."
+    },
+    "chatgpt": {
+      "class": "probabilistic",
+      "kind": "cli-driver",
+      "tier": "frontier",
+      "rung": "CORROBORATED",
+      "temperature": 0,
+      "role": "F1-cross-family-seat (when a pref names chatgpt)",
+      "driver_ref": "<path>",
+      "run_export": "defaultRunCodexCli",
+      "model": "gpt-5.6-terra",
+      "family": "chatgpt",
+      "request_timeout_ms": 900000,
+      "note": "The ChatGPT seat: the subscription Codex CLI (`codex exec`, read-only sandbox for a refuter) — never the raw OpenAI HTTP API. John's dashboard on 2026-09-04: coding_family=chatgpt, review_family=claude -> with a Claude author this IS the seat. Env-gated (CRUCIBLE_AGENT_LIVE=1)."
+    },
+    "claude": {
+      "class": "probabilistic",
+      "kind": "cli-driver",
+      "tier": "frontier",
+      "rung": "CORROBORATED",
+      "temperature": 0,
+      "role": "F1-cross-family-seat (only for a claim NOT authored by Claude)",
+      "driver_ref": "<path>",
+      "run_export": "defaultRunClaude",
+      "model": null,
+      "family": "claude",
+      "request_timeout_ms": 900000,
+      "note": "The Claude seat: `claude.exe` (subscription). The Honesty Law is generator-relative — this seat is legal only when the claim's author is another family; the driver hard-faults otherwise. model=null: the driver picks its standard notch by role."
     },
     "lean": {
       "class": "deterministic",
       "role": "F2-lean-kernel",
       "path": "C:\\Users\\john\\.elan\\bin\\lean.exe",
       "version": "4.31.0",
-      "version_args": ["--version"],
+      "version_args": [
+        "--version"
+      ],
       "note": "Core Lean only; mathlib (multi-GB) FLAGGED follow-on. Verified 1+1=2 := rfl -> exit 0, 1+1=3 := rfl -> exit 1."
     },
     "lake": {
@@ -49,7 +98,9 @@
       "role": "F2-lean-build",
       "path": "C:\\Users\\john\\.elan\\bin\\lake.exe",
       "version": "4.31.0",
-      "version_args": ["--version"],
+      "version_args": [
+        "--version"
+      ],
       "note": "Lean build driver; pinned for completeness. Core Lean only (no mathlib this increment)."
     },
     "z3": {
@@ -57,7 +108,9 @@
       "role": "F3-smt",
       "path": "C:\\Users\\john\\AppData\\Roaming\\Python\\bin\\z3.exe",
       "version": "4.16.0",
-      "version_args": ["--version"],
+      "version_args": [
+        "--version"
+      ],
       "note": "Used ONLY within z3-DECIDABLE theories (LIA/LRA/BV); quantified number-theory/analysis is out of scope this increment (fail-CLOSED on unknown). Verified sat/unsat."
     },
     "ollama": {
@@ -66,13 +119,17 @@
       "tier": "fallback",
       "rung": "PLAUSIBILITY-CORROBORATED",
       "path": "C:\\Users\\john\\AppData\\Local\\Programs\\Ollama\\ollama.exe",
-      "version_args": ["--version"],
+      "version_args": [
+        "--version"
+      ],
       "note": "Cross-family FALLBACK (non-Claude) verifier panel, used when the Gemini PRIMARY is quarantined (key-missing / 401|403 / 429 / unreachable). A weaker soft-check tier => PLAUSIBILITY-CORROBORATED (NOT a proof oracle). A SINGLE cold generation measured >200s on this host, so a persistent server + a paid-once warm-up is REQUIRED; per-call model reload is forbidden. The bare `ollama run` default is NOT temp 0 — deterministic decoding is pinned below.",
       "server": {
         "host": "127.0.0.1",
         "port": 11434,
         "base_url": "http://127.0.0.1:11434",
-        "serve_args": ["serve"],
+        "serve_args": [
+          "serve"
+        ],
         "version_path": "/api/version",
         "generate_path": "/api/generate",
         "keep_alive": "30m",
@@ -80,8 +137,14 @@
         "fresh_load_min_ns": 50000000
       },
       "models": [
-        { "name": "qwen2.5:7b-instruct-q4_K_M", "family": "qwen" },
-        { "name": "llama3:latest", "family": "llama" }
+        {
+          "name": "qwen2.5:7b-instruct-q4_K_M",
+          "family": "qwen"
+        },
+        {
+          "name": "llama3:latest",
+          "family": "llama"
+        }
       ],
       "deterministic_decoding": {
         "temperature": 0,
@@ -100,6 +163,9 @@
   "faithfulness_instance_battery": {
     "comment": "Wave-4 (F2+F3) reads this. The metamorphic concrete-instance battery is tool/cross-family/human/PRNG-sourced (NEVER Claude-enumerated), provenance-stamped, coupled to a non-vacuity check.",
     "default_count": 16,
-    "bounded_domain": { "min": -64, "max": 64 }
+    "bounded_domain": {
+      "min": -64,
+      "max": 64
+    }
   }
 }

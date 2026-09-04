@@ -82,21 +82,41 @@ function normalizeEngineId(raw) {
  * @param {object} [opts] — { firstPromptMs?: {claude,gemini,grok}, now?: number }
  * @returns {{ engines: object[], available: string[], defaultEngine: string|null, anyHealthy: boolean }}
  */
+/**
+ * The families the Anchor dashboard SELECTED (2026-09-04, John: seats are what the dashboard
+ * sets — universally). From opts.prefs: an explicit `selected` set, else the union of
+ * default_cli / coding_family / review_family. Empty ⇒ no selection known ⇒ no gating.
+ */
+function selectedFamilies(prefs = {}) {
+  const out = new Set();
+  const add = (v) => { const id = normalizeEngineId(v); if (id) out.add(id); };
+  if (prefs.selected && typeof prefs.selected[Symbol.iterator] === 'function') {
+    for (const v of prefs.selected) add(v);
+  } else {
+    add(prefs.default_cli); add(prefs.coding_family); add(prefs.review_family);
+  }
+  return out;
+}
+
 function listEngineToggle(profile = {}, opts = {}) {
   const healthIn = profile.health || {};
   const firstPromptMs = opts.firstPromptMs || {};
+  const selected = selectedFamilies(opts.prefs || {});
   const engines = ENGINE_IDS.map((id) => {
     const transport = ENGINE_TRANSPORT[id];
     const available = profile[id] === true;
     const promptMs = firstPromptMs[id];
     const overBudget = Number.isFinite(promptMs) && promptMs > FIRST_PROMPT_BUDGET_MS;
+    const chosen = selected.size === 0 || selected.has(id);
     const healthNote = healthIn[id]
       || (!available
         ? 'unavailable (subscription CLI not detected)'
         : (overBudget
           ? `first prompt ${promptMs}ms > ${FIRST_PROMPT_BUDGET_MS}ms budget — disabled`
-          : 'healthy'));
-    const enabled = available && !overBudget;
+          : (!chosen
+            ? 'installed, but not selected on the Anchor dashboard (Terminal / Coder / Reviewer)'
+            : 'healthy')));
+    const enabled = available && !overBudget && chosen;
     return {
       id,
       label: transport.label,
@@ -104,6 +124,7 @@ function listEngineToggle(profile = {}, opts = {}) {
       spawn: transport.spawn,
       subscriptionCli: true,
       available,
+      selected: chosen,
       enabled,
       disabled: !enabled,
       health: healthNote,
@@ -135,8 +156,12 @@ function pickDefaultEngine(healthyIds, prefs = {}, lastUsed) {
   const healthy = new Set((healthyIds || []).map(normalizeEngineId).filter(Boolean));
   const last = normalizeEngineId(lastUsed);
   if (last && healthy.has(last)) return last;
-  const family = normalizeEngineId(prefs.coding_family || prefs.default_cli);
+  // (2026-09-04) a picker starts a TERMINAL: the dashboard's Terminal role (default_cli) wins,
+  // then the Coder family.
+  const family = normalizeEngineId(prefs.default_cli || prefs.coding_family);
   if (family && healthy.has(family)) return family;
+  const alt = normalizeEngineId(prefs.coding_family);
+  if (alt && healthy.has(alt)) return alt;
   for (const id of ENGINE_IDS) {
     if (healthy.has(id)) return id;
   }

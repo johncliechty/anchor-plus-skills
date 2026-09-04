@@ -4,6 +4,10 @@
 <title>Report</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/static/shared.css">
+<!-- (2026-09-04) math in a report typesets: the vendored KaTeX the main Reader already ships (no network) -->
+<link rel="stylesheet" href="/vendor/katex/katex.min.css">
+<script defer src="/vendor/katex/katex.min.js"></script>
+<script defer src="/vendor/katex/auto-render.min.js"></script>
 <style>
   body { overflow-y: auto; }
   .rep { max-width: 860px; margin: 0 auto; padding: 34px 26px 80px; }
@@ -45,6 +49,26 @@
 <script src="/static/md.js"></script>
 <script>
 try { document.body.dataset.theme = localStorage.getItem("protoTheme") || "slate"; } catch (e) {}
+// KaTeX loads deferred; typeset once it is there (a report with no math is untouched).
+function typesetMath(el, tries) {
+  tries = tries || 0;
+  if (typeof window.renderMathInElement !== "function") {
+    if (tries < 40) setTimeout(function () { typesetMath(el, tries + 1); }, 100);
+    return;
+  }
+  try {
+    window.renderMathInElement(el, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false }
+      ],
+      throwOnError: false,
+      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"]
+    });
+  } catch (e) {}
+}
 const qp = new URLSearchParams(location.search);
 const dir = qp.get("dir") || "", path = qp.get("path") || "";
 document.querySelector("[data-path]").textContent = path;
@@ -52,7 +76,9 @@ fetch("/api/filetext?dir=" + encodeURIComponent(dir) + "&path=" + encodeURICompo
   .then(r => r.json())
   .then(j => {
     if (j.error) { document.querySelector("[data-body]").textContent = j.error; return; }
-    mdRender(document.querySelector("[data-body]"), j.text);
+    const body = document.querySelector("[data-body]");
+    mdRender(body, j.text);
+    typesetMath(body);
     const h = (j.text.match(/^#\s+(.*)$/m) || [])[1];
     if (h) document.title = h.replace(/[*`]/g, "");
   })

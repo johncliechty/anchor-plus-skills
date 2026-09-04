@@ -1049,7 +1049,11 @@ const server = http.createServer(async (req, res) => {
     };
     // Default assume available unless explicitly disabled (Anchor probes real CLIs).
     const toggle = listEngineToggle(envProfile, {
-      prefs: { coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY },
+      prefs: {
+        default_cli: process.env.ZH_DEFAULT_CLI || process.env.ANCHOR_DEFAULT_CLI,
+        coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY,
+        review_family: process.env.ZH_REVIEW_FAMILY || process.env.REVIEW_FAMILY,
+      },
       lastUsed: process.env.ZH_LAST_ENGINE,
     });
     const p5 = assertP5StartPlumbingGreen();
@@ -1090,7 +1094,11 @@ const server = http.createServer(async (req, res) => {
       classifierMode: mp.classifierMode,
       freezeCapability: mp.freezeCapability === true,
       freezeKillEnabled: mp.freezeKillEnabled,
-      prefs: { coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY },
+      prefs: {
+        default_cli: process.env.ZH_DEFAULT_CLI || process.env.ANCHOR_DEFAULT_CLI,
+        coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY,
+        review_family: process.env.ZH_REVIEW_FAMILY || process.env.REVIEW_FAMILY,
+      },
     });
     sendJson(res, { ok: true, plan });
     return;
@@ -1201,7 +1209,11 @@ const server = http.createServer(async (req, res) => {
       engine,
       classifierMode: mp.classifierMode,
       autoDiagnose,
-      prefs: { coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY },
+      prefs: {
+        default_cli: process.env.ZH_DEFAULT_CLI || process.env.ANCHOR_DEFAULT_CLI,
+        coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY,
+        review_family: process.env.ZH_REVIEW_FAMILY || process.env.REVIEW_FAMILY,
+      },
     });
     const click = buildClickableBannerContract(issue, { autoDiagnose });
     const attempt = autoDiagnose
@@ -1257,7 +1269,11 @@ const server = http.createServer(async (req, res) => {
       classifierMode: mp.classifierMode || body.classifierMode,
       forceFail: body.forceFail === true,
       failReason: body.failReason,
-      prefs: { coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY },
+      prefs: {
+        default_cli: process.env.ZH_DEFAULT_CLI || process.env.ANCHOR_DEFAULT_CLI,
+        coding_family: process.env.ZH_CODING_FAMILY || process.env.CODING_FAMILY,
+        review_family: process.env.ZH_REVIEW_FAMILY || process.env.REVIEW_FAMILY,
+      },
     });
     sendJson(res, {
       ok: result.ok,

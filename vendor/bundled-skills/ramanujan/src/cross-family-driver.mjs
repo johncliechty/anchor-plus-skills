@@ -1,4 +1,9 @@
-// Wave 2 — F1a: cross-family driver (v3 substrate: GEMINI-PRIMARY + ollama-FALLBACK, verdict-level).
+// Wave 2 — F1a: cross-family driver (v3 substrate: a PREFS-RESOLVED PRIMARY seat + ollama-FALLBACK, verdict-level).
+//
+// (2026-09-04, John) The PRIMARY seat is no longer a hardwired Gemini: it is whichever family the Anchor
+// dashboard prefs configure that is not the author's own (seat.mjs — review_family first, then
+// coding_family; gemini only when a pref names it). The prose below describing GEMINI-PRIMARY is the
+// substrate's history; every 'Gemini' there now reads 'the configured seat'.
 //
 // A DETERMINISTIC-DECODING, OUT-OF-MODEL invocation seam to non-Claude families, reproducible AT THE
 // VERDICT LEVEL. The Honesty Law forbids any same-family-authored object reaching a trusted rung; this
@@ -51,10 +56,14 @@
 
 import crypto from 'node:crypto';
 
+import { DEFAULT_AUTHOR_FAMILY } from './seat.mjs';
 import {
   parseVerdict,
   createOllamaGenerate,
   createGeminiGenerate,
+  createFamilyGenerate,
+  resolvePrimarySeat,
+  SEAT_FAIL_CLASS,
   buildGeminiRequest,
   loadManifest,
   FRONTIER_FAMILY,
@@ -395,50 +404,72 @@ export async function driveCrossFamily(manifest, prompt, opts = {}) {
     throw new CrossFamilyDriverError('driveCrossFamily requires a non-empty prompt');
   }
   const m = manifest || loadManifest(opts.manifestPath);
-  const geminiSpec = (m.tools && m.tools.gemini) || {};
   const ollamaSpec = (m.tools && m.tools.ollama) || null;
   const {
     geminiGenerate,
     runGemini,
+    primaryGenerate,
+    runPrimary,
+    seat,
+    author = DEFAULT_AUTHOR_FAMILY,
+    loadModelFamilies,
     env = process.env,
     ollamaGenerateFor,
     baseUrl,
     fallbackModelOrFamily,
   } = opts;
 
-  // ---- PRIMARY: frontier Gemini via agy (tier=frontier). ----
-  let geminiQuarantine = null;
-  try {
-    const gen = geminiGenerate || createGeminiGenerate(geminiSpec, { env, runGemini });
-    const rawAnswer = await gen(prompt);
-    const rec = makeVerdictRecord({
-      model: geminiSpec.model || 'gemini',
-      verifier_family: geminiSpec.family || FRONTIER_FAMILY,
-      tier: TIER.FRONTIER,
-      prompt,
-      rawAnswer,
-    });
-    return Object.freeze({
-      ...rec,
-      backend: 'gemini',
-      tier: TIER.FRONTIER,
-      verifier_family: rec.artifact.verifier_family,
-      model: rec.artifact.model,
-      gemini_quarantine: null,
-    });
-  } catch (e) {
-    // agy uses the login (no key) — there is no secret to redact; carry the typed failClass through.
-    geminiQuarantine = Object.freeze({
-      failClass: (e && e.failClass) || 'ERROR',
-      reason: e && e.message ? String(e.message) : 'agy transport error',
-    });
+  // ---- The PRIMARY seat (2026-09-04): the Anchor dashboard's configured family, never a hardwired one. ----
+  const resolved = await resolvePrimarySeat(m, { geminiGenerate, runGemini, primaryGenerate, runPrimary, seat, author, env, loadModelFamilies });
+  if (resolved.family && resolved.family === resolved.author) {
+    // The Honesty Law at the invocation boundary: a seat pinned to the author's own family is a
+    // wiring error, refused loudly — never quarantined into a fallback that hides it.
+    throw new CrossFamilyDriverError(
+      `cross-family driver refuses the \`${resolved.family}\` seat for a \`${resolved.author}\`-authored claim — ` +
+      'the verifier family must DIFFER from the generator family (Honesty Law, generator-relative)',
+      { seat: resolved },
+    );
   }
+  let primaryQuarantine = null;
+  if (!resolved.family) {
+    primaryQuarantine = Object.freeze({ failClass: SEAT_FAIL_CLASS.SEAT_UNCONFIGURED, reason: resolved.reason });
+  } else {
+    try {
+      const gen = primaryGenerate || geminiGenerate || createFamilyGenerate(resolved.tool, { env, runFamily: runPrimary || runGemini });
+      const rawAnswer = await gen(prompt);
+      const rec = makeVerdictRecord({
+        model: resolved.model || resolved.family,
+        verifier_family: resolved.family,
+        tier: TIER.FRONTIER,
+        prompt,
+        rawAnswer,
+        generator_family: resolved.author,
+      });
+      return Object.freeze({
+        ...rec,
+        backend: resolved.family,
+        tier: TIER.FRONTIER,
+        verifier_family: rec.artifact.verifier_family,
+        model: rec.artifact.model,
+        seat: resolved,
+        primary_quarantine: null,
+        gemini_quarantine: null, // legacy alias of primary_quarantine
+      });
+    } catch (e) {
+      // Subscription seams use the login (no key) — nothing to redact; carry the typed failClass through.
+      primaryQuarantine = Object.freeze({
+        failClass: (e && e.failClass) || 'ERROR',
+        reason: e && e.message ? String(e.message) : `${resolved.family} transport error`,
+      });
+    }
+  }
+  const seatName = resolved.family || 'cross-family seat';
 
   // ---- QUARANTINE -> FALLBACK: ollama (tier=fallback). ----
   if (!ollamaSpec) {
     throw new CrossFamilyDriverError(
-      'Gemini PRIMARY quarantined and the manifest has no ollama FALLBACK panel — no cross-family backend',
-      { gemini_quarantine: geminiQuarantine },
+      `${seatName} PRIMARY quarantined and the manifest has no ollama FALLBACK panel — no cross-family backend`,
+      { primary_quarantine: primaryQuarantine, gemini_quarantine: primaryQuarantine },
     );
   }
   const { name, family } = fallbackModelOrFamily ? resolveModel(m, fallbackModelOrFamily) : firstOllamaModel(ollamaSpec);
@@ -446,21 +477,23 @@ export async function driveCrossFamily(manifest, prompt, opts = {}) {
   if (typeof gen !== 'function') {
     if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
       throw new CrossFamilyDriverError(
-        'Gemini PRIMARY quarantined and the FALLBACK needs either an injected ollamaGenerateFor(model) or a baseUrl to reach the persistent server',
-        { gemini_quarantine: geminiQuarantine },
+        `${seatName} PRIMARY quarantined and the FALLBACK needs either an injected ollamaGenerateFor(model) or a baseUrl to reach the persistent server`,
+        { primary_quarantine: primaryQuarantine, gemini_quarantine: primaryQuarantine },
       );
     }
     gen = createOllamaGenerate(ollamaSpec, name, baseUrl);
   }
   const rawAnswer = await gen(prompt);
-  const rec = makeVerdictRecord({ model: name, verifier_family: family, tier: TIER.FALLBACK, prompt, rawAnswer });
+  const rec = makeVerdictRecord({ model: name, verifier_family: family, tier: TIER.FALLBACK, prompt, rawAnswer, generator_family: resolved.author });
   return Object.freeze({
     ...rec,
     backend: 'ollama',
     tier: TIER.FALLBACK,
     verifier_family: rec.artifact.verifier_family,
     model: rec.artifact.model,
-    gemini_quarantine: geminiQuarantine,
+    seat: resolved,
+    primary_quarantine: primaryQuarantine,
+    gemini_quarantine: primaryQuarantine, // legacy alias
   });
 }
 

@@ -89,7 +89,9 @@ export const LIFT_VERDICT = 'YES';
  * canary requires every re-run family ∈ this set and != claude. §v3.1: the quorum counts distinct
  * non-Claude FAMILIES (gemini / qwen / llama), not models.
  */
-export const CROSS_FAMILY_FAMILIES = Object.freeze(new Set([FRONTIER_FAMILY, 'qwen', 'llama']));
+export const CROSS_FAMILY_FAMILIES = Object.freeze(new Set([FRONTIER_FAMILY, 'grok', 'chatgpt', 'claude', 'qwen', 'llama']));
+// (2026-09-04) every seat family the Anchor prefs may name is admissible; INDEPENDENCE is checked
+// separately against the claim's AUTHOR family (adjudicateCrossFamily `author`, default claude).
 
 /** The adjudication outcome alphabet. */
 export const CROSS_FAMILY_STATUS = Object.freeze({
@@ -156,8 +158,15 @@ const memberFamily = (m) => lowerFamily(m && (m.verifier_family != null ? m.veri
  * NON-pinned model) is FALLBACK. The adjudicator HARD-FAULTS (FLAG) when this derived tier disagrees
  * with the member's recorded `tier` — catching an ollama verdict whose artifact LIES `tier=frontier`.
  */
-const derivedTier = (m, frontierModel) =>
-  memberFamily(m) === FRONTIER_FAMILY && m && m.model === frontierModel ? TIER.FRONTIER : TIER.FALLBACK;
+/** The frontier IDENTITY a tier is derived against: `{ family, model }` (the resolved seat) or, for legacy
+ * callers, a bare model string (family = the historical default). */
+const frontierOf = (f) => (f && typeof f === 'object')
+  ? { family: lowerFamily(f.family) || FRONTIER_FAMILY, model: f.model }
+  : { family: FRONTIER_FAMILY, model: f };
+const derivedTier = (m, frontier) => {
+  const fo = frontierOf(frontier);
+  return memberFamily(m) === fo.family && m && m.model === fo.model ? TIER.FRONTIER : TIER.FALLBACK;
+};
 
 /** A stable family-of-record stamp for a set of agreeing families: `cross-family:llama+qwen`. */
 export function familyOfRecord(families) {
@@ -171,7 +180,8 @@ export function familyOfRecord(families) {
  * re-runs from it), its hash (claim-binding), the per-family F1a artifacts, and a provenance-only
  * recorded quorum_verdict (the canary NEVER trusts this — it recomputes from the independent re-run).
  */
-export function makeQuorumArtifact({ claim, members, frontierModel = FRONTIER_MODEL } = {}) {
+export function makeQuorumArtifact({ claim, members, frontierModel = FRONTIER_MODEL, frontier } = {}) {
+  const fo = frontier || frontierModel;
   if (!claim || typeof claim.id !== 'string') {
     throw new CrossFamilyVerifierError('makeQuorumArtifact requires the claim being verified');
   }
@@ -199,7 +209,7 @@ export function makeQuorumArtifact({ claim, members, frontierModel = FRONTIER_MO
   // PROVENANCE-ONLY tier/rung: a frontier (pinned-model Gemini) member would carry the frontier rung,
   // else the soft fallback rung. The adjudicator NEVER trusts these — it DERIVES the tier/rung from the
   // canary-reproduced backend identity (§v3.1). They are recorded only so the artifact is self-describing.
-  const anyFrontier = memberArtifacts.some((a) => derivedTier(a, frontierModel) === TIER.FRONTIER);
+  const anyFrontier = memberArtifacts.some((a) => derivedTier(a, fo) === TIER.FRONTIER);
   return Object.freeze({
     claim_id: claim.id,
     tier: anyFrontier ? TIER.FRONTIER : TIER.FALLBACK,
@@ -222,7 +232,7 @@ export function makeQuorumArtifact({ claim, members, frontierModel = FRONTIER_MO
  * createOllamaGenerate bound to the persistent server in the tool lane). Each family is asked the SAME
  * deterministic corroboration prompt, so every member's F1a prompt_hash matches the artifact's.
  */
-export async function runCrossFamilyPanel(claim, panel, { drive } = {}) {
+export async function runCrossFamilyPanel(claim, panel, { drive, frontier } = {}) {
   if (!Array.isArray(panel) || panel.length === 0) {
     throw new CrossFamilyVerifierError('runCrossFamilyPanel requires a non-empty panel');
   }
@@ -236,7 +246,8 @@ export async function runCrossFamilyPanel(claim, panel, { drive } = {}) {
     const rec = await driver(null, { model: p.model, family: p.family, prompt, tier: p.tier }, { generate: p.generate });
     members.push(rec);
   }
-  return makeQuorumArtifact({ claim, members });
+  // (2026-09-04) `frontier` = the resolved seat identity {family, model}; absent, the legacy default applies.
+  return makeQuorumArtifact({ claim, members, frontier });
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +315,8 @@ const flag = (reason, extra = {}) =>
  *
  * @param {{ artifact:object, claim:object, rerun?:Function|object, probeTrust?:Function|object, families?:Set<string>, frontierModel?:string }} o
  */
-export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust, families = CROSS_FAMILY_FAMILIES, frontierModel = FRONTIER_MODEL } = {}) {
+export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust, families = CROSS_FAMILY_FAMILIES, frontierModel = FRONTIER_MODEL, frontier, author = 'claude' } = {}) {
+  const fo = frontier || frontierModel; // (2026-09-04) the resolved seat identity, else the legacy model string
   if (!claim || typeof claim.id !== 'string') {
     throw new CrossFamilyVerifierError('adjudicateCrossFamily requires the claim being verified');
   }
@@ -319,10 +331,10 @@ export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust
   // (1) HONESTY LAW boundary — a `claude` panel member HARD-FAULTS (a Claude-only verdict can never
   // be laundered into a cross-family corroboration). Checked first, before any trust/quorum logic.
   for (const m of members) {
-    if (memberFamily(m) === 'claude') {
+    if (memberFamily(m) === (lowerFamily(author) || 'claude')) {
       throw new CrossFamilyVerifierError(
-        'cross-family verifier refuses a `claude` panel member — a same-family verdict cannot corroborate (Honesty Law)',
-        { family: memberFamily(m) },
+        `cross-family verifier refuses a \`${memberFamily(m)}\` panel member — the claim's own family; a same-family verdict cannot corroborate (Honesty Law, generator-relative)`,
+        { family: memberFamily(m), author: lowerFamily(author) || 'claude' },
       );
     }
   }
@@ -360,7 +372,7 @@ export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust
     // (verifier_family + model vs the pinned frontier model), NOT trusted from the recorded `tier`
     // field. A member whose recorded tier LIES about its identity (e.g. an ollama qwen verdict whose
     // artifact claims tier=frontier) HARD-FAULTS — the frontier rung can never be reached by a lie.
-    const dt = derivedTier(m, frontierModel);
+    const dt = derivedTier(m, fo);
     if (m.tier !== dt) {
       return flag(
         `panel member ${memberFamily(m)} recorded tier=${JSON.stringify(m.tier)} but its backend identity ` +
@@ -378,9 +390,9 @@ export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust
   // satisfies the >=2-agree gate (§v3.1 "a single reachable family never satisfies a >=2-agree gate").
   const isTrusted = makeTrustFn(probeTrust);
   const trusted = members.filter((m) => isTrusted(memberFamily(m)));
-  const trustedFrontier = trusted.filter((m) => derivedTier(m, frontierModel) === TIER.FRONTIER);
+  const trustedFrontier = trusted.filter((m) => derivedTier(m, fo) === TIER.FRONTIER);
   const trustedFallbackFamilies = new Set(
-    trusted.filter((m) => derivedTier(m, frontierModel) === TIER.FALLBACK).map((m) => memberFamily(m)),
+    trusted.filter((m) => derivedTier(m, fo) === TIER.FALLBACK).map((m) => memberFamily(m)),
   );
   if (trustedFrontier.length === 0 && trustedFallbackFamilies.size < MIN_QUORUM) {
     const distinctTrusted = new Set(trusted.map((m) => memberFamily(m)));
@@ -405,7 +417,7 @@ export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust
     const reVerdict = parseVerdict(normalizeAnswer(await rerunFn(fam, artifact.prompt)));
     reexec.push({
       family: fam,
-      tier: derivedTier(m, frontierModel),
+      tier: derivedTier(m, fo),
       recorded: m.verdict,
       reexec: reVerdict,
       agrees: reVerdict === m.verdict,

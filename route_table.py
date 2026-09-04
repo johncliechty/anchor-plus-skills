@@ -417,6 +417,9 @@ ROUTES = [
     # (2026-09-03) Resolve all: live re-probe -> re-run or one all-issues session
     _r("POST", "/api/doctor/resolve_all", AUTH_TOKEN,
        handler="handle_doctor_resolve_all", migrated=True),
+    # (2026-09-03) The r3 Doctor rule: Doctor probes first on open. Read-only.
+    _r("GET", "/api/doctor/probe", AUTH_TOKEN,
+       handler="handle_doctor_probe", migrated=True),
     _r("POST", "/api/doctor/healthcheck_run", AUTH_TOKEN,
        handler="handle_doctor_healthcheck_run", migrated=True),
 

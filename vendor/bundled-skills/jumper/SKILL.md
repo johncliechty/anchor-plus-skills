@@ -113,8 +113,8 @@ node bin/jumper-run.mjs --problem "<statement>" --depth FULL --fan-out <ideaRoun
   journal 0031)**: `JumperSelfReviewHalt` = Gate 3 resolved to the drafter family (fixed at
   PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any paid seat;
   select an independent review family or explicitly retarget `JUMPER_GATE3_DRIVER`);
-  `JumperCrossFamilyDegradeHalt` = agy down (Jumper NEVER silently self-reviews — rerun when agy
-  is back; if candidates were already built, the CLI emits them to `--output` stamped
+  `JumperCrossFamilyDegradeHalt` = the dashboard's review-family seat is down (Jumper NEVER silently
+  self-reviews — rerun when the seat is back; if candidates were already built, the CLI emits them to `--output` stamped
   **NOT FULLY VETTED** instead of nothing). `RefuterBudgetHalt` no longer kills a composed run
   (it killed THREE tournaments: journals 0003/0012/0030): the compose seam CAPS refuter demand
   at the budget (prereg R=3, or `--budget N`) — the first R firing elevations are refuted for

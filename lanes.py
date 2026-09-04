@@ -446,8 +446,33 @@ def detect_host_profile(env=None) -> dict:
     }
 
 
+def selected_families(env=None) -> dict:
+    """The families the Anchor dashboard has SELECTED (2026-09-04, John: "the seats for
+    different skills should be what is set in the Anchor main dashboard ... universal").
+
+    Read from ``anchor_settings`` (data-dir settings.json / the ~/.anchor mirror) — never
+    from which CLIs happen to be installed. Returns
+    ``{"default_cli", "coding", "review", "selected": set(...)}``; total (defaults on error).
+    """
+    try:
+        import anchor_settings as _aset
+        s = _aset.load_settings()
+        default_cli = str(s.get("default_cli") or "claude").strip().lower()
+        coding = str(s.get("coding_family") or "claude").strip().lower()
+        review = str(s.get("review_family") or coding).strip().lower()
+    except Exception:
+        default_cli, coding, review = "claude", "claude", "claude"
+    return {
+        "default_cli": default_cli,
+        "coding": coding,
+        "review": review,
+        "selected": {default_cli, coding, review},
+    }
+
+
 def select_engine_plan(lane: str, profile=None, env=None,
-                       preferred_backend=None, review_family=None) -> dict:
+                       preferred_backend=None, review_family=None,
+                       families=None) -> dict:
     """The honest per-lane execution plan for a host-capability profile (#10).
 
     Given a ``lane`` and a host profile (detected via
@@ -570,12 +595,26 @@ def select_engine_plan(lane: str, profile=None, env=None,
         plan["reason"] = "No Claude or Gemini subscription detected on this host."
         return plan
 
-    if has_claude and has_gemini:
-        # Both: Claude drives; Gemini is available as the 5:1 skill-layer swarm.
+    # (2026-09-04, John) No explicit preference: the DASHBOARD decides, never "both CLIs
+    # are installed". A Gemini swarm is offered only when a selected family IS gemini —
+    # an installed-but-unselected agy is never spawned (the subscription may be gone).
+    fams = families if isinstance(families, dict) else selected_families(env)
+    gemini_selected = "gemini" in (fams.get("selected") or set())
+    plan["families"] = {"coding": fams.get("coding"), "review": fams.get("review"),
+                        "default_cli": fams.get("default_cli")}
+    if has_claude and has_gemini and gemini_selected:
+        # Both installed AND the dashboard names gemini: Claude drives; Gemini swarms.
         plan.update(
             driver=BACKEND_CLAUDE, swarm=BACKEND_GEMINI, swarm_ratio=SWARM_RATIO,
             status=ENGINE_STATUS_OK, spawns_gemini=True,
-            reason="Claude driver + Gemini swarm ({}, skill-layer).".format(SWARM_RATIO),
+            reason="Claude driver + Gemini swarm ({}, skill-layer) — gemini is a selected family.".format(SWARM_RATIO),
+        )
+        return plan
+    if has_claude and has_gemini:
+        plan.update(
+            driver=BACKEND_CLAUDE, swarm=None, swarm_ratio=None,
+            status=ENGINE_STATUS_OK, spawns_gemini=False,
+            reason="Claude drives every lane; the installed Gemini CLI is not a selected family on the dashboard, so no Gemini swarm is spawned.",
         )
         return plan
 

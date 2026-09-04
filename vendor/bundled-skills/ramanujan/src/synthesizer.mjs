@@ -1,4 +1,5 @@
-import { loadManifest, createGeminiGenerate, createOllamaGenerate } from './phasef-probe.mjs';
+import { loadManifest, createFamilyGenerate, createOllamaGenerate } from './phasef-probe.mjs';
+import { resolveCrossFamilySeat } from './seat.mjs';
 import { FRONTIER_MODEL } from './cross-family-verifier.mjs';
 
 /**
@@ -79,15 +80,15 @@ export class Synthesizer {
       }
 
       if (manifest) {
-        const geminiSpec = manifest.tools?.gemini || {};
-        // 2026-07: the cross-family PRIMARY is agy (the login-based Antigravity CLI) — no API key. The
-        // live `agy -p` seam is env-gated by CRUCIBLE_AGENT_LIVE=1, so gate the frontier attempt on
-        // that (the fast tier, which never sets it, takes the ollama/mock fallback exactly as before).
-        const agyLive = env.CRUCIBLE_AGENT_LIVE === '1';
-
-        if (agyLive) {
+        // (2026-09-04) the frontier seat is the Anchor dashboard's configured family (seat.mjs), never a
+        // hardwired Gemini. The live seams are env-gated by CRUCIBLE_AGENT_LIVE=1, so the fast tier (which
+        // never sets it) takes the ollama/mock fallback exactly as before.
+        const live = env.CRUCIBLE_AGENT_LIVE === '1';
+        if (live) {
           try {
-            const gen = createGeminiGenerate(geminiSpec, { env });
+            const seat = await resolveCrossFamilySeat({ manifest, env });
+            if (!seat.family) throw new Error(seat.reason);
+            const gen = createFamilyGenerate(seat.tool, { env });
             rawAdvice = await gen(prompt);
           } catch (err) {
             rawAdvice = await this.#fallbackToOllama(manifest, prompt, options);

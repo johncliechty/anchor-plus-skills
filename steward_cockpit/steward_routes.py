@@ -434,12 +434,28 @@ def handle_get(cdir, verb, qs):
         if os.path.getsize(real) > 50 * 1024 * 1024:
             return {"error": "file too large to serve inline (50MB cap)"}, 413
         ext = Path(real).suffix.lower()
-        ctype = {
-            ".pdf": "application/pdf",
-            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-            ".json": "application/json; charset=utf-8",
-        }.get(ext, "text/plain; charset=utf-8")  # md/csv/html/svg served INERT as text
-        return {"__file__": real, "__ctype__": ctype}, 200
+        # (2026-09-04, John) "PDFs, MD, Word, PPT, Excel docs should all show
+        # up well." Every type gets its honest content-type; a browser renders
+        # PDF and images inline; an Office document (which no browser renders)
+        # gets a stdlib TEXT PREVIEW page (?view=1 — the cockpit's default) with
+        # a download link that hands it to Word / PowerPoint / Excel; anything
+        # else downloads under its own name instead of painting bytes as text.
+        # md/txt/csv/log still go through the Reader route from the cockpit.
+        want_view = str(qs.get("view", "")).strip() in ("1", "true")
+        want_download = str(qs.get("download", "")).strip() in ("1", "true")
+        ctype, disposition = deliverable_content_type(ext)
+        if want_view and ext in OFFICE_PREVIEW_EXTENSIONS:
+            import office_preview as _op
+            with open(real, "rb") as fh:
+                data = fh.read()
+            dl = "/api/steward/deliverable-file?pid=%s&dir=%s&path=%s&download=1%s" % (
+                _q(str(qs.get("pid", ""))), _q(str(qs.get("dir", ""))), _q(rel),
+                ("&token=" + _q(str(qs.get("token")))) if qs.get("token") else "")
+            html_page = _op.render_preview(data, os.path.basename(real), dl)
+            return {"__html__": html_page}, 200
+        if want_download:
+            disposition = "attachment"
+        return {"__file__": real, "__ctype__": ctype, "__disposition__": disposition}, 200
     if verb == "efforts":
         return _efforts(cdir), 200
     if verb == "map":
@@ -610,6 +626,42 @@ def _gandalf_runs(cdir):
         if len(runs) >= 8:
             break
     return runs
+
+
+# The content types a deliverable is served under (ext → (ctype, disposition)).
+# "inline" lets the browser render what it can (PDF, images, plain text);
+# "attachment" hands the rest to the native app under the file's own name.
+# html/svg are served INERT as text (active content from a project folder
+# must never execute in the dashboard's origin).
+OFFICE_PREVIEW_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
+_DELIVERABLE_TYPES = {
+    ".pdf": ("application/pdf", "inline"),
+    ".png": ("image/png", "inline"), ".jpg": ("image/jpeg", "inline"),
+    ".jpeg": ("image/jpeg", "inline"), ".gif": ("image/gif", "inline"),
+    ".webp": ("image/webp", "inline"),
+    ".json": ("application/json; charset=utf-8", "inline"),
+    ".md": ("text/plain; charset=utf-8", "inline"), ".txt": ("text/plain; charset=utf-8", "inline"),
+    ".csv": ("text/plain; charset=utf-8", "inline"), ".log": ("text/plain; charset=utf-8", "inline"),
+    ".html": ("text/plain; charset=utf-8", "inline"), ".htm": ("text/plain; charset=utf-8", "inline"),
+    ".svg": ("text/plain; charset=utf-8", "inline"),
+    ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "attachment"),
+    ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", "attachment"),
+    ".xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "attachment"),
+    ".doc": ("application/msword", "attachment"),
+    ".ppt": ("application/vnd.ms-powerpoint", "attachment"),
+    ".xls": ("application/vnd.ms-excel", "attachment"),
+    ".zip": ("application/zip", "attachment"),
+}
+
+
+def deliverable_content_type(ext):
+    """(content_type, disposition) for a deliverable's extension — total."""
+    return _DELIVERABLE_TYPES.get(str(ext or "").lower(), ("application/octet-stream", "attachment"))
+
+
+def _q(s):
+    from urllib.parse import quote
+    return quote(str(s or ""), safe="")
 
 
 def _deliverables(cdir):

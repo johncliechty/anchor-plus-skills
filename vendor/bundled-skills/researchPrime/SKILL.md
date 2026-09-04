@@ -183,7 +183,7 @@ Gather evidence; record each item in the evidence ledger with its origin(s) and 
    form>"` and no permission flags (0048).
 2. `node bin/run-rounds.mjs <runDir> [--max-rounds N]` — replay mode by default (recorded adjudications);
    `RESEARCHPRIME_LIVE_ROUND=1` routes reviewer/debate/judge LIVE via family prefs and, when
-   `reviews` are vacant, **spawns the panel** (agy down ⇒ honest HALT, never self-review).
+   `reviews` are vacant, **spawns the panel** on the dashboard's `review_family` seat (seat down ⇒ honest HALT, never self-review).
    Hung/thrown seats ABSTAIN (the other two keep going). The orchestrator LOOKS IN
    (heartbeat trail + RC-6 + elegance) — a talking seat is not killed for wall-clock.
    Silence is death: spawned seats MUST heartbeat; a silent seat is looked into, then

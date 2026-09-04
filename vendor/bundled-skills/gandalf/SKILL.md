@@ -97,13 +97,14 @@ discussion:
 
 1. **The real path (stakes ≥ medium, any `-Heavy`, or on request) — LIVE cross-family grade:**
    `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N]`
-   Fires agy refuters on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under
+   Fires independent refuters on the dashboard's `review_family` seat (never a hardwired family; agy only when
+   that family is gemini) on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under
    the host cap, mints claim-bound commissions, grades against the shared ledger — `cross_model:true` and
    GROUNDED become reachable, DERIVED never asserted. **Cost pre-flights, never mid-run walls (2026-08-25,
    John's ruling; journals 0298-0301):** more firing elevations than the budget FLOORS — top-R refuted, the
    excess ships SPECULATIVE, each named in the dispatch log; re-run with `--budget N` to cover all. A live
-   HALT's stderr names its ACTUAL cause — read it; "agy down" is one cause among several (0300 lesson).
-2. **Light regular-tier asks / agy down — Tier-1 deterministic grade:**
+   HALT's stderr names its ACTUAL cause — read it; "seat down" is one cause among several (0300 lesson).
+2. **Light regular-tier asks / review seat down — Tier-1 deterministic grade:**
    `node runtime/gandalf-run.mjs --input draft.json --output read.json`
    Zero model calls; every elevation floors at SPECULATIVE with the "no independent refutation ran" stamp
    and `cross_model:false`. Honest and cheap — the stakes gate makes this the correct light path, not a tier-break.
@@ -214,14 +215,15 @@ output. The model emits ONLY the RAW draft per **`runtime/RAW-DRAFT-CONTRACT.md`
 anticipate→`composeAnticipation`, situate→`composeSituate`, elevation→`vetElevationRefutation`+`labelTier`,
 synthesis→`composeRiskLabels`) and writes the canary-conformant output; a malformed draft exits non-zero
 and writes nothing (no forged output).
-- **`--live` (the real path)** wires `runHostLive` + `runtime/live-refuter.mjs`: independent agy refuters
+- **`--live` (the real path)** wires `runHostLive` + `runtime/live-refuter.mjs`: independent refuters on the
+  dashboard's review-family seat (`buildDefaultRefuterRoutes` → trio `buildRoutesFromFamilies`)
   attempt each firing elevation's named defeater (concurrent, bounded, budget R with pre-flight FLOOR — see
   above; never a mid-run halt), commissions are
   minted into the per-run `seam/commission-ledger.mjs`, and the gate DERIVES `cross_model` / GROUNDED from
   resolved commissions — journal 0009/0010 are real GROUNDED runs through this path.
 - **Default (Tier-1 deterministic)** makes zero model calls; every elevation honestly floors at
   SPECULATIVE + the "no independent refutation ran" stamp. This is the stakes-gated LIGHT path and the
-  agy-down fallback — never passed off as cross-model.
+  seat-down fallback — never passed off as cross-model.
 
 **5 — SYNTHESIS.** Emit the committed schema (`schema/advisor-output.schema.json`): `{ schema_version,
 cross_model, degraded, reasoning (BEFORE verdict), verdict (may be "this is sound"), findings[]{id, rung, kind,
