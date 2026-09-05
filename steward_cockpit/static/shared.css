@@ -481,3 +481,7 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 /* pages with no dedicated slot keep the old in-pane pin */
 .pscroll .blk.deliv { position: sticky; top: 0; z-index: 2;
        background: var(--panel); }
+
+/* (2026-09-04) what's next as short bullets inside the status table */
+.stab .stodo { margin: 0; padding-left: 16px; }
+.stab .stodo li { margin: 1px 0; }

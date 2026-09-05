@@ -1,6 +1,30 @@
 import fs from 'node:fs/promises';
 import { validateSchema } from './validateSchema.mjs';
 
+/**
+ * Decode an OpenAlex `abstract_inverted_index` into plain text. Lives here (not in
+ * text-sourcing.mjs, which imports this module) so the OpenAlex mappers below can
+ * carry the abstract from the first fetch — the Gandalf read of the 0010 build
+ * (2026-09-04) found every OpenAlex neighbour reached relevance screening with
+ * `abstract: null`, so TF-IDF ranked it on its title alone and could exclude an
+ * on-topic paper as off-topic before the sourcing chain ever ran.
+ *
+ * @param {Record<string, number[]>|null|undefined} index
+ * @returns {string|null} the abstract, or null when the index is absent/empty
+ */
+export function invertedIndexToAbstract(index) {
+  if (index === null || typeof index !== 'object' || Array.isArray(index)) return null;
+  const slots = [];
+  for (const [word, positions] of Object.entries(index)) {
+    if (!Array.isArray(positions)) continue;
+    for (const pos of positions) {
+      if (Number.isInteger(pos) && pos >= 0) slots[pos] = word;
+    }
+  }
+  const words = slots.filter((w) => typeof w === 'string');
+  return words.length > 0 ? words.join(' ') : null;
+}
+
 // C8 (2026-07-11): the whitelist is a RANKING prior, not an exclusion list, by default.
 // The old default EXCLUDED everything outside 3 ML/security venues — arXiv preprints
 // (empty venue) all died as 'low-venue', so a real snowball yielded near-zero candidates
@@ -260,7 +284,7 @@ export async function fetchReferencesOpenAlex(title, options = {}) {
     citationCount: w.cited_by_count ?? 0,
     authors: (w.authorships ?? []).map((a) => ({ name: a.author?.display_name ?? '?' })),
     openAccessPdf: w.open_access?.oa_url ? { url: w.open_access.oa_url } : null,
-    abstract: null,
+    abstract: invertedIndexToAbstract(w.abstract_inverted_index),
     provider: 'openalex',
   }));
 }
@@ -284,7 +308,7 @@ export async function expandOpenAlexId(openAlexId, options = {}) {
     citationCount: x.cited_by_count ?? 0,
     authors: (x.authorships ?? []).map((a) => ({ name: a.author?.display_name ?? '?' })),
     openAccessPdf: x.open_access?.oa_url ? { url: x.open_access.oa_url } : null,
-    abstract: null,
+    abstract: invertedIndexToAbstract(x.abstract_inverted_index),
     provider: 'openalex',
   }));
 }
@@ -300,7 +324,7 @@ function openAlexWorkToPaper(w) {
     citationCount: w.cited_by_count ?? 0,
     authors: (w.authorships ?? []).map((a) => ({ name: a.author?.display_name ?? '?' })),
     openAccessPdf: w.open_access?.oa_url ? { url: w.open_access.oa_url } : null,
-    abstract: null,
+    abstract: invertedIndexToAbstract(w.abstract_inverted_index),
     provider: 'openalex',
   };
 }
@@ -323,7 +347,7 @@ export async function resolveSeedPaperWithFallback(seedEntityId, options = {}) {
   const customFetch = options.fetch || fetch;
   let s2Err;
   try {
-    const seedUrl = `https://api.semanticscholar.org/graph/v1/paper/${seedEntityId}?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
+    const seedUrl = `https://api.semanticscholar.org/graph/v1/paper/${seedEntityId}?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract,externalIds`;
     const res = await fetchWithBackoff(seedUrl, { ...options, fetch: customFetch });
     const data = await res.json();
     if (data && data.paperId) return { paper: data, provider: 's2' };
@@ -402,7 +426,7 @@ export async function performSnowballSearch(seedEntityId, venueWhitelist, option
         refs = await expandOpenAlexId(paperId, { fetch: customFetch, ...options });
       } else {
         try {
-          const refUrl = `https://api.semanticscholar.org/graph/v1/paper/${paperId}/references?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract`;
+          const refUrl = `https://api.semanticscholar.org/graph/v1/paper/${paperId}/references?fields=title,venue,year,citationCount,authors,openAccessPdf,abstract,externalIds`;
           const res = await fetchWithBackoff(refUrl, { fetch: customFetch, ...options });
           const responseData = await res.json();
           refs = responseData.data || responseData.references || [];

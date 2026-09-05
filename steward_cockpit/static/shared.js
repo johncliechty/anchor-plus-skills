@@ -165,28 +165,42 @@ const Proto = (() => {
     const goal = (_lastMap && (_lastMap.goal_brief || _lastMap.goal)) || "";
     const nowLine = (stat.now || []).join(" · ");
     const seats = (stat.swarm || []).map(x => (x.label || "seat") + " · " + (x.state || "?"));
+    // (2026-09-04, John) the status is about the CURRENT SLICE, looked through
+    // the steward to the skill it runs; what's next is <=3 short bullets; the
+    // whole map lives in the goal bar, not here.
+    const sl = stat.slice || null;
+    const run = stat.running || null;
+    const proj = stat.project || {};
+    const sliceLine = sl ? ("Slice " + sl.n + "/" + sl.total + " · " + sl.name +
+      (sl.summary ? " — " + sl.summary : "")) : "";
+    const doingLine = (run && run.label) || nowLine;
+    const bullets = (stat.next_bullets && stat.next_bullets.length) ? stat.next_bullets
+      : (p.next ? [p.next] : []);
+    const todo = bullets.length ? el("ul", "stodo") : null;
+    if (todo) bullets.slice(0, 3).forEach(t => todo.appendChild(el("li", "", t)));
     const rows = [
-      ["Summary", goal || "—", !goal],
-      ["Effort", stat.effort || "—", !stat.effort],
-      ["Doing", nowLine || "—", !nowLine],
+      ["Summary", sliceLine || goal || "—", !sliceLine && !goal],
+      ["Effort", (stat.effort || "—") + (proj.brief ? " — " + proj.brief : ""), !stat.effort],
+      ["Doing", doingLine || "—", !doingLine],
       ["Status", hhmm + " · " + (p.step || "(no active step)") + " · " +
         (p.steps_done || 0) + "/" + (p.steps_total || 0) + " done · attention: " +
         (p.attention || "unknown"), false],
       ["Tests", stat.tests || "—", !stat.tests],
       ["Blocker", p.waiting_on_you ? "waiting on you: " + p.waiting_on_you : "none",
         false, !!p.waiting_on_you],
-      ["Procs", seats.length ? seats.join(" · ") : "none", false],
+      ["Procs", seats.length ? seats.join(" · ")
+        : ((run && run.kind === "skill") ? run.skill + " (commissioned)" : "none"), false],
       ["Journal", stat.journal || "—", !stat.journal],
       ["ETA", stat.eta || "—", !stat.eta],
-      ["To do", [p.next ? "next: " + p.next : ""].concat(
-        (stat.map || []).map(l => "map: " + l)).filter(Boolean).join(" · ") || "—",
-        !p.next && !(stat.map || []).length],
+      ["To do", todo || "—", !todo],
     ];
     const tab = el("table", "stab");
     rows.forEach(([k, v, dim, flag]) => {
       const tr = el("tr", flag ? "flag" : "");
       tr.appendChild(el("th", "", k));
-      const td = el("td", dim ? "dim" : "", v);
+      const isNode = !!(v && v.nodeType);
+      const td = el("td", dim ? "dim" : "", isNode ? "" : v);
+      if (isNode) td.appendChild(v);
       tr.appendChild(td);
       tab.appendChild(tr);
     });
@@ -205,10 +219,12 @@ const Proto = (() => {
     try {
       const brief = $("[data-goalbrief]"), lab = $("[data-goallabel]");
       if (brief) {
-        let line = (p.steps_done || 0) + "/" + (p.steps_total || 0) + " done";
+        // what is running (looked through) · the slice · its ETA
+        let line = (run && run.label) || (stat.now || [])[0] || "quiet";
+        if (sl) line += " · slice " + sl.n + "/" + sl.total + " " + sl.name;
+        else line += " · " + (p.steps_done || 0) + "/" + (p.steps_total || 0) + " done";
         if (p.waiting_on_you) line += " · waiting on you: " + p.waiting_on_you;
-        else if ((stat.now || [])[0]) line += " · " + stat.now[0];
-        if (p.next) line += " · next: " + p.next;
+        else if (stat.eta) line += " · ETA " + stat.eta;
         if (line.length > 120) line = line.slice(0, 117).replace(/\s+\S*$/, "") + "…";
         _statusLine = line + (stat.stale ? "  (" + hhmm + ")" : "");
         brief.textContent = _statusLine;
@@ -866,7 +882,12 @@ const Proto = (() => {
     };
     if (send) send.onclick = submit;
     ta.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+      if (e.key !== "Enter" || e.isComposing) return;
+      // (2026-09-04, John) Enter sends, the same as the Send button; Shift+Enter
+      // keeps a newline. Dictation (Win+H) never presses Enter, so the button
+      // stays the way to send dictated text.
+      if (e.shiftKey) return;
+      e.preventDefault(); submit();
     });
     // Dictation is Win+H (2026-08-25, jrnl 0088): the in-page Web Speech mic
     // was choppy and never auto-punctuated, so it is GONE — the textarea

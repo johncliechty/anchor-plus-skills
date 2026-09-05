@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { normalizeTopic } from './extraction.mjs';
 import { validateSchema } from './validateSchema.mjs';
+import { formatLedgerHeader } from './run-summary.mjs';
 
 /**
  * Returns a weight for the given Truth Ladder type.
@@ -211,9 +212,17 @@ export function populateMatrix(candidates, columns) {
 
 /**
  * Generates a formatted Markdown report of the Assumptions Ledger.
+ *
+ * Wave 4 (journal 0010): when a RunSummary is supplied, the ledger opens with the
+ * corpus-relevance honesty header rendered from that SAME object the console and
+ * the run record consume — a corpus:off-topic ledger is stamped partial right here.
+ * Without a summary the legacy output is byte-identical.
  */
-export function formatMarkdownLedger(ledger) {
+export function formatMarkdownLedger(ledger, runSummary = null) {
   let md = `# Synthesized Assumptions Ledger\n\n`;
+  if (runSummary) {
+    md += formatLedgerHeader(runSummary);
+  }
   md += `## Overview\n`;
   md += `- **Total Resolved Assumptions:** ${ledger.assumptions.length}\n`;
   
@@ -320,7 +329,7 @@ export async function runFinalSynthesis(candidates, columns, options = {}) {
     await fs.writeFile(options.matrixJsonPath, JSON.stringify(matrix, null, 2), 'utf8');
   }
 
-  const markdown = formatMarkdownLedger(ledger);
+  const markdown = formatMarkdownLedger(ledger, options.runSummary ?? null);
   if (options.ledgerMarkdownPath) {
     await fs.writeFile(options.ledgerMarkdownPath, markdown, 'utf8');
   }

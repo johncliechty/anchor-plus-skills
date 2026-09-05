@@ -101,8 +101,9 @@ def test_handle_settings_get_returns_defaults(settings_stack):
     caps = h._payload["model_capabilities"]
     assert caps["schema"] == "anchor.model-role-capabilities.v1"
     assert caps["roles"]["coder"]["families"]["chatgpt"]["selectable"] is True
-    assert caps["roles"]["terminal"]["families"]["chatgpt"]["selectable"] is False
-    assert caps["roles"]["reviewer"]["families"]["chatgpt"]["selectable"] is False
+    # (2026-09-05) ChatGPT drives the terminal and reviews/judges (model stamped unattested)
+    assert caps["roles"]["terminal"]["families"]["chatgpt"]["selectable"] is True
+    assert caps["roles"]["reviewer"]["families"]["chatgpt"]["selectable"] is True
     assert caps["roles"]["judge"]["setting"] == "review_family"
 
 

@@ -57,9 +57,12 @@ def test_valid_backends_include_chatgpt(stack):
     # ChatGPT is a valid CODING family but NOT a valid default terminal CLI while
     # the terminal bridge is pending: every terminal open resolves the default
     # engine, so a persisted "chatgpt" would brick them all with a bare 400.
-    assert "chatgpt" not in stack["settings"].VALID_DEFAULT_CLIS
+    # (John, 2026-09-05) ChatGPT is a terminal engine: a saved default persists.
+    assert "chatgpt" in stack["settings"].VALID_DEFAULT_CLIS
+    stack["settings"].save_settings(default_cli="chatgpt")
+    assert stack["settings"].get_default_cli() == "chatgpt"
     with pytest.raises(ValueError):
-        stack["settings"].save_settings(default_cli="chatgpt")
+        stack["settings"].save_settings(default_cli="not-a-cli")
     stack["settings"].save_settings(coding_family="chatgpt", review_family="gemini")
     assert stack["settings"].get_coding_family() == "chatgpt"
     assert stack["settings"].get_default_cli() in stack["settings"].VALID_DEFAULT_CLIS
@@ -73,15 +76,16 @@ def test_model_role_capability_matrix_is_honest_by_role(stack):
     })
     roles = caps["roles"]
     assert set(roles) == {"terminal", "coder", "reviewer", "judge"}
-    assert roles["terminal"]["families"]["chatgpt"]["status"] == "bridge_pending"
-    assert roles["terminal"]["families"]["chatgpt"]["selectable"] is False
+    assert roles["terminal"]["families"]["chatgpt"]["status"] == "ready"
+    assert roles["terminal"]["families"]["chatgpt"]["selectable"] is True
     assert roles["coder"]["families"]["chatgpt"]["status"] == "available_unattested"
     assert roles["coder"]["families"]["chatgpt"]["selectable"] is True
     for role in ("reviewer", "judge"):
+        # (John, 2026-09-05) ChatGPT reviews and judges; the model stays unattested, stamped.
         chatgpt = roles[role]["families"]["chatgpt"]
-        assert chatgpt["status"] == "verification_unattested"
-        assert chatgpt["selectable"] is False
-        assert "fails closed" in chatgpt["reason"]
+        assert chatgpt["status"] == "available_unattested_review"
+        assert chatgpt["selectable"] is True
+        assert "model-unattested stamp" in chatgpt["reason"]
     assert roles["judge"]["setting"] == "review_family"
     assert caps["judge_follows"] == "reviewer"
 
@@ -96,12 +100,12 @@ def test_main_dashboard_offers_four_honest_chatgpt_role_controls(stack):
     assert "id='mpReview'" in controls
     assert "id='mpJudge'" in controls
     assert controls.count("<option value='chatgpt'") == 4
-    assert controls.count("ChatGPT &mdash; terminal bridge pending") == 1
+    assert controls.count("ChatGPT &mdash; ready") == 1          # the terminal seat
     assert controls.count("ChatGPT &mdash; coder ready") == 1
-    assert controls.count("ChatGPT &mdash; verification unavailable") == 2
+    assert controls.count("ChatGPT &mdash; reviewer ready (model unattested)") == 2
     assert len(re.findall(
         r"<option value='chatgpt'[^>]* disabled>ChatGPT", controls,
-    )) == 3
+    )) == 0     # (2026-09-05) no ChatGPT seat is disabled any more
     assert "review_family: ['mpReview', 'mpJudge']" in controls
     assert "data-linked-role='reviewer'" in controls
 
@@ -169,10 +173,11 @@ def test_browser_role_controls_disable_honestly_and_link_judge(stack, monkeypatc
         def option_disabled(selector):
             return page.locator(selector).evaluate("option => option.disabled")
 
-        assert option_disabled("#mpDefaultCli option[value=chatgpt]") is True
+        assert option_disabled("#mpDefaultCli option[value=chatgpt]") is False   # terminal seat open (2026-09-05)
         assert option_disabled("#mpCoding option[value=chatgpt]") is False
-        assert option_disabled("#mpReview option[value=chatgpt]") is True
-        assert option_disabled("#mpJudge option[value=chatgpt]") is True
+        # (John, 2026-09-05) ChatGPT reviews and judges — enabled, model stamped unattested
+        assert option_disabled("#mpReview option[value=chatgpt]") is False
+        assert option_disabled("#mpJudge option[value=chatgpt]") is False
 
         page.select_option("#mpJudge", "grok")
         page.wait_for_function(
@@ -199,12 +204,9 @@ def test_chatgpt_allowed_on_lanes(stack):
         stack["lanes"].check_engine_allowed(lane, "chatgpt")
 
 
-def test_interactive_chatgpt_terminal_fails_closed_until_bridge_exists(stack):
-    with pytest.raises(
-        stack["ts"].TerminalSessionError,
-        match="chatgpt-gated-bridge-pending",
-    ):
-        stack["ts"]._check_engine_allowed("general", "chatgpt")
+def test_interactive_chatgpt_terminal_is_allowed_since_2026_09_05(stack):
+    # (John, 2026-09-05) the Codex TUI runs in the cockpit PTY; no gate remains.
+    stack["ts"]._check_engine_allowed("general", "chatgpt")
 
 
 def test_interactive_chatgpt_start_refuses_before_worktree_or_pty(stack, monkeypatch):
@@ -213,10 +215,11 @@ def test_interactive_chatgpt_start_refuses_before_worktree_or_pty(stack, monkeyp
     monkeypatch.setattr(
         ts._wt, "create_worktree",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("bridge-pending must precede worktree creation")
+            AssertionError("reached worktree creation")
         ),
     )
-    with pytest.raises(ts.TerminalSessionError, match="chatgpt-gated-bridge-pending"):
+    # (2026-09-05) a ChatGPT start now proceeds to the worktree like any engine
+    with pytest.raises(AssertionError, match="reached worktree creation"):
         ts.start_session("p1", "general", backend="chatgpt")
 
 
@@ -236,22 +239,24 @@ def test_interactive_chatgpt_switch_refuses_before_source_session_changes(
     monkeypatch.setattr(
         ts, "_switch_handoff_summary",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("bridge-pending must precede transcript access")
+            AssertionError("reached transcript access")
         ),
     )
-    with pytest.raises(ts.TerminalSessionError, match="chatgpt-gated-bridge-pending"):
+    # (2026-09-05) a switch to ChatGPT now proceeds to the handoff like any engine
+    with pytest.raises(AssertionError, match="reached transcript access"):
         ts.switch_engine("source", "chatgpt")
 
 
-def test_chatgpt_switch_without_worktree_still_reports_bridge_pending(
+def test_chatgpt_switch_without_worktree_fails_on_the_worktree_not_a_gate(
         stack, monkeypatch):
     ts = stack["ts"]
     monkeypatch.setattr(ts._reg, "get_session", lambda _sid: {
         "session_id": "source", "lane": "general", "worktree_path": "",
         "backend": "claude",
     })
-    with pytest.raises(ts.TerminalSessionError, match="chatgpt-gated-bridge-pending"):
+    with pytest.raises(Exception) as ei:
         ts.switch_engine("source", "chatgpt")
+    assert "chatgpt-gated-bridge-pending" not in str(ei.value)
 
 
 @pytest.mark.parametrize("backend", ([], {}, ["chatgpt"], {"x": 1}))

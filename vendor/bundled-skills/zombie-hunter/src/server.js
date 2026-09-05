@@ -625,6 +625,9 @@ function renderBurnTrend() {
   }).join('') + `</div>`;
 }
 
+const SERVER_MTIME_MS = (() => { try { return require('fs').statSync(__filename).mtimeMs; } catch (e) { return 0; } })();
+const SERVER_STARTED_AT = Date.now();
+
 function generateDashboard() {
   // W7: cache-first paint — never await full sweep for shell
   const paint = paintRadarFromCache({
@@ -971,6 +974,10 @@ const server = http.createServer(async (req, res) => {
     // Dual-write: actionable zombies empty under shadow → dashboard banner stays dark
     // (Anchor handle_zombie_spenders sums st.zombies). Observe + dualWrite for all surfaces.
     sendJson(res, {
+      // (2026-09-04) the build this process runs — Anchor recycles a hunter whose
+      // server.js on disk is newer (the process outlives service restarts).
+      server_mtime: SERVER_MTIME_MS,
+      started_at: SERVER_STARTED_AT,
       zombies: b.zombie,
       active: b.active,
       idleCount: b.idleCount,

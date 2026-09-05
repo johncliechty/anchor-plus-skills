@@ -1,5 +1,107 @@
 # Changelog
 
+## v1.2.12 — the status says what is running and what the slice needs; a stopped model is told; Enter sends; Grok and ChatGPT review; ChatGPT drives the terminal (2026-09-05)
+
+John's evening after v1.2.11, in his words: the status window's "what's next" was
+"way too long", "what is running is always the steward", the ETA should be "the
+length of the current slice", the summary "should focus on the current slice";
+a plan for going forward must be "a clickable link in the overall work flow" AND
+"a short summary presented by the steward in the dialogue (bullet point style)";
+Enter in the project steward's box should send like the button (dictation still
+clicks Send); and "if a session limit is hit by one of the models, then Anchor
+needs to inform the user, not just stop."
+
+### The status looks through the steward (`steward_campaign.compose_status`)
+- **What is running** is the skill the steward commissioned, read from that
+  skill's OWN status log (`_foreman-status.log`, `_crucible-status*.log`, …,
+  the newest fresh one under the effort, `status_lookthrough`): its Doing,
+  Tests and ETA rows ride the status as `running`, `tests`, `eta`. "steward
+  working" is the whole story only when nothing else runs.
+- **Summary = the current slice**: `slice` = the active roadmap step, its
+  position (n/m), its part tag and its done-when in one line (≤140 chars).
+  **Effort** carries the effort name + the goal brief, so the High Seat's copy
+  says what the whole project is.
+- **ETA = the length of the current slice**: the commissioned run's own ETA when
+  it has one, else a typical length for the step's part tag minus the time
+  already in (`estimate_eta`; labelled an estimate; "over the ~45 min typical"
+  when past it, never "0 min left").
+- **What's next = ≤3 short bullets** (`next_bullets`, ≤90 chars each, split on
+  lines / semicolons / sentence ends); the map no longer rides the To do row.
+- A strip whose human-wait says "none" is not a blocker (`_real_wait`).
+- The pane (`shared.js renderStatus`), the top bar line and the dashboard row
+  (`_steward_status_tile_line`) all read the new shape: running · slice · ETA.
+
+### Grok and ChatGPT are reviewer seats (John 2026-09-05)
+- A verification seat proves its FAMILY; an unattested served MODEL is accepted and
+  stamped (trio drivers). Grok attests through JSON output; ChatGPT's verdicts carry
+  `model_attested:false`. The Reviewer/Judge pickers offer ChatGPT (`available_unattested_review`);
+  `VALID_REVIEW_FAMILIES` includes it.
+
+### A stopped model is told, never just stopped
+- A commissioned run that ENDED is said as **STOPPED** with its own reason (the
+  status log's `HALT/STOP reason` / Blocker row); a **model session / usage
+  limit** (`classify_model_limit`) is named first and becomes the Blocker row,
+  the top bar and the dashboard row ("waiting on you: model session limit (…)").
+- The engine flips an attention flag still saying "working" to `needs_you`
+  with that reason (`raise_halt_attention`, `write_attention`), so the High
+  Seat and the rail count it as "need you"; the pane gets one `STOPPED: …` line.
+- The steward's own error result is said in the pane (`result_error_text`):
+  `MODEL LIMIT: …` raises the flag (`failure_code MODEL_LIMIT`); "session
+  ended" says why.
+
+### Plans forward (steward law 14 + a mechanism)
+- Law (14): a plan for going forward lives in TWO places — a `DELIVERABLES.md`
+  row (a clickable link in the work flow and the status pane) AND a 3–6 bullet
+  summary said in the dialogue, ending with the one decision it needs.
+- Mechanism: `PLAN.md` / `MASTER-PLAN.md` / `IMPLEMENTATION-PLAN.md` /
+  `NORTH-STAR.md` / `*-PLAN.md` up to two levels under the effort appear as
+  `auto` rows in the deliverables register without anyone registering them.
+
+### Enter sends
+- In the project steward's box, Enter = Send; Shift+Enter keeps a newline;
+  dictation (Win+H) never presses Enter, so the Send button stays its path.
+
+### ChatGPT is a first-class Terminal engine (the last role; one wave, John 2026-09-05)
+- The cockpit terminal opens on the **Codex TUI** exactly as it does on Claude and Grok:
+  the `chatgpt-gated-bridge-pending` guard in `terminal_session._check_engine_allowed` is
+  gone, `VALID_DEFAULT_CLIS` widened so a saved `default_cli=chatgpt` persists, the
+  Terminal picker and capability note say **ready**, and the engine toggle switches a live
+  session to and from ChatGPT in the same worktree.
+- **Seen on the page, then fixed:** the Codex TUI opened on its own "Update available"
+  menu and dropped the lane seed typed into stdin — so a ChatGPT terminal now launches with
+  `-c check_for_update_on_startup=false` and receives the lane seed as Codex's positional
+  prompt (the Gemini `-i` pattern), at start and at switch. No launch-argument table, no
+  seed-timing machinery, no `--cd` (the PTY already starts in the worktree), no
+  `--no-alt-screen` (the TUI renders in xterm.js as is).
+- **Seen on the page, kept as is:** the first ChatGPT terminal on a project shows Codex's own
+  one-time per-repository trust question; Enter answers Yes and the lane seed then runs as the
+  first turn ("✓ researchPrime loaded — what would you like to do?" was read off the page). Anchor
+  does not auto-trust on the user's behalf.
+- **Doctor on ChatGPT is read-only by construction:** `DOCTOR_READONLY_CLI_ARGS[chatgpt] =
+  ("-s", "read-only")` overrides a `danger-full-access` Codex config; proven on the stub
+  child's argv. Grok still has no Doctor contract and stays refused.
+- **Honest accounting (RULED Option C):** a Codex session's segment is unmeasured like
+  Gemini's — stamped at start and at switch; the rollup badge reads
+  `partial (unmeasured engine segment)`, never a fabricated number.
+- The job-layer / legacy-REPL ChatGPT net (`select_engine_plan`, `rnd_terminal`, the
+  `test_chatgpt_lane_routing` pins) is deliberately untouched — that is the parked
+  ChatGPT-steward (F1B) surface, its own cycle.
+- Process record: Crucible's seven-element, four-phase plan was cut to one wave by the
+  Rabbit-Catcher (`planning/chatgpt-terminal-2026-09-05/REVIEW-FABLE-2026-09-05.md`),
+  adversarially reviewed by Grok before the build and again on the diff; Foreman was not
+  used for a one-wave change (trio journals crucible 0094, foreman 0110).
+- Tests: `test_chatgpt_terminal_2026_09_05.py` (stub PTY: start, seed-on-argv, switch,
+  Doctor fence on the spawn, live-spawn refusal, rollup); terminal pins in
+  `test_backend_chatgpt.py`, `test_anchor_settings.py`, `test_settings_api.py` rewritten.
+
+### Notes
+- `planning/deliverable-runner-2026-09-04/NOTE.md`: the design note for running
+  software deliverables from the browser (terminal / app slot / remote display;
+  puter first, Roar second). Not built.
+- Tests: `test_status_lookthrough_2026_09_04.py` (10),
+  `test_model_limit_informs_2026_09_04.py` (5). The full suite's 157 failures
+  are pre-existing (browser-timeout and runner tests fail on HEAD too).
+
 ## v1.2.11 — seats are what the dashboard selects, everywhere; deliverables open well; Doctor probes first; sessions advance in the background (2026-09-04)
 
 John's day of use after v1.2.10: a math-research run went to Gemini (whose

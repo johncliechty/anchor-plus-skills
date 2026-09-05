@@ -97,7 +97,10 @@ export function loadModelFamilies(env = process.env) {
     return String(value).trim().toLowerCase();
   };
   const coding = selected('coding_family', 'claude');
-  const review = selected('review_family', 'gemini');
+  // (2026-09-04, John) no prefs anywhere ⇒ single-family Claude, honestly stamped — never a Gemini
+  // seat nobody selected (the dashboard is the source; this default only covers a host with
+  // no Anchor settings and no mirror).
+  const review = selected('review_family', 'claude');
   const source = settings
     ? settingsPath
     : mirror
@@ -145,7 +148,7 @@ export function buildRoutesFromFamilies({
 } = {}) {
   const families = loadModelFamilies(env);
   const codingDriver = familyToDriverName(families.coding) || 'claude';
-  const reviewDriver = familyToDriverName(families.review) || 'gemini-cli';
+  const reviewDriver = familyToDriverName(families.review) || 'claude';
   const routes = { default: { driver: codingDriver } };
   for (const role of codingRoles) {
     const r = normalizeRole({ role });
@@ -179,7 +182,7 @@ export function buildRoutesFromFamilies({
 export function applyFamilyPrefsToEnv(env = process.env) {
   const fams = loadModelFamilies(env);
   const codingDrv = familyToDriverName(fams.coding) || 'claude';
-  const reviewDrv = familyToDriverName(fams.review) || 'gemini-cli';
+  const reviewDrv = familyToDriverName(fams.review) || 'claude';
   const roleMap = {
     EXECUTE: codingDrv,
     FIX: codingDrv,
@@ -494,11 +497,19 @@ async function runDispatcherAttempt(driver, opts, ordinal, kind) {
         ? 'aborted'
         : 'seat_unavailable';
     error = errorInfo(last.error?.code || 'seat_unavailable', last.error?.message || 'transport failed');
-  } else if (verification
-      && (!last.served?.family_attested || !last.served?.model_attested)) {
+  } else if (verification && !last.served?.family_attested) {
     status = 'seat_unavailable';
-    error = errorInfo('served_unattested', 'verification requires attested served family and model');
+    error = errorInfo('served_unattested', 'verification requires an attested served family');
   } else {
+    // (John, 2026-09-05) a verification seat whose FAMILY is attested but whose served MODEL
+    // is not (the Codex CLI names no model; Grok plain output did not) is ACCEPTED with the
+    // honest stamp `model_attested:false` on its receipt — family independence is what a
+    // reviewer must prove; the model tier is stamped, never inferred. Said on the log so no
+    // run is blind to it. A family that cannot be attested still fails closed above.
+    if (verification && !last.served?.model_attested) {
+      const say = typeof opts.log === 'function' ? opts.log : () => {};
+      say(`⚠ ${opts.label ?? opts.role ?? 'seat'}: ${driver.name} verification seat served family "${last.served?.family ?? '?'}" with an UNATTESTED model — accepted, stamped model_attested:false`);
+    }
     status = transportAttempts.length === 2 ? 'success_after_schema_reprompt' : 'success';
     served = last.served;
   }

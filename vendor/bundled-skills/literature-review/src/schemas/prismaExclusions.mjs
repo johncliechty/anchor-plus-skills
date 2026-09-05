@@ -14,8 +14,11 @@ export const prismaExclusionsSchema = {
           "title": { "type": "string" },
           "reason": {
             "type": "string",
-            "enum": ["low-venue", "low-tier", "date-range", "no-pdf", "duplicate", "off-topic", "fetch-failed"]
+            "enum": ["low-venue", "low-tier", "date-range", "no-pdf", "duplicate", "off-topic", "fetch-failed", "no-text", "rank-truncated"]
           },
+          "relevance_score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "relevance_floor": { "type": "number", "minimum": 0, "maximum": 1 },
+          "nearest_seed": { "type": ["string", "null"] },
           "details": { "type": "string" }
         }
       }

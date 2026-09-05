@@ -20,7 +20,8 @@
 //
 // Usage:
 //   node bin/cli.mjs [--seed <spec>]... [--seed-list <json-file>] [--depth N]
-//        [--max-papers N] [--columns a,b,c] [--stakes low|medium|high] [--out <dir>]
+//        [--max-papers N] [--relevance-floor F] [--corpus-relevance-min F]
+//        [--columns a,b,c] [--stakes low|medium|high] [--out <dir>]
 //        [--mock-user "q: ...|approve"] [--live]
 //        [--content <root>]... [--intent "<research intent>"] [--plan-run-dir <dir>]
 //        [--plan-decision APPROVE|EDIT|ABORT] [--plan-edited-file <path>]
@@ -71,7 +72,7 @@ import { dedupeSeedList, seedEntityId, mergeSnowballResults } from '../src/seed-
 import { runMixedInitiativeGate } from '../src/gate.mjs';
 import { extractLedgerLean } from '../src/extraction.mjs';
 import { runStage0Plan, stage0AllowsExecution, buildHeadlessApproval, PIPELINE_STATE_FILENAME } from '../src/stage0-plan.mjs';
-import { advancePrismaWithSnowball, writePipelineState, readPipelineState } from '../src/pipeline-state.mjs';
+import { advancePrismaWithSnowball, recordExtractionNoText, writePipelineState, readPipelineState } from '../src/pipeline-state.mjs';
 import { buildNormalizedView } from '../src/textNormalization.mjs';
 import { groundQuote } from '../src/quoteExtractor.mjs';
 import { runPostApproveBreadth } from '../src/breadthStage.mjs';
@@ -79,13 +80,18 @@ import { buildBreadthTelemetry } from '../src/breadthTelemetry.mjs';
 import { reviewSeatLineageFromReceipt } from '../src/reviewSeatLabels.mjs';
 import { makeSeatTelemetry, wrapAgentWithSeatTelemetry, seatRecordFields } from '../src/seatTelemetry.mjs';
 import { applyLiteratureReviewTriageLock } from '../src/triage-lock-apply.mjs';
+import { assembleCandidatesWithSeeds, truncateCandidatesPreservingSeeds, truncationPrismaExclusions, buildSeedPrismaInclusions } from '../src/candidate-assembly.mjs';
+import { SOURCING_CHAIN, acquireTextWithProvenance, stampTextProvenance, makeOpenAlexAbstractResolver, preScreenSourcing } from '../src/text-sourcing.mjs';
+import { applyRelevanceScreening } from '../src/relevance.mjs';
+import { buildRunSummary, finalizeRunSummary, formatConsoleSummary, formatRunResult, VERDICT_CORPUS_OFF_TOPIC } from '../src/run-summary.mjs';
+import { resolveRunConfig, parseMaxPapers, combineInspectableExclusions } from '../src/run-config.mjs';
 import { composeLiteratureReviewAdversarialPass } from '../src/adversarial-compose.mjs';
 
 function parseArgs(argv) {
   // Track B7 W2 — distinct fields: snowballDepth (integer hops), triageBand (band),
   // adversarialRounds (N). CLI --depth is freestyle snowball hops only (never band).
   const o = {
-    seeds: [], seedList: null, snowballDepth: 1, adversarialRounds: 1, maxPapers: 6, columns: ['method', 'evidence', 'result'], stakes: 'medium', out: 'litreview-out', mockUser: null, live: false,
+    seeds: [], seedList: null, snowballDepth: 1, adversarialRounds: 1, maxPapers: 6, relevanceFloor: null, corpusRelevanceMin: null, columns: ['method', 'evidence', 'result'], stakes: 'medium', out: 'litreview-out', mockUser: null, live: false,
     content: [], intent: null, planRunDir: null, planDecision: null, planEditedFile: null, planToken: null, planPolicyGrant: null,
     triageDepth: null, triageTier: null, triageBand: null,
     snowballDepthExplicit: false, adversarialRoundsExplicit: false, depthExplicit: false,
@@ -102,7 +108,14 @@ function parseArgs(argv) {
     }
     else if (a === '--triage-depth') o.triageDepth = argv[++i];
     else if (a === '--triage-tier') o.triageTier = argv[++i];
-    else if (a === '--max-papers') o.maxPapers = parseInt(argv[++i], 10) || 6;
+    else if (a === '--max-papers') o.maxPapers = parseMaxPapers(argv[++i]);
+    // Wave 3/5: the configurable hard relevance floor. NaN is passed through so
+    // resolveRunConfig REFUSES it outright at the boundary (an unnamed bound cannot
+    // be tested).
+    else if (a === '--relevance-floor') o.relevanceFloor = Number(argv[++i]);
+    // Wave 4/5: the configurable corpus-relevance honesty minimum — same NaN
+    // pass-through refusal contract as the floor.
+    else if (a === '--corpus-relevance-min') o.corpusRelevanceMin = Number(argv[++i]);
     else if (a === '--columns') o.columns = String(argv[++i]).split(',').map((s) => s.trim()).filter(Boolean);
     else if (a === '--stakes') o.stakes = argv[++i];
     else if (a === '--out') o.out = argv[++i];
@@ -154,6 +167,14 @@ function buildStage0Adapters(agent) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
+  // Wave 5 (journal 0010): resolve the relevance/honesty knobs ONCE at the boundary —
+  // source-level defaults, named [0,1] bounds, out-of-bounds REFUSED here before any
+  // work runs; seed exemption and inspectable exclusions hold by construction.
+  const runConfig = resolveRunConfig({
+    relevanceFloor: opts.relevanceFloor,
+    corpusRelevanceMin: opts.corpusRelevanceMin,
+  });
+
   // ---- Wave 10: the canonical multi-seed list, FIRST. Strict validation (the shared
   // Wave-6 checkpoint) runs here at the boundary — a malformed identifier stops the
   // run before any child-process handoff — and list-level dedupe is deterministic:
@@ -179,7 +200,7 @@ async function main() {
   const intentPresent = typeof opts.intent === 'string' && opts.intent.trim() !== '';
   const planPhase = opts.content.length > 0 || intentPresent || canonicalSeeds.length > 0;
   if (!planPhase) {
-    console.error('Usage: node bin/cli.mjs [--seed spec]... [--seed-list json] [--depth N] [--max-papers N] [--columns a,b,c] [--stakes t] [--out dir] [--mock-user seq] [--live] [--content root]... [--intent text] [--plan-decision APPROVE|EDIT|ABORT] [--plan-edited-file p] [--plan-token t] [--plan-policy-grant id]');
+    console.error('Usage: node bin/cli.mjs [--seed spec]... [--seed-list json] [--depth N] [--max-papers N] [--relevance-floor F] [--corpus-relevance-min F] [--columns a,b,c] [--stakes t] [--out dir] [--mock-user seq] [--live] [--content root]... [--intent text] [--plan-decision APPROVE|EDIT|ABORT] [--plan-edited-file p] [--plan-token t] [--plan-policy-grant id]');
     console.error('Seed specs: doi:<id>[|title] | pmid:<id>[|title] | arxiv:<id>[|title] | title:<title> | bare DOI/PMID/arXiv id.');
     process.exit(1);
   }
@@ -411,6 +432,13 @@ async function main() {
   }
   let candidates = [];
   let seedChunks = [];
+  // Wave 4: the floor/floor-activity pair the run summary stamps — set by the Wave-3
+  // screening when snowball runs; on the no-snowball path the floor was never active.
+  let relevanceScreeningInfo = { relevance_floor: runConfig.relevance_floor, floor_active: false };
+  // The sourcing chain (Wave 2): provider abstract → OpenAlex abstract → …; defined here
+  // because (2026-09-05, Grok review F1) it now ALSO runs before relevance ranking.
+  const sourcingChain = { 'openalex-abstract': makeOpenAlexAbstractResolver() };
+  let prismaExclusions = { exclusions: [] };
   if (resolvableSeeds.length > 0) {
     console.log(`Snowball search over ${resolvableSeeds.length} seed(s) (snowballDepth ${opts.snowballDepth})...`);
     const perSeedRuns = [];
@@ -433,16 +461,90 @@ async function main() {
     for (const m of merged.seedMerges) {
       console.log(`  seed dedupe: ${m.absorbed.join(', ')} resolve to the same paper as ${m.kept} (${m.paperId}) — merged deterministically by identity precedence.`);
     }
-    fs.writeFileSync(path.join(opts.out, 'prisma-exclusions.json'), JSON.stringify(merged.prismaExclusions, null, 2), 'utf8');
+    // Wave 1 (journal 0010 — Seeds always in): EVERY approved seed becomes a
+    // canonical, relevance-exempt candidate BEFORE rank truncation, upserted by
+    // stable identity (resolved catalog paperId, else its idType:id key) — never
+    // duplicated, never rank-truncated. The 0010 run lost 10 of 12 seeds at the
+    // old `slice(0, maxPapers)` on this exact line.
+    const assembly = assembleCandidatesWithSeeds({
+      candidates: merged.candidates,
+      seeds: approvedSeeds,
+      seedPapers: merged.seedPapers,
+      seedMerges: merged.seedMerges,
+    });
+    // Wave 3 (journal 0010 — relevance-ranked, off-topic excluded): candidate order
+    // becomes TF-IDF relevance to the seeds combined with normalized citation weight,
+    // and below-floor non-seeds are EXCLUDED here — before truncation, extraction and
+    // synthesis input — each a PRISMA `off-topic` exclusion stamped with its score,
+    // the floor and its nearest seed. Seeds are exempt by construction; with no
+    // scoreable seeds the floor is inactive and citation order is preserved. The 0010
+    // run ranked by citations alone on this line and extracted Fiji over the topic.
+    // (2026-09-05, Grok review F1) TEXT BEFORE RELEVANCE: a candidate the provider returned
+    // without an abstract (Semantic Scholar often does) is sourced through the chain NOW,
+    // so TF-IDF scores its real text and a record with none is named no-text — never
+    // scored on its title and excluded as off-topic.
+    const preScreen = await preScreenSourcing(assembly.candidates, { sources: sourcingChain });
+    if (preScreen.attempted) {
+      console.log(`  text before ranking: ${preScreen.sourced} of ${preScreen.attempted} abstract-less candidate(s) sourced through the chain`);
+    }
+    const screening = applyRelevanceScreening(preScreen.candidates, {
+      relevanceFloor: runConfig.relevance_floor,
+    });
+    relevanceScreeningInfo = { relevance_floor: screening.relevance_floor, floor_active: screening.floor_active };
+    // (2026-09-04, Gandalf read) truncation is an exclusion too: the budget's drops
+    // become PRISMA `rank-truncated` rows, so the record and the flow agree.
+    const truncation = truncateCandidatesPreservingSeeds(screening.retained, opts.maxPapers);
+    // Wave 5: ONE inspectable, schema-validated exclusion record — snowball's own
+    // exclusions, the screening's off-topic / no-text exclusions and the budget's
+    // rank-truncated drops, combined in run order.
+    prismaExclusions = combineInspectableExclusions(
+      merged.prismaExclusions, screening.prismaExclusions,
+      truncationPrismaExclusions(truncation.dropped, { maxPapers: opts.maxPapers, seedCount: truncation.seedCount }));
+    const seedInclusions = buildSeedPrismaInclusions(screening.candidates);
+    fs.writeFileSync(path.join(opts.out, 'prisma-exclusions.json'), JSON.stringify(prismaExclusions, null, 2), 'utf8');
+    fs.writeFileSync(path.join(opts.out, 'prisma-inclusions.json'), JSON.stringify(seedInclusions, null, 2), 'utf8');
     fs.writeFileSync(path.join(opts.out, 'citation-graph.mmd'), merged.mermaid || '');
-    candidates = merged.candidates.slice(0, opts.maxPapers);
+    fs.writeFileSync(path.join(opts.out, 'relevance-ranking.json'), JSON.stringify({
+      stamp: 'per-candidate relevance ranking (TF-IDF cosine to seeds + normalized citation weight; floor screens non-seeds before extraction)',
+      relevance_floor: screening.relevance_floor,
+      floor_active: screening.floor_active,
+      candidates: screening.candidates.map((c) => ({
+        paperId: c.canonical_id ?? c.paperId ?? null,
+        title: c.title ?? 'Untitled',
+        is_seed: c.is_seed === true,
+        relevance_score: c.relevance_score,
+        nearest_seed: c.nearest_seed,
+        citation_weight: c.citation_weight,
+        combined_score: c.combined_score,
+      })),
+    }, null, 2), 'utf8');
+    if (screening.excluded.length) {
+      for (const ex of screening.prismaExclusions.exclusions) {
+        console.log(`  - ${ex.reason} (PRISMA): "${String(ex.title).slice(0, 60)}" relevance ${ex.relevance_score} < floor ${ex.relevance_floor}`);
+      }
+    }
+    candidates = truncation.kept;
     seedChunks = merged.seedPapers.map((sp) => sp.paper?.abstract).filter(Boolean);
-    console.log(`  included=${merged.candidates.length} · taking top ${candidates.length} · excluded(PRISMA)=${merged.prismaExclusions.exclusions.length}`);
+    // (2026-09-05, Grok review F2) ONE identity on every surface: included = the kept set.
+    console.log(`  included=${truncation.kept.length} of ${assembly.candidates.length} identified (retained ${screening.retained.length} at relevance floor ${screening.relevance_floor}${screening.floor_active ? '' : ' — inactive, no scoreable seeds'}; ${screening.excluded.length} screened out; ${truncation.dropped.length} rank-truncated; all ${truncation.seedCount} seed(s) kept) · excluded(PRISMA)=${prismaExclusions.exclusions.length}`);
     if (pipelineState) {
-      // Stage-0 initialized PRISMA; snowball is the ONLY stage that advances it.
-      pipelineState = advancePrismaWithSnowball(pipelineState, merged);
+      // Stage-0 initialized PRISMA; snowball is the ONLY stage that advances it —
+      // over the RETAINED candidate list (every seed included by construction), with
+      // off-topic screening exclusions counted alongside the snowball's own.
+      pipelineState = advancePrismaWithSnowball(pipelineState, {
+        candidates: truncation.kept,
+        prismaExclusions,
+      });
       writePipelineState(planStatePath, pipelineState);
     }
+  } else if (approvedSeeds.length > 0) {
+    // (2026-09-05, Grok review F4) no catalog-resolvable seed (title-hash-only plans):
+    // the user's seeds are STILL the corpus — assembled, stamped, in the PRISMA flow.
+    const assembly = assembleCandidatesWithSeeds({ candidates: [], seeds: approvedSeeds });
+    candidates = assembly.candidates;
+    const seedInclusions = buildSeedPrismaInclusions(assembly.candidates);
+    fs.writeFileSync(path.join(opts.out, 'prisma-inclusions.json'), JSON.stringify(seedInclusions, null, 2), 'utf8');
+    console.log(`  no catalog-resolvable seed: ${candidates.length} user seed(s) assembled as the corpus (no snowball, no ranking)`);
   }
 
   // ---- 3. mixed-initiative gate (TTY-aware; copilot honest about its seat) ----
@@ -470,14 +572,114 @@ async function main() {
   // ---- 4. LEAN extraction: 1 call/paper + deterministic quote grounding ----
   const allAssumptions = [];
   const allRejected = [];
-  for (const cand of candidates) {
-    const text = cand.abstract || '';
-    if (!text.trim()) { console.log(`  ~ ${cand.title}: no text available — skipped (stamped)`); continue; }
-    const { ledger, rejected } = await extractLedgerLean(cand, text, opts.columns, agent);
+  // Wave 4: the papers that were actually EXTRACTED (text sourced AND grounded claims
+  // produced) — the only ones corpus_relevance is computed over.
+  const extractedRecords = [];
+  // Papers that failed the per-paper floor (zero grounded claims after quote-grounding) are
+  // SKIPPED AND STAMPED here, never allowed to abort the run (journal 0008: one such paper
+  // killed a run after eight papers were extracted and no ledger was written). The per-paper
+  // function keeps its fail-closed contract (it still throws; B7-C3 canary); the run keeps going.
+  const skippedPapers = [];
+  // Wave 2 (journal 0010 — provenance-bearing text acquisition): seeds and ordinary
+  // retained candidates take the SAME bounded sourcing chain (provider abstract →
+  // OpenAlex abstract → Crossref abstract → arXiv/PMC full text → user PDF); the
+  // winning link — or `none` with every applicable attempt — is stamped on the
+  // record. The 0010 run skipped ten of twelve seeds at the old `cand.abstract || ''`
+  // on this line while OpenAlex had their abstracts.
+  // (2026-09-05, Grok review F3) a paper that yields NO text here leaves PRISMA `included`
+  // as a `no-text` exclusion — never a silent console line.
+  const noTextAtExtraction = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const before = candidates[i];
+    // text already sourced before ranking (F1) is reused with its stamp; otherwise the chain runs
+    const preSourced = typeof before.text_source === 'string' && before.text_source !== 'none'
+      && typeof before.abstract === 'string' && before.abstract.trim() !== '';
+    const acquisition = preSourced
+      ? { text: before.abstract, text_source: before.text_source, attempts: before.text_source_attempts }
+      : await acquireTextWithProvenance(before, { sources: sourcingChain });
+    const cand = candidates[i] = stampTextProvenance(before, acquisition);
+    const text = acquisition.text || '';
+    if (!text.trim()) {
+      const attempted = cand.text_source_attempts.filter((a) => a.status !== 'skipped');
+      console.log(`  ~ ${cand.title}: no text from any applicable source — text_source=none (${attempted.map((a) => `${a.source}:${a.status}`).join(', ')}); excluded as no-text (PRISMA)`);
+      noTextAtExtraction.push({
+        paperId: String(cand.canonical_id ?? cand.paperId ?? 'unknown'),
+        title: typeof cand.title === 'string' ? cand.title : 'Untitled',
+        reason: 'no-text',
+        details: `no text from any applicable source at extraction (${attempted.map((a) => `${a.source}:${a.status}`).join(', ') || 'no link attempted'})`,
+      });
+      continue;
+    }
+    if (cand.text_source !== 'provider-abstract') {
+      console.log(`  · ${String(cand.title).slice(0, 60)}: text sourced via ${cand.text_source} (chain fallback, stamped)`);
+    }
+    let extracted;
+    try {
+      extracted = await extractLedgerLean(cand, text, opts.columns, agent);
+    } catch (err) {
+      if (err && err.code === 'LIT_REVIEW_MIN_GROUNDED_CLAIMS') {
+        const rejectedHere = Array.isArray(err.rejected) ? err.rejected : [];
+        allRejected.push(...rejectedHere);
+        skippedPapers.push({
+          paperId: cand.paperId || '',
+          title: cand.title || 'Untitled',
+          reason: `below LIT_REVIEW_SAFETY_FLOOR.minGroundedClaimsPerPaper (${err.grounded ?? 0} grounded < ${err.minGrounded ?? '?'}); ${rejectedHere.length} fabricated quote(s) rejected`,
+        });
+        console.log(`  ~ ${String(cand.title).slice(0, 60)}: 0 grounded claim(s) after quote-grounding — paper skipped (stamped), run continues`);
+        continue;
+      }
+      throw err;
+    }
+    const { ledger, rejected } = extracted;
     allAssumptions.push(...ledger.assumptions);
     allRejected.push(...rejected);
+    extractedRecords.push(cand);
     console.log(`  ✓ ${String(cand.title).slice(0, 60)}: ${ledger.assumptions.length} grounded claim(s), ${rejected.length} rejected (fabricated quote)`);
   }
+  if (skippedPapers.length) {
+    fs.writeFileSync(path.join(opts.out, 'skipped-papers.json'), JSON.stringify({
+      stamp: 'papers skipped at extraction: zero grounded claims after quote-grounding (per-paper floor held; run continued)',
+      skipped: skippedPapers,
+    }, null, 2));
+    console.log(`  ${skippedPapers.length} paper(s) skipped at the floor — recorded in ${opts.out}/skipped-papers.json`);
+  }
+  if (noTextAtExtraction.length) {
+    prismaExclusions = combineInspectableExclusions(prismaExclusions, { exclusions: noTextAtExtraction });
+    fs.writeFileSync(path.join(opts.out, 'prisma-exclusions.json'), JSON.stringify(prismaExclusions, null, 2), 'utf8');
+    if (pipelineState) {
+      pipelineState = recordExtractionNoText(pipelineState, noTextAtExtraction);
+      writePipelineState(planStatePath, pipelineState);
+    }
+    console.log(`  ${noTextAtExtraction.length} paper(s) excluded as no-text at extraction — PRISMA updated (${opts.out}/prisma-exclusions.json)`);
+  }
+  if (candidates.length) {
+    // The auditable record of every attempted source — winning link or `none`,
+    // one ordered attempt trail per retained candidate, seed and non-seed alike.
+    fs.writeFileSync(path.join(opts.out, 'text-sourcing.json'), JSON.stringify({
+      stamp: 'per-candidate sourcing-chain outcomes (provenance-bearing text acquisition; same shape for seeds and non-seeds)',
+      chain: [...SOURCING_CHAIN],
+      candidates: candidates.map((c) => ({
+        paperId: c.canonical_id ?? c.paperId ?? null,
+        title: c.title ?? 'Untitled',
+        is_seed: c.is_seed === true,
+        text_source: c.text_source ?? null,
+        attempts: c.text_source_attempts ?? [],
+      })),
+    }, null, 2));
+  }
+
+  // ---- 4b. Wave 4 (journal 0010 — corpus-relevance stamp + honesty gate): ONE
+  // authoritative run summary derived from the EXTRACTED corpus only. Below the
+  // configurable corpus_relevance_min the verdict is corpus:off-topic and the ledger
+  // is still written — stamped PARTIAL; the run can no longer report success on
+  // extracted/grounded/synthesized counts alone. Console, ledger header and the
+  // machine-readable run record all consume THIS object. ----
+  let runSummary = buildRunSummary({
+    extractedCandidates: extractedRecords,
+    relevanceFloor: relevanceScreeningInfo.relevance_floor,
+    floorActive: relevanceScreeningInfo.floor_active,
+    corpusRelevanceMin: runConfig.corpus_relevance_min,
+  });
 
   // ---- 5. weighted consensus synthesis (deterministic math) ----
   const { runFinalSynthesis } = await import('../src/synthesis.mjs');
@@ -490,8 +692,13 @@ async function main() {
       ledgerJsonPath: path.join(opts.out, 'assumptions-ledger.json'),
       ledgerMarkdownPath: path.join(opts.out, 'assumptions-ledger.md'),
       matrixJsonPath: path.join(opts.out, 'parameterized-matrix.json'),
+      runSummary,
     });
-    console.log(`Synthesis: ${synth.ledger.assumptions.length} assumption(s), ${synth.matrix.rows.length} matrix row(s) → ${opts.out}/`);
+    if (runSummary.verdict === VERDICT_CORPUS_OFF_TOPIC) {
+      console.log(`Synthesis output written as PARTIAL (${VERDICT_CORPUS_OFF_TOPIC}): ${synth.ledger.assumptions.length} assumption(s) recorded → ${opts.out}/ — NOT a synthesis success.`);
+    } else {
+      console.log(`Synthesis: ${synth.ledger.assumptions.length} assumption(s), ${synth.matrix.rows.length} matrix row(s) → ${opts.out}/`);
+    }
   } else {
     console.log('Synthesis SKIPPED (honest): zero grounded assumptions extracted.');
   }
@@ -581,17 +788,26 @@ async function main() {
   }
 
   const lastVerdict = adversarial?.rounds?.[adversarial.rounds.length - 1];
+  // Wave 4: the governed verdict fills the summary ONLY when the corpus verdict has
+  // not already claimed it (corpus:off-topic is authoritative and never overridden);
+  // console and run record then consume the same finalized object as the ledger did.
+  runSummary = finalizeRunSummary(runSummary, { governedVerdict: lastVerdict?.tally?.verdict ?? null });
+  for (const line of formatConsoleSummary(runSummary)) console.log(line);
   writeRunRecord({
     started, t0, opts,
-    result: synth
-      ? `synthesized ${synth.ledger.assumptions.length} assumptions; adversarial invokeCount=${adversarial?.invokeCount ?? 0} skipped=${!!adversarial?.skipped}; last=${lastVerdict?.tally?.verdict ?? 'n/a'}; rejected-fabricated=${allRejected.length}`
-      : 'no grounded assumptions',
+    result: formatRunResult(
+      runSummary,
+      synth
+        ? `synthesized ${synth.ledger.assumptions.length} assumptions; adversarial invokeCount=${adversarial?.invokeCount ?? 0} skipped=${!!adversarial?.skipped}; last=${lastVerdict?.tally?.verdict ?? 'n/a'}; rejected-fabricated=${allRejected.length}`
+        : 'no grounded assumptions',
+    ),
     seatTelemetry,
     breadthTelemetry,
+    runSummary,
   });
 }
 
-function writeRunRecord({ started, t0, opts, result, crossModel = false, seatTelemetry = null, breadthTelemetry = null }) {
+function writeRunRecord({ started, t0, opts, result, crossModel = false, seatTelemetry = null, breadthTelemetry = null, runSummary = null }) {
   try {
     const seatFields = seatTelemetry
       ? seatRecordFields(seatTelemetry)
@@ -618,6 +834,9 @@ function writeRunRecord({ started, t0, opts, result, crossModel = false, seatTel
         models: seatFields.models,
         // Wave 5: breadth honesty stamps (from-branches / none / facet errors).
         breadthTelemetry: breadthTelemetry ?? null,
+        // Wave 4 (journal 0010): THE corpus-relevance summary — the same object the
+        // console lines and the ledger header rendered; null before extraction runs.
+        run_summary: runSummary ?? null,
         duration_s: Math.round((Date.now() - t0) / 1000), journal_ref: null,
       }, null, 2) + '\n');
   } catch (error) {

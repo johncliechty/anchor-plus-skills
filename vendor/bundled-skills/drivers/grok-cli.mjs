@@ -56,6 +56,29 @@ export function resolveGrokCliModel({ model, role, env = process.env } = {}) {
 }
 
 /**
+ * Parse `grok --output-format json` stdout: `{ text, modelUsage: { "<served>": {...} }, ... }`.
+ * Returns `{ text, servedModel }` — `servedModel` is the single served model, or the requested
+ * one when several are reported, else null (unattested). Null when stdout is not that envelope
+ * (the caller then treats stdout as plain text, unattested).
+ */
+export function parseGrokJsonOutput(stdout, { requested = null } = {}) {
+  const raw = String(stdout || '').trim();
+  if (!raw) return null;
+  let obj = null;
+  try { obj = JSON.parse(raw); } catch {
+    // narration glued before the envelope: take the LAST top-level object
+    const i = raw.lastIndexOf('\n{');
+    if (i >= 0) { try { obj = JSON.parse(raw.slice(i + 1)); } catch { obj = null; } }
+  }
+  if (!obj || typeof obj !== 'object' || typeof obj.text !== 'string') return null;
+  const usage = obj.modelUsage && typeof obj.modelUsage === 'object' ? Object.keys(obj.modelUsage) : [];
+  let servedModel = null;
+  if (usage.length === 1) servedModel = usage[0];
+  else if (usage.length > 1 && requested && usage.includes(String(requested))) servedModel = String(requested);
+  return { text: obj.text.trim(), servedModel };
+}
+
+/**
  * Spawn headless `grok -p` (subscription login). Returns { text, rec }.
  * @param {string} fullPrompt
  * @param {string} label
@@ -82,7 +105,10 @@ export function defaultRunGrokCli(fullPrompt, label, {
     );
   }
   const cmdName = platform === 'win32' ? 'grok.exe' : 'grok';
-  const args = ['--output-format', 'plain'];
+  // (2026-09-04, foreman journal 0109) JSON output carries `modelUsage`, which names the
+  // SERVED model — the attestation a verification seat needs. Plain output never did, so
+  // every Grok review ran to completion and was then rejected as unattested.
+  const args = ['--output-format', 'json'];
   const mdl = resolveGrokCliModel({ model, role, env });
   if (mdl) args.push('--model', mdl);
   const perm = isVerificationRole({ role, label })
@@ -126,13 +152,15 @@ export function defaultRunGrokCli(fullPrompt, label, {
     if (tmpPath) {
       try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
     }
-    const text = String(result.stdout || '').trim();
+    const parsed = parseGrokJsonOutput(result.stdout, { requested: mdl });
+    const text = parsed ? parsed.text : String(result.stdout || '').trim();
     const status = result.terminal !== 'closed'
       ? result.terminal
       : result.code === 0
         ? (text ? 'success' : 'no_reply')
         : 'cli_error';
     const ok = status === 'success';
+    const served = ok && parsed ? parsed.servedModel : null;
     const rec = {
       label,
       cli_status: result.code,
@@ -140,12 +168,14 @@ export function defaultRunGrokCli(fullPrompt, label, {
       status,
       error: ok ? undefined : (result.error || result.stderr.slice(0, 500)),
       requested_model: mdl,
-      // Plain Grok output exposes no served model. Never stamp a session default.
-      model_served: null,
+      // The served model comes from the JSON envelope's `modelUsage` (one served model,
+      // or the requested one among several). Anything else stays honestly unattested —
+      // never a session default.
+      model_served: served,
       model_family: ok ? 'grok' : null,
       family_attested: ok,
-      model_attested: false,
-      degraded: true,
+      model_attested: !!served,
+      degraded: !served,
       timed_out: status === 'timeout',
       aborted: status === 'aborted',
       kill_status: result.kill_status,

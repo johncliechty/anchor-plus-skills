@@ -288,8 +288,10 @@ function isDispatcherAttempt(value, ordinal, verification) {
         && Array.from(value.transport_attempts)
           .every((child) => child.status === 'schema_rejected'))) return false;
   if (last.status !== 'accepted') return true;
+  // (John, 2026-09-05) a verification seat fails closed only when its FAMILY is unattested;
+  // an unattested MODEL is accepted and stamped (mirrors drivers/index.mjs).
   return verification
-    && (!last.served.family_attested || !last.served.model_attested)
+    && !last.served.family_attested
     && value.error.code === 'served_unattested';
 }
 
@@ -354,8 +356,7 @@ function isTrioSeatReceipt(value) {
     return value.served !== null
       && sameServed(value.served, finalAttempt.served)
       && value.error === null
-      && (!value.verification
-        || (value.served.family_attested && value.served.model_attested));
+      && (!value.verification || value.served.family_attested);
   }
   return value.served === null
     && value.error !== null;
@@ -372,12 +373,15 @@ function receiptSupportsIndependence(receipt, verification) {
     && receipt.verification === verification
     && receipt.failover?.used === false
     && receipt.served?.family_attested === true
-    && receipt.served?.model_attested === true
+    // (2026-09-05) the served MODEL may be unattested (Codex names none): independence is
+    // the FAMILY; the model stamp rides the receipt as model_attested:false
+    && typeof receipt.served?.model_attested === 'boolean'
     && typeof receipt.served?.driver === 'string'
     && receipt.served.driver.trim().length > 0
     && SEAT_FAMILIES.has(receiptFamily(receipt))
-    && typeof receipt.served?.model === 'string'
-    && receipt.served.model.trim().length > 0;
+    && (receipt.served.model_attested
+      ? (typeof receipt.served?.model === 'string' && receipt.served.model.trim().length > 0)
+      : receipt.served?.model === null);
 }
 
 /**
@@ -727,10 +731,17 @@ export function resolveGate3Seating({
   const prefsCoding = fams.coding;
   const prefsReview = fams.review;
   const prefsCodingDriver = familyToDriverName(fams.coding) || 'claude';
-  const prefsReviewDriver = familyToDriverName(fams.review) || 'gemini-cli';
-
-  const drafterDriverName = drafterDriver || prefsCodingDriver;
-  const drafterFamily = familyFromDriver(drafterDriverName) || prefsCoding;
+  // (2026-09-04, John) the drafter is the SESSION that ideates: a Claude Code host drafts as
+  // claude even when coding_family is chatgpt (JUMPER_DRAFTER_FAMILY / CLAUDECODE), else coding.
+  const hostDrafter = (typeof env?.JUMPER_DRAFTER_FAMILY === 'string' && env.JUMPER_DRAFTER_FAMILY.trim())
+    ? env.JUMPER_DRAFTER_FAMILY.trim().toLowerCase()
+    : (env?.CLAUDECODE ? 'claude' : null);
+  const drafterDriverName = drafterDriver || (hostDrafter ? (familyToDriverName(hostDrafter) || prefsCodingDriver) : prefsCodingDriver);
+  const drafterFamily = familyFromDriver(drafterDriverName) || hostDrafter || prefsCoding;
+  // Gate 3 default (2026-09-04): the configured family that is NOT the drafter's — review_family
+  // first, then coding_family; none ⇒ the self-review HALT below (never a family nobody selected).
+  const nonDrafter = [prefsReview, prefsCoding].find((f) => f && String(f).toLowerCase() !== String(drafterFamily).toLowerCase());
+  const prefsReviewDriver = (nonDrafter && familyToDriverName(nonDrafter)) || familyToDriverName(fams.review) || 'claude';
   // Env/option may retarget the verifier driver; default is review-family (cross-family).
   // No env invents skip-independence — only a different family (or injected agent) is independent.
   const gate3DriverName =

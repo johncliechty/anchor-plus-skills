@@ -65,6 +65,15 @@ export function familyOfServedModel(served) {
  * the dispatcher's recorded served-model stamp for that member's call) OR a `servedModel` string
  * we normalize through `attestStamp`. Absent both => degraded (never fabricate a served model).
  */
+/** The lineage of a stamp whose FAMILY is attested but whose model is not (null otherwise). */
+const FAMILY_LINEAGE = Object.freeze({ chatgpt: 'gpt', openai: 'gpt', codex: 'gpt' });
+export function familyAttestedLineage(attestation) {
+  if (!attestation || attestation.family_attested !== true) return null;
+  const fam = typeof attestation.family === 'string' ? attestation.family.trim().toLowerCase() : '';
+  if (!fam) return null;
+  return FAMILY_LINEAGE[fam] ?? fam;
+}
+
 function resolveAttestation(member) {
   if (member.attest != null) {
     const a = typeof member.attest === 'function' ? member.attest() : member.attest;
@@ -118,7 +127,12 @@ export async function runRubricPanel({ doc, pack, members, attestedLineages, log
       probeCrossModel: memberProbe(member), log,
     });
     const attestation = resolveAttestation(member);
-    const familyServed = attestation.model_attested ? familyOfServedModel(attestation.model_served) : null;
+    // (2026-09-05) a member whose served FAMILY is attested counts as an origin even when its
+    // served MODEL is unattested (the Codex CLI names no model): the stamp says so, the family
+    // is real. A member with neither stays excluded (the RED single-family probe still fails).
+    const familyServed = attestation.model_attested
+      ? familyOfServedModel(attestation.model_served)
+      : familyAttestedLineage(attestation);
     results.push({
       requested_family: member.family ?? rubric.stamp.family,
       requested_model: member.servedModel ?? rubric.stamp.model,
@@ -134,7 +148,7 @@ export async function runRubricPanel({ doc, pack, members, attestedLineages, log
   // borrow the capped "off-enum" bucket to manufacture a second family. This is what makes the
   // RED single-family probe FAIL honestly (a degraded or same-family second judge cannot pass).
   const attestedReviewers = results
-    .filter((r) => r.attestation.model_attested === true)
+    .filter((r) => r.family_served !== null)
     .map((r) => ({ lineage: r.family_served }));
   const independentOrigins = countIndependentOrigins(attestedReviewers, { attestedLineages: enum_ });
   const attestedFamilies = [...new Set(attestedReviewers.map((r) => r.lineage).filter(Boolean))].sort();

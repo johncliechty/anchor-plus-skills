@@ -544,6 +544,54 @@ function reviewerPrompt(role, { round, angle, focus, artifact, northStar, heartb
 
 export { DEFAULT_CHECKIN_MS, DEFAULT_DEAD_IDLE_MS, DEFAULT_SILENT_KILL_MS };
 
+/**
+ * Recover the findings object from a live seat's reply. The drivers return `{ text, rec }`
+ * (the model's final transcript text), and a real reviewer answers with a ```json-fenced
+ * findings object, often after prose. Before 2026-09-04 the panel read `out?.findings`
+ * directly, so EVERY live seat reply was silently recorded as zero findings and an
+ * unparsed reply was indistinguishable from a clean look (three seats, three fenced
+ * findings objects, engine tally 0 — run report/researchprime-novelty, journal 0068).
+ * Returns { findings: Array|null, raw: string, parsed: 'object'|'json'|'empty'|'unparsed' }.
+ */
+export function extractPanelFindings(out) {
+  if (out && typeof out === 'object' && Array.isArray(out.findings)) {
+    return { findings: out.findings, raw: typeof out.text === 'string' ? out.text : '', parsed: 'object' };
+  }
+  const text = typeof out === 'string'
+    ? out
+    : (out && typeof out.text === 'string' ? out.text : (out && typeof out.reply === 'string' ? out.reply : ''));
+  if (!text.trim()) return { findings: null, raw: '', parsed: 'empty' };
+  const candidates = [];
+  const fenced = [...text.matchAll(/```(?:json|JSON)?\s*([\s\S]*?)```/g)].map((m) => m[1].trim());
+  for (let i = fenced.length - 1; i >= 0; i--) candidates.push(fenced[i]);
+  candidates.push(text.trim());
+  // last brace-balanced object that contains "findings"
+  const key = text.lastIndexOf('"findings"');
+  if (key >= 0) {
+    let start = text.lastIndexOf('{', key);
+    while (start >= 0) {
+      let depth = 0; let end = -1;
+      for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '{') depth++;
+        else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+      }
+      if (end > start) candidates.push(text.slice(start, end + 1));
+      start = text.lastIndexOf('{', start - 1);
+      if (candidates.length > 12) break;
+    }
+  }
+  for (const c of candidates) {
+    try {
+      const j = JSON.parse(c);
+      if (j && typeof j === 'object' && Array.isArray(j.findings)) return { findings: j.findings, raw: text, parsed: 'json' };
+    } catch { /* try the next candidate */ }
+  }
+  return { findings: null, raw: text, parsed: 'unparsed' };
+}
+
+const RAW_REPLY_KEEP = 20000;
+
 export function panelSeatAbstain(job, err) {
   const msg = (err && (err.message || String(err))) || 'rejected';
   return {
@@ -618,11 +666,23 @@ export async function runPanelRound({
         task: artifact,
         onLookin,
       });
+      const extracted = extractPanelFindings(out);
+      if (extracted.findings === null) {
+        // An unparseable or empty reply is NOT a clean look: the seat abstains (honest
+        // tracker counts it as not-surviving), and the raw text is kept for the audit.
+        return {
+          ...panelSeatAbstain(job, new Error(`reply not parseable as a findings object (${extracted.parsed})`)),
+          lineage: lineage ?? null,
+          raw_reply: String(extracted.raw || '').slice(0, RAW_REPLY_KEEP),
+        };
+      }
       return {
         reviewer: job.role.role,
         angle: job.angle,
         lineage: lineage ?? null,
-        findings: normalizePanelFindings(Array.isArray(out?.findings) ? out.findings : []),
+        findings: normalizePanelFindings(extracted.findings),
+        reply_parsed_as: extracted.parsed,
+        raw_reply: String(extracted.raw || '').slice(0, RAW_REPLY_KEEP),
       };
     } catch (err) {
       return panelSeatAbstain(job, err);

@@ -23,13 +23,12 @@ import paths as _paths
 
 VALID_CLIS = frozenset({"claude", "gemini", "grok", "chatgpt"})
 VALID_FAMILIES = VALID_CLIS
-VALID_REVIEW_FAMILIES = frozenset({"claude", "gemini", "grok"})
-# ChatGPT cannot drive the interactive terminal yet (persistent bridge pending —
-# see model_role_capabilities "bridge_pending"), so it is not a valid DEFAULT
-# terminal CLI: a persisted/forged/mirror-written "chatgpt" here would make every
-# terminal open fail with a bare 400. It remains a valid coding family. Widen to
-# VALID_CLIS when the bridge lands.
-VALID_DEFAULT_CLIS = frozenset({"claude", "gemini", "grok"})
+# (John, 2026-09-05) ChatGPT reviews and judges: the Codex transport attests the
+# family, not the served model, so its verdicts carry a model-unattested stamp.
+VALID_REVIEW_FAMILIES = frozenset({"claude", "gemini", "grok", "chatgpt"})
+# (John, 2026-09-05) ChatGPT drives the interactive terminal too — the Codex TUI
+# in the cockpit PTY — so every family is a valid default terminal CLI.
+VALID_DEFAULT_CLIS = VALID_CLIS
 
 # ── Steward personas (2026-07-29) ────────────────────────────────────────────
 # One steward engine, selectable livery. The HIGH SEAT icon fronts the

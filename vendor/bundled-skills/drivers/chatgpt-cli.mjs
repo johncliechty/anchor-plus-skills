@@ -407,21 +407,10 @@ export function defaultRunCodexCli(fullPrompt, label, {
       },
     });
   }
-  if (isVerificationRole({ role: seatRole })) {
-    return Promise.resolve({
-      text: '',
-      rec: {
-        label, ok: false, status: 'unattested_verification_model',
-        error: 'Codex JSONL does not expose the actually served verification model',
-        requested_model: mdl, requested_effort: effort,
-        orchestration_mode: orchestration, model_served: null,
-        model_family: null, family_attested: false,
-        model_attested: false, degraded: true,
-        subscription_cli: true, subscription_auth: null, timed_out: false,
-        preflight_skipped: 'served_model_unavailable', sandbox: box,
-      },
-    });
-  }
+  // (John, 2026-09-05) ChatGPT IS a reviewer/judge seat. The Codex JSONL still names no
+  // served model, so a verification call runs read-only (sandbox above) and its receipt is
+  // stamped family_attested:true / model_attested:false — the seat contract accepts that
+  // honestly and says so on the log. The old up-front refusal is gone.
   const preflight = preflightImpl({ cmd, model: mdl, effort, env });
   if (!preflight.ok) {
     return Promise.resolve({

@@ -120,6 +120,15 @@ strength and is scrupulously honest about what has and has not actually been set
    evaluation (mental algebra shown step-by-step, or a quick script the user can rerun). State
    which you did.
 
+## Every written report opens with a plain summary (John, 2026-09-04 — promoted here, not journaled)
+
+A Ramanujan report file starts with a **Summary** section before any provenance, ledger, or
+machinery: the question in one line, what was found ranked by consequence (each item one or two
+plain sentences a reader who has been away can follow), what changed as a result, and the single
+open item. Rung labels, scripts, and refutation tables come after. A report registered as a
+deliverable without this summary is not done. Reason: John reads reports cold; a thirteen-row
+ledger at the top cost him a re-read.
+
 ## Fast path (the default — no engine, no ceremony)
 
 For a direct mathematical question — "is this proof step valid?", "what's the asymptotic here?",
@@ -130,6 +139,12 @@ normal mode of the skill; the discipline above IS the deliverable.
 For genuinely hard problems, structure the work like a working mathematician: understand → try
 small cases → conjecture → attack → verify — narrating rungs as they change. When a claim graduates
 (e.g. a computation confirms a small-case pattern), say so and move its rung with the evidence.
+
+**A written review opens with the summary (John, 2026-09-04).** When the output is a report
+(a claim ledger, a review of someone's formalization), the FIRST thing on the page is a short,
+plain summary a reader who has been away can take in at once: what was checked, what holds, what
+fell and why, and what to do next — five to eight sentences, no ledger rows, no provenance. The
+ledger, findings and cross-family table follow. Provenance closes the report, never opens it.
 
 ## Process depth (NS-01 triage / Track B4)
 

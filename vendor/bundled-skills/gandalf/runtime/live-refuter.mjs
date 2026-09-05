@@ -361,19 +361,48 @@ export async function runLiveRefutation(rawDraft, {
  * @param {{routes?:object, drafterFamily?:string, env?:object}} [o]
  * @returns {Promise<Function>} the role-routed agent(prompt, opts)
  */
+/**
+ * The family that DRAFTED (2026-09-04, journal 0315): the session running this skill, not the
+ * dashboard's coding family — a Claude Code session drafts as claude even when coding_family is
+ * chatgpt. Explicit `drafterFamily` wins; then GANDALF_DRAFTER_FAMILY; then a Claude Code host
+ * (CLAUDECODE set) is claude; else the coding family.
+ */
+export function resolveDrafterFamily({ drafterFamily, env = process.env, codingFamily } = {}) {
+  const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim().toLowerCase() : null);
+  return pick(drafterFamily) || pick(env.GANDALF_DRAFTER_FAMILY) || (env.CLAUDECODE ? 'claude' : null) || pick(codingFamily) || DRAFTER_FAMILY;
+}
+
+/**
+ * The refuter seat under the dashboard's rule (John, 2026-09-04): the configured family that is NOT
+ * the drafter's — review_family first (the check seat), then coding_family; null when every
+ * configured family is the drafter's (the caller HALTs honestly — never self-refutation, never a
+ * family nobody selected).
+ */
+export function pickRefuterFamily({ families = {}, drafterFamily } = {}) {
+  const d = String(drafterFamily || '').toLowerCase();
+  for (const f of [families.review, families.coding]) {
+    const fam = String(f || '').toLowerCase();
+    if (fam && fam !== d) return fam;
+  }
+  return null;
+}
+
 export async function buildLiveRefuterAgent({ routes, drafterFamily, env = process.env } = {}) {
-  const { makeRoleRoutedAgent, buildRoutesFromFamilies } = await import('fil<path>');
+  const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import('fil<path>');
   const built = buildRoutesFromFamilies({
     env,
     codingRoles: [],
     reviewRoles: ['refuter'],
   });
-  const resolvedRoutes = routes ?? built.routes;
-  const resolvedDrafter = drafterFamily ?? built.drafterFamily;
-  // Fail-closed unless Anchor prefs set coding_family === review_family (honest single-family).
-  const singleFamilyPrefs = !routes && built.families.coding === built.families.review;
-  if (!singleFamilyPrefs) {
-    assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });
+  const resolvedDrafter = resolveDrafterFamily({ drafterFamily, env, codingFamily: built.families?.coding });
+  let resolvedRoutes = routes;
+  if (!resolvedRoutes) {
+    // (2026-09-04) refuter = the configured non-drafter family; review_family first.
+    const fam = pickRefuterFamily({ families: built.families || {}, drafterFamily: resolvedDrafter });
+    const drv = fam ? familyToDriverName(fam) : null;
+    resolvedRoutes = drv ? { ...built.routes, refuter: { driver: drv } } : built.routes;
   }
+  // Fail-closed: a refuter that resolves to the drafter's family is a self-refutation HALT.
+  assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });
   return makeRoleRoutedAgent({ routes: resolvedRoutes, env: { ...env, CRUCIBLE_AGENT_LIVE: '1' } });
 }

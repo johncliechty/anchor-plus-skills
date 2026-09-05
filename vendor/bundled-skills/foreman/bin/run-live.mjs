@@ -78,6 +78,19 @@ const CLAUDE_ARGS = ['-p', ' ', '--output-format', 'stream-json', '--verbose',
 import { importFoundryTriage } from '../../drivers/foundry-triage-resolve.mjs';
 const { inheritReviewerCount } = await importFoundryTriage('foreman-wire.mjs');
 
+/** A dead seat's last words: the result text of an error envelope, one line, clipped. */
+export function seatLastWords(text, max = 240) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  return t.length <= max ? t : t.slice(0, max - 1).replace(/\s+\S*$/, '') + '…';
+}
+
+/** True when a CLI/model message says a session / usage / rate limit was hit. */
+export const USAGE_LIMIT_RE = /usage limit|rate.?limit|limit reached|hit your limit|reached your limit|out of (?:extra )?usage|quota|resets? (?:at|in) |too many requests|\b429\b|resource exhausted|overloaded/i;
+export function isUsageLimitText(text) {
+  return USAGE_LIMIT_RE.test(String(text || ''));
+}
+
 // Declarative per-role model routing from the project's foreman.config.json "models"
 // block, e.g. {"models":{"execute":"claude:claude-fable-5","fix":"claude:claude-fable-5",
 // "review":"gemini-cli:gemini-3.1-pro"}}. Each entry is exported as per-role env —
@@ -113,6 +126,9 @@ try {
     const R = role.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
     if (drv === 'claude') {
       if (!process.env[`CLAUDE_MODEL_${R}`]) process.env[`CLAUDE_MODEL_${R}`] = model;
+      // (0106 E3) pin the DRIVER too: a `claude:` entry used to set only the model, so the
+      // dashboard's coding_family (chatgpt) filled the empty driver slot and re-seated execute.
+      if (!process.env[`TRIO_DRIVER_${R}`]) process.env[`TRIO_DRIVER_${R}`] = 'claude';
     } else {
       if (!process.env[`TRIO_DRIVER_${R}`]) process.env[`TRIO_DRIVER_${R}`] = drv;
       if (!process.env[`TRIO_MODEL_${R}`]) process.env[`TRIO_MODEL_${R}`] = model;
@@ -292,12 +308,19 @@ async function agent(prompt, opts = {}) {
   // move is a deterministic [taxonomy:agent-died] HALT with the cap named —
   // not a reliability-wrapper retry that pays for the same death twice.
   if (rec && rec.ok === false) {
+    // (2026-09-04, John) the seat's own last words ride the halt — a model
+    // session limit above all — so the stop is TOLD, never just a class name.
+    const lastWords = seatLastWords(text);
+    const usageLimit = isUsageLimitText(lastWords);
     emit(`   !! ${label} agent DIED (class ${rec.exit_class}, ${rec.tools ?? 0} tools, ` +
-      `${rec.duration_ms ?? '?'}ms) — typed failure, never "complete"`);
+      `${rec.duration_ms ?? '?'}ms) — typed failure, never "complete"` +
+      (lastWords ? ` — said: ${lastWords}` : ''));
     return {
       agent_failed: true, exit_class: rec.exit_class, label,
       tools: rec.tools ?? 0, duration_ms: rec.duration_ms ?? null,
-      detail: `agent ${label} died: class ${rec.exit_class}, ${rec.tools ?? 0} tool calls, ${rec.duration_ms ?? '?'}ms`,
+      last_words: lastWords, usage_limit: usageLimit,
+      detail: `agent ${label} died: class ${rec.exit_class}, ${rec.tools ?? 0} tool calls, ${rec.duration_ms ?? '?'}ms` +
+        (lastWords ? `; it said: ${lastWords}` : ''),
     };
   }
   if (!opts.schema) return text;

@@ -2,16 +2,20 @@ import { assumptionsLedgerSchema } from './schemas/assumptionsLedger.mjs';
 import { parameterizedMatrixSchema } from './schemas/parameterizedMatrix.mjs';
 import { venueWhitelistSchema } from './schemas/venueWhitelist.mjs';
 import { prismaExclusionsSchema } from './schemas/prismaExclusions.mjs';
+import { prismaInclusionsSchema } from './schemas/prismaInclusions.mjs';
 import { telemetryEventSchema } from './schemas/telemetryEvent.mjs';
 import { evidenceLedgerSchema } from './schemas/evidenceLedger.mjs';
+import { runSummarySchema } from './schemas/runSummary.mjs';
 
 export const schemas = {
   assumptionsLedger: assumptionsLedgerSchema,
   parameterizedMatrix: parameterizedMatrixSchema,
   venueWhitelist: venueWhitelistSchema,
   prismaExclusions: prismaExclusionsSchema,
+  prismaInclusions: prismaInclusionsSchema,
   telemetryEvent: telemetryEventSchema,
-  evidenceLedger: evidenceLedgerSchema
+  evidenceLedger: evidenceLedgerSchema,
+  runSummary: runSummarySchema
 };
 
 export class ValidationError extends Error {

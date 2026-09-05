@@ -135,7 +135,7 @@ class TestBadges:
                                     "backend": "gemini"})
         assert b["state"] == rh.STATE_PARTIAL
         assert b["label"] == "partial"
-        assert "gemini segment unmeasured" in b["title"]
+        assert "unmeasured engine segment" in b["title"]
 
     def test_pending_session_renders_no_badge(self):
         import rollup_honesty as rh

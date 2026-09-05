@@ -44,7 +44,7 @@ def test_load_defaults_when_missing(settings_env):
     assert "updated_at" in out
     assert out["default_cli"] in s.VALID_CLIS
     assert s.VALID_FAMILIES is s.VALID_CLIS or s.VALID_FAMILIES == s.VALID_CLIS
-    assert "chatgpt" not in s.VALID_REVIEW_FAMILIES
+    assert "chatgpt" in s.VALID_REVIEW_FAMILIES   # a reviewer/judge family since 2026-09-05
 
 
 def test_load_defaults_when_corrupt(settings_env):
@@ -81,14 +81,19 @@ def test_save_rejects_invalid(settings_env):
     s = settings_env["mod"]
     with pytest.raises(ValueError):
         s.save_settings(default_cli="not-a-cli")
-    # A valid coding family is still not a valid default terminal CLI until the
-    # ChatGPT terminal bridge lands (a persisted value bricks every terminal open).
+    # (2026-09-05) ChatGPT drives the terminal: a saved default persists.
+    s.save_settings(default_cli="chatgpt")
+    assert s.load_settings()["default_cli"] == "chatgpt"
+    s.save_settings(default_cli="grok")   # back to the fixture default for the checks below
     with pytest.raises(ValueError, match="default_cli"):
-        s.save_settings(default_cli="chatgpt")
+        s.save_settings(default_cli="not-a-cli")
     with pytest.raises(ValueError):
         s.save_settings(coding_family="not-a-family")
+    # (2026-09-05) ChatGPT IS a valid review family now (model stamped unattested)
+    s.save_settings(review_family="chatgpt")
+    assert s.load_settings()["review_family"] == "chatgpt"
     with pytest.raises(ValueError, match="review_family"):
-        s.save_settings(review_family="chatgpt")
+        s.save_settings(review_family="not-a-family")
     # Nothing persisted on rejection.
     assert not s.settings_path().exists() or s.load_settings()["default_cli"] == "grok"
 
@@ -170,7 +175,7 @@ def test_defaults_constant_and_valid_sets(settings_env):
     assert s.DEFAULTS["coding_family"] == "claude"
     assert s.DEFAULTS["review_family"] == "gemini"
     assert s.VALID_CLIS == frozenset({"claude", "gemini", "grok", "chatgpt"})
-    assert s.VALID_REVIEW_FAMILIES == frozenset({"claude", "gemini", "grok"})
+    assert s.VALID_REVIEW_FAMILIES == frozenset({"claude", "gemini", "grok", "chatgpt"})
 
 
 def test_mirror_values_preferred_but_primary_path_never_redirects(
@@ -214,7 +219,7 @@ def test_mirror_values_preferred_but_primary_path_never_redirects(
         "source": "anchor", "primary_path": str(redirected),
         "default_cli": "gemini",
         "coding_family": "chatgpt",
-        "review_family": "chatgpt",  # Invalid reviewer; local value survives.
+        "review_family": "not-a-family",  # Invalid reviewer; local value survives (chatgpt is valid since 2026-09-05).
     }), encoding="utf-8")
 
     assert s.settings_path() == primary

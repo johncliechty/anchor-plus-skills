@@ -553,16 +553,334 @@ def read_swarm_trails(campaign_dir: str):
     return found
 
 
+#: (2026-09-04, John: "what is running is always the steward") the status looks
+#: THROUGH the steward to the skill it commissioned. A trio skill writes its own
+#: status table to a status log under the campaign dir (Foreman
+#: ``_foreman-status.log``, Crucible ``_crucible-status*.log``, ...); the newest
+#: FRESH one is the run of record for "what is happening right now".
+STATUS_LOOKTHROUGH_FRESH_SECONDS = 900
+_STATUS_LOG_NAME = re.compile(r"^_?([A-Za-z]+)-status[\w.-]*\.log$", re.I)
+_STATUS_ROW = re.compile(
+    r"^(Effort|Doing|Status|Tests|Blocker|Procs|Journal|ETA|To do)\s{2,}(.*)$")
+_STATUS_HEAD = re.compile(
+    r"\[(\d\d:\d\d)\]\s+(.+?)\s+\u00b7\s+(t=0|final|t\+\d+[hm]\d*m?)\s*$")
+_SKILL_LABELS = {"foreman": "Foreman build", "crucible": "Crucible plan",
+                 "gandalf": "Gandalf review", "researchprime": "researchPrime",
+                 "jumper": "Jumper", "ramanujan": "Ramanujan",
+                 "litreview": "literature review"}
+_LOOK_SKIP_DIRS = {".git", "node_modules", "_boneyard", ".foreman", "__pycache__",
+                   ".anchor", ".ecgberht", "_foreman-logs"}
+#: typical length of a roadmap step by part tag, minutes — the ETA when the
+#: commissioned run does not carry its own (an estimate, and labelled so)
+_PART_MINUTES = {"research": 30, "slice": 45, "rigor": 30, "integrate": 30,
+                 "harden": 30}
+#: plan documents that are a plan forward — auto-rows in the deliverables
+#: register (John, 2026-09-04: a plan lives as a clickable link in the work
+#: flow AND a bullet summary in the dialogue; never something he hunts for)
+_PLAN_DOC_NAME = re.compile(
+    r"^(PLAN|MASTER-PLAN|IMPLEMENTATION-PLAN|NORTH-STAR|[\w.-]*-PLAN)\.md$", re.I)
+
+
+#: (2026-09-04, John) a model's session/usage limit must be TOLD, never swallowed.
+MODEL_LIMIT_RE = re.compile(
+    r"usage limit|rate.?limit|limit reached|hit your limit|reached your limit|"
+    r"out of (?:extra )?usage|quota|resets? (?:at|in) |too many requests|\b429\b|"
+    r"resource exhausted|overloaded|capacity", re.I)
+
+
+def classify_model_limit(text):
+    """The limit phrase a model/CLI message carries, or "" when it is not a limit."""
+    m = MODEL_LIMIT_RE.search(str(text or ""))
+    return m.group(0) if m else ""
+
+
+def _halt_reason(text):
+    """The run's own HALT/STOP reason line when it comes AFTER the last status
+    table (a run that ended); "" otherwise."""
+    t = str(text or "")
+    last_todo = t.rfind("\nTo do")
+    m = None
+    for m in re.finditer(r"HALT/STOP reason:\s*(.+)", t):
+        pass
+    if not m or m.start() < last_todo:
+        return ""
+    return m.group(1).strip()
+
+
+def write_attention(campaign_dir, state, reason, failure_code=None, by="engine"):
+    """Atomic write of the ONE attention flag (the same shape the steward writes)."""
+    f = Path(campaign_dir) / ".ecgberht" / "attention.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    prev, _ = _read_json(f)
+    prev = prev if isinstance(prev, dict) else {}
+    rec = {"state": state, "reason": str(reason or ""), "updated_at": now,
+           "state_since": (prev.get("state_since") if prev.get("state") == state
+                           else now),
+           "failure_code": failure_code,
+           "provenance": ((prev.get("provenance") if isinstance(prev.get("provenance"), list)
+                           else []) + [{"by": by, "at": now, "state": state}])[-8:]}
+    tmp = f.with_name(f.name + ".%s.tmp" % os.getpid())
+    tmp.write_text(json.dumps(rec, indent=2), encoding="utf-8")
+    os.replace(tmp, f)
+    return rec
+
+
+def raise_halt_attention(campaign_dir, status):
+    """A commissioned run that STOPPED while the flag still says "working" is
+    a lie on the High Seat: flip it to needs_you with the run's own reason (a
+    model session limit above all). Returns the new flag or None (no change)."""
+    halt = (status or {}).get("halt") or {}
+    if not halt.get("reason"):
+        return None
+    att, err = _read_json(Path(campaign_dir) / ".ecgberht" / "attention.json")
+    state = str((att or {}).get("state") or "").lower() if isinstance(att, dict) else ""
+    if state != "working":
+        return None
+    code = "MODEL_LIMIT" if halt.get("limit") else "RUN_HALTED"
+    label = ("model session limit: " + halt["limit"] + " \u2014 " if halt.get("limit") else "") \
+        + (halt.get("skill") or "run") + " stopped: " + halt["reason"]
+    return write_attention(campaign_dir, "needs_you", label[:400], failure_code=code)
+
+
+def parse_status_table(text):
+    """The LAST status table in a trio status log (John's locked rows) ->
+    ``{"head": {"at","title","tick"} | None, "rows": {...}}`` or None."""
+    lines = str(text or "").splitlines()
+    rows, head = {}, None
+    i = len(lines) - 1
+    while i >= 0:
+        m = _STATUS_ROW.match(lines[i].rstrip())
+        if m:
+            key = m.group(1).lower().replace(" ", "_")
+            if key not in rows:
+                rows[key] = m.group(2).strip()
+            if key == "effort":
+                for j in range(i - 1, max(-1, i - 4), -1):
+                    h = _STATUS_HEAD.search(lines[j])
+                    if h:
+                        head = {"at": h.group(1), "title": h.group(2).strip(),
+                                "tick": h.group(3)}
+                        break
+                break
+        i -= 1
+    if not rows:
+        return None
+    return {"head": head, "rows": rows}
+
+
+def _newest_status_log(campaign_dir, depth=3):
+    root = Path(campaign_dir)
+    best = None
+
+    def walk(d, level):
+        nonlocal best
+        try:
+            entries = list(d.iterdir())
+        except OSError:
+            return
+        for p in entries:
+            name = p.name
+            try:
+                is_dir = p.is_dir()
+            except OSError:
+                continue
+            if is_dir:
+                if level < depth and name not in _LOOK_SKIP_DIRS \
+                        and not name.startswith("."):
+                    walk(p, level + 1)
+                continue
+            m = _STATUS_LOG_NAME.match(name)
+            if not m:
+                continue
+            try:
+                mt = p.stat().st_mtime
+            except OSError:
+                continue
+            if best is None or mt > best[1]:
+                best = (p, mt, m.group(1).lower())
+
+    walk(root, 0)
+    return best
+
+
+def status_lookthrough(campaign_dir, now=None):
+    """The commissioned run of record when one is FRESH — parsed from the
+    skill's OWN status log. None when nothing fresh (then the steward's own
+    state speaks). ``final`` marks a run that has ended (its last table)."""
+    found = _newest_status_log(campaign_dir)
+    if not found:
+        return None
+    p, mt, skill = found
+    age = (now or time.time()) - mt
+    if age > STATUS_LOOKTHROUGH_FRESH_SECONDS:
+        return None
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    parsed = parse_status_table(text[-20000:])
+    if not parsed:
+        return None
+    rows, head = parsed["rows"], parsed["head"] or {}
+    label = _SKILL_LABELS.get(skill, skill.capitalize())
+    title = head.get("title") or label
+    doing = rows.get("doing", "")
+    halt_reason = _halt_reason(text[-20000:])
+    blocker = rows.get("blocker", "")
+    limit = classify_model_limit(halt_reason) or classify_model_limit(blocker)
+    try:
+        source = os.path.relpath(str(p), str(campaign_dir)).replace(os.sep, "/")
+    except ValueError:
+        source = str(p)
+    return {"skill": label, "title": title, "doing": doing,
+            "label": title + (" \u00b7 " + doing if doing else ""),
+            "effort": rows.get("effort", ""), "status": rows.get("status", ""),
+            "tests": rows.get("tests", ""), "blocker": rows.get("blocker", ""),
+            "procs": rows.get("procs", ""), "eta": rows.get("eta", ""),
+            "todo": rows.get("to_do", ""), "final": head.get("tick") == "final",
+            "halt_reason": halt_reason, "limit": limit,
+            "age": _humanize(age), "age_seconds": age, "source": source}
+
+
+def blocker_text(look):
+    """The Blocker row of a run's last table unless it says none."""
+    b = str((look or {}).get("blocker") or "").strip()
+    return "" if b.lower() in ("", "none", "-", "\u2014") else b
+
+
+def _parse_epoch(ts):
+    if isinstance(ts, (int, float)):
+        return float(ts) / 1000.0 if ts > 1e11 else float(ts)
+    s = str(ts or "").strip()
+    if not s:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+def _slice_started_epoch(campaign_dir, step_id):
+    """When the active step became active — the newest roadmap event that
+    names it and says active/started. None when the roadmap never said."""
+    roadmap, err = _read_json(Path(campaign_dir) / "roadmap.json")
+    if err or not roadmap or not step_id:
+        return None
+    best = None
+    for ev in roadmap.get("roadmap_events") or []:
+        if str(ev.get("step_id") or ev.get("id") or "") != str(step_id):
+            continue
+        st = " ".join(str(ev.get(k) or "") for k in ("status", "to", "kind")).lower()
+        if "active" not in st and "start" not in st:
+            continue
+        ep = _parse_epoch(ev.get("at") or ev.get("ts") or ev.get("time")
+                          or ev.get("when"))
+        if ep and (best is None or ep > best):
+            best = ep
+    return best
+
+
+def _real_wait(text):
+    """A strip that says "none" / "-" is not waiting on anyone (the Blocker row
+    read "waiting on you: none" on a live effort, 2026-09-04)."""
+    t = str(text or "").strip()
+    return "" if t.lower().rstrip(".") in ("", "none", "nothing", "-", "\u2014", "n/a") else t
+
+
+def slice_of(m):
+    """The current slice: the active roadmap step, its position, and its
+    done-when in one short line."""
+    steps = m.get("steps") or []
+    active = next((s for s in steps if s.get("status") == "active"), None)
+    if not active:
+        return None
+    brief = _first_sentence(active.get("done_when") or "")
+    if len(brief) > 140:
+        brief = brief[:139].rsplit(" ", 1)[0] + "\u2026"
+    return {"n": steps.index(active) + 1, "total": len(steps),
+            "id": str(active.get("id") or ""), "name": active.get("name") or "",
+            "part": active.get("part") or "", "summary": brief,
+            "commissioned_as": str(active.get("commissioned_as") or "")}
+
+
+def estimate_eta(slice_, look, started_epoch, now=None):
+    """The ETA is the length of the CURRENT SLICE: the commissioned run's own
+    ETA when it carries one, else a typical length for the step's part tag
+    minus the time already in — always labelled an estimate."""
+    if look and not look.get("final") and look.get("eta"):
+        return look["eta"] + " \u00b7 " + look["skill"]
+    if not slice_:
+        return ""
+    part = slice_.get("part") or "step"
+    typical = _PART_MINUTES.get(slice_.get("part") or "", 30)
+    if started_epoch:
+        elapsed = max(0, int(((now or time.time()) - started_epoch) // 60))
+        if elapsed >= typical:
+            return "over the ~%d min typical for a %s (%d min in \u00b7 estimate)" % (
+                typical, part, elapsed)
+        return "~%d min left of a ~%d min %s (estimate \u00b7 %d min in)" % (
+            typical - elapsed, typical, part, elapsed)
+    return "~%d min for this %s (typical \u00b7 start unknown)" % (typical, part)
+
+
+def next_bullets(text, limit=3, width=90):
+    """What's next as <=3 short bullets — split on lines, semicolons and
+    sentence ends; each clipped at a word boundary."""
+    parts = re.split(r"(?:\r?\n)+|;\s+|(?<=[.!?])\s+(?=[A-Z0-9(])",
+                     str(text or "").strip())
+    out = []
+    for p in parts:
+        p = re.sub(r"^[\s\-\u2022*\d.)]+", "", p).strip()
+        if not p:
+            continue
+        if len(p) > width:
+            p = p[:width - 1].rsplit(" ", 1)[0] + "\u2026"
+        out.append(p)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def project_line(m):
+    """The overall project in one breath (the High Seat lead): the goal brief
+    and the part tags in order, marked done / in progress."""
+    steps = m.get("steps") or []
+    order, seen = [], set()
+    for s in steps:
+        part = s.get("part") or ""
+        if part and part not in seen:
+            seen.add(part)
+            order.append(part)
+    bits = []
+    for part in order:
+        mine = [s for s in steps if s.get("part") == part]
+        if mine and all(s.get("status") == "done" for s in mine):
+            bits.append(part + " \u2713")
+        elif any(s.get("status") == "active" for s in mine):
+            bits.append(part + " \u25b6")
+        else:
+            bits.append(part)
+    brief = m.get("goal_brief") or ""
+    if len(brief) > 160:
+        brief = brief[:159].rsplit(" ", 1)[0] + "\u2026"
+    return {"brief": brief, "parts": " \u00b7 ".join(bits),
+            "steps_done": m.get("steps_done", 0),
+            "steps_total": m.get("steps_total", 0)}
+
+
 def compose_status(campaign_dir: str, engine_state=None):
-    """The deterministic TWO-PART 10-minute status (handoff 2026-08-25 #2b).
+    """The deterministic TWO-PART 10-minute status (handoff 2026-08-25 #2b;
+    reworked 2026-09-04 on John's word).
 
     Zero-model, disk-true — composed from the map + the engine's own state,
-    never from the model's memory (the same law as the old ⏱ line, grown to
-    carry commissioned runs). TOP (``now``): what is running at this moment —
-    the steward's own turn, queued messages, and the commissioned/background
-    run the attention flag + the active step's ``commissioned_as`` name.
-    BOTTOM (``plan``): where the whole effort stands — active step, n/m done,
-    what is waiting on John, the recommended next move.
+    never from the model's memory. TOP (``now`` / ``running``): what is
+    running at this moment, looked THROUGH the steward to the skill it
+    commissioned (its own status log), else the attention flag, else the
+    steward's turn. BOTTOM (``plan`` / ``slice`` / ``project``): the current
+    slice in one line, its ETA, <=3 next bullets, and where the whole effort
+    stands.
 
     One shape, three consumers: the cockpit's right status pane (the
     ``status`` event / verb), the universal file
@@ -571,38 +889,73 @@ def compose_status(campaign_dir: str, engine_state=None):
     m = read_map(campaign_dir)
     st = engine_state or {}
     active = next((s for s in m["steps"] if s["status"] == "active"), None)
+    look = status_lookthrough(campaign_dir)
     now_lines = []
-    if st.get("busy"):
-        line = "steward working"
-        if st.get("queued"):
-            line += " · %d queued" % st["queued"]
-        now_lines.append(line)
-    elif st.get("queued"):
-        now_lines.append("steward idle · %d held message(s)" % st["queued"])
-    if m["attention"]["state"] == "working":
+    running = None
+    # THE LOOK-THROUGH: the commissioned skill is what is happening;
+    # "steward working" is the whole story only when nothing else runs.
+    if look and not look["final"]:
+        running = {"kind": "skill", "label": look["label"], "skill": look["skill"],
+                   "source": look["source"], "age": look["age"]}
+        now_lines.append(look["label"])
+    elif m["attention"]["state"] == "working":
         run = (m["attention"]["reason"] or "").strip() \
             or "commissioned work in flight"
         if active and active.get("commissioned_as"):
-            run += " · as " + str(active["commissioned_as"])
+            run += " \u00b7 as " + str(active["commissioned_as"])
+        running = {"kind": "commissioned", "label": run,
+                   "skill": str((active or {}).get("commissioned_as") or ""),
+                   "source": ".ecgberht/attention.json", "age": ""}
         now_lines.append(run)
+    if st.get("busy"):
+        line = "steward working"
+        if st.get("queued"):
+            line += " \u00b7 %d queued" % st["queued"]
+        now_lines.append(line)
+        if running is None:
+            running = {"kind": "steward", "label": line, "skill": "",
+                       "source": "engine", "age": ""}
+    elif st.get("queued"):
+        now_lines.append("steward idle \u00b7 %d held message(s)" % st["queued"])
+    halt = None
+    if look and look["final"] and (look.get("halt_reason") or look.get("limit")):
+        reason = look.get("halt_reason") or blocker_text(look)
+        short = reason if len(reason) <= 160 else reason[:159].rsplit(" ", 1)[0] + "\u2026"
+        halt = {"skill": look["skill"], "reason": reason, "limit": look.get("limit") or "",
+                "age": look["age"], "source": look["source"]}
+        if look.get("limit"):
+            line = (look["skill"] + " STOPPED \u2014 model session limit (" + look["limit"]
+                    + ") \u00b7 " + look["age"] + " ago \u00b7 " + short)
+        else:
+            line = look["skill"] + " STOPPED \u00b7 " + look["age"] + " ago \u00b7 " + short
+        now_lines.insert(0, line)
+        running = {"kind": "halted", "label": line, "skill": look["skill"],
+                   "source": look["source"], "age": look["age"]}
+    if look and look["final"] and running is None:
+        done_line = look["skill"] + " finished \u00b7 " + look["age"] + " ago"
+        if look.get("tests") and look["tests"] not in ("-", "\u2014"):
+            done_line += " \u00b7 " + look["tests"]
+        now_lines.append(done_line)
+        running = {"kind": "finished", "label": done_line, "skill": look["skill"],
+                   "source": look["source"], "age": look["age"]}
     swarm = read_swarm_trails(campaign_dir)
     swarm_notes = []
     for seat in swarm:
         if seat.get("state") == "stale":
-            swarm_notes.append(seat["label"] + " · stale heartbeat · "
+            swarm_notes.append(seat["label"] + " \u00b7 stale heartbeat \u00b7 "
                                + seat.get("age", "unknown age"))
             continue
         if seat.get("state") != "fresh":
-            swarm_notes.append(seat["label"] + " · heartbeat unknown · "
+            swarm_notes.append(seat["label"] + " \u00b7 heartbeat unknown \u00b7 "
                                + seat.get("reason", "invalid"))
             continue
-        line = seat["label"] + " · " + (seat["doing"] or "silent")
+        line = seat["label"] + " \u00b7 " + (seat["doing"] or "silent")
         if seat.get("rabbit"):
-            line += " · rabbit"
+            line += " \u00b7 rabbit"
         elif seat.get("load_bearing") is False:
-            line += " · not load-bearing"
+            line += " \u00b7 not load-bearing"
         else:
-            line += " · on path"
+            line += " \u00b7 on path"
         now_lines.append(line)
     if not now_lines:
         attention_label = {
@@ -613,18 +966,26 @@ def compose_status(campaign_dir: str, engine_state=None):
             "unknown": "attention unknown",
         }.get(m["attention"]["state"], "quiet")
         now_lines.append("nothing running - " + attention_label)
+        running = {"kind": "none", "label": now_lines[0], "skill": "",
+                   "source": "", "age": ""}
     now_lines.extend(swarm_notes)
     if active and active.get("part"):
         plan_step = active["part"] + ": " + active["name"]
     else:
         plan_step = active["name"] if active else "(no active step)"
+    next_text = (m["heartbeat"]["next_recommended"] or "").strip()
+    waiting = _real_wait((m["heartbeat"]["human_wait"] or "").split("\u00b7")[0].strip())
+    if halt and not waiting:
+        # the run's stop is the thing waiting on him — a limit above all
+        waiting = (("model session limit (" + halt["limit"] + "): ") if halt["limit"]
+                   else (halt["skill"] + " stopped: ")) + halt["reason"]
+        waiting = waiting if len(waiting) <= 220 else waiting[:219].rsplit(" ", 1)[0] + "\u2026"
     plan = {
         "step": plan_step,
         "steps_done": m["steps_done"],
         "steps_total": m["steps_total"],
-        "waiting_on_you": (m["heartbeat"]["human_wait"] or "")
-                          .split("·")[0].strip(),
-        "next": (m["heartbeat"]["next_recommended"] or "").strip(),
+        "waiting_on_you": waiting,
+        "next": next_text,
         "attention": m["attention"]["state"],
         "goal_reread": m.get("goal_reread", True),
     }
@@ -633,10 +994,22 @@ def compose_status(campaign_dir: str, engine_state=None):
     if active and active.get("part") in ("slice", "rigor", "integrate", "harden") \
             and not active.get("gate") and active.get("commissioned_as"):
         now_lines.append("commissioned without a gate command")
+    slice_ = slice_of(m)
+    started = _slice_started_epoch(campaign_dir, slice_["id"]) if slice_ else None
+    live_skill = bool(look and not look["final"])
     out = {"at": time.strftime("%Y-%m-%d %H:%M"),
            "status_id": f"{time.time_ns():020d}",
            "effort": m["name"],
            "now": now_lines,
+           "running": running,
+           "slice": slice_,
+           "eta": estimate_eta(slice_, look, started),
+           "tests": (look.get("tests") or "") if live_skill else "",
+           "next_bullets": next_bullets(next_text),
+           "project": project_line(m),
+           "lookthrough": ({"source": look["source"], "age": look["age"],
+                            "final": look["final"]} if look else None),
+           "halt": halt,
            "plan": plan,
            "map": m.get("map") or [],
            "work_map": m.get("work_map") or [],
@@ -649,7 +1022,6 @@ def compose_status(campaign_dir: str, engine_state=None):
     except Exception:
         out["deliverables_count"] = 0
     return out
-
 
 def read_last_status(campaign_dir: str):
     """The last 10-minute status the engine PERSISTED for this effort
@@ -684,7 +1056,7 @@ def read_deliverables(campaign_dir: str):
     outside, e.g. ``../…``, render as text, never as links)."""
     f = Path(campaign_dir) / "DELIVERABLES.md"
     if not f.is_file():
-        return {"exists": False, "items": []}
+        return {"exists": False, "items": _plan_doc_rows(campaign_dir, [])}
     try:
         cdir_real = os.path.realpath(str(campaign_dir))
         items = []
@@ -731,9 +1103,62 @@ def read_deliverables(campaign_dir: str):
                           # name fragment; the map embeds the link there
                           "step": cells[3].strip() if len(cells) > 3 else "",
                           "openable": openable})
-        return {"exists": True, "items": items}
+        return {"exists": True, "items": items + _plan_doc_rows(campaign_dir, items)}
     except Exception:
         return {"exists": True, "items": []}
+
+
+def _plan_doc_rows(campaign_dir, listed, depth=2):
+    """(John, 2026-09-04) a plan for going forward is a clickable link in the
+    work flow without anyone registering it: every PLAN / MASTER-PLAN /
+    IMPLEMENTATION-PLAN / NORTH-STAR / *-PLAN document up to two levels
+    under the campaign dir that the register does not already list becomes
+    an ``auto`` row (openable — it is inside the campaign by construction)."""
+    root = Path(campaign_dir)
+    try:
+        cdir_real = os.path.realpath(str(root))
+    except OSError:
+        return []
+    have = set()
+    for it in listed or []:
+        p = it.get("path")
+        if p:
+            have.add(os.path.normcase(os.path.realpath(os.path.join(cdir_real, p))))
+    rows = []
+
+    def walk(d, level):
+        try:
+            entries = sorted(d.iterdir(), key=lambda p: p.name.lower())
+        except OSError:
+            return
+        for p in entries:
+            name = p.name
+            try:
+                is_dir = p.is_dir()
+            except OSError:
+                continue
+            if is_dir:
+                if level < depth and name not in _LOOK_SKIP_DIRS \
+                        and not name.startswith((".", "_")):
+                    walk(p, level + 1)
+                continue
+            if not _PLAN_DOC_NAME.match(name):
+                continue
+            try:
+                real = os.path.realpath(str(p))
+                if os.path.normcase(real) in have:
+                    continue
+                relp = os.path.relpath(real, cdir_real).replace(os.sep, "/")
+                date = time.strftime("%Y-%m-%d", time.localtime(p.stat().st_mtime))
+            except OSError:
+                continue
+            have.add(os.path.normcase(real))
+            rows.append({"what": "Plan \u00b7 " + relp, "where_text": relp,
+                         "path": relp, "date": date, "step": "",
+                         "openable": True, "auto": True})
+
+    walk(root, 0)
+    return rows
 
 
 def read_history(campaign_dir: str, tail: int = TAIL_TURNS):

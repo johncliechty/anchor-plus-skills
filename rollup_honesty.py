@@ -71,7 +71,7 @@ _REASON_LABELS = {
     _uc.REASON_PRE_FEATURE:
         "pre-feature session — never instrumented (defer-and-badge)",
     _uc.REASON_GEMINI_SEGMENT:
-        "gemini segment unmeasured (Anchor does not yet capture agy/Gemini usage)",
+        "engine segment unmeasured (Anchor does not capture Gemini/agy or Codex usage)",
     _uc.REASON_PARSE_ERROR:
         "usage file present but unparseable — capture failed",
     _uc.REASON_ZERO_USAGE:
@@ -104,7 +104,8 @@ def has_gemini_segment(record: dict) -> bool:
     """
     if not isinstance(record, dict):
         return False
-    if (record.get("backend") or "") == _reg.BACKEND_GEMINI:
+    # (2026-09-05) a Codex/ChatGPT segment is unmeasured the same way (no pin).
+    if (record.get("backend") or "") in (_reg.BACKEND_GEMINI, _reg.BACKEND_CHATGPT):
         return True
     return bool(record.get("usage_gemini_segment"))
 
@@ -317,7 +318,7 @@ def session_usage_badge(record_or_classification) -> dict:
                 "title": "", "reason": ""}
     label = _BADGE_LABEL.get(state, state)
     if state == STATE_PARTIAL:
-        title = "partial (gemini segment unmeasured)"
+        title = "partial (unmeasured engine segment)"
     else:
         title = reason_label(reason) or label
     return {"state": state, "cls": cls_map.get(state, "ub-unmeas"),

@@ -1,0 +1,21 @@
+{
+    "triage_track":  "LITE",
+    "triage":  {
+                   "locked":  true,
+                   "tier":  "Heavy",
+                   "depth":  "LITE",
+                   "rationale":  "Stage-2 handoff from confirmed depth=LITE tier=Heavy",
+                   "source":  "inherit",
+                   "lockedAt":  "2026-09-04T23:49:40.044Z"
+               },
+    "docs":  {
+                 "description":  "DESCRIPTION.md",
+                 "plan":  "IMPLEMENTATION-PLAN.md",
+                 "execution_log":  "EXECUTION-LOG.md"
+             },
+    "models":  {
+                   "execute":  "claude:claude-fable-5",
+                   "fix":  "claude:claude-fable-5"
+               },
+    "models_note":  "2026-09-04: execute/fix pinned to claude for THIS build - the dashboard coding seat (chatgpt/codex) reported wave 1 complete with no file changed (Foreman 0106 class); review stays on the dashboard review family"
+}

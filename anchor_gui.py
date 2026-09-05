@@ -208,22 +208,69 @@ _CACHE_BUST_JS_TEMPLATE = """
         ks.forEach(function (k) { try { caches.delete(k); } catch (e) {} });
       }).catch(function () {});
     }
+    // (2026-09-04, John) "the cockpit refreshed on its own ... and cleared the
+    // dialogue while I was typing" — that was THIS reload, fired by a redeploy.
+    // Two rules now: (1) never reload while a text field has focus or holds
+    // unsent text — wait for the next check; (2) before any reload, stash every
+    // draft (textareas + text inputs) in sessionStorage and put it back after.
+    var DRAFT_KEY = 'anchor_drafts:' + location.pathname;
+    function draftFields() {
+      var out = [];
+      var els = document.querySelectorAll('textarea, input[type=text], input[type=search], input:not([type])');
+      for (var i = 0; i < els.length; i++) out.push(els[i]);
+      return out;
+    }
+    function fieldKey(el, i) {
+      return (el.getAttribute('data-say') != null ? 'data-say' : (el.id || el.name || '')) + '#' + i;
+    }
+    function typing() {
+      var a = document.activeElement;
+      if (a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT') && (a.value || '').length) return true;
+      var els = draftFields();
+      for (var i = 0; i < els.length; i++) if ((els[i].value || '').trim().length) return true;
+      return false;
+    }
+    function stashDrafts() {
+      try {
+        var els = draftFields(), d = [];
+        for (var i = 0; i < els.length; i++) if ((els[i].value || '').length) d.push({ k: fieldKey(els[i], i), v: els[i].value });
+        if (d.length) sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d)); else sessionStorage.removeItem(DRAFT_KEY);
+      } catch (e) {}
+    }
+    function restoreDrafts() {
+      try {
+        var raw = sessionStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        sessionStorage.removeItem(DRAFT_KEY);
+        var d = JSON.parse(raw), els = draftFields(), byKey = {};
+        for (var i = 0; i < els.length; i++) byKey[fieldKey(els[i], i)] = els[i];
+        for (var j = 0; j < d.length; j++) {
+          var el = byKey[d[j].k];
+          if (el && !(el.value || '').length) { el.value = d[j].v; try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
+        }
+      } catch (e) {}
+    }
     function checkVersion() {
       fetch('/api/version', { cache: 'no-store' })
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var v = d && d.version;
           if (!v || v === window.__ANCHOR_BUILD__) return;
+          if (typing()) return; // his words outrank a redeploy; try again next check
           // Loop guard: never reload more than once per server version.
           var key = 'anchor_reloaded_for';
           try {
             if (sessionStorage.getItem(key) === String(v)) return;
             sessionStorage.setItem(key, String(v));
           } catch (e) {}
+          stashDrafts();
           location.replace(location.pathname + '?v=' + encodeURIComponent(v));
         })
         .catch(function () {});
     }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', restoreDrafts);
+    else restoreDrafts();
+    setTimeout(restoreDrafts, 1500); // pages that build their fields after load
     checkVersion();
     setInterval(checkVersion, 30000);
   } catch (e) {}
@@ -1440,6 +1487,28 @@ def _zh_node_is_up(timeout=1.0):
         return False
 
 
+def _zh_node_is_stale(timeout=1.0):
+    """True when the running hunter GUI was started from an OLDER server.js than
+    the one on disk (2026-09-04): the process outlives service restarts and
+    keeps the code + environment it was born with, so a picker rule or a prefs
+    env change never reached it until someone killed it by hand. The hunter
+    reports ``server_mtime`` in /api/state; a hunter that reports none is an
+    old build and therefore stale."""
+    import json as _json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{_zh_node_base()}/api/state", timeout=timeout) as r:
+            st = _json.loads(r.read().decode("utf-8", "replace") or "{}")
+    except Exception:
+        return False  # not up / unreadable — the caller's liveness logic decides
+    try:
+        reported = float(st.get("server_mtime") or 0)
+        on_disk = os.path.getmtime(_ZH_NODE_SERVER_PATH) * 1000.0
+    except Exception:
+        return False
+    return reported <= 0 or (on_disk - reported) > 2000.0
+
+
 def _zh_node_port_listening():
     """True if something accepts TCP on the ZH port (may still be wedged)."""
     try:
@@ -1561,12 +1630,18 @@ def _ensure_zh_node_server(wait_s=10.0):
     blocking freeze-capability probe on the old Node build).
     """
     import subprocess
-    if _zh_node_is_up(timeout=0.8):
+    if _zh_node_is_up(timeout=0.8) and not _zh_node_is_stale(timeout=0.8):
         return True
     with _zh_node_start_lock:
         if _zh_node_is_up(timeout=0.8):
-            _zh_node_breaker_reset()
-            return True
+            if not _zh_node_is_stale(timeout=0.8):
+                _zh_node_breaker_reset()
+                return True
+            # (2026-09-04) a live but STALE hunter: retire it and fall through to
+            # the spawn below (it comes back on the current server.js + prefs env).
+            _logger.warning("ensure_zh_node: hunter GUI runs an older server.js than on disk — recycling")
+            _zh_node_kill_listener()
+            time.sleep(0.4)
         # CIRCUIT BREAKER (2026-07-26 hardening, P0.6). This recycle loop had no
         # backoff and no give-up: logs/errors.log shows 74 cycles of
         # "listening but /api/state dead -> killed wedged listener -> launched
@@ -2563,16 +2638,29 @@ def _steward_status_tile_line(entry: dict) -> str:
         return ""
     now_lines = [str(x).strip() for x in (data.get("now") or []) if str(x).strip()]
     plan = data.get("plan") or {}
+    # (2026-09-04, John) the row says what is RUNNING (looked through the
+    # steward to the commissioned skill), the current slice, and its ETA.
+    run = data.get("running") or {}
+    sl = data.get("slice") or {}
     bits = []
-    if now_lines:
+    if str(run.get("label") or "").strip():
+        bits.append(str(run["label"]).strip())
+    elif now_lines:
         bits.append(now_lines[0])
-    step = str(plan.get("step") or "").strip()
-    if step and step != "(no active step)":
-        bits.append("step %s/%s · %s" % (plan.get("steps_done", 0),
-                                         plan.get("steps_total", 0), step))
+    if str(sl.get("name") or "").strip():
+        bits.append("slice %s/%s · %s" % (sl.get("n", "?"), sl.get("total", "?"),
+                                          str(sl["name"]).strip()))
+    else:
+        step = str(plan.get("step") or "").strip()
+        if step and step != "(no active step)":
+            bits.append("step %s/%s · %s" % (plan.get("steps_done", 0),
+                                             plan.get("steps_total", 0), step))
     wait = str(plan.get("waiting_on_you") or "").strip()
     if wait:
         bits.append("waiting on you: " + wait)
+    eta = str(data.get("eta") or "").strip()
+    if eta:
+        bits.append("ETA " + eta)
     if not bits:
         return ""
     return ("⏱ %s · %s" % (str(data.get("at", ""))[-5:],
@@ -5722,9 +5810,10 @@ def model_role_capabilities(profile=None) -> dict:
     """Return honest dashboard availability for each visible agentic role.
 
     This reports transport truth without creating another setting.  Codex can
-    drive coding/orchestration when its subscription CLI is present.  Its
-    interactive terminal bridge is unfinished, and reviewer/judge stay
-    fail-closed because current receipts do not attest the served model.
+    drive coding/orchestration when its subscription CLI is present; since
+    2026-09-05 it also drives the interactive terminal (the Codex TUI in the
+    cockpit PTY) and the reviewer/judge seats, whose verdicts carry a
+    model-unattested stamp because the Codex receipts name no served model.
     """
     if profile is None:
         try:
@@ -5748,11 +5837,16 @@ def model_role_capabilities(profile=None) -> dict:
                 "%s subscription CLI is not detected on this host." % label
             )
             if family == "chatgpt" and present and role == "terminal":
-                selectable = False
-                status = "bridge_pending"
+                # (John, 2026-09-05) the Codex TUI runs in the cockpit terminal;
+                # the user's own Codex config governs approvals and sandbox there
+                # (the Doctor forces read-only); usage stays honestly unmeasured.
+                status = "ready"
                 reason = (
-                    "Interactive ChatGPT terminal is not ready: the persistent "
-                    "Codex exec/resume bridge is still pending, so no seat starts."
+                    "ChatGPT terminal: the Codex TUI runs in the cockpit "
+                    "terminal; your Codex config's approval and sandbox settings "
+                    "apply (the Doctor forces read-only); usage is unmeasured. "
+                    "The first ChatGPT terminal on a project asks Codex's "
+                    "one-time trust question - press Enter for Yes."
                 )
             elif family == "chatgpt" and present and role == "coder":
                 status = "available_unattested"
@@ -5761,12 +5855,14 @@ def model_role_capabilities(profile=None) -> dict:
                     "with Ultra requested; served-model identity is not attested."
                 )
             elif family == "chatgpt" and present and role in ("reviewer", "judge"):
-                selectable = False
-                status = "verification_unattested"
+                # (John, 2026-09-05) ChatGPT reviews and judges. The Codex transport
+                # attests the FAMILY (the binary) but not the served model, so every
+                # verdict carries a model-unattested stamp — accepted, never blind.
+                status = "available_unattested_review"
                 reason = (
-                    "ChatGPT verification is unavailable: the current Codex "
-                    "transport does not attest the served model, so this seat "
-                    "fails closed."
+                    "ChatGPT can review and judge: the Codex transport attests "
+                    "the family but not the served model, so its verdicts carry a "
+                    "model-unattested stamp (accepted on John's word, 2026-09-05)."
                 )
             families[family] = {
                 "label": label,
@@ -5827,8 +5923,8 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
             shown = lab
             if val == "chatgpt":
                 suffix = {
-                    "bridge_pending": "terminal bridge pending",
                     "available_unattested": "coder ready",
+                    "available_unattested_review": "reviewer ready (model unattested)",
                     "verification_unattested": "verification unavailable",
                     "unavailable": "unavailable",
                 }.get(cap["status"], cap["status"])
@@ -5849,8 +5945,8 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
 
     chatgpt_ready = capabilities["roles"]["coder"]["families"]["chatgpt"]["available"]
     capability_summary = (
-        "ChatGPT: coder ready &middot; terminal bridge pending &middot; "
-        "verification unavailable"
+        "ChatGPT: terminal, coder, reviewer and judge ready (reviewer/judge "
+        "model unattested, stamped)"
         if chatgpt_ready else "ChatGPT unavailable on this host"
     )
 
@@ -5918,8 +6014,8 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
     if (!cap) return base;
     if (base === 'ChatGPT') {
       var suffix = {
-        bridge_pending: 'terminal bridge pending',
         available_unattested: 'coder ready',
+        available_unattested_review: 'reviewer ready (model unattested)',
         verification_unattested: 'verification unavailable',
         unavailable: 'unavailable'
       }[cap.status] || cap.status;
@@ -5952,7 +6048,7 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
     var chat = caps.roles.coder && caps.roles.coder.families.chatgpt;
     if (note && chat) {
       note.textContent = chat.available
-        ? 'ChatGPT: coder ready · terminal bridge pending · verification unavailable'
+        ? 'ChatGPT: terminal, coder, reviewer and judge ready (reviewer/judge model unattested, stamped)'
         : 'ChatGPT unavailable on this host';
     }
   }

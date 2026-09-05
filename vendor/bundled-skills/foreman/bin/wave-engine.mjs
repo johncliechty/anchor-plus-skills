@@ -225,6 +225,58 @@ function snapshotHashes(root, foremanDir) {
 }
 
 /** relpaths whose content differs from (or did not exist in) the start snapshot. */
+/**
+ * (0106 E1, 2026-09-04) An execute phase that changed NOTHING in the project — once runtime
+ * noise (checkpoints, status logs) and the engine's own `.foreman/` files are set aside — is a
+ * wave that was not implemented, whatever the executor said. Deterministic: no reviewer opinion,
+ * no tool-call plumbing; a deletion counts as work.
+ */
+export function vacuousExecute(changed) {
+  const real = (changed || []).filter((rel) => {
+    const r = String(rel || '').replace(/\\/g, '/');
+    const base = r.replace(/\s*\(deleted\)\s*$/, '');
+    if (!base) return false;
+    if (base.startsWith('.foreman/') || base.includes('/.foreman/')) return false;
+    return !isRuntimeNoisePath(base);
+  });
+  return real.length === 0;
+}
+
+/** The plan's section for wave N (from its heading to the next wave heading), or ''. */
+export function waveSectionOf(planText, waveN) {
+  const lines = String(planText || '').split(/\r?\n/);
+  const head = /^#{1,6}\s*(?:wave|sprint|section)\s*(\d+)\b/i;
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(head);
+    if (!m) continue;
+    if (start >= 0) return lines.slice(start, i).join('\n');
+    if (Number(m[1]) === Number(waveN)) start = i;
+  }
+  return start >= 0 ? lines.slice(start).join('\n') : '';
+}
+
+/** Relative file paths a wave section NAMES as deliverables (path-like tokens with a code/doc extension). */
+export function namedWavePaths(planText, waveN) {
+  const section = waveSectionOf(planText, waveN);
+  const re = /(?:^|[\s`'"(\[])((?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.(?:mjs|cjs|js|ts|tsx|py|md|json|html|css|yml|yaml|txt|ps1|sh))\b/g;
+  const out = new Set();
+  let m;
+  while ((m = re.exec(section)) !== null) {
+    const rel = m[1].replace(/\\/g, '/');
+    if (rel.startsWith('http') || rel.includes('://')) continue;
+    out.add(rel);
+  }
+  return [...out];
+}
+
+/** The named deliverables of wave N that do NOT exist under projectDir after execute. */
+export function missingWaveDeliverables(projectDir, planText, waveN) {
+  return namedWavePaths(planText, waveN).filter((rel) => {
+    try { return !fs.existsSync(path.join(projectDir, rel)); } catch { return false; }
+  });
+}
+
 function changedSince(root, foremanDir, startSnap) {
   const now = snapshotHashes(root, foremanDir);
   const changed = [];
@@ -364,15 +416,21 @@ function testHashSnapshot(root, foremanDir) {
  * reason string if the FIX loop touched a test file (modified/added/deleted) with
  * no plan citation, else null.
  */
-function checkTestImmutability(baseline, root, foremanDir, citation) {
+function checkTestImmutability(baseline, root, foremanDir, citation, { fixRan = true } = {}) {
   if (citation) return null; // an explicit plan citation authorizes the test change
   const now = testHashSnapshot(root, foremanDir);
+  // (0107 E6) at iteration 0 no fix agent has run: the writer is the executor's trailing write
+  // or the gate's own scripts — say so, never "fix agent" (a false sentence in a HALT costs a
+  // forensic round).
+  const who = fixRan
+    ? 'fix agent'
+    : 'something between execute and gate (no fix agent ran — likely the executor\'s trailing write or the gate\'s own scripts)';
   for (const rel of Object.keys(baseline)) {
-    if (!(rel in now)) return `fix agent deleted test file ${rel}`;
-    if (now[rel] !== baseline[rel]) return `fix agent modified test file ${rel}`;
+    if (!(rel in now)) return `${who} deleted test file ${rel}`;
+    if (now[rel] !== baseline[rel]) return `${who} modified test file ${rel}`;
   }
   for (const rel of Object.keys(now)) {
-    if (!(rel in baseline)) return `fix agent added test file ${rel}`;
+    if (!(rel in baseline)) return `${who} added test file ${rel}`;
   }
   return null;
 }
@@ -1022,10 +1080,13 @@ export function collectFindings(reviews) {
  * (a) >=2 reviewers agree on and (b) carries a failing repro command+output.
  * A RED gate is never GO regardless of any sub-agent prose (anti-forgery).
  */
-export function judge(gate, findings) {
+export function judge(gate, findings, { panelSize } = {}) {
+  // (0106 E2) agreement needs >=2 reviewers — on a LEAN round of one reviewer that guard could
+  // never fire, so a single reviewer's BLOCKER blocks; the full panel keeps the 2-agree rule.
+  const need = Number.isInteger(panelSize) && panelSize > 0 ? Math.min(2, panelSize) : 2;
   const blocking = findings.filter((f) =>
     (f.severity === 'BLOCKER' || f.severity === 'MAJOR') &&
-    f.status === 'open' && f.agreement >= 2);
+    f.status === 'open' && f.agreement >= need);
   if (!gate.green) {
     return { go: false, reason: `gate RED (exit ${gate.exit_code}, fail ${gate.tap.fail ?? '?'})`, blocking };
   }
@@ -1173,14 +1234,22 @@ export async function runWave(o) {
     if (exec?.agent_failed) {
       const af = exec.agent_failed;
       const timedOut = /TIMEOUT/i.test(String(af.exit_class || ''));
-      const reason = `[taxonomy:agent-died] HALT: the execute agent died (${af.detail}) — nothing was executed; the wave must not advance to the gate`;
+      // (2026-09-04, John) a model session limit is its own, named stop — the
+      // seat's own words ride the reason so Anchor can tell him, not just stop.
+      const tax = af.usage_limit ? 'usage-limit' : 'agent-died';
+      const reason = af.usage_limit
+        ? `[taxonomy:usage-limit] HALT: the execute seat hit a model session/usage limit (${af.detail}) — nothing was executed; wait for the reset, then re-invoke wave ${wave.n}`
+        : `[taxonomy:agent-died] HALT: the execute agent died (${af.detail}) — nothing was executed; the wave must not advance to the gate`;
       steps.push(`✗ ${reason}`);
-      log(`execute: agent DIED (${af.exit_class}) — HALT, never "complete"`);
+      log(`execute: agent DIED (${af.exit_class}${af.usage_limit ? ', usage limit' : ''}) — HALT, never "complete"`);
       return finishHalt({ reason, recommend:
-        `[taxonomy:agent-died] execute for wave ${wave.n} died with class ${af.exit_class} after ${af.tools} tool call(s). ` +
-        (timedOut
-          ? `This is the per-call cap killing a still-working agent: raise --call-timeout-min (default 20; the 0102 wave needed 43) and re-invoke wave ${wave.n}.`
-          : `Check the engine CLI/auth (a <2s, 0-tool death is the 0082 launch-failure class — usage limits or a broken CLI), then re-invoke wave ${wave.n}.`) });
+        `[taxonomy:${tax}] execute for wave ${wave.n} died with class ${af.exit_class} after ${af.tools} tool call(s)` +
+        (af.last_words ? ` — it said: ${af.last_words}` : '') + `. ` +
+        (af.usage_limit
+          ? `The model's session limit is hit: wait for the reset it names, then re-invoke wave ${wave.n}.`
+          : timedOut
+            ? `This is the per-call cap killing a still-working agent: raise --call-timeout-min (default 20; the 0102 wave needed 43) and re-invoke wave ${wave.n}.`
+            : `Check the engine CLI/auth (a <2s, 0-tool death is the 0082 launch-failure class — usage limits or a broken CLI), then re-invoke wave ${wave.n}.`) });
     }
     steps.push(`▸ execute… ${exec?.note || 'done'}`);
     log(`execute: ${exec?.note || 'done'}`);
@@ -1226,6 +1295,30 @@ export async function runWave(o) {
     // §8: measure changed set before gate so syntax smoke can target it.
     const changedPre = git ? git.changedVsHead() : changedSince(projectDir, foremanDir, hashStart);
     lastChanged = changedPre;
+
+    // ----- (0106 E1) wave-not-implemented: execute ran and changed nothing -----
+    // The 0106 wave: execute "complete" in 29 s with zero tool calls, the OLD suite went
+    // GREEN, a lean review could not block, and "Wave 2/6 GREEN" was written for a wave
+    // whose test file never existed. Caught here, deterministically, before the gate.
+    if (iteration === 0 && !skipExecute && vacuousExecute(changedPre)) {
+      // Journal 0106's own test: the wave's deliverables name files that do not exist after
+      // execute. A plan section that names no files cannot be judged this way (a fixture
+      // whose execute is a stub and whose work lands in the fix loop stays legal) — then the
+      // vacuous-GREEN guard after the gate keeps the watch.
+      const missing = missingWaveDeliverables(projectDir, planText, wave.n);
+      if (missing.length) {
+        const reason = `[taxonomy:wave-not-implemented] HALT: execute for wave ${wave.n} changed nothing in the project and the wave's named deliverable(s) do not exist afterwards (${missing.slice(0, 4).join(', ')}) — the wave was not implemented; the gate must not run on the previous wave's tree`;
+        steps.push(`✗ ${reason}`);
+        log(`execute: NOTHING changed and ${missing.length} named deliverable(s) missing — HALT wave-not-implemented (never "complete")`);
+        return finishHalt({
+          reason,
+          recommend: `[taxonomy:wave-not-implemented] the execute seat produced no change for wave ${wave.n} and ${missing[0]} does not exist. ` +
+            `Check the routing header (a seat that cannot run the execute prompt — e.g. a Codex seat on a ` +
+            `Claude-shaped prompt — reports "complete" with 0 tool calls), fix the seat, then re-invoke wave ${wave.n}.`,
+        });
+      }
+      log(`execute: changed nothing, but the wave section names no missing deliverable — continuing to the gate (vacuous-GREEN guard stands)`);
+    }
 
     // ----- Pre-gate syntax smoke (0082 P3.14) -----
     const smoke = preGateSyntaxSmoke(projectDir, changedPre);
@@ -1296,7 +1389,7 @@ export async function runWave(o) {
     }
 
     // ----- Wave 7 test-immutability guard: the FIX loop must not touch tests -----
-    const immutable = checkTestImmutability(testBaseline, projectDir, foremanDir, lastCitation);
+    const immutable = checkTestImmutability(testBaseline, projectDir, foremanDir, lastCitation, { fixRan: iteration > 0 });
     if (immutable) {
       const reason = `test-immutability HALT: ${immutable}`;
       steps.push(`✗ ${reason}`);
@@ -1473,7 +1566,7 @@ export async function runWave(o) {
     if (reviews.length) log(`review: ${reviews.length} reviewers · ${openBlockers.length} agreed BLOCKER/MAJOR`);
 
     // ----- JUDGE (reads only the gate artifact for pass/fail of record) -----
-    const verdict = judge(lastGate, findings);
+    const verdict = judge(lastGate, findings, { panelSize: reviews.length });
 
     if (verdict.go) {
       // ----- vacuous-GREEN guard before declaring convergence (§5) -----
@@ -1905,7 +1998,8 @@ export function creditPriorWaveAttempt(root, foremanDir, waveN, { reach, exercis
 }
 
 export const _internals = {
-  inventory, checkTestWeakening, checkVacuousGreen, reachableFromTests,
+  inventory, checkTestWeakening, checkVacuousGreen, reachableFromTests, vacuousExecute,
+  waveSectionOf, namedWavePaths, missingWaveDeliverables,
   changedSince, snapshotHashes, parseCount, hasRealTestEvents, countTestEvents, findingId,
   isRuntimeNoisePath, isProvenDeliverablePath,
   // Wave 7 test-immutability guard:

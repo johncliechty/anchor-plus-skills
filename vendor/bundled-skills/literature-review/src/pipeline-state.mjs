@@ -171,6 +171,35 @@ export function advancePrismaWithSnowball(state, { candidates, prismaExclusions 
 }
 
 /**
+ * (2026-09-05, Grok review F3) A paper that passed screening but yielded NO text at
+ * extraction leaves `included` and becomes a `no-text` exclusion — PRISMA stays balanced
+ * (identified = included + excluded) and the paper never counts as reviewed.
+ *
+ * @param {object} state a state at/after the snowball stage
+ * @param {Array<{paperId?: string, title?: string, reason?: string, details?: string}>} rows
+ * @returns {object} new state (unchanged when rows is empty)
+ */
+export function recordExtractionNoText(state, rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length || !state?.prisma) return state;
+  const p = state.prisma;
+  return {
+    ...state,
+    prisma: {
+      ...p,
+      included: Math.max(0, p.included - list.length),
+      excluded: p.excluded + list.length,
+      exclusions: [...p.exclusions, ...list.map((e) => ({
+        paperId: e.paperId ?? null,
+        title: e.title ?? null,
+        reason: e.reason ?? 'no-text',
+        details: e.details ?? '',
+      }))],
+    },
+  };
+}
+
+/**
  * Canonical byte-stable serialization: recursively sorted keys, 2-space indent, one
  * trailing newline. Same content -> same bytes, always.
  *

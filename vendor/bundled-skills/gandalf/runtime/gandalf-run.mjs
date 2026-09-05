@@ -41,10 +41,11 @@ const USAGE =
   'usage: node runtime/gandalf-run.mjs --live [--budget N] [--input <file>] [--output <file>] [--project <dir>]\n' +
   '       node runtime/gandalf-run.mjs [--input <file>] [--output <file>] [--cross-model] [--project <dir>]\n' +
   '       node runtime/gandalf-run.mjs --analyze --project <dir> --objective "<question>" [--depth LITE|FULL|SPIKE-FIRST] [--output <file>]\n' +
-  '       (--live: THE DEFAULT REAL PATH — dispatch cross-family agy refuters on firing elevations, mint\n' +
-  '        claim-bound commissions, grade against the shared ledger; GROUNDED becomes reachable. Requires agy.)\n' +
+  '       (--live: THE DEFAULT REAL PATH — dispatch cross-family refuters on the dashboard\'s non-drafter seat\n' +
+  '        (review_family first; agy only when that family is gemini), mint claim-bound commissions, grade against\n' +
+  '        the shared ledger; GROUNDED becomes reachable.)\n' +
   '       (grade mode: Tier-1 deterministic stamp only — every elevation floors at SPECULATIVE; use for\n' +
-  '        offline/agy-down runs, honestly stamped cross_model:false)\n' +
+  '        offline/seat-down runs, honestly stamped cross_model:false)\n' +
   '       (--analyze mode: Scaled-Gandalf context-size router → single frontier pass for a SMALL target,\n' +
   '        or shard→scout→map→reduce for a LARGE one; --depth locks @foundry/triage band knobs)\n' +
   '       (grade/live: with no --input, the raw draft is read from stdin; no --output → stdout)';
