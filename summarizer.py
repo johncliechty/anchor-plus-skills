@@ -935,6 +935,20 @@ def _member_href(project_id: str, lane: str, member: dict):
     return None
 
 
+def _member_doc(project_id: str, lane: str, member: dict):
+    """One role-doc for a member: the UI ``href`` plus the member's RAW FACTS
+    (``rel``, ``job_id``) — so a register hook resolves its Where through
+    ``deliverables_register.where_for`` (the ONE Where-form resolver) from the
+    facts, never by re-using this module's UI route spelling (reports-links
+    2026-09-05 W2, premortem 1). ``None`` when the member is unroutable."""
+    href = _member_href(project_id, lane, member)
+    if href is None:
+        return None
+    rel = (member.get("artifact_path") or "").strip().replace("\\", "/")
+    return {"label": _member_label(member), "href": href,
+            "rel": rel, "job_id": (member.get("job_id") or "").strip()}
+
+
 def _member_basename(member: dict) -> str:
     """Lowercased basename of a member's artifact path (POSIX), or ''."""
     from pathlib import PurePosixPath
@@ -965,34 +979,31 @@ def _research_roles(project_id, store_lane, members) -> dict:
     roles = {}
     for m in members:
         base = _member_basename(m)
-        href = _member_href(project_id, store_lane, m)
-        if href is None:
+        doc = _member_doc(project_id, store_lane, m)
+        if doc is None:
             continue
-        label = _member_label(m)
         suffix = base.rsplit(".", 1)[-1] if "." in base else ""
         # report — the full report. Either a discovered file named report.* /
         # *.pdf, OR a RUN member (no artifact_path) whose report.md/.pdf the
         # ``/report`` route serves directly (the run-session common case).
-        rel = (m.get("artifact_path") or "").strip()
-        jid = (m.get("job_id") or "").strip()
         if "report" not in roles and (
                 suffix == "pdf" or base.startswith("report.") or base == "report"
-                or (not rel and jid)):
-            roles["report"] = {"label": label, "href": href}
+                or (not doc["rel"] and doc["job_id"])):
+            roles["report"] = doc
             continue
         # exec — an executive summary markdown (exec/summary in the name)
         if "exec" not in roles and suffix in ("md", "markdown", "txt") and (
                 "exec" in base or "summary" in base):
-            roles["exec"] = {"label": label, "href": href}
+            roles["exec"] = doc
             continue
         # agent — an agent-readable JSON
         if "agent" not in roles and suffix == "json":
-            roles["agent"] = {"label": label, "href": href}
+            roles["agent"] = doc
             continue
         # provenance — refs.bib / run.log (citations + the raw run log)
         if "provenance" not in roles and (base in ("refs.bib", "run.log")
                                           or suffix in ("bib", "log")):
-            roles["provenance"] = {"label": label, "href": href}
+            roles["provenance"] = doc
             continue
     return roles
 
@@ -1002,18 +1013,17 @@ def _planning_roles(project_id, store_lane, members) -> dict:
     roles = {}
     for m in members:
         base = _member_basename(m)
-        href = _member_href(project_id, store_lane, m)
-        if href is None:
+        doc = _member_doc(project_id, store_lane, m)
+        if doc is None:
             continue
-        label = _member_label(m)
         if "master" not in roles and base.startswith("master-plan"):
-            roles["master"] = {"label": label, "href": href}
+            roles["master"] = doc
             continue
         if "impl" not in roles and base.startswith("implementation-plan"):
-            roles["impl"] = {"label": label, "href": href}
+            roles["impl"] = doc
             continue
         if "northstar" not in roles and base.startswith("north-star"):
-            roles["northstar"] = {"label": label, "href": href}
+            roles["northstar"] = doc
             continue
     return roles
 
@@ -1029,15 +1039,14 @@ def _build_roles(folder_path, project_id, store_lane, members) -> dict:
     roles = {}
     for m in members:
         base = _member_basename(m)
-        href = _member_href(project_id, store_lane, m)
-        if href is None:
+        doc = _member_doc(project_id, store_lane, m)
+        if doc is None:
             continue
-        label = _member_label(m)
         if "northstar" not in roles and base.startswith("north-star"):
-            roles["northstar"] = {"label": label, "href": href}
+            roles["northstar"] = doc
             continue
         if "execlog" not in roles and base.startswith("execution-log"):
-            roles["execlog"] = {"label": label, "href": href}
+            roles["execlog"] = doc
             continue
 
     # deliverable — the project's pinned/linked deliverable (newest pinned wins).
@@ -1051,6 +1060,7 @@ def _build_roles(folder_path, project_id, store_lane, members) -> dict:
                 roles["deliverable"] = {
                     "label": rec.get("title") or rel,
                     "href": _artifact_href(project_id, rel),
+                    "rel": rel, "job_id": "",
                 }
     except Exception:
         pass
@@ -1067,6 +1077,7 @@ def _build_roles(folder_path, project_id, store_lane, members) -> dict:
                 roles["plan"] = {
                     "label": plan_set.get("title") or rel,
                     "href": _artifact_href(project_id, rel),
+                    "rel": rel, "job_id": "",
                 }
     except Exception:
         pass

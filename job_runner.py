@@ -2592,6 +2592,34 @@ def _finalize(job_id: str, exit_code, result_envelope=None) -> None:
         except Exception:  # pragma: no cover - bridge is strictly best-effort
             pass
 
+    # Hook B (reports-links 2026-09-05 W2): a finished research/plan lane job
+    # registers itself in the effort's DELIVERABLES.md — STATUS_DONE only (a
+    # failed job never mints a row), in the record's effort dir when it carries
+    # one, else the project root. OUTSIDE WRITE_LOCK, lazy import, broad guard:
+    # a registrar failure can never break job finalization. The outcome is
+    # journaled as {register: written|dup|<reason>} on the existing
+    # deliverable-pinned event so a silent no-op is auditable.
+    if (final_status == STATUS_DONE and rec.get("project_id")
+            and rec.get("folder_path")
+            and rec.get("lane") in ("research", "plan")):
+        try:
+            import deliverables_register as _dreg
+            pid = rec["project_id"]
+            pfolder = rec["folder_path"]
+            effort_dir = rec.get("effort_dir") or pfolder
+            where = _dreg.where_for(effort_dir, pfolder, pid,
+                                    lane=rec.get("lane"), job_id=job_id)
+            what = "%s run — %s" % (rec.get("lane"),
+                                    rec.get("label") or job_id)
+            out = _dreg.register(effort_dir, what, where)
+            _journal.emit_safe(
+                pid, _journal.EV_DELIVERABLE_PINNED, correlation_id=job_id,
+                folder_path=pfolder,
+                payload={"register": out.get("reason") or "unknown",
+                         "what": what, "where": where})
+        except Exception:  # pragma: no cover - registrar is strictly best-effort
+            pass
+
 
 # ── Tail / long-poll ─────────────────────────────────────────────────────────
 

@@ -186,7 +186,14 @@ BACKEND_CLAUDE = "claude"
 BACKEND_GEMINI = "gemini"
 BACKEND_GROK = "grok"
 BACKEND_CHATGPT = "chatgpt"
-VALID_BACKENDS = {BACKEND_CLAUDE, BACKEND_GEMINI, BACKEND_GROK, BACKEND_CHATGPT}
+#: reports-links W3: the RUN terminal — the user's OWN shell (%COMSPEC% /
+#: PowerShell), NOT an engine REPL. Staging a command in an engine session hands
+#: it to the MODEL (the auto-send hazard the 2026-07-17 review named); a shell
+#: session stages it on a real prompt, UNSENT, and Enter runs it. Status/color
+#: mapping is unchanged — a shell session is a general session like any other.
+BACKEND_SHELL = "shell"
+VALID_BACKENDS = {BACKEND_CLAUDE, BACKEND_GEMINI, BACKEND_GROK, BACKEND_CHATGPT,
+                  BACKEND_SHELL}
 
 
 # ── Persistence ─────────────────────────────────────────────────────────────

@@ -84,6 +84,7 @@ friction_journal.py
 sessions.py
 summarizer.py
 deliverables.py
+deliverables_register.py
 rnd_terminal.py
 
 # ── R&D control surface v3 "Mission Control" modules ───────────────────────

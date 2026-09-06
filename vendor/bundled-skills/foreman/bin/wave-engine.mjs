@@ -1212,6 +1212,9 @@ export async function runWave(o) {
   // Declared BEFORE the execute step: the 0102 agent-died halt calls finishHalt,
   // which closes over iteration/findings/lastGate — post-execute declarations TDZ.
   let iteration = seededIteration;
+  // (2026-09-05) the elegance review runs ONCE per wave; its HOLD lines ride the GO line.
+  let eleganceDone = false;
+  let eleganceHolds = [];
   let findings = [];
   let lastGate = null;
   let lastChanged = [];   // Phase 3c: the wave's changed files (for the GO commit)
@@ -1721,6 +1724,52 @@ export async function runWave(o) {
       steps.push(`✓ wave ${wave.n} converged (${iteration} fix iter${iteration === 1 ? '' : 's'}) · ` +
         `gate ${lastGate.tap.pass}/${lastGate.tap.tests} (orchestrator-run)`);
       log(`CONVERGED: ${verdict.reason}`);
+      // (2026-09-05, John) THE ELEGANCE / RABBIT-CATCHER REVIEW after the gate is GREEN and the
+      // reviewers converged: a CUT confirmed by the second seat is a fix-loop item — the element
+      // is removed and the wave re-proves GREEN before GO; HOLDs become one line in the
+      // execution log. One pass per wave, never twice; a driver without the seat is unchanged.
+      if (typeof driver.elegance === 'function' && !eleganceDone) {
+        eleganceDone = true;
+        let ep = null;
+        try {
+          ep = await agentWait('elegance', () => driver.elegance({ ...ctx, changed: lastChanged }, lastGate));
+        } catch (e) {
+          log(`elegance review failed (non-fatal — said aloud, wave proceeds): ${e?.message || e}`);
+        }
+        if (ep && Array.isArray(ep.verdicts)) {
+          try { fs.writeFileSync(path.join(foremanDir, `wave-${wave.n}-elegance.md`), String(ep.markdown || ''), 'utf8'); } catch { /* best-effort */ }
+          eleganceHolds = ep.verdicts.filter((v) => v.verdict === 'HOLD')
+            .map((v) => `[${v.id}] ${v.text} — ${v.trigger || v.needed_because || 'trigger to be named'}`);
+          const cuts = ep.verdicts.filter((v) => v.verdict === 'CUT');
+          steps.push(`▸ elegance review: keep ${ep.keeps?.length ?? 0} · hold ${eleganceHolds.length} · cut ${cuts.length}` +
+            (cuts.length ? ' (confirmed by the second seat)' : ' · nothing cut'));
+          log(`elegance review: cut ${cuts.length} · hold ${eleganceHolds.length} · keep ${ep.keeps?.length ?? 0}`);
+          if (cuts.length && iteration < fixIterCap) {
+            const cutFindings = cuts.map((v) => ({
+              id: `rabbit-hole:${v.id}`, severity: 'MAJOR', file: v.text, line: null, rule: 'RC-1', status: 'open', agreement: 2,
+              message: `[taxonomy:rabbit-hole] REMOVE ${v.text} — ${v.rc2 || v.need || 'no independent need'}; keep the gate green`,
+            }));
+            // A confirmed CUT over a test file is the second seat's judged verdict (the RC-2 malleability
+            // carve-out applied, then disputed and upheld), not the fix seat weakening a gate: release
+            // exactly those files from the immutability baseline. Any OTHER test change still HALTs.
+            for (const v of cuts) {
+              const rel = String(v.text || '').replace(/\\/g, '/').replace(/^\.\//, '');
+              if (rel in testBaseline) { delete testBaseline[rel]; log(`elegance: ${rel} released from the test-immutability baseline (confirmed cut)`); }
+            }
+            iteration++;
+            const efix = await agentWait(`fix-${iteration}`, () => driver.fix({ ...ctx, iteration }, lastGate, cutFindings));
+            if (efix?.agent_failed) {
+              const af = efix.agent_failed;
+              const reason = `[taxonomy:agent-died] HALT: the elegance fix agent died (${af.detail}) — iteration ${iteration} applied nothing`;
+              steps.push(`✗ ${reason}`);
+              return finishHalt({ reason, recommend: `[taxonomy:agent-died] the fix seat died removing ${cuts.length} confirmed cut(s) in wave ${wave.n}; check the seat, then re-invoke wave ${wave.n}` });
+            }
+            steps.push(`▸ elegance fix iter ${iteration}… ${efix?.note || 'applied'} (removing ${cuts.length} confirmed cut(s): ${cuts.map((v) => v.id).join(', ')})`);
+            log(`elegance fix iter ${iteration}: ${efix?.note || 'applied'} — re-proving GREEN`);
+            continue;
+          }
+        }
+      }
       return finishGo();
     }
 
@@ -1802,7 +1851,8 @@ export async function runWave(o) {
           `${wave.title ? ` — ${wave.title}` : ''} (gate exit ${lastGate?.exit_code ?? '?'} · ` +
           `tests ${lastGate?.tap?.tests ?? '?'} pass ${lastGate?.tap?.pass ?? '?'} fail ${lastGate?.tap?.fail ?? '?'} · iter ${iteration}; appended by orchestrator on GO)\n`;
         fs.appendFileSync(p, line, 'utf8');
-        steps.push(`▸ execution log: appended Wave ${wave.n} GREEN`);
+        for (const h of eleganceHolds) fs.appendFileSync(p, `  - elegance HOLD (Grasscatcher): ${h}\n`, 'utf8');
+        steps.push(`▸ execution log: appended Wave ${wave.n} GREEN${eleganceHolds.length ? ` + ${eleganceHolds.length} elegance HOLD line(s)` : ''}`);
       }
     } catch { /* best-effort — never block a proven GO on log bookkeeping */ }
     // ----- §9 commit-on-GO + §8 ORDER: COMMIT first, THEN checkpoint -----

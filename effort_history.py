@@ -2651,7 +2651,13 @@ def finalize_effort(folder_path, project_id: str, lane: str, job_id: str,
 #: are persisted like any trio lane's; without it a general session (John's
 #: runaway case) stranded everything it generated. The sweep is git-diff-scoped to
 #: the session's own isolated worktree, so only session-produced general/ docs match.
-_DOC_DIRS = ("planning", "research", "build", "deliverables", "general")
+#: ``gandalf`` is included (reports-links W2 second amendment, 2026-09-05) so a
+#: cockpit-commissioned Gandalf read's ``gandalf/**/report.md`` + exec-summary
+#: — written in the session's isolated worktree — persist into MAIN like any
+#: lane doc; without it the read's artifacts were DROPPED at capture time and
+#: the deliverables register had nothing real to point at.
+_DOC_DIRS = ("planning", "research", "build", "deliverables", "general",
+             "gandalf")
 
 #: Directories we NEVER sweep, even if git reports changes under them — Anchor's
 #: own per-project store, git internals, dependency trees, and managed worktrees.

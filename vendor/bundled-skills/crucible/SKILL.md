@@ -90,6 +90,7 @@ vocabulary in the sentence the user must read; every ask ends with a question
 answerable in one word AND carries a recommendation (what you would choose +
 one line of why + alternatives when the choice has them + "or tell me
 something else" — options are a convenience, never a cage).
+**Engine-enforced since 2026-09-05 (John):** the Rabbit-Catcher battery runs INSIDE `runStage1` (after the phased plan) and `runStage2` (after the wave decomposition), BEFORE the Shark round — steering seat judges, review seat attacks the verdicts, CUT blocks, HOLD carries its trigger, the table rides the Shark draft; record: `ELEGANCE-PASS.md` / `elegance-pass.json` in the stage artifacts (`bin/elegance-hooks.mjs`, `drivers/elegance-pass.mjs`). Stage 2 also asks RC-8 (the wave-count question; adjacent waves that are one change merge, the adversary disputes, the record rides the draft — `ELEGANCE-RC8-stage2.md`).
 <!-- /ELEGANCE-V2.1 -->
 <!-- /ELEGANCE-LAW -->
 

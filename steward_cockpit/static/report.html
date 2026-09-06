@@ -46,6 +46,7 @@
     <span style="margin-left:auto"><a href="#" onclick="window.close();return false">close</a></span></div>
   <div class="repbody" data-body>loading…</div>
 </div>
+<script src="/static/skill-icons.js"></script>
 <script src="/static/md.js"></script>
 <script>
 try { document.body.dataset.theme = localStorage.getItem("protoTheme") || "slate"; } catch (e) {}
@@ -71,7 +72,25 @@ function typesetMath(el, tries) {
 }
 const qp = new URLSearchParams(location.search);
 const dir = qp.get("dir") || "", path = qp.get("path") || "";
-document.querySelector("[data-path]").textContent = path;
+document.querySelector("[data-path]").textContent = path.split("/").pop() || path;
+document.querySelector("[data-path]").title = path;
+// (2026-09-05, John) the producing skill's mark tops the report
+// the mark comes from the path, else from the file name and the first heading once the text is in
+function markReport(text) {
+  try {
+    const head = document.querySelector("[data-path]");
+    if (!window.SkillIcons || head.querySelector("img.skico")) return;
+    const h1 = ((text || "").match(/^#\s+(.*)$/m) || [])[1] || "";
+    const sk = window.SkillIcons.fromPath(path) || (window.SkillIcons.entryFor((path.split("/").pop() || "") + " " + h1) || {}).name;
+    const im = sk && window.SkillIcons.img(sk, 34);
+    if (!im) return;
+    im.style.marginRight = "10px"; im.style.verticalAlign = "middle"; im.style.borderRadius = "8px";
+    const who = document.createElement("span");
+    who.textContent = sk + " · "; who.style.cssText = "font-weight:700;margin-right:6px";
+    head.insertBefore(who, head.firstChild); head.insertBefore(im, head.firstChild);
+  } catch (e) {}
+}
+markReport("");
 fetch("/api/filetext?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path))
   .then(r => r.json())
   .then(j => {
@@ -79,6 +98,7 @@ fetch("/api/filetext?dir=" + encodeURIComponent(dir) + "&path=" + encodeURICompo
     const body = document.querySelector("[data-body]");
     mdRender(body, j.text);
     typesetMath(body);
+    markReport(j.text);
     const h = (j.text.match(/^#\s+(.*)$/m) || [])[1];
     if (h) document.title = h.replace(/[*`]/g, "");
   })

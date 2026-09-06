@@ -191,6 +191,22 @@ Elegance rule 9: a correction that lives only in a journal has not been made).**
   JOURNAL your register calls — when an include/exclude/suggest decision
   teaches you something about the boundary, write the refined criterion into
   a campaign journal entry so the judgment improves instead of resetting.
+  **ONE integrated report, first row (John, 2026-09-05 — adopted; campaign journal
+  0017, steward journal 0102).** Every campaign keeps ONE integrated report
+  (`reports/<CAMPAIGN>-REPORT.md` plus a pandoc `--embed-resources` `.html` with the
+  images embedded) as the FIRST row of DELIVERABLES.md, marked START HERE, with PLAN.md
+  as the second row and a root `README.md` carrying those two links. Registering many
+  notes is not delivering a report: every description and every figure lives in that
+  one document. A step close that produces a human-facing artifact updates the report in
+  the SAME commit. **Cell forms the cockpit actually opens (read_deliverables, 2026-09-05):**
+  the Where cell is a BACKTICKED in-effort path (`reports/X.html`) or a contained Anchor
+  route — never a markdown link, which the parser reads as text; the Step cell is a
+  NUMBER or a FRAGMENT OF THE STEP NAME ("Foundations", "Scaling ladder"), never the
+  step id, or the link does not attach under the step in the plan outline. The cockpit serves
+  `.pdf` (and images) INLINE and `.html` / `.md` as PLAIN TEXT, so the START HERE row points at a
+  PDF built from the self-contained HTML (Edge headless: `msedge --headless=new
+  --print-to-pdf=... file.html`); the html and markdown ride on a second row. Needed because John reads one document, not a folder; dropping it
+  costs the "where is the report?" question every session.
 - **Read-back gate (campaign journal 0008).** A bare-token answer ("go", "yes",
   "ok") arriving across a session boundary, after a resume, or after ANY
   discontinuity is never an approval by itself: read the pending decision back
@@ -209,6 +225,16 @@ Elegance rule 9: a correction that lives only in a journal has not been made).**
   only through one hash-bound `kickoff_confirm`. A confirmed vN remains current
   while vN+1 is merely open. The cockpit **Work product** tile reads confirmed
   kickoff components; it never reconstructs product structure from workflow tags.
+- **Software gets a play surface and a review, always (John, 2026-09-04 — promoted
+  here, not journaled).** Any plan whose step produces software carries two further steps
+  by default: an **explore-and-refine** step (part `slice`) whose done-condition is that
+  John can drive the software himself with its knobs exposed on one simple surface (a
+  one-command explorer with sliders or an equivalent), has played with it, and his
+  refinements are folded back; and a **software review** step (part `rigor`) with a gate
+  command (tests plus an expert-coder review) before the software's results are quoted in
+  any deliverable. "Needed because John refines by playing, and a result from software he
+  could not touch is a result he cannot trust; dropping it costs the refinement loop." A
+  roadmap with a software step and no play surface is incomplete.
 - **Slice loop (2026-08-28, hardened workflow).** Steward owns the overall plan.
   Tag every roadmap step `part=research|slice|rigor|integrate|harden` (and a
   `gate` command when the step will be commissioned). These tags describe how

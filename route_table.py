@@ -526,6 +526,10 @@ ROUTES = [
        handler="handle_preview_stop", migrated=True),
     _r("POST", "/api/rnd/term_start", AUTH_TOKEN,
        handler="handle_term_start", migrated=True),
+    # reports-links W3 — Run ▶: stage a REGISTER-allowlisted command UNSENT in a
+    # shell-backend session (401 before substance; byte-for-byte match only).
+    _r("POST", "/api/rnd/run_deliverable_terminal", AUTH_TOKEN,
+       handler="handle_run_deliverable_terminal", migrated=True),
     _r("POST", "/api/rnd/zombie_terminal_start", AUTH_TOKEN,
        handler="handle_zombie_terminal_start", migrated=True),
     # W8/SC5+SC6 — engine toggle health for Investigate/Doctor shell-first start

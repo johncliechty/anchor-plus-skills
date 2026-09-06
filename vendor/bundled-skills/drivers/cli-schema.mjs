@@ -112,8 +112,10 @@ export function conformsJsonSchema(value, schema) {
   return schemaShapeIsSupported(schema) && valueConforms(value, schema);
 }
 
-function schemaError(label) {
-  const error = new Error(`provider reply remained schema-nonconforming after one reprompt (${label})`);
+function schemaError(label, rec = null) {
+  const error = new Error(rec?.turn_cancelled
+    ? `provider turn was CANCELLED twice — a tool ask cannot be answered headless (${label})`
+    : `provider reply remained schema-nonconforming after one reprompt (${label})`);
   error.seat_unavailable = true;
   error.seat_status = 'schema_nonconforming';
   return error;
@@ -191,9 +193,15 @@ export async function runCliSchemaAttempts({
   reportPhysicalReceipt(driverOpts, {
     kind: 'initial', label, outcome: 'schema_rejected', receipt: first.rec,
   });
-  log(`   !! ${label} reply was schema-nonconforming — retrying once (strict reprompt)`);
+  const cancelled = first.rec?.turn_cancelled === true;
+  log(cancelled
+    ? `   !! ${label} turn was CANCELLED (a tool ask cannot be answered headless) — retrying once with the read-only constraint`
+    : `   !! ${label} reply was schema-nonconforming — retrying once (strict reprompt)`);
 
-  const strict = `${prompt}\n\nYour previous reply did not conform to the requested JSON Schema. `
+  const strict = `${prompt}\n\n` + (cancelled
+    ? 'Your previous turn was CANCELLED because a shell command needed an approval nobody can give in this seat. '
+      + 'Do not chain (;), branch (if/else) or redirect (2>$null, >) commands; use plain single commands or your file tools. '
+    : 'Your previous reply did not conform to the requested JSON Schema. ')
     + `Respond with ONLY a single raw JSON object that conforms to this JSON Schema — `
     + `no prose, no markdown fences, nothing else:\n${JSON.stringify(schema)}`;
   const retryLabel = `${label}#retry`;
@@ -208,5 +216,5 @@ export async function runCliSchemaAttempts({
   reportPhysicalReceipt(driverOpts, {
     kind: 'schema_reprompt', label: retryLabel, outcome: 'schema_rejected', receipt: retry.rec,
   });
-  throw schemaError(label);
+  throw schemaError(label, retry.rec);
 }

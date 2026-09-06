@@ -95,6 +95,8 @@
       </div>
       <div class="pfiles psect folded" data-filesect>
         <h2 data-filestoggle>Files produced <span class="pcount" data-filecount></span></h2>
+        <div class="ftools"><input type="text" data-fsearch placeholder="search files…">
+          <button data-fsort="name">name</button><button data-fsort="type">type</button><button data-fsort="date" class="on">date</button></div>
         <div class="flist" data-flist></div>
       </div>
     </div>
@@ -117,6 +119,7 @@
 </div>
 <script src="/static/md.js"></script>
 <script src="/static/plate.js"></script>
+<script src="/static/skill-icons.js"></script>
 <script src="/static/shared.js"></script>
 <script>
 Proto.init({ statusPane: true });

@@ -2137,6 +2137,15 @@ def _trigger_session_summary_on_finish(project_id, lane, session_id):
     try:
         if not project_id or not lane or not session_id:
             return
+        # reports-links W3: a SHELL runner session has no model transcript to
+        # summarize — the summarize-on-finish hook no-ops for it.
+        try:
+            _rec = _sessreg.get_session(session_id)
+        except Exception:
+            _rec = None
+        if _rec is not None and (_rec.get("backend") or "") == \
+                getattr(_sessreg, "BACKEND_SHELL", "shell"):
+            return
         proj = _rnd.get_project(project_id)
         if proj is None:
             return
@@ -2599,9 +2608,18 @@ def _render_activity_reflection_html(refl: dict) -> str:
         color = html_lib.escape(latest.get("color") or "grey")
         age = html_lib.escape(latest.get("age") or "")
         age_txt = f' · {age}' if age else ""
+        # (2026-09-05, John) the lane's skill mark rides the project list line
+        _lane_icon = {"research": "research-prime-icon.jpg", "plan": "crucible-icon.svg",
+                      "planning": "crucible-icon.svg", "build": "foreman-icon.svg",
+                      "gandalf": "gandalf-icon.jpg"}.get((stage or lane).lower(), "")
+        if not _lane_icon and "gandalf" in (latest.get("label") or "").lower():
+            _lane_icon = "gandalf-icon.jpg"
+        lane_mark = (f'<img class="skico" src="/vendor/brand/{_lane_icon}" alt="" '
+                     f'style="width:16px;height:16px;border-radius:4px;object-fit:cover;'
+                     f'vertical-align:-3px;margin-right:4px">' if _lane_icon else "")
         parts.append(
             f'<span class="rnd-act-latest">latest: '
-            f'<span class="rnd-act-lane">{lane_lbl}</span> · '
+            f'{lane_mark}<span class="rnd-act-lane">{lane_lbl}</span> · '
             f'<span class="rnd-act-title">{title}</span> '
             f'<span class="rnd-act-status rnd-act-{color}">'
             f'({status})</span>{age_txt}</span>'
@@ -10219,6 +10237,15 @@ function _rndCollapsedSet() {{  // name kept for the callers; it is now the OPEN
 function _rndSaveCollapsed(arr) {{
     try {{ localStorage.setItem(RND_FOLDER_LS, JSON.stringify(arr || [])); }} catch (e) {{}}
 }}
+// (2026-09-05, John: "nothing happens") a drop that regroups reloads the page with
+// every folder closed by default - remember the DESTINATION folder open first, so
+// the moved row is the first thing on screen after the reload.
+function _rndOpenFolderNext(group) {{
+    var g = (group || '').trim();
+    if (!g) return;
+    var set = _rndCollapsedSet();
+    if (set.indexOf(g) < 0) {{ set.push(g); _rndSaveCollapsed(set); }}
+}}
 // Collapse / expand one folder, persisting the OPEN state by group name.
 function rndToggleFolder(headEl) {{
     var folder = headEl && headEl.closest ? headEl.closest('.rnd-folder') : null;
@@ -10328,6 +10355,7 @@ function _rndWireFolderDrop(folder) {{
 function rndMoveDialog(pid, group, folder) {{
     var ov = document.getElementById('rndMoveOverlay');
     if (!ov) {{  // dialog markup absent → fall back to the plain group path.
+        _rndOpenFolderNext(group);
         apiCall('/api/rnd/set_group', {{project_id: pid, group: group}});
         return;
     }}
@@ -10361,6 +10389,7 @@ function rndMoveCancel() {{
 // refusal (Anchor repo / live session) we surface a clear toast (no reload).
 function rndMoveConfirm(pid, group, onDisk) {{
     rndMoveCancel();
+    _rndOpenFolderNext(group);
     if (!onDisk) {{
         apiCall('/api/rnd/set_group', {{project_id: pid, group: group}});
         return;
@@ -14847,6 +14876,69 @@ def handle_term_start(handler, path, body):
                 if handoff_info is not None:
                     resp["handoff"] = handoff_info
                 handler._send_json(resp)
+
+
+def handle_run_deliverable_terminal(handler, path, body):
+    # reports-links W3 — the Run ▶ link behind a register row's `run:` marker.
+    # Token-gated by the route row + the do_POST middleware (401 BEFORE any
+    # substance). This is an ALLOWLIST, not an exec API: the ONLY command it
+    # will stage is one that byte-for-byte equals a parsed row's run string in
+    # THAT dir's register, re-read NOW from disk (steward_campaign.
+    # discover_efforts + read_deliverables — exactly what register-all serves).
+    # A near-miss is refused 400 WITHOUT echoing the rejected string (no
+    # reflection surface). cwd derives from the MATCHED row — its effort dir
+    # when the row is effort-level, else the project folder — never from the
+    # caller. The command is STAGED UNSENT on a 'shell'-backend session (the
+    # user's own shell; Enter runs it), and the response is the SAFE projection
+    # (never worktree_path/branch).
+    pid = (body.get("project_id", "") or body.get("pid", "") or "").strip()
+    dir_rel = body.get("dir", "")
+    dir_rel = dir_rel.strip() if isinstance(dir_rel, str) else None
+    command = body.get("command", "")
+    if not pid or dir_rel is None or not isinstance(command, str) or not command:
+        handler._send_json({"ok": False,
+                            "error": "project_id, dir and command required"}, 400)
+        return
+    # Containment: a '..'-bearing (or absolute / drive-qualified) dir can never
+    # address a register outside the project tree.
+    _norm = dir_rel.replace("\\", "/")
+    if ".." in _norm.split("/") or _norm.startswith("/") or ":" in _norm:
+        handler._send_json({"ok": False, "error": "invalid dir"}, 400)
+        return
+    proj = _rnd.get_project(pid)
+    if proj is None:
+        handler._send_json({"ok": False, "error": "Unknown project"}, 404)
+        return
+    folder = proj.get("folder_path", "")
+    from steward_cockpit import steward_campaign as _campaign
+    matched = None
+    match_dir = None
+    for e in _campaign.discover_efforts(folder):
+        if (e.get("rel") or "") != dir_rel:
+            continue
+        edir = str(Path(folder) / e["rel"]) if e["rel"] else str(folder)
+        for it in _campaign.read_deliverables(edir).get("items", []):
+            run = it.get("run")
+            if isinstance(run, str) and run == command:
+                matched, match_dir = it, edir
+                break
+        break  # effort rels are unique; the named dir's register was checked
+    if matched is None:
+        # No echo of the rejected string — the refusal carries nothing of it.
+        handler._send_json({
+            "ok": False,
+            "error": "command is not a registered run for that dir"}, 400)
+        return
+    try:
+        rec = _termsess.start_session(
+            pid, "general",
+            backend=getattr(_sessreg, "BACKEND_SHELL", "shell"),
+            label=(matched.get("what") or "run"),
+            paste_prompt=command, cwd=match_dir)
+    except _termsess.TerminalSessionError as exc:
+        handler._send_json({"ok": False, "error": str(exc)}, 400)
+        return
+    handler._send_json({"ok": True, "session": _safe_session_projection(rec)})
 
 
 def _zombie_scan_and_skill_briefing():
@@ -20288,6 +20380,7 @@ _MIGRATED_HANDLERS = {
     "handle_term_discover": handle_term_discover,
     "handle_term_adopt": handle_term_adopt,
     "handle_term_start": handle_term_start,
+    "handle_run_deliverable_terminal": handle_run_deliverable_terminal,
     "handle_zombie_terminal_start": handle_zombie_terminal_start,
     "handle_zh_engines": handle_zh_engines,
     "handle_doctor_session_start": handle_doctor_session_start,
@@ -21508,13 +21601,38 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     # consumer keeps its current raw behavior. Non-markdown is
                     # always raw, even with render=1.
                     want_render = (q.get("render", [""])[0] or "").strip()
+                    want_view = (q.get("view", [""])[0] or "").strip() in ("1", "true")
+                    want_download = (q.get("download", [""])[0] or "").strip() in ("1", "true")
+                    ext = Path(rel).suffix.lower()
                     if want_render and "markdown" in (ctype or ""):
                         try:
                             md_text = data.decode("utf-8", "replace")
                             title = Path(rel).name or "Report"
-                            self._send_html(_rv.reader_html(md_text, title))
+                            # (2026-09-05, John) the producing skill's mark tops the page
+                            self._send_html(_rv.reader_html(md_text, title, skill=_rv.skill_from_path(rel, md_text)))
                         except Exception:
                             self._send_bytes(data, ctype)
+                    elif want_view and ext in (".docx", ".pptx", ".xlsx"):
+                        # (2026-09-05, John) Word / PowerPoint / Excel open as the same
+                        # readable preview page the cockpit uses, with a download
+                        # that hands the file to the native app.
+                        try:
+                            import office_preview as _op
+                            dl = self.path.replace("view=1", "download=1")
+                            self._send_html(_op.render_preview(data, Path(rel).name, dl))
+                        except Exception:
+                            self._send_bytes(data, ctype)
+                    elif want_download:
+                        try:
+                            self.send_response(200)
+                            self.send_header("Content-Type", ctype or "application/octet-stream")
+                            self.send_header("Content-Disposition",
+                                             "attachment; filename=\"%s\"" % Path(rel).name.replace('"', ""))
+                            self.send_header("Content-Length", str(len(data)))
+                            self.end_headers()
+                            self.wfile.write(data)
+                        except Exception:
+                            pass
                     else:
                         self._send_bytes(data, ctype)
             # /zombie_terminal migrated to route_table (handle_zombie_terminal) — served by the strangler above.

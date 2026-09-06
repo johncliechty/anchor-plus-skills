@@ -24,6 +24,7 @@
 // injected async `agent(prompt, opts)` whose return contract matches Workflow's
 // `agent()` (text by default; the validated object when a `schema` is passed).
 
+import { runElegancePass } from '../../drivers/elegance-pass.mjs';
 import path from 'node:path';
 import fs from 'node:fs';
 import { lookinAppendix, superviseSeat, trailFromFile } from '../../drivers/swarm-lookin.mjs';
@@ -278,6 +279,29 @@ export function makeAgentDriver({ agent }) {
         findings: Array.isArray(out?.findings) ? out.findings : [],
       };
     },
+    // (2026-09-05, John) THE ELEGANCE / RABBIT-CATCHER REVIEW of a GREEN wave: the steering
+    // seat runs the battery over the wave's changed files (the plan's wave section as context),
+    // the review seat attacks the verdicts. Confirmed cuts come back for the engine's fix loop.
+    async elegance(ctx, gate) {
+      const changed = (Array.isArray(ctx.changed) ? ctx.changed : [])
+        .map((f) => String(f)).filter((f) => f && !f.endsWith(' (deleted)'));
+      const elements = changed.map((f, i) => ({
+        id: `F${i + 1}`, text: f,
+        kind: /(^|\/)(test|tests|spec|fixtures?)(\/|$)|\.test\.|_test\.|test_/i.test(f) ? 'malleability' : 'element',
+        detail: `changed in wave ${ctx.wave.n}`,
+      }));
+      const section = waveSectionText(ctx.planText, ctx.wave.n);
+      return runElegancePass({
+        elements,
+        northStar: northStarFromPlan(ctx.planText),
+        criteria: [],
+        provenance: { records: [`the frozen implementation plan, wave ${ctx.wave.n} section`], proposerWritten: [] },
+        agent: (p, o = {}) => agent(p, { ...o, label: `${o.label || 'elegance'}:w${ctx.wave.n}` }),
+        context: `wave ${ctx.wave.n}${ctx.wave.title ? ` "${ctx.wave.title}"` : ''} — ${elements.length} changed file(s); gate ${gate?.tap?.pass ?? '?'}/${gate?.tap?.tests ?? '?'}` +
+          (section ? `\nPLAN SECTION:\n${section.slice(0, 2500)}` : ''),
+        log: typeof ctx.log === 'function' ? ctx.log : () => {},
+      });
+    },
     async fix(ctx, gate, findings) {
       const hb = resetSeatHeartbeat(ctx);
       const out = await superviseSeat({
@@ -295,3 +319,24 @@ export function makeAgentDriver({ agent }) {
 
 export const _internals = { executePrompt, reviewPrompt, fixPrompt, extractWaveSection };
 export default makeAgentDriver;
+
+/** The North Star line(s) of an implementation plan, for the elegance seat. */
+export function northStarFromPlan(planText) {
+  const t = String(planText || '');
+  const m = t.match(/\*\*North Star:\*\*\s*([\s\S]{0,1500}?)(?:\n\s*\n|$)/);
+  return m ? m[1].trim() : t.slice(0, 600);
+}
+
+/** The plan's section for wave N (heading to the next wave heading), or ''. */
+export function waveSectionText(planText, waveN) {
+  const lines = String(planText || '').split(/\r?\n/);
+  const head = /^#{1,6}\s*(?:wave|sprint|section)\s*(\d+)\b/i;
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(head);
+    if (!m) continue;
+    if (start >= 0) return lines.slice(start, i).join('\n');
+    if (Number(m[1]) === Number(waveN)) start = i;
+  }
+  return start >= 0 ? lines.slice(start).join('\n') : '';
+}

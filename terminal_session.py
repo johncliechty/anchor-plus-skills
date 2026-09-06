@@ -82,6 +82,12 @@ def _finalize_usage_safe(session_id, project_id=None, record=None):
     if _usage is None:
         return None
     try:
+        rec = record if isinstance(record, dict) else _reg.get_session(session_id)
+        # reports-links W3: a SHELL runner session spends no engine tokens —
+        # the usage-capture hook no-ops for it (nothing to correlate or bill).
+        if rec is not None and (rec.get("backend") or "") == \
+                getattr(_reg, "BACKEND_SHELL", "shell"):
+            return None
         return _usage.finalize_session_usage(
             session_id, project_id=project_id, record=record)
     except Exception:
@@ -100,6 +106,20 @@ def finalize_usage(session_id, project_id=None, record=None):
 
 #: Backends this service accepts (mirrors session_registry.VALID_BACKENDS).
 VALID_BACKENDS = set(_reg.VALID_BACKENDS)
+
+
+def _is_shell_record(rec):
+    """True iff this record is a W3 SHELL runner session.
+
+    reports-links W3 amendment: a shell session's ``worktree_path`` is the LIVE
+    effort dir / project folder — NEVER a managed disposable worktree — so every
+    path that consumes that field as an isolated worktree (persist / autosave /
+    close-snapshot / status emitter) must no-op for it, or it would mkdir/write
+    ``general/RESTART.md`` + transcripts into the real tree and may git-commit
+    them into MAIN."""
+    return (isinstance(rec, dict) and
+            (rec.get("backend") or "") == getattr(_reg, "BACKEND_SHELL",
+                                                  "shell"))
 
 
 def _default_engine() -> str:
@@ -482,6 +502,21 @@ def assert_not_live_engine_under_test(argv) -> None:
 def _resolve_engine_cmd(engine: str) -> str:
     """Resolve the executable name/path for a given engine backend."""
     import shutil
+    if engine == getattr(_reg, "BACKEND_SHELL", "shell"):
+        # reports-links W3: the RUN terminal is the user's OWN shell, never an
+        # engine CLI — %COMSPEC% (cmd.exe) on Windows, PowerShell as the
+        # fallback there, else the POSIX login shell. Resolved BEFORE the
+        # ANCHOR_ENGINE_CMD seam: that override pins the ENGINE command, and a
+        # deploy that set it must not silently turn the Run terminal into a
+        # model REPL (the exact hazard this backend exists to close). Tests
+        # stay safe regardless — the stub PTY never execs, and
+        # assert_not_live_engine_under_test fails closed on engine basenames.
+        comspec = os.environ.get("COMSPEC", "").strip()
+        if comspec:
+            return comspec
+        if os.name == "nt":
+            return "powershell.exe"
+        return os.environ.get("SHELL", "").strip() or "/bin/sh"
     override = os.environ.get(ENGINE_CMD_ENV, "").strip()
     if override:
         return override
@@ -594,7 +629,7 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
                   parent_session_id=None, paste_prompt=None, grass_origin=None,
                   effort_id=None, effort_managed=False, actor=None,
                   extra_cli_args=None, lean_worktree=False,
-                  doctor_mode="", doctor_posture=""):
+                  doctor_mode="", doctor_posture="", cwd=None):
     """Start a live, worktree-isolated, registered terminal session.
 
     Resolves ``project_id`` in ``rnd_registry``, mints ONE session id, creates a
@@ -661,6 +696,18 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     Doctor entry point supplies them so its reuse identity is registered in the
     same atomic record write as the PTY session.
 
+    reports-links W3: ``backend='shell'`` (:data:`session_registry.BACKEND_SHELL`)
+    spawns the user's OWN shell (%COMSPEC% / PowerShell) instead of an engine
+    REPL — cwd = ``cwd`` when supplied (the run row's effort dir) else the REAL
+    project tree (no worktree, no branch, no isolation theater; kill's
+    ``remove_worktree`` only ever touches the managed base, so the in-place path
+    stays safe). A shell session is seeded ``False`` with NO seed text and NO
+    greet gate: a ``paste_prompt`` is delivered by :func:`_flush_pending_paste`
+    once the PTY has produced its FIRST output bytes (the prompt), UNSENT. The
+    summarize-on-finish, usage-capture and switch-handoff hooks all no-op for it,
+    and it never becomes the project's last_engine. ``cwd`` is ignored for every
+    engine backend (they get a managed worktree as always).
+
     Returns the registry record (incl. ``session_id``). Raises
     :class:`TerminalSessionError` for an unknown project or a disallowed engine.
     On a worktree-creation failure it raises with the git reason (nothing is left
@@ -710,13 +757,24 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     if not origin and parent_rec is not None:
         origin = _resolve_grass_origin_from_chain(parent_id, parent_rec)
 
+    is_shell = (backend == getattr(_reg, "BACKEND_SHELL", "shell"))
+
     # 1) Isolated worktree first — if this fails we never start a PTY.
     # ``lean_worktree`` skips heavy binaries in the checkout. A commissioned skill
     # needs the project's text and code, not its media: on the MBA Teaching AI repo
     # (a 1.27 GB zip committed to git) this is 0.3 MB / 0.1s instead of 1430 MB / 5.3s.
-    wt = _wt.create_worktree(
-        project_id, sid,
-        exclude_globs=_wt.LEAN_EXCLUDE_GLOBS if lean_worktree else None)
+    if is_shell:
+        # reports-links W3: the RUN terminal works ON the real tree — cwd = the
+        # caller-supplied effort dir (derived from the register row) else the
+        # project folder. No worktree/branch is created (same in-place idiom as
+        # __doctor__ / a non-git project folder).
+        wt = {"ok": True,
+              "path": str(cwd) if cwd else str(proj.get("folder_path") or ""),
+              "branch": "shell-root", "isolation": "none"}
+    else:
+        wt = _wt.create_worktree(
+            project_id, sid,
+            exclude_globs=_wt.LEAN_EXCLUDE_GLOBS if lean_worktree else None)
     if not wt.get("ok"):
         raise TerminalSessionError(
             "worktree creation failed (%s): %s"
@@ -742,10 +800,13 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     if extra_cli_args:
         launch_argv = launch_argv + [str(a) for a in extra_cli_args]
 
-    # 1b) Resolve the lane seed ONCE before launch.
-    seed_text = seed_for_lane(lane, seed_context=seed_context)
+    # 1b) Resolve the lane seed ONCE before launch. A SHELL session gets NO seed
+    # under ANY circumstance (not even the ANCHOR_TERMINAL_SEED env override) —
+    # seeded stays False, there is no greet, and the pending paste flushes on
+    # first output instead (reports-links W3).
+    seed_text = None if is_shell else seed_for_lane(lane, seed_context=seed_context)
     seed_text_to_write = seed_text
-    
+
     # 1c) For gemini/agy, inject the seed via --prompt-interactive (-i) so it
     # processes it safely instead of dropping stdin.
     if backend == _reg.BACKEND_GEMINI and seed_text:
@@ -888,8 +949,11 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     # PTY input until the user presses Enter. It is NOT written here; it is
     # delivered exactly once, after the greet, by :func:`_flush_pending_paste`
 
-    # W12 Status Emitter
-    _start_status_emitter(project_id, sid, worktree_path)
+    # W12 Status Emitter (reports-links W3 amendment: NOT for a shell runner —
+    # its worktree_path is the LIVE tree, and there is no wave/budget to narrate
+    # into the user's own shell prompt).
+    if not is_shell:
+        _start_status_emitter(project_id, sid, worktree_path)
     # (wired into the first read_since/attach). Recorded with paste_flushed=False
     # so the flush guard knows it is still pending. With no paste_prompt this is
     # skipped entirely (the v9 back-compat path is untouched).
@@ -928,7 +992,10 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
 
     # v4 Wave 2: remember the engine this session chose so the NEXT session for
     # this project defaults to it. Best-effort (never fails a live session).
-    set_last_engine_for_project(project_id, backend)
+    # A SHELL runner is not an engine choice — it must never become the default
+    # the next engine session inherits (reports-links W3).
+    if not is_shell:
+        set_last_engine_for_project(project_id, backend)
     return record
 
 
@@ -1216,6 +1283,15 @@ def _flush_pending_paste(session_id):
         return False
     text = (out.get("text") or "") if isinstance(out, dict) else ""
 
+    # reports-links W3: a SHELL session has NO seed and NO greet — its flush
+    # condition is simply "the PTY has produced its first output bytes" (the
+    # prompt is up, so the staged command lands ON it, unsent). Same
+    # claim-under-WRITE_LOCK + rstrip + once-only delivery below.
+    if (rec.get("backend") or "") == getattr(_reg, "BACKEND_SHELL", "shell"):
+        if not text:
+            return False  # no output yet — the shell prompt hasn't appeared
+        return _claim_and_write_paste(session_id)
+
     # Distinguish the ECHOED seed from a REAL model greet by counting marker
     # occurrences beyond what the seed text itself contributes (see docstring).
     marker = GREET_MARKER.lower()
@@ -1243,6 +1319,17 @@ def _flush_pending_paste(session_id):
         if not (waited >= _paste_flush_fallback_secs() and has_model_output):
             return False  # still waiting on the greet (or its bounded fallback)
 
+    return _claim_and_write_paste(session_id)
+
+
+def _claim_and_write_paste(session_id):
+    """Claim a session's pending paste (CAS under WRITE_LOCK) and write it UNSENT.
+
+    The shared once-only delivery tail of :func:`_flush_pending_paste` — used by
+    BOTH the engine greet-gate path and the W3 shell first-output path, so there
+    is exactly ONE claim + rstrip + write in the codebase. Returns ``True`` iff
+    the paste was claimed+written on THIS call. Never raises.
+    """
     # Compare-and-set the claim under WRITE_LOCK (reentrant; same lock
     # update_session takes). Re-load + re-check inside the lock so exactly ONE
     # concurrent thread wins; claim (persist paste_flushed=True + clear pending)
@@ -1510,6 +1597,15 @@ def switch_engine(session_id, engine, seed_context=None):
     if record is None:
         raise TerminalSessionError("unknown session: %s" % (session_id,))
 
+    # reports-links W3: a SHELL runner session has no engine to switch and no
+    # model context to hand off — the switch-handoff hook NO-OPS for it. And
+    # 'shell' is never a switch TARGET (the project window hides the engine
+    # toggle for shell sessions; an engine REPL must not silently become a
+    # shell). Either way: return the record untouched, reap nothing.
+    _shell = getattr(_reg, "BACKEND_SHELL", "shell")
+    if engine == _shell or (record.get("backend") or "") == _shell:
+        return record
+
     lane = record.get("lane", "")
     worktree_path = record.get("worktree_path", "")
     project_id = record.get("project_id") or None
@@ -1766,6 +1862,11 @@ def suspend_session(session_id) -> str:
         record = _reg.get_session(session_id)
         if record is None:
             return ""
+        # reports-links W3 amendment: a SHELL runner has no model transcript to
+        # summarize, and its worktree_path is the LIVE tree — the snapshot below
+        # would write a transcript doc into John's real effort dir. No-op.
+        if _is_shell_record(record):
+            return ""
 
         project_id = record.get("project_id")
         lane = record.get("lane")
@@ -1996,6 +2097,11 @@ def _persist_current_stage(session_id, project_id=None, record=None):
         rec = record if record is not None else _reg.get_session(session_id)
         if rec is None:
             return {"ok": False, "reason": "unknown-session", "persisted": []}
+        # reports-links W3 amendment: a SHELL session works IN the live tree —
+        # its worktree_path is NOT a disposable worktree, so persisting from it
+        # would write runner artifacts into (and commit them to) the real tree.
+        if _is_shell_record(rec):
+            return {"ok": False, "reason": "shell-session", "persisted": []}
         if project_id is None:
             project_id = rec.get("project_id") or None
 
@@ -3263,6 +3369,12 @@ def capture_session_docs(session_id, project_id=None, record=None):
         rec = record if record is not None else _reg.get_session(session_id)
         if rec is None:
             return {"ok": False, "reason": "unknown-session", "persisted": []}
+        # reports-links W3 amendment: a SHELL session's worktree_path is the
+        # LIVE effort dir / project folder — persisting would copy/commit runner
+        # artifacts into John's real tree. No-op on every end path (kill /
+        # close / autosave / boot-recover).
+        if _is_shell_record(rec):
+            return {"ok": False, "reason": "shell-session", "persisted": []}
         if project_id is None:
             project_id = rec.get("project_id") or None
         if not project_id:
@@ -3405,6 +3517,13 @@ def autosave_session(session_id, record=None):
         rec = record if record is not None else _reg.get_session(session_id)
         if not isinstance(rec, dict):
             out["reason"] = "unknown-session"
+            return out
+        # reports-links W3 amendment: NEVER autosave a SHELL session — its
+        # worktree_path is the LIVE effort dir / project folder, so the
+        # transcript/RESTART snapshot + doc persist below would write runner
+        # artifacts into John's real tree (and may commit them into MAIN).
+        if _is_shell_record(rec):
+            out["reason"] = "shell-session"
             return out
         if rec.get("status") != _reg.STATUS_RUNNING:
             out["reason"] = "not-running"
@@ -3559,17 +3678,22 @@ def close_session(session_id, project_id=None, actor=None):
     # — so the actual session log survives, gets persisted to MAIN by
     # `capture_session_docs`, becomes a groundable member doc for the summarizer,
     # and warms the reopen seed. Best-effort; never blocks the park.
-    try:
-        _snapshot_transcript_doc(record, session_id)
-        worktree_path = (record.get("worktree_path") or "").strip()
+    # reports-links W3 amendment: SKIPPED for a SHELL session — its
+    # worktree_path is the LIVE effort dir / project folder, so the snapshot +
+    # RESTART seed would write runner artifacts into John's real tree. (The
+    # capture below no-ops for shell via its own guard.)
+    if not _is_shell_record(record):
         try:
-            _doc_rels = (_eh._produced_doc_rels(worktree_path)
-                         if worktree_path else [])
+            _snapshot_transcript_doc(record, session_id)
+            worktree_path = (record.get("worktree_path") or "").strip()
+            try:
+                _doc_rels = (_eh._produced_doc_rels(worktree_path)
+                             if worktree_path else [])
+            except Exception:
+                _doc_rels = []
+            _write_restart_seed(record, persisted_rels=_doc_rels)
         except Exception:
-            _doc_rels = []
-        _write_restart_seed(record, persisted_rels=_doc_rels)
-    except Exception:
-        pass
+            pass
 
     # Stop the live PTY (tolerant of an already-dead / never-live session).
     pty_killed = False

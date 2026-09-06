@@ -31,6 +31,7 @@
 // convergence (dry OR clean, stamped); RUN-STATE.json always (resume = add the next
 // round-input and re-run — every paid result is on disk, nothing is discarded).
 
+import { runCriticalPathCheck } from '../../drivers/elegance-pass.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -354,6 +355,23 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
     const empty = result.empty ?? isEmptyRound(result);
     const obs = tracker.observe(result);
     for (const b of result.tally.blockers) priorBlockerIds.add(b.id);
+    // (2026-09-05) RC-6 at the round boundary — the one battery question a round may ask
+    // (ELEGANCE.md Part II): a NEW blocker the North Star does not fail without is PARKED —
+    // dropped from the carried set (zero further spend) and said as one line the user reads.
+    let parkedByRc6 = [];
+    if (Array.isArray(result.tally.newBlockers) && result.tally.newBlockers.length && typeof agent === 'function') {
+      try {
+        const rc6 = await runCriticalPathCheck({
+          items: result.tally.newBlockers.map((b) => ({ id: String(b.id), text: String(b.message || b.id) })),
+          northStar: inp.northStar, agent, log,
+        });
+        parkedByRc6 = rc6.parked;
+        for (const p of rc6.parked) priorBlockerIds.delete(p.id);
+        for (const line of rc6.lines) log(line);
+      } catch (e) {
+        log(`!! RC-6 check failed (non-fatal — blockers carried as-is): ${e?.message || e}`);
+      }
+    }
     if (dry && !empty && roundsToDry == null) roundsToDry = obs.countedRounds;
 
     const summary = {
@@ -375,6 +393,7 @@ export async function runRounds(runDir, { maxRounds = null, env = process.env, l
       },
       newBlockers: result.tally.newBlockers.map((b) => ({ id: b.id, severity: b.severity, agreement: b.agreement, message: b.message })),
       allBlockers: result.tally.blockers.map((b) => b.id),
+      parkedByRc6,
       demoted: result.tally.demoted.map((d) => ({ id: d.id, message: d.message })),
       quorum: result.quorum ?? null,
       conflicts: result.conflicts ?? [],

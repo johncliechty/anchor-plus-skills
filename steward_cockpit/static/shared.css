@@ -352,6 +352,13 @@ button.armed { background: #234a2c; border-color: #3b6b46; color: #b5e6c3; }
 .rightcol .pscroll .blk { margin-bottom: 10px; }
 .rightcol .pscroll .body { font-size: 12.5px; }
 .rightcol .pscroll table { font-size: 11.5px; }
+/* (2026-09-05, John) status history: older status blocks compress to their
+   time line; the newest stays open and prominent */
+.rightcol .pscroll .blk.status.folded .body { display: none; }
+.rightcol .pscroll .blk.status.folded { opacity: .7; padding-top: 2px; padding-bottom: 2px; }
+.rightcol .pscroll .blk.status.folded .who { font-size: 11px; }
+.rightcol .pscroll .blk.status.latest { border-left: 3px solid var(--steward); padding-left: 8px; }
+.rightcol .pscroll .blk.status.latest .who { font-weight: 700; }
 .rightcol .pscroll .blk.steward.folded .body { max-height: 1.5em;
     overflow: hidden; opacity: .55; cursor: pointer; }
 /* Files: a COLLAPSIBLE tile pinned to the bottom (2026-08-27). It used to be
@@ -485,3 +492,13 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 /* (2026-09-04) what's next as short bullets inside the status table */
 .stab .stodo { margin: 0; padding-left: 16px; }
 .stab .stodo li { margin: 1px 0; }
+
+/* (2026-09-05, John) files: search + sort by name / type / date; a file is a link */
+.pfiles .ftools { display: flex; gap: 6px; align-items: center; margin: 4px 0 8px; }
+.pfiles .ftools input[type=text] { flex: 1; min-width: 0; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+.pfiles .ftools button { font-size: 11px; padding: 2px 8px; }
+.pfiles .ftools button.on { border-color: var(--steward); color: var(--steward); }
+.pfiles .frow a.fname { color: var(--text); text-decoration: none; }
+.pfiles .frow a.fname:hover { color: var(--steward); text-decoration: underline; }
+.skico { vertical-align: -4px; }

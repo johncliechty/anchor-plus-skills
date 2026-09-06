@@ -57,6 +57,46 @@ BONEYARD = campaign.BONEYARD_DIRNAME
 SKILLS = ["researchPrime", "Crucible", "Foreman", "Gandalf", "Jumper",
           "ramanujan", "legal-beagle", "financial-analyst",
           "literature-review", "tidy-idy"]
+# (2026-09-05, John) every skill has a brand mark under /vendor/brand/; the cockpit
+# reaches it as /brand/<file>. The client twin is static/skill-icons.js.
+SKILL_ICONS = {
+    "researchPrime": "research-prime-icon.jpg", "Crucible": "crucible-icon.svg",
+    "Foreman": "foreman-icon.svg", "Gandalf": "gandalf-icon.jpg", "Jumper": "jumper-icon.jpg",
+    "ramanujan": "ramanujan-icon.jpg", "legal-beagle": "legal-beagle-icon.jpg",
+    "financial-analyst": "financial-analyst-icon.jpg",
+    "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
+    "zombie-hunter": "zombie-hunter-radar.jpg", "Ecgberht": "ecgberht-project-seal.jpg",
+}
+SKILL_ICON_FALLBACK = "gwl-m-icon.svg"
+
+
+def skill_icon(name):
+    """The brand file for a skill name (case-insensitive); the GWL mark when unknown."""
+    key = str(name or "").strip().lower()
+    for k, v in SKILL_ICONS.items():
+        if k.lower() == key:
+            return v
+    return SKILL_ICON_FALLBACK
+# (2026-09-05, John) every skill has a brand mark under /vendor/brand/; the cockpit
+# reaches it as /brand/<file>. The client twin is static/skill-icons.js.
+SKILL_ICONS = {
+    "researchPrime": "research-prime-icon.jpg", "Crucible": "crucible-icon.svg",
+    "Foreman": "foreman-icon.svg", "Gandalf": "gandalf-icon.jpg", "Jumper": "jumper-icon.jpg",
+    "ramanujan": "ramanujan-icon.jpg", "legal-beagle": "legal-beagle-icon.jpg",
+    "financial-analyst": "financial-analyst-icon.jpg",
+    "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
+    "zombie-hunter": "zombie-hunter-radar.jpg", "Ecgberht": "ecgberht-project-seal.jpg",
+}
+SKILL_ICON_FALLBACK = "gwl-m-icon.svg"
+
+
+def skill_icon(name):
+    """The brand file for a skill name (case-insensitive); the GWL mark when unknown."""
+    key = str(name or "").strip().lower()
+    for k, v in SKILL_ICONS.items():
+        if k.lower() == key:
+            return v
+    return SKILL_ICON_FALLBACK
 
 
 # ---------- terminal registry (per campaign dir) ----------
@@ -490,7 +530,7 @@ def handle_get(cdir, verb, qs):
     if verb == "boneyard":
         return {"boneyard": campaign.list_boneyard(cdir)}, 200
     if verb == "skills":
-        return {"skills": SKILLS}, 200
+        return {"skills": SKILLS, "icons": {s: skill_icon(s) for s in SKILLS}}, 200
     if verb == "terms":
         return {"terms": _terms_view(cdir)}, 200
     if verb == "gandalf":

@@ -129,6 +129,17 @@ open item. Rung labels, scripts, and refutation tables come after. A report regi
 deliverable without this summary is not done. Reason: John reads reports cold; a thirteen-row
 ledger at the top cost him a re-read.
 
+## Every OBSERVED label carries its artifact beside it (John, 2026-09-05 — adopted; journal 0007)
+
+An OBSERVED rung is a claim that an artifact you or the user can re-execute supports the
+sentence it is attached to. So the label is written WITH its reference — the script (or command)
+and the output line, e.g. `OBSERVED (check_foundations.py: "|P|=3")` — in the same sentence or the
+next line, never only in a later section. A report whose OBSERVED labels lack the reference is not
+registerable as a deliverable; the author fixes the reference or lowers the rung. Reason: twice in
+one campaign a sentence was written before its check and the check falsified it ("one block per
+plate"; "tied rows look alike"); the label had been attached to a sentence its artifact did not
+support. This enforces the Honesty Law earlier; it does not change it.
+
 ## Fast path (the default — no engine, no ceremony)
 
 For a direct mathematical question — "is this proof step valid?", "what's the asymptotic here?",

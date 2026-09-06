@@ -39,6 +39,7 @@
 // `runWellFormednessGate` (spawning Foreman's real resolver); the approval gate reuses
 // crucible-lib's `haltForHuman` + the canonical `HALT_GATES`. Stage 2 ORCHESTRATES.
 
+import { runPlanElegancePass, elegancePassSection, runWaveCountPass, waveCountSection } from './elegance-hooks.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -718,6 +719,7 @@ export function approveImplementationPlan({ loop, approved = false, log = () => 
  *                    docTrio:object, handoff:object}>}
  */
 export async function runStage2({
+  provenance = null,
   agent,
   northStar,
   masterPlan,
@@ -792,13 +794,41 @@ export async function runStage2({
     // (1) Decompose the approved Master Plan into waves (PM heuristics).
     live.lastStep = 'decompose';
     stampStage2Progress(stateDir, { phase: 'decompose', status: 'start' });
-    const waves = await withPhaseProgress({
+    let waves = await withPhaseProgress({
       phase: 'stage2-decompose',
       log,
       progressPath,
       guards,
       fn: () => decomposeIntoWaves({ agent, northStar, criteria, masterPlan, log }),
     });
+
+    // (1b) THE ELEGANCE PASS (John, 2026-09-05): the Rabbit-Catcher over every wave
+    // deliverable BEFORE hardening and the Sharks — CUT removes the deliverable (a wave
+    // with none left is dropped), HOLD is annotated with its trigger, and the verdict
+    // table rides the Shark draft so the reviewers attack the pass too.
+    let elegance = null;
+    try {
+      elegance = await withPhaseProgress({
+        phase: 'stage2-elegance-pass', log, progressPath, guards,
+        fn: () => runPlanElegancePass({ waves, northStar, criteria, provenance, agent, artifactsDir: stateDir, log, fileTag: '-stage2' }),
+      });
+      if (Array.isArray(elegance?.waves) && elegance.waves.length) waves = elegance.waves;
+    } catch (e) {
+      log(`!! elegance pass failed (non-fatal — waves unchanged, said aloud): ${e?.message || e}`);
+    }
+    // RC-8 (John, 2026-09-05): the wave-count question, asked AFTER the element verdicts and BEFORE
+    // the Sharks — the steering seat proposes merges of adjacent waves that are one change, the
+    // adversary disputes, only undisputed merges are applied; the record rides the draft.
+    let waveCount = null;
+    try {
+      waveCount = await withPhaseProgress({
+        phase: 'stage2-wave-count', log, progressPath, guards,
+        fn: () => runWaveCountPass({ waves, northStar, agent, artifactsDir: stateDir, log, fileTag: '-stage2' }),
+      });
+      if (Array.isArray(waveCount?.waves) && waveCount.waves.length) waves = waveCount.waves;
+    } catch (e) {
+      log(`!! RC-8 wave-count check failed (non-fatal — waves unchanged, said aloud): ${e?.message || e}`);
+    }
     live.waves = waves;
     try {
       fs.writeFileSync(
@@ -856,7 +886,7 @@ export async function runStage2({
         guards,
         fn: () => runMasterPlanLoop({
           agent, northStar, criteria,
-          draft: plan, research, acceptanceCriteria, roundCap, artifactsDir: stateDir, log,
+          draft: plan + elegancePassSection(elegance) + waveCountSection(waveCount), research, acceptanceCriteria, roundCap, artifactsDir: stateDir, log,
           sharkRoles: band.sharkRoles,
           capPendingAction: 'stage2-round-cap',
           // 2026-08-25: name what THIS gate actually locks (the reused loop used to say

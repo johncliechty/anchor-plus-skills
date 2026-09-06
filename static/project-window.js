@@ -3269,9 +3269,10 @@ function openPanel(sessionId) {
   // term_set_engine to relaunch this LIVE session on the other engine in the same
   // worktree. Research can switch freely; plan/build allow Gemini (the server
   // also enforces this). Historical/non-live sessions have no process to switch,
-  // so the toggle is omitted there.
+  // so the toggle is omitted there — and a 'shell' RUN session has no engine at
+  // all (reports-links W3), so it never renders a toggle either.
   var engEl = null;
-  if (isLive) engEl = _buildEngineToggle(sessionId, s);
+  if (isLive && s.backend !== 'shell') engEl = _buildEngineToggle(sessionId, s);
   // crucible-improve W6 — UNIFIED panel-header controls. Alongside the window
   // controls (– minimize / ▢ maximize) the panel now exposes exactly TWO
   // lifecycle controls, collapsing the old redundant close/hardkill/delete trio:

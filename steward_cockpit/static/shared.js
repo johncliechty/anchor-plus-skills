@@ -27,6 +27,20 @@ const Proto = (() => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(Object.assign(
       { dir: DIR, general: GENERAL, term: TERM || undefined }, body)) });
+  // reports-links W3: authed JSON POST to an ANCHOR route (not a steward verb —
+  // the page shim passes /api/rnd/ through unrewritten). Same token path the
+  // tidy-idy caller uses: Bearer + X-Anchor-Token from the page token.
+  function _postJson(url, payload) {
+    const headers = { "Content-Type": "application/json" };
+    let tok = window.STEWARD_TOKEN || "";
+    try { tok = tok || localStorage.getItem("anchor_token") || ""; } catch (e) {}
+    if (tok) {
+      headers["X-Anchor-Token"] = tok;
+      headers["Authorization"] = "Bearer " + tok;
+    }
+    return fetch(url, { method: "POST", headers: headers,
+                        body: JSON.stringify(payload) });
+  }
 
   /* ---------- kickoff (Gate 5 canary, 2026-09-01) ----------
      The confirmed kickoff is the goal's AUTHORITATIVE form (confirmed intent has
@@ -208,8 +222,14 @@ const Proto = (() => {
     if (p.goal_reread === false)
       body.appendChild(el("div", "splan sflag", "goal not re-read since last close"));
     b.appendChild(body);
+    // (2026-09-05, John) the NEWEST status is always prominent: it carries
+    // .latest, older blocks above it are folded to their time line, and the
+    // pane always brings the newest into view (a status pane is for now,
+    // not for reading history — history stays one click away).
+    s.querySelectorAll(".blk.status.latest").forEach(o => o.classList.remove("latest"));
+    b.classList.add("latest");
     s.appendChild(b);
-    pin(s, stick);
+    pin(s, true);
     // the window's header carries the time of the last update (idle projects
     // show their LAST update, stamped, not a fresh blank)
     const stamp = $("[data-statusstamp]");
@@ -286,6 +306,7 @@ const Proto = (() => {
     const row = el("div", "sdrow");
     const one = (it.what || "").split(" — ")[0].trim() || it.what || "(untitled)";
     const line = el("div", "sdone", "▸ " + one);
+    try { const im = window.SkillIcons && window.SkillIcons.img(one, 14); if (im) line.insertBefore(im, line.firstChild); } catch (e) { /* no-op */ }
     const detail = el("div", "sddetail");
     const full = el("div", "", it.what || "");
     detail.appendChild(full);
@@ -294,7 +315,10 @@ const Proto = (() => {
     // the detail already carries the full description above; the link itself
     // just says what it does (2026-09-03)
     const lnk = detail.querySelector(".drow a");
-    if (lnk) lnk.textContent = "Open ↗" + (it.path ? "  " + it.path : "");
+    // a route row is labelled by the document it opens (report.md), never the
+    // whole route string (2026-09-05, seen on the page)
+    if (lnk) lnk.textContent = "Open ↗" +
+      (it.path ? "  " + it.path : (it.route ? "  " + routeName(it.route) : ""));
     const key = (it.dir || "") + "|" + (it.path || it.what || "");
     if (_openDelivs.has(key)) row.classList.add("open");
     line.onclick = (ev) => {
@@ -327,6 +351,11 @@ const Proto = (() => {
       wrap.style.minWidth = "0";
       const title = el("div", "");
       if (st.part) title.appendChild(el("span", "wpkind", st.part));
+      // (2026-09-05, John) a step that names a skill carries its mark
+      try {
+        const _sk = window.SkillIcons && window.SkillIcons.img((st.commissioned_as || "") + " " + st.name, 16);
+        if (_sk) title.appendChild(_sk);
+      } catch (e) { /* no-op */ }
       title.appendChild(document.createTextNode(st.name));
       wrap.appendChild(title);
       const parts = [];
@@ -436,11 +465,38 @@ const Proto = (() => {
       }
     }
   }
+  // (2026-09-05, John) a route opens rendered: markdown through the Reader,
+  // Word / PowerPoint / Excel as a preview page; the page token rides along.
+  function routeHref(route) {
+    const r = String(route || "");
+    const sep = r.indexOf("?") >= 0 ? "&" : "?";
+    const md = /\.(md|markdown)(&|$)/i.test(r), office = /\.(docx|pptx|xlsx)(&|$)/i.test(r);
+    return r + (md ? sep + "render=1" : office ? sep + "view=1" : "") +
+      (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+  }
+  function routeName(r) {
+    try { const m = /[?&]path=([^&]+)/.exec(r); const seg = decodeURIComponent(m ? m[1] : r).split("/").filter(Boolean); return seg[seg.length - 1] || r; }
+    catch (e) { return r; }
+  }
   function delivRow(it) {
     const row = el("div", "snow drow");
-    if (it.openable && it.path) {
+    if (it.route) {
+      // (2026-09-05) a contained Anchor route (/report/…, /artifact/…) the
+      // parser CLASSIFIED (classify_route) — hostile cells arrive route:null
+      // and fall through to the text branch. Opens in a new window with the
+      // page token appended, same mechanism as the deliverable-file link.
+      const a = document.createElement("a");
+      // labelled by the document it opens, never the whole route (2026-09-05)
+      a.textContent = "• " + (it.what || routeName(it.route));
+      try { const im = window.SkillIcons && window.SkillIcons.img(it.what || "", 14); if (im) a.insertBefore(im, a.firstChild); } catch (e) { /* no-op */ }
+      a.href = routeHref(it.route);
+      a.target = "_blank";
+      a.rel = "noopener";
+      row.appendChild(a);
+    } else if (it.openable && it.path) {
       const a = document.createElement("a");
       a.textContent = "• " + it.what;
+      try { const im = window.SkillIcons && window.SkillIcons.img(it.what || "", 14); if (im) a.insertBefore(im, a.firstChild); } catch (e) { /* no-op */ }
       // 2026-08-26 (John: "I click on them and the page had nothing"): a raw
       // <a href> NAVIGATES — it never passes through the fetch shim, so the
       // old api() URL arrived with no /api/steward/ prefix, no pid and no
@@ -459,6 +515,7 @@ const Proto = (() => {
           encodeURIComponent(window.STEWARD_PID || "") +
           "&dir=" + encodeURIComponent(dirRel) +
           "&path=" + encodeURIComponent(it.path) +
+          (/\.(docx|pptx|xlsx)$/i.test(it.path) ? "&view=1" : "") +
           (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
         a.target = "_blank";
         a.rel = "noopener";
@@ -466,6 +523,35 @@ const Proto = (() => {
       row.appendChild(a);
     } else {
       row.appendChild(document.createTextNode("• " + it.what + (it.path ? " — " + it.path : "")));
+    }
+    // reports-links W3: a row carrying a run: command gets a 'Run ▶' control.
+    // It POSTs the register-allowlisted command to the run endpoint (the server
+    // re-reads the register and refuses anything else byte-for-byte), then
+    // opens the EXISTING standalone terminal page on the returned session —
+    // the command sits on the shell prompt UNSENT until the user presses
+    // Enter. textContent only, never raw markup injection.
+    if (it.run) {
+      const runDir = it.dir !== undefined ? it.dir : DIR;
+      const rbtn = document.createElement("a");
+      rbtn.className = "drun";
+      rbtn.textContent = " Run ▶";
+      rbtn.href = "#";
+      rbtn.title = "Open a terminal with this command staged (Enter runs it)";
+      rbtn.onclick = (ev) => {
+        ev.preventDefault();
+        _postJson("/api/rnd/run_deliverable_terminal", {
+          project_id: window.STEWARD_PID || "",
+          dir: runDir,
+          command: it.run,
+        }).then((r) => r.json()).then((j) => {
+          const sid = j && j.ok && j.session && j.session.session_id;
+          if (!sid) return;
+          window.open("/zombie_terminal?session=" + encodeURIComponent(sid) +
+            (window.STEWARD_TOKEN
+              ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""));
+        }).catch(() => {});
+      };
+      row.appendChild(rbtn);
     }
     if (it.date) row.appendChild(document.createTextNode(" · " + it.date));
     return row;
@@ -695,7 +781,33 @@ const Proto = (() => {
   }
 
   /* ---------- files the steward touched ---------- */
+  let _lastFiles = [], _filesSort = "date";
+  function wireFileTools() {
+    const s = $("[data-fsearch]");
+    if (s && !s._wired) { s._wired = true; s.oninput = () => renderFiles(_lastFiles); }
+    const sortBtns = Array.from(document.querySelectorAll("[data-fsort]"));
+    sortBtns.forEach(b => {
+      if (b._wired) return; b._wired = true;
+      b.onclick = () => { _filesSort = b.getAttribute("data-fsort"); sortBtns.forEach(x => x.classList.toggle("on", x === b)); renderFiles(_lastFiles); };
+    });
+  }
+  // a produced file opens rendered in a new window when it lies inside this effort
+  function openProducedFile(f) {
+    const root = (_lastMap && _lastMap.dir) || "";
+    const norm = (x) => String(x || "").replace(/\\/g, "/");
+    const fn = norm(f), rn = norm(root).replace(/\/$/, "");
+    if (rn && fn.toLowerCase().indexOf(rn.toLowerCase() + "/") === 0) {
+      const rel = fn.slice(rn.length + 1);
+      if (/\.(md|txt|csv|json|log)$/i.test(rel)) { window.open("/report?dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(rel)); return; }
+      window.open("/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) +
+        "&path=" + encodeURIComponent(rel) + (/\.(docx|pptx|xlsx)$/i.test(rel) ? "&view=1" : "") +
+        (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""));
+      return;
+    }
+    post("/api/open", { path: f });   // outside the effort: the app opens it, said in the row
+  }
   function renderFiles(files) {
+    wireFileTools();
     const list = $("[data-flist]");
     if (!list) return;
     const cnt = $("[data-filecount]");
@@ -715,16 +827,31 @@ const Proto = (() => {
         } catch (e) { /* no-op */ }
       };
     }
+    // (2026-09-05, John) files are searchable, sortable (name / type / date order
+    // as produced) and OPEN IN A NEW WINDOW rendered; "app" opens them on this
+    // computer as before.
+    _lastFiles = files.slice();
+    const q = (($("[data-fsearch]") || {}).value || "").trim().toLowerCase();
+    const sort = _filesSort;
+    let rows = files.map((f, i) => ({ f, i, name: f.split(/[\\/]/).pop() }));
+    if (q) rows = rows.filter(r => r.name.toLowerCase().indexOf(q) >= 0);
+    if (sort === "name") rows.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    else if (sort === "type") rows.sort((a, b) => (a.name.split(".").pop() || "").toLowerCase().localeCompare((b.name.split(".").pop() || "").toLowerCase()) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    else rows.sort((a, b) => b.i - a.i);   // "date": newest produced first
     list.textContent = "";
-    files.slice().reverse().forEach(f => {
+    rows.forEach(({ f, name }) => {
       const row = el("div", "frow");
-      row.appendChild(el("span", "fname", f.split(/[\\/]/).pop()));
-      const btn = el("button", "", "Open");
+      const a = document.createElement("a");
+      a.className = "fname"; a.textContent = name; a.href = "#";
+      a.onclick = (ev) => { ev.preventDefault(); openProducedFile(f); };
+      row.appendChild(a);
+      const btn = el("button", "", "app");
+      btn.title = "open on this computer";
       btn.onclick = () => post("/api/open", { path: f });
       row.appendChild(btn);
       list.appendChild(row);
     });
-    if (!files.length) list.appendChild(el("div", "frow", "(none yet)"));
+    if (!rows.length) list.appendChild(el("div", "frow", files.length ? "nothing matches" : "(none yet)"));
   }
 
   /* ---------- work-product overlay (tile on the plan rail) ---------- */

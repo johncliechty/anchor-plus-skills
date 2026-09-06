@@ -266,6 +266,7 @@
       <div class="ftools">
         <input type="text" data-fsearch placeholder="search the whole project by name…">
         <button data-sort-name class="on">name</button>
+        <button data-sort-type>type</button>
         <button data-sort-date>date</button>
       </div>
       <div class="crumb" data-crumb></div>
@@ -341,6 +342,7 @@
   </div>
 </div>
 
+<script src="/static/skill-icons.js"></script>
 <script src="/static/md.js"></script>
 <script src="/static/plate.js"></script>
 <script src="/static/tidy-idy-run.js"></script>
@@ -864,7 +866,9 @@ setInterval(loadShelves, 20000);
     const mk = (list, sel) => {
       const box = document.querySelector(sel);
       list.forEach(name => {
-        const b = el("button", "", name);
+        const b = el("button", "");
+        try { const im = window.SkillIcons && window.SkillIcons.img(name, 18); if (im) b.appendChild(im); } catch (e) {}
+        b.appendChild(document.createTextNode(name));
         b.onclick = () => {
           if (!ACTIVE) { alert("open a terminal first (＋ Terminal)"); return; }
           fetch("/api/say", { method: "POST",
@@ -893,9 +897,25 @@ async function loadDeliv() {
   list.textContent = "";
   items.forEach(it => {
     const row = el("div", "frow2");
-    const fn = el("span", "fn", "• " + it.what);
+    /* (2026-09-05) a contained Anchor route the parser classified
+       (classify_route) opens by ANCHOR — href = route + the page token,
+       target _blank, rel noopener, labelled with the deliverable's NAME —
+       the same way delivRow opens it. NEVER window.open for a route: the
+       page shim rewrites window.open("/report…") to /steward/report…,
+       which serve_page_doc 404s (wave-1 reviewer finding, 2026-09-05).
+       Hostile cells arrive route:null and stay text. */
+    const fn = el(it.route ? "a" : "span", "fn", "• " + it.what);
+    try { const im = window.SkillIcons && window.SkillIcons.img(it.what || "", 14); if (im) fn.insertBefore(im, fn.firstChild); } catch (e) {}
     fn.title = it.path || "";
-    if (it.openable && it.path) {
+    if (it.route) {
+      // markdown renders in the Reader, Office documents preview (2026-09-05)
+      const _sep = it.route.indexOf("?") >= 0 ? "&" : "?";
+      fn.href = it.route + (/\.(md|markdown)(&|$)/i.test(it.route) ? _sep + "render=1"
+        : /\.(docx|pptx|xlsx)(&|$)/i.test(it.route) ? _sep + "view=1" : "") +
+        (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      fn.target = "_blank";
+      fn.rel = "noopener";
+    } else if (it.openable && it.path) {
       const isText = /\.(md|txt|csv|json|log)$/i.test(it.path);
       /* (2026-09-04, John) every deliverable opens well: text in the Reader;
          PDF / images inline; Word / PowerPoint / Excel as a text preview page
@@ -961,13 +981,29 @@ function renderFiles(q) {
   const rows = FILES.slice();
   rows.sort((a, b) => a.dir !== b.dir ? (a.dir ? -1 : 1)
     : SORT === "date" ? b.mtime - a.mtime
+    : SORT === "type" ? (((a.name.split(".").pop() || "").toLowerCase()).localeCompare((b.name.split(".").pop() || "").toLowerCase()) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
     : a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   const list = document.querySelector("[data-filelist]");
   list.textContent = "";
   rows.forEach(f => {
     const row = el("div", "frow2");
-    const fn = el("span", "fn", (f.dir ? "📁 " : "· ") + f.name);
-    fn.onclick = async () => {
+    // (2026-09-05, John) a file is a LINK that opens rendered in a new window
+    // (text in the Reader, PDF inline, Office as a preview page); the small
+    // "app" button still opens it on this computer.
+    const fn = el(f.dir ? "span" : "a", "fn", (f.dir ? "📁 " : "· ") + f.name);
+    if (!f.dir) {
+      const rel = q ? f.name : (SUB ? SUB + "/" : "") + f.name;
+      fn.href = /\.(md|txt|csv|json|log)$/i.test(f.name)
+        ? "/report?dir=&path=" + encodeURIComponent(rel)
+        : "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") +
+          "&dir=&path=" + encodeURIComponent(rel) + (/\.(docx|pptx|xlsx)$/i.test(f.name) ? "&view=1" : "") +
+          (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      fn.target = "_blank"; fn.rel = "noopener";
+      fn.onclick = (ev) => { if (/^\/report\?/.test(fn.getAttribute("href"))) { ev.preventDefault(); window.open(fn.getAttribute("href")); } };
+    }
+    const appBtn = f.dir ? null : el("button", "fapp", "app");
+    if (appBtn) appBtn.title = "open on this computer";
+    const openInApp = async () => {
       if (f.dir) { SUB = SUB ? SUB + "/" + f.name : f.name; loadFiles(); }
       else {
         const msg = document.querySelector("[data-upmsg]");
@@ -984,7 +1020,9 @@ function renderFiles(q) {
         }
       }
     };
+    if (f.dir) fn.onclick = openInApp; else if (appBtn) appBtn.onclick = openInApp;
     row.appendChild(fn);
+    if (appBtn) row.appendChild(appBtn);
     row.appendChild(el("span", "fm",
       new Date(f.mtime * 1000).toISOString().slice(0, 10) +
       (f.dir ? "" : " · " + (f.size > 1048576
@@ -997,12 +1035,12 @@ function renderFiles(q) {
 }
 document.querySelector("[data-fsearch]").addEventListener("input",
   () => { clearTimeout(window._ft); window._ft = setTimeout(loadFiles, 300); });
-document.querySelector("[data-sort-name]").onclick = (e) => {
-  SORT = "name"; e.target.classList.add("on");
-  document.querySelector("[data-sort-date]").classList.remove("on"); renderFiles(); };
-document.querySelector("[data-sort-date]").onclick = (e) => {
-  SORT = "date"; e.target.classList.add("on");
-  document.querySelector("[data-sort-name]").classList.remove("on"); renderFiles(); };
+["name", "type", "date"].forEach(k => {
+  document.querySelector("[data-sort-" + k + "]").onclick = (e) => {
+    SORT = k;
+    ["name", "type", "date"].forEach(o => document.querySelector("[data-sort-" + o + "]").classList.toggle("on", o === k));
+    renderFiles(document.querySelector("[data-fsearch]").value.trim()); };
+});
 
 function fmtSize(n) {
   n = Number(n) || 0;

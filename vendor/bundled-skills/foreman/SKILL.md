@@ -84,6 +84,7 @@ vocabulary in the sentence the user must read; every ask ends with a question
 answerable in one word AND carries a recommendation (what you would choose +
 one line of why + alternatives when the choice has them + "or tell me
 something else" — options are a convenience, never a cage).
+**Engine-enforced since 2026-09-05 (John):** after every wave's gate is GREEN and the reviewers converge, the driver's `elegance` seat runs the Rabbit-Catcher over the wave's changed files (steering seat judges, review seat attacks); a CUT confirmed by the second seat is one fix iteration that removes the element and re-proves GREEN before GO; HOLDs ride EXECUTION-LOG.md as Grasscatcher lines; record: `.foreman/wave-N-elegance.md` (`bin/wave-workflow.js` `elegance`, `bin/wave-engine.mjs`).
 <!-- /ELEGANCE-V2.1 -->
 <!-- /ELEGANCE-LAW -->
 

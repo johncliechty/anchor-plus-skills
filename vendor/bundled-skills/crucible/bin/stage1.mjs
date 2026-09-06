@@ -32,6 +32,7 @@
 // loop, it does not re-implement Sharks, the Synthesizer, the Judge, the gates, or
 // researchPrime.
 
+import { runPlanElegancePass, elegancePassSection } from './elegance-hooks.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -1259,6 +1260,7 @@ export function writeStage1HaltJson(dir, {
 }
 
 export async function runStage1({
+  provenance = null,
   agent,
   northStar,
   criteria = [],
@@ -1442,10 +1444,24 @@ export async function runStage1({
     throw e;
   }
 
+  // (3b) THE ELEGANCE PASS (John, 2026-09-05): the Rabbit-Catcher over every near-term
+  // specific, BEFORE the Sharks — CUT blocks here (the cheapest point), HOLD is annotated
+  // with its trigger, and the verdict table rides the Shark draft so the reviewers attack
+  // the pass too (crucible journal 0094: a LITE run integrated 7/7 ideas and parked none).
+  let elegance = null;
+  try {
+    elegance = await phased('elegance-pass', () => runPlanElegancePass({
+      plan, northStar, criteria, provenance, agent, artifactsDir, log,
+    }));
+    if (elegance?.plan) plan = elegance.plan;
+  } catch (e) {
+    log(`!! elegance pass failed (non-fatal — plan unchanged, said aloud): ${e?.message || e}`);
+  }
+
   // (4) The Shark-Tank loop to model-side convergence.
   const loop = await phased('shark-loop', () => runMasterPlanLoop({
     agent, northStar, criteria,
-    draft: renderMasterPlanDraft(plan),
+    draft: renderMasterPlanDraft(plan) + elegancePassSection(elegance),
     research, acceptanceCriteria, roundCap, artifactsDir, log,
     sharkRoles: band.sharkRoles,
     statusLog, statusLabel: `Crucible Stage 1 (${band.depth})`,
@@ -1456,7 +1472,7 @@ export async function runStage1({
   live.lastStep = 'approval';
   const approval = approveMasterPlan({ loop, plan, approved, log });
 
-  return { brainstorm, triage, plan, loop, approval, band: bandProfileStamp(band) };
+  return { brainstorm, triage, plan, loop, approval, elegance, band: bandProfileStamp(band) };
 }
 
 // ---------------------------------------------------------------------------

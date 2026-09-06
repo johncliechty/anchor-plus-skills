@@ -24,6 +24,18 @@ import { runCloseBoundProcess } from './subscription-process.mjs';
 export const GROK_CLI_HEAVY_MODEL = process.env.GROK_CLI_HEAVY_MODEL || 'grok-4.5';
 export const GROK_CLI_STANDARD_MODEL = process.env.GROK_CLI_STANDARD_MODEL || 'grok-4.5';
 export const DEFAULT_GROK_CLI_TIMEOUT_MS = 20 * 60 * 1000;
+// (2026-09-05) grok's headless `-p` mode stops after a handful of agent turns by default;
+// a reviewer that reads files hit that cap mid-investigation and its last prose line was
+// the whole reply (schema-nonconforming twice → verification failed closed; every Foreman
+// wave then went GREEN as review:degraded). The cap is now explicit and generous.
+export const DEFAULT_GROK_CLI_MAX_TURNS = 40;
+// (2026-09-05, foreman journal 0112 addendum) a tool ask that headless mode cannot answer CANCELS
+// the whole turn (stopReason 'cancelled', no reply) — seen with chained (;), branching (if/else) and
+// redirected (2>$null) shell commands in plan AND dontAsk modes. A verification seat is told first.
+export const GROK_HEADLESS_READONLY_NOTE =
+  'READ-ONLY SEAT (headless grok): a shell command that chains (;), branches (if/else) or redirects '
+  + '(2>$null, >) needs an approval no one can give here and ENDS your turn unanswered. Use plain single '
+  + 'commands or your file tools, and always finish with the JSON you were asked for.';
 
 /** True only for ids the Grok CLI will accept — reject stale Gemini/Claude setx pins. */
 export function isPlausibleGrokModelId(m) {
@@ -75,7 +87,11 @@ export function parseGrokJsonOutput(stdout, { requested = null } = {}) {
   let servedModel = null;
   if (usage.length === 1) servedModel = usage[0];
   else if (usage.length > 1 && requested && usage.includes(String(requested))) servedModel = String(requested);
-  return { text: obj.text.trim(), servedModel };
+  return {
+    text: obj.text.trim(), servedModel,
+    stopReason: typeof obj.stopReason === 'string' ? obj.stopReason : null,
+    numTurns: Number.isFinite(obj.num_turns) ? obj.num_turns : null,
+  };
 }
 
 /**
@@ -90,6 +106,7 @@ export function defaultRunGrokCli(fullPrompt, label, {
   model = null,
   role = null,
   timeoutMs = (Number(env.GROK_CLI_TIMEOUT_MS) || DEFAULT_GROK_CLI_TIMEOUT_MS),
+  maxTurns = (Number(env.GROK_CLI_MAX_TURNS) || DEFAULT_GROK_CLI_MAX_TURNS),
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
@@ -115,6 +132,10 @@ export function defaultRunGrokCli(fullPrompt, label, {
     ? 'plan'
     : (env.GROK_CLI_PERMISSION_MODE || 'acceptEdits');
   if (perm) args.push('--permission-mode', perm);
+  if (Number.isFinite(maxTurns) && maxTurns > 0) args.push('--max-turns', String(maxTurns));
+  // NOT grok's `--json-schema`: under it the model answers on its FIRST turn without touching
+  // its tools (live smoke 2026-09-05 — a reviewer said "not answerable" in 8 s, 0 tool calls).
+  // The schema stays the prompt-suffix + parse contract (cli-schema.mjs); the cap is the fix.
   if (signal?.aborted) {
     return Promise.resolve({ text: '', rec: {
       label, cli_status: null, ok: false, status: 'aborted', aborted: true,
@@ -122,6 +143,7 @@ export function defaultRunGrokCli(fullPrompt, label, {
       family_attested: false, model_attested: false, degraded: true,
     } });
   }
+  if (isVerificationRole({ role, label })) fullPrompt = GROK_HEADLESS_READONLY_NOTE + String.fromCharCode(10, 10) + fullPrompt;
   const useFile = Buffer.byteLength(fullPrompt, 'utf8') > 24000;
   let tmpPath = null;
   if (useFile) {
@@ -177,6 +199,9 @@ export function defaultRunGrokCli(fullPrompt, label, {
       model_attested: !!served,
       degraded: !served,
       timed_out: status === 'timeout',
+      stop_reason: parsed?.stopReason ?? null,
+      num_turns: parsed?.numTurns ?? null,
+      turn_cancelled: parsed?.stopReason === 'cancelled',
       aborted: status === 'aborted',
       kill_status: result.kill_status,
     };

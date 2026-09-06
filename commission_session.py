@@ -520,6 +520,196 @@ def _watch_session(folder, project_id, record, *, watch_only,
 #: burns unbounded runs.
 AUTO_CHAIN_CAP = 3
 
+#: Hook C (reports-links 2026-09-05 W2): the HUMAN-FACING doc roles per lane
+#: kind — one register row per role, NEVER agent or provenance files
+#: (campaign journal 0010's human-facing scope).
+HUMAN_FACING_DOC_ROLES = {
+    "research": ("report", "exec"),
+    "planning": ("master", "impl", "northstar"),
+    "build": ("execlog", "deliverable"),
+}
+
+
+def _register_gandalf_read(_dreg, _jnl, effort_dir, pfolder, project_id,
+                           record) -> None:
+    """The cockpit-Gandalf branch of Hook C (W2 second amendment, 2026-09-05):
+    the cockpit's 'Commission a Gandalf read' maps skill Gandalf to lane
+    ``general`` — HUMAN_FACING_DOC_ROLES has no ``general`` key and
+    ``session_doc_roles`` is empty for that lane. The commissioned session
+    runs in an ISOLATED WORKTREE, so at PRODUCED time its artifacts live at
+    ``record.worktree_path/gandalf/**/report.md`` (+ sibling
+    ``exec-summary.md``) — NOT under the campaign folder. THIS run's artifacts
+    are resolved from that worktree (everything under its ``gandalf/`` is this
+    run's own — never a sibling run bound by newest mtime), PERSISTED into
+    MAIN first (``gandalf`` is a persistable ``effort_history._DOC_DIRS`` dir,
+    so the capture-first step already copies them; a missed copy is completed
+    here so the register never mints a dead Where), then registered via
+    ``effort_dir_for`` + ``where_for(abs_path=<the MAIN path>)`` with the SAME
+    what-string Hook A uses ('Gandalf read <tier> — <verdict>', verdict from
+    the exec summary's first content line when known). No worktree → nothing
+    registers (never fabricate). Never raises."""
+    try:
+        wt = str(record.get("worktree_path") or "")
+        if not wt:
+            try:
+                import session_registry as _sreg
+                srec = _sreg.get_session(str(record.get("session_id") or ""))
+                wt = str((srec or {}).get("worktree_path") or "")
+            except Exception:
+                wt = ""
+        base = Path(wt) / "gandalf" if wt else None
+        if base is None or not base.is_dir():
+            return
+        docs = []
+        for rep in sorted(base.rglob("report.md")):
+            try:
+                if rep.stat().st_size <= 0:
+                    continue
+            except OSError:
+                continue
+            docs.append(rep)
+            exec_md = rep.parent / "exec-summary.md"
+            if exec_md.is_file():
+                docs.append(exec_md)
+        if not docs:
+            return
+        verdict = ""
+        for doc in docs:
+            if doc.name != "exec-summary.md":
+                continue
+            try:
+                for line in doc.read_text(
+                        encoding="utf-8", errors="replace").splitlines():
+                    s = line.strip()
+                    if s and not s.startswith("#"):
+                        verdict = s[:200]
+                        break
+            except OSError:
+                pass
+            break
+        what = "Gandalf read %s — %s" % (record.get("tier") or "",
+                                         verdict or "complete")
+        for doc in docs:
+            rel = doc.relative_to(wt).as_posix()
+            main = Path(pfolder) / rel
+            if not main.is_file():
+                # Persist into MAIN before registering (the git-scoped capture
+                # normally already did; this closes the stubbed/unmanaged gap).
+                try:
+                    import shutil
+                    main.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(str(doc), str(main))
+                except OSError:
+                    continue
+            where = _dreg.where_for(effort_dir, pfolder, project_id,
+                                    abs_path=str(main))
+            out = _dreg.register(effort_dir, what, where,
+                                 step=record.get("step_id"),
+                                 project_folder=pfolder)
+            _jnl.emit_safe(
+                project_id, _jnl.EV_DELIVERABLE_PINNED,
+                correlation_id=str(record.get("session_id") or ""),
+                folder_path=pfolder,
+                payload={"register": out.get("reason") or "unknown",
+                         "what": what, "where": where})
+    except Exception:
+        pass
+
+
+def _register_run_docs(folder, project_id, record) -> None:
+    """Hook C (reports-links 2026-09-05 W2): a commissioned run that came home
+    PRODUCED (the plan's RUN_DONE) registers its HUMAN-FACING docs in the
+    effort's DELIVERABLES.md — one row per resolved role, what =
+    '<skill> — <role>: <filename>', step hint = the commission record's step.
+    Idempotent on resume (the registrar dedups on (what, where)); every
+    outcome is journaled as ``{register: written|dup|<reason>}`` on the
+    existing deliverable-pinned event. Best-effort: never raises up a
+    finishing run; a run with no resolvable docs registers nothing (an honest
+    register lists only real artifacts).
+
+    W2 amendment (2026-09-05): at finish time the produced docs are NOT yet
+    persisted (PRODUCED is a transcript classify; capture runs on kill/close),
+    so the docs are CAPTURED FIRST (``terminal_session.capture_session_docs``)
+    and only then role-resolved — against the record's managed session id when
+    the lane grouping knows it, else against the session whose captured
+    members carry that managed id (the v8 keystone tag). A Gandalf commission
+    (lane ``general``) takes the direct-scan branch instead — see
+    :func:`_register_gandalf_read`."""
+    try:
+        import deliverables_register as _dreg
+        import effort_history as _eh
+        import journal as _jnl
+        import summarizer as _summ
+        lane = record.get("lane") or ""
+        session_id = record.get("session_id") or ""
+        skill = record.get("skill") or "skill"
+        pfolder = str(folder)
+        try:
+            import rnd_registry as _rnd
+            proj = _rnd.get_project(project_id)
+            pfolder = (proj or {}).get("folder_path") or pfolder
+        except Exception:
+            pass
+        effort_dir = _dreg.effort_dir_for(str(folder), pfolder)
+        # Amendment: persist the worktree's produced docs NOW so the role
+        # resolution below sees files that exist (list_efforts is empty until
+        # persist, and finish_run does not otherwise persist). Best-effort +
+        # idempotent; a non-managed session id no-ops inside the capture.
+        try:
+            import terminal_session as _ts
+            _ts.capture_session_docs(session_id, project_id=project_id)
+        except Exception:
+            pass
+        if str(skill).strip().lower() == "gandalf":
+            _register_gandalf_read(_dreg, _jnl, effort_dir, pfolder,
+                                   project_id, record)
+            return
+        roles = _summ.session_doc_roles(project_id, lane, session_id,
+                                        folder_path=pfolder) or {}
+        store_lane = _eh._resolve_subdir(lane)
+        if not roles:
+            # The record's id is the MANAGED session id; the capture above
+            # recorded the docs as discovered efforts grouped by their dir
+            # (a computed ``dir::…`` session id). Bridge via the v8 keystone
+            # tag: the session whose members carry this managed id.
+            try:
+                import sessions as _sess
+                for s in _sess.list_sessions(pfolder, project_id, store_lane):
+                    if any((m.get("session_id") or "") == session_id
+                           for m in (s.get("member_files") or [])):
+                        roles = _summ.session_doc_roles(
+                            project_id, lane, s["session_id"],
+                            folder_path=pfolder) or {}
+                        break
+            except Exception:
+                pass
+        for role in HUMAN_FACING_DOC_ROLES.get(store_lane, ()):
+            doc = roles.get(role)
+            if not doc or not doc.get("href"):
+                continue
+            what = "%s — %s: %s" % (skill, role, doc.get("label") or role)
+            # The Where cell is minted by the ONE resolver (where_for), fed
+            # the doc's raw facts — never the summarizer's UI href, whose
+            # spelling differs (premortem 1: a second Where form defeats the
+            # registrar's (what, where) dedup across hooks).
+            rel = (doc.get("rel") or "").strip()
+            jid = (doc.get("job_id") or "").strip()
+            where = _dreg.where_for(
+                effort_dir, pfolder, project_id,
+                abs_path=(os.path.join(pfolder, rel) if rel else None),
+                lane=(store_lane if jid and not rel else None),
+                job_id=(jid if not rel else None))
+            out = _dreg.register(effort_dir, what, where,
+                                 step=record.get("step_id"),
+                                 project_folder=pfolder)
+            _jnl.emit_safe(
+                project_id, _jnl.EV_DELIVERABLE_PINNED,
+                correlation_id=str(session_id), folder_path=pfolder,
+                payload={"register": out.get("reason") or "unknown",
+                         "what": what, "where": where})
+    except Exception:
+        pass
+
 
 def finish_run(folder, project_id, record, result, *,
                read_fn=None, write_fn=None, runner_kwargs=None) -> dict:
@@ -663,6 +853,13 @@ def finish_run(folder, project_id, record, result, *,
             _cgates.on_run_death(folder, updated)
     except Exception:
         pass
+
+    # Hook C (reports-links 2026-09-05 W2): a run that came home PRODUCED
+    # registers its human-facing docs (idempotent on the re-armed watch's
+    # second finish); asked/died/quiet/timeout runs never register. Runs
+    # BEFORE the campaign commit so the register row rides the same bank.
+    if result.get("outcome") == _cr.RUN_PRODUCED:
+        _register_run_docs(folder, project_id, updated)
 
     # A finished run changed campaign state (record, attention, log) — bank it.
     commit_campaign_state(

@@ -1420,6 +1420,44 @@ def _add_gitignore_best_effort(folder_path) -> None:
 
 # ── Public engine ────────────────────────────────────────────────────────────
 
+# ── Hook A (reports-links 2026-09-05 W2) — a finalized-OK run registers itself ─
+
+def _register_finished_run(store, folder, pid, record) -> None:
+    """One row in the effort's DELIVERABLES.md for a run that finalized OK.
+
+    Called ONLY from run_gandalf's ok-only terminal ``_append_index`` success
+    point — the crash-reconcile finally block and the cancelled path never
+    register (an honest register lists only real artifacts). The outcome is
+    journaled as ``{register: written|dup|<reason>}`` on the existing
+    ``deliverable-pinned`` event so a silent no-op is auditable. Best-effort:
+    never raises up a finishing run."""
+    try:
+        import deliverables_register as _dreg
+        import journal as _jnl
+        effort_dir = _dreg.effort_dir_for(store, folder)
+        report_rel = record.get("report_rel") or ""
+        where = _dreg.where_for(
+            effort_dir, folder, pid,
+            abs_path=os.path.join(str(store), report_rel) if report_rel
+            else None)
+        what = "Gandalf read %s — %s" % (record.get("tier") or "",
+                                         record.get("verdict") or "")
+        try:
+            date = time.strftime("%Y-%m-%d",
+                                 time.localtime(float(record.get("ts"))))
+        except (TypeError, ValueError):
+            date = None
+        out = _dreg.register(effort_dir, what, where, date=date)
+        _jnl.emit_safe(
+            pid, _jnl.EV_DELIVERABLE_PINNED,
+            correlation_id=str(record.get("run_id") or ""),
+            folder_path=str(folder),
+            payload={"register": out.get("reason") or "unknown",
+                     "what": what, "where": where})
+    except Exception:
+        pass
+
+
 # ── Wave 2 (foundry-v2) — the HOST-ENFORCED journaling write-back ────────────
 
 def _aggregate_model_cost(job_ids) -> dict:
@@ -1742,6 +1780,11 @@ def run_gandalf(folder_path, project_id, *, force=False, env=None, status_cb=Non
                 # write an honest terminal row, so a failed write can never leave a
                 # perpetual in_progress "still running" ghost.
                 wrote_terminal = False
+            # Hook A (reports-links 2026-09-05 W2): immediately after the
+            # SUCCESSFUL terminal index append, and ONLY when ok — a failed or
+            # cancelled run never registers.
+            if wrote_terminal and ok:
+                _register_finished_run(store, folder, pid, record)
 
         # Wave 2 (foundry-v2): host-enforced journaling — EVERY run through
         # Anchor (done/failed/cancelled) auto-appends its 7-field skeleton

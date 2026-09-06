@@ -1,5 +1,68 @@
 # Changelog
 
+## v1.2.13 — every report is a link; runs register themselves; a runnable deliverable opens in an Anchor window; icons; the plan you see is the roadmap
+
+John's asks on 2026-09-05, in his words: reports "need to show up with a clickable
+link in the plan outline … as well as they always need to have a clickable link in
+the deliverable section"; a bit of code that runs locally "still needs a clickable
+link"; the status window "managed so that the most recent status update is always
+prominent"; the skill icons "in the plan when they are mentioned … at the top of each
+report … in the list of skills in the drop down menu in the workbench terminal", and
+"into the existing projects and plans"; links labelled by "the name of the report"
+and rendered "in nice human readable formats (md, pdf, docx, pptx, …)"; files
+"searchable … sort by name, file type and date"; "open the file in a new window";
+the folder move that "does not work"; and "the plan gets updated when there are
+clear instructions to add elements".
+
+### Every report is a link (reports-links, Crucible LITE + elegance pass + Foreman)
+- The register parser classifies contained Anchor routes (`/report/<pid>/<lane>[/<job>]`,
+  `/artifact/<pid>?path=<rel>`) and a `run:` marker; hostile cells stay text.
+- Route rows open from the effort cockpit's deliverables tile, under their step in the
+  plan outline, and from the project page's deliverables list — labelled by the
+  document's name, markdown through the Reader, Word/PowerPoint/Excel as a preview
+  page, PDF inline.
+- A finished run registers itself: one registrar (`deliverables_register.py`) and three
+  hooks — a dashboard Gandalf finalize, a lane job that reaches DONE, and a commissioned
+  session at PRODUCED (a cockpit Gandalf read is a general-lane session in its own
+  worktree; its `gandalf/` folder now persists to the project before the row is written).
+  Failed or cancelled runs never register.
+- The Run link: a `shell` backend for general-lane sessions (the user's own shell in the
+  project tree, no engine, no seed, no greet) with the `run:` command staged unsent on the
+  prompt — Enter runs it; `POST /api/rnd/run_deliverable_terminal` accepts only a command
+  that matches a register row byte-for-byte, in that row's folder; "Run ▶" appears on
+  such rows in the one renderer. The session's persist, autosave, close-snapshot and
+  status-emitter paths no-op for a shell session (its working directory is the LIVE tree,
+  never a disposable worktree — a reviewer finding, proven on a git-backed folder).
+
+### The cockpit
+- The newest status block is always prominent; older ones fold to their time line.
+- Plan drift: the plan John sees is `roadmap.json`. When it has no steps but a plan
+  document exists, the outline derives proposed steps from the document; while the
+  roadmap is behind the plan documents, every human turn carries a PLAN DRIFT line to
+  the steward (law 16).
+- Skill icons: one map (`steward_cockpit/static/skill-icons.js`, `SKILL_ICONS`) —
+  plan outline steps, the workbench skill rail, the top of every report (path, file
+  name or first heading), the home project line, deliverable rows.
+- Files: search plus sort by name, type and date on both pages; a file opens rendered
+  in a new window ("app" keeps the local open).
+- Folder move: a regroup drop remembers the destination folder open before the
+  reload (a disk move is still refused while a project is being set up or a Gandalf
+  run is in flight; the grouping applies).
+
+### The skills (vendored trio at the pinned commit)
+- Elegance + Rabbit-Catcher passes inside Crucible (after the plan and after the wave
+  decomposition; CUT blocks), Foreman (after every converged wave; a CUT confirmed by
+  the second seat is one fix iteration), researchPrime (RC-6 per round); RC-8 (the
+  wave-count question) in Stage 2.
+- Grok headless seats: an explicit turn cap; a turn cancelled by a tool ask is said
+  aloud and re-prompted with the read-only constraint.
+
+### Still open, by name
+- The ChatGPT steward (a codex exec+resume adapter) — one-wave effort, parked.
+- Deliverable "app slot" / remote display / Roar — design note only.
+- The elegance HOLD on law (15)'s register text in the steward prompt — John's call.
+- A report whose file name and first heading name no skill stays unmarked.
+
 ## v1.2.12 — the status says what is running and what the slice needs; a stopped model is told; Enter sends; Grok and ChatGPT review; ChatGPT drives the terminal (2026-09-05)
 
 John's evening after v1.2.11, in his words: the status window's "what's next" was

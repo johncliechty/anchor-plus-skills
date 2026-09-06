@@ -76,6 +76,7 @@ vocabulary in the sentence the user must read; every ask ends with a question
 answerable in one word AND carries a recommendation (what you would choose +
 one line of why + alternatives when the choice has them + "or tell me
 something else" — options are a convenience, never a cage).
+**Engine-enforced since 2026-09-05 (John):** at every round boundary the governor asks RC-6 only — "does the North Star FAIL without this new blocker, or merely feel less complete?" — a 'merely' blocker is PARKED (dropped from the carried set, zero further spend) and said as one line (`possible rabbit hole: … — pursue or drop?`); record: `parkedByRc6` in `round-N-result.json` (`bin/run-rounds.mjs`, `drivers/elegance-pass.mjs` `runCriticalPathCheck`).
 <!-- /ELEGANCE-V2.1 -->
 <!-- /ELEGANCE-LAW -->
 
