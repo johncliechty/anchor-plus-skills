@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.14 — the cockpit's skill-icon map ships
+
+v1.2.13's bundle carried the registrar but not `steward_cockpit/static/skill-icons.js`:
+the cockpit's static files are listed one by one in the deny-by-default manifest and
+the new file was never added, so a collaborator's cockpit would have 404ed the icon
+map (the plan outline, the skill rail and the report tops fall back to no mark). Found
+by the clone verify, fixed in the manifest. Nothing else changed.
+
 ## v1.2.13 — every report is a link; runs register themselves; a runnable deliverable opens in an Anchor window; icons; the plan you see is the roadmap
 
 John's asks on 2026-09-05, in his words: reports "need to show up with a clickable

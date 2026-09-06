@@ -301,6 +301,7 @@ steward_cockpit/static/shared.css
 steward_cockpit/static/md.js
 steward_cockpit/static/plate.js
 steward_cockpit/static/tidy-idy-run.js
+steward_cockpit/static/skill-icons.js
 
 # ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
 # Stdlib-only: journal (the per-project append-only JSONL event journal — the
