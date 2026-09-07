@@ -320,6 +320,7 @@ const Proto = (() => {
     if (lnk) lnk.textContent = "Open ↗" +
       (it.path ? "  " + it.path : (it.route ? "  " + routeName(it.route) : ""));
     const key = (it.dir || "") + "|" + (it.path || it.what || "");
+    row.dataset.key = key;
     if (_openDelivs.has(key)) row.classList.add("open");
     line.onclick = (ev) => {
       ev.stopPropagation();
@@ -327,6 +328,8 @@ const Proto = (() => {
       if (row.classList.contains("open")) _openDelivs.add(key);
       else _openDelivs.delete(key);
     };
+    // the detail's own clicks (its link, its text) never toggle the row or the step
+    detail.onclick = (ev) => { ev.stopPropagation(); };
     row.appendChild(line);
     row.appendChild(detail);
     return row;
@@ -349,7 +352,9 @@ const Proto = (() => {
       // the full string width — the rail then grows a horizontal scrollbar
       // instead of ellipsizing the blue line
       wrap.style.minWidth = "0";
-      const title = el("div", "");
+      // (2026-09-06, John) the TITLE line is the only toggle; a ▸/▾ twisty says the state
+      const title = el("div", "stitle");
+      title.appendChild(el("span", "tw", ""));
       if (st.part) title.appendChild(el("span", "wpkind", st.part));
       // (2026-09-05, John) a step that names a skill carries its mark
       try {
@@ -390,9 +395,17 @@ const Proto = (() => {
       if (_openSteps.has(stepKey)) li.classList.add("open");
       li.onclick = (ev) => {
         if (ev.target.closest(".sdeliv")) return;   // deliverables own their clicks
+        if (!ev.target.closest(".stitle")) return;  // reading the detail never collapses it
         li.classList.toggle("open");
         if (li.classList.contains("open")) _openSteps.add(stepKey);
-        else _openSteps.delete(stepKey);
+        else {
+          _openSteps.delete(stepKey);
+          // closing a step closes everything open under it (down and up the levels)
+          li.querySelectorAll(".sdrow.open").forEach((r) => {
+            r.classList.remove("open");
+            if (r.dataset.key) _openDelivs.delete(r.dataset.key);
+          });
+        }
       };
       list.appendChild(li);
     });

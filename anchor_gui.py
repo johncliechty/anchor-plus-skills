@@ -20564,6 +20564,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     self.send_header("Content-Type", obj.get("__ctype__", "application/octet-stream"))
                     self.send_header("X-Content-Type-Options", "nosniff")
+                    if obj.get("__csp__"):
+                        # a project's own HTML/SVG renders in an OPAQUE origin (2026-09-06)
+                        self.send_header("Content-Security-Policy", obj["__csp__"])
                     self.send_header("Content-Disposition",
                                      '%s; filename="%s"' % (obj.get("__disposition__") or "inline",
                                                             os.path.basename(obj["__file__"]).replace('"', '')))
@@ -21628,6 +21631,21 @@ class AnchorHandler(BaseHTTPRequestHandler):
                             self.send_header("Content-Type", ctype or "application/octet-stream")
                             self.send_header("Content-Disposition",
                                              "attachment; filename=\"%s\"" % Path(rel).name.replace('"', ""))
+                            self.send_header("Content-Length", str(len(data)))
+                            self.end_headers()
+                            self.wfile.write(data)
+                        except Exception:
+                            pass
+                    elif str(ctype or "").lower().startswith(("text/html", "image/svg")):
+                        # (2026-09-06) a project's own HTML/SVG renders — in an OPAQUE origin
+                        # (CSP sandbox, no allow-same-origin), never in the dashboard's.
+                        try:
+                            from steward_cockpit.steward_routes import sandbox_csp_for as _csp
+                            self.send_response(200)
+                            self.send_header("Content-Type", ctype)
+                            self.send_header("X-Content-Type-Options", "nosniff")
+                            self.send_header("Content-Security-Policy", _csp(ctype) or "sandbox")
+                            self.send_header("Cache-Control", "no-store")
                             self.send_header("Content-Length", str(len(data)))
                             self.end_headers()
                             self.wfile.write(data)

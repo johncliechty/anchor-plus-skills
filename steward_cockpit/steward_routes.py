@@ -495,7 +495,8 @@ def handle_get(cdir, verb, qs):
             return {"__html__": html_page}, 200
         if want_download:
             disposition = "attachment"
-        return {"__file__": real, "__ctype__": ctype, "__disposition__": disposition}, 200
+        return {"__file__": real, "__ctype__": ctype, "__disposition__": disposition,
+                "__csp__": sandbox_csp_for(ctype)}, 200
     if verb == "efforts":
         return _efforts(cdir), 200
     if verb == "map":
@@ -682,8 +683,11 @@ _DELIVERABLE_TYPES = {
     ".json": ("application/json; charset=utf-8", "inline"),
     ".md": ("text/plain; charset=utf-8", "inline"), ".txt": ("text/plain; charset=utf-8", "inline"),
     ".csv": ("text/plain; charset=utf-8", "inline"), ".log": ("text/plain; charset=utf-8", "inline"),
-    ".html": ("text/plain; charset=utf-8", "inline"), ".htm": ("text/plain; charset=utf-8", "inline"),
-    ".svg": ("text/plain; charset=utf-8", "inline"),
+    # (2026-09-06, John: "I just see the raw code") HTML and SVG RENDER — served as
+    # their real types under a Content-Security-Policy sandbox (see sandbox_csp_for):
+    # an opaque origin that cannot read the dashboard's token, cookies or storage.
+    ".html": ("text/html; charset=utf-8", "inline"), ".htm": ("text/html; charset=utf-8", "inline"),
+    ".svg": ("image/svg+xml", "inline"),
     ".docx": ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "attachment"),
     ".pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", "attachment"),
     ".xlsx": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "attachment"),
@@ -692,6 +696,20 @@ _DELIVERABLE_TYPES = {
     ".xls": ("application/vnd.ms-excel", "attachment"),
     ".zip": ("application/zip", "attachment"),
 }
+
+
+#: The sandbox a project's own HTML/SVG renders under: scripts may run, popups and forms
+#: work, but the document has an OPAQUE origin — no allow-same-origin, so it can never
+#: read the dashboard's localStorage token, cookies, or call the API as the user.
+SANDBOX_CSP = "sandbox allow-scripts allow-popups allow-forms allow-modals allow-downloads"
+
+
+def sandbox_csp_for(ctype):
+    """The CSP header value for a content type that can carry active content, else None."""
+    c = str(ctype or "").lower()
+    if c.startswith("text/html") or c.startswith("image/svg"):
+        return SANDBOX_CSP
+    return None
 
 
 def deliverable_content_type(ext):

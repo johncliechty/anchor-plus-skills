@@ -82,8 +82,17 @@ class DeliverablesTest(unittest.TestCase):
         ok, code = routes.handle_get(
             self.cdir, "deliverable-file", {"path": "deliverables/page.html"})
         self.assertEqual(code, 200)
-        self.assertTrue(ok["__ctype__"].startswith("text/plain"),
-                        "html/svg must be served inert, never renderable")
+        # (2026-09-06, John: "I just see the raw code") HTML now RENDERS — as text/html
+        # under a Content-Security-Policy sandbox with NO allow-same-origin, so the
+        # page runs in an opaque origin that can never read the dashboard's token,
+        # cookies or storage. The invariant is "never in the dashboard's origin",
+        # not "never renderable".
+        self.assertTrue(ok["__ctype__"].startswith("text/html"),
+                        "html renders (text/html) — under the sandbox below")
+        csp = ok.get("__csp__") or ""
+        self.assertTrue(csp.startswith("sandbox"), "html must carry the CSP sandbox")
+        self.assertNotIn("allow-same-origin", csp,
+                         "the sandbox must never grant the dashboard's origin")
 
     def test_status_carries_count(self):
         s = campaign.compose_status(self.cdir)

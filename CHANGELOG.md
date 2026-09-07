@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.2.15 — HTML deliverables render; plan rows close again
+
+John, 2026-09-06: "when I open up details for plan elements, I try and close them and
+they don't seem to close" and "why am I getting htmls that I can't open and have render,
+I just see the raw code".
+
+- A project's own `.html` / `.svg` now renders — served as its real type under a
+  `Content-Security-Policy: sandbox` with no `allow-same-origin`, so the page runs in an
+  opaque origin that cannot read the dashboard's token, cookies or storage (the old rule
+  served them as plain text to keep them out of the dashboard's origin; the sandbox keeps
+  that property and renders). Both the cockpit's deliverable-file route and `/artifact`.
+- Plan outline: only the step's title line toggles it (a ▸/▾ marker shows the state);
+  reading the detail no longer collapses it; closing a step closes any open deliverable
+  details under it; a detail's own clicks never bubble up.
+
 ## v1.2.14 — the cockpit's skill-icon map ships
 
 v1.2.13's bundle carried the registrar but not `steward_cockpit/static/skill-icons.js`:
