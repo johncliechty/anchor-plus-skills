@@ -2,7 +2,7 @@
 name = "anchor"
 # Keep in lockstep with the VERSION file (the single human-facing stamp; it
 # ships so installs self-report correctly — v1.1.3 share-fix alignment).
-version = "1.2.15"
+version = "1.3.0"
 description = "Anchor — per-project productivity & R&D control surface (Python stdlib only at runtime)"
 requires-python = ">=3.8"
 # NOTE: The shipped Anchor product is Python stdlib only. No runtime dependencies.
@@ -14,6 +14,9 @@ dev = ["pytest"]
 # pywinpty backend) is the ONE place that may use a native dep. It is NOT part of
 # the stdlib-only core import path — installed only via `pip install .[terminal]`.
 terminal = ["pywinpty>=2.0; sys_platform == 'win32'"]
+# Optional separate-host-process runtime; never imported by the core dashboard.
+# Install into the dedicated notebook account's environment, not the AI tools.
+notebook = ["jupyterlab>=4,<5", "jupyter-server>=2,<3", "ipykernel>=6"]
 
 [tool.pytest.ini_options]
 addopts = "-v"

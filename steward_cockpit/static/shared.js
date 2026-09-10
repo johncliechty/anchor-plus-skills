@@ -292,12 +292,15 @@ const Proto = (() => {
     try { return localStorage.getItem("steward_deliv_open") === "1"; }
     catch (e) { return false; }
   })();
-  function stepDeliverables(stepName, idx1) {
+  function stepDeliverables(step, idx1) {
+    const stepId = (step.id || "").trim().toLowerCase();
+    const stepName = (step.name || "").trim().toLowerCase();
     return _delivItems.filter((it) => {
       const s = (it.step || "").trim();
       if (!s) return false;
+      if (stepId && s.toLowerCase() === stepId) return true;
       if (/^\d+$/.test(s)) return parseInt(s, 10) === idx1;
-      return (stepName || "").toLowerCase().indexOf(s.toLowerCase()) >= 0;
+      return stepName.indexOf(s.toLowerCase()) >= 0;
     });
   }
   // One blue SENTENCE under its step. Click once → the detail; click the
@@ -384,14 +387,14 @@ const Proto = (() => {
       //   1. step name (+ a one-SENTENCE blue line per deliverable)
       //   2. click the step  -> its why/done-when detail
       //   3. click a deliverable -> its detail, click again -> the report
-      const dl = stepDeliverables(st.name, i + 1);
+      const dl = stepDeliverables(st, i + 1);
       if (dl.length) {
         const box = el("div", "sdeliv");
         dl.forEach((it) => box.appendChild(stepDelivLine(it)));
         wrap.appendChild(box);
       }
       li.appendChild(wrap);
-      const stepKey = st.name || String(i);
+      const stepKey = st.id || st.name || String(i);
       if (_openSteps.has(stepKey)) li.classList.add("open");
       li.onclick = (ev) => {
         if (ev.target.closest(".sdeliv")) return;   // deliverables own their clicks
@@ -493,6 +496,10 @@ const Proto = (() => {
   }
   function delivRow(it) {
     const row = el("div", "snow drow");
+    if (it.notebook_product && window.AnchorNotebooks) {
+      row.appendChild(window.AnchorNotebooks.render(it, it.dir !== undefined ? it.dir : DIR));
+      return row;
+    }
     if (it.route) {
       // (2026-09-05) a contained Anchor route (/report/…, /artifact/…) the
       // parser CLASSIFIED (classify_route) — hostile cells arrive route:null
@@ -672,8 +679,21 @@ const Proto = (() => {
       closeCurrent();
       busySince = null;
       endActivity(ev);
-      addLine("turnend", "· turn done in " + ev.duration_s + "s · $" +
-              (ev.cost_usd || 0).toFixed(3), ev);
+      const hasReportedTurnCost = typeof ev.cost_usd === "number" && Number.isFinite(ev.cost_usd) && ev.cost_usd >= 0
+        && (ev.cost_status === "reported" || ev.cost_status === undefined);
+      const turnCostText = hasReportedTurnCost
+        ? "$" + ev.cost_usd.toFixed(ev.cost_usd === 0 ? 2 : 3) + " reported"
+        : "cost unavailable";
+      const turnTokensText = typeof ev.tokens === "number" && Number.isFinite(ev.tokens) && ev.tokens >= 0
+        ? " · " + Math.round(ev.tokens).toLocaleString() + " tokens" : "";
+      addLine("turnend", "· turn done in " + ev.duration_s + "s · " + turnCostText + turnTokensText, ev);
+      // Older live servers persist completion without publishing it. Coalesce
+      // history replays and fetch the post-arbitration truth at the boundary.
+      clearTimeout(renderStatus._refreshTimer);
+      renderStatus._refreshTimer = setTimeout(async () => {
+        try { renderStatus(await (await fetch(api("/api/status"))).json()); }
+        catch (e) { addLine("sys", "Status delivery unconfirmed — reconnecting", { tick: true }); }
+      }, 250);
     } else if (ev.t === "status") {
       // the engine-composed two-part status of record (disk map + engine
       // state, zero-model) — pane only, never the conversation
@@ -747,10 +767,21 @@ const Proto = (() => {
         : "";
     }
     const spend = $("[data-spend]");
-    if (spend) spend.textContent = st.alive
-      ? ("session $" + (st.spend_usd || 0).toFixed(2) + " · " + st.turns + " turns")
-      : (GENERAL ? "" : "steward asleep" +
-         (st.queued ? " · " + st.queued + " held" : ""));
+    if (spend) {
+      const knownSessionUsd = value => typeof value === "number" && Number.isFinite(value) && value >= 0;
+      let sessionCostText = "cost unavailable";
+      if (st.cost_status === "partial") {
+        const reported = knownSessionUsd(st.reported_spend_usd) ? st.reported_spend_usd
+          : knownSessionUsd(st.spend_usd) ? st.spend_usd : null;
+        if (reported !== null) sessionCostText = "$" + reported.toFixed(2) + " reported + unpriced usage";
+      } else if ((st.cost_status === "reported" || st.cost_status === undefined) && knownSessionUsd(st.spend_usd)) {
+        sessionCostText = "$" + st.spend_usd.toFixed(2) + " reported";
+      }
+      const sessionTokensText = typeof st.tokens === "number" && Number.isFinite(st.tokens) && st.tokens >= 0
+        ? " · " + Math.round(st.tokens).toLocaleString() + " tokens" : "";
+      spend.textContent = st.alive ? ("session " + sessionCostText + " · " + st.turns + " turns" + sessionTokensText)
+        : (GENERAL ? "" : "steward asleep" + (st.queued ? " · " + st.queued + " held" : ""));
+    }
     const wake = $("[data-wake]");
     if (wake) wake.textContent = st.alive ? "Sleep" : "Wake";
     const drive = $("[data-drive]");
@@ -763,20 +794,37 @@ const Proto = (() => {
     }
     renderFiles(st.files || []);
     // the status window's light + plain-words state line
+    const attention = (_lastMap && _lastMap.attention) || {};
+    const attentionState = st.attention_state || attention.state || "";
+    const attentionReason = st.attention_reason || attention.reason || "";
+    const working = st.busy || st.working_bg || (st.alive && st.queued);
+    // Also support an already-running server from before the state contract repair.
+    const color = st.light === "red" ? "red" : working ? "green"
+      : (st.open_question || ["needs_you", "blocked"].includes(attentionState)) ? "orange" : "quiet";
     const light = $("[data-light]"), light2 = $("[data-light2]");
-    if (light) light.className = "light " + (st.light || "orange");
-    if (light2) light2.className = "light " + (st.light || "orange");
+    if (light) light.className = "light " + color;
+    if (light2) light2.className = "light " + color;
     const stx = $("[data-statetext]");
     if (stx) {
       let txt;
       if (st.light === "red") txt = "stuck or broken — needs a look";
+      else if (working) txt = "Working" +
+        (attentionReason ? " — " + attentionReason : "");
       else if (!st.alive && st.queued) txt = st.queued +
         " held message(s) — waking the steward for delivery";
+      else if (st.open_question) txt = "Waiting for your answer";
+      else if (attentionState === "needs_you") txt = attentionReason || "Waiting for your answer";
+      else if (attentionState === "blocked") txt = attentionReason || "Work is blocked";
+      else if (attentionState === "unknown" || attentionState === "stale") txt = "Work status unconfirmed";
       else if (!st.alive) txt = "nothing running — asleep; your message wakes it";
-      else if (st.busy) txt = "actively running" +
-        (busySince ? " — " + Math.round((Date.now() - busySince) / 1000) + "s" : "");
-      else if (st.working_bg) txt = "working in the background — commissioned run in flight, nothing needed from you";
-      else txt = "awake — waiting on you";
+      else txt = "Nothing running — ready";
+      const details = [];
+      if (st.cli) details.push(st.cli);
+      const policy = st.model_policy;
+      if (policy && policy.model) details.push("requested " + policy.model + " / " + policy.effort);
+      if (st.pending_switch) details.push("switch to " + st.pending_switch + " at the next safe turn boundary");
+      if (st.settings_error) txt += " · " + st.settings_error;
+      stx.title = details.join(" · ");
       stx.textContent = txt;
     }
     // the pinned open question (rubric #6): visible until answered
@@ -1115,6 +1163,10 @@ const Proto = (() => {
     stampPoll();
     setInterval(() => updateState(null), 1000); // busy clock repaint
   }
+
+  window.addEventListener("anchor-notebooks-changed", () => {
+    renderDeliverablesTile().catch(() => {});
+  });
 
   return { init, addLine, applyTheme, toggleTheme,
            get map() { return map; }, get dir() { return DIR; } };

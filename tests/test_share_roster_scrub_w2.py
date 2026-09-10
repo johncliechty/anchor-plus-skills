@@ -468,6 +468,7 @@ def test_full_roster_honest_skips_without_hardcoded_paths(tmp_path, monkeypatch)
     """Expanding SKILL_SOURCES never falls back to a real author path."""
     for env in (
         "ANCHOR_TRIO_DIR", "ANCHOR_GANDALF_DIR", "ANCHOR_FOUNDRY_DIR",
+        "ANCHOR_ECGBERHT_DIR",
     ):
         monkeypatch.delenv(env, raising=False)
     dest = tmp_path / "dest"

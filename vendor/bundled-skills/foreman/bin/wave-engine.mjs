@@ -277,6 +277,43 @@ export function missingWaveDeliverables(projectDir, planText, waveN) {
   });
 }
 
+/** Literal required test declarations, using the existing wave/path parser.
+ * Prose references and fenced examples are not deliverables. In particular the
+ * W6 contract uses "**Deliverables:** ... Test file test/w06-... with ids: ...".
+ * Bounded grammar: sentence/semicolon clause, optional bullet/Deliverables label,
+ * optional add/create/implement/write/deliver/provide or "replace ... with",
+ * optional required/new, then "Test file <one literal path>". Bare paths never count.
+ */
+export function requiredWaveTestPaths(planText, waveN) {
+  const section = waveSectionOf(planText, waveN);
+  const declarations = [];
+  let fenced = false;
+  for (const raw of section.split(/\r?\n/)) {
+    if (/^\s*(```|~~~)/.test(raw)) { fenced = !fenced; continue; }
+    if (fenced) continue;
+    const line = raw.replace(/\*\*/g, '').trim();
+    if (!line || /^#{1,6}\s/.test(line)) continue;
+    const label = line.match(/^(?:[-*]\s*)?Deliverables?\s*:\s*(.*)$/i);
+    if (!label && /^(?:[-*]\s*)?[A-Za-z][\w -]*:\s/.test(line)
+      && !/^(?:[-*]\s*)?(?:(?:required|new)\s+)?test file\s*:/i.test(line)) continue;
+    const body = label ? label[1] : line;
+    for (const clause of body.split(/[.;!?]\s+/)) {
+      const explicit = clause.trim().match(/^(?:(?:[-*+]|\d+[.)])\s+)?(?:(?:add|create|implement|write|deliver|provide)\s+(?:a\s+)?|replace\s+.+?\s+with\s+)?(?:(?:required|new)\s+)?test file\s*:?\s+(\S+)/i);
+      if (explicit) declarations.push(explicit[1]);
+    }
+  }
+  return namedWavePaths(`## Wave ${waveN}\n${declarations.join('\n')}`, waveN)
+    .filter((rel) => !rel.split('/').includes('..')
+      && /\.(?:mjs|cjs|js|ts|tsx|py)$/.test(rel) && isTestFile(rel));
+}
+
+export function missingRequiredWaveTests(projectDir, planText, waveN) {
+  return requiredWaveTestPaths(planText, waveN).filter((rel) => {
+    try { return !fs.statSync(path.join(projectDir, rel)).isFile(); }
+    catch { return true; }
+  });
+}
+
 function changedSince(root, foremanDir, startSnap) {
   const now = snapshotHashes(root, foremanDir);
   const changed = [];
@@ -1056,23 +1093,78 @@ function findingId(f) {
   return `${f.file || '?'}:${f.line ?? '?'}+${f.rule || 'unspecified'}`;
 }
 
+function reproStrength(repro) {
+  if (repro?.failing !== true || typeof repro.command !== 'string' || !repro.command.trim()) return 0;
+  return 1 + (typeof repro.output === 'string' && repro.output.trim() ? 1 : 0)
+    + (Number.isInteger(repro.exit_code) && repro.exit_code !== 0 ? 1 : 0);
+}
+
 /** Merge per-reviewer findings into deduped findings with an agreement count. */
 export function collectFindings(reviews) {
   const byId = new Map();
   reviews.forEach((rv, idx) => {
     for (const f of rv.findings || []) {
-      const id = f.id || findingId(f);
+      // Only this established rule describes the whole current wave. Ordinary
+      // defects retain their exact identities; no fuzzy semantic voting.
+      const id = f.rule === 'wave-not-implemented' ? 'wave-not-implemented' : f.id || findingId(f);
       if (!byId.has(id)) {
-        byId.set(id, { ...f, id, status: f.status || 'open', reviewers: new Set(), agreement: 0 });
+        byId.set(id, { ...f, id, status: f.status || 'open', reviewers: new Set(), agreement: 0, evidence: [] });
       }
-      byId.get(id).reviewers.add(rv.reviewer ?? idx);
+      const merged = byId.get(id);
+      const reviewer = rv.reviewer ?? idx;
+      merged.reviewers.add(reviewer);
+      merged.evidence.push({ ...f, id: f.id || findingId(f), reviewer });
+      // A passing old-suite repro must never erase a later real failing repro.
+      if (reproStrength(f.repro) > reproStrength(merged.repro)) merged.repro = { ...f.repro };
+      if (f.rule === 'wave-not-implemented') {
+        const severity = ['NIT', 'MINOR', 'MAJOR', 'BLOCKER'];
+        if (severity.indexOf(f.severity) > severity.indexOf(merged.severity)) merged.severity = f.severity;
+        if (!f.status || f.status === 'open') merged.status = 'open';
+      }
     }
   });
   return [...byId.values()].map((f) => {
     const agreement = f.reviewers.size;
     const { reviewers, ...rest } = f;
-    return { ...rest, agreement };
+    return { ...rest, reviewer_ids: [...reviewers], agreement };
   });
+}
+
+/** A missing/malformed review is a failed transport, never an empty approval. */
+function validReview(rv) {
+  return rv && typeof rv === 'object' && !Array.isArray(rv) && !rv.transport_failed
+    && (rv.reviewer == null || (typeof rv.reviewer === 'string' && rv.reviewer.trim()))
+    && ['yes', 'no'].includes(rv.answerable) && Array.isArray(rv.findings)
+    && rv.findings.length <= 100 && rv.findings.every((f) => f && typeof f === 'object'
+      && ['BLOCKER', 'MAJOR', 'MINOR', 'NIT'].includes(f.severity)
+      && (typeof f.file === 'string' || f.file === null) && typeof f.rule === 'string' && f.rule.trim()
+      && (f.line == null || Number.isFinite(f.line))
+      && (f.message === undefined || typeof f.message === 'string')
+      && (f.repro == null || (typeof f.repro === 'object' && !Array.isArray(f.repro)
+        && (f.repro.failing === undefined || typeof f.repro.failing === 'boolean')
+        && (f.repro.command === undefined || typeof f.repro.command === 'string'))));
+}
+
+// Preserve useful originals without persisting unbounded model output. Truncation
+// is explicit; voting uses the validated in-memory findings, not this projection.
+function boundedReviewEvidence(value, depth = 0) {
+  if (typeof value === 'string') return value.length > 4096 ? value.slice(0, 4096) + '[truncated]' : value;
+  if (value == null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (depth >= 8) return '[depth limit]';
+  if (Array.isArray(value)) return value.slice(0, 100).map((v) => boundedReviewEvidence(v, depth + 1))
+    .concat(value.length > 100 ? ['[truncated]'] : []);
+  if (typeof value === 'object') return Object.fromEntries(Object.entries(value).slice(0, 30)
+    .map(([k, v]) => [k, boundedReviewEvidence(v, depth + 1)]));
+  return String(value);
+}
+
+function writeReviewEvidence(file, evidence) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + '.tmp';
+  const fd = fs.openSync(tmp, 'w');
+  try { fs.writeFileSync(fd, JSON.stringify(evidence, null, 2) + '\n'); fs.fsyncSync(fd); }
+  finally { fs.closeSync(fd); }
+  fs.renameSync(tmp, file);
 }
 
 /**
@@ -1216,6 +1308,16 @@ export async function runWave(o) {
   let eleganceDone = false;
   let eleganceHolds = [];
   let findings = [];
+  let reviewEvidence = null;
+  const reviewEvidencePath = () => path.join(foremanDir, `wave-${wave.n}-review-${reviewEvidence.iteration}.json`);
+  const persistReview = (decision = undefined) => {
+    if (!reviewEvidence) return;
+    if (decision !== undefined) reviewEvidence.decision = boundedReviewEvidence(decision);
+    // Resume may re-review the same iteration. Keep that earlier completed round
+    // even while the new latest record is pending or interrupted.
+    writeReviewEvidence(reviewEvidencePath().replace(/\.json$/, `-${reviewEvidence.round_id}.json`), reviewEvidence);
+    writeReviewEvidence(reviewEvidencePath(), reviewEvidence);
+  };
   let lastGate = null;
   let lastChanged = [];   // Phase 3c: the wave's changed files (for the GO commit)
   let lastCitation = null;
@@ -1298,6 +1400,11 @@ export async function runWave(o) {
     // §8: measure changed set before gate so syntax smoke can target it.
     const changedPre = git ? git.changedVsHead() : changedSince(projectDir, foremanDir, hashStart);
     lastChanged = changedPre;
+
+    // Required current-wave tests are independent of source changes, resume and
+    // historical proven ledgers. A prior suite cannot implement a named test.
+    const requiredTestHalt = guardRequiredTests();
+    if (requiredTestHalt) return requiredTestHalt;
 
     // ----- (0106 E1) wave-not-implemented: execute ran and changed nothing -----
     // The 0106 wave: execute "complete" in 29 s with zero tool calls, the OLD suite went
@@ -1428,10 +1535,9 @@ export async function runWave(o) {
     // ----- REVIEW: REVIEWER_COUNT independent reviewers (§3) -----
     // Default CONCURRENT (FOREMAN_CONCURRENT_REVIEW=0 restores the serial path). The
     // read-only reviewers run via Promise.allSettled — order-independent
-    // (collectFindings keys by stable id). A reviewer whose promise REJECTS is mapped to
-    // an abstain (answerable:'no') so a degraded run HALTs at the §4.7 ambiguity gate
-    // rather than silently passing on one reviewer (never Promise.all, which would drop
-    // a surviving reviewer's findings). Flag OFF ⇒ byte-identical to the serial path.
+    // (collectFindings keys by stable id). A rejected or malformed response is
+    // recorded as a transport failure under the existing degradation policy;
+    // surviving findings remain available. Both concurrency modes persist seats.
     // ----- red-gate review skip (2026-07 efficiency; rigor-preserving) -----
     // On a RED gate the verdict is already determined: judge() can never return
     // GO (anti-forgery, above), and reviewer blocking power exists only against
@@ -1453,8 +1559,36 @@ export async function runWave(o) {
       (wave?.n != null && totalWaves != null && wave.n === totalWaves) || iteration > 0;
     const effectiveReviewers = fullPanel ? reviewerCount : Math.min(reviewerCount, 1);
 
+    const skipReview = !lastGate.green && process.env.FOREMAN_REVIEW_ON_RED !== '1' && iteration < fixIterCap;
+    reviewEvidence = {
+      version: 1, written_by: 'orchestrator', wave: wave.n, iteration, round_id: crypto.randomUUID(),
+      phase: skipReview ? 'skipped' : 'pending', review_status: skipReview ? 'skipped-red-gate' : 'pending',
+      configured_reviewers: reviewerCount,
+      expected_reviewers: Array.from({ length: skipReview ? 0 : effectiveReviewers }, (_, r) => `reviewer-${r}`),
+      completed_reviewers: [], failed_reviewers: [], responses: [], merged_findings: [], decision: null,
+    };
+    persistReview();
+    const receiveReview = async (r) => {
+      const seat = `reviewer-${r}`;
+      let raw;
+      try { raw = await driver.review({ ...ctx, reviewerIndex: r, changed }, lastGate); }
+      catch (error) { raw = { transport_failed: true, note: `reviewer call rejected (${error?.message || error})` }; }
+      const valid = validReview(raw);
+      const rv = valid ? { ...raw, reviewer: raw.reviewer ?? seat } : {
+        reviewer: seat, answerable: 'transport-failed', transport_failed: true,
+        note: raw?.note || 'missing or malformed review response', findings: [],
+      };
+      (valid ? reviewEvidence.completed_reviewers : reviewEvidence.failed_reviewers).push(seat);
+      reviewEvidence.responses.push({ seat, reviewer: rv.reviewer, status: valid ? 'completed' : 'transport-failed',
+        original: boundedReviewEvidence(raw) });
+      // Each settled seat is durable even if a sibling never returns. Only the
+      // post-panel arbitration below may mark the round complete.
+      persistReview();
+      return rv;
+    };
+
     let reviews;
-    if (!lastGate.green && process.env.FOREMAN_REVIEW_ON_RED !== '1' && iteration < fixIterCap) {
+    if (skipReview) {
       reviews = [];
       steps.push(`▸ review skipped (gate RED, iter ${iteration}/${fixIterCap} — verdict already determined)`);
       log(`review: skipped — gate RED (reviewers can only block GREEN, §5); fix guidance = gate artifact`);
@@ -1464,13 +1598,13 @@ export async function runWave(o) {
       }
       const settled = await agentWait('review', () => Promise.allSettled(
         Array.from({ length: effectiveReviewers }, (_, r) =>
-          driver.review({ ...ctx, reviewerIndex: r, changed }, lastGate))));
+          receiveReview(r))));
       // T10a: a REJECTED reviewer call is a transport failure, not a plan problem.
-      reviews = settled.map((s, r) => s.status === 'fulfilled' ? s.value : {
-        reviewer: `reviewer-${r}`, answerable: 'transport-failed', transport_failed: true,
-        note: `reviewer ${r} call rejected (${s.reason?.message || s.reason})`,
-        findings: [],
-      });
+      // receiveReview absorbs transport rejection; remaining errors are failed
+      // evidence writes. Never advance if the orchestrator cannot persist them.
+      const failedWrite = settled.find((s) => s.status === 'rejected');
+      if (failedWrite) throw failedWrite.reason;
+      reviews = settled.map((s) => s.value);
     } else {
       if (effectiveReviewers < reviewerCount) {
         steps.push(`▸ review lean (${effectiveReviewers}/${reviewerCount} — ordinary mid-run wave; full panel on terminal/fix-iter waves)`);
@@ -1478,9 +1612,17 @@ export async function runWave(o) {
       reviews = [];
       for (let r = 0; r < effectiveReviewers; r++) {
         reviews.push(await agentWait(`review-${r}`,
-          () => driver.review({ ...ctx, reviewerIndex: r, changed }, lastGate)));
+          () => receiveReview(r)));
       }
     }
+
+    findings = collectFindings(reviews.filter((rv) => !rv.transport_failed));
+    reviewEvidence.merged_findings = boundedReviewEvidence(findings);
+    reviewEvidence.review_status = skipReview ? 'skipped-red-gate'
+      : reviewEvidence.failed_reviewers.length ? 'degraded' : 'completed';
+    // Panel responses are accounted for, but ambiguity/amendment arbitration
+    // still precedes a decision. Do not expose an interim approval on disk.
+    persistReview();
 
     // T10a (2026-07-11): DEGRADE, don't halt, on transport-failed reviewers. A lone
     // reviewer cannot block anyway (≥2-agree), so halting the whole run because ONE
@@ -1569,9 +1711,14 @@ export async function runWave(o) {
     if (reviews.length) log(`review: ${reviews.length} reviewers · ${openBlockers.length} agreed BLOCKER/MAJOR`);
 
     // ----- JUDGE (reads only the gate artifact for pass/fail of record) -----
-    const verdict = judge(lastGate, findings, { panelSize: reviews.length });
+    // Failed seats never reduce a configured two-vote requirement to one vote.
+    const verdict = judge(lastGate, findings, { panelSize: effectiveReviewers });
+    reviewEvidence.phase = skipReview ? 'skipped' : 'complete';
+    persistReview(verdict);
 
     if (verdict.go) {
+      const requiredTestHalt = guardRequiredTests();
+      if (requiredTestHalt) return requiredTestHalt;
       // ----- vacuous-GREEN guard before declaring convergence (§5) -----
       // T4: hand the guard the test-only evidence it needs (wave-start inventory
       // snapshot, fresh inventory, the gate's executed counts, the wave title).
@@ -1821,6 +1968,18 @@ export async function runWave(o) {
   }
 
   // --- closures that finalize state (checkpoint + dashboard) ---
+  function guardRequiredTests() {
+    const missing = missingRequiredWaveTests(projectDir, planText, wave.n);
+    if (!missing.length) return null;
+    const reason = `[taxonomy:wave-not-implemented] HALT: wave ${wave.n} is missing required test file(s): ${missing.join(', ')}`;
+    steps.push(`✗ ${reason}`);
+    log(reason);
+    return finishHalt({ reason, subType: 'missing-required-tests', recommend:
+      `[taxonomy:missing-required-tests] Implement the frozen wave's declared tests (${missing.join(', ')}) and their source. ` +
+      `To run EXECUTE again, use --resume --clear-halt --force; the required-test guard, fresh gate and review still apply. ` +
+      `Without force, clear-halt re-enters the gate and missing tests still HALT. Prior suite results and proven ledgers cannot replace these files.` });
+  }
+
   function dashboard(extraFooter) {
     return renderDashboard({
       project: projectDir,
@@ -1836,6 +1995,8 @@ export async function runWave(o) {
   }
 
   function finishGo() {
+    const requiredTestHalt = guardRequiredTests();
+    if (requiredTestHalt) return requiredTestHalt;
     const status = wave.n === totalWaves ? 'done' : 'running';
     // P1 2026-07-25 (journals 0023/0025/0028/0058, 0076 RC2): EXECUTION-LOG.md had
     // NO writer anywhere in the engine — downstream EXECUTE agents read it to confirm
@@ -1909,6 +2070,10 @@ export async function runWave(o) {
   }
 
   function finishHalt({ reason, recommend, stash = false, subType = null, amendment = null }) {
+    if (reviewEvidence?.iteration === iteration) {
+      if (reviewEvidence.phase === 'pending' && reviewEvidence.responses.length === reviewEvidence.expected_reviewers.length) reviewEvidence.phase = 'complete';
+      persistReview({ go: false, reason, blocking: findings });
+    }
     // §6.3 non-convergence ONLY: stash the failed attempt so the tree is left
     // clean + recoverable, recording the ref. Other halts leave the tree as-is for
     // the human to inspect (the checkpoint is `halted` and is never auto-resumed).

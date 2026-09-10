@@ -137,6 +137,7 @@ def test_browser_role_controls_disable_honestly_and_link_judge(stack, monkeypatc
         "default_cli": "grok",
         "coding_family": "claude",
         "review_family": "gemini",
+        "settings_revision": 1,
         "model_capabilities": capabilities,
     }
     posts = []
@@ -184,7 +185,8 @@ def test_browser_role_controls_disable_honestly_and_link_judge(stack, monkeypatc
             "document.querySelector('#mpReview').value === 'grok' && "
             "document.querySelector('#mpJudge').value === 'grok'"
         )
-        assert posts[-1] == {"review_family": "grok"}
+        assert posts[-1] == {"default_cli": "grok", "coding_family": "claude",
+                             "review_family": "grok", "expected_revision": 1}
         browser.close()
 
 
@@ -211,6 +213,8 @@ def test_interactive_chatgpt_terminal_is_allowed_since_2026_09_05(stack):
 
 def test_interactive_chatgpt_start_refuses_before_worktree_or_pty(stack, monkeypatch):
     ts = stack["ts"]
+    monkeypatch.setattr(ts, "_resolve_model_selection", lambda *_a, **_k: {
+        "family": "chatgpt", "model": "synthetic-model", "effort": "ultra"})
     monkeypatch.setattr(ts._rnd, "get_project", lambda _pid: {"id": "p1"})
     monkeypatch.setattr(
         ts._wt, "create_worktree",
@@ -226,6 +230,8 @@ def test_interactive_chatgpt_start_refuses_before_worktree_or_pty(stack, monkeyp
 def test_interactive_chatgpt_switch_refuses_before_source_session_changes(
         stack, monkeypatch):
     ts = stack["ts"]
+    monkeypatch.setattr(ts, "_resolve_model_selection", lambda *_a, **_k: {
+        "family": "chatgpt", "model": "synthetic-model", "effort": "ultra"})
     source = {
         "session_id": "source",
         "lane": "general",

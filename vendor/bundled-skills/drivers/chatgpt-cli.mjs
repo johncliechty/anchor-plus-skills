@@ -19,11 +19,14 @@ import { extractJson } from './claude.mjs';
 import { isVerificationRole, normalizeRole } from './roles.mjs';
 import { conformsJsonSchema, runCliSchemaAttempts } from './cli-schema.mjs';
 import { runCloseBoundProcess } from './subscription-process.mjs';
+import { resolveModelPolicy, policyEnvironment } from './model-policy.mjs';
+import { classifySubscriptionOutcome } from './subscription-outcome.mjs';
 
 export const DEFAULT_CODEX_CLI_TIMEOUT_MS = 45 * 60 * 1000;
 
-export const CODEX_CLI_HEAVY_MODEL = 'gpt-5.6-sol';
-export const CODEX_CLI_STANDARD_MODEL = 'gpt-5.6-terra';
+// Compatibility exports only. Production seats resolve the current catalog.
+export const CODEX_CLI_HEAVY_MODEL = null;
+export const CODEX_CLI_STANDARD_MODEL = null;
 export const CODEX_REASONING_EFFORTS = Object.freeze([
   'none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra',
 ]);
@@ -39,7 +42,7 @@ const WRITE_ROLES = new Set([
   'implement', 'implementation',
 ]);
 
-const CODEX_SANDBOXES = new Set(['read-only', 'workspace-write']);
+const CODEX_SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access']);
 
 /** True only for ids Codex will accept — reject stale Claude/Gemini/Grok pins. */
 export function isPlausibleCodexModelId(m) {
@@ -295,7 +298,7 @@ export function buildCodexExecArgs({
     throw new TypeError(`unsupported Codex reasoning effort "${reasoningEffort}"`);
   }
   if (!CODEX_SANDBOXES.has(String(sandbox))) {
-    throw new TypeError(`unsupported Codex sandbox "${sandbox}" (expected read-only|workspace-write)`);
+    throw new TypeError(`unsupported Codex sandbox "${sandbox}" (expected read-only|workspace-write|danger-full-access)`);
   }
   const args = [
     'exec', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config',
@@ -303,6 +306,8 @@ export function buildCodexExecArgs({
     '--json', '--sandbox', sandbox,
     '-c', 'approval_policy="never"',
     '-c', `model_reasoning_effort="${reasoningEffort}"`,
+    '-c', `agents.default_subagent_reasoning_effort=${JSON.stringify(reasoningEffort)}`,
+    '-c', 'forced_login_method="chatgpt"',
   ];
   // 2026-09-01 (Gate 5 Foreman wave 1, proven live): on Windows the workspace-write sandbox
   // needs a Windows sandbox implementation selected; `--ignore-user-config` drops the user's
@@ -313,21 +318,27 @@ export function buildCodexExecArgs({
     args.push('-c', 'windows.sandbox="unelevated"');
   }
   if (target) args.push('--cd', target);
-  if (model) args.push('--model', model);
+  if (model) args.push('--model', model, '-c', `agents.default_subagent_model=${JSON.stringify(model)}`);
   args.push('-');
   return args;
 }
 
 export function resolveCodexSandbox({ sandbox, role, env = process.env } = {}) {
-  const verification = isVerificationRole({ role });
+  const normalizedRole = normalizeRole({ role });
+  const verification = isVerificationRole({ role: normalizedRole });
   const explicit = sandbox || env.CODEX_CLI_SANDBOX;
+  // Explicit operator YOLO is authoring-only. A shared launch env must never
+  // widen a reviewer, synthesizer, or unclassified seat (Foreman journal 0116).
+  const unrestricted = explicit === 'danger-full-access';
   const selected = verification
     ? 'read-only'
-    : explicit || (WRITE_ROLES.has(String(role || '').toLowerCase())
+    : unrestricted && !WRITE_ROLES.has(normalizedRole)
+      ? 'read-only'
+      : explicit || (WRITE_ROLES.has(normalizedRole)
       ? 'workspace-write' : 'read-only');
   if (!CODEX_SANDBOXES.has(String(selected))) {
     throw new TypeError(
-      `unsupported Codex sandbox "${selected}" (expected read-only|workspace-write)`,
+      `unsupported Codex sandbox "${selected}" (expected read-only|workspace-write|danger-full-access)`,
     );
   }
   return String(selected);
@@ -366,6 +377,7 @@ export function defaultRunCodexCli(fullPrompt, label, {
   log = () => {},
   processRunner = runCloseBoundProcess,
   preflightImpl = preflightCodexSubscription,
+  policyResolver = resolveModelPolicy,
   spawnImpl,
   spawnSyncImpl,
   platform = process.platform,
@@ -378,20 +390,10 @@ export function defaultRunCodexCli(fullPrompt, label, {
     );
   }
   const cmd = resolveCodexCmd(env);
-  const requestedOrchestration = resolveCodexOrchestrationMode({ orchestrationMode, env });
-  const effort = resolveCodexReasoningEffort({
-    reasoningEffort: reasoningEffort
-      || (requestedOrchestration === 'ultra' ? 'ultra' : null),
-    role,
-    env,
-  });
-  const orchestration = effort === 'ultra' ? 'ultra' : requestedOrchestration;
-  if (orchestration === 'ultra' && effort !== 'ultra') {
-    throw new TypeError('Codex ultra orchestration requires the installed ultra effort');
-  }
-  const mdl = resolveCodexCliModel({ model, role, env })
-    || (['xhigh', 'max', 'ultra'].includes(effort)
-      ? CODEX_CLI_HEAVY_MODEL : CODEX_CLI_STANDARD_MODEL);
+  const selection = policyResolver('chatgpt', { env });
+  const effort = selection.effort;
+  const mdl = selection.model;
+  const orchestration = effort === 'ultra' ? 'ultra' : 'native';
   const seatRole = normalizeRole({ role, label });
   const box = resolveCodexSandbox({ sandbox, role: seatRole, env });
   if (signal?.aborted) {
@@ -421,7 +423,8 @@ export function defaultRunCodexCli(fullPrompt, label, {
         orchestration_mode: orchestration, model_served: null,
         model_family: null, family_attested: false, model_attested: false, degraded: true,
         subscription_cli: true, subscription_auth: preflight.subscription_auth ?? null,
-        timed_out: false, sandbox: box,
+        timed_out: false, sandbox: box, replay_safe: true,
+        replay_evidence: 'subscription_preflight_rejected_before_prompt_spawn',
       },
     });
   }
@@ -433,7 +436,7 @@ export function defaultRunCodexCli(fullPrompt, label, {
     args,
     options: {
       cwd: target || undefined,
-      env: subscriptionOnlyEnv(env),
+      env: subscriptionOnlyEnv(policyEnvironment(env)),
       shell: false,
       windowsHide: true,
     },
@@ -448,6 +451,7 @@ export function defaultRunCodexCli(fullPrompt, label, {
     ...(killImpl ? { killImpl } : {}),
   }).then((result) => {
     const parsed = parseCodexJsonl(result.stdout);
+    const outcome = classifySubscriptionOutcome({family: 'chatgpt', ...result});
     const detail = `${result.stderr}\n${result.stdout}`.trim();
     const classifiedFailure = classifyCodexFailure(detail);
     const status = result.terminal !== 'closed'
@@ -467,8 +471,12 @@ export function defaultRunCodexCli(fullPrompt, label, {
       cli_status: result.code,
       ok,
       status,
+      replay_safe: !ok && outcome.replay_safe,
+      replay_evidence: outcome.replay_evidence,
       requested_model: mdl,
       requested_effort: effort,
+      model_policy: selection,
+      highest_effort_verified: true,
       orchestration_mode: orchestration,
       model_served: null,
       model_family: ok ? 'chatgpt' : null,

@@ -1,5 +1,5 @@
 import { loadManifest, createFamilyGenerate, createOllamaGenerate } from './phasef-probe.mjs';
-import { resolveCrossFamilySeat } from './seat.mjs';
+import { loadFamilies } from './seat.mjs';
 import { FRONTIER_MODEL } from './cross-family-verifier.mjs';
 
 /**
@@ -80,23 +80,21 @@ export class Synthesizer {
       }
 
       if (manifest) {
-        // (2026-09-04) the frontier seat is the Anchor dashboard's configured family (seat.mjs), never a
-        // hardwired Gemini. The live seams are env-gated by CRUCIBLE_AGENT_LIVE=1, so the fast tier (which
-        // never sets it) takes the ollama/mock fallback exactly as before.
+        // Advisory synthesis is a coding seat, not independent verification.
+        // Production uses the configured subscription family; no unconfigured
+        // network fallback or mock answer can impersonate a completed live call.
         const live = env.CRUCIBLE_AGENT_LIVE === '1';
         if (live) {
-          try {
-            const seat = await resolveCrossFamilySeat({ manifest, env });
-            if (!seat.family) throw new Error(seat.reason);
-            const gen = createFamilyGenerate(seat.tool, { env });
-            rawAdvice = await gen(prompt);
-          } catch (err) {
-            rawAdvice = await this.#fallbackToOllama(manifest, prompt, options);
-          }
+          const families = await loadFamilies({ env, loadModelFamilies: options.loadModelFamilies });
+          const spec = manifest.tools?.[families.coding];
+          if (!spec) throw new Error('Configured synthesis transport unavailable: ' + families.source);
+          const gen = createFamilyGenerate(spec, { env, label: 'ramanujan-synthesis', role: 'coder' });
+          rawAdvice = await gen(prompt);
         } else {
-          rawAdvice = await this.#fallbackToOllama(manifest, prompt, options);
+          rawAdvice = this.#getMockAdvice(claims);
         }
       } else {
+        if (env.CRUCIBLE_AGENT_LIVE === '1') throw new Error('Live synthesis requires a valid tools manifest');
         rawAdvice = this.#getMockAdvice(claims);
       }
     }

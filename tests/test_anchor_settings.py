@@ -151,10 +151,10 @@ def test_export_env(settings_env):
 
 def test_resolve_tier_label(settings_env):
     s = settings_env["mod"]
-    assert "frontier" in s.resolve_tier_label("claude", "heavy")
+    assert "highest-supported" in s.resolve_tier_label("claude", "heavy")
     assert s.resolve_tier_label("claude", "heavy").startswith("claude:")
-    assert "one-notch-below-frontier" in s.resolve_tier_label("gemini", "standard")
-    assert "one-notch-below-frontier" in s.resolve_tier_label("grok", "regular")
+    assert "highest-supported" in s.resolve_tier_label("gemini", "standard")
+    assert "highest-supported" in s.resolve_tier_label("grok", "regular")
 
 
 def test_getters(settings_env):
@@ -178,7 +178,7 @@ def test_defaults_constant_and_valid_sets(settings_env):
     assert s.VALID_REVIEW_FAMILIES == frozenset({"claude", "gemini", "grok", "chatgpt"})
 
 
-def test_mirror_values_preferred_but_primary_path_never_redirects(
+def test_primary_values_preferred_and_mirror_primary_path_never_redirects(
         tmp_path, monkeypatch):
     home = tmp_path / "home"
     mirror_dir = home / ".anchor"
@@ -224,8 +224,11 @@ def test_mirror_values_preferred_but_primary_path_never_redirects(
 
     assert s.settings_path() == primary
     loaded = s.load_settings()
-    assert loaded["default_cli"] == "gemini"
-    assert loaded["coding_family"] == "chatgpt"
+    # Approved 2026-09-08 contract: primary is authoritative; a stale mirror
+    # cannot undo dashboard choices or redirect their write destination.
+    assert loaded["default_cli"] == "claude"
+    assert loaded["coding_family"] == "claude"
+    assert loaded["mirror_out_of_sync"] is True
     assert loaded["review_family"] == "grok"
     assert loaded["steward_type"] == "aladdin"
 
@@ -236,7 +239,7 @@ def test_mirror_values_preferred_but_primary_path_never_redirects(
     assert saved_mirror["primary_path"] == str(primary.resolve())
 
 
-def test_explicit_data_dir_is_closed_to_global_mirror(settings_env):
+def test_explicit_absent_primary_uses_valid_mirror_without_following_metadata(settings_env):
     s = settings_env["mod"]
     s.mirror_path().parent.mkdir(parents=True, exist_ok=True)
     s.mirror_path().write_text(json.dumps({
@@ -249,6 +252,8 @@ def test_explicit_data_dir_is_closed_to_global_mirror(settings_env):
 
     assert s.settings_path() == settings_env["data"] / "settings.json"
     loaded = s.load_settings()
-    assert loaded["default_cli"] == "grok"
-    assert loaded["coding_family"] == "claude"
-    assert loaded["review_family"] == "gemini"
+    assert loaded["default_cli"] == "chatgpt"
+    assert loaded["coding_family"] == "chatgpt"
+    assert loaded["review_family"] == "grok"
+    assert not s.settings_path().exists()
+    assert not (settings_env["home"] / "elsewhere" / "settings.json").exists()

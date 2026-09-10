@@ -5980,7 +5980,7 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
     lab_style = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap"
     html = (
         "<div id='modelPrefs' class='model-prefs' style=\"%s\" "
-        "title='Terminal, coding, and verification model families'>"
+        "title='Terminal, coding, and verification families: latest supported model, highest supported effort'>"
         "<label style=\"%s\">Terminal "
         "<select id='mpDefaultCli' data-key='default_cli' data-role='terminal' "
         "aria-describedby='mpCapability' style=\"%s\">%s</select>"
@@ -6080,6 +6080,7 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
   }
   function apply(d) {
     if (!d) return;
+    window.ANCHOR_SETTINGS_REVISION = d.settings_revision;
     var map = {
       default_cli: ['mpDefaultCli'],
       coding_family: ['mpCoding'],
@@ -6100,14 +6101,20 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
     var opts = { cache: 'no-store', headers: { Accept: 'application/json' } };
     fetch('/api/settings' + tq(), opts)
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && d.ok) apply(d); })
+      .then(function (d) { if (d && d.ok) { apply(d); if (d.settings_error) setStatus(d.settings_error); } })
       .catch(function () { });
   }
   function save(el) {
     var key = el.getAttribute('data-key');
     if (!key) return;
     var body = Object.create(null);
+    ['mpDefaultCli', 'mpCoding', 'mpReview'].forEach(function (id) {
+      var choice = document.getElementById(id);
+      if (choice) body[choice.getAttribute('data-key')] = choice.value;
+    });
     body[key] = el.value;
+    if (!Number.isInteger(window.ANCHOR_SETTINGS_REVISION)) { setStatus('load settings before saving'); load(); return; }
+    body.expected_revision = window.ANCHOR_SETTINGS_REVISION;
     setStatus('saving…');
     var h = {
       'Content-Type': 'application/json',
@@ -6121,10 +6128,10 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
       .then(function (d) {
         if (d && d.ok) {
           apply(d);
-          setStatus('saved');
-          setTimeout(function () { setStatus(''); }, 1200);
+          setStatus(d.mirror_out_of_sync ? 'saved; standalone mirror needs repair' : 'saved · latest model / highest effort · active turns finish before switching');
         } else {
           setStatus((d && d.error) || 'error');
+          load();
         }
       })
       .catch(function () { setStatus('error'); });
@@ -6740,6 +6747,7 @@ def render_deliverables_html(project_id: str, folder_path: str) -> str:
             _deliv.TYPE_SKILL: "✓ verify status",
             _deliv.TYPE_TOOL: "✓ verify status",
             _deliv.TYPE_DOC: "📖 open rendered",
+            _deliv.TYPE_NOTEBOOK: "📓 open notebook on Anchor host",
         }
         items = []
         for r in pinned:
@@ -11457,7 +11465,7 @@ def handle_settings_post(handler, path, body):
     body = body or {}
     kwargs = {}
     for key in ("default_cli", "coding_family", "review_family",
-                "steward_type"):
+                "steward_type", "expected_revision", "model_policy"):
         if key in body and body[key] is not None:
             kwargs[key] = body[key]
     if not kwargs:
@@ -11473,6 +11481,9 @@ def handle_settings_post(handler, path, body):
         return
     try:
         settings = _aset.save_settings(**kwargs)
+    except _aset.SettingsInvalid as exc:
+        handler._send_json({"ok": False, "error": str(exc)}, 409)
+        return
     except ValueError as exc:
         handler._send_json({"ok": False, "error": str(exc)}, 400)
         return
@@ -16024,20 +16035,34 @@ def _build_doctor_seed():
 def handle_doctor_session_start(handler, path, body):
     # Doctor V3 Wave 2 + W8/SC6 multi-engine — start (or attach to) THE doctor
     # agentic session. Token-authed by middleware BEFORE this handler runs.
-    # When the UI picker sends backend=claude|gemini|grok, resolve via the
-    # shared three-engine start helper (dead toggle forbidden). When no
-    # backend is provided (legacy API callers / V3 tests), keep honest
-    # select_engine_plan (claude/agy job-layer) so unavailable stays honest.
+    # Resolve an omitted backend from the same authoritative dashboard
+    # snapshot used by the status card. Never fall back to a legacy Claude seat.
     # Page itself must NOT auto-call this on load (shell-first / one-click
     # diagnose).
     body = body or {}
     short_only = bool(body.get("short") or body.get("shortSeed"))
     issue = body.get("issue") if isinstance(body.get("issue"), dict) else None
-    requested = _w8_normalize_engine(body.get("backend") or body.get("engine"))
+    explicit_backend = body.get("backend") or body.get("engine")
+    try:
+        launch_settings = _aset.get_launch_settings()
+    except _aset.SettingsInvalid as exc:
+        handler._send_json({"ok": False, "error": str(exc), "status": "settings_invalid",
+                            "failureNonBlocking": True}, 400)
+        return
+    requested = _w8_normalize_engine(explicit_backend or launch_settings["default_cli"])
+    if not requested:
+        handler._send_json({"ok": False, "error": "Unknown model provider", "status": "invalid_engine"}, 400)
+        return
+    if body.get("settings_revision") is not None and body["settings_revision"] != launch_settings["settings_revision"]:
+        handler._send_json({"ok": False, "error": "Model preferences changed; reload before starting",
+                            "status": "settings_changed"}, 409)
+        return
     start_plan = _w8_shared_session_start_plan(
         surface="doctor",
         engine=requested,
         issue=issue,
+        prefs={**launch_settings, "_selected": {
+            launch_settings[key] for key in ("default_cli", "coding_family", "review_family")}},
     )
     engine_meta = {
         "driver": None,
@@ -16062,29 +16087,6 @@ def handle_doctor_session_start(handler, path, body):
                 "p5Plumbing": _W8_P5_PLUMBING,
             })
             return
-    else:
-        # Legacy / no-picker path: claude|gemini job-layer honesty (V3 tests).
-        profile = _lanes.detect_host_profile()
-        plan = _lanes.select_engine_plan("general", profile=profile)
-        if plan.get("status") != _lanes.ENGINE_STATUS_OK or not plan.get("driver"):
-            handler._send_json({
-                "ok": False,
-                "status": plan.get("status") or _lanes.ENGINE_STATUS_UNAVAILABLE,
-                "reason": plan.get("reason", ""),
-                "session": None,
-                "engineToggle": start_plan.get("engineToggle"),
-                "shell": start_plan.get("shell"),
-                "failureNonBlocking": True,
-                "p5Plumbing": _W8_P5_PLUMBING,
-            })
-            return
-        backend = plan["driver"]
-        engine_meta = {
-            "driver": plan.get("driver"),
-            "swarm": plan.get("swarm"),
-            "swarm_ratio": plan.get("swarm_ratio"),
-            "reason": plan.get("reason", ""),
-        }
     # Only the JSON boolean true requests write-enabled Resolve posture. A
     # truthy string such as "false" must not silently turn Diagnose into write.
     resolve = body.get("resolve") is True
@@ -16177,8 +16179,8 @@ _DOCTOR_STATUS_TEXT = {
 
 _DOCTOR_STATUS_DETAIL = {
     "red": "The latest report flags correctness issues (red banner).",
-    "yellow": ("All correctness checks passed; non-blocking performance "
-               "warnings present."),
+    "yellow": ("All correctness checks passed; non-blocking warnings "
+               "or skipped checks remain."),
     "green": "All checks passed in the latest report.",
     "unknown": "The latest report file could not be parsed.",
     "none": "Run diagnostics now, or wait for the daily 5 AM health check.",
@@ -16252,6 +16254,7 @@ def _doctor_stats():
         # has — the newest report's Issues, parsed deterministically — so
         # opening the page answers "what's wrong?" instantly, no model run.
         "issues": _doctor_latest_issues(newest_body or ""),
+        "warnings": _doctor_latest_section(newest_body or "", "Warnings"),
         "autofixes": _doctor_latest_section(newest_body or "", "Auto-fixes applied"),
     }
 
@@ -16297,14 +16300,25 @@ def handle_doctor_status(handler, path, body):
     # diagnostics run. Token-authed by the route row (?token= / header /
     # cookie). Never spawns / never blocks. W8: includes engine toggle so the
     # shell can paint pickers without starting a session.
-    try:
-        prefs = {"default_cli": _aset.get_default_cli()}
-    except Exception:
-        prefs = {}
-    toggle = _w8_engine_toggle(prefs=prefs)
+    state = _aset.read_settings_state()
+    prefs = state["settings"]
+    toggle = _w8_engine_toggle(prefs={**prefs, "_selected": {
+        prefs[key] for key in ("default_cli", "coding_family", "review_family")}})
+    # An unavailable configured default stays visible and disabled. Choosing
+    # another configured provider is an explicit user action, not a silent swap.
+    toggle["defaultEngine"] = prefs["default_cli"]
+    if not state["valid"]:
+        toggle["defaultEngine"] = None
+        for row in toggle["engines"]:
+            row["enabled"] = False
+    stats = _doctor_stats()
     handler._send_json({
-        "ok": True,
-        **_doctor_stats(),
+        "ok": state["valid"],
+        "error": state["error"],
+        "settings_revision": prefs.get("settings_revision", 0),
+        "model_policy": prefs.get("model_policy"),
+        **stats,
+        "issues_html": _doctor_issues_block_html(stats),
         "engines": toggle["engines"],
         "defaultEngine": toggle["defaultEngine"],
         "shellFirst": True,
@@ -16654,7 +16668,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 
   <div class="cols">
     <div class="col-left">
-      __ISSUES_BLOCK__
+      <div id="doctorIssues">__ISSUES_BLOCK__</div>
       <div class="card panel">
         <h3>Diagnostics</h3>
         <button class="btn" id="runBtn" onclick="runDiagnostics()">Re-run full health check</button>
@@ -16673,12 +16687,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
           <span style="color:#71717a;font-size:12px">Engine:</span>
           <button type="button" class="btn eng-btn" data-eng="claude" id="engC" onclick="pickDoctorEng('claude')">Claude</button>
           <button type="button" class="btn eng-btn" data-eng="gemini" id="engG" onclick="pickDoctorEng('gemini')">Gemini</button>
-          <button type="button" class="btn eng-btn" data-eng="grok" id="engK" onclick="pickDoctorEng('grok')">Grok</button>
-          <button type="button" class="btn" id="diagnoseBtn" onclick="runDiagnose()">Diagnose</button>
+<button type="button" class="btn eng-btn" data-eng="grok" id="engK" onclick="pickDoctorEng('grok')">Grok</button>
+<button type="button" class="btn eng-btn" data-eng="chatgpt" id="engChat" onclick="pickDoctorEng('chatgpt')">ChatGPT</button>
+<button type="button" class="btn" id="diagnoseBtn" onclick="runDiagnose()">Diagnose</button>
           <span id="engHealth" style="color:#a1a1aa;font-size:11px"></span>
         </div>
         <div id="terminal"></div>
-        <div class="hint">Shell-first (W8/SC6): page is usable immediately. Session starts only when you click Diagnose — no multi-minute blank wait. Engines: Claude · Gemini(agy) · Grok (grok.exe -p). Unhealthy engines disable with health.</div>
+        <div class="hint">Shell-first (W8/SC6): page is usable immediately. Session starts only when you click Diagnose — no multi-minute blank wait. Engines: Claude · Gemini(agy) · Grok (grok.exe -p) · ChatGPT (Codex subscription). Unhealthy engines disable with health.</div>
       </div>
     </div>
   </div>
@@ -16687,6 +16702,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 <script>
 (function () {
   var token = new URLSearchParams(location.search).get('token') || '';
+  if (!token) { try { token = localStorage.getItem('anchor_token') || ''; } catch (_) {} }
   function tq(url) {
     if (!token) return url;
     return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
@@ -16698,7 +16714,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   }
   function getHdrs() {
     var h = {};
-    if (token) h['X-Anchor-Token'] = token;
+    if (token) h['Authorization'] = 'Bearer ' + token;
     return h;
   }
   // Carry the token onto the server-rendered report links when configured.
@@ -16709,13 +16725,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   // ── W8/SC6 shell-first doctor terminal (NO auto session_start on load) ──
   var term = new Terminal({ convertEol: true, fontSize: 13, theme: { background: '#0c0e14' }, scrollback: 5000 });
   term.open(document.getElementById('terminal'));
-  term.write('[doctor] Shell ready (≤1s). Pick Claude / Gemini / Grok, then Diagnose.\r\n');
+  term.write('[doctor] Shell ready (≤1s). Pick Claude / Gemini / Grok / ChatGPT, then Diagnose.\r\n');
   term.write('[doctor] No auto-session — page stays usable without multi-minute blank wait.\r\n');
   var activeWs = null;
   var sendChain = Promise.resolve();
   var sessionId = null;
-  var ZH_ENG = 'claude';
-  var ZH_ENG_HEALTH = { claude: true, gemini: true, grok: true, chatgpt: true };
+  var ZH_ENG = null;
+  var ZH_SETTINGS_REVISION = null;
+  var ZH_ENG_HEALTH = { claude: false, gemini: false, grok: false, chatgpt: false };
   function paintEng() {
     ['claude','gemini','grok','chatgpt'].forEach(function (e) {
       var id = e === 'claude' ? 'engC' : (e === 'gemini' ? 'engG' : (e === 'grok' ? 'engK' : 'engChat'));
@@ -16727,7 +16744,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       el.style.outline = (ZH_ENG === e) ? '1px solid #6c9cfc' : 'none';
     });
     var h = document.getElementById('engHealth');
-    if (h) h.textContent = ZH_ENG_HEALTH[ZH_ENG] === false ? (ZH_ENG + ' unavailable') : (ZH_ENG + ' ready');
+    if (h) h.textContent = !ZH_ENG ? 'Model settings unavailable; reload after signing in' : (ZH_ENG_HEALTH[ZH_ENG] === false ? (ZH_ENG + ' unavailable') : (ZH_ENG + ' ready'));
+    var launchButton = document.getElementById('diagnoseBtn');
+    if (launchButton) launchButton.disabled = !ZH_ENG || ZH_ENG_HEALTH[ZH_ENG] !== true;
   }
   window.pickDoctorEng = function (e) {
     if (ZH_ENG_HEALTH[e] === false) {
@@ -16810,15 +16829,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
           term.write('[doctor] live ' + q.path + ': ' + (q.ok ? ('answers (' + q.code + ', ' + q.ms + ' ms)') : ('NO ANSWER - ' + (q.error || ''))) + '\r\n');
         });
         if (p.decision === 'rerun') {
+          if (!p.rerun || !p.rerun.ok) {
+            term.write('[doctor] Verification could not start: ' + ((p.rerun && p.rerun.error) || 'no run receipt') + '\r\n');
+            refreshStats();
+            return;
+          }
           term.write('[doctor] Every issue was the 5 AM self-test failing to reach its target, and the live server answers now. '
             + 'Re-running the health check so the report says so; the red banner clears when it is clean.\r\n');
           if (btn) btn.textContent = 'Re-running…';
+          pollTail(0);
         } else if (p.decision === 'session' && p.seed_issue) {
           term.write('[doctor] ' + (p.issues || []).length + ' issue(s) need work - starting ONE doctor session for all of them.\r\n');
           BANNER_ISSUE = p.seed_issue;
           window.runDiagnose({ fromBanner: true, resolve: true });
         } else {
           term.write('[doctor] Nothing open to resolve.\r\n');
+          refreshStats();
         }
       })
       .catch(function (e) { if (btn) { btn.disabled = false; btn.textContent = 'Resolve all'; } term.write('[doctor] Resolve all failed: ' + e + '\r\n'); });
@@ -16907,11 +16933,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   // Shell-first: load deterministic status/engine health only. Opening this
   // page NEVER starts a paid model, including banner URLs with diagnose=1.
   fetch(tq('/api/doctor/status'), { headers: getHdrs() })
-    .then(function (r) { return r.json(); })
+    .then(function (r) { if (!r.ok) throw new Error('Model status authentication failed'); return r.json(); })
     .then(function (s) {
       if (s && s.engines) {
         s.engines.forEach(function (row) { ZH_ENG_HEALTH[row.id] = !!row.enabled; });
         if (s.defaultEngine) ZH_ENG = s.defaultEngine;
+        ZH_SETTINGS_REVISION = s.settings_revision == null ? null : s.settings_revision;
       }
       paintEng();
       // Banner URLs preload context but require a human click before a MODEL
@@ -16946,13 +16973,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       term.write('[doctor] Session already live.\r\n');
       return;
     }
-    if (ZH_ENG_HEALTH[ZH_ENG] === false) {
+    if (!ZH_ENG || ZH_ENG_HEALTH[ZH_ENG] !== true) {
       term.write('[doctor] Engine ' + ZH_ENG + ' disabled with health — pick another.\r\n');
       return;
     }
     var btn = document.getElementById('diagnoseBtn');
     if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
-    var startBody = { backend: ZH_ENG };
+    var startBody = { backend: ZH_ENG, settings_revision: ZH_SETTINGS_REVISION };
     if (token) startBody.token = token;
     // W9: seed Doctor 1:1 from banner issue payload (short diagnose seed).
     if (BANNER_ISSUE) {
@@ -16998,12 +17025,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   // ── Background diagnostics run + live tail ──
   var chipNames = { red: 'issues', yellow: 'warnings', green: 'healthy' };
   function setCards(s) {
+    // A completed repair only clears findings after a newer report proves it.
+    // Replace the old issue panel as well as the status cards; never retain a
+    // stale Resolve All button after the report has become clean.
+    DOCTOR_ISSUES = s.issues || [];
+    var issuePanel = document.getElementById('doctorIssues');
+    if (issuePanel && typeof s.issues_html === 'string') issuePanel.innerHTML = s.issues_html;
     var el = document.getElementById('cardStatusDot');
     if (el) el.className = 'dot ' + (s.status || 'none');
     el = document.getElementById('cardStatusText');
     if (el) el.textContent = s.status_text || '';
     el = document.getElementById('cardStatusDetail');
-    if (el) el.textContent = s.status_detail || '';
+    if (el) el.textContent = (s.status_detail || '') +
+      ((s.warnings || []).length ? ' ' + s.warnings.join('; ') : '');
     el = document.getElementById('cardLastRun');
     if (el) el.textContent = s.last_run || '—';
     el = document.getElementById('cardLastAgo');
@@ -17037,6 +17071,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       .then(function (s) { if (s && s.ok) setCards(s); })
       .catch(function () {});
   }
+  // Read-only refresh catches reports produced by a Doctor session or the
+  // scheduled checker too, not just this tab's diagnostics button.
+  setInterval(function () { if (!document.hidden) refreshStats(); }, 15000);
+  window.addEventListener('focus', refreshStats);
   var polling = false;
   function pollDone() {
     polling = false;
@@ -19135,8 +19173,8 @@ function resumeSession(sessionId, btn) {
     btn.innerText = "Resume";
   });
 }
-var ZH_ENG = 'claude';
-var ZH_ENG_HEALTH = { claude: true, gemini: true, grok: true, chatgpt: true };
+var ZH_ENG = null;
+var ZH_ENG_HEALTH = { claude: false, gemini: false, grok: false, chatgpt: false };
 function paintZhEng() {
   ['claude','gemini','grok','chatgpt'].forEach(function(e) {
     var el = document.getElementById('zh-eng-' + e);
@@ -19172,7 +19210,7 @@ function loadZhEngines() {
     .catch(function() { paintZhEng(); });
 }
 function startZombieTerminal(btn) {
-  if (ZH_ENG_HEALTH[ZH_ENG] === false) {
+  if (!ZH_ENG || ZH_ENG_HEALTH[ZH_ENG] !== true) {
     alert(ZH_ENG + ' is disabled (unhealthy). Pick another engine.');
     return;
   }
@@ -20553,6 +20591,16 @@ class AnchorHandler(BaseHTTPRequestHandler):
             # Deliverable file streaming (2026-08-25): the routes layer returns a
             # {__file__, __ctype__} marker (containment already enforced there);
             # everything else stays JSON.
+            if code == 200 and isinstance(obj, dict) and "__notebook_redirect__" in obj:
+                # Authorization already succeeded. Never forward Anchor's
+                # token/cookie to Jupyter or leak it in a Referer header.
+                self.send_response(302)
+                self.send_header("Location", obj["__notebook_redirect__"])
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if code == 200 and isinstance(obj, dict) and "__html__" in obj:
                 # (2026-09-04) a rendered preview page (Office deliverables)
                 self._send_html(obj["__html__"])

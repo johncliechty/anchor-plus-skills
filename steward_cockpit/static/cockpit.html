@@ -358,10 +358,22 @@ document.querySelector("[data-theme-toggle]").onclick = (ev) => {
 const el = (t, c, x) => { const n = document.createElement(t);
   if (c) n.className = c; if (x !== undefined) n.textContent = x; return n; };
 const LIGHTWORD = { green: "running", orange: "quiet", red: "needs a look" };
-const usageLine = (u) => "$" + (u.spend || 0).toFixed(2) + " · " +
-  Math.round((u.tokens || 0) / 1000) + "k tokens · " +
-  (u.secs >= 5400 ? ((u.secs / 3600).toFixed(1) + "h")
-                  : Math.round((u.secs || 0) / 60) + "m");
+const usageLine = (u) => {
+  const knownUsd = value => typeof value === "number" && Number.isFinite(value) && value >= 0;
+  let costText = "cost unavailable";
+  const incomplete = u.cost_complete === false || (typeof u.unpriced_turns === "number" && u.unpriced_turns > 0);
+  if (incomplete) {
+    const reported = knownUsd(u.reported_spend) ? u.reported_spend : knownUsd(u.spend) ? u.spend : null;
+    // Incomplete zero-only rollups cannot distinguish a reported zero from
+    // wholly unpriced usage, so they must not imply a reported charge.
+    if (reported !== null && reported > 0) costText = "$" + reported.toFixed(2) + " reported + unpriced usage";
+  } else if ((u.cost_complete === true || u.cost_complete === undefined) && knownUsd(u.spend)) {
+    costText = "$" + u.spend.toFixed(2) + " reported";
+  }
+  return costText + " · " + Math.round((u.tokens || 0) / 1000) + "k tokens · " +
+    (u.secs >= 5400 ? ((u.secs / 3600).toFixed(1) + "h")
+                    : Math.round((u.secs || 0) / 60) + "m");
+};
 
 /* ---------- header + seal ---------- */
 async function refresh() {
@@ -631,7 +643,7 @@ async function loadTerms() {
     const sum = el("div", "bsum",
       (t.last_text ? "Last it was doing:\n" + t.last_text
                    : "(no record of its last activity)") +
-      (t.usage && t.usage.spend ? "\n" + usageLine(t.usage) : ""));
+      (t.usage ? "\n" + usageLine(t.usage) : ""));
     const rb = el("button", "mini", "restore");
     rb.style.marginTop = "6px";
     rb.onclick = async (ev) => {
@@ -660,7 +672,7 @@ function showSummary(t) {
   inner.appendChild(el("div", "sname", t.label + " · " + t.cli));
   inner.appendChild(el("div", "smeta", "created " + t.created +
     (t.last_used ? " · last active " + t.last_used : "") +
-    (t.usage && t.usage.spend ? " · " + usageLine(t.usage) : "")));
+    (t.usage ? " · " + usageLine(t.usage) : "")));
   inner.appendChild(el("div", "stext",
     t.last_text ? "Last it was doing:\n\n" + t.last_text
                 : "(no record of its last activity)"));
@@ -897,6 +909,11 @@ async function loadDeliv() {
   list.textContent = "";
   items.forEach(it => {
     const row = el("div", "frow2");
+    if (it.notebook_product && window.AnchorNotebooks) {
+      row.appendChild(window.AnchorNotebooks.render(it, it.dir || ""));
+      row.appendChild(el("span", "fm", (it.effort || "") + (it.date ? " · " + it.date : "")));
+      list.appendChild(row); return;
+    }
     /* (2026-09-05) a contained Anchor route the parser classified
        (classify_route) opens by ANCHOR — href = route + the page token,
        target _blank, rel noopener, labelled with the deliverable's NAME —
@@ -987,6 +1004,10 @@ function renderFiles(q) {
   list.textContent = "";
   rows.forEach(f => {
     const row = el("div", "frow2");
+    if (f.notebook_product && window.AnchorNotebooks) {
+      row.appendChild(window.AnchorNotebooks.render(f, ""));
+      list.appendChild(row); return;
+    }
     // (2026-09-05, John) a file is a LINK that opens rendered in a new window
     // (text in the Reader, PDF inline, Office as a preview page); the small
     // "app" button still opens it on this computer.
@@ -1127,6 +1148,9 @@ document.querySelector("[data-upfile]").addEventListener("change", (ev) => {
   ev.target.value = "";
 });
 
+window.addEventListener("anchor-notebooks-changed", () => {
+  Promise.allSettled([loadDeliv(), loadFiles()]);
+});
 refresh();
 </script>
 </body></html>

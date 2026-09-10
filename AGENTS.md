@@ -96,31 +96,56 @@ persistent census loop that appends counts to a log; every tick then only
 ## 2. Skill tiers — Heavy vs regular
 
 Invoking a skill by its **bare name** (`/gandalf`) runs the **regular tier**.
-Appending `-Heavy` (`Gandalf-Heavy`) runs the **top tier**. They differ only in
-which notch of each model family fills the seats:
+Appending `-Heavy` (`Gandalf-Heavy`) runs the **Heavy tier**. This shipped mirror
+follows the canonical family-selection law; it adds no separate model-tier
+definition. **Both regular and Heavy use `latest_supported` models with
+`highest_supported` effort** for their selected coding and review families.
+Resolve support from the installed subscription CLI's current catalog or a
+verified moving alias. Exact model IDs belong only in receipts and caches, not
+in preference pins. Heavy controls depth, stakes, and verification requirements;
+regular does not select an older model.
 
-- **regular** — coding seats run one notch below the coding family's frontier;
-  checking seats run the available review-family model.
-- **`-Heavy`** — the **frontier** of the coding family on coding seats and the
-  **frontier** of the review family on checking seats. Heavy is a promise about
-  model quality on *every* seat, independent of the base session. If the base
-  session is not the coding family's frontier, the frontier seat must be
-  delegated to a sub-agent pinned to it. Running Heavy synthesis on the lesser
-  base model is a tier-break, not a rounding error.
+**Where the seats come from — read this if you did not install Anchor.** The
+primary source is Anchor's data-dir `settings.json`. It must contain complete,
+valid `default_cli`, `coding_family`, and `review_family` selections. An existing
+invalid primary file blocks resolution; it must not fall through to a mirror or
+defaults. Only when the primary file is absent may the well-known mirror
+`~/.anchor/model_prefs.json` supply the same complete, valid preferences. An
+existing invalid mirror also blocks resolution. Its `primary_path` field is
+metadata only and never redirects resolution. Stale environment variables do
+not override or supply these preferences. If both files are absent, all three
+selections default to `claude`, with `cross_model: false`.
 
-**Where the seats come from — read this if you did not install Anchor.** Seat
-assignment resolves from Anchor's preferences: the Anchor data-dir
-`settings.json`, else the well-known mirror `~/.anchor/model_prefs.json`, else
-environment variables. Two knobs matter: `coding_family` (code / reason /
-orchestrate / synthesize) and `review_family` (adversarial review / judge /
-check).
+`coding_family` fills code, reasoning, orchestration, and synthesis seats;
+`review_family` fills adversarial review, judge, and checking seats. Production
+seats use logged-in subscription CLIs. Choose available families from `claude`,
+`chatgpt`, and `grok`; treat `gemini` as unavailable unless its installed,
+authenticated subscription CLI and supported model have been verified.
 
-- **Package B (Anchor installed):** seats resolve automatically.
-- **Package A (skills only):** there is no Anchor registry. Either create
-  `~/.anchor/model_prefs.json` with `coding_family` and `review_family`, or
-  accept the defaults. **When both families resolve to the same value, the skill
-  must stamp `cross_model: false`** and honestly cap its confidence tiers —
-  single-family verification is a conservative lower bound, never cross-model.
+- **Package B (Anchor installed):** use the Dashboard to set these preferences.
+- **Package A (skills only):** when the primary settings file is absent, create
+  `~/.anchor/model_prefs.json` with this minimal complete example, adjusting the
+  families to the subscription CLIs available to you:
+
+  ```json
+  {
+    "default_cli": "claude",
+    "coding_family": "claude",
+    "review_family": "claude",
+    "model_policy": {
+      "mode": "latest_supported",
+      "effort": "highest_supported"
+    },
+    "settings_revision": 0
+  }
+  ```
+
+**When both families resolve to the same value, stamp `cross_model: false`** and
+honestly cap confidence tiers. Permissions and actual-served-model reporting
+remain separate requirements: model preferences do not grant permissions, and
+receipts must identify the model actually served, including any substitution.
+If the provider cannot attest its model, record `model_attested: false` and
+state that limit; never present the requested model as an observed one.
 
 ---
 

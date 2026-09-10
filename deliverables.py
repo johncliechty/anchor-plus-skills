@@ -63,6 +63,7 @@ TYPE_PROGRAM = "program"
 #:                   data dir) and pulls up the running one on a second launch.
 TYPE_TOOL = "tool"
 TYPE_SERVICE = "service"
+TYPE_NOTEBOOK = "notebook"
 
 #: Types that are EXECUTED as a subprocess (vs. ``doc`` which is read/rendered).
 EXECUTABLE_TYPES = frozenset((TYPE_SCRIPT, TYPE_SKILL, TYPE_PROGRAM))
@@ -70,7 +71,7 @@ EXECUTABLE_TYPES = frozenset((TYPE_SCRIPT, TYPE_SKILL, TYPE_PROGRAM))
 #: (skill/tool are "available if present / loaded at runtime"; for a deliverable
 #: we verify by existence/registry — NO spawn, per IMPLEMENTATION-PLAN Wave 7).
 VERIFY_TYPES = frozenset((TYPE_SKILL, TYPE_TOOL))
-VALID_TYPES = (frozenset((TYPE_DOC, TYPE_SERVICE)) | EXECUTABLE_TYPES
+VALID_TYPES = (frozenset((TYPE_DOC, TYPE_SERVICE, TYPE_NOTEBOOK)) | EXECUTABLE_TYPES
                | VERIFY_TYPES)
 
 # ── Status values (the dashboard shows these) ───────────────────────────────
@@ -384,6 +385,8 @@ def infer_type(path) -> str:
     override; this is only the default when none is declared.
     """
     suf = Path(str(path)).suffix.lower()
+    if suf == ".ipynb":
+        return TYPE_NOTEBOOK
     if suf in (".md", ".markdown", ".txt", ".pdf", ".rst"):
         return TYPE_DOC
     if suf in (".py", ".sh", ".ps1", ".bat", ".js", ".rb", ".pl"):
@@ -531,6 +534,23 @@ def list_pinned_deliverables(folder_path, project_id: str) -> list:
     for rec in _eh.list_efforts(folder_path, project_id, "deliverables"):
         if rec.get("source") in (SOURCE_DECLARED, SOURCE_PINNED):
             out.append(rec)
+    # Notebook rows are a read-only projection of DELIVERABLES.md, never a
+    # second mutable register. Old pins are deduplicated by logical artifact.
+    from steward_cockpit.steward_campaign import read_deliverables
+    for item in read_deliverables(str(folder_path))["items"]:
+        info = item.get("notebook_product")
+        rel = item.get("path")
+        if not info or not rel or item.get("run"):
+            continue
+        names = {rel, info.get("source"), info.get("notebook")} - {None}
+        existing = next((r for r in out if r.get("artifact_path") in names), None)
+        if existing is not None:
+            out.remove(existing)
+        out.append({"job_id": (existing or {}).get("job_id") or _eh.discovered_job_id("deliverables", "notebook::" + rel),
+                    "source": "notebook-register", "kind": "deliverable-notebook",
+                    "deliverable_type": TYPE_NOTEBOOK, "title": item["what"],
+                    "artifact_path": rel, "step": item.get("step", ""),
+                    "status": "registered", "notebook_product": info})
     return out
 
 
@@ -1085,6 +1105,16 @@ def launch_deliverable(folder_path, project_id: str, deliverable_id: str,
     if dtype not in VALID_TYPES:
         dtype = infer_type(rec.get("artifact_path") or "")
     rel = rec.get("artifact_path") or ""
+
+    if dtype == TYPE_NOTEBOOK:
+        import anchor_notebooks
+        from urllib.parse import urlencode
+        try:
+            anchor_notebooks.open_url(folder_path, rel)  # validate now; redirect revalidates
+        except ValueError as exc:
+            return {"ok": False, "type": dtype, "deliverable_id": deliverable_id, "reason": str(exc)}
+        return {"ok": True, "type": dtype, "deliverable_id": deliverable_id,
+                "href": "/api/steward/notebook-open?" + urlencode({"pid": project_id, "path": rel})}
 
     # skill / tool → verify only, never spawn.
     if dtype in VERIFY_TYPES:

@@ -482,7 +482,7 @@ def test_session_summary_effort_from_real_result_envelope(mods, tmp_path,
     # command to fake_claude.py JUST for this launch, then restore the summarizer
     # stub for the summarize step.
     monkeypatch.setenv("ANCHOR_RUNNER_CMD", f"python {fake}")
-    rec = jr.launch("plan", cwd=str(folder), job_id=jid,
+    rec = jr.launch("plan", cwd=str(folder), job_id=jid, backend="claude",
                     extra_args=["--lines", "1", "--result"])
     final = jr.wait(jid, timeout=30)
     assert final["status"] == jr.STATUS_DONE

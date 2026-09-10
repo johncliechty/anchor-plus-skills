@@ -677,7 +677,7 @@ def _build_relaunch_spec(lane, cwd, prompt, output_dir, gated,
 
 
 def launch(lane: str, cwd=None, extra_args=None, env=None,
-           job_id: str = None, backend=DEFAULT_BACKEND,
+           job_id: str = None, backend=None,
            prompt=None, output_dir=None, gated=False,
            permission_mode=None, project_id=None, folder_path=None,
            command=None, kill_on_job_close: bool = True,
@@ -732,7 +732,11 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
       tool_result, so the model re-asks in plain text and we answer with a
       stream-json user TEXT turn — best-effort continuation, not guaranteed.
     """
-    backend = _require_backend(DEFAULT_BACKEND if backend is None else backend)
+    import anchor_settings as _aset
+    import model_policy as _mp
+    settings_snapshot = None if command else _aset.get_launch_settings()
+    backend = _require_backend((settings_snapshot or {}).get("coding_family", DEFAULT_BACKEND)
+                               if backend is None else backend)
     if backend == BACKEND_CHATGPT and lane not in CHATGPT_ONESHOT_LANES:
         # The lane is authoritative only at this public launch boundary. Command
         # resolution deliberately has no lane input and therefore must not infer
@@ -804,6 +808,13 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
             "chatgpt-artifact-contract-invalid: expected artifacts are owned "
             "by the ChatGPT adapter"
         )
+    # An explicit runner override owns its command and does not launch the
+    # installed provider. Do not require (or attest) a model for that transport.
+    # ChatGPT always uses its receipt-bearing adapter, even with this seam set.
+    runner_override = (backend != BACKEND_CHATGPT
+                       and bool(os.environ.get(RUNNER_CMD_ENV, "").strip()))
+    selection = (None if command or runner_override
+                 else _mp.resolve(backend, settings=settings_snapshot))
     job_id = job_id or uuid.uuid4().hex
     # Pin this job's storage dir for its lifetime (resolved now, once).
     pinned = jobs_dir()
@@ -823,19 +834,23 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
                                   output_dir=output_dir, gated=gated,
                                   permission_mode=permission_mode,
                                   expected_artifacts=normalized_expected_artifacts)
+        if backend == BACKEND_CHATGPT:
+            argv += ["--resolved-model", selection["model"], "--resolved-effort", selection["effort"]]
+        elif not os.environ.get(RUNNER_CMD_ENV):
+            argv += _mp.launch_args(selection)
 
-    full_env = dict(os.environ)
+    full_env = dict(os.environ) if command else _mp.policy_environment()
     if env and backend != BACKEND_CHATGPT:
         full_env.update(env)
     # Propagate Anchor model-family prefs so foundry/trio seats (and any agent
     # reading CODING_FAMILY / REVIEW_FAMILY) honor the dashboard knobs.
     # Saved settings are authoritative and overwrite stale process/setx values.
-    try:
-        import anchor_settings as _aset
-        for _k, _v in _aset.export_env_overrides().items():
-            full_env[_k] = _v
-    except Exception:
-        pass
+    if settings_snapshot:
+        coding, review = settings_snapshot["coding_family"], settings_snapshot["review_family"]
+        full_env.update(ANCHOR_DEFAULT_CLI=settings_snapshot["default_cli"],
+                        ANCHOR_CODING_FAMILY=coding, ANCHOR_REVIEW_FAMILY=review,
+                        CODING_FAMILY=coding, REVIEW_FAMILY=review,
+                        CROSS_MODEL="true" if coding != review else "false")
     if backend == BACKEND_GEMINI:
         full_env["TRIO_DRIVER"] = "gemini-cli-native"
     elif backend == BACKEND_CHATGPT:
@@ -944,6 +959,7 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
         "session_id": None,
         "backend": backend,
         "crypt_token": crypt_token,
+        "model_policy": selection,
         "proc_create_time": proc_create_time,
         # Durability 2026-07 Wave 1: everything a guarded launch needs to start
         # an equivalent job, so an interrupted record is re-launchable in ONE
@@ -954,6 +970,7 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
             project_id=project_id, folder_path=folder_path, command=command,
             expected_artifacts=normalized_expected_artifacts),
     }
+    rec["relaunch_spec"]["model_policy"] = selection
     # W13 (C3): journal the launch. Use the project_id/folder_path PARAMETERS
     # (a guarded launch passes them) — the rec dict carries them only inside
     # relaunch_spec, so reading rec.get("project_id") here would always no-op.
@@ -1224,7 +1241,8 @@ _MODEL_RECEIPT_FIELDS = frozenset((
     "auth_probe_at", "subscription_auth", "requested_model",
     "requested_effort", "requested_orchestration_mode",
     "orchestration_mode_served", "model_capability_verified",
-    "ultra_capability_verified", "sandbox_requested",
+    "ultra_capability_verified", "highest_effort_verified", "requested_policy",
+    "delegation_policy", "sandbox_requested",
     "approval_policy_requested", "model_provider_requested", "codex_home",
     "config_sha256",
     "user_config_loaded", "user_config_ignored", "critical_overrides_enforced",
@@ -1904,6 +1922,9 @@ def _valid_chatgpt_success_envelope(envelope, record,
         "read-only" if spec.get("permission_mode") == "plan"
         else "workspace-write"
     )
+    if (type(receipt.get("ultra_capability_verified")) is not bool or
+            not isinstance((spec.get("model_policy") or {}).get("model"), str)):
+        return False
     required = {
         "family_requested": BACKEND_CHATGPT,
         "backend_requested": BACKEND_CHATGPT,
@@ -1911,12 +1932,14 @@ def _valid_chatgpt_success_envelope(envelope, record,
         "transport_actual": "codex-cli",
         "auth_kind": "chatgpt_subscription",
         "subscription_auth": True,
-        "requested_model": _codex.CODEX_MODEL,
-        "requested_effort": _codex.CODEX_EFFORT,
-        "requested_orchestration_mode": "ultra",
+        "requested_model": (spec.get("model_policy") or {}).get("model"),
+        "requested_effort": (spec.get("model_policy") or {}).get("effort"),
+        "requested_orchestration_mode": ("ultra" if (spec.get("model_policy") or {}).get("effort") == "ultra" else "single"),
         "orchestration_mode_served": None,
         "model_capability_verified": True,
-        "ultra_capability_verified": True,
+        "highest_effort_verified": True,
+        "requested_policy": {"mode": "latest_supported", "effort": "highest_supported"},
+        "delegation_policy": "disabled_by_isolated_oneshot_contract",
         "sandbox_requested": expected_sandbox,
         "approval_policy_requested": "never",
         "model_provider_requested": "openai",
@@ -2098,9 +2121,9 @@ def _valid_chatgpt_failure_envelope(envelope, record,
         "family_requested": BACKEND_CHATGPT,
         "backend_requested": BACKEND_CHATGPT,
         "transport_requested": "codex-cli",
-        "requested_model": _codex.CODEX_MODEL,
-        "requested_effort": _codex.CODEX_EFFORT,
-        "requested_orchestration_mode": "ultra",
+        "requested_model": (spec.get("model_policy") or {}).get("model"),
+        "requested_effort": (spec.get("model_policy") or {}).get("effort"),
+        "requested_orchestration_mode": ("ultra" if (spec.get("model_policy") or {}).get("effort") == "ultra" else "single"),
         "orchestration_mode_served": None,
         "sandbox_requested": expected_sandbox,
         "approval_policy_requested": "never",
@@ -2247,7 +2270,7 @@ def _valid_chatgpt_failure_envelope(envelope, record,
                 receipt.get("auth_kind") != "chatgpt_subscription" or
                 receipt.get("subscription_auth") is not True or
                 receipt.get("model_capability_verified") is not True or
-                receipt.get("ultra_capability_verified") is not True or
+                receipt.get("highest_effort_verified") is not True or
                 receipt.get("config_guard_verified") is not True or
                 receipt.get("user_config_ignored") is not True or
                 receipt.get("runtime_guard_rechecked") is not True or
@@ -3471,7 +3494,7 @@ def folder_build_holder(folder_path: str):
 
 def launch_guarded(lane: str, project_id: str, folder_path, cwd=None,
                    extra_args=None, env=None, job_id: str = None,
-                   backend=DEFAULT_BACKEND, prompt=None, output_dir=None,
+                   backend=None, prompt=None, output_dir=None,
                    gated=False, permission_mode=None, command=None,
                    kill_on_job_close: bool = True,
                    expected_artifacts=None) -> dict:

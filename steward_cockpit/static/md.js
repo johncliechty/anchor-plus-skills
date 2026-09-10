@@ -3,18 +3,37 @@
    Covers: #-#### headings, hr, > quotes, -/* lists, 1. lists, ``` fences,
    | tables, paragraphs; inline **bold**, `code`, [text](http-links). */
 "use strict";
+// Report links belong to the Anchor origin the reader is using. Historical
+// steward replies hard-coded the author's loopback host, which is another
+// machine when opened remotely. Keep external paper URLs untouched.
+function mdReportHref(raw) {
+  const current = new URL(window.location.href);
+  let dest;
+  try { dest = new URL(raw, current.origin); }
+  catch (_) { return raw; } // An invalid document link must not erase the turn.
+  const internal = /^\/artifact\/[^/]+$/.test(dest.pathname) ||
+    dest.pathname === "/api/steward/deliverable-file";
+  const legacy = dest.origin === "http://127.0.0.1:8777";
+  if (internal && !dest.username && !dest.password &&
+      (dest.origin === current.origin || legacy)) {
+    dest.searchParams.delete("token");
+    if (window.STEWARD_TOKEN) dest.searchParams.set("token", window.STEWARD_TOKEN);
+    return dest.pathname + dest.search + dest.hash;
+  }
+  return raw;
+}
 function mdRender(container, text) {
   const el = (t, c, x) => { const n = document.createElement(t);
     if (c) n.className = c; if (x !== undefined) n.textContent = x; return n; };
   function inline(node, s) {
-    const parts = String(s).split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g);
+    const parts = String(s).split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/[^\s)]+|\/artifact\/[^\s)]+|\/api\/steward\/deliverable-file\?[^\s)]+)\))/g);
     parts.forEach(p => {
       if (/^\*\*[^*]+\*\*$/.test(p)) node.appendChild(el("strong", "", p.slice(2, -2)));
       else if (/^`[^`]+`$/.test(p)) node.appendChild(el("code", "", p.slice(1, -1)));
-      else if (/^\[[^\]]+\]\(https?:\/\//.test(p)) {
-        const m = p.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
-        if (m) { const a = el("a", "", m[1]); a.href = m[2];
-                 a.target = "_blank"; a.rel = "noopener"; node.appendChild(a); }
+      else if (/^\[[^\]]+\]\(/.test(p)) {
+        const m = p.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
+        if (m) { const a = el("a", "", m[1]); a.href = mdReportHref(m[2]);
+                 a.target = "_blank"; a.rel = "noopener noreferrer"; node.appendChild(a); }
         else node.appendChild(document.createTextNode(p));
       } else if (p) node.appendChild(document.createTextNode(p));
     });

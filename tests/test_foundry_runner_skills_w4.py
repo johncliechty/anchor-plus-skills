@@ -121,11 +121,11 @@ def _make_host(tmp_path, name, body):
 
 
 def _journal_entries(skill_dir: Path) -> list:
-    return sorted((Path(skill_dir) / "journal").glob("*.md"))
+    return sorted((Path(skill_dir) / "journal" / "machine").glob("*.md"))
 
 
 def _entry_for(skill_dir: Path, run_id: str):
-    p = Path(skill_dir) / "journal" / (str(run_id) + ".md")
+    p = Path(skill_dir) / "journal" / "machine" / (str(run_id) + ".md")
     assert p.is_file(), "no journal entry for run %s in %s" % (run_id,
                                                                skill_dir)
     return p.read_text(encoding="utf-8")

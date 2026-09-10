@@ -252,6 +252,9 @@ export async function runRabbitCatcher({ elements, northStar, criteria = [], pro
  * demoted to HOLD; a CUT the adversary confirms (or does not dispute) stays CUT.
  */
 export async function runRabbitCatcherAdversary({ catcher, elements, northStar, agent, label = 'rabbit-catcher-adversary', log = () => {} } = {}) {
+  // (2026-09-07, crucible journal 0099) a KEEP whose need is USER-RATIFIED is not the proposer's
+  // own record — the user's lock is the independent need — so a dispute is recorded but moves nothing.
+  const userLocked = (v) => String(v?.provenance || '').toLowerCase().startsWith('user');
   if (typeof agent !== 'function') throw new ElegancePassError('runRabbitCatcherAdversary requires an agent() seam');
   const verdicts = Array.isArray(catcher?.verdicts) ? catcher.verdicts : [];
   if (!verdicts.length) return { disputes: [], verdicts: [], confirmedCuts: [], restored: [], demoted: [] };
@@ -286,7 +289,7 @@ export async function runRabbitCatcherAdversary({ catcher, elements, northStar, 
     if (severity === 'MINOR') continue;   // a minor dispute is recorded, it moves nothing
     if (v.verdict === 'CUT') {
       v.verdict = 'HOLD'; v.trigger = dispute.trigger || dispute.reason; v.restored_by_adversary = true; restored.push(id);
-    } else if (v.verdict === 'KEEP') {
+    } else if (v.verdict === 'KEEP' && !userLocked(v)) {
       v.verdict = 'HOLD'; v.trigger = dispute.trigger || dispute.reason; v.demoted_by_adversary = true; demoted.push(id);
     }
   }

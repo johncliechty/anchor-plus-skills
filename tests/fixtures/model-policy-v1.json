@@ -1,0 +1,896 @@
+{
+  "schema_version": 1,
+  "contract": "anchor-trio-model-policy-v1",
+  "policy": {
+    "mode": "latest_supported",
+    "effort": "highest_supported"
+  },
+  "notes": [
+    "All model names other than the provider's moving best alias are synthetic.",
+    "Both implementations must consume raw fixtures unchanged; the test consumers do not adapt incompatible schemas.",
+    "Unavailable cases must raise the public PolicyUnavailable type, not an incidental parsing error.",
+    "Reason labels describe the contract failure; implementation-specific error prose is not part of the shared contract.",
+    "Provider priority is used only when advertised. Provider-order selection is not an attested frontier rank.",
+    "The canonical Claude capability input is an efforts array; CLI-help parsing remains a provider-specific discovery responsibility."
+  ],
+  "cases": [
+    {
+      "id": "provider_priority_beats_lexical_model_name",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "aaa-older",
+            "priority": 9,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          },
+          {
+            "slug": "zzz-current",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "zzz-current",
+        "effort": "ultra",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "new_catalog_identity_is_selected_without_a_policy_pin",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "zzz-current",
+            "priority": 7,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          },
+          {
+            "slug": "synthetic-successor",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-successor",
+        "effort": "ultra",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "visibility_hide",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-excluded",
+            "priority": 0,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "visibility": "hide"
+          },
+          {
+            "slug": "synthetic-visible",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "visibility_hidden",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-excluded",
+            "priority": 0,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "visibility": "hidden"
+          },
+          {
+            "slug": "synthetic-visible",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "visibility_none",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-excluded",
+            "priority": 0,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "visibility": "none"
+          },
+          {
+            "slug": "synthetic-visible",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "hidden_boolean",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-excluded",
+            "priority": 0,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "hidden": true
+          },
+          {
+            "slug": "synthetic-visible",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "is_hidden_boolean",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-excluded",
+            "priority": 0,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "isHidden": true
+          },
+          {
+            "slug": "synthetic-visible",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "selectable_false",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-excluded",
+            "priority": 0,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "selectable": false
+          },
+          {
+            "slug": "synthetic-visible",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "provider_order_when_priority_is_unavailable",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "zzz-advertised-first",
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ]
+          },
+          {
+            "slug": "aaa-advertised-second",
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "zzz-advertised-first",
+        "effort": "high",
+        "selection_evidence": "provider_catalog_order",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "all_effort_object_shapes_select_highest",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-capabilities",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "low"
+              },
+              {
+                "reasoningEffort": "high"
+              },
+              {
+                "value": "max"
+              },
+              {
+                "id": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-capabilities",
+        "effort": "ultra",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "camel_case_effort_capabilities",
+      "family": "chatgpt",
+      "raw": {
+        "data": [
+          {
+            "id": "synthetic-camel-catalog",
+            "priority": 0,
+            "supportedReasoningEfforts": [
+              {
+                "reasoningEffort": "medium"
+              },
+              {
+                "reasoningEffort": "max"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-camel-catalog",
+        "effort": "max",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "string_effort_capabilities",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "model": "synthetic-string-efforts",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-string-efforts",
+        "effort": "ultra",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "unknown_effort_is_not_silently_downgraded",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-future-effort",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              "high",
+              "unrecognized-effort"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "unknown_reasoning_effort"
+      }
+    },
+    {
+      "id": "absent_effort_capabilities_are_unavailable",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-without-efforts",
+            "priority": 1
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "missing_effort_capabilities"
+      }
+    },
+    {
+      "id": "invalid_identifier_spaces",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic model",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "invalid_identifier_argument_prefix",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "--synthetic-option",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "invalid_identifier_quotes",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic\"model",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "invalid_identifier_trailing_newline",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-model\n",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "invalid_identifier_trailing_carriage_return",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-model\r",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "invalid_identifier_length",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "invalid_identifier_empty",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "invalid_model_identifier"
+      }
+    },
+    {
+      "id": "safe_identifier_punctuation",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "provider/synthetic.model:revision-current",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "provider/synthetic.model:revision-current",
+        "effort": "ultra",
+        "selection_evidence": "provider_priority",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "explicit_upgrade_chain_selects_available_successor",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-original",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ],
+            "upgrade": {
+              "model": "synthetic-intermediate"
+            }
+          },
+          {
+            "slug": "synthetic-intermediate",
+            "priority": 2,
+            "supported_reasoning_levels": [
+              {
+                "effort": "max"
+              }
+            ],
+            "upgrade": {
+              "id": "synthetic-successor"
+            }
+          },
+          {
+            "slug": "synthetic-successor",
+            "priority": 9,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-successor",
+        "effort": "ultra",
+        "selection_evidence": "provider_priority+provider_upgrade",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "upgrade_cycle_is_unavailable",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-cycle-one",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ],
+            "upgrade": "synthetic-cycle-two"
+          },
+          {
+            "slug": "synthetic-cycle-two",
+            "priority": 2,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ],
+            "upgrade": "synthetic-cycle-one"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "upgrade_cycle"
+      }
+    },
+    {
+      "id": "self_upgrade_cycle_is_unavailable",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-self-cycle",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ],
+            "upgrade": "synthetic-self-cycle"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "upgrade_cycle"
+      }
+    },
+    {
+      "id": "missing_upgrade_target_is_unavailable",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-original",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ],
+            "upgrade": "synthetic-absent"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "missing_upgrade_target"
+      }
+    },
+    {
+      "id": "hidden_upgrade_target_is_unavailable",
+      "family": "chatgpt",
+      "raw": {
+        "models": [
+          {
+            "slug": "synthetic-original",
+            "priority": 1,
+            "supported_reasoning_levels": [
+              {
+                "effort": "high"
+              }
+            ],
+            "upgrade": "synthetic-hidden-target"
+          },
+          {
+            "slug": "synthetic-hidden-target",
+            "priority": 2,
+            "supported_reasoning_levels": [
+              {
+                "effort": "ultra"
+              }
+            ],
+            "visibility": "hide"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "missing_upgrade_target"
+      }
+    },
+    {
+      "id": "grok_provider_order_requires_honest_frontier_warning",
+      "family": "grok",
+      "raw": {
+        "models": {
+          "zzz-provider-first": {
+            "info": {
+              "model": "zzz-provider-first",
+              "reasoning_efforts": [
+                {
+                  "value": "low"
+                },
+                {
+                  "value": "xhigh"
+                }
+              ]
+            },
+            "api_key": "placeholder"
+          },
+          "aaa-provider-second": {
+            "info": {
+              "id": "aaa-provider-second",
+              "reasoning_efforts": [
+                {
+                  "id": "ultra"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "zzz-provider-first",
+        "effort": "xhigh",
+        "selection_evidence": "provider_catalog_order",
+        "model_attested": false,
+        "warning_required": true
+      }
+    },
+    {
+      "id": "grok_hidden_entries_are_not_selected",
+      "family": "grok",
+      "raw": {
+        "models": {
+          "synthetic-hidden": {
+            "info": {
+              "model": "synthetic-hidden",
+              "hidden": true,
+              "reasoning_efforts": [
+                {
+                  "value": "ultra"
+                }
+              ]
+            }
+          },
+          "synthetic-visible": {
+            "info": {
+              "model": "synthetic-visible",
+              "reasoning_efforts": [
+                {
+                  "value": "high"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "synthetic-visible",
+        "effort": "high",
+        "selection_evidence": "provider_catalog_order",
+        "model_attested": false,
+        "warning_required": true
+      }
+    },
+    {
+      "id": "claude_moving_best_alias_with_highest_advertised_effort",
+      "family": "claude",
+      "raw": {
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "best",
+        "effort": "max",
+        "selection_evidence": "provider_moving_alias",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "claude_moving_alias_tracks_new_supported_effort",
+      "family": "claude",
+      "raw": {
+        "efforts": [
+          "low",
+          "high",
+          "max",
+          "ultra"
+        ]
+      },
+      "expected": {
+        "outcome": "selected",
+        "model": "best",
+        "effort": "ultra",
+        "selection_evidence": "provider_moving_alias",
+        "model_attested": false
+      }
+    },
+    {
+      "id": "unverified_agy_capability_is_explicitly_unavailable",
+      "family": "gemini",
+      "raw": {},
+      "expected": {
+        "outcome": "unavailable",
+        "reason": "capability_unsupported"
+      }
+    }
+  ]
+}

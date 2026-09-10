@@ -587,7 +587,7 @@ def _engine_pins_session(backend):
     return backend in (_reg.BACKEND_CLAUDE, _reg.BACKEND_GROK)
 
 
-def _engine_launch_argv(cmd, backend, engine_uuid):
+def _engine_session_argv(cmd, backend, engine_uuid):
     """Build the PTY launch argv, injecting a session-id pin when the backend supports it.
 
     UUID-at-launch (W4): ``claude --session-id <uuid>`` pins the engine's sidecar
@@ -623,6 +623,38 @@ def _engine_launch_argv(cmd, backend, engine_uuid):
             return argv
         return [cmd, flag, engine_uuid]
     return argv
+
+
+def _engine_launch_argv(cmd, backend, engine_uuid, *, selection=None):
+    """Pure argv builder; production callers must supply their resolved policy."""
+    argv = _engine_session_argv(cmd, backend, engine_uuid)
+    if selection is not None:
+        import model_policy
+        argv.extend(model_policy.launch_args(selection))
+    return argv
+
+
+def _resolve_model_selection(backend, settings=None):
+    if backend == getattr(_reg, "BACKEND_SHELL", "shell"):
+        return None
+    # The in-memory PTY does not execute a provider command. Keep tests and
+    # health probes independent of installed CLIs without inventing a model.
+    if _pty.select_backend().name == _pty.STUB_BACKEND:
+        return None
+    import anchor_settings
+    import model_policy
+    try:
+        snapshot = settings if settings is not None else anchor_settings.get_launch_settings()
+        return model_policy.resolve(backend, settings=snapshot)
+    except (anchor_settings.SettingsInvalid, model_policy.PolicyUnavailable) as exc:
+        raise TerminalSessionError(str(exc)) from exc
+
+
+def _model_launch_env(selection):
+    if selection is None:
+        return None
+    import model_policy
+    return model_policy.policy_environment()
 
 
 def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
@@ -717,9 +749,13 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     if proj is None:
         raise TerminalSessionError("unknown project: %s" % (project_id,))
 
-    # v4 Wave 2: no explicit engine → inherit the project's last-used one.
+    # New sessions follow durable dashboard preference, not a stale project pin.
     if backend is _UNSET:
-        backend = last_engine_for_project(project_id)
+        import anchor_settings
+        try:
+            backend = anchor_settings.get_launch_settings()["default_cli"]
+        except anchor_settings.SettingsInvalid as exc:
+            raise TerminalSessionError(str(exc)) from exc
 
     # Validate the lane BEFORE creating any worktree/PTY — a typo must not mint a
     # real session. (Reuses the canonical lane set; engine policy is checked next.)
@@ -729,6 +765,7 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
             % (lane, ", ".join(sorted(_valid_lanes()))))
 
     _check_engine_allowed(lane, backend)
+    model_selection = _resolve_model_selection(backend)
 
     sid = _new_id()
 
@@ -791,7 +828,7 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     # backend/seam that can't pin leaves it "" → the session finalizes honestly
     # ``uncorrelated``.
     engine_uuid = _new_engine_session_id()
-    launch_argv = _engine_launch_argv(cmd, backend, engine_uuid)
+    launch_argv = _engine_launch_argv(cmd, backend, engine_uuid, selection=model_selection)
     stored_engine_uuid = engine_uuid if _engine_pins_session(backend) else ""
 
     # Doctor V3 W2: caller-supplied extra engine flags (e.g. the doctor
@@ -821,7 +858,7 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
     # 2) Launch a BARE interactive PTY in the worktree (no skill/prompt seeding).
     try:
         assert_not_live_engine_under_test(launch_argv)
-        pty_sid = _pty.start(launch_argv, cwd=worktree_path)
+        pty_sid = _pty.start(launch_argv, cwd=worktree_path, env=_model_launch_env(model_selection))
     except Exception as exc:
         # Roll back the worktree so a failed launch leaves nothing behind.
         try:
@@ -894,6 +931,8 @@ def start_session(project_id, lane, backend=_UNSET, label="", seed_context=None,
             causation_id=(parent_id or None),
             payload={"session_id": sid, "lane": lane, "backend": backend},
         )
+        if model_selection is not None:
+            record = _reg.update_session(sid, model_policy=model_selection)
     except Exception as exc:
         try:
             _pty.kill(sid)
@@ -1617,6 +1656,11 @@ def switch_engine(session_id, engine, seed_context=None):
     # (2026-09-05) ChatGPT switches like any engine; the F1B gate is gone.
     _check_engine_allowed(lane, engine)
 
+    # Resolve the selected provider and capabilities before disturbing a live
+    # session. A missing catalog or invalid settings must leave it untouched.
+    cmd = _resolve_engine_cmd(engine)
+    model_selection = _resolve_model_selection(engine)
+
     if not worktree_path:
         raise TerminalSessionError(
             "session %s has no worktree to relaunch in" % (session_id,))
@@ -1649,13 +1693,11 @@ def switch_engine(session_id, engine, seed_context=None):
     except _pty.UnknownSession:
         pass
 
-    cmd = _resolve_engine_cmd(engine)
-
     # Honest Telemetry W4: mint segment B's engine UUID and pin it at relaunch, so
     # the switched-to engine's sidecar is a distinct, correlatable segment. The
     # session accumulates BOTH uuids; finalize sums A + B, counted once.
     engine_uuid_b = _new_engine_session_id()
-    relaunch_argv = _engine_launch_argv(cmd, engine, engine_uuid_b)
+    relaunch_argv = _engine_launch_argv(cmd, engine, engine_uuid_b, selection=model_selection)
     stored_engine_uuid_b = engine_uuid_b if _engine_pins_session(engine) else ""
 
     # 1b) Resolve the lane seed ONCE before launch, folding in the W7 handoff context.
@@ -1676,7 +1718,7 @@ def switch_engine(session_id, engine, seed_context=None):
     # 2) Launch a NEW PTY on the other engine in the SAME worktree.
     try:
         assert_not_live_engine_under_test(relaunch_argv)
-        pty_sid = _pty.start(relaunch_argv, cwd=worktree_path)
+        pty_sid = _pty.start(relaunch_argv, cwd=worktree_path, env=_model_launch_env(model_selection))
     except Exception as exc:
         # Relaunch failed: leave the record CONSISTENT. The old PTY is already
         # reaped, so mark the session IDLE (no live process) but keep its prior
@@ -1701,7 +1743,7 @@ def switch_engine(session_id, engine, seed_context=None):
     #    engine needs the skill re-loaded once).
     record = _reg.update_session(
         session_id, backend=engine, status=_reg.STATUS_RUNNING,
-        seeded=False, seed_text="")
+        seeded=False, seed_text="", model_policy=model_selection)
 
     # Honest Telemetry W4: append segment B's engine UUID to the session's history
     # (the current segment), so finalize on the eventual end path sums A + B.
@@ -1800,11 +1842,15 @@ def resume_parked_session(session_id):
 
     lane = record.get("lane", "")
     engine = record.get("backend", DEFAULT_ENGINE)
-    cmd = _resolve_engine_cmd(engine)
+    try:
+        cmd = _resolve_engine_cmd(engine)
+        model_selection = _resolve_model_selection(engine)
+    except TerminalSessionError as exc:
+        return {"ok": False, "reason": "model-policy-unavailable", "detail": str(exc)}
     # Mint a fresh engine UUID for the resumed segment so its sidecar is a
     # distinct, correlatable segment (finalize sums over all segments, once).
     engine_uuid = _new_engine_session_id()
-    relaunch_argv = _engine_launch_argv(cmd, engine, engine_uuid)
+    relaunch_argv = _engine_launch_argv(cmd, engine, engine_uuid, selection=model_selection)
     stored_engine_uuid = engine_uuid if _engine_pins_session(engine) else ""
 
     # Reap any stale PTY child (tolerate already-dead), then relaunch in-tree.
@@ -1816,7 +1862,7 @@ def resume_parked_session(session_id):
         pass
     try:
         assert_not_live_engine_under_test(relaunch_argv)
-        pty_sid = _pty.start(relaunch_argv, cwd=worktree_path)
+        pty_sid = _pty.start(relaunch_argv, cwd=worktree_path, env=_model_launch_env(model_selection))
     except Exception as exc:
         return {"ok": False, "reason": "relaunch-failed", "detail": str(exc)}
     # Rebind the new PTY under the EXISTING session_id (one id per session).
@@ -1827,7 +1873,8 @@ def resume_parked_session(session_id):
 
     try:
         record = _reg.update_session(
-            session_id, status=_reg.STATUS_RUNNING, seeded=False, seed_text="")
+            session_id, status=_reg.STATUS_RUNNING, seeded=False, seed_text="",
+            model_policy=model_selection)
     except Exception:
         pass
     if stored_engine_uuid:
@@ -2321,6 +2368,22 @@ def _start_status_emitter(project_id, sid, worktree_path):
         pass
 
 
+def _notebook_completion_gate(record, docs=None):
+    """Read-only last check before completion; missing authority retains the worktree."""
+    if (docs or {}).get("notebooks_required") and (docs or {}).get("notebooks_ok") is not True:
+        return {"ok": False, "reason": (docs or {}).get("reason", "notebook-persistence-required")}
+    try:
+        rec = record or {}
+        wt = rec.get("worktree_path")
+        if _is_shell_record(rec) or not wt or not Path(wt).is_dir():
+            return {"ok": True, "notebooks_required": False}
+        proj = _rnd.get_project(rec.get("project_id")) if rec.get("project_id") else None
+        from notebook_completion import verify_main_copy
+        return verify_main_copy((proj or {}).get("folder_path"), wt)
+    except Exception:
+        return {"ok": False, "reason": "notebook-verification-error"}
+
+
 def finish_stage(session_id, stage=None, store_lane=None, project_id=None):
     """Persist+summarize a stage at a stage boundary — WITHOUT reaping (v12 W5).
 
@@ -2352,6 +2415,10 @@ def finish_stage(session_id, stage=None, store_lane=None, project_id=None):
             project_id = record.get("project_id") or None
         docs_out = _persist_current_stage(session_id, project_id=project_id,
                                           record=record)
+        notebook_gate = _notebook_completion_gate(record, docs_out)
+        if not notebook_gate.get("ok"):
+            return {"ok": False, "reason": "notebook-persistence-required",
+                    "session_id": session_id, "docs": docs_out, "notebooks": notebook_gate}
         return {"ok": True, "session_id": session_id, "docs": docs_out}
     except Exception:
         return {"ok": False, "reason": "error", "session_id": session_id,
@@ -2598,6 +2665,8 @@ def advance_stage(session_id, to_stage=None, mode="manual", project_id=None,
         finished = finish_stage(session_id, current_stage,
                                 _store_lane_for_stage(current_stage),
                                 project_id=project_id)
+        if finished.get("reason") == "notebook-persistence-required":
+            return finished
 
         # Open the NEW stage: record its baseline + flip current_stage + lane.
         new_store_lane = _store_lane_for_stage(to_stage)
@@ -2918,9 +2987,11 @@ def handoff_to_fresh(effort_id_or_sid, project_id=None):
     # Best-effort: a finish hiccup must not abort the handoff (the prepare below
     # also persists, idempotently).
     try:
-        finish_stage(old_sid, current_stage,
+        finished = finish_stage(old_sid, current_stage,
                      _store_lane_for_stage(current_stage) if current_stage
                      else None, project_id=project_id)
+        if finished.get("reason") == "notebook-persistence-required":
+            return finished
     except Exception:
         pass
 
@@ -3160,6 +3231,13 @@ def kill(session_id, project_id=None, _record_boneyard=True, actor=None):
     # Best-effort: a teardown failure never blocks the kill.
     jobs_out = _teardown_owned_jobs(session_id, record=record,
                                     project_id=project_id)
+
+    notebook_gate = _notebook_completion_gate(record, docs_out)
+    if not notebook_gate.get("ok"):
+        return {"ok": False, "reason": "notebook-persistence-required",
+                "session_id": session_id, "pty_killed": pty_killed,
+                "docs": docs_out, "jobs": jobs_out, "notebooks": notebook_gate,
+                "worktree": {"ok": False, "removed": False, "reason": "retained-for-notebook-recovery"}}
 
     # Docs are now persisted + confirmed AND owned jobs reaped → NOW mark the
     # registry record terminal (DONE) — tolerate an unknown id.
@@ -3796,7 +3874,9 @@ def delete_session(session_id, project_id=None):
         if rec is not None and (
                 session_id in set(_pty.live_sessions())
                 or rec.get("status") == _reg.STATUS_RUNNING):
-            kill(session_id, project_id=project_id, _record_boneyard=False)
+            killed_result = kill(session_id, project_id=project_id, _record_boneyard=False)
+            if killed_result.get("reason") == "notebook-persistence-required":
+                return {**killed_result, "deleted": False}
             killed = True
     except Exception:
         killed = False
@@ -3812,6 +3892,12 @@ def delete_session(session_id, project_id=None):
             _teardown_owned_jobs(session_id, record=rec, project_id=project_id)
         except Exception:
             pass
+
+    notebook_gate = _notebook_completion_gate(rec)
+    if not notebook_gate.get("ok"):
+        return {"ok": False, "reason": "notebook-persistence-required",
+                "deleted": False, "session_id": session_id, "killed": killed,
+                "notebooks": notebook_gate}
 
     # Hard-delete the registry record (the durability of "stays gone": the board
     # + term_sessions read the registry, so a removed record never re-surfaces).

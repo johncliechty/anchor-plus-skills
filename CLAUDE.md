@@ -12,7 +12,7 @@ This is a data-free Anchor distribution. Read this before exploring.
 ## Reading rules (token discipline)
 - Do NOT read `anchor_gui.py` end-to-end (18,000+ lines) — grep for the
   symbol you need and read that region only.
-- Do NOT crawl `vendor/bundled-skills/` — those are 13 packaged skills, not
+- Do NOT crawl `vendor/bundled-skills/` — those are packaged skills, not
   app code.
 - Do NOT bulk-scan `starter/`, `static/`, or `vendor/` trees.
 

@@ -525,6 +525,8 @@ def _normalize(record: dict) -> dict:
         "usage_gemini_segment": usage_gemini_segment,
         "doctor_mode": doctor_mode,
         "doctor_posture": doctor_posture,
+        "model_policy": (dict(record["model_policy"])
+                         if isinstance(record.get("model_policy"), dict) else None),
         # ── telemetry-resume W6: eviction + paste-fallback + orientation ─────
         # ``evicted``/``evicted_at``: the bounded oldest-first parked-worktree
         # eviction reclaims ONLY the worktree; the record stays parked-warm with
@@ -889,7 +891,7 @@ def update_session(session_id: str, **fields) -> dict:
                # Honest Telemetry W5: durable mixed-session (gemini-segment) marker.
                "usage_gemini_segment",
                # Anchor Doctor P0: exact durable session-reuse identity.
-               "doctor_mode", "doctor_posture",
+               "doctor_mode", "doctor_posture", "model_policy",
                # telemetry-resume W6: bounded oldest-first parked-worktree
                # eviction (worktree reclaimed, everything else survives) +
                # the greet-gate bounded-fallback stamp + the read-only

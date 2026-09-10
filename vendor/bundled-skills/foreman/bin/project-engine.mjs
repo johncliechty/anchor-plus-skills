@@ -159,7 +159,7 @@ export function planResume(checkpointPath, totalWaves) {
 /**
  * @param {string} checkpointPath
  * @param {{log?:(s:string)=>void, force?:boolean}} [o]
- *   force: allow clear-halt on vacuous-GREEN without code-hypothesis (ops escape hatch)
+ *   force: re-enter execute for vacuous-GREEN or a typed missing-required-tests halt
  */
 /**
  * P2 2026-07-25 — `--attest-wave-proven` (F-AT-1: journals 0043/0044/0045, 0074).
@@ -244,8 +244,10 @@ export function clearHaltedCheckpoint(checkpointPath, { log = () => {}, force = 
     return { cleared: false, status: cp.status };
   }
   const clearedHalt = cp.pending_action ?? null;
+  const isMissingRequiredTests = typeof clearedHalt === 'string' &&
+    clearedHalt.startsWith('[taxonomy:missing-required-tests]');
   // Sleep 0076 package 3 / 0079: vacuous-GREEN clear-halt without new source is thrash.
-  const isVacuous = typeof clearedHalt === 'string' && /vacuous-GREEN/i.test(clearedHalt);
+  const isVacuous = !isMissingRequiredTests && typeof clearedHalt === 'string' && /vacuous-GREEN/i.test(clearedHalt);
   if (isVacuous && !force) {
     const msg =
       `clear-halt REFUSED for vacuous-GREEN (journals 0076/0078/0079): re-clearing alone ` +
@@ -269,22 +271,27 @@ export function clearHaltedCheckpoint(checkpointPath, { log = () => {}, force = 
   // Phase A (2026-07-22): PLAN-AMENDMENT clear-halt re-enters at EXECUTE (iteration 0)
   // so the wave does not gate-only on already-applied code and false-vacuous-GREEN
   // (journals 0040, 0045). Other halts still re-enter at the gate and re-prove GREEN.
-  // Vacuous with force re-enters EXECUTE so a newly landed delta is applied.
-  const isPlanAmendment = typeof clearedHalt === 'string' &&
+  // Explicit force also lets a typed missing-required-tests halt run EXECUTE.
+  // Keep the ledger and every readiness/gate/review guard; other halts are unchanged.
+  const isPlanAmendment = !isMissingRequiredTests && typeof clearedHalt === 'string' &&
     /PLAN-AMENDMENT/i.test(clearedHalt);
-  const reenterExecute = isPlanAmendment || (isVacuous && force);
+  const reenterExecute = isPlanAmendment || ((isVacuous || isMissingRequiredTests) && force);
   if (reenterExecute) {
     cp.intra_wave_step = 'execute';
     cp.iteration = 0;
     cp.pending_action =
-      isPlanAmendment
+      isMissingRequiredTests
+        ? (`halt cleared by human (--clear-halt --force) after missing-required-tests — re-enter EXECUTE ` +
+          `(iteration reset); declared tests must exist and a fresh gate and review must pass before GO` +
+          ` — was: ${clearedHalt}`)
+        : isPlanAmendment
         ? (`halt cleared by human (--clear-halt) after PLAN-AMENDMENT — re-enter EXECUTE ` +
           `(iteration reset); gate still re-proves GREEN before GO` +
           (clearedHalt ? ` — was: ${clearedHalt}` : ''))
         : (`halt cleared by human (--clear-halt --force) after vacuous-GREEN — re-enter EXECUTE ` +
           `(iteration reset); you MUST have landed import-tested source first` +
           (clearedHalt ? ` — was: ${clearedHalt}` : ''));
-    log(`clear-halt: wave ${cp.current_wave} ${isPlanAmendment ? 'PLAN-AMENDMENT' : 'vacuous(force)'} ` +
+    log(`clear-halt: wave ${cp.current_wave} ${isMissingRequiredTests ? 'missing-required-tests(force)' : isPlanAmendment ? 'PLAN-AMENDMENT' : 'vacuous(force)'} ` +
       `halt cleared -> budget_stopped @ execute (iteration 0); resume will re-run EXECUTE then re-prove GREEN`);
   } else {
     cp.intra_wave_step = 'gate';

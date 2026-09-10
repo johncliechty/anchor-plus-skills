@@ -181,7 +181,7 @@ export function transcriptHash(rawAnswer) {
  * authored claim may now be verified by the strongest family on the host). `family` is accepted as a
  * legacy alias for `verifier_family`.
  */
-export function makeVerdictRecord({ model, verifier_family, family, tier, prompt, rawAnswer, generator_family = 'claude' }) {
+export function makeVerdictRecord({ model, verifier_family, family, tier, prompt, rawAnswer, generator_family = null }) {
   if (typeof model !== 'string' || model.length === 0) {
     throw new CrossFamilyDriverError('makeVerdictRecord requires a non-empty model name');
   }
@@ -189,7 +189,7 @@ export function makeVerdictRecord({ model, verifier_family, family, tier, prompt
   if (typeof vf !== 'string' || vf.trim().length === 0) {
     throw new CrossFamilyDriverError('makeVerdictRecord requires a non-empty verifier_family');
   }
-  const gf = String(generator_family || 'claude').trim().toLowerCase();
+  const gf = requireActualGeneratorFamily(generator_family);
   if (vf.trim().toLowerCase() === gf) {
     throw new CrossFamilyDriverError(
       `cross-family driver refuses to mint a \`${gf}\` verdict for a \`${gf}\`-authored claim — ` +
@@ -235,9 +235,12 @@ export function makeVerdictRecord({ model, verifier_family, family, tier, prompt
  * 2026-07: the family ban is generator-relative — pass { generator_family } for a claim not authored
  * by Claude; the default preserves the historical never-claude check for every existing caller.
  */
-export function validateArtifact(artifact, { generator_family = 'claude' } = {}) {
+export function validateArtifact(artifact, { generator_family = null } = {}) {
   const failures = [];
-  const _gf = String(generator_family || 'claude').trim().toLowerCase();
+  const _gf = normalizeActualGeneratorFamily(generator_family);
+  if (!isKnownActualGeneratorFamily(_gf)) {
+    failures.push('generator_family must identify a known actual author family; it cannot be inferred from a default or an Ollama transport name');
+  }
   if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
     return { ok: false, failures: ['artifact is not an object'] };
   }
@@ -336,14 +339,33 @@ function firstOllamaModel(ollamaSpec) {
  * drive is the FALLBACK substrate, so `tier` defaults to fallback when unspecified. Returns the verdict
  * record from makeVerdictRecord.
  */
+function normalizeActualGeneratorFamily(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isKnownActualGeneratorFamily(value) {
+  return ['claude', 'chatgpt', 'grok', 'gemini', 'qwen', 'llama', 'human'].includes(value);
+}
+
+function requireActualGeneratorFamily(value) {
+  const family = normalizeActualGeneratorFamily(value);
+  if (!isKnownActualGeneratorFamily(family)) {
+    throw new CrossFamilyDriverError(
+      'A known actual generator family is required for probabilistic cross-family verification. Supply author provenance from the served-model receipt; Ollama is a transport, not an author model family.',
+    );
+  }
+  return family;
+}
+
 export async function driveCrossFamilyVerdict(
   ollamaSpec,
-  { model, family, verifier_family, prompt, tier } = {},
+  { model, family, verifier_family, prompt, tier, generator_family } = {},
   { generate, baseUrl, tier: tierOpt } = {},
 ) {
   if (typeof prompt !== 'string' || prompt.length === 0) {
     throw new CrossFamilyDriverError('driveCrossFamilyVerdict requires a non-empty prompt');
   }
+  const actualGenerator = requireActualGeneratorFamily(generator_family);
   const t = tier != null ? tier : tierOpt != null ? tierOpt : TIER.FALLBACK;
   let gen = generate;
   if (typeof gen !== 'function') {
@@ -355,7 +377,7 @@ export async function driveCrossFamilyVerdict(
     gen = createOllamaGenerate(ollamaSpec, model, baseUrl);
   }
   const rawAnswer = await gen(prompt);
-  return makeVerdictRecord({ model, verifier_family, family, tier: t, prompt, rawAnswer });
+  return makeVerdictRecord({ model, verifier_family, family, tier: t, prompt, rawAnswer, generator_family: actualGenerator });
 }
 
 /**
@@ -363,12 +385,13 @@ export async function driveCrossFamilyVerdict(
  * FALLBACK-tier verdict against the persistent server. The fast tier still injects `generate`; the tool
  * lane passes `baseUrl`.
  */
-export async function driveFromManifest(manifest, modelOrFamily, prompt, { generate, baseUrl, manifestPath } = {}) {
+export async function driveFromManifest(manifest, modelOrFamily, prompt, { generate, baseUrl, manifestPath, generator_family } = {}) {
+  const actualGenerator = requireActualGeneratorFamily(generator_family);
   const m = manifest || loadManifest(manifestPath);
   const ollamaSpec = m.tools && m.tools.ollama;
   if (!ollamaSpec) throw new CrossFamilyDriverError('manifest has no ollama tool spec');
   const { name, family } = resolveModel(m, modelOrFamily);
-  return driveCrossFamilyVerdict(ollamaSpec, { model: name, family, prompt, tier: TIER.FALLBACK }, { generate, baseUrl });
+  return driveCrossFamilyVerdict(ollamaSpec, { model: name, family, prompt, tier: TIER.FALLBACK, generator_family: actualGenerator }, { generate, baseUrl });
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +443,8 @@ export async function driveCrossFamily(manifest, prompt, opts = {}) {
   } = opts;
 
   // ---- The PRIMARY seat (2026-09-04): the Anchor dashboard's configured family, never a hardwired one. ----
-  const resolved = await resolvePrimarySeat(m, { geminiGenerate, runGemini, primaryGenerate, runPrimary, seat, author, env, loadModelFamilies });
+  const actualAuthor = requireActualGeneratorFamily(author);
+  const resolved = await resolvePrimarySeat(m, { geminiGenerate, runGemini, primaryGenerate, runPrimary, seat, author: actualAuthor, env, loadModelFamilies });
   if (resolved.family && resolved.family === resolved.author) {
     // The Honesty Law at the invocation boundary: a seat pinned to the author's own family is a
     // wiring error, refused loudly — never quarantined into a fallback that hides it.
@@ -436,15 +460,36 @@ export async function driveCrossFamily(manifest, prompt, opts = {}) {
   } else {
     try {
       const gen = primaryGenerate || geminiGenerate || createFamilyGenerate(resolved.tool, { env, runFamily: runPrimary || runGemini });
+      const previousReceipt = gen.receipt;
       const rawAnswer = await gen(prompt);
-      const rec = makeVerdictRecord({
-        model: resolved.model || resolved.family,
+      const servedReceipt = gen.receipt;
+      const injectedGenerate = typeof primaryGenerate === 'function' || typeof geminiGenerate === 'function';
+      let servedModel;
+      let modelAttested = false;
+      if (servedReceipt) {
+        if (servedReceipt === previousReceipt || servedReceipt.ok !== true
+            || servedReceipt.model_attested !== true
+            || typeof servedReceipt.model_served !== 'string' || !servedReceipt.model_served.trim()
+            || servedReceipt.model_family !== resolved.family) {
+          throw new CrossFamilyDriverError('The primary verifier did not provide a fresh attested served-model receipt for its selected family.');
+        }
+        servedModel = servedReceipt.model_served;
+        modelAttested = true;
+      } else if (injectedGenerate && typeof resolved.model === 'string' && resolved.model.trim()) {
+        // Explicit synthetic identity is supported only at the injected-generator
+        // test seam. Production CLI seats must supply a served-model receipt.
+        servedModel = resolved.model;
+      } else {
+        throw new CrossFamilyDriverError('The primary verifier requires an attested served-model receipt; a provider family is not a model identity.');
+      }
+      const rec = Object.freeze({ ...makeVerdictRecord({
+        model: servedModel,
         verifier_family: resolved.family,
         tier: TIER.FRONTIER,
         prompt,
         rawAnswer,
         generator_family: resolved.author,
-      });
+      }), model_attested: modelAttested, model_identity_evidence: modelAttested ? 'served-receipt' : 'injected-explicit-model' });
       return Object.freeze({
         ...rec,
         backend: resolved.family,
@@ -464,37 +509,12 @@ export async function driveCrossFamily(manifest, prompt, opts = {}) {
     }
   }
   const seatName = resolved.family || 'cross-family seat';
+  const verificationHalt = new CrossFamilyDriverError(
+    seatName + ' is unavailable. Probabilistic verification is fail-closed; an unconfigured Ollama fallback is not permitted.',
+  );
+  verificationHalt.primary_quarantine = primaryQuarantine;
+  throw verificationHalt;
 
-  // ---- QUARANTINE -> FALLBACK: ollama (tier=fallback). ----
-  if (!ollamaSpec) {
-    throw new CrossFamilyDriverError(
-      `${seatName} PRIMARY quarantined and the manifest has no ollama FALLBACK panel — no cross-family backend`,
-      { primary_quarantine: primaryQuarantine, gemini_quarantine: primaryQuarantine },
-    );
-  }
-  const { name, family } = fallbackModelOrFamily ? resolveModel(m, fallbackModelOrFamily) : firstOllamaModel(ollamaSpec);
-  let gen = typeof ollamaGenerateFor === 'function' ? ollamaGenerateFor(name) : null;
-  if (typeof gen !== 'function') {
-    if (typeof baseUrl !== 'string' || baseUrl.length === 0) {
-      throw new CrossFamilyDriverError(
-        `${seatName} PRIMARY quarantined and the FALLBACK needs either an injected ollamaGenerateFor(model) or a baseUrl to reach the persistent server`,
-        { primary_quarantine: primaryQuarantine, gemini_quarantine: primaryQuarantine },
-      );
-    }
-    gen = createOllamaGenerate(ollamaSpec, name, baseUrl);
-  }
-  const rawAnswer = await gen(prompt);
-  const rec = makeVerdictRecord({ model: name, verifier_family: family, tier: TIER.FALLBACK, prompt, rawAnswer, generator_family: resolved.author });
-  return Object.freeze({
-    ...rec,
-    backend: 'ollama',
-    tier: TIER.FALLBACK,
-    verifier_family: rec.artifact.verifier_family,
-    model: rec.artifact.model,
-    seat: resolved,
-    primary_quarantine: primaryQuarantine,
-    gemini_quarantine: primaryQuarantine, // legacy alias
-  });
 }
 
 // Re-export the pinned Gemini transport surface (provenance: F0) for callers/tests that assert the

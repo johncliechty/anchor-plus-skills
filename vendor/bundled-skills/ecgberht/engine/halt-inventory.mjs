@@ -32,6 +32,7 @@ export const HALT_PATH_ROOTS = Object.freeze({
   Foreman: { kind: 'skill', skill: 'foreman', note: 'paths relative to foreman skill root' },
   Gandalf: { kind: 'skill', skill: 'gandalf', note: 'paths relative to gandalf skill root' },
   Jumper: { kind: 'skill', skill: 'jumper', note: 'paths relative to jumper skill root' },
+  chekhov: { kind: 'skill', skill: 'chekhov', note: 'paths relative to chekhov skill root' },
   '*': {
     kind: 'anchor_host',
     note: 'job_runner.py paths are relative to the Anchor host repo root (reference host)',
@@ -288,6 +289,47 @@ export const HALT_GATES = Object.freeze([
     symbol: 'killGates floor / JumperKillGatesFloorHalt',
     description:
       'Ideation HALT surfaces when killGates floor refused or 3-gate kill-filter rejects; grounding fails honestly',
+    class: 'EXTERNALLY-OBSERVABLE',
+    gated_lane: false,
+  },
+
+  // ── chekhov (the writing skill; registered W1 2026-09-07, RIDER 7) ─
+  // Executor evidence is the session receipt the engine writes to
+  // <root>/chekhov/session.json — externally observable by file, never by
+  // claim. Full COMMISSION_SKILLS membership awaits its compose adapter.
+  {
+    id: 'chekhov-reconciliation-halt',
+    skill: 'chekhov',
+    path: 'lib/engine.mjs',
+    path_root: 'skill:chekhov',
+    line: 234,
+    symbol: 'confirmReconciliation (TTY-only confirm key)',
+    description:
+      'Engine-owned file changed outside the engine: unmanaged edit on line 2, nothing published, John confirms or reverts at the session prompt',
+    class: 'EXTERNALLY-OBSERVABLE',
+    gated_lane: false,
+  },
+  {
+    id: 'chekhov-first-sitting-halt',
+    skill: 'chekhov',
+    path: 'HUMAN.md',
+    path_root: 'skill:chekhov',
+    line: 19,
+    symbol: 'First sitting after the W1 build',
+    description:
+      'The bounded first-accept walk (RIDER B, W11): chekhov accept walks a NAMED id list with John at the terminal',
+    class: 'EXTERNALLY-OBSERVABLE',
+    gated_lane: false,
+  },
+  {
+    id: 'chekhov-decision-sitting-halt',
+    skill: 'chekhov',
+    path: 'HUMAN.md',
+    path_root: 'skill:chekhov',
+    line: 53,
+    symbol: 'When a reconciliation HALT opens',
+    description:
+      'The decision sitting (W13 HALT-2): the Bright-Heart decision record answered by John with full context (RIDER 2)',
     class: 'EXTERNALLY-OBSERVABLE',
     gated_lane: false,
   },

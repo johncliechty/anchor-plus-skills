@@ -86,5 +86,7 @@ def test_engine_appends_the_drift_line_to_a_human_turn_only():
     from steward_cockpit import steward_engine as eng
     src = Path(eng.__file__).read_text(encoding="utf-8")
     assert "(16) PLAN DRIFT" in src
-    assert "text = text + self._plan_drift_suffix()" in src
-    assert "if human and not self.general:" in src
+    # (2026-09-07) the drift line is computed at DELIVERY, never at queue time (journal 0111)
+    assert "text = text + self._plan_drift_suffix()" not in src
+    assert 'self._send_locked(text + (self._plan_drift_suffix() if (human and not self.general) else ""))' in src
+    assert 'suffix = "" if self.general else self._plan_drift_suffix()' in src

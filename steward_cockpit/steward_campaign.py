@@ -237,7 +237,14 @@ def read_map(campaign_dir: str):
         "next_recommended": strip.get("next_recommended", ""),
         "why_next": strip.get("why_next", ""),
         "uncertainty_flags": strip.get("uncertainty_flags", []),
+        "current_step_id": strip.get("current_step_id"),
+        "current_session_id": strip.get("current_session_id"),
+        "current_run_id": strip.get("current_run_id"),
+        "current_skill_status_source": strip.get("current_skill_status_source"),
+        "receipts": strip.get("receipts") if isinstance(strip.get("receipts"), list) else [],
     }
+    if "pending_request" in strip:
+        heartbeat["pending_request"] = strip["pending_request"]
     grasscatch = strip.get("grasscatch", []) or []
 
     # --- Attention flag ---
@@ -780,7 +787,9 @@ def _slice_started_epoch(campaign_dir, step_id):
     for ev in roadmap.get("roadmap_events") or []:
         if str(ev.get("step_id") or ev.get("id") or "") != str(step_id):
             continue
-        st = " ".join(str(ev.get(k) or "") for k in ("status", "to", "kind")).lower()
+        fields = ev.get("fields") if isinstance(ev.get("fields"), dict) else {}
+        st = " ".join([*(str(ev.get(k) or "") for k in ("status", "to", "kind")),
+                       str(fields.get("status") or "")]).lower()
         if "active" not in st and "start" not in st:
             continue
         ep = _parse_epoch(ev.get("at") or ev.get("ts") or ev.get("time")
@@ -797,11 +806,136 @@ def _real_wait(text):
     return "" if t.lower().rstrip(".") in ("", "none", "nothing", "-", "\u2014", "n/a") else t
 
 
+def _focused_step(m):
+    """Use the declared work item; never guess among several active steps."""
+    steps = m.get("steps") or []
+    current_id = (m.get("heartbeat") or {}).get("current_step_id")
+    if current_id:
+        found = next((s for s in steps if str(s.get("id")) == str(current_id)), None)
+        if found:
+            return found, ""
+        return None, "Current work item is unavailable: current_step_id does not match the roadmap."
+    active = [s for s in steps if s.get("status") == "active"]
+    if len(active) == 1:
+        return active[0], ""
+    if len(active) > 1:
+        return None, "Current work item is unavailable: several steps are active and no current_step_id is set."
+    return None, ""
+
+
+def _local_status_evidence(campaign_dir, m, engine_state, step):
+    """Read explicit, current receipts rather than inferring a pass from prose."""
+    heartbeat = m.get("heartbeat") or {}
+    identity = {
+        "session_id": engine_state.get("session_id") or heartbeat.get("current_session_id"),
+        "run_id": engine_state.get("run_id") or heartbeat.get("current_run_id"),
+    }
+    identity = {key: str(value) for key, value in identity.items() if value is not None and str(value)}
+    result = {
+        "tests": "Unavailable — no check receipt for the current work and session",
+        "journal": "Unavailable — no journal receipt for the current work and session",
+        "eta": "Unavailable — no current estimate",
+        "eta_source": {"state": "unavailable"},
+        "source": {"path": "strip.json", "step_id": step.get("id") if step else None, **identity},
+        "checks": [],
+        "journal_source": {"state": "unavailable"},
+    }
+    if not step or not identity:
+        return result
+
+    def epoch(value):
+        try:
+            return _parse_epoch(value) if value else None
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    def current(receipt):
+        if not isinstance(receipt, dict) or str(receipt.get("step_id")) != str(step.get("id")):
+            return False
+        matches = [key for key, value in identity.items() if str(receipt.get(key) or "") == value]
+        conflicts = [key for key, value in identity.items()
+                     if receipt.get(key) is not None and str(receipt.get(key)) != value]
+        return bool(matches) and not conflicts
+
+    def contained_file(value):
+        if not isinstance(value, str) or not value.strip():
+            return None
+        try:
+            base = Path(campaign_dir).resolve()
+            candidate = (base / value).resolve()
+            relative = candidate.relative_to(base)
+            return relative.as_posix() if candidate.is_file() else None
+        except (OSError, ValueError, RuntimeError):
+            return None
+
+    receipts = [r for r in heartbeat.get("receipts", []) if current(r)]
+    checks = [r for r in receipts if r.get("kind") == "local_check"]
+    # A later run of the same command supersedes its earlier result. Different
+    # checks remain visible, so a later pass cannot hide an unrelated failure.
+    latest_checks = {}
+    for receipt in sorted(checks, key=lambda r: epoch(r.get("finished_at") or r.get("started_at")) or 0):
+        command = receipt.get("command")
+        key = command.strip() if isinstance(command, str) and command.strip() else "(missing command)"
+        latest_checks[key] = receipt
+    for command, receipt in latest_checks.items():
+        path = contained_file(receipt.get("evidence"))
+        started = epoch(receipt.get("started_at"))
+        finished = epoch(receipt.get("finished_at"))
+        exit_code = receipt.get("exit_code")
+        state, detail = "unavailable", "receipt is incomplete"
+        if not path:
+            detail = "evidence file is missing or outside the effort"
+        elif command == "(missing command)" or started is None:
+            detail = "command or start time is missing"
+        elif exit_code is None and finished is None:
+            state, detail = "untested", "check has not finished"
+        elif not isinstance(exit_code, int) or isinstance(exit_code, bool) or finished is None or finished < started:
+            detail = "completion time or exit code is invalid"
+        elif exit_code == 0:
+            state, detail = "passed", "exit 0"
+        else:
+            state, detail = "failed", f"exit {exit_code}"
+        item = {"state": state, "command": command, "evidence": path, "detail": detail,
+                "started_at": receipt.get("started_at"), "finished_at": receipt.get("finished_at"),
+                "exit_code": exit_code, "step_id": receipt.get("step_id"),
+                "session_id": receipt.get("session_id"), "run_id": receipt.get("run_id")}
+        result["checks"].append(item)
+        estimate = receipt.get("eta")
+        if state == "untested" and isinstance(estimate, dict):
+            until = epoch(estimate.get("at"))
+            basis = estimate.get("basis")
+            if until is not None and until > time.time() and isinstance(basis, str) and basis.strip():
+                result["eta"] = f"Estimated {time.strftime('%H:%M', time.localtime(until))} — {basis.strip()}"
+                result["eta_source"] = {"state": "available", "at": estimate["at"], "basis": basis.strip(),
+                                        "source": "local_check", "evidence": path,
+                                        "step_id": receipt.get("step_id"), **identity}
+    if result["checks"]:
+        result["tests"] = "; ".join(f"{item['state'].capitalize()} — {item['command']} ({item['detail']})"
+                                     for item in result["checks"])
+
+    journals = sorted((r for r in receipts if r.get("kind") == "journal_update"),
+                      key=lambda r: epoch(r.get("at")) or 0)
+    if journals:
+        receipt = journals[-1]
+        path = contained_file(receipt.get("path"))
+        summary = receipt.get("summary")
+        entry_id = receipt.get("entry_id")
+        state = "available" if path and epoch(receipt.get("at")) is not None and entry_id and isinstance(summary, str) and summary.strip() else "unavailable"
+        result["journal_source"] = {"state": state, "path": path, "entry_id": entry_id,
+                                     "at": receipt.get("at"), "step_id": receipt.get("step_id"),
+                                     "session_id": receipt.get("session_id"), "run_id": receipt.get("run_id")}
+        if state == "available":
+            result["journal"] = f"{entry_id}: {summary.strip()}"
+        else:
+            result["journal"] = "Unavailable — current journal receipt or its file is incomplete"
+    return result
+
+
 def slice_of(m):
     """The current slice: the active roadmap step, its position, and its
     done-when in one short line."""
     steps = m.get("steps") or []
-    active = next((s for s in steps if s.get("status") == "active"), None)
+    active, _focus_warning = _focused_step(m)
     if not active:
         return None
     brief = _first_sentence(active.get("done_when") or "")
@@ -896,8 +1030,17 @@ def compose_status(campaign_dir: str, engine_state=None):
     """
     m = read_map(campaign_dir)
     st = engine_state or {}
-    active = next((s for s in m["steps"] if s["status"] == "active"), None)
+    active, focus_warning = _focused_step(m)
     look = status_lookthrough(campaign_dir)
+    if m["heartbeat"].get("current_step_id"):
+        expected_source = m["heartbeat"].get("current_skill_status_source")
+        actual_source = look.get("source") if look else None
+        source_matches = (isinstance(expected_source, str) and expected_source.strip()
+                          and isinstance(actual_source, str)
+                          and expected_source.strip().replace("\\", "/") == actual_source.strip().replace("\\", "/"))
+        if not active or not source_matches:
+            look = None
+    local_evidence = _local_status_evidence(campaign_dir, m, st, active)
     now_lines = []
     running = None
     # THE LOOK-THROUGH: the commissioned skill is what is happening;
@@ -916,7 +1059,17 @@ def compose_status(campaign_dir: str, engine_state=None):
                    "source": ".ecgberht/attention.json", "age": ""}
         now_lines.append(run)
     if st.get("busy"):
-        line = "steward working"
+        # (2026-09-07, journals 0006/0111) a steward mid-turn cannot repaint the
+        # pane: say so, with the turn's start and the last status on record,
+        # instead of letting the previous status stand as if current.
+        line = "steward mid-turn"
+        ts0 = float(st.get("turn_started") or 0)
+        if ts0 > 0:
+            mins = int(max(0.0, time.time() - ts0) // 60)
+            line += " since " + time.strftime("%H:%M", time.localtime(ts0)) + " (" + str(mins) + " min)"
+        _last = read_last_status(campaign_dir)
+        if _last and _last.get("at"):
+            line += " \u00b7 last status " + str(_last["at"])[-5:]
         if st.get("queued"):
             line += " \u00b7 %d queued" % st["queued"]
         now_lines.append(line)
@@ -983,6 +1136,14 @@ def compose_status(campaign_dir: str, engine_state=None):
         plan_step = active["name"] if active else "(no active step)"
     next_text = (m["heartbeat"]["next_recommended"] or "").strip()
     waiting = _real_wait((m["heartbeat"]["human_wait"] or "").split("\u00b7")[0].strip())
+    if "pending_request" in m["heartbeat"]:
+        pending = m["heartbeat"]["pending_request"]
+        if pending is None:
+            waiting = ""
+        elif isinstance(pending, str):
+            waiting = _real_wait(pending.strip())
+        elif isinstance(pending, dict):
+            waiting = _real_wait(str(pending.get("question") or pending.get("text") or "").strip())
     if halt and not waiting:
         # the run's stop is the thing waiting on him — a limit above all
         waiting = (("model session limit (" + halt["limit"] + "): ") if halt["limit"]
@@ -999,25 +1160,40 @@ def compose_status(campaign_dir: str, engine_state=None):
     }
     if not m.get("goal_reread", True):
         now_lines.append("goal not re-read since last close")
+    # (2026-09-07, journals 0026/0111) the effort line carries its AGE, and a line
+    # a day or more older than the newest work on disk is shouted, never kept quietly.
+    effort_line = effort_line_freshness(campaign_dir, m)
+    if effort_line.get("stale"):
+        now_lines.append("effort line as of " + effort_line["as_of"] + " \u2014 "
+                         + str(effort_line["behind_days"]) + " day(s) older than the newest work; the steward has not restamped it")
     if active and active.get("part") in ("slice", "rigor", "integrate", "harden") \
             and not active.get("gate") and active.get("commissioned_as"):
         now_lines.append("commissioned without a gate command")
     slice_ = slice_of(m)
     started = _slice_started_epoch(campaign_dir, slice_["id"]) if slice_ else None
     live_skill = bool(look and not look["final"])
+    if focus_warning:
+        now_lines.append(focus_warning)
     out = {"at": time.strftime("%Y-%m-%d %H:%M"),
            "status_id": f"{time.time_ns():020d}",
            "effort": m["name"],
            "now": now_lines,
            "running": running,
            "slice": slice_,
-           "eta": estimate_eta(slice_, look, started),
-           "tests": (look.get("tests") or "") if live_skill else "",
+           "eta": estimate_eta(slice_, look, started) if live_skill and look.get("eta") else local_evidence["eta"],
+           "tests": (look.get("tests") or local_evidence["tests"]) if live_skill else local_evidence["tests"],
+           "journal": local_evidence["journal"],
+           "evidence": {"source": local_evidence["source"], "checks": local_evidence["checks"],
+                        "journal": local_evidence["journal_source"],
+                        "eta": {"state": "available", "source": "live_skill", "skill": look.get("skill")}
+                               if live_skill and look.get("eta") else local_evidence["eta_source"]},
+           "focus_warning": focus_warning,
            "next_bullets": next_bullets(next_text),
            "project": project_line(m),
            "lookthrough": ({"source": look["source"], "age": look["age"],
                             "final": look["final"]} if look else None),
            "halt": halt,
+           "effort_line": effort_line,
            "plan": plan,
            "map": m.get("map") or [],
            "work_map": m.get("work_map") or [],
@@ -1030,6 +1206,46 @@ def compose_status(campaign_dir: str, engine_state=None):
     except Exception:
         out["deliverables_count"] = 0
     return out
+
+def effort_line_freshness(campaign_dir: str, m=None):
+    """The Strip's effort line with its age: ``as_of`` (the stamp's own
+    ``active_effort_as_of`` date, else strip.json's mtime), ``newest_work`` (the
+    newest of roadmap.json / DELIVERABLES.md / the journal), ``behind_days`` and
+    ``stale`` (a day or more behind). Disk-true, never raises."""
+    root = Path(campaign_dir)
+    out = {"text": "", "as_of": "", "newest_work": "", "behind_days": 0, "stale": False}
+    try:
+        strip, _err = _read_json(root / "strip.json")
+        strip = strip or {}
+        out["text"] = str(strip.get("active_effort") or "")
+        as_of = str(strip.get("active_effort_as_of") or "").strip()
+        if as_of:
+            as_of_t = time.mktime(time.strptime(as_of[:10], "%Y-%m-%d")) + 86399
+        else:
+            as_of_t = (root / "strip.json").stat().st_mtime
+            as_of = time.strftime("%Y-%m-%d", time.localtime(as_of_t))
+        out["as_of"] = as_of
+        newest = 0.0
+        for rel in ("roadmap.json", "DELIVERABLES.md"):
+            try:
+                newest = max(newest, (root / rel).stat().st_mtime)
+            except OSError:
+                pass
+        try:
+            for p in (root / "journal").iterdir():
+                if p.is_file():
+                    newest = max(newest, p.stat().st_mtime)
+        except OSError:
+            pass
+        if newest:
+            out["newest_work"] = time.strftime("%Y-%m-%d", time.localtime(newest))
+            behind = int(max(0.0, newest - as_of_t) // 86400)
+            out["behind_days"] = behind
+            out["stale"] = behind >= 1 and bool(out["text"])
+    except Exception:
+        pass
+    return out
+
 
 def read_last_status(campaign_dir: str):
     """The last 10-minute status the engine PERSISTED for this effort
@@ -1189,7 +1405,9 @@ def read_deliverables(campaign_dir: str):
                           # name fragment; the map embeds the link there
                           "step": cells[3].strip() if len(cells) > 3 else "",
                           "openable": openable})
-        return {"exists": True, "items": items + _plan_doc_rows(campaign_dir, items)}
+        from anchor_notebooks import decorate
+        return {"exists": True, "items": [decorate(campaign_dir, item)
+                for item in items + _plan_doc_rows(campaign_dir, items)]}
     except Exception:
         return {"exists": True, "items": []}
 

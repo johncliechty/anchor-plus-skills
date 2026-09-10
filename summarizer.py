@@ -33,7 +33,9 @@ Stdlib only. All model calls go through ``job_runner`` so they are exercised via
 """
 
 import json
+import os
 import re
+import sys
 import threading
 import time
 import unicodedata
@@ -565,6 +567,48 @@ def _seed_prompt(seed: dict) -> str:
 RUN_FAILED = object()
 
 
+def _summary_fixture_backend():
+    """Recognize only the bundled Python fixtures used by Doctor and tests.
+
+    Their Claude-compatible output is a test transport, independent of the
+    user's saved coding family. Arbitrary runner overrides keep the normal
+    backend contract, including ChatGPT's dedicated adapter requirement.
+    """
+    raw = os.environ.get(_jr.RUNNER_CMD_ENV, "")
+    if not raw.strip():
+        return None
+    try:
+        argv = _jr._shlex_split(raw)
+        if len(argv) != 2:
+            return None
+        interpreter = argv[0]
+        if (interpreter.lower() not in ("python", "python.exe")
+                and Path(interpreter).resolve() != Path(sys.executable).resolve()):
+            return None
+        fixtures = Path(__file__).resolve().parent / "tests"
+        allowed = {fixtures / name for name in (
+            "fake_claude.py", "stub_streamjson.py", "stub_summarizer.py")}
+        if Path(argv[1]).resolve() in allowed:
+            return _jr.BACKEND_CLAUDE
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _launch_summary(folder_path, prompt, runner_env=None):
+    """Generate text in the project scope; only Anchor writes summary caches."""
+    kwargs = {
+        "cwd": str(folder_path), "output_dir": str(folder_path),
+        "prompt": prompt, "permission_mode": "plan",
+    }
+    fixture_backend = _summary_fixture_backend()
+    if fixture_backend is not None:
+        kwargs["backend"] = fixture_backend
+    if runner_env:
+        kwargs["env"] = runner_env
+    return _jr.launch("research", **kwargs)
+
+
 def _claims_from_job(job_id) -> list:
     """Turn a finished job's captured output into candidate-claim lines.
 
@@ -602,7 +646,7 @@ def _run_model_once(folder_path, seed: dict):
     summary. A successful run that simply emitted nothing returns ``[]``.
     """
     prompt = _seed_prompt(seed)
-    rec = _jr.launch("research", cwd=str(folder_path), prompt=prompt)
+    rec = _launch_summary(folder_path, prompt)
     jid = rec["job_id"]
     _jr.wait(jid, timeout=60)
     # FIX 2: a failed/timed-out/killed job is retryable — never cache its output.
@@ -1696,8 +1740,7 @@ def _run_project_model_once(folder_path, seed: dict, runner_env: dict = None):
     test from contaminating a later test's runner-call counter (test isolation).
     """
     prompt = _project_seed_prompt(seed)
-    rec = _jr.launch("research", cwd=str(folder_path), prompt=prompt,
-                     env=(runner_env or None))
+    rec = _launch_summary(folder_path, prompt, runner_env=runner_env)
     jid = rec["job_id"]
     _jr.wait(jid, timeout=60)
     final = _jr.load_record(jid) or {}

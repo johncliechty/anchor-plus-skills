@@ -10,3 +10,9 @@
    sessions were being steered by a dead objective. Decoy NORTH-STAR-*.md
    files still sit beside the locked one; read only the file whose header says
    LOCKED. (journal 0001)
+
+## 2026-09-09 — notebook and model-policy maintenance
+
+Read model authority from preferences and carry it through the actual driver and helper. Persist and register notebook work products when produced.
+
+Validation: focused source tests passed. Notebook execution, authenticated opening, and recovery require acceptance on the installation host.

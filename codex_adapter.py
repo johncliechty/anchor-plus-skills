@@ -33,8 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-CODEX_MODEL = "gpt-5.6-sol"
-CODEX_EFFORT = "ultra"
+# Model identities are resolved from the installed subscription catalog for
+# each new seat. No dated model/effort defaults belong in this transport.
 DEFAULT_TIMEOUT_SECONDS = 45 * 60
 VALID_SANDBOXES = frozenset(("read-only", "workspace-write"))
 MAX_ARTIFACT_SCAN_FILES = 10_000
@@ -934,7 +934,7 @@ def _preflight_args_are_local_only(args) -> bool:
     )
 
 
-def preflight_codex(cmd: str, model=CODEX_MODEL, effort=CODEX_EFFORT,
+def preflight_codex(cmd: str, model=None, effort=None,
                     env=None, run_impl=None, now_fn=_now_iso,
                     provenance_fn=inspect_executable,
                     popen_impl=subprocess.Popen, platform_name=None,
@@ -949,6 +949,9 @@ def preflight_codex(cmd: str, model=CODEX_MODEL, effort=CODEX_EFFORT,
         "auth_probe_at": now_fn(),
         "subscription_auth": None,
         "model_capability_verified": False,
+        "selected_model": model,
+        "selected_effort": effort,
+        "highest_effort_verified": False,
         "ultra_capability_verified": False,
         "config_guard_verified": False,
         "user_config_ignored": False,
@@ -1123,9 +1126,20 @@ def preflight_codex(cmd: str, model=CODEX_MODEL, effort=CODEX_EFFORT,
         detail = (catalog_run.stderr or catalog_run.stdout or
                   "catalog command failed").strip()
         return dict(base, ok=False, status="catalog_probe_failed", error=detail[:500])
+    from model_policy import normalize_catalog, select_model, PolicyUnavailable
     try:
         catalog = parse_model_catalog(catalog_run.stdout)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        policy = select_model("chatgpt", normalize_catalog("chatgpt", json.loads(catalog_run.stdout)))
+        # An Anchor parent may freeze a policy selection before spawning this
+        # adapter. Never silently substitute another identity mid-launch.
+        if ((model is not None and model != policy["model"]) or
+                (effort is not None and effort != policy["effort"])):
+            return dict(base, ok=False, status="capability_unavailable",
+                        error="Frozen model policy changed before launch; start a new seat")
+        model, effort = policy["model"], policy["effort"]
+        base.update(selected_model=model, selected_effort=effort,
+                    model_policy=policy, highest_effort_verified=True)
+    except (ValueError, TypeError, json.JSONDecodeError, PolicyUnavailable) as exc:
         return dict(base, ok=False, status="catalog_probe_failed", error=str(exc)[:500])
     selected = next((entry for entry in catalog if entry.get("slug") == model), None)
     if selected is None:
@@ -1149,7 +1163,7 @@ def _toml_basic_string(value) -> str:
 
 
 def build_exec_argv(cmd: str, target, sandbox="read-only",
-                    model=CODEX_MODEL, effort=CODEX_EFFORT,
+                    model=None, effort=None,
                     mcp_server_ids=()) -> list[str]:
     """Build the pinned, prompt-on-stdin ``codex exec`` argv.
 
@@ -1163,6 +1177,8 @@ def build_exec_argv(cmd: str, target, sandbox="read-only",
         raise ValueError("unsupported Codex sandbox %r" % (sandbox,))
     if tuple(mcp_server_ids or ()):
         raise ValueError("user MCP entries are forbidden for Anchor Codex seats")
+    if not isinstance(model, str) or not model or not isinstance(effort, str) or not effort:
+        raise ValueError("resolved model and effort are required before launch")
     target_path = Path(target).resolve()
     # Replace the entire projects table. A quoted key inside one inline table
     # handles drive letters, dots, spaces, quotes, backslashes, and Unicode as a
@@ -1208,7 +1224,9 @@ def build_exec_argv(cmd: str, target, sandbox="read-only",
         "-c", 'shell_environment_policy.ignore_default_excludes=false',
         "-c", 'shell_environment_policy.set={}',
         "-c", projects_override,
-        "-c", 'model_reasoning_effort="%s"' % effort,
+        "-c", 'model_reasoning_effort=%s' % _toml_basic_string(effort),
+        "-c", 'agents.default_subagent_model=%s' % _toml_basic_string(model),
+        "-c", 'agents.default_subagent_reasoning_effort=%s' % _toml_basic_string(effort),
         "--cd", str(target_path),
         "--model", model,
         "-",
@@ -1606,8 +1624,8 @@ def classify_failure(stderr: str, parsed: dict, exit_code,
 
 def build_receipt(*, status: str, prompt: str, sandbox: str, preflight: dict,
                    parsed=None, exit_code=None, error=None, timed_out=False,
-                   aborted=False, seat_started=False, model=CODEX_MODEL,
-                   effort=CODEX_EFFORT, artifact_paths=None,
+                   aborted=False, seat_started=False, model=None,
+                   effort=None, artifact_paths=None,
                    artifact_hashes=None, expected_artifact_paths=None,
                    artifact_contract_verified=False,
                    artifact_mutation_verified=False, artifact_evidence=None,
@@ -1620,6 +1638,8 @@ def build_receipt(*, status: str, prompt: str, sandbox: str, preflight: dict,
                    native_stderr_bytes=0) -> dict:
     """Build the durable whitelisted receipt; requested and observed stay distinct."""
     parsed = parsed or {}
+    model = model or preflight.get("selected_model")
+    effort = effort or preflight.get("selected_effort")
     raw_usage = parsed.get("usage") or {}
     normalized_usage = {}
     for key in USAGE_KEYS:
@@ -1656,6 +1676,9 @@ def build_receipt(*, status: str, prompt: str, sandbox: str, preflight: dict,
         "subscription_auth": preflight.get("subscription_auth"),
         "requested_model": model,
         "requested_effort": effort,
+        "requested_policy": {"mode": "latest_supported", "effort": "highest_supported"},
+        "highest_effort_verified": bool(preflight.get("highest_effort_verified")),
+        "delegation_policy": "disabled_by_isolated_oneshot_contract",
         "requested_orchestration_mode": "ultra" if effort == "ultra" else "single",
         "orchestration_mode_served": None,
         "model_capability_verified": bool(preflight.get("model_capability_verified")),
@@ -2697,7 +2720,7 @@ def run_codex(prompt: str, target, sandbox="read-only",
               platform_name=None, signal_api=signal,
               resolve_fn=resolve_codex_cmd,
               guard_recheck_fn=recheck_runtime_guard,
-              expected_artifact_paths=None,
+              expected_artifact_paths=None, model=None, effort=None,
               windows_job_factory=_WindowsJob) -> tuple[dict, int, str, str]:
     """Run one subscription seat and return envelope, adapter exit, native out/err."""
     started = time.monotonic()
@@ -2742,7 +2765,7 @@ def run_codex(prompt: str, target, sandbox="read-only",
         )
         elapsed = int((time.monotonic() - started) * 1000)
         return normalized_result("", receipt, elapsed, True), 2, "", ""
-    preflight = dict(preflight_fn(cmd, CODEX_MODEL, CODEX_EFFORT, child_env))
+    preflight = dict(preflight_fn(cmd, model, effort, child_env))
     if not preflight.get("ok"):
         status = str(preflight.get("status") or "preflight_failed")
         receipt = build_receipt(
@@ -2830,7 +2853,9 @@ def run_codex(prompt: str, target, sandbox="read-only",
         canonical_cmd = canonical_cmd.resolve(strict=False)
         cmd = str(canonical_cmd)
         trusted_launch_cwd = str(canonical_cmd.parent)
-        argv = build_exec_argv(cmd, target_path, sandbox=sandbox)
+        argv = build_exec_argv(cmd, target_path, sandbox=sandbox,
+                               model=preflight.get("selected_model"),
+                               effort=preflight.get("selected_effort"))
     except BaseException:
         _release_artifact_root_guard()
         raise
@@ -3557,6 +3582,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Anchor ChatGPT subscription adapter")
     parser.add_argument("--target", default=os.getcwd())
     parser.add_argument("--sandbox", choices=sorted(VALID_SANDBOXES), default="read-only")
+    parser.add_argument("--resolved-model")
+    parser.add_argument("--resolved-effort")
     parser.add_argument(
         "--expected-artifact", action="append", default=[],
         help="Target-relative file that workspace-write must create or hash-change",
@@ -3571,6 +3598,7 @@ def main(argv=None) -> int:
             prompt, args.target, sandbox=args.sandbox,
             timeout_seconds=args.timeout_seconds,
             expected_artifact_paths=args.expected_artifact,
+            model=args.resolved_model, effort=args.resolved_effort,
         )
     except (OSError, ValueError, TypeError) as exc:
         envelope = _failure_envelope(exc, prompt, args.sandbox)

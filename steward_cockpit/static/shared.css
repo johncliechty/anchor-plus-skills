@@ -303,6 +303,7 @@ button.armed { background: #234a2c; border-color: #3b6b46; color: #b5e6c3; }
          flex: none; }
 .light.green { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 .light.orange { background: var(--warn); }
+.light.quiet { background: #8995a7; box-shadow: none; }
 .light.red { background: #e05f5f; box-shadow: 0 0 7px #e05f5f; }
 .leftcol { width: 300px; }
 .rightcol { width: 0; border: none; overflow: hidden;

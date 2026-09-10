@@ -441,6 +441,19 @@ def remove_worktree(session_id, project_id=None, base=None, force=True):
     # Resolve the owning repo (explicit project_id, else best-effort skip).
     repo = _repo_for_project(project_id) if project_id is not None else None
 
+    # Orphans and direct teardown callers must obey the same notebook durability
+    # gate as terminal completion. Verification is read-only; never copy/retry
+    # or convert artifacts as a side effect of a destructive cleanup.
+    if existed:
+        try:
+            from notebook_completion import verify_main_copy
+            notebook_gate = verify_main_copy(repo, path)
+        except Exception:
+            notebook_gate = {"ok": False, "reason": "notebook-verification-error"}
+        if not notebook_gate.get("ok"):
+            return {"ok": False, "removed": False, "reason": "notebook-persistence-required",
+                    "notebooks": notebook_gate, "path": str(path)}
+
     git_removed = False
     if repo and _is_git_repo(repo):
         ok, _rc, _out, _err = _git(

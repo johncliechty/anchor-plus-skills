@@ -109,6 +109,12 @@ node bin/jumper-run.mjs --problem "<statement>" --depth FULL --fan-out <ideaRoun
 - **Model seats are pre-decided** (invocation discipline): Anchor's coding family owns
   drafting/ideation and its review family owns Gate 3. `JUMPER_GATE3_DRIVER` may
   retarget the review driver, but never the independence rule.
+- **On a Claude Code host with prefs coding=chatgpt, review=claude (2026-09-04, journals 0036/0037):**
+  run with `JUMPER_DRAFTER_FAMILY=chatgpt JUMPER_GATE3_DRIVER=claude`. The host-drafts-as-claude
+  rule otherwise leaves no attested second family (the trio refuses Codex for verification roles
+  because Codex does not expose its served model), and the resolver falls through to grok-cli.
+  ChatGPT drafts, Claude verifies: gate-3 live in seconds. Making this the resolver default is
+  proposed in 0037 and not yet applied.
 - **HALTs are honest outcomes, not bugs — and a HALT never destroys paid work (2026-08-19,
   journal 0031)**: `JumperSelfReviewHalt` = Gate 3 resolved to the drafter family (fixed at
   PRE-FLIGHT since 2026-07-25 — the CLI refuses in under a second, before any paid seat;

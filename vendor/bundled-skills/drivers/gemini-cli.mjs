@@ -67,6 +67,7 @@ import { extractJson } from './claude.mjs';
 import { isVerificationRole, normalizeRole } from './roles.mjs';
 import { runCliSchemaAttempts } from './cli-schema.mjs';
 import { runCloseBoundProcess } from './subscription-process.mjs';
+import { resolveModelPolicy, policyEnvironment } from './model-policy.mjs';
 
 // agy on-disk layout (validated on this host). The conversation transcript lives under
 // the brain dir keyed by conversation id; the served-model attestation lives in cli.log.
@@ -523,6 +524,7 @@ export function defaultRunGeminiCli(fullPrompt, label, {
   role,
   approvalMode,
   timeoutMs = DEFAULT_GEMINI_TIMEOUT_MS,
+  policyResolver = resolveModelPolicy,
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
@@ -538,12 +540,15 @@ export function defaultRunGeminiCli(fullPrompt, label, {
     );
   }
 
-  const mdl = resolveGeminiModel({ model, role, env });
+  // A dated label is not capability discovery. Until the subscription dispatch
+  // contract proves current models and maximum effort, fail before any spawn.
+  const selection = policyResolver('gemini', { env });
+  const mdl = selection.model;
   const readonly = isReadonlyRole({ role, label });
   // W0: prompt via ARGV `-p` with the STEER prefix (mirrors agy-dispatch.mjs); the reply
   // is read from transcript.jsonl below, not stdout.
   const prompt = STEER + String(fullPrompt ?? '');
-  const childEnv = Object.assign({}, env, { NO_COLOR: '1', FORCE_COLOR: '0', CI: '1' });
+  const childEnv = Object.assign({}, policyEnvironment(env), { NO_COLOR: '1', FORCE_COLOR: '0', CI: '1' });
   if (signal?.aborted) {
     return Promise.resolve({ text: '', rec: {
       label, cli_status: null, ok: false, status: 'aborted', aborted: true,

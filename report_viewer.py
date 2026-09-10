@@ -170,6 +170,7 @@ SKILL_ICON_FILES = {
     "financial-analyst": "financial-analyst-icon.jpg",
     "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
     "zombie-hunter": "zombie-hunter-radar.jpg", "ecgberht": "ecgberht-project-seal.jpg",
+    "chekhov": "chekhov-icon.svg",
 }
 LANE_SKILL_NAMES = {"research": "researchPrime", "plan": "Crucible", "planning": "Crucible",
                     "build": "Foreman"}

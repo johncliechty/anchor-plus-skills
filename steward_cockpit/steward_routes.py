@@ -56,7 +56,7 @@ CONFIG = {"steward": "Ecgberht", "fake": False, "permission_mode": "bypassPermis
 BONEYARD = campaign.BONEYARD_DIRNAME
 SKILLS = ["researchPrime", "Crucible", "Foreman", "Gandalf", "Jumper",
           "ramanujan", "legal-beagle", "financial-analyst",
-          "literature-review", "tidy-idy"]
+          "literature-review", "tidy-idy", "chekhov"]
 # (2026-09-05, John) every skill has a brand mark under /vendor/brand/; the cockpit
 # reaches it as /brand/<file>. The client twin is static/skill-icons.js.
 SKILL_ICONS = {
@@ -66,6 +66,7 @@ SKILL_ICONS = {
     "financial-analyst": "financial-analyst-icon.jpg",
     "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
     "zombie-hunter": "zombie-hunter-radar.jpg", "Ecgberht": "ecgberht-project-seal.jpg",
+    "chekhov": "chekhov-icon.svg",
 }
 SKILL_ICON_FALLBACK = "gwl-m-icon.svg"
 
@@ -86,6 +87,7 @@ SKILL_ICONS = {
     "financial-analyst": "financial-analyst-icon.jpg",
     "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
     "zombie-hunter": "zombie-hunter-radar.jpg", "Ecgberht": "ecgberht-project-seal.jpg",
+    "chekhov": "chekhov-icon.svg",
 }
 SKILL_ICON_FALLBACK = "gwl-m-icon.svg"
 
@@ -236,7 +238,7 @@ def serve_page_doc(page, pid=""):
                 .replace('/brand/', '/vendor/brand/'))
     shim = _CLIENT_SHIM % (json.dumps(pid),
                            json.dumps(CONFIG.get("build") or ""))
-    return html.replace("<script", shim + "<script", 1)
+    return html.replace("<script", shim + '<script src="/steward-static/notebook-actions.js"></script><script', 1)
 
 
 def _effort_dir(proot, rel):
@@ -263,7 +265,8 @@ _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
 # always sends dir="" — if we resolve that through discover_efforts and the
 # root has no Face, the files tile was an honest empty while the folder
 # was full (2026-08-28).
-_PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open"}
+_PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open", "notebook-open",
+                       "notebook-register", "notebook-status", "deliverable-file"}
 
 
 def api_get(proot, verb, qs):
@@ -438,8 +441,8 @@ def _efforts(cdir):
 
 
 def _usage_rollup(cdir):
-    zero = lambda: {"spend": 0.0, "tokens": 0, "secs": 0}
-    from steward_cockpit.steward_engine import _read_all_state
+    zero = lambda: {"reported_spend": 0.0, "unpriced_turns": 0, "tokens": 0, "secs": 0}
+    from steward_cockpit.steward_engine import _read_all_state, _usage_snapshot
     estate = _read_all_state()
     stew, term = zero(), zero()
     cdir_n = os.path.realpath(cdir)
@@ -448,15 +451,28 @@ def _usage_rollup(cdir):
         # exact boundary, not a string prefix: '.../foo' must not match '.../foobar'
         if base != cdir_n and not base.startswith(cdir_n + os.sep):
             continue
-        u = entry.get("usage") or {}
+        u = _usage_snapshot(entry.get("usage"))
         b = term if "||general||" in key else stew
-        b["spend"] += u.get("spend", 0); b["tokens"] += u.get("tokens", 0)
-        b["secs"] += u.get("secs", 0)
+        for field in b:
+            b[field] += u[field]
     total = {k: round(stew[k] + term[k], 4) for k in stew}
+    for bucket in (stew, term, total):
+        bucket["reported_spend"] = round(bucket["reported_spend"], 4)
+        bucket["cost_complete"] = bucket["unpriced_turns"] == 0
+        bucket["spend"] = bucket["reported_spend"] if bucket["cost_complete"] else None
     return {"steward": stew, "terms": term, "total": total}
 
 
 def handle_get(cdir, verb, qs):
+    if verb == "notebook-status":
+        import anchor_notebooks
+        return anchor_notebooks.service_status(), 200
+    if verb == "notebook-open":
+        import anchor_notebooks
+        try:
+            return {"__notebook_redirect__": anchor_notebooks.open_url(cdir, qs.get("path", ""))}, 200
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 409
     if verb == "deliverables":
         # 2026-08-25 (John's ask; campaign journal 0010 "where is the thing I paid
         # for?"): the effort's DELIVERABLES.md register, parsed disk-true — the ONE
@@ -505,6 +521,14 @@ def handle_get(cdir, verb, qs):
         m["steward"] = CONFIG["steward"]
         return m, 200
     if verb == "history":
+        if qs.get("general") == "1":
+            from steward_cockpit.conversation_history import read_history_document
+            try:
+                turns = read_history_document(cdir, thread_id=str(qs.get("term") or "1"))["turns"]
+                return {"turns": turns[-campaign.TAIL_TURNS:],
+                        "note": "" if len(turns) <= campaign.TAIL_TURNS else f"showing last {campaign.TAIL_TURNS} of {len(turns)} turns"}, 200
+            except (OSError, ValueError) as exc:
+                return {"turns": [], "note": "conversation history unreadable: " + str(exc)}, 409
         return campaign.read_history(cdir), 200
     if verb == "state":
         eng = get_engine(cdir, qs.get("general") == "1", qs.get("term"))
@@ -601,7 +625,7 @@ def events(cdir, qs):
 
 
 def _terms_view(cdir):
-    from steward_cockpit.steward_engine import _read_all_state
+    from steward_cockpit.steward_engine import _read_all_state, _usage_snapshot
     estate = _read_all_state()
     out = []
     for tid, meta in _load_terms(cdir).items():
@@ -617,7 +641,7 @@ def _terms_view(cdir):
                     "cli": (eng.cli if eng else entry.get("cli", "claude")),
                     "last_used": entry.get("last_used", ""),
                     "last_text": entry.get("last_text", ""),
-                    "usage": entry.get("usage", {})})
+                    "usage": _usage_snapshot(entry.get("usage"))})
     out.sort(key=lambda t: (t["alive"], t["last_used"] or t["created"]),
              reverse=True)
     return out
@@ -802,6 +826,13 @@ def _files(cdir, sub, q):
                                 "mtime": int(mt)})
         except OSError as e:
             return {"error": str(e)}, 500
+    import anchor_notebooks
+    for entry in entries:
+        if not entry["dir"]:
+            rel = entry["name"] if q or not sub else sub.replace("\\", "/") + "/" + entry["name"]
+            info = anchor_notebooks.describe(cdir, rel)
+            if info:
+                entry["notebook_product"] = info
     return {"sub": sub, "q": q, "entries": entries}, 200
 
 
@@ -824,6 +855,14 @@ def _filetext(cdir, fpath):
 
 # ---------- POST acts ----------
 def handle_post(cdir, verb, body):
+    if verb == "notebook-register":
+        import anchor_notebooks
+        try:
+            return anchor_notebooks.register(cdir, source=body.get("source"),
+                what=body.get("what"), step=body.get("step", ""),
+                regenerate=body.get("regenerate") is True), 200
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "error": str(exc)}, 409
     if verb == "drain-all":
         # 2026-08-25 hardening (review finding #1): the restart drain runs in a SEPARATE
         # process, so it can never see this service's live ENGINES — the in-process leg

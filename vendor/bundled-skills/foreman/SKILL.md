@@ -210,14 +210,35 @@ data -> directly-read authoritative source -> theory/argument.
   wave changed (coverage-of-changed-files check), it is **not** a GO — HALT as
   "gate proves nothing about this wave."
 - **Judge rules:** a GREEN gate outranks reviewer prose; to block GREEN a
-  reviewer must produce a **failing repro command + output**. The judge may HALT
-  on missing required tests; it may not override passing real output with argument.
+  reviewer must produce a **failing repro command + output**. The orchestrator's
+  readiness guard may HALT on missing required tests; the judge may not override
+  passing real output with argument.
+- **Current-wave readiness:** explicitly declared required test files (including
+  `**Deliverables:** ... Test file test/wNN-name.test.mjs with ids: ...`) must
+  exist after execute and before GO, including resume with a proven ledger.
+  Unrelated source fixes and an older passing suite do not meet this source gate.
+  Documentation, spec, example and fixture references are not test declarations.
+  The bounded declaration grammar accepts `Test file <path>` at a sentence or
+  semicolon clause start, after an optional bullet/Deliverables label, or following
+  an add/create/implement/write/deliver/provide directive or `Replace ... with`.
+  `required`/`new` modifiers are supported. Bare paths, including Deliverables
+  bullets, do not create required-test declarations; fenced examples are ignored.
+  A `[taxonomy:missing-required-tests]` halt supports `--resume --clear-halt --force`
+  to re-enter EXECUTE at iteration 0 while preserving the prior ledger. Missing
+  tests still HALT; fresh gate and review are required before GO. Without force,
+  clear-halt keeps the ordinary gate re-entry and cannot skip this readiness guard.
 - **Anti-sycophancy:** reviewers run read-only, are prompted to **refute**, cite
   `file:line` or `command+output`; a **BLOCKER requires >=2 independent reviewers
   to agree**.
 - **Finding identity:** every finding carries a stable id (`file:line + rule`);
   convergence = zero open BLOCKER/MAJOR with verified closure; a fix that closes
   A but opens B is tracked to prevent false convergence / oscillation.
+  The established wave-wide `wave-not-implemented` rule alone combines citations
+  across files; retain every original reviewer/repro and count each reviewer once.
+  Orchestrator-owned `.foreman/wave-N-review-I.json` records expected, completed
+  and failed seats, bounded originals, merged evidence and decision before elegance.
+  A round-specific copy preserves prior evidence when resume repeats an iteration.
+  A pending round has no approval; a degraded round names missing votes explicitly.
 
 ---
 

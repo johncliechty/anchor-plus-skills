@@ -1,16 +1,13 @@
-"""Wave 12 — the v12 build added NO new native/third-party import.
+"""Distribution import guards, including the original Wave 12 checks.
 
-Proves IMPLEMENTATION-PLAN.md "## Wave 12 — ... distro": after Waves 1-12,
-`distro.py`'s stdlib-only import scan still reports ONLY the declared, file-scoped
-`pywinpty` exception. The lone NEW v12 module — `effort_view.py` (the derived,
-drift-safe, deduped effort view-layer) — is STDLIB-ONLY (it imports only
-`session_registry` / `effort_history` / `summarizer`, all in-repo stdlib-only
-modules) and is listed in `dist_manifest.txt`. And — critically — **Playwright
-never appears in product code** (it is a DEV-ONLY test dep, imported via
-`pytest.importorskip` in tests only).
+The whole shipped product must pass the stdlib-only import scan except for
+explicit, file-scoped optional dependencies: `winpty` in `pty_manager.py`, and
+`jupyter_server`, `jupyter_client`, and `traitlets` in `notebook_service.py`.
+Each exception is restricted to its owning file.
 
-Hard constraint: the WHOLE shipped product set scans clean modulo the single
-`winpty`-in-`pty_manager.py` exception.
+The Wave 12 module `effort_view.py` remains stdlib-only and listed in
+`dist_manifest.txt`. Playwright remains a development-only test dependency
+and must never appear in product code.
 """
 from pathlib import Path
 
@@ -34,13 +31,22 @@ def test_v12_full_scan_clean():
     assert distro.scan_paths(pairs) == []
 
 
-def test_only_declared_pywinpty_exception():
-    """The sole declared native-dep exception is winpty, scoped to pty_manager.py."""
+def test_only_declared_file_scoped_import_exceptions():
+    """Only declared optional dependencies may import from their owning file."""
+    expected_owners = {
+        "winpty": "pty_manager.py",
+        "jupyter_server": "notebook_service.py",
+        "jupyter_client": "notebook_service.py",
+        "traitlets": "notebook_service.py",
+    }
     allow = distro._THIRD_PARTY_IMPORT_ALLOWLIST
-    assert set(allow.keys()) == {"winpty"}, (
-        "no v12 wave may add a new third-party-import exception")
-    assert allow["winpty"]["files"] == frozenset({"pty_manager.py"})
-    assert distro._import_allowed("winpty", "pty_manager.py")
+    assert set(allow) == set(expected_owners), (
+        "third-party-import exceptions must match the declared optional dependencies")
+    for module, owner in expected_owners.items():
+        assert allow[module]["files"] == frozenset({owner})
+        assert distro._import_allowed(module, owner)
+        for other_file in {"anchor_gui.py", "pty_manager.py", "notebook_service.py"} - {owner}:
+            assert not distro._import_allowed(module, other_file)
 
 
 def test_v12_new_module_ships_in_manifest_and_scans_clean():

@@ -44,6 +44,18 @@ usage_ledger.py
 usage_capture.py
 narration.py
 anchor_settings.py
+model_policy.py
+anchor_notebooks.py
+notebook_artifacts.py
+notebook_products.py
+notebook_persistence.py
+notebook_completion.py
+notebook_runtime.py
+notebook_service.py
+docs/notebook-work-products.md
+docs/notebook-host-setup.md
+tools/setup_notebooks.ps1
+tools/install_notebook_startup.ps1
 gate_adapter.py
 lanes.py
 effort_history.py
@@ -284,6 +296,10 @@ chamber/rebrief-channel-audit.json
 # per-project .anchor/ + .ecgberht/) — no repo data files.
 steward_cockpit/__init__.py
 steward_cockpit/steward_engine.py
+steward_cockpit/codex_turn_bridge.py
+steward_cockpit/conversation_history.py
+steward_cockpit/legacy_claude_history.py
+steward_cockpit/grok_turn_bridge.py
 steward_cockpit/steward_routes.py
 steward_cockpit/steward_campaign.py
 steward_cockpit/fake_claude.py
@@ -297,6 +313,7 @@ steward_cockpit/static/v1.html
 steward_cockpit/static/v3.html
 steward_cockpit/static/report.html
 steward_cockpit/static/shared.js
+steward_cockpit/static/notebook-actions.js
 steward_cockpit/static/shared.css
 steward_cockpit/static/md.js
 steward_cockpit/static/plate.js
@@ -338,7 +355,8 @@ foundry_acceptance.py
 # list): orientation (the /api/rnd/orient_session handler's engine) and parity
 # (the C3 journal↔legacy parity classifier the shipped healthcheck walks).
 # Their own closures resolve entirely to already-shipped modules. The dev-only
-# ``tools/`` package stays unshipped (declared in _OPTIONAL_FIRST_PARTY; its
+# Python ``tools/`` package stays unshipped (the two standalone notebook setup
+# PowerShell entrypoints above are an explicit exception; declared in _OPTIONAL_FIRST_PARTY, its
 # consumers degrade by design and the healthcheck skip-warns without it).
 orientation.py
 parity.py
@@ -477,6 +495,7 @@ tests/test_*.py
 !tests/test_log_redaction_2026_07_26.py
 tests/fixtures/fake_stream.jsonl
 tests/fixtures/gate_stream.jsonl
+tests/fixtures/model-policy-v1.json
 
 tests/test_cockpit_status_window_2026_09_03.py
 tests/test_doctor_resolve_all_2026_09_03.py

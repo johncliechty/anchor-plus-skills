@@ -26,6 +26,7 @@ def env(tmp_path, monkeypatch):
     data.mkdir()
     wbase = tmp_path / "wt-base"
     monkeypatch.setenv("ANCHOR_DATA_DIR", str(data))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "profile"))
     monkeypatch.setenv("ANCHOR_WORKTREE_BASE", str(wbase))
     monkeypatch.setenv("ANCHOR_PTY_BACKEND", "stub")
     monkeypatch.delenv("ANCHOR_TOKEN", raising=False)
@@ -36,6 +37,21 @@ def env(tmp_path, monkeypatch):
     import worktrees; importlib.reload(worktrees)
     import lanes; importlib.reload(lanes)
     import terminal_session; importlib.reload(terminal_session)
+    # Exercise model policy while retaining the in-memory stub transport: the
+    # ordinary stub backend deliberately bypasses model resolution.
+    class PolicyFixtureBackend(pty_manager.StubBackend):
+        name = "policy-fixture"
+
+    policy_backend = PolicyFixtureBackend()
+    monkeypatch.setattr(pty_manager, "select_backend", lambda *args, **kwargs: policy_backend)
+    import anchor_settings
+    anchor_settings.save_settings(default_cli="chatgpt", coding_family="chatgpt", review_family="grok")
+    import model_policy
+    model_policy._MEMORY.clear()
+    def synthetic_catalog(family, **kwargs):
+        return [{"model": "fixture-frontier", "efforts": ["high", "ultra"],
+                 "rank": 0, "upgrade": None, "evidence": "test_catalog"}], "fixture-cli"
+    monkeypatch.setattr(model_policy, "discover", synthetic_catalog)
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-b", "main")
@@ -76,6 +92,9 @@ def test_a_terminal_opens_on_chatgpt_seeded_once(env):
     cmd = env["pty"]._LIVE[sid].cmd
     assert cmd[-1] == rec["seed_text"].strip()
     assert "check_for_update_on_startup=false" in cmd
+    assert cmd[cmd.index("--model") + 1] == "fixture-frontier"
+    assert 'model_reasoning_effort="ultra"' in cmd
+    assert reg.get_session(sid)["model_policy"]["model"] == "fixture-frontier"
     # honest accounting: a Codex session's segment is unmeasured (RULED Option C)
     assert reg.get_session(sid)["usage_gemini_segment"] is True
     out = ts.read_since(sid, 0)
@@ -106,6 +125,28 @@ def test_switch_to_and_from_chatgpt_leaves_no_orphan_pty(env):
 def test_doctor_posture_on_chatgpt_is_read_only(env):
     ts = env["ts"]
     assert ts.DOCTOR_READONLY_CLI_ARGS[ts._reg.BACKEND_CHATGPT] == ("-s", "read-only")
+
+
+def test_default_terminal_uses_dashboard_not_sticky_project_engine(env):
+    ts, pid = env["ts"], env["pid"]
+    ts.start_session(pid, "research", backend="claude")
+    assert ts.start_session(pid, "research")["backend"] == "chatgpt"
+
+
+def test_failed_capability_switch_preserves_live_session(env, monkeypatch):
+    import model_policy
+    ts, reg = env["ts"], env["reg"]
+    rec = ts.start_session(env["pid"], "research", backend="chatgpt")
+    sid = rec["session_id"]
+    old_child = env["pty"]._LIVE[sid]
+    model_policy._MEMORY.clear()
+    def unavailable(*args, **kwargs):
+        raise model_policy.PolicyUnavailable("claude", "fixture unavailable")
+    monkeypatch.setattr(model_policy, "discover", unavailable)
+    with pytest.raises(ts.TerminalSessionError, match="fixture unavailable"):
+        ts.switch_engine(sid, "claude")
+    assert env["pty"]._LIVE[sid] is old_child
+    assert reg.get_session(sid)["backend"] == "chatgpt"
 
 
 def test_live_codex_spawn_is_still_refused_under_pytest(env, monkeypatch):

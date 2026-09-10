@@ -75,7 +75,7 @@ export const CORROBORATED_RUNG = RUNG.CORROBORATED;
  * vs THIS pinned model — never a producer-recorded `tier` field. A test binds it to the manifest so the
  * two cannot drift. `frontierModel` is overridable per call (the router passes the manifest value).
  */
-export const FRONTIER_MODEL = 'Gemini 3.1 Pro (High)';
+export const FRONTIER_MODEL = null; // Actual per-run served identity is required.
 
 /** The minimum number of DISTINCT independent families for the FALLBACK quorum (DESCRIPTION-INC2: quorum >=2). */
 export const MIN_QUORUM = 2;
@@ -232,7 +232,7 @@ export function makeQuorumArtifact({ claim, members, frontierModel = FRONTIER_MO
  * createOllamaGenerate bound to the persistent server in the tool lane). Each family is asked the SAME
  * deterministic corroboration prompt, so every member's F1a prompt_hash matches the artifact's.
  */
-export async function runCrossFamilyPanel(claim, panel, { drive, frontier } = {}) {
+export async function runCrossFamilyPanel(claim, panel, { drive, frontier, author } = {}) {
   if (!Array.isArray(panel) || panel.length === 0) {
     throw new CrossFamilyVerifierError('runCrossFamilyPanel requires a non-empty panel');
   }
@@ -243,7 +243,8 @@ export async function runCrossFamilyPanel(claim, panel, { drive, frontier } = {}
     // The F1a driver HARD-FAULTS on a claude family at mint time — the seam stays non-Claude. The
     // member's tier is passed through (a frontier Gemini panel member stamps tier=frontier; an ollama
     // member defaults to fallback) so makeQuorumArtifact / the adjudicator see the right backend identity.
-    const rec = await driver(null, { model: p.model, family: p.family, prompt, tier: p.tier }, { generate: p.generate });
+    const rec = await driver(null, { model: p.model, family: p.family, prompt, tier: p.tier,
+      generator_family: author }, { generate: p.generate });
     members.push(rec);
   }
   // (2026-09-04) `frontier` = the resolved seat identity {family, model}; absent, the legacy default applies.
@@ -315,13 +316,16 @@ const flag = (reason, extra = {}) =>
  *
  * @param {{ artifact:object, claim:object, rerun?:Function|object, probeTrust?:Function|object, families?:Set<string>, frontierModel?:string }} o
  */
-export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust, families = CROSS_FAMILY_FAMILIES, frontierModel = FRONTIER_MODEL, frontier, author = 'claude' } = {}) {
+export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust, families = CROSS_FAMILY_FAMILIES, frontierModel = FRONTIER_MODEL, frontier, author = null } = {}) {
   const fo = frontier || frontierModel; // (2026-09-04) the resolved seat identity, else the legacy model string
   if (!claim || typeof claim.id !== 'string') {
     throw new CrossFamilyVerifierError('adjudicateCrossFamily requires the claim being verified');
   }
   if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
     return abstain('no cross-family corroboration artifact supplied — the panel was never run (deferred arm)');
+  }
+  if (!['claude', 'chatgpt', 'grok', 'gemini', 'qwen', 'llama', 'human'].includes(lowerFamily(author))) {
+    return abstain('Actual claim author family is required for independent verification');
   }
   const members = Array.isArray(artifact.members) ? artifact.members : null;
   if (!members || members.length === 0) {
@@ -358,7 +362,7 @@ export async function adjudicateCrossFamily({ artifact, claim, rerun, probeTrust
 
   // (3a) per-member STRUCTURAL validation (the F1a artifact contract) + same-prompt + allowed-panel.
   for (const m of members) {
-    const v = validateArtifact(m);
+    const v = validateArtifact(m, {generator_family: author});
     if (!v.ok) return flag(`malformed panel member artifact: ${v.failures.join('; ')}`);
     if (m.prompt_hash !== storedHash) {
       return flag(`panel member ${memberFamily(m)} was asked a DIFFERENT prompt than the bound one (spliced artifact)`);

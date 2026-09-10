@@ -146,6 +146,18 @@ _USERPATH_ALLOWED_ACCOUNTS = frozenset({"example"})
 # Each entry maps the imported top-level module name → the set of first-party
 # files (POSIX relpaths) where it is allowed, plus a human reason.
 _THIRD_PARTY_IMPORT_ALLOWLIST = {
+    "jupyter_server": {
+        "files": frozenset({"notebook_service.py"}),
+        "reason": "Optional isolated notebook service only; declared notebook extra, lazy import",
+    },
+    "jupyter_client": {
+        "files": frozenset({"notebook_service.py"}),
+        "reason": "Optional isolated local-kernel service only; Jupyter dependency, lazy import",
+    },
+    "traitlets": {
+        "files": frozenset({"notebook_service.py"}),
+        "reason": "Optional isolated Jupyter service configuration only; lazy import",
+    },
     "winpty": {
         "files": frozenset({"pty_manager.py"}),
         "reason": ("pty_manager.py — terminal subsystem (ConPTY), the only "
@@ -442,6 +454,9 @@ _TOKEN_VALUE_RE = re.compile(
 # dictionary-ish words. base64url ("-"/"_") and JWT are handled by the concrete
 # shape detectors above, so the generic run deliberately excludes "_" and "-".
 _GENERIC_ENTROPY_RE = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{40,}(?![A-Za-z0-9+/])")
+# Exact public Windows API identifiers, not credentials. This exception applies
+# only to the generic entropy heuristic; all concrete secret detectors remain on.
+_PUBLIC_API_IDENTIFIERS = frozenset({"ConvertStringSecurityDescriptorToSecurityDescriptorW"})
 
 # A dotted identifier chain (``panel.token``, ``process.env.X``,
 # ``body.confirmToken``) — a code READ of a runtime value, never a pasted
@@ -600,6 +615,8 @@ def _scan_text(rel: str, text: str):
             yield (rel, "build-host-path", _snip(m.group(0)))
         for m in _GENERIC_ENTROPY_RE.finditer(text):
             run = m.group(0)
+            if run in _PUBLIC_API_IDENTIFIERS:
+                continue
             if run.lower() in _PLACEHOLDER_VALUES:
                 continue
             if _looks_high_entropy(run):
@@ -1029,22 +1046,38 @@ dependency-free assets. There is no personal task/project data, no R&D registry,
 and no `.anchor/` store in this export; you start from an empty state.
 
 ## Requirements
-- Python 3.8+ (the shipped product is **Python standard library only** — with
-  ONE optional, isolated exception: the v3 ConPTY terminal subsystem can use the
-  native `pywinpty` package).
+- Python 3.8+ for the core dashboard; use a current supported Python installation.
+  The core import path uses the Python standard library.
 - **Optional terminal extra (`pywinpty`):** real in-browser ConPTY terminals
   (`pty_manager.py`) need `pywinpty` (`pip install .[terminal]`, Windows only).
   It is imported LAZILY and ONLY by the terminal subsystem — if absent, the
   terminal feature reports "real terminal unavailable" and the rest of Anchor is
   unaffected. The core import path stays stdlib-only.
-- Optional system tools, invoked as subprocesses when present: `claude`
-  (Claude Code), `git`, `latexmk` (for PDF reports).
+- For AI features, install and sign in to your selected subscription CLI:
+  Claude Code, ChatGPT Codex, or Grok Build. Choose coding and review families
+  in Settings. Model and effort selection follow the installed CLI's current
+  capabilities. Git and Node.js are needed by the project and skill engines.
+- Optional notebooks use a separate Jupyter/Python environment on the Anchor
+  host. R notebooks also require R and IRkernel. These are one-time setup
+  dependencies; opening a notebook never installs software.
 
-## Run
+## Install and run
+Start with the [collaborator installation guide](USER-ONBOARD.md). On Windows,
+run `onboard.cmd` from the downloaded package to configure the local install,
+then start Anchor with its authenticated launcher:
+
 ```
-python anchor_gui.py --no-browser      # local web server (default :8777)
+python launch_anchor_dashboard.py
 ```
-Then open the dashboard in your browser.
+The launcher opens the dashboard in your browser. Keep your project folders
+and their backups separate from replaceable notebook software.
+
+For notebooks, follow [host setup](docs/notebook-host-setup.md), then
+[notebook work products](docs/notebook-work-products.md). The Windows notebook
+installer defaults to `C:/ProgramData/AnchorNotebook` for software and asks for
+the existing folder containing your notebooks. This optional setup requires
+administrator confirmation and a password entered locally. Enable notebook
+links only after authenticated Python/R acceptance on your host.
 
 ## Develop / test
 `pytest` is a dev-only dependency (not shipped at runtime):
@@ -1098,7 +1131,7 @@ This is a data-free Anchor distribution. Read this before exploring.
 ## Reading rules (token discipline)
 - Do NOT read `anchor_gui.py` end-to-end (18,000+ lines) — grep for the
   symbol you need and read that region only.
-- Do NOT crawl `vendor/bundled-skills/` — those are 13 packaged skills, not
+- Do NOT crawl `vendor/bundled-skills/` — those are packaged skills, not
   app code.
 - Do NOT bulk-scan `starter/`, `static/`, or `vendor/` trees.
 

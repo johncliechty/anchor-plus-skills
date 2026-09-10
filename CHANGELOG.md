@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.0 — Provider routing and optional notebooks
+
+- Adds provider-neutral `latest_supported` / `highest_supported` model selection across Anchor, Trio, Foundry, and Ecgberht.
+- Adds native ChatGPT and Grok cockpit turns with conversation history continuity.
+- Adds `.py` / `.R` notebook work products with persistence, registration, and opening from the shared UI.
+- Adds an optional Windows Jupyter installer with a dedicated account, automatic startup, and Python and R support.
+
+Remaining limits: Each host must complete installation and authenticated Python/R acceptance before notebook links are enabled. Host reboot and remote tablet acceptance are not yet verified by source gates. This release targets trusted single-user deployments; installers for other operating systems and multiuser support are excluded.
+
 ## v1.2.15 — HTML deliverables render; plan rows close again
 
 John, 2026-09-06: "when I open up details for plan elements, I try and close them and

@@ -2604,7 +2604,7 @@ async function launchDeliverable(btn) {
       data = await r.json();
     }
     if (!data || !data.ok) {
-      if (msg) msg.textContent = 'failed: ' + ((data && data.error) || 'unknown');
+      if (msg) msg.textContent = 'failed: ' + ((data && (data.error || data.reason)) || 'unknown');
       btn.disabled = false;
       return;
     }
@@ -2616,6 +2616,18 @@ async function launchDeliverable(btn) {
       if (stopBtn) stopBtn.style.display = '';
       btn.style.display = 'none';
       if (data.url) window.open(data.url, '_blank');
+    } else if (data.type === 'notebook' || dtype === 'notebook') {
+      if (msg) msg.textContent = 'opening on the Anchor host; Jupyter sign-in may be required';
+      btn.disabled = false;
+      if (data.href) {
+        var notebookLink = new URL(data.href, location.origin);
+        if (notebookLink.origin !== location.origin || notebookLink.pathname !== '/api/steward/notebook-open') {
+          throw new Error('Invalid notebook navigation route');
+        }
+        var notebookToken = _anchorToken();
+        if (notebookToken) notebookLink.searchParams.set('token', notebookToken);
+        window.open(notebookLink.href, '_blank', 'noopener,noreferrer');
+      }
     } else if (dtype === 'doc') {
       if (msg) msg.textContent = 'opened';
       btn.disabled = false;

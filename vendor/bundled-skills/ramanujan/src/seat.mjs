@@ -17,15 +17,16 @@
 // not guessed.
 
 import { pathToFileURL } from 'node:url';
+import { resolveDriverReference } from './trio-location.mjs';
 
 /** The pinned trio driver index (the ONE family→driver mechanism on this host). */
-export const DEFAULT_TRIO_DRIVERS_REF = '<path>';
+export const DEFAULT_TRIO_DRIVERS_REF = 'trio:index';
 
 /** The families a seat may resolve to (mirrors trio drivers' VALID_MODEL_FAMILIES). */
 export const SEAT_FAMILIES = Object.freeze(['claude', 'gemini', 'grok', 'chatgpt']);
 
 /** The historical author of every claim this engine verifies (the Claude Code session). */
-export const DEFAULT_AUTHOR_FAMILY = 'claude';
+export const DEFAULT_AUTHOR_FAMILY = null;
 
 const lower = (f) => (typeof f === 'string' ? f.trim().toLowerCase() : '');
 
@@ -40,6 +41,10 @@ const lower = (f) => (typeof f === 'string' ? f.trim().toLowerCase() : '');
 export function chooseSeat({ coding, review } = {}, author = DEFAULT_AUTHOR_FAMILY) {
   const a = lower(author) || DEFAULT_AUTHOR_FAMILY;
   const candidates = [lower(review), lower(coding)].filter((f) => SEAT_FAMILIES.includes(f));
+  if (!SEAT_FAMILIES.includes(a)) {
+    return Object.freeze({family: null, cross_model: false, candidates,
+      reason: 'Claim author family is unknown; record its actual family before claiming cross-family verification.'});
+  }
   const family = candidates.find((f) => f !== a) || null;
   if (!family) {
     return Object.freeze({
@@ -66,7 +71,7 @@ export async function loadFamilies({ env = process.env, driversRef = DEFAULT_TRI
   try {
     const loader = typeof loadModelFamilies === 'function'
       ? loadModelFamilies
-      : (await import(pathToFileURL(driversRef).href)).loadModelFamilies;
+      : (await import(pathToFileURL(resolveDriverReference(driversRef, env)).href)).loadModelFamilies;
     if (typeof loader !== 'function') throw new Error(`${driversRef} does not export loadModelFamilies`);
     const fams = loader(env) || {};
     return Object.freeze({ coding: lower(fams.coding) || null, review: lower(fams.review) || null, source: fams.source || 'prefs' });
@@ -97,7 +102,7 @@ export async function resolveCrossFamilySeat({ manifest, env = process.env, auth
   return Object.freeze({
     ...base,
     family: pick.family,
-    model: tool.model || null,
+    model: null,  // Shared CLI policy resolves latest/highest; manifests never pin production models.
     driver_ref: tool.driver_ref,
     run_export: tool.run_export,
     tool,

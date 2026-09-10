@@ -33,7 +33,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 import { SEAT_ROLE, resolveTierAlias } from '../engine/seat-tiers.mjs';
 import { familyToSubscriptionDriver } from '../engine/seating.mjs';
@@ -289,141 +289,51 @@ export const TALK_DENIED_TOOLS = Object.freeze([
  *           allowTools?: boolean }} [opts]
  */
 export async function callClaudeSeat(prompt, opts = {}) {
-  const bin = opts.bin || process.env.ECGBERHT_CLAUDE_BIN || 'claude';
-  const args = [
-    '-p',
-    '--output-format', 'json',
-    // NO --permission-mode plan (removed 2026-08-06, found live on John's first
-    // real campaigns). Plan mode injects its own system prompt, so the seat
-    // BELIEVED it was an interactive terminal session mid-plan: it told John to
-    // press Shift+Tab, to run /config, refused to "act" until a toggle he could
-    // not see was flipped, and burned four turns of a real campaign on a
-    // handshake that could never complete. The DENY LIST below is the layer
-    // that actually keeps the seat read-only (an allow-list does not restrict —
-    // measured 2026-08-05); plan mode added nothing but the poisoned prompt.
-  ];
-  // MODEL BY ALIAS, never a versioned id — the alias resolves to the latest model in
-  // that tier, so a new release is picked up with no code change (see seat-tiers.mjs).
-  if (opts.model) args.push('--model', String(opts.model));
-  // TOOLS COST TIME. Grounding in the project's files is what made the first BA 815
-  // proposal good, but it is also what made that turn take 162s. A talking turn does
-  // not need to re-read the disk — the scaffolding and history are already in the
-  // prompt — so tools are opt-IN, granted only to the planning turn.
-  // DENY, don't merely allow-list — an allow-list does not restrict (verified).
-  const denied = opts.allowTools
-    ? [...SEAT_DENIED_TOOLS]
-    : [...SEAT_DENIED_TOOLS, ...TALK_DENIED_TOOLS];
-  args.push('--disallowed-tools', ...denied);
-  if (opts.allowTools) args.push('--allowed-tools', ...SEAT_ALLOWED_TOOLS);
-
-  const res = await runProcess(
-    bin,
-    args,
-    // PROMPT ON STDIN, not argv. A prompt carrying conversation history crosses the
-    // Windows 32,767-char command-line ceiling at roughly eight turns and fails with
-    // ENAMETOOLONG — which surfaced to John as "I could not reach the steward's seat"
-    // and got MORE likely the longer he talked. stdin has no such limit (verified to
-    // 72k chars).
-    { timeoutMs: opts.timeoutMs, cwd: opts.cwd, stdin: String(prompt) },
-  );
-  if (!res.ok) {
-    return {
-      ok: false,
-      reason: res.reason ?? 'seat_failed',
-      detail: String(res.err || '').slice(0, 400),
-      ms: res.ms,
-    };
-  }
-  const parsed = parseClaudeWrapper(res.out);
-  if (!parsed.ok) return { ...parsed, ms: res.ms };
-  return {
-    ok: true,
-    text: parsed.text,
-    meta: { ...parsed.meta, duration_ms: parsed.meta.duration_ms || res.ms },
-  };
+  return callTrioSeat(prompt, { ...opts, family: 'claude' });
 }
 
-// ── ChatGPT / Codex subscription seat ─────────────────────────────────────
-
-/**
- * Run a ChatGPT-family seat through the installed Codex subscription CLI.
- * No API key or HTTP fallback exists here. The session is ephemeral, project
- * rules are not imported into the steward persona, and the sandbox is read-only.
- * Frontier planning is explicitly Ultra; ordinary conversation uses high effort
- * to preserve the fast/slow tier distinction without pinning a product model id.
- *
- * @param {string} prompt
- * @param {{ timeoutMs?: number, bin?: string, cwd?: string, model?: string,
- *           role?: string, env?: NodeJS.ProcessEnv }} [opts]
- */
+/** Legacy pure argv helper; callers must supply a verified frozen selection. */
 export function buildCodexSeatArgs(opts = {}) {
-  const env = opts.env ?? process.env;
-  const effort = opts.role === SEAT_ROLE.FRONTIER
-    ? (env.ECGBERHT_CHATGPT_FRONTIER_EFFORT || 'ultra')
-    : (env.ECGBERHT_CHATGPT_CONVERSATIONAL_EFFORT || 'high');
-  const args = [
-    'exec',
-    '--ephemeral',
-    '--ignore-rules',
-    '--skip-git-repo-check',
-    '--sandbox', 'read-only',
-    '--color', 'never',
-    '-c', `model_reasoning_effort="${effort}"`,
-  ];
-  // `configured` deliberately delegates model selection to the authenticated
-  // user's Codex config. An explicit env tier override can still name a CLI model.
-  if (opts.model && opts.model !== 'configured') args.push('--model', String(opts.model));
+  const selection = opts.selection;
+  if (!selection || selection.family !== 'chatgpt'
+      || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(selection.model || '')
+      || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(selection.effort)) {
+    throw new TypeError('A verified current ChatGPT model-policy selection is required');
+  }
+  const { model, effort } = selection;
+  const args = ['exec', '--ephemeral', '--ignore-rules', '--skip-git-repo-check',
+    '--sandbox', 'read-only', '--color', 'never', '--model', model,
+    '-c', 'model_reasoning_effort="' + effort + '"',
+    '-c', 'forced_login_method="chatgpt"',
+    '-c', 'agents.default_subagent_model="' + model + '"',
+    '-c', 'agents.default_subagent_reasoning_effort="' + effort + '"'];
   if (opts.cwd) args.push('--cd', String(opts.cwd));
   args.push('-');
   return { args, effort };
 }
 
 export async function callCodexSeat(prompt, opts = {}) {
-  const env = opts.env ?? process.env;
-  const bin = opts.bin || env.ECGBERHT_CODEX_BIN || 'codex';
-  const { args, effort } = buildCodexSeatArgs(opts);
-
-  const res = await runProcess(bin, args, {
-    timeoutMs: opts.timeoutMs,
-    cwd: opts.cwd,
-    stdin: String(prompt),
-  });
-  if (!res.ok) {
-    const detail = String(res.err || res.out || '').slice(0, 500);
-    return {
-      ok: false,
-      reason: /usage limit|rate limit|quota|resource exhausted/i.test(detail)
-        ? 'usage_limit'
-        : res.reason ?? 'seat_failed',
-      detail,
-      ms: res.ms,
-      reasoning_effort: effort,
-    };
-  }
-  const text = String(res.out ?? '').trim();
-  if (!text) {
-    return { ok: false, reason: 'codex_no_reply', ms: res.ms, reasoning_effort: effort };
-  }
-  return {
-    ok: true,
-    text,
-    meta: {
-      tokens: 0,
-      duration_ms: res.ms,
-      reasoning_effort: effort,
-      subscription_cli: true,
-    },
-  };
+  return callTrioSeat(prompt, { ...opts, family: 'chatgpt' });
 }
 
 // ── Shared Trio seat ──────────────────────────────────────────────────────
 
 /** The shared driver registry next to this installed skill's development root. */
 export function resolveTrioIndexSpec(env = process.env) {
-  const override = String(env.ECGBERHT_TRIO_INDEX || '').trim();
-  if (!override) return new URL('../../trio/drivers/index.mjs', import.meta.url).href;
-  if (/^file:/i.test(override)) return override;
-  return pathToFileURL(path.resolve(override)).href;
+  const override = env.ECGBERHT_TRIO_INDEX || env.TRIO_DRIVERS_INDEX
+    || (env.ANCHOR_TRIO_DIR && path.join(env.ANCHOR_TRIO_DIR, 'drivers', 'index.mjs'));
+  if (override) {
+    const target = String(override).startsWith('file:') ? fileURLToPath(override) : String(override);
+    if (!path.isAbsolute(target) || /^(?:\\\\|\/\/)/.test(target) || !fs.existsSync(target)) {
+      throw new TypeError('Explicit Trio module must be an existing absolute local file');
+    }
+    return pathToFileURL(target).href;
+  }
+  for (const rel of ['../../trio/drivers/index.mjs', '../../drivers/index.mjs']) {
+    const candidate = new URL(rel, import.meta.url);
+    if (fs.existsSync(fileURLToPath(candidate))) return candidate.href;
+  }
+  throw new TypeError('Shared Trio drivers are missing; install the bundled skills or set ANCHOR_TRIO_DIR');
 }
 
 async function resolveTrioRunAgent(opts, env) {
@@ -436,19 +346,6 @@ async function resolveTrioRunAgent(opts, env) {
   return mod.runAgent;
 }
 
-function chatgptEffort(role, env) {
-  if (role === SEAT_ROLE.FRONTIER) {
-    // Frontier is Ultra BY LAW; the override may only move sideways-or-up. A stale
-    // env value must not silently downgrade John's planning seat to a cheap effort.
-    const override = String(env.ECGBERHT_CHATGPT_FRONTIER_EFFORT || '').trim().toLowerCase();
-    return override === 'max' ? 'max' : 'ultra';
-  }
-  return env.ECGBERHT_CHATGPT_CONVERSATIONAL_EFFORT || 'high';
-}
-
-// Model-selecting env that trio drivers consult when no explicit model is passed.
-// Ecgberht chooses model/effort BY ROLE through the tier table; a stale machine-wide
-// setx from an old Foreman run must not repin the production Steward seat.
 const MODEL_ENV_SCRUB_EXACT = ['TRIO_MODEL', 'TRIO_TIER', 'CODEX_MODEL', 'CHATGPT_MODEL', 'GEMINI_MODEL', 'GROK_MODEL'];
 function scrubModelEnv(env) {
   const out = { ...env };
@@ -490,16 +387,17 @@ export async function callTrioSeat(prompt, opts = {}) {
   }
 
   const seatRole = opts.role === SEAT_ROLE.FRONTIER ? 'synthesizer' : 'orchestrator';
-  const reasoningEffort = family === 'chatgpt' ? chatgptEffort(opts.role, env) : null;
-  const orchestrationMode = family === 'chatgpt' && opts.role === SEAT_ROLE.FRONTIER
-    ? 'ultra'
-    : 'single';
+  // Role determines tools/depth, never a lower model/effort. Trio resolves
+  // latest-supported/highest-supported for every production family and role.
+  const reasoningEffort = null;
+  const orchestrationMode = 'native';
   const started = Date.now();
   let receipt = null;
   // Measured usage rides the raw physical receipts (the public trio.seat.v1 shape is
   // frozen by strict consumers) — captured here so the debit is real, never invented.
   let measuredTokens = 0;
   let measuredCost = 0;
+  let selection = null;
   try {
     const text = await runAgent({
       prompt: String(prompt),
@@ -509,12 +407,13 @@ export async function callTrioSeat(prompt, opts = {}) {
       freshContext: true,
       env: { ...scrubModelEnv(env), CRUCIBLE_AGENT_LIVE: env.CRUCIBLE_AGENT_LIVE || '1' },
       target: opts.cwd,
-      model: opts.model && opts.model !== 'configured' ? opts.model : undefined,
+      model: undefined,
       timeoutMs: opts.timeoutMs,
       sandbox: 'read-only',
       reasoningEffort,
       orchestrationMode,
       [PHYSICAL_RECEIPT_HOOK]: (entry) => {
+        selection = entry?.receipt?.model_policy || selection;
         const usage = entry?.receipt?.usage;
         if (usage && typeof usage === 'object') {
           measuredTokens += (Number(usage.input_tokens) || 0)
@@ -552,10 +451,11 @@ export async function callTrioSeat(prompt, opts = {}) {
         tokens: measuredTokens,
         cost_usd: measuredCost,
         duration_ms: Date.now() - started,
-        reasoning_effort: reasoningEffort,
+        reasoning_effort: selection?.effort ?? null,
+        model_policy: selection,
         orchestration_mode: orchestrationMode,
         subscription_cli: true,
-        requested_family: family,
+        requested_family: receipt.requested?.family ?? family,
         served_family: receipt.served?.family ?? null,
         served_family_attested: receipt.served?.family_attested === true,
         trio_receipt: receipt,
@@ -595,34 +495,7 @@ export function resolveAgyDispatch(env = process.env) {
  * @param {{ timeoutMs?: number }} [opts]
  */
 export async function callGeminiSeat(prompt, opts = {}) {
-  const dispatch = resolveAgyDispatch();
-  if (!dispatch) {
-    return {
-      ok: false,
-      reason: 'agy_dispatch_not_found',
-      detail: 'Set ECGBERHT_AGY_DISPATCH or SKILL_FOUNDRY_DIR to reach the gemini seat.',
-    };
-  }
-  const tmp = path.join(
-    fs.mkdtempSync(path.join(process.env.TEMP || process.env.TMPDIR || '.', 'ecg-seat-')),
-    'prompt.md',
-  );
-  const out = path.join(path.dirname(tmp), 'reply.txt');
-  fs.writeFileSync(tmp, String(prompt), 'utf8');
-
-  const res = await runProcess(
-    process.execPath,
-    [dispatch, '--prompt-file', tmp, '--out', out, '--readonly',
-     '--target', path.dirname(tmp), '--label', 'ecgberht-steward'],
-    { timeoutMs: opts.timeoutMs },
-  );
-  if (!res.ok) {
-    return { ok: false, reason: res.reason ?? 'seat_failed', detail: String(res.err).slice(0, 400) };
-  }
-  let text = '';
-  try { text = fs.readFileSync(out, 'utf8'); } catch { /* handled below */ }
-  if (!text.trim()) return { ok: false, reason: 'gemini_no_reply' };
-  return { ok: true, text, meta: { tokens: 0, duration_ms: res.ms } };
+  return callTrioSeat(prompt, { ...opts, family: 'gemini' });
 }
 
 // ── The injected hook ──────────────────────────────────────────────────────

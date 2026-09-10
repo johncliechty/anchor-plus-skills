@@ -18,11 +18,13 @@ import { extractJson } from './claude.mjs';
 import { isVerificationRole, normalizeRole } from './roles.mjs';
 import { conformsJsonSchema, runCliSchemaAttempts } from './cli-schema.mjs';
 import { runCloseBoundProcess } from './subscription-process.mjs';
+import { resolveModelPolicy, policyEnvironment, modelLaunchArgs } from './model-policy.mjs';
+import { classifySubscriptionOutcome } from './subscription-outcome.mjs';
 
 // Live catalog (this host, 2026-07-22): `grok models` → default grok-4.5.
 // Prefer null (omit --model) so the logged-in CLI default always wins unless env pins.
-export const GROK_CLI_HEAVY_MODEL = process.env.GROK_CLI_HEAVY_MODEL || 'grok-4.5';
-export const GROK_CLI_STANDARD_MODEL = process.env.GROK_CLI_STANDARD_MODEL || 'grok-4.5';
+export const GROK_CLI_HEAVY_MODEL = null;
+export const GROK_CLI_STANDARD_MODEL = null;
 export const DEFAULT_GROK_CLI_TIMEOUT_MS = 20 * 60 * 1000;
 // (2026-09-05) grok's headless `-p` mode stops after a handful of agent turns by default;
 // a reviewer that reads files hit that cap mid-investigation and its last prose line was
@@ -82,13 +84,15 @@ export function parseGrokJsonOutput(stdout, { requested = null } = {}) {
     const i = raw.lastIndexOf('\n{');
     if (i >= 0) { try { obj = JSON.parse(raw.slice(i + 1)); } catch { obj = null; } }
   }
-  if (!obj || typeof obj !== 'object' || typeof obj.text !== 'string') return null;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
   const usage = obj.modelUsage && typeof obj.modelUsage === 'object' ? Object.keys(obj.modelUsage) : [];
   let servedModel = null;
   if (usage.length === 1) servedModel = usage[0];
-  else if (usage.length > 1 && requested && usage.includes(String(requested))) servedModel = String(requested);
   return {
-    text: obj.text.trim(), servedModel,
+    text: typeof obj.text === 'string' ? obj.text.trim()
+      : typeof obj.result === 'string' ? obj.result.trim() : '', servedModel,
+    isError: obj.is_error === true || obj.isError === true
+      || Boolean(obj.error) || (Array.isArray(obj.errors) && obj.errors.length > 0),
     stopReason: typeof obj.stopReason === 'string' ? obj.stopReason : null,
     numTurns: Number.isFinite(obj.num_turns) ? obj.num_turns : null,
   };
@@ -105,11 +109,13 @@ export function defaultRunGrokCli(fullPrompt, label, {
   target = process.cwd(),
   model = null,
   role = null,
+  sandbox = null,
   timeoutMs = (Number(env.GROK_CLI_TIMEOUT_MS) || DEFAULT_GROK_CLI_TIMEOUT_MS),
   maxTurns = (Number(env.GROK_CLI_MAX_TURNS) || DEFAULT_GROK_CLI_MAX_TURNS),
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
+  policyResolver = resolveModelPolicy,
   spawnImpl,
   spawnSyncImpl,
   platform = process.platform,
@@ -125,10 +131,10 @@ export function defaultRunGrokCli(fullPrompt, label, {
   // (2026-09-04, foreman journal 0109) JSON output carries `modelUsage`, which names the
   // SERVED model — the attestation a verification seat needs. Plain output never did, so
   // every Grok review ran to completion and was then rejected as unattested.
-  const args = ['--output-format', 'json'];
-  const mdl = resolveGrokCliModel({ model, role, env });
-  if (mdl) args.push('--model', mdl);
-  const perm = isVerificationRole({ role, label })
+  const selection = policyResolver('grok', { env });
+  const mdl = selection.model;
+  const args = ['--output-format', 'json', ...modelLaunchArgs(selection)];
+  const perm = sandbox === 'read-only' || isVerificationRole({ role, label })
     ? 'plan'
     : (env.GROK_CLI_PERMISSION_MODE || 'acceptEdits');
   if (perm) args.push('--permission-mode', perm);
@@ -158,7 +164,7 @@ export function defaultRunGrokCli(fullPrompt, label, {
     args,
     options: {
       cwd: target,
-      env: { ...env, NO_COLOR: '1', CI: '1' },
+      env: { ...policyEnvironment(env), NO_COLOR: '1', CI: '1' },
       shell: false,
       windowsHide: true,
     },
@@ -175,12 +181,15 @@ export function defaultRunGrokCli(fullPrompt, label, {
       try { fs.unlinkSync(tmpPath); } catch { /* best effort */ }
     }
     const parsed = parseGrokJsonOutput(result.stdout, { requested: mdl });
+    const outcome = classifySubscriptionOutcome({family: 'grok', ...result});
     const text = parsed ? parsed.text : String(result.stdout || '').trim();
     const status = result.terminal !== 'closed'
       ? result.terminal
+      : parsed?.isError || ['error', 'cancelled', 'max_turns', 'max_turns_reached'].includes(parsed?.stopReason)
+        ? outcome.failure_status || (parsed?.stopReason === 'cancelled' ? 'aborted' : 'cli_error')
       : result.code === 0
         ? (text ? 'success' : 'no_reply')
-        : 'cli_error';
+        : outcome.failure_status || 'cli_error';
     const ok = status === 'success';
     const served = ok && parsed ? parsed.servedModel : null;
     const rec = {
@@ -188,10 +197,15 @@ export function defaultRunGrokCli(fullPrompt, label, {
       cli_status: result.code,
       ok,
       status,
+      replay_safe: !ok && outcome.replay_safe,
+      replay_evidence: outcome.replay_evidence,
       error: ok ? undefined : (result.error || result.stderr.slice(0, 500)),
       requested_model: mdl,
-      // The served model comes from the JSON envelope's `modelUsage` (one served model,
-      // or the requested one among several). Anything else stays honestly unattested —
+      requested_effort: selection.effort,
+      model_policy: selection,
+      highest_effort_verified: true,
+      // The served model comes from one unambiguous `modelUsage` contributor.
+      // Multiple contributors stay honestly unattested —
       // never a session default.
       model_served: served,
       model_family: ok ? 'grok' : null,

@@ -1,4 +1,4 @@
-# Install guide — Anchor + skills (v1.2.4, Package A / B)
+# Install guide — Anchor + skills (v1.3.0, Package A / B)
 
 **All rights reserved.** Not open source. Use by author permission only.
 
@@ -9,24 +9,27 @@ This is the short path for collaborators. Plain ASCII for mail and terminals.
 ## What you're getting — pick your package
 
 - **Package B — Anchor + skills**: the full product. A local R&D dashboard
-  (runs on your machine at `http://localhost:8777`, nothing leaves your
-  computer) that drives projects, tasks, and AI research/plan/build sessions,
-  plus 14 bundled skills for Claude Code. **Pick this to try Anchor.**
+  (runs on your machine at `http://localhost:8777`) that drives projects,
+  tasks, and AI research/plan/build sessions, plus 14 bundled skills.
+  AI requests go to the subscription provider you select. **Pick this to try Anchor.**
 - **Package A — skills only**: just the skills, registered for your coding
   agent. No server, no dashboard.
 
 ## What you need
 
-- **Windows 10/11.** About 200 MB free. **No admin rights needed.**
+- **Windows 10/11.** About 200 MB free for Anchor. Core onboarding does not
+  require administrator rights. Optional notebook setup needs additional disk
+  space and one-time administrator confirmation.
 - **git** (to clone and to pull upgrades): `winget install --id Git.Git`
   or gitforwindows.org. No GitHub account needed — the repo is public.
 - **Python 3.8+** — onboard installs it via winget if you don't have it.
 - For the **AI features** (in-dashboard terminals, research/plan/build
-  sessions, Gandalf): the **Claude Code CLI** with your subscription
-  (`npm install -g @anthropic-ai/claude-code`), plus **git** and
-  **Node.js 16+**. Without them the dashboard still runs — the AI features
+  sessions, Gandalf): sign in to a supported **subscription CLI** (Claude Code,
+  ChatGPT Codex, or Grok Build), plus install **git** and **Node.js 16+**.
+  Choose the coding and review families in Anchor Settings. Without these tools
+  the dashboard still runs — the AI features
   honestly report themselves unavailable instead of breaking.
-- **Money honesty:** nothing spends your Claude subscription without an
+- **Money honesty:** nothing spends your model subscription without an
   explicit action by you. Background auto-summaries are OFF on shared
   installs; the multi-agent skills (researchPrime / Crucible / Foreman /
   Gandalf) only run when you invoke them.
@@ -37,10 +40,13 @@ This is the short path for collaborators. Plain ASCII for mail and terminals.
 
 ### 1. Clone the repo somewhere stable
 
-```text
-cd C:\dev        (create the folder if needed)
+In PowerShell, this installs outside your development tree:
+
+```powershell
+New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Programs" | Out-Null
+Set-Location "$env:LOCALAPPDATA\Programs"
 git clone https://github.com/johncliechty/anchor-plus-skills.git
-cd anchor-plus-skills
+Set-Location anchor-plus-skills
 ```
 
 - Keep this folder — **your Anchor data lives inside it** (see "Known
@@ -71,13 +77,15 @@ Open a terminal in the package root (the folder containing `onboard.cmd`):
    that fails, it points you at python.org and asks you to re-run.
 2. Starts the **interactive** install dialogue (a silent/`--non-interactive`
    run never stamps ready — that is deliberate).
-3. Asks/confirms **where** to put things (recommend your `C:\dev` tree).
+3. Asks/confirms **where** to put things. Keep the program folder above;
+   choose your existing project folders separately. Anchor's local data still
+   needs a backup even when the program is installed outside your development tree.
 4. Installs **skills** and registers them for your agent hosts. For Claude it
    tries a symlink, then a **directory junction** (works on stock Windows —
    no admin, no Developer Mode), then a **full copy** as last resort, and
    reports which one it used. Check: `%USERPROFILE%\.claude\skills\<name>`
    contains a real `SKILL.md`.
-5. Probes **Claude / Gemini(agy) / Grok** subscription CLIs (at least one
+5. Probes subscription CLIs, including **Claude / ChatGPT Codex / Grok** (at least one
    coding seat should be present to stamp ready).
 6. Optional **feedback** — **default is No**.
 7. **Package B only:** installs the **pywinpty** terminal extra (real
@@ -88,6 +96,12 @@ Open a terminal in the package root (the folder containing `onboard.cmd`):
    desktop icon (anchor.ico).
 
 ### 3. Start Anchor (Package B)
+
+Optional Python/R notebooks have a separate [one-time host setup](docs/notebook-host-setup.md).
+Notebook software defaults to `C:\ProgramData\AnchorNotebook`; your existing
+notebooks stay in the project folder you select. R and IRkernel are needed only
+for R notebooks. The notebook service starts automatically after its setup;
+the Anchor dashboard launcher below is separate.
 
 There is **no Windows service** — Anchor runs as a background process you
 start with the launcher:

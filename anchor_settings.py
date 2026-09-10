@@ -9,17 +9,21 @@ Claude Code, Grok Build) share the same prefs.
 Primary: ``paths.data_dir() / "settings.json"``
 Mirror:  ``~/.anchor/model_prefs.json`` (discoverable without ANCHOR_DATA_DIR)
 
-Never raises on load — corrupt/missing store falls back to defaults.
+Display reads remain available during configuration errors. Model launches use
+get_launch_settings(), which refuses corrupt or missing authoritative settings.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 import paths as _paths
+from model_policy import DEFAULT_POLICY, validate_policy
 
 VALID_CLIS = frozenset({"claude", "gemini", "grok", "chatgpt"})
 VALID_FAMILIES = VALID_CLIS
@@ -86,6 +90,48 @@ MIRROR_DIRNAME = ".anchor"
 MIRROR_NAME = "model_prefs.json"
 
 
+class SettingsInvalid(ValueError):
+    """Display may continue, but no model may launch from invalid authority."""
+
+
+@contextmanager
+def _settings_write_lock():
+    """Serialize UI and standalone writers across processes, not just threads."""
+    with _paths.WRITE_LOCK:
+        lock_path = settings_path().with_name(".settings.lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as stream:
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"0")
+                stream.flush()
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    stream.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+                        msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise SettingsInvalid("Settings are busy; try saving again")
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
 def settings_path() -> Path:
     """Return the fixed primary settings path for this Anchor checkout/data dir.
 
@@ -111,6 +157,8 @@ def _normalize(raw) -> dict:
     a new dict with every schema key present (including ``updated_at``).
     """
     out = dict(DEFAULTS)
+    out["model_policy"] = dict(DEFAULT_POLICY)
+    out["settings_revision"] = 0
     out["updated_at"] = _now_iso()
     if not isinstance(raw, dict):
         return out
@@ -129,6 +177,13 @@ def _normalize(raw) -> dict:
     ts = raw.get("updated_at")
     if isinstance(ts, str) and ts.strip():
         out["updated_at"] = ts.strip()
+    if isinstance(raw.get("settings_revision"), int) and not isinstance(raw["settings_revision"], bool):
+        out["settings_revision"] = raw["settings_revision"]
+    if "model_policy" in raw:
+        try:
+            out["model_policy"] = validate_policy(raw["model_policy"])
+        except ValueError:
+            pass  # Display normalization only; read_settings_state rejects it for launch.
     return out
 
 
@@ -164,19 +219,58 @@ def _prefer_valid_values(preferred, fallback) -> dict:
     return merged
 
 
-def load_settings() -> dict:
-    """Load fixed stores; always complete and never raises.
+def read_settings_state() -> dict:
+    """Primary wins. Corrupt primary cannot be hidden by mirror or defaults."""
+    primary_path = settings_path()
+    try:
+        primary_exists = primary_path.exists()
+        selected_path = primary_path
+        if not primary_exists:
+            if mirror_path().exists():
+                selected_path = mirror_path()
+        if not selected_path.exists():
+            return {"settings": _normalize(None), "valid": False, "missing": True,
+                    "error": "Model preferences are not configured", "source": str(primary_path)}
+        raw = json.loads(selected_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("expected a settings object")
+        for key, allowed in (("default_cli", VALID_DEFAULT_CLIS), ("coding_family", VALID_CLIS),
+                             ("review_family", VALID_REVIEW_FAMILIES)):
+            if key not in raw or raw[key] not in allowed:
+                raise ValueError(f"missing or invalid {key}")
+        validate_policy(raw.get("model_policy", DEFAULT_POLICY))
+        revision = raw.get("settings_revision", 0)
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+            raise ValueError("invalid settings_revision")
+        result = _normalize(raw)
+        mirror = _read_settings_dict(mirror_path())
+        if selected_path == primary_path and mirror is not None:
+            if any(mirror.get(key, DEFAULT_POLICY if key == "model_policy" else 0 if key == "settings_revision" else None)
+                   != result[key] for key in ("default_cli", "coding_family", "review_family", "steward_type",
+                                             "model_policy", "settings_revision")):
+                result["mirror_out_of_sync"] = True
+        return {"settings": result, "valid": True, "missing": False,
+                "error": None, "source": str(selected_path)}
+    except (OSError, ValueError, TypeError) as error:
+        return {"settings": _normalize(None), "valid": False, "missing": False,
+                "error": f"Model preferences are invalid ({type(error).__name__}); repair settings before launching AI",
+                "source": str(primary_path)}
 
-    ``ANCHOR_DATA_DIR`` is a closed boundary and reads only its local primary.
-    In normal checkout mode, valid global mirror values take precedence while
-    missing/invalid mirror fields fall back to this checkout's local primary,
-    then to defaults.  Mirror ``primary_path`` metadata is never consulted.
-    """
-    primary = _read_settings_dict(settings_path())
-    if (os.environ.get("ANCHOR_DATA_DIR") or "").strip():
-        return _normalize(primary)
-    mirror = _read_settings_dict(mirror_path())
-    return _normalize(_prefer_valid_values(mirror, primary))
+
+def load_settings() -> dict:
+    """Non-raising display contract; invalid values are explicitly NOT launchable."""
+    state = read_settings_state()
+    result = dict(state["settings"])
+    if not state["valid"]:
+        result["settings_error"] = state["error"]
+    return result
+
+
+def get_launch_settings() -> dict:
+    state = read_settings_state()
+    if not state["valid"]:
+        raise SettingsInvalid(state["error"])
+    return dict(state["settings"])
 
 
 def _atomic_write_json(path: Path, obj: dict) -> None:
@@ -187,13 +281,28 @@ def _atomic_write_json(path: Path, obj: dict) -> None:
 
 
 def save_settings(**kwargs) -> dict:
+    """Read/merge/write one revision under the stable cross-process lock."""
+    with _settings_write_lock():
+        return _save_settings_locked(**kwargs)
+
+
+def _save_settings_locked(**kwargs) -> dict:
     """Merge partial updates into settings, validate, write primary + mirror.
 
     Only recognized keys (``default_cli``, ``coding_family``, ``review_family``)
     are applied; invalid values raise :class:`ValueError`. Returns the full
     settings dict after write. Always stamps a fresh ``updated_at``.
     """
-    current = load_settings()
+    state = read_settings_state()
+    if not state["valid"] and not state["missing"]:
+        raise SettingsInvalid(state["error"])
+    current = dict(state["settings"])
+    current.pop("mirror_out_of_sync", None)
+    expected = kwargs.get("expected_revision")
+    if expected is not None and (type(expected) is not int or expected < 0):
+        raise ValueError("expected_revision must be a nonnegative integer")
+    if expected is not None and expected != current["settings_revision"]:
+        raise SettingsInvalid("Model settings changed; reload before saving")
     for key in ("default_cli", "coding_family", "review_family"):
         if key not in kwargs:
             continue
@@ -215,6 +324,9 @@ def save_settings(**kwargs) -> dict:
                 % (val, "|".join(sorted(VALID_STEWARDS)))
             )
         current["steward_type"] = val.strip()
+    if "model_policy" in kwargs:
+        current["model_policy"] = validate_policy(kwargs["model_policy"])
+    current["settings_revision"] += 1
     current["updated_at"] = _now_iso()
 
     primary = settings_path()
@@ -229,15 +341,13 @@ def save_settings(**kwargs) -> dict:
         try:
             _atomic_write_json(mirror, mirror_payload)
         except OSError:
-            # Mirror write failed. Because load_settings PREFERS valid mirror
-            # values, a stale mirror now wins every subsequent load — returning
-            # `current` here would report a save the next render silently
-            # reverts. Report what load actually serves, flagged.
+            # Primary stays authoritative. Report the incomplete mirror without
+            # rolling back or letting stale mirror values undo the saved choice.
             mirror_write_ok = False
     result = load_settings()
     if not mirror_write_ok or any(
         result.get(k) != current.get(k)
-        for k in ("default_cli", "coding_family", "review_family", "steward_type")
+        for k in ("default_cli", "coding_family", "review_family", "steward_type", "model_policy", "settings_revision")
     ):
         result = dict(result)
         result["mirror_out_of_sync"] = True
@@ -263,18 +373,9 @@ def families_are_cross_model() -> bool:
 
 
 def resolve_tier_label(family: str, tier: str) -> str:
-    """Descriptive tier label for UI/docs — NOT a hard product model id.
-
-    ``tier`` is ``heavy`` | ``standard`` | ``regular``:
-      - heavy → ``"<family>:frontier (top tier of family)"``
-      - standard/regular → ``"<family>:one-notch-below-frontier"``
-    """
+    """Workflow depth never lowers the shared latest/highest model policy."""
     fam = (family or "").strip() or "unknown"
-    t = (tier or "").strip().lower()
-    if t == "heavy":
-        return "%s:frontier (top tier of family)" % fam
-    # standard / regular / anything else treated as one-notch-below
-    return "%s:one-notch-below-frontier" % fam
+    return "%s:latest-supported / highest-supported effort" % fam
 
 
 def export_env_overrides() -> dict:
@@ -284,6 +385,7 @@ def export_env_overrides() -> dict:
     review = s["review_family"]
     cross = "true" if coding != review else "false"
     return {
+        "ANCHOR_DATA_DIR": str(settings_path().parent),
         "ANCHOR_DEFAULT_CLI": s["default_cli"],
         "ANCHOR_CODING_FAMILY": coding,
         "ANCHOR_REVIEW_FAMILY": review,

@@ -174,6 +174,12 @@ generated triage block `foundry/triage/generated/ramanujan.triage-block.md` (reg
 
 ## Cross-family second opinion (stakes-gated)
 
+Assess complexity and model use up front. Both regular and Heavy use the selected
+provider's latest supported model and highest supported effort; Heavy increases
+review depth, not a dated model tier. Use the shared subscription transport's
+capability resolver, including supported subagents. Exact served model IDs are
+runtime evidence, never permanent skill settings.
+
 When stakes ≥ medium (a result the user will build on, publish, or spend against), on any `-Heavy`
 run, or on request: dispatch the core claim + your derivation to the **cross-family seat** with
 "attempt to refute this derivation; return the strongest concrete objection". Report agreement and
@@ -186,8 +192,9 @@ promoted here so it is LOADED, not journaled):**
 1. Read the prefs the way the trio drivers do: Anchor data-dir `settings.json` → `~/.anchor/model_prefs.json`
    (`coding_family`, `review_family`). Never a hardcoded family, never a stale `TRIO_DRIVER_*` setx.
 2. The seat is the configured family that is **not your own** — `review_family` first (the check seat
-   under the Universal Seating Law), then `coding_family`. You are Claude, so with
-   `coding_family: chatgpt` / `review_family: claude` the seat is **ChatGPT**.
+   under the Universal Seating Law), then `coding_family`. Record the claim author's
+   ACTUAL family, not an assumed Claude identity; if it is unknown, independence is
+   unverified. With a Claude author and ChatGPT coding / Claude review, use ChatGPT.
 3. If every configured family is your own, there is **no** cross-family seat: say so and stamp the
    run `cross_model: false`. Do not reach for a family nobody selected.
 4. **Gemini via `agy` only when a pref names gemini.** It is not the default dispatcher for this check
@@ -196,14 +203,24 @@ promoted here so it is LOADED, not journaled):**
 
 | Seat family | Transport (subscription login — never an API key) |
 |---|---|
-| chatgpt | `codex exec --sandbox read-only --ephemeral - < prompt.txt` (trio `chatgpt-cli`) |
-| grok | `grok.exe -p --permission-mode plan` (trio `grok-cli`) |
-| gemini | `agy -p` through `agy-dispatch` / trio `gemini-cli` (label, never an API-style id) |
-| claude | `claude.exe -p` — legal only when the claim's author is another family |
+| chatgpt | Trio `chatgpt-cli`: current catalog / highest effort, read-only Codex subscription |
+| grok | Trio `grok-cli`: current catalog / highest effort, native subscription, plan permissions |
+| gemini | Trio `gemini-cli` through `agy-dispatch`; only verified current capabilities |
+| claude | Trio `claude`: moving latest alias / highest supported effort, read-only verification |
 
 The certifier engine resolves the same seat in code (`src/seat.mjs` → the trio drivers'
 `loadModelFamilies`; the transports are pinned in `tools.manifest.json`), so the fast path and the
 engine cannot disagree. The run record's `models.second_family` is the seat that ACTUALLY answered.
+
+For instructional Python/R work products, use the installed Anchor
+`notebook_products.py` helper with root, relative source, title and producing step.
+Keep the source, unexecuted notebook and relative companion metadata together;
+`DELIVERABLES.md` is the sole product register. Anchor's Deliverables/Plan/Files
+links open the exact notebook on the Anchor host, with a separate Source link.
+Never embed a token, project-specific host URL or HTML redirect launcher. Preserve
+edited notebooks and persist the full product to MAIN before step completion.
+Follow Anchor's `docs/notebook-work-products.md`; setup or opening is not evidence
+that computation ran, so no OBSERVED rung is earned without actual output.
 
 ## The certifier engine — one command for the arithmetic slice (2026-07-25)
 

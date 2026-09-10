@@ -430,6 +430,17 @@ def _strip(html):
     return m.group(1) if m else b
 
 
+def _project_scripts(gui, html):
+    """Include the project script only when the rendered page references it."""
+    script_path = f"{gui.STATIC_URL_PREFIX}/{gui.PROJECT_WINDOW_JS_ASSET}"
+    scripts = [attrs.get("src", "").split("?", 1)[0]
+               for tag, _, attrs in _parse(html) if tag == "script"]
+    if script_path in scripts:
+        return html + "\n" + (gui.STATIC_DIR / gui.PROJECT_WINDOW_JS_ASSET).read_text(
+            encoding="utf-8")
+    return html
+
+
 def test_dom_github_control_present(env):
     """The header renders the #ghRemote control host + the JS to populate it; the
     Link GitHub button is created by renderRemoteControls (asserted in the JS)."""
@@ -438,11 +449,12 @@ def test_dom_github_control_present(env):
     body = _strip(html)
     hosts = [a for tag, c, a in _parse(body) if a.get("id") == "ghRemote"]
     assert len(hosts) == 1, "the #ghRemote header control host is missing"
-    # The JS wiring (in the script block, so assert against the full html).
-    assert "renderRemoteControls" in html
-    assert "/api/rnd/remote_status" in html
-    assert "Link GitHub" in html
-    assert "linkGithub" in html
+    # The classic page serves its JS inline or through the static asset.
+    scripts = _project_scripts(gui, html)
+    assert "renderRemoteControls" in scripts
+    assert "/api/rnd/remote_status" in scripts
+    assert "Link GitHub" in scripts
+    assert "linkGithub" in scripts
 
 
 def test_dom_autopush_and_pushnow_wired_in_js(env):
@@ -453,8 +465,9 @@ def test_dom_autopush_and_pushnow_wired_in_js(env):
     gui = env["gui"]
     html = gui.render_project_window_html(env["pid"])
     # Positive — wired in the JS source.
-    assert "toggleAutoPush" in html and "/api/rnd/set_auto_push" in html
-    assert "pushNow" in html and "/api/rnd/push_now" in html
+    scripts = _project_scripts(gui, html)
+    assert "toggleAutoPush" in scripts and "/api/rnd/set_auto_push" in scripts
+    assert "pushNow" in scripts and "/api/rnd/push_now" in scripts
     # Negative — the unlinked SERVER-rendered body shows no Push-now button / no
     # auto-push checkbox (those are injected client-side only when linked).
     body = _strip(html)
@@ -514,7 +527,8 @@ def test_playwright_link_github_flow(server):
         pg.on("dialog", lambda d: d.accept(
             prompts.pop(0) if prompts else "") if d.type == "prompt"
             else d.accept())
-        pg.goto(f"{base}/project/{pid}", wait_until="networkidle")
+        # v8 controls remain on the classic surface after the Steward cutover.
+        pg.goto(f"{base}/project/{pid}?classic=1", wait_until="networkidle")
         from tests.ui_helpers import expand_workbench
         expand_workbench(pg)  # the Workbench tile now opens collapsed
 

@@ -126,6 +126,20 @@ export function extractWaveSection(planText, waveN) {
   return body.length > max ? `${body.slice(0, max)}\n\n…[wave section truncated; read plan file for remainder]` : body;
 }
 
+function authoringToolRule(env = process.env) {
+  // The opt-in is set only by a ConPTY launcher on a Codex host (journal 0116).
+  // Neither enabling terminal file tools nor YOLO implies the other setting.
+  if (env.FOREMAN_CODEX_CONPTY === '1' && env.CODING_FAMILY === 'chatgpt') {
+    return `Use dedicated file tools where available. On this explicitly ConPTY-hosted Codex run, ` +
+      `when dedicated file tools are absent, you may use batched terminal commands only to read/search ` +
+      `files and create/edit/delete files within the authorized project workspace. Use apply_patch for edits ` +
+      `when available. Do NOT run git commands, tests, installs, servers, or other process workloads yourself. ` +
+      `The orchestrator owns all testing and version control.`;
+  }
+  return `Do NOT run any git commands, terminal commands, or tests yourself. The orchestrator ` +
+    `owns all testing and version control; strictly just edit the source files.`;
+}
+
 function executePrompt(ctx) {
   const planPath = ctx.planPath || path.join(ctx.projectDir || '.', 'IMPLEMENTATION-PLAN.md');
   const testCommand = ctx.testCommand || '(see plan test-command:)';
@@ -164,8 +178,7 @@ function executePrompt(ctx) {
     `  (1) Every new module is imported by at least one test that will run under the gate command.`,
     `  (2) No absolute host paths (C:\\Users\\..., <path> in shipped strings, pointers, or docs — use relative paths or env.`,
     `  (3) Syntax-valid sources only (no half-written files that fail node --check / py_compile).`,
-    `Do NOT run any git commands, terminal commands, or tests yourself. The orchestrator`,
-    `owns all testing and version control; strictly just edit the source files.`,
+    authoringToolRule(),
     `If the wave is not answerable from the frozen docs, say so explicitly.`,
     `If you discover the wave is BLOCKED (a required human approval/amendment is`,
     `missing, a prerequisite is absent) or believe it is ALREADY DONE, do NOT`,
@@ -191,8 +204,8 @@ function reviewPrompt(ctx, gate) {
   const notImplementedRule = [
     `MANDATORY: if the changed-file list is empty, or nothing in it could plausibly`,
     `implement this wave's stated deliverables (e.g. only regenerated data/doc`,
-    `artifacts or log noise), you MUST report a BLOCKER finding titled`,
-    `"wave-not-implemented" — do NOT approve an unimplemented wave because the`,
+    `artifacts or log noise), you MUST report a BLOCKER finding with`,
+    `rule: "wave-not-implemented" (title optional) — do NOT approve an unimplemented wave because the`,
     `gate is green.`,
   ];
   return [
@@ -220,7 +233,7 @@ function fixPrompt(ctx, gate, findings) {
     `Close these findings without weakening tests: ${JSON.stringify(findings.map((f) => f.id))}.`,
     `The orchestrator gate is at ${gate.artifact_path}. Make the minimal change that`,
     `turns the gate GREEN; the orchestrator — not you — re-runs the gate to verify.`,
-    `Do NOT run any git commands, terminal commands, or tests yourself. The orchestrator owns all testing and version control.`,
+    authoringToolRule(),
     `TESTS ARE FROZEN. Do not modify test files to force a pass. You may NEVER use pytest.skip, @pytest.mark.skip, or pytest.importorskip on failing tests. Solve the root cause in the product code.`,
     lookinAppendix({ heartbeatPath: seatHeartbeatPath(ctx) }),
   ].join(' ');
@@ -264,7 +277,7 @@ export function makeAgentDriver({ agent }) {
       });
       return {
         reviewer: `reviewer-${ctx.reviewerIndex}`,
-        answerable: out?.answerable ?? 'yes',
+        answerable: out?.answerable,
         note: out?.note,
         // T10a: drivers stamp transport_failed on unparseable-after-retry (with
         // answerable:'no'). Forward it so wave-engine degrades the seat BEFORE the
@@ -276,7 +289,9 @@ export function makeAgentDriver({ agent }) {
         ...(out?.plan_amendment ? { plan_amendment: out.plan_amendment } : {}),
         // `claim` is intentionally absent: in production the judge reads only the
         // orchestrator gate, never reviewer prose, so there is nothing to forge.
-        findings: Array.isArray(out?.findings) ? out.findings : [],
+        // Preserve an absent/malformed field for engine validation. Defaulting it
+        // to [] would manufacture a clean vote from a failed model response.
+        findings: out?.findings,
       };
     },
     // (2026-09-05, John) THE ELEGANCE / RABBIT-CATCHER REVIEW of a GREEN wave: the steering

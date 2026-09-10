@@ -2812,8 +2812,49 @@ def _doc_kind_title(rel: str):
     return "doc", (stem.title() if stem else name)
 
 
+def _persist_notebooks_and_docs(folder_path, project_id, lane, session_id,
+                                worktree_path, persist_docs):
+    """Notebook completion is required; historical document capture stays best effort."""
+    notebooks = {"ok": True, "persisted": [], "notebooks_required": False}
+    try:
+        if worktree_path and Path(worktree_path).is_dir():
+            from notebook_completion import persist_to_main
+            notebooks = persist_to_main(folder_path, worktree_path)
+        if not notebooks.get("ok"):
+            return {**notebooks, "notebooks_ok": False, "committed": False,
+                    "commit": None, "reason": "notebook-persistence-" + notebooks.get("reason", "failed")}
+        product_paths = list(notebooks.get("persisted") or [])
+        excluded = set(product_paths)
+        if notebooks.get("notebooks_required"):
+            excluded.add("DELIVERABLES.md")  # MAIN's merged register must not be replaced by WT's.
+        out = persist_docs(excluded)
+        if not notebooks.get("notebooks_required"):
+            return out
+        committed_paths = list(dict.fromkeys(product_paths + ["DELIVERABLES.md"]))
+        commit = _commit_session_docs(Path(folder_path), project_id, lane,
+                                      session_id, committed_paths, [])
+        durable = bool(commit.get("committed")) or commit.get("reason") in {
+            "no-staged-changes", "not-a-git-repo"}
+        return {**out, "ok": bool(out.get("ok")) and durable,
+                "persisted": list(dict.fromkeys(list(out.get("persisted") or []) + committed_paths)),
+                "notebooks_required": True, "notebooks_ok": durable,
+                "notebooks": notebooks, "notebook_commit": commit,
+                "reason": out.get("reason", "ok") if durable else "notebook-commit-" + commit.get("reason", "failed")}
+    except Exception:
+        return {"ok": False, "persisted": notebooks.get("persisted", []),
+                "notebooks_required": True, "notebooks_ok": False,
+                "reason": "notebook-completion-error", "committed": False, "commit": None}
+
+
 def persist_session_docs(folder_path, project_id: str, lane: str,
                          session_id: str, worktree_path) -> dict:
+    return _persist_notebooks_and_docs(folder_path, project_id, lane, session_id,
+        worktree_path, lambda excluded: _persist_session_docs_only(folder_path,
+            project_id, lane, session_id, worktree_path, excluded_paths=excluded))
+
+
+def _persist_session_docs_only(folder_path, project_id: str, lane: str,
+                         session_id: str, worktree_path, *, excluded_paths=()) -> dict:
     """Persist a session's produced documents into the MAIN project (the keystone).
 
     Called on session finish/kill **BEFORE the worktree is reaped**. Steps:
@@ -2844,7 +2885,7 @@ def persist_session_docs(folder_path, project_id: str, lane: str,
             out["reason"] = "folder-missing"
             return out
 
-        doc_rels = _produced_doc_rels(worktree_path)
+        doc_rels = [rel for rel in _produced_doc_rels(worktree_path) if rel not in excluded_paths]
         if not doc_rels:
             out["ok"] = True
             out["reason"] = "no-docs"
@@ -3127,6 +3168,15 @@ def efforts_for_session_stage(folder_path, project_id: str, session_id: str,
 def persist_session_stage_docs(folder_path, project_id: str, session_id: str,
                                stage: str, store_lane: str, worktree_path,
                                baseline_ref) -> dict:
+    return _persist_notebooks_and_docs(folder_path, project_id, store_lane, session_id,
+        worktree_path, lambda excluded: _persist_session_stage_docs_only(folder_path,
+            project_id, session_id, stage, store_lane, worktree_path, baseline_ref,
+            excluded_paths=excluded))
+
+
+def _persist_session_stage_docs_only(folder_path, project_id: str, session_id: str,
+                               stage: str, store_lane: str, worktree_path,
+                               baseline_ref, *, excluded_paths=()) -> dict:
     """Persist ONE stage's produced docs into the MAIN project (the v12 keystone).
 
     Unlike the legacy :func:`persist_session_docs` (a whole-worktree diff that
@@ -3167,7 +3217,7 @@ def persist_session_stage_docs(folder_path, project_id: str, session_id: str,
                 ap = (e.get("artifact_path") or "").strip().replace("\\", "/")
                 if ap:
                     prior_rels.add(ap)
-        doc_rels = [r for r in produced if r not in prior_rels]
+        doc_rels = [r for r in produced if r not in prior_rels and r not in excluded_paths]
 
         if not doc_rels:
             out["ok"] = True
@@ -3306,7 +3356,7 @@ def _commit_session_docs(folder: Path, project_id: str, lane: str,
         except (OSError, subprocess.SubprocessError):
             return {"committed": False, "reason": "add-failed", "commit": None}
 
-        diff = _git(folder, "diff", "--cached", "--name-only")
+        diff = _git(folder, "diff", "--cached", "--name-only", "--", *rel_targets)
         if not (diff.stdout or "").strip():
             return {"committed": False, "reason": "no-staged-changes",
                     "commit": None}

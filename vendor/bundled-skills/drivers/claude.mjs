@@ -23,6 +23,8 @@ import { attestStamp } from './attest.mjs';
 import { isVerificationRole, normalizeRole } from './roles.mjs';
 import { runCliSchemaAttempts } from './cli-schema.mjs';
 import { runCloseBoundProcess } from './subscription-process.mjs';
+import { resolveModelPolicy, policyEnvironment, modelLaunchArgs } from './model-policy.mjs';
+import { classifySubscriptionOutcome } from './subscription-outcome.mjs';
 
 const BASE_ARGS = [
   '-p', ' ', '--output-format', 'stream-json', '--verbose',
@@ -86,9 +88,7 @@ export function parseClaudeFrames(stdout, {
     const line = raw.trim();
     if (!line) continue;
     let o; try { o = JSON.parse(line); } catch { continue; }
-    if (o.type === 'system' && typeof o.model === 'string' && o.model) {
-      servedModel = servedModel || o.model;
-    } else if (o.type === 'assistant' && o.message?.content) {
+    if (o.type === 'assistant' && o.message?.content) {
       if (typeof o.message.model === 'string' && o.message.model) servedModel = o.message.model;
       for (const x of o.message.content) {
         if (x.type === 'tool_use') { tools++; }
@@ -140,9 +140,9 @@ export function parseClaudeFrames(stdout, {
  * without unpinning machine-wide env. Update ids when a new frontier ships.
  */
 const TIER_CLAUDE_MODELS = {
-  heavy: 'claude-fable-5',
+  heavy: 'best',
   // one notch below frontier (2026-07-27): Opus 5 — was claude-opus-4-8 until Opus 5 shipped
-  standard: 'claude-opus-5',
+  standard: 'best',
 };
 
 /** The Claude model ONE NOTCH BELOW frontier (the `standard` tier) — the failover target when a
@@ -170,10 +170,12 @@ export function defaultRunClaude(fullPrompt, label, {
   allowedTools = DEFAULT_ALLOWED_TOOLS,
   model = null,
   role = null,
+  sandbox = null,
   timeoutMs = (Number(env.CLAUDE_CALL_TIMEOUT_MS) || 20 * 60000),
   signal = null,
   log = () => {},
   processRunner = runCloseBoundProcess,
+  policyResolver = resolveModelPolicy,
   spawnImpl,
   spawnSyncImpl,
   platform = process.platform,
@@ -186,19 +188,20 @@ export function defaultRunClaude(fullPrompt, label, {
     );
   }
   const args = [...BASE_ARGS, '--allowedTools', allowedTools];
-  if (isVerificationRole({ role, label })) {
+  if (sandbox === 'read-only' || isVerificationRole({ role, label })) {
     const modeIndex = args.indexOf('--permission-mode');
     if (modeIndex !== -1) args[modeIndex + 1] = 'plan';
     const toolsIndex = args.indexOf('--allowedTools');
     if (toolsIndex !== -1) args[toolsIndex + 1] = 'Read,Glob,Grep';
   }
-  const mdl = resolveClaudeModel({ model, role, label, env });
-  if (mdl) args.push('--model', mdl);
+  const selection = policyResolver('claude', { env });
+  const mdl = selection.model;
+  args.push(...modelLaunchArgs(selection));
   const cmdName = platform === 'win32' ? 'claude.exe' : 'claude';
   return processRunner({
     command: cmdName,
     args,
-    options: { cwd: target, env, shell: false, windowsHide: true },
+    options: { cwd: target, env: policyEnvironment(env), shell: false, windowsHide: true },
     input: fullPrompt,
     signal,
     timeoutMs,
@@ -214,12 +217,19 @@ export function defaultRunClaude(fullPrompt, label, {
       cli_status: result.code,
       requested_model: mdl,
     });
+    const outcome = classifySubscriptionOutcome({family: 'claude', ...result});
+    rec.replay_safe = !rec.ok && outcome.replay_safe;
+    rec.replay_evidence = outcome.replay_evidence;
+    if (!rec.ok && outcome.failure_status) rec.status = outcome.failure_status;
     if (result.terminal !== 'closed') {
       rec.ok = false;
       rec.status = result.terminal;
       rec.error = result.error || result.stderr.slice(0, 500);
     }
     rec.timed_out = result.terminal === 'timeout';
+    rec.requested_effort = selection.effort;
+    rec.model_policy = selection;
+    rec.highest_effort_verified = true;
     rec.aborted = result.terminal === 'aborted';
     rec.kill_status = result.kill_status;
     if (!_finalEnv) {

@@ -16,13 +16,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { HaltError } from '../foreman/bin/foreman-lib.mjs';
 import { makeReliableAgent } from './reliability.mjs';
-import { claudeDriver, belowFrontierClaudeModel } from './claude.mjs';
+import { claudeDriver } from './claude.mjs';
+import { loadPolicyPrefs, resolveModelPolicy, policyEnvironment } from './model-policy.mjs';
 import { geminiCliDriver } from './gemini-cli.mjs';
 import { geminiDriver } from './gemini.mjs';
 import { openaiDriver } from './openai.mjs';
 import { grokDriver } from './grok.mjs';
 import { grokCliDriver } from './grok-cli.mjs';
 import { chatgptCliDriver } from './chatgpt-cli.mjs';
+import { openChatgptDataSession, DataSessionError } from './chatgpt-session.mjs';
+export { DataSessionError } from './chatgpt-session.mjs';
 import { normalizeRole, isVerificationRole, VERIFICATION_ROLES } from './roles.mjs';
 import { PHYSICAL_RECEIPT_HOOK } from './seat-contract.mjs';
 const DEFAULT_DRIVER = process.env.ANTIGRAVITY_AGENT ? 'gemini-cli' : 'claude';
@@ -81,37 +84,11 @@ function readPrefsFile(file) {
 }
 
 export function loadModelFamilies(env = process.env) {
-  const home = env.USERPROFILE || env.HOME || '';
-  const mirrorPath = home ? path.join(home, '.anchor', 'model_prefs.json') : null;
-  const settingsPath = String(env.ANCHOR_DATA_DIR || '').trim()
-    ? path.join(String(env.ANCHOR_DATA_DIR).trim(), 'settings.json')
-    : null;
-  const settings = readPrefsFile(settingsPath);
-  const needsMirror = !settings
-    || settings.coding_family === undefined
-    || settings.review_family === undefined;
-  // `primary_path` in the mirror is informational. It never redirects this read.
-  const mirror = needsMirror ? readPrefsFile(mirrorPath) : null;
-  const selected = (key, historicalDefault) => {
-    const value = settings?.[key] ?? mirror?.[key] ?? historicalDefault;
-    return String(value).trim().toLowerCase();
-  };
-  const coding = selected('coding_family', 'claude');
-  // (2026-09-04, John) no prefs anywhere ⇒ single-family Claude, honestly stamped — never a Gemini
-  // seat nobody selected (the dashboard is the source; this default only covers a host with
-  // no Anchor settings and no mirror).
-  const review = selected('review_family', 'claude');
-  const source = settings
-    ? settingsPath
-    : mirror
-      ? mirrorPath
-      : 'historical-default';
-  return {
-    coding,
-    review,
-    cross_model: coding !== review,
-    source,
-  };
+  const prefs = loadPolicyPrefs(env);
+  return { coding: prefs.coding_family, review: prefs.review_family,
+    terminal: prefs.default_cli, cross_model: prefs.coding_family !== prefs.review_family,
+    source: prefs.source, settings_revision: prefs.settings_revision,
+    model_policy: prefs.model_policy };
 }
 
 /**
@@ -126,6 +103,40 @@ export function resolveDriverFromFamilies(role, env = process.env) {
   const fams = loadModelFamilies(env);
   const family = isVerificationRole({ role: r }) ? fams.review : fams.coding;
   return familyToDriverName(family);
+}
+
+/** Open a caller-held, serial, read-only structured-data session. There is no
+ * failover: unsupported family/capability is an honest refusal before any turn.
+ * Data roles use the configured coding family; canonical verification roles refuse.
+ * @returns {Promise<{pid:number, threadId:string, request:Function, cancel:Function, close:Function}>}
+ */
+export async function createDataSession(options = {}) {
+  const env = options.env ?? process.env;
+  const role = normalizeRole(options);
+  if (isVerificationRole({ role })) {
+    throw new DataSessionError('capability_unavailable', 'Verification roles cannot use persistent data sessions');
+  }
+  if (options.capability !== undefined && options.capability !== 'read-only-data') {
+    throw new DataSessionError('capability_unavailable', 'Only read-only-data sessions are supported');
+  }
+  const driver = resolveDriverFromFamilies({ role }, env);
+  if (options.driver && options.driver !== driver) {
+    throw new DataSessionError('capability_unavailable', 'Data session driver must match the configured coding family');
+  }
+  if (driver !== 'chatgpt-cli') {
+    throw new DataSessionError('capability_unavailable', `Selected driver ${driver || 'unknown'} does not support persistent read-only data sessions`);
+  }
+  // Real production seats reuse the existing policy with the SAME child's
+  // complete RPC catalog. An injected fake process keeps its hermetic resolver
+  // seam; no model discovery or live process is introduced into those tests.
+  const policy = options.spawnImpl ? {} : {
+    policyEnvironment,
+    policyResolver: (family, args) => {
+      const selection = resolveModelPolicy(family, args);
+      return { model: selection.model, effort: selection.effort, receipt: selection };
+    },
+  };
+  return openChatgptDataSession({ ...options, role, env, ...policy });
 }
 
 /**
@@ -159,7 +170,6 @@ export function buildRoutesFromFamilies({
     const r = normalizeRole({ role });
     if (!r) continue;
     const entry = { driver: reviewDriver };
-    if (reviewModel) entry.model = reviewModel;
     routes[r] = entry;
   }
   return {
@@ -516,6 +526,7 @@ async function runDispatcherAttempt(driver, opts, ordinal, kind) {
   const ok = status === 'success' || status === 'success_after_schema_reprompt';
   return {
     value,
+    replay_safe: !contractError && entries.length === 1 && entries[0]?.receipt?.replay_safe === true,
     attempt: {
       ordinal,
       kind,
@@ -566,7 +577,7 @@ function finalizeReceipt({ opts, role, verification, requested, attempts, status
     attempts,
     failover: {
       allowed: !verification,
-      used: attempts.length === 2,
+      used: attempts.length > 1,
       blocked_reason: verification
         ? 'verification_seat'
         : status === 'seat_unavailable' && attempts.length === 1
@@ -612,6 +623,13 @@ export async function runAgent(opts = {}) {
   }
   const activeEnv = opts.env ?? process.env;
   const role = normalizeRole({ role: opts.role, label: opts.label });
+  // Explicit test/host stores must be valid even when a stub owns transport;
+  // validation does not reroute that stub or discover a live capability.
+  if (activeEnv.ANCHOR_DATA_DIR) loadPolicyPrefs(activeEnv);
+  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli);
+  if (!injected && (!name || ['claude', 'grok-cli', 'chatgpt-cli', 'gemini-cli', 'grok', 'openai', 'gemini'].includes(name))) {
+    name = resolveDriverFromFamilies({ role, label: opts.label }, activeEnv);
+  }
   if (!name) {
     name = resolveDriverFromFamilies({ role, label: opts.label }, activeEnv) || null;
   }
@@ -632,89 +650,82 @@ export async function runAgent(opts = {}) {
  * Used by BOTH `runAgent` AND `makeRoleRoutedAgent`, so EVERY trio+foundry call path inherits it.
  * A Claude seat has nowhere better to fail over to, so it re-throws.
  */
+function injectedTransportFor(name, opts) {
+  return { claude: opts.runClaude, 'grok-cli': opts.runGrokCli,
+    'chatgpt-cli': opts.runCodexCli, 'gemini-cli': opts.runGemini }[name];
+}
+
+async function journalRouting(opts, event) {
+  const entry = { schema: 'trio.model-routing.v1', at: new Date().toISOString(),
+    label: bounded(opts.label, opts.role || 'seat'), ...event };
+  if (typeof opts.onRoutingEvent === 'function') {
+    await opts.onRoutingEvent(entry);
+    return;
+  }
+  const env = opts.env ?? process.env;
+  const profile = env.USERPROFILE || env.HOME;
+  if (!profile) throw new HaltError('Cannot journal model failover', 'configure a private profile or onRoutingEvent journal sink');
+  const directory = path.join(profile, '.anchor', 'journal', 'runs');
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.appendFileSync(path.join(directory, 'model-routing.jsonl'), JSON.stringify(entry) + '\n', { mode: 0o600 });
+}
+
 async function dispatchWithFailover(driver, opts) {
   const role = normalizeRole({ role: opts.role, label: opts.label });
   const verification = isVerificationRole({ role, label: opts.label });
+  const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli);
   const primary = await runDispatcherAttempt(driver, { ...opts, role }, 1, 'primary');
   const attempts = [primary.attempt];
+  let current = primary;
   let finalValue = primary.value;
-  let status;
-  let served = null;
-  let topError = null;
-
-  if (primary.attempt.ok) {
-    status = 'success';
-    served = primary.attempt.served;
-  } else if (primary.attempt.status === 'aborted' || opts.signal?.aborted) {
-    status = 'aborted';
-    topError = errorInfo('aborted', primary.attempt.error?.message || 'logical dispatch aborted');
-  } else if (verification) {
-    status = 'verification_fail_closed';
-    topError = errorInfo(
-      primary.attempt.error?.code || 'seat_unavailable',
-      primary.attempt.error?.message || 'verification seat failed closed',
-    );
-  } else if (driver.name === 'claude') {
-    status = 'seat_unavailable';
-    topError = errorInfo(
-      primary.attempt.error?.code || 'seat_unavailable',
-      primary.attempt.error?.message || 'no capable coding fallback is available',
-    );
-  } else {
-    const fallbackDriver = getDriver('claude', opts.env ?? process.env);
-    const failoverModel = belowFrontierClaudeModel();
-    const log = typeof opts.log === 'function' ? opts.log : () => {};
-    log(`⚠ ${opts.label ?? role ?? 'seat'}: ${driver.name} seat failed — FAILING OVER to Claude ${failoverModel} (cross_model:false).`);
-    if (opts.signal?.aborted) {
+  let status = primary.attempt.ok ? 'success' : 'seat_unavailable';
+  let served = primary.attempt.served;
+  let topError = primary.attempt.error;
+  if (!primary.attempt.ok) {
+    if (primary.attempt.status === 'aborted' || opts.signal?.aborted) {
       status = 'aborted';
-      topError = errorInfo('aborted', 'logical dispatch aborted before fallback');
-    } else {
-      const fallback = await runDispatcherAttempt(fallbackDriver, {
-        ...opts,
-        role,
-        driver: 'claude',
-        model: failoverModel,
-        cross_model: false,
-        failed_over_from: {
-          driver: driver.name,
-          served: primary.attempt.transport_attempts.at(-1)?.served?.model ?? null,
-        },
-      }, 2, 'fallback');
-      attempts.push(fallback.attempt);
-      finalValue = fallback.value;
-      if (fallback.attempt.ok) {
-        status = 'success_after_failover';
-        served = fallback.attempt.served;
-      } else if (fallback.attempt.status === 'aborted') {
-        status = 'aborted';
-        topError = errorInfo('aborted', fallback.attempt.error?.message || 'fallback aborted');
-      } else {
-        status = 'seat_unavailable';
-        topError = errorInfo(
-          fallback.attempt.error?.code || 'seat_unavailable',
-          fallback.attempt.error?.message || 'fallback seat unavailable',
-        );
+    } else if (verification) {
+      status = 'verification_fail_closed';
+    } else if (primary.replay_safe) {
+      // Only dashboard-selected families; executable presence grants no authority.
+      const prefs = loadModelFamilies(opts.env ?? process.env);
+      const ladder = [...new Set([prefs.coding, prefs.review, prefs.terminal].map(familyToDriverName))]
+        .filter(name => name && name !== driver.name);
+      const log = typeof opts.log === 'function' ? opts.log : () => {};
+      for (const name of ladder) {
+        if (opts.signal?.aborted) { status = 'aborted'; break; }
+        if (injected && !injectedTransportFor(name, opts)) continue; // hermetic seats never escape to a real CLI
+        const event = { action: 'failover', from: current.attempt.requested.driver,
+          to: name, reason: current.attempt.error?.code || 'seat_unavailable',
+          cross_model: false, settings_revision: prefs.settings_revision };
+        await journalRouting(opts, event); // durable BEFORE launching another seat
+        log('MODEL FAILOVER: ' + event.from + ' -> ' + name + ' (' + event.reason + '; cross_model:false). Journaled.');
+        current = await runDispatcherAttempt(getDriver(name, opts.env ?? process.env), {
+          ...opts, role, driver: name, model: null, cross_model: false,
+        }, attempts.length + 1, 'fallback');
+        attempts.push(current.attempt);
+        finalValue = current.value;
+        topError = current.attempt.error;
+        if (current.attempt.ok) {
+          status = 'success_after_failover'; served = current.attempt.served; topError = null; break;
+        }
+        if (current.attempt.status === 'aborted') { status = 'aborted'; break; }
+        if (!current.replay_safe) break; // never replay uncertain work
       }
     }
   }
-
+  if (!primary.attempt.ok && status !== 'success_after_failover') {
+    await journalRouting(opts, { action: 'halt', driver: current.attempt.requested.driver,
+      reason: topError?.code || status, verification, replay_safe: current.replay_safe });
+  }
   const receipt = finalizeReceipt({
-    opts,
-    role,
-    verification,
-    requested: primary.attempt.requested,
-    attempts,
-    status,
-    served,
-    error: topError,
+    opts, role, verification, requested: primary.attempt.requested,
+    attempts, status, served: status.startsWith('success') ? served : null, error: topError,
   });
   if (!receipt.ok) throw failedSeatError(receipt);
   if (typeof opts.onReceipt === 'function') {
-    try {
-      await opts.onReceipt(receipt);
-    } catch (error) {
-      throw new ReceiptCallbackError(error, receipt);
-    }
+    try { await opts.onReceipt(receipt); }
+    catch (error) { throw new ReceiptCallbackError(error, receipt); }
   }
   return finalValue;
 }

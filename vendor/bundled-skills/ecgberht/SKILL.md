@@ -168,6 +168,31 @@ CLI: `node bin/ecgberht.mjs <verb> [args…]` (package bin: `ecgberht`).
 **Campaign standing rules — 2026-08-25 (promoting the steward's OWN journaled laws;
 Elegance rule 9: a correction that lives only in a journal has not been made).**
 
+- **Instructional Python/R are notebook work products.** Explicitly identify scripts meant
+  for a reader to run; do not convert application code indiscriminately. Use the installed
+  Anchor helper `notebook_products.py --root <workspace> --source <relative.py-or.R>
+  --what <title> --step <producing-step>`. It retains the verbatim source, creates an
+  unexecuted `.ipynb` plus relative companion metadata, and maintains one logical row in
+  `DELIVERABLES.md`. Deliverables, Plan and Files resolve that row through Anchor's built-in
+  notebook route to the exact JupyterLab tab on the Anchor host. No browser-local kernels,
+  `run:` rows, token-bearing URLs or `RUN-*.html` launch pages. Source remains downloadable.
+  Preserve edited notebooks; request a new revision explicitly when source changes. Persist
+  and verify the source/notebook/companion/register in MAIN before completing a step or
+  discarding its worktree. Missing setup is an explicit setup-required result, never a claim
+  of execution. Follow the installed Anchor `docs/notebook-work-products.md` for host setup
+  and real authenticated-route/kernel-host proof; opening alone does not execute cells.
+  Ship generic helpers/instructions only, never a user's projects, tokens or runtime state.
+- **Status freshness is the whole heartbeat, not one field (John, 2026-09-07: "the status
+  does not seem to be up to date, why?"; steward journal 0111, Econ 588 journal 0026).** The
+  pane and rail paint the Strip's `active_effort`, `why_next`, `phase`, `human_wait`,
+  `next_recommended`, the Face's Active effort / Why next / Human wait sections, and the
+  roadmap projection. A stamp that refreshes only `human_wait` leaves the effort line
+  describing last week's work. At EVERY step close and every decision: rewrite the effort line
+  and why-next in the same stamp (one tool writes attention, Strip and Face together and prints
+  the effort line's age), append the goal_flip in the same turn (a missed one paints "goal not
+  re-read since last close"), and flip any step the close made true (a zip that exists while its
+  step says planned is a stale status). Read the composed status once after the stamp; if any
+  line names finished work as current, the stamp was incomplete.
 - **Deliverables register (campaign journal 0010).** Every campaign keeps
   `DELIVERABLES.md` at its root — one table row (What | Where | Date | Step) per thing a
   human would open; finals also copied to `deliverables/`. A roadmap step whose

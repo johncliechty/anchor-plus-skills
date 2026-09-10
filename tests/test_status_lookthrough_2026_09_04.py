@@ -122,7 +122,8 @@ class LookThroughTest(unittest.TestCase):
         self.assertIn("wave 2 · gate (iter 1)", st["running"]["label"])
         # the skill leads the NOW lines; the steward's own turn follows, never leads
         self.assertEqual(st["now"][0], st["running"]["label"])
-        self.assertIn("steward working · 1 queued", st["now"])
+        # (2026-09-07) a mid-turn steward is said with its start time; the queue count rides the line
+        self.assertTrue(any(l.startswith("steward mid-turn") and "1 queued" in l for l in st["now"]), st["now"])
         self.assertEqual(st["tests"], "last verdict GO")
         self.assertTrue(st["eta"].startswith("~35m to run end"))
         self.assertIn("Foreman build", st["eta"])
@@ -154,7 +155,7 @@ class LookThroughTest(unittest.TestCase):
         _campaign(td, active_started_min_ago=20, with_log=False)
         st = campaign.compose_status(td, {"busy": True})
         self.assertEqual(st["running"]["kind"], "steward")
-        self.assertEqual(st["now"][0], "steward working")
+        self.assertEqual(st["now"][0], "steward mid-turn")
         self.assertEqual(st["tests"], "")
         self.assertIn("min left of a ~45 min slice", st["eta"])
         self.assertIn("estimate", st["eta"])

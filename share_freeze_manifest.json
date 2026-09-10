@@ -1,21 +1,21 @@
 {
- "schema": "share-freeze-manifest/v1",
- "schema_version": 1,
- "ship_allowed": true,
- "freeze_commits": {
-  "anchor": "6198a8830912",
-  "trio": "1f3acba2b404",
-  "skill-foundry": "b92606015266"
- },
- "freeze_tags": {
-  "anchor": "v1.2.7",
-  "trio": "v1.2.7",
-  "skill-foundry": "v1.2.7"
- },
- "skills_pin": {
-  "tag": "v1.2.7",
-  "commit": "b92606015266"
- },
- "package_matrix_version": "1.2.7",
- "notes": "v1.2.7 freeze 2026-08-27. The anchor commit pinned above is the reviewed content commit; the anchor v1.2.7 tag lands on the freeze-record commit that follows it. trio is UNCHANGED from v1.2.5/6 (same vendored commit, re-tagged). skill-foundry b92606015266 adds the two gandalf run journals. Ecgberht vendored at b9900a3 (tag v1.2.7)."
+  "schema": "share-freeze-manifest/v1",
+  "schema_version": 1,
+  "ship_allowed": true,
+  "freeze_commits": {
+    "anchor": "1837142beb92",
+    "trio": "b9539da9f3fd",
+    "skill-foundry": "f14c94cb7715"
+  },
+  "freeze_tags": {
+    "anchor": "v1.3.0",
+    "trio": "v1.3.0",
+    "skill-foundry": "v1.3.0"
+  },
+  "skills_pin": {
+    "tag": "v1.3.0",
+    "commit": "f14c94cb7715"
+  },
+  "package_matrix_version": "1.3.0",
+  "notes": "v1.3.0 source freeze. Anchor pins the content commit immediately before this freeze record. Ecgberht source commit 8ba78b0bd370. Notebook activation and per-host acceptance remain explicit setup requirements."
 }

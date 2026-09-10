@@ -1757,7 +1757,11 @@ def check_rnd_v4_surface(report: Report, server_proc, rnd_env: dict):
             # ── (a) seed-once on a stub Research session (so the gemini engine
             #         switch below is policy-allowed: gemini is research-only) ──
             try:
-                rec = _ts.start_session(pid, "research", label="hc v4 seed")
+                # This fixture measures Claude's stdin seed protocol. Other
+                # engines seed through argv, so saved user preferences must not
+                # select the protocol this synthetic assertion exercises.
+                rec = _ts.start_session(pid, "research", backend="claude",
+                                        label="hc v4 seed")
                 seed_tsid = rec["session_id"]
                 seeded_flag = bool(rec.get("seeded"))
                 out1 = _pty.read_since(seed_tsid, 0)
@@ -3081,9 +3085,15 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
                 import subprocess as _sp
                 # A LOCAL BARE repo stands in for github.com (file:// → no network).
                 bare = Path(_tf.mkdtemp(prefix="anchor-hc-v8-bare-")) / "bare.git"
-                _sp.run(["git", "init", "--bare", str(bare)],
-                        capture_output=True, text=True, timeout=30)
                 rnd_env["v3_temp_dirs"].append(bare.parent)
+                initialized = _sp.run(
+                    ["git", "init", "--bare", str(bare)],
+                    capture_output=True, text=True, timeout=30,
+                    creationflags=_paths.NO_WINDOW)
+                if initialized.returncode != 0:
+                    raise RuntimeError(
+                        "bare-init-failed: "
+                        + (initialized.stderr or initialized.stdout).strip())
                 bare_url = bare.resolve().as_uri()
 
                 # link via the gh CREATE seam → PRIVATE + persisted on the record.
@@ -3095,8 +3105,15 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
 
                 # Re-point origin at the LOCAL BARE remote so the push is
                 # network-free (the stub gh invented a github.com URL).
-                _remote.link_github(str(proj_folder), "existing", bare_url,
-                                    project_id=pid)
+                local_link = _remote.link_github(
+                    str(proj_folder), "existing", bare_url, project_id=pid)
+                if not local_link.get("ok"):
+                    raise RuntimeError(f"local-relink-failed: {local_link}")
+                origin_ok, _, origin, origin_err = _wt._git(
+                    proj_folder, ["remote", "get-url", "--push", "--all", "origin"])
+                if not origin_ok or origin.strip() != bare_url:
+                    raise RuntimeError(
+                        f"local-remote-mismatch: {origin_err or origin}")
 
                 # Non-opted → NEVER pushes.
                 no_opt = _remote.auto_push_if_opted(pid)
@@ -3104,18 +3121,35 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
                     and no_opt.get("reason") == "not-opted"
 
                 # Opt-in persists, THEN linked+opted pushes to the LOCAL BARE only.
-                _remote.set_auto_push(pid, True)
+                opted = _remote.set_auto_push(pid, True)
+                if not _remote.get_auto_push(pid):
+                    raise RuntimeError(f"opt-in-failed: {opted}")
                 pushed = _remote.auto_push_if_opted(pid)
-                bare_has = _sp.run(
-                    ["git", "-C", str(bare), "rev-parse", "--verify",
-                     "--quiet", "HEAD"],
-                    capture_output=True, text=True).returncode == 0
+                # A fresh bare HEAD can name a different default branch. Prove
+                # that the pushed branch contains this project's actual commit.
+                branch = pushed.get("branch") or ""
+                local_ok, _, local_commit, local_err = _wt._git(
+                    proj_folder, ["rev-parse", "--verify", "HEAD"])
+                bare_has, bare_commit, bare_err = False, "", ""
+                if branch:
+                    bare_has, _, bare_commit, bare_err = _wt._git(
+                        bare, ["rev-parse", "--verify", "--quiet",
+                               f"refs/heads/{branch}"])
+                commit_matches = (local_ok and bare_has
+                                  and local_commit.strip() == bare_commit.strip())
                 remote_ok = (link_ok and not_pushed
-                             and pushed.get("pushed") is True and bare_has)
+                             and pushed.get("ok") is True
+                             and pushed.get("pushed") is True and commit_matches)
+                remote_detail = (
+                    f"link_ok={link_ok} not_pushed={not_pushed} "
+                    f"pushed={pushed.get('pushed')} bare_has={bare_has} "
+                    f"branch={branch} commit_matches={commit_matches}")
+                if not remote_ok:
+                    remote_detail += (
+                        f" reason={pushed.get('reason', '')} "
+                        f"detail={pushed.get('detail') or bare_err or local_err or ''}")
                 steps.append(("remote: create(private)+opt-in gates push (local bare)",
-                              remote_ok,
-                              f"link_ok={link_ok} not_pushed={not_pushed} "
-                              f"pushed={pushed.get('pushed')} bare_has={bare_has}"))
+                              remote_ok, remote_detail))
             except Exception as e:
                 steps.append(("remote", False, f"{type(e).__name__}: {e}"))
         else:
@@ -3160,7 +3194,9 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
     if failures:
         report.check(name, False, "; ".join(failures))
     else:
-        report.check(name, True, f"{len(steps)} steps")
+        remote_receipt = next((d for s, _, d in steps if s.startswith("remote:")), "")
+        report.check(name, True, f"{len(steps)} steps"
+                     + (f"; {remote_receipt}" if remote_receipt else ""))
 
 
 def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
@@ -6511,7 +6547,8 @@ def check_supervisor_seam(report: Report):
         folder.mkdir(parents=True, exist_ok=True)
         rec = sup.launch_guarded(
             "research", project_id="hc-sup-pid", folder_path=str(folder),
-            cwd=str(folder), extra_args=["--lines", "6", "--line-interval",
+            cwd=str(folder), backend="claude",
+            extra_args=["--lines", "6", "--line-interval",
                                          "0.15", "--sleep", "6"])
         jid = rec["job_id"]
 
@@ -6660,9 +6697,11 @@ def check_supervisor_live_probes(report: Report):
                                        "ANCHOR_SUPERVISOR_TOKEN": "WRONG"})
         bad_refused = (bad.mode == _sup.MODE_INLINE and bad.degraded)
 
-        rec = client.launch("research",
+        rec = client.launch("research", backend="claude",
                             extra_args=["--lines", "5", "--line-interval",
                                         "0.12", "--sleep", "5"])
+        if not rec.get("job_id"):
+            raise RuntimeError(f"synthetic supervisor launch failed: {rec}")
         jid = rec["job_id"]
         _deadline = _time.monotonic() + 5
         while _time.monotonic() < _deadline:

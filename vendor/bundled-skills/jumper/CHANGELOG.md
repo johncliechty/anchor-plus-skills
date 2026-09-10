@@ -8,3 +8,9 @@
 - Initialized from the Phase-0 per-skill repo skeleton (`skills/templates/skill-repo/`):
   NORTH-STAR.md, SKILL.md, references/, LESSONS.md, journal/, CHANGELOG.md.
 - No lessons promoted yet.
+
+## 2026-09-09 — notebook and model-policy maintenance
+
+Added notebook work-product instructions.
+
+Validation: focused source tests passed. Notebook execution, authenticated opening, and recovery require acceptance on the installation host.

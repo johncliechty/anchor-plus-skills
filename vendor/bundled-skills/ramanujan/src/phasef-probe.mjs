@@ -49,6 +49,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveCrossFamilySeat, DEFAULT_AUTHOR_FAMILY } from './seat.mjs';
+import { resolveDriverReference } from './trio-location.mjs';
 
 // ---------------------------------------------------------------------------
 // Constants.
@@ -99,10 +100,10 @@ export const GEMINI_HOST = 'generativelanguage.googleapis.com';
 export const KNOWN_AGY_LABELS = Object.freeze(new Set(['Gemini 3.1 Pro (High)', 'Gemini 3.5 Flash (Medium)']));
 
 /** The default frontier agy LABEL — the verifier whose attested verdict earns the CORROBORATED rung. */
-export const DEFAULT_FRONTIER_LABEL = 'Gemini 3.1 Pro (High)';
+export const DEFAULT_FRONTIER_LABEL = null; // Current capability discovery owns the label.
 
 /** Default agy driver path (overridden by manifest tools.gemini.driver_ref); dynamic-imported LIVE only. */
-export const DEFAULT_AGY_DRIVER_REF = '<path>';
+export const DEFAULT_AGY_DRIVER_REF = 'trio:gemini-cli';
 
 /**
  * The fail-closed enumeration for the Gemini PRIMARY (DESCRIPTION-INC2 §v3.1). EVERY class
@@ -217,8 +218,9 @@ export function validateManifest(manifest) {
   for (const k of seatKeys) {
     const t = tools[k];
     if (t.class !== TOOL_CLASS.PROBABILISTIC) errors.push(`${k} must be class probabilistic`);
-    if (typeof t.driver_ref !== 'string' || !path.isAbsolute(t.driver_ref)) {
-      errors.push(`${k}.driver_ref must be the ABSOLUTE path to its trio driver`);
+    if (typeof t.driver_ref !== 'string' || (!path.isAbsolute(t.driver_ref)
+        && !['trio:claude', 'trio:gemini-cli', 'trio:grok-cli', 'trio:chatgpt-cli'].includes(t.driver_ref))) {
+      errors.push(`${k}.driver_ref must name a supported Trio transport or explicit local driver path`);
     }
     if (typeof t.run_export !== 'string' || t.run_export.length === 0) errors.push(`${k}.run_export must name the driver's run function`);
     if (t.family !== k) errors.push(`${k}.family must be ${k}`);
@@ -228,7 +230,7 @@ export function validateManifest(manifest) {
   const gem = tools.gemini;
   if (gem) {
     if (gem.kind !== 'cli-agy') errors.push('gemini.kind must be "cli-agy" (the agy CLI transport — the bare Gemini HTTP API is dead)');
-    if (typeof gem.model !== 'string' || !KNOWN_AGY_LABELS.has(gem.model)) {
+    if (gem.model != null && (typeof gem.model !== 'string' || !KNOWN_AGY_LABELS.has(gem.model))) {
       errors.push(`gemini.model must be a known agy LABEL, one of {${[...KNOWN_AGY_LABELS].join(' | ')}} (an API-style id silently degrades to Flash)`);
     }
   }
@@ -239,7 +241,7 @@ export function validateManifest(manifest) {
     errors.push('manifest.cross_family substrate block is required (v3): {primary, fallback, frontier_rung, fallback_rung, hard_fault_rung}');
   } else {
     if (cf.primary !== 'prefs') errors.push('cross_family.primary must be "prefs" (2026-09-04: the seat is the Anchor dashboard\'s configured family, never a hardwired one)');
-    if (cf.fallback !== 'ollama') errors.push('cross_family.fallback must be ollama');
+    if (cf.fallback != null) errors.push('Production verification fallback must be null; unconfigured models are not seats');
     if (cf.frontier_rung !== CORROBORATED) errors.push(`cross_family.frontier_rung must be ${CORROBORATED}`);
     if (cf.fallback_rung !== PLAUSIBILITY_CORROBORATED) errors.push(`cross_family.fallback_rung must be ${PLAUSIBILITY_CORROBORATED}`);
     if (cf.hard_fault_rung !== CONJECTURAL) errors.push(`cross_family.hard_fault_rung must be ${CONJECTURAL}`);
@@ -581,9 +583,9 @@ export function agyStatusToFailClass(status) {
  * (injected) short-circuits the import so the fast gate spawns nothing. Every live seam is env-gated
  * (CRUCIBLE_AGENT_LIVE=1) and a disabled/erroring seam fails CLOSED (NETWORK -> quarantine -> fallback).
  */
-export function createFamilyGenerate(spec = {}, { env = process.env, runFamily, timeoutMs, label = 'ramanujan-cross-family' } = {}) {
+export function createFamilyGenerate(spec = {}, { env = process.env, runFamily, timeoutMs, label = 'ramanujan-cross-family', role = 'refuter' } = {}) {
   const family = String(spec.family || '').trim().toLowerCase() || 'seat';
-  const model = spec.model || null;
+  const model = null; // Shared production transport selects from verified current capabilities.
   const reqTimeout = timeoutMs || spec.request_timeout_ms || 60000;
   const driverRef = spec.driver_ref;
   const runExport = spec.run_export;
@@ -598,11 +600,11 @@ export function createFamilyGenerate(spec = {}, { env = process.env, runFamily, 
           { failClass: GEMINI_FAIL_CLASS.NETWORK },
         ));
       } else {
-        runnerPromise = import(pathToFileURL(driverRef).href).then((mod) => {
+        runnerPromise = import(pathToFileURL(resolveDriverReference(driverRef, env)).href).then((mod) => {
           if (typeof mod[runExport] !== 'function') {
             throw new PhaseFProbeError(`${family} driver ${driverRef} does not export ${runExport}`, { failClass: GEMINI_FAIL_CLASS.NETWORK });
           }
-          return (prompt, lbl) => mod[runExport](prompt, lbl, { env, model, role: 'refuter', timeoutMs: reqTimeout });
+          return (prompt, lbl) => mod[runExport](prompt, lbl, { env, model, role, timeoutMs: reqTimeout });
         });
       }
     }
@@ -610,6 +612,7 @@ export function createFamilyGenerate(spec = {}, { env = process.env, runFamily, 
   }
 
   return async function familyGenerate(prompt) {
+    familyGenerate.receipt = null;
     let runner;
     try {
       runner = await resolveRunner();
@@ -626,13 +629,16 @@ export function createFamilyGenerate(spec = {}, { env = process.env, runFamily, 
       throw new PhaseFProbeError(`${family} transport error: ${e && e.message}`, { failClass: GEMINI_FAIL_CLASS.NETWORK });
     }
     const rec = out && out.rec;
-    if (!rec || rec.ok === false) {
+    if (!rec || rec.ok !== true || rec.model_attested !== true
+        || typeof rec.model_served !== 'string' || !rec.model_served.trim()
+        || rec.model_family !== family) {
       const failClass = agyStatusToFailClass(rec && rec.status);
       throw new PhaseFProbeError(
         `${family} seat unavailable [${rec ? rec.status : 'no-rec'}] (requested="${model}" served="${(rec && rec.model_served) ?? 'unattested'}")`,
         { failClass, served: (rec && rec.model_served) ?? null, requested: model },
       );
     }
+    familyGenerate.receipt = Object.freeze({ ...rec });
     return typeof out.text === 'string' ? out.text : '';
   };
 }
@@ -660,7 +666,7 @@ export async function resolvePrimarySeat(manifest, {
   author = DEFAULT_AUTHOR_FAMILY, env = process.env, loadModelFamilies,
 } = {}) {
   const tools = (manifest && manifest.tools) || {};
-  const a = String(author || DEFAULT_AUTHOR_FAMILY).trim().toLowerCase();
+  const a = typeof author === 'string' ? author.trim().toLowerCase() : null;
   if (seat && typeof seat === 'object') {
     const fam = String(seat.family || '').trim().toLowerCase() || null;
     const tool = (fam && tools[fam]) || {};
@@ -737,9 +743,13 @@ export async function probeCrossFamily(manifest, {
   // (2026-09-04) the PRIMARY seat is the Anchor dashboard's configured family — see resolvePrimarySeat.
   const resolved = await resolvePrimarySeat(manifest, { geminiGenerate, runGemini, primaryGenerate, runPrimary, seat, author, env, loadModelFamilies });
   const fam = resolved.family;
+  if (!resolved.author || resolved.author === fam) {
+    throw new PhaseFProbeError('Actual independent author family is required before a verification probe');
+  }
 
   // ---- PRIMARY: the configured seat (self-test FIRST, then the full sentinel battery). ----
   let primary;
+  let actualModel = null;
   if (!fam) {
     primary = quarantine(
       'seat',
@@ -761,7 +771,10 @@ export async function probeCrossFamily(manifest, {
           { failClass: 'SELFTEST_FAILED', selfTest },
         );
       } else {
-        const battery = await probeCrossFamilyModel(resolved.model || fam, gen, { trials });
+        actualModel = gen.receipt?.model_served
+          || ((primaryGenerate || geminiGenerate) ? resolved.model : null);
+        if (!actualModel) throw new PhaseFProbeError('Verification probe did not attest its actual model');
+        const battery = await probeCrossFamilyModel(actualModel, gen, { trials });
         primary = battery.trusted
           ? Object.freeze({ ...battery, selfTest, family: fam })
           : Object.freeze({ ...battery, selfTest });
@@ -786,7 +799,7 @@ export async function probeCrossFamily(manifest, {
       tier: CROSS_FAMILY_TIER.FRONTIER,
       activeBackend: fam,
       activeFamily: fam,
-      activeModel: resolved.model || null,
+      activeModel: actualModel,
       seat: resolved,
       rung: CORROBORATED,
       primary,
@@ -795,52 +808,12 @@ export async function probeCrossFamily(manifest, {
     });
   }
 
-  // ---- QUARANTINE -> FALLBACK: the ollama panel must itself pass its sentinels. ----
-  const models = Array.isArray(ollamaSpec.models) ? ollamaSpec.models : [];
-  const fallback = {};
-  let allFallbackTrusted = models.length > 0;
-  for (const m of models) {
-    const gen = ollamaGenerateFor ? ollamaGenerateFor(m.name) : null;
-    if (typeof gen !== 'function') {
-      fallback[m.name] = quarantine(m.name, TOOL_CLASS.PROBABILISTIC, [], `no fallback generate available for ${m.name}`);
-      allFallbackTrusted = false;
-      continue;
-    }
-    const r = await probeCrossFamilyModel(m.name, gen, { trials });
-    fallback[m.name] = r;
-    if (!r.trusted) allFallbackTrusted = false;
-  }
+  // Verification fails closed; local experimental engines are not prefs seats.
+  return Object.freeze({crossFamilyTrusted: false, tier: CROSS_FAMILY_TIER.NONE,
+    activeBackend: null, activeFamily: null, activeModel: null, seat: resolved,
+    rung: CONJECTURAL, hardFault: true, primary, gemini: geminiAlias, fallback: null,
+    reason: 'Configured verification seat unavailable; no unconfigured fallback was launched.'});
 
-  if (allFallbackTrusted) {
-    return Object.freeze({
-      crossFamilyTrusted: true,
-      tier: CROSS_FAMILY_TIER.FALLBACK,
-      activeBackend: 'ollama',
-      activeFamily: null, // a >=2-family panel, not a single family
-      activeModel: null,
-      seat: resolved,
-      rung: PLAUSIBILITY_CORROBORATED,
-      primary,
-      gemini: geminiAlias,
-      fallback,
-    });
-  }
-
-  // ---- BOTH failed: HARD-FAULT to CONJECTURAL (no probed cross-family backend). ----
-  return Object.freeze({
-    crossFamilyTrusted: false,
-    tier: CROSS_FAMILY_TIER.NONE,
-    activeBackend: null,
-    activeFamily: null,
-    activeModel: null,
-    seat: resolved,
-    rung: CONJECTURAL,
-    hardFault: true,
-    reason: `cross-family HARD-FAULT: the ${fam || 'configured'} PRIMARY seat quarantined AND the ollama FALLBACK failed its sentinel — no probed cross-family backend (CONJECTURAL, never a silent same-family/no-op pass)`,
-    primary,
-    gemini: geminiAlias,
-    fallback,
-  });
 }
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,8 @@ import pytest
 
 import codex_adapter as ca
 
+TEST_MODEL = "fixture-frontier"
+
 
 @pytest.fixture(autouse=True)
 def fixed_codex_identity_home(tmp_path, monkeypatch):
@@ -33,7 +35,7 @@ def _completed(code=0, stdout="", stderr=""):
 def _catalog(efforts=("max", "ultra")):
     return json.dumps({
         "models": [{
-            "slug": ca.CODEX_MODEL,
+            "slug": TEST_MODEL,
             "supported_reasoning_levels": [{"effort": effort} for effort in efforts],
         }],
     })
@@ -50,6 +52,9 @@ def _ready(executable="C:/trusted/codex.exe", **overrides):
         "auth_probe_at": "2026-08-30T15:00:00+00:00",
         "subscription_auth": True,
         "model_capability_verified": True,
+        "selected_model": TEST_MODEL,
+        "selected_effort": "ultra",
+        "highest_effort_verified": True,
         "ultra_capability_verified": True,
         "config_guard_verified": True,
         "runtime_guard_rechecked": False,
@@ -150,14 +155,14 @@ def test_overflow_cleanup_uses_platform_appropriate_proof(monkeypatch):
 def test_exec_argv_is_isolated_safe_and_prompt_on_stdin(tmp_path):
     target = tmp_path / 'dotted.path spaces 雪'
     target.mkdir()
-    argv = ca.build_exec_argv("codex.exe", target, sandbox="read-only")
+    argv = ca.build_exec_argv("codex.exe", target, sandbox="read-only", model=TEST_MODEL, effort="ultra")
     assert argv[0:3] == ["codex.exe", "exec", "--skip-git-repo-check"]
     for flag in ("--ephemeral", "--ignore-rules", "--strict-config", "--json"):
         assert flag in argv
     assert "--ignore-user-config" in argv
     assert argv[-1] == "-"
     assert argv[argv.index("--sandbox") + 1] == "read-only"
-    assert argv[argv.index("--model") + 1] == ca.CODEX_MODEL
+    assert argv[argv.index("--model") + 1] == TEST_MODEL
     assert 'model_reasoning_effort="ultra"' in argv
     assert 'approval_policy="never"' in argv
     assert 'model_provider="openai"' in argv
@@ -583,9 +588,11 @@ def test_preflight_distinguishes_auth_catalog_and_capability_failures(tmp_path):
     missing = ca.preflight_codex(
         "codex", env=clean_env, run_impl=no_ultra,
         provenance_fn=provenance)
-    assert missing["status"] == "capability_unavailable"
+    assert missing["status"] == "ready"
     assert missing["model_capability_verified"] is True
     assert missing["ultra_capability_verified"] is False
+    assert missing["highest_effort_verified"] is True
+    assert missing["selected_effort"] == "max"
 
 
 def test_jsonl_parser_keeps_answer_usage_and_structured_failure_boundaries():
@@ -691,7 +698,7 @@ def test_run_codex_forwards_prompt_only_on_stdin_and_emits_honest_receipt(tmp_pa
     assert envelope["type"] == "result"
     assert envelope["result"] == "ADAPTER_OK"
     receipt = envelope["model_receipt"]
-    assert receipt["requested_model"] == ca.CODEX_MODEL
+    assert receipt["requested_model"] == TEST_MODEL
     assert receipt["requested_effort"] == "ultra"
     assert receipt["model_served"] is None
     assert receipt["model_attested"] is False
@@ -2570,7 +2577,7 @@ def test_installed_cli_parses_full_override_set_without_starting_model(tmp_path)
     sentinel = "ANCHOR_PROJECT_CONFIG_MUST_NOT_LOAD_7E91"
     (project_config / "config.toml").write_text(
         'developer_instructions = "%s"\n' % sentinel, encoding="utf-8")
-    generated = ca.build_exec_argv(str(executable), odd_target)
+    generated = ca.build_exec_argv(str(executable), odd_target, model=TEST_MODEL, effort="ultra")
     complete_help = subprocess.run(generated[:-1] + ["--help"], **common)
     assert complete_help.returncode == 0, \
         complete_help.stderr or complete_help.stdout

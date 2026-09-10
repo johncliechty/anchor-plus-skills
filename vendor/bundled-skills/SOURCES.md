@@ -6,17 +6,17 @@ extraction. The archived commit sha below is the honest provenance.
 
 | Skill | Source | Archived commit |
 |-------|--------|-----------------|
-| researchPrime | <path> | `188e21e96d978aa00e3ac0b5504a34a70231da98` |
-| crucible | <path> | `188e21e96d978aa00e3ac0b5504a34a70231da98` |
-| foreman | <path> | `188e21e96d978aa00e3ac0b5504a34a70231da98` |
-| gandalf | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| jumper | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| ramanujan | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| legal-beagle | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| literature-review | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| financial-analyst | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| tidy-idy | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| zombie-hunter | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
-| ecgberht | <path> | `7be68e24832e81b81b548cb5f40effe24fe6c4bf` |
-| drivers | <path> | `188e21e96d978aa00e3ac0b5504a34a70231da98` |
-| foundry-triage | <path> Foundry | `06fb4380894531a02d6ade01e0dc253b8af29849` |
+| researchPrime | <path> | `b9539da9f3fd58ce7667a574569d14791b2e38d6` |
+| crucible | <path> | `b9539da9f3fd58ce7667a574569d14791b2e38d6` |
+| foreman | <path> | `b9539da9f3fd58ce7667a574569d14791b2e38d6` |
+| gandalf | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| jumper | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| ramanujan | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| legal-beagle | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| literature-review | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| financial-analyst | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| tidy-idy | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| zombie-hunter | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |
+| ecgberht | <path> | `8ba78b0bd37051302d352678ab59bfd2204ec9f9` |
+| drivers | <path> | `b9539da9f3fd58ce7667a574569d14791b2e38d6` |
+| foundry-triage | <path> | `f14c94cb77151cc14452e360786d475309b105e0` |

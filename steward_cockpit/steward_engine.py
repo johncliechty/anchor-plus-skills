@@ -22,12 +22,14 @@ Session ids persist to proto-state.json so a server restart resumes the same
 conversation instead of starting cold.
 """
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
 import threading
 import time
+import uuid
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -64,21 +66,31 @@ REASSERT = (
 # "when I start up the session, I need some context"). The deterministic
 # pickup lines (_emit_resume_pickup) land instantly from the record; this
 # turn adds the model's own two-sentence orientation in plain words.
+RESUME_CONTINUITY = (
+    "Read the complete durable history and give a brief pickup. Continue agreed "
+    "work under explicit, still-current authorization across session or provider "
+    "changes; do not require renewed approval solely for the pickup. Honor later "
+    "pauses, unresolved decisions, scope limits, and budgets. Ask only for "
+    "decisions, permissions, or required inputs that genuinely block the next "
+    "action; optional later materials do not block independent authorized work. "
+    "Do not replay completed actions; verify uncertain action outcomes before "
+    "repeating them. Existing authorization does not expand scope. If no "
+    "outstanding authorized task exists, ask John what to do next; do not invent "
+    "work or treat the pickup as a new effort."
+)
+
 RESUME_BRIEF = (
     "(engine resume - not John) You are Ecgberht, waking from a parked "
     "session. Silently re-read ECGBERHT.md, roadmap.json, strip.json, "
     "DELIVERABLES.md (the register of things worth opening - keep it current "
     "per its standing rule, and answer any 'what have we produced?' from it) "
-    "and the tail of .ecgberht/conversation-log.json, then give John a SHORT "
+    "and the complete durable history in .ecgberht/conversation-log.json, then give John a SHORT "
     "pickup - two or three plain sentences: where the campaign stands, the "
     "last thing that happened, and what comes next. If a question is waiting "
     "on him, restate it as the LAST line with enough context that he can "
-    "answer from your words alone. READ-BACK GATE (campaign journal 0008): if "
-    "his first reply is a bare token (go / yes / ok), read the pending "
-    "decision back as ONE canonical line and get his yes against THAT line "
-    "before spending anything - a bare token across a session boundary is "
-    "never an approval by itself. Do not start any work until he speaks. "
-    "ATTENTION FLAG (2026-08-25, John saw 'waiting on you' during a live "
+    "answer from your words alone. "
+    + RESUME_CONTINUITY
+    + " ATTENTION FLAG (2026-08-25, John saw 'waiting on you' during a live "
     "run): whenever you commission or observe background work - a "
     "researchPrime/Foreman/Gandalf run, a long build - write "
     ".ecgberht/attention.json {\"state\": \"working\", \"reason\": <what is "
@@ -199,6 +211,37 @@ TICK = (
 _STATE_LOCK = threading.RLock()
 
 
+def _reported_cost(value):
+    """Only an explicit, finite provider dollar figure is a reported cost."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if math.isfinite(value) and value >= 0:
+            return float(value)
+    return None
+
+
+def _usage_snapshot(usage):
+    """Preserve known subtotals without certifying old, unpriced usage."""
+    u = usage if isinstance(usage, dict) else {}
+    def count(key):
+        value = u.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+    reported = _reported_cost(u.get("reported_spend", u.get("spend")))
+    turns, tokens = count("turns"), count("tokens")
+    secs = _reported_cost(u.get("secs")) or 0.0
+    unknown = count("unpriced_turns")
+    # Older records accumulated missing provider costs as zero. Neither a
+    # positive subtotal nor the currently selected family proves coverage.
+    if u.get("cost_complete") is not True and "unpriced_turns" not in u:
+        unknown = max(turns, 1 if tokens or secs or reported else 0)
+    if u.get("cost_complete") is False or (reported is None and (turns or tokens)):
+        unknown = max(unknown, 1)
+    reported = reported if reported is not None else 0.0
+    return {"spend": round(reported, 4) if not unknown else None,
+            "reported_spend": round(reported, 4), "cost_complete": not unknown,
+            "unpriced_turns": unknown, "tokens": tokens,
+            "secs": secs, "turns": turns}
+
+
 def result_error_text(ev):
     """The text of an error result event (``is_error`` or an error subtype),
     clipped; "" for a clean result. The model's own words, never a guess."""
@@ -208,7 +251,12 @@ def result_error_text(ev):
     is_err = bool(ev.get("is_error")) or (sub.startswith("error") and sub != "")
     if not is_err:
         return ""
-    txt = ev.get("result")
+    error = ev.get("error")
+    txt = (error.get("message") if isinstance(error, dict) else error)
+    if not isinstance(txt, str) or not txt.strip():
+        txt = " ".join(str(x) for x in (ev.get("errors") or []) if x)
+    if not txt:
+        txt = ev.get("result")
     if not isinstance(txt, str) or not txt.strip():
         txt = " ".join(str(x) for x in (ev.get("errors") or []) if x) or sub or "error"
     txt = " ".join(str(txt).split())
@@ -329,15 +377,20 @@ class Engine:
         self.dir = str(campaign_dir)
         self.permission_mode = permission_mode
         self.fake = fake
-        self.model = model
+        self.model = None  # stale caller model pins do not override dashboard policy
         self.steward = steward
         self.general = general      # workbench terminal: no steward duties
         self.tid = tid              # terminal id (general sessions only)
-        self.cli = "claude"         # terminal seat: claude | grok | gemini
         _key = self.dir + (f"||general||{tid or 1}" if general else "")
         stored_entry = _read_state_entry(_key)
-        if general:
-            self.cli = stored_entry.get("cli", "claude")
+        import anchor_settings
+        prefs = anchor_settings.load_settings()
+        self.cli = stored_entry.get("cli") or prefs["default_cli"]
+        self.model_selection = stored_entry.get("model_policy")
+        self.policy_override = stored_entry.get("policy_override")
+        self._bridge_system_prompt = None
+        self._last_submitted = ""
+        self._turn_had_tools = False
         self.proc = None
         self._stdout_thread = None  # joined by stop() (state writes finish)
         self.events = []            # normalized, seq-stamped
@@ -363,14 +416,10 @@ class Engine:
         # (re)creation and the turn-end write then REPLACED the durable usage with
         # the smaller in-memory total. Seed them from the record so the totals
         # carry the entire history of the effort.
-        _u = stored_entry.get("usage") or {}
-        try:
-            self.spend = float(_u.get("spend") or 0.0)
-            self.tokens = int(_u.get("tokens") or 0)
-            self.secs = float(_u.get("secs") or 0.0)
-            self.turns = int(_u.get("turns") or 0)
-        except (TypeError, ValueError):
-            self.spend, self.tokens, self.secs, self.turns = 0.0, 0, 0.0, 0
+        _u = _usage_snapshot(stored_entry.get("usage"))
+        self.spend = _u["reported_spend"]
+        self.unpriced_turns = _u["unpriced_turns"]
+        self.tokens, self.secs, self.turns = _u["tokens"], _u["secs"], _u["turns"]
         self.last_output = 0.0
         self.last_tick = 0.0
         self.last_status = 0.0      # deterministic status cadence (separate
@@ -380,6 +429,7 @@ class Engine:
         self.auto_count = 0
         self.broken = False         # bad exit / failed delivery -> red light
         self.last_say = 0.0
+        self.turn_started = 0.0     # when the current model turn began (0 = idle)
         self.woke_at = 0.0
         self.john_msgs = 0          # ease-metric floor: his message count
         self.open_question = stored_entry.get("open_question", "")
@@ -424,32 +474,48 @@ class Engine:
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
-    def light(self):
-        """green = actively running · orange = quiet/done/asleep ·
+    def light(self, attention=None):
+        """green = working · orange = needs an answer · quiet = idle ·
         red = broken or stuck (bad exit, failed delivery, or busy with no
         output for twice the tick window)."""
+        att = attention if attention is not None else self._attention()
         now = time.time()
         stuck = (self.alive() and self.busy
                  and now - max(self.last_output, self.last_say,
                                self.woke_at) > max(2 * TICK_SECONDS, 1200))
         if self.broken or stuck:
             return "red"
-        if self.alive() and (self.busy or self.queue):
+        if (self.alive() and (self.busy or self.queue)) or att.get("state") == "working":
             return "green"
-        return "orange"
+        if self.open_question or att.get("state") in ("needs_you", "blocked"):
+            return "orange"
+        return "quiet"
 
     def state(self):
+        import anchor_settings
+        selected = anchor_settings.load_settings()
+        pending = selected["default_cli"] != self.cli and not (
+            self.policy_override and self.policy_override.get("revision") == selected["settings_revision"])
+        attention = self._attention()
         return {
             "alive": self.alive(),
             "busy": self.busy,
+            "turn_started": self.turn_started if self.busy else 0.0,
             # commissioned/background work in flight (the attention flag,
             # disk-true) — WITHOUT this the header pill said "waiting on
             # you" while a commissioned run worked (John, 2026-08-25)
-            "working_bg": self._working_bg(),
-            "light": self.light(),
+            "working_bg": attention.get("state") == "working",
+            "attention_state": attention.get("state", ""),
+            "attention_reason": attention.get("reason", ""),
+            "light": self.light(attention),
             "queued": len(self.queue),
             "session_id": self.session_id,
-            "spend_usd": round(self.spend, 4),
+            "spend_usd": round(self.spend, 4) if not self.unpriced_turns else None,
+            "reported_spend_usd": round(self.spend, 4),
+            "cost_status": ("reported" if not self.unpriced_turns else
+                            "partial" if self.spend else "unavailable"),
+            "unpriced_turns": self.unpriced_turns,
+            "tokens": self.tokens,
             "turns": self.turns,
             "mode": "fake" if self.fake else self.permission_mode,
             "drive": self.drive,
@@ -457,6 +523,10 @@ class Engine:
             # the full durable window, not a 12-line peek (2026-08-26)
             "files": self.files[-40:],
             "cli": self.cli,
+            "selected_cli": selected["default_cli"],
+            "pending_switch": selected["default_cli"] if pending else None,
+            "model_policy": self.model_selection,
+            "settings_error": selected.get("settings_error"),
             "john_msgs": self.john_msgs,
             "open_question": self.open_question,
             "open_question_kind": self.open_question_kind,
@@ -476,6 +546,163 @@ class Engine:
             return self.dir
         return self.dir + "||general||" + str(self.tid or 1)
 
+    def _history_thread(self):
+        return str(self.tid or 1) if self.general else None
+
+    def _record_conversation(self, role, text, *, turn_id=None):
+        """The canonical project history survives provider and process changes."""
+        if self.fake or os.environ.get("STEWARD_COCKPIT_FAKE"):
+            return True
+        try:
+            from steward_cockpit.conversation_history import append_turn
+            append_turn(self.dir, role, text, thread_id=self._history_thread(),
+                        turn_id=turn_id or str(uuid.uuid4()))
+            return True
+        except (OSError, ValueError) as exc:
+            self.broken = True
+            self._emit({"t": "sys", "text": "Conversation could not be saved; no further work will be submitted: " + str(exc)})
+            _update_state(self.skey(), {"history_error": str(exc)})
+            return False
+
+    def _recover_legacy_history(self, entry):
+        """Recover one parked, explicitly identified Claude conversation.
+
+        The canonical log wins once present. Never discover unrelated native
+        sessions or import over a damaged canonical record.
+        """
+        if (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")
+                or entry.get("cli") != "claude" or not entry.get("session_id")):
+            return False
+        from steward_cockpit.conversation_history import has_history
+        if has_history(self.dir, thread_id=self._history_thread()):
+            return False
+        if self.alive() or self.busy:
+            raise ValueError("legacy conversation recovery requires a parked session")
+        from steward_cockpit.legacy_claude_history import import_legacy_claude
+        result = import_legacy_claude(
+            self.dir, entry["session_id"], thread_id=self._history_thread(),
+            excluded_prompts=(STAND_UP, STAND_UP_NEW, RESUME_BRIEF, REASSERT, TICK))
+        self._journal_routing(kind="legacy_conversation_recovered", family="claude",
+                              source_session=entry["session_id"], turns=result["imported"])
+        self._emit({"t": "sys", "text": f"Recovered {result['imported']} original conversation entries; native transcript retained."})
+        return True
+
+    def _history_reference(self):
+        if self.fake or os.environ.get("STEWARD_COCKPIT_FAKE"):
+            return ""
+        from steward_cockpit.conversation_history import has_history
+        if not has_history(self.dir, thread_id=self._history_thread()):
+            return ""
+        relative = (f".ecgberht/terminal-history/{self._history_thread()}.json"
+                    if self.general else ".ecgberht/conversation-log.json")
+        return ("CONVERSATION CONTINUITY: This is an existing conversation, even if the goal/map is still empty. "
+                f"Before answering or working, read the complete durable history in {relative}. "
+                "Do not substitute a short summary for John's original instructions. His unresolved requirements remain active; "
+                "do not ask him to dictate them again. Read the existing project files as needed. "
+                "Distinguish requirements from completed actions: do not replay completed actions; verify uncertain action outcomes before repeating them. Explicit, still-current authorization for outstanding agreed work remains valid across session or provider changes, but does not create new approval or expand scope. Honor later pauses, unresolved decisions, scope limits, and budgets. "
+                "If the history cannot be read completely, say so before proceeding.\n")
+
+    def _retain_native_session(self, entry):
+        """Retain old provider pointers before replacing the active native ID."""
+        family, session_id = entry.get("cli"), entry.get("session_id")
+        if not family or not session_id:
+            return True
+        with _STATE_LOCK:
+            # A caller can hold an older entry across a handoff. Merge into
+            # the current archive; never replace newer pointers with its copy.
+            current = _read_state_entry(self.skey())
+            records = list(current.get("provider_sessions") or [])
+            for record in entry.get("provider_sessions") or []:
+                if record not in records:
+                    records.append(record)
+            if not any(r.get("family") == family and r.get("session_id") == session_id for r in records):
+                records.append({"family": family, "session_id": session_id,
+                                "model_policy": entry.get("model_policy"), "preserved_at": time.time()})
+            return _update_state(self.skey(), {"provider_sessions": records}) is True
+
+    def _desired_policy(self):
+        import anchor_settings
+        settings = anchor_settings.get_launch_settings()
+        override = self.policy_override or {}
+        if override.get("revision") == settings["settings_revision"]:
+            target = override["family"]
+        else:
+            self.policy_override = None
+            target = settings["default_cli"]
+        return settings, target
+
+    def _journal_routing(self, **event):
+        entry = _read_state_entry(self.skey())
+        events = list(entry.get("routing_events") or [])
+        events.append({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), **event})
+        if _update_state(self.skey(), {"routing_events": events[-100:]}) is not True:
+            raise RuntimeError("Model routing journal could not be persisted; no fallback launched")
+        self._emit({"t": "sys", "text": "MODEL ROUTING (journaled): " + event.get("message", event.get("action", "change"))})
+
+    def _select_available_policy(self, settings, target, excluded=()):
+        """Bounded prelaunch selection, exclusively among dashboard families."""
+        import model_policy
+        ladder = list(dict.fromkeys([target] + [settings[k] for k in ("coding_family", "review_family", "default_cli")]))
+        failed = []
+        for family in ladder:
+            if family in excluded:
+                continue
+            try:
+                if family not in ("claude", "chatgpt", "grok"):
+                    raise RuntimeError("native cockpit capability contract is not verified")
+                if family == "grok" and not (HERE / "grok_turn_bridge.py").is_file():
+                    raise RuntimeError("native Grok cockpit adapter is unavailable")
+                selection = model_policy.resolve(family, settings=settings)
+            except (ValueError, RuntimeError) as exc:
+                failed.append(family)
+                self._journal_routing(action="unavailable", family=family,
+                                      message=family + " preflight unavailable: " + str(exc))
+                continue
+            if family != target:
+                self._journal_routing(action="failover", requested=target, actual_family=family,
+                                      model_served=None, cross_model=False,
+                                      message=target + " -> " + family + "; selected-provider fallback, cross_model:false")
+                self.policy_override = {"family": family, "revision": settings["settings_revision"],
+                                        "reason": "visible_failover", "failed_families": list(excluded)}
+            return family, selection
+        self._journal_routing(action="halt", message="No capable selected cockpit provider remains")
+        raise RuntimeError("No capable selected cockpit provider remains; check subscription health")
+
+    def _rollover_locked(self, target, settings, text):
+        """Idle-boundary handoff; the next message is never sent to the old seat."""
+        import model_policy
+        try:
+            target, selection = self._select_available_policy(settings, target)
+        except (ValueError, RuntimeError) as exc:
+            self._emit({"t": "sys", "text": "Pending provider switch could not start: " + str(exc)})
+            return False
+        if target not in ("claude", "chatgpt", "grok"):
+            self._emit({"t": "sys", "text": target + " cockpit transport is not yet verified; message retained"})
+            return False
+        try:
+            handoff = self._handoff_text()
+        except (OSError, ValueError) as exc:
+            self._emit({"t": "sys", "text": "Provider switch withheld: conversation history is unreadable: " + str(exc)})
+            return False
+        old, proc = self.cli, self.proc
+        self._emit({"t": "sys", "text": f"Dashboard provider change: {old} -> {target}. Starting a new provider session with a history handoff."})
+        if (not self._retain_native_session(_read_state_entry(self.skey()))
+                or not _update_state(self.skey(), {"pending_switch": target, "pending_handoff": handoff})):
+            self._emit({"t": "sys", "text": "Provider switch withheld: handoff could not be saved; original session retained"})
+            return False
+        self.proc = None  # old reader cannot alter the replacement's state
+        if proc is not None and proc.poll() is None:
+            self._kill_tree(proc)
+        self.cli, self.model_selection, self.session_id = target, selection, None
+        seed = ("Provider handoff. Preserve active user requirements; do not replay completed actions:\n"
+                + handoff + "\n\nNEXT MESSAGE (answer this once):\n" + text)
+        ok, why = self._wake_locked(fresh=True, seed=seed)
+        if ok:
+            _update_state(self.skey(), {"pending_switch": None, "pending_handoff": None})
+        else:
+            self._emit({"t": "sys", "text": "Provider handoff failed: " + why})
+        return ok
+
     def wake(self, fresh=False, seed=None):
         # single-flight: hold the lock across the alive-check + Popen so two
         # concurrent requests never spawn two CLI processes
@@ -486,6 +713,37 @@ class Engine:
 
     def _wake_locked(self, fresh, seed):
         entry = _read_state_entry(self.skey())
+        is_fake = self.fake or bool(os.environ.get("STEWARD_COCKPIT_FAKE"))
+        history_reference = ""
+        if not is_fake:
+            try:
+                self._recover_legacy_history(entry)
+                history_reference = self._history_reference()
+                settings, target = self._desired_policy()
+                import model_policy
+                previous = entry.get("model_policy") or {}
+                if (not fresh and entry.get("session_id") and target == entry.get("cli")
+                        and previous.get("family") == target and previous.get("model") and previous.get("effort")):
+                    model_policy.validate_policy(previous.get("requested_policy"))
+                    model_policy.launch_args(previous)  # validate frozen argv without changing the logical seat
+                    selection = dict(previous)
+                else:
+                    target, selection = self._select_available_policy(settings, target)
+            except (OSError, ValueError, RuntimeError) as exc:
+                self._emit({"t": "sys", "text": "Model policy unavailable: " + str(exc)})
+                return False, str(exc)
+            if target != entry.get("cli"):
+                if entry.get("session_id") and not history_reference:
+                    self._emit({"t": "sys", "text": "Provider change withheld: this older conversation needs its original transcript recovered into project history first. The original session is retained."})
+                    return False, "original conversation recovery required before provider change"
+                if not self._retain_native_session(entry):
+                    return False, "native conversation pointer could not be preserved"
+                fresh = True
+                if not seed and history_reference:
+                    seed = history_reference + RESUME_CONTINUITY
+                elif not seed and entry.get("last_text"):
+                    seed = "Provider changed. Read the campaign record before continuing. Prior session summary:\n" + entry["last_text"]
+            self.cli, self.model_selection = target, selection
         held = list(entry.get("pending_queue") or [])
         if held and not self.queue:
             self.queue = held
@@ -498,34 +756,44 @@ class Engine:
         # Anchor stub seam: the healthcheck / tests set STEWARD_COCKPIT_FAKE=1
         # so the cockpit is exercised through THIS module's stream-json fake
         # (the generic ANCHOR_RUNNER_CMD stub speaks a different protocol).
-        if self.fake or os.environ.get("STEWARD_COCKPIT_FAKE"):
+        if is_fake:
             import sys
             cmd = [sys.executable, str(HERE / "fake_claude.py")]
         else:
-            base = _cli_cmd(self.cli)
+            base = _cli_cmd("codex" if self.cli == "chatgpt" else self.cli)
             if not base:
                 self._emit({"t": "sys", "text": f"{self.cli} CLI not found on PATH"})
                 return False, f"{self.cli} CLI not found"
             persona = ("" if self.general else
                        f"Your name in this interface is {self.steward} - John "
                        "picked that persona; answer to it. ")
-            cmd = base + [
+            if self.cli in ("chatgpt", "grok"):
+                import sys
+                bridge = "codex_turn_bridge.py" if self.cli == "chatgpt" else "grok_turn_bridge.py"
+                cmd = [sys.executable, str(HERE / bridge),
+                       "--target", self.dir, "--model", selection["model"],
+                       "--effort", selection["effort"], "--permission-mode", self.permission_mode]
+                if stored:
+                    cmd += ["--resume", stored]
+                self._bridge_system_prompt = persona + CONTRACT + "\n" + history_reference
+            elif self.cli == "claude":
+                cmd = base + [
                 "-p", "--verbose",
                 "--input-format", "stream-json",
                 "--output-format", "stream-json",
                 "--include-partial-messages",
                 "--permission-mode", self.permission_mode,
                 "--disallowedTools", "AskUserQuestion",
-                "--append-system-prompt", persona + CONTRACT,
+                "--append-system-prompt", persona + CONTRACT + "\n" + history_reference,
                 "--name", "steward-proto",
-            ]
-            if self.model:
-                cmd += ["--model", self.model]
-            if stored:
-                cmd += ["--resume", stored]
+                ] + model_policy.launch_args(selection)
+                if stored:
+                    cmd += ["--resume", stored]
+            else:
+                return False, self.cli + " cockpit transport is not yet verified; no provider was substituted"
         flags = 0
         if os.name == "nt":
-            flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         try:
             proc = subprocess.Popen(
                 cmd, cwd=self.dir,
@@ -533,11 +801,15 @@ class Engine:
                 stderr=subprocess.PIPE,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
                 creationflags=flags,
+                env=None if is_fake else model_policy.policy_environment(),
             )
         except Exception as e:
             self._emit({"t": "sys", "text": f"could not start the steward: {e}"})
             return False, str(e)
         self.proc = proc
+        _update_state(self.skey(), {"cli": self.cli, "model_policy": self.model_selection,
+                                   "policy_override": self.policy_override,
+                                   "session_id": stored})
 
         self.broken = False
         self.busy = False
@@ -577,6 +849,9 @@ class Engine:
                 initial_prompt = RESUME_BRIEF
         elif seed:
             initial_prompt = seed
+        elif history_reference:
+            self._emit({"t": "sys", "text": "awake - restoring the existing conversation and requirements"})
+            initial_prompt = history_reference + RESUME_CONTINUITY
         elif self.general:
             self._emit({"t": "sys", "text": "workbench terminal awake"})
             initial_prompt = (
@@ -701,11 +976,14 @@ class Engine:
         return persisted
 
     def _kill_tree(self, proc):
+        if proc.poll() is not None:
+            return  # never target a PID after our owned process has exited
         # cmd /c wraps the real CLI on Windows; kill the whole tree, not the shim
         try:
             if os.name == "nt":
                 subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True, timeout=10)
+                               capture_output=True, timeout=10,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
             else:
                 proc.kill()
         except Exception:
@@ -716,9 +994,12 @@ class Engine:
 
     # ---------- engine switch (workbench terminals) ----------
     def _handoff_text(self):
-        """Deterministic handoff from the live event buffer - no model call."""
+        """Full record reference; never replace user requirements with a tail."""
+        reference = self._history_reference()
+        if reference:
+            return reference
         blocks, cur = [], ""
-        for ev in self.events[-600:]:
+        for ev in self.events:
             if ev["t"] == "delta":
                 cur += ev.get("text", "")
             elif ev["t"] == "john":
@@ -728,14 +1009,14 @@ class Engine:
                 blocks.append("JOHN: " + ev.get("text", ""))
         if cur.strip():
             blocks.append("ASSISTANT: " + cur.strip())
-        text = "\n\n".join(blocks)[-3500:]
+        text = "\n\n".join(blocks)
         if self.files:
             text += "\n\nFILES TOUCHED: " + ", ".join(self.files[-10:])
         return text.strip()
 
     def switch_cli(self, target):
         target = str(target or "").strip().lower()
-        if target not in ("claude", "grok", "gemini"):
+        if target not in ("claude", "grok", "gemini", "chatgpt"):
             return {"ok": False, "error": "unknown engine"}
         if target == self.cli and self.alive():
             return {"ok": True, "cli": self.cli}
@@ -744,21 +1025,33 @@ class Engine:
             # queue - refuse rather than lose work
             return {"ok": False, "cli": self.cli,
                     "error": "finish or pause the current turn before switching engine"}
-        handoff = self._handoff_text()
-        old = self.cli
-        if handoff:
+        if not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")):
             try:
-                hdir = HERE / "handoffs"
-                hdir.mkdir(exist_ok=True)
-                fname = f"term-{abs(hash(self.skey())) % 99999}-{old}-to-{target}.md"
-                (hdir / fname).write_text(
-                    f"# Engine switch handoff - {old} -> {target}\n\n" + handoff,
-                    encoding="utf-8")
-            except Exception:
-                pass
+                import anchor_settings, model_policy
+                settings = anchor_settings.get_launch_settings()
+                if target not in {settings[key] for key in ("default_cli", "coding_family", "review_family")}:
+                    return {"ok": False, "error": "provider is not selected on the dashboard"}
+                if target not in ("claude", "chatgpt", "grok"):
+                    return {"ok": False, "error": target + " cockpit transport is not yet verified"}
+                model_policy.resolve(target, settings=settings)
+                self.policy_override = {"family": target, "revision": settings["settings_revision"], "reason": "explicit_session_choice"}
+            except (ValueError, RuntimeError) as exc:
+                return {"ok": False, "error": str(exc)}
+        try:
+            handoff = self._handoff_text()
+        except (OSError, ValueError) as exc:
+            return {"ok": False, "cli": self.cli, "error": "conversation history unreadable: " + str(exc)}
+        entry = _read_state_entry(self.skey())
+        if (not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE"))
+                and entry.get("session_id") and not self._history_reference()):
+            return {"ok": False, "cli": self.cli,
+                    "error": "original conversation recovery required before provider change; original session retained"}
+        old = self.cli
+        if not self._retain_native_session(_read_state_entry(self.skey())):
+            return {"ok": False, "cli": self.cli, "error": "native session history could not be preserved"}
         if self.alive():
             self._emit({"t": "sys",
-                        "text": f"switching {old} -> {target} - work handed off, nothing lost"})
+                        "text": f"switching {old} -> {target} - restoring the saved project conversation"})
             self.stop()
         seed = None
         if handoff:
@@ -768,13 +1061,6 @@ class Engine:
                     f"where it left off.\n\n{handoff}")
         self.cli = target
         ok, why = self.wake(fresh=True, seed=seed)
-        if not ok and target != "claude":
-            self._emit({"t": "sys", "text":
-                        f"{target} could not start with streaming flags on this "
-                        "machine - falling back to claude with the same handoff; "
-                        f"full {target} terminals ride Anchor's engine-switch at integration"})
-            self.cli = "claude"
-            ok, why = self.wake(fresh=True, seed=seed)
         _update_state(self.skey(), {"cli": self.cli})
         return {"ok": ok, "cli": self.cli, "why": why}
 
@@ -795,6 +1081,8 @@ class Engine:
         with self._lock:
             control = ""
             if human:
+                if not self._record_conversation("john", text):
+                    return {"ok": False, "error": "your message was not accepted because durable conversation storage failed"}
                 # Only bare UI commands are controls. "go with option B" and
                 # "hold on" are substantive words, not drive switches.
                 low = text.lower().rstrip(".!").strip()
@@ -836,9 +1124,9 @@ class Engine:
             # (2026-09-05, John: "the plan does not get updated") while the
             # roadmap is behind the plan documents, his turn carries the drift
             # line on the model's stdin - his displayed words stay his own.
-            if human and not self.general:
-                text = text + self._plan_drift_suffix()
             if self.busy:
+                # queued RAW: the drift line is computed when this is delivered
+                # (a line computed now can be false by then — journal 0111)
                 self.queue.append(text)
                 if not self._persist_queue():
                     self.queue.pop()
@@ -851,7 +1139,7 @@ class Engine:
                             "error": "could not durably queue your text"}
                 self._emit({"t": "sys", "text": "queued - the steward is mid-turn; it will be delivered next"})
                 return {"ok": True, "queued": True}
-            ok = self._send_locked(text)
+            ok = self._send_locked(text + (self._plan_drift_suffix() if (human and not self.general) else ""))
         if not ok:
             return {"ok": False, "error": "delivery failed - your text was not sent"}
         return {"ok": True, "queued": False}
@@ -866,14 +1154,28 @@ class Engine:
 
     def _send_locked(self, text):
         """Caller holds self._lock. Returns True iff the write reached stdin."""
+        if not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")):
+            try:
+                settings, target = self._desired_policy()
+            except (ValueError, RuntimeError) as exc:
+                self._emit({"t": "sys", "text": "Model settings unavailable; message not sent: " + str(exc)})
+                return False
+            if target != self.cli:
+                return self._rollover_locked(target, settings, text)
         proc = self.proc
         msg = {"type": "user",
                "message": {"role": "user",
                            "content": [{"type": "text", "text": text}]}}
+        if self._bridge_system_prompt:
+            msg["system_prompt"] = self._bridge_system_prompt
         try:
             proc.stdin.write(json.dumps(msg) + "\n")
             proc.stdin.flush()
+            self._bridge_system_prompt = None
+            self._last_submitted = text
+            self._turn_had_tools = False
             self.busy = True
+            self.turn_started = time.time()
             self.turn_text = ""
             return True
         except Exception as e:
@@ -930,8 +1232,14 @@ class Engine:
         if t == "system" and ev.get("subtype") == "init":
             if proc is not self.proc:
                 return
+            if not self._retain_native_session(_read_state_entry(self.skey())):
+                self._emit({"t": "sys", "text": "Native session history could not be preserved; retaining the prior pointer"})
+                self.broken = True
+                return
             self.session_id = ev.get("session_id")
-            _update_state(self.skey(), {"session_id": self.session_id})
+            # init.model is configuration, not proof of what actually served.
+            _update_state(self.skey(), {"session_id": self.session_id, "cli": self.cli,
+                                      "model_policy": self.model_selection})
         elif t == "stream_event":
             inner = ev.get("event", {})
             if inner.get("type") == "content_block_delta":
@@ -947,6 +1255,7 @@ class Engine:
             self.last_output = time.time()
             for block in ev.get("message", {}).get("content", []):
                 if block.get("type") == "tool_use":
+                    self._turn_had_tools = True
                     inp = block.get("input") or {}
                     fp = inp.get("file_path")
                     if (block.get("name") in ("Write", "Edit", "NotebookEdit")
@@ -964,6 +1273,15 @@ class Engine:
             # an error result is said in the pane with its text, a limit raises
             # the flag so the High Seat says "need you" with the reason.
             err_text = result_error_text(ev)
+            if self.model_selection:
+                actual = ev.get("model_served") if ev.get("model_attested") is True else None
+                if self.cli == "claude" and not err_text:
+                    usage_models = ev.get("modelUsage")
+                    if isinstance(usage_models, dict) and len(usage_models) == 1:
+                        actual = next(iter(usage_models))
+                self.model_selection = {**self.model_selection, "model_served": actual,
+                                        "model_attested": bool(actual)}
+                _update_state(self.skey(), {"model_policy": self.model_selection})
             if err_text:
                 limit = _campaign_limit(err_text)
                 self._model_limit = ("model session limit: " + err_text) if limit else ""
@@ -978,13 +1296,22 @@ class Engine:
                             failure_code="MODEL_LIMIT")
                     except Exception:
                         pass
-            cost = ev.get("total_cost_usd") or 0
-            usage = ev.get("usage") or {}
-            self.tokens += (usage.get("input_tokens", 0)
-                            + usage.get("output_tokens", 0)
-                            + usage.get("cache_creation_input_tokens", 0))
-            self.secs += (ev.get("duration_ms") or 0) / 1000
-            self.spend += cost
+            cost = _reported_cost(ev.get("total_cost_usd"))
+            usage = ev.get("usage")
+            usage = usage if isinstance(usage, dict) else {}
+            # Codex cached_input_tokens is already included in input_tokens.
+            # Claude's separate cache read/create counts are additive.
+            turn_tokens = sum(value for key in ("input_tokens", "output_tokens",
+                "cache_creation_input_tokens", "cache_read_input_tokens")
+                if isinstance((value := usage.get(key)), int)
+                and not isinstance(value, bool) and value >= 0)
+            self.tokens += turn_tokens
+            duration = (_reported_cost(ev.get("duration_ms")) or 0) / 1000
+            self.secs += duration
+            if cost is None:
+                self.unpriced_turns += 1
+            else:
+                self.spend += cost
             self.turns += 1
             # pinned open question: scan the WHOLE final text for the last
             # question-bearing sentence (not just a trailing "?"), so a
@@ -999,6 +1326,8 @@ class Engine:
                 if proc is not self.proc:
                     return
                 was_tick = self.in_tick
+                history_saved = (not txt or was_tick or self._record_conversation(
+                    "steward", txt, turn_id=f"{self.cli}:{self.session_id}:{self.epoch}:{self.turns}"))
                 pinned_now = False
                 if not was_tick:
                     sentences = [s.strip() for s in
@@ -1011,7 +1340,10 @@ class Engine:
                         pinned_now = True
 
                 _update_state(self.skey(), {
-                    "usage": {"spend": round(self.spend, 4),
+                    "usage": {"spend": round(self.spend, 4) if not self.unpriced_turns else None,
+                              "reported_spend": round(self.spend, 4),
+                              "cost_complete": not self.unpriced_turns,
+                              "unpriced_turns": self.unpriced_turns,
                               "tokens": self.tokens,
                               "secs": int(self.secs),
                               "turns": self.turns},
@@ -1026,17 +1358,47 @@ class Engine:
                 })
                 self.busy = False
                 self._emit({"t": "turn_end",
-                            "cost_usd": round(cost, 4),
-                            "duration_s": round(
-                                (ev.get("duration_ms") or 0) / 1000),
+                            "cost_usd": round(cost, 4) if cost is not None else None,
+                            "cost_status": "reported" if cost is not None else "unavailable",
+                            "tokens": turn_tokens,
+                            "duration_s": round(duration),
                             "tick": was_tick})
                 self.in_tick = self._ticks_pending > 0
                 self._ticks_pending = max(0, self._ticks_pending - 1)
 
+                if not history_saved:
+                    self._hold_queue("conversation persistence failed; queued messages retained")
+                elif err_text:
+                    # Error turns never trigger answer nudges or auto-drive on
+                    # the exhausted provider. Only a confirmed unsubmitted/
+                    # rejected turn can replay the original message.
+                    if limit and not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")):
+                        try:
+                            import anchor_settings
+                            settings = anchor_settings.get_launch_settings()
+                            excluded = set((self.policy_override or {}).get("failed_families") or [])
+                            excluded.add(self.cli)
+                            target, selection = self._select_available_policy(settings, self.cli, excluded=excluded)
+                            if ev.get("replay_safe") is True and not self._turn_had_tools:
+                                seed = self._last_submitted
+                            else:
+                                self._journal_routing(action="replay_blocked", family=self.cli,
+                                    message="Interrupted action state is uncertain; original turn will not be replayed")
+                                seed = ("The previous provider stopped mid-turn. Do not run tools or repeat prior actions. "
+                                        "Briefly explain that you are the available replacement provider, but the interrupted "
+                                        "turn needs confirmation before continuing. Preserve all queued user messages.")
+                            if self._rollover_locked(target, settings, seed):
+                                self._model_limit = ""
+                                return
+                        except (ValueError, RuntimeError) as exc:
+                            self._emit({"t": "sys", "text": "Model failover stopped: " + str(exc)})
+                    self._hold_queue("model turn failed; no automatic replay")
                 # Human ingress always outranks automatic retries/drive.
-                if self.queue:
+                elif self.queue:
                     queued = self.queue[0]
-                    if self._send_locked(queued):
+                    # the drift line is computed NOW, at delivery (journal 0111)
+                    suffix = "" if self.general else self._plan_drift_suffix()
+                    if self._send_locked(queued + suffix):
                         self.queue.pop(0)
                     if not self._persist_queue():
                         self.broken = True
@@ -1073,9 +1435,9 @@ class Engine:
                         self._human_asked = False
                     self._maybe_drive_locked(was_tick, txt)
 
-            # Persist the post-arbitration truth (including a just-started
+            # Publish the post-arbitration truth (including a just-started
             # queued/nudge/drive turn) without holding the stdin arbiter lock.
-            self._status_update(emit=False)
+            self._status_update(emit=True)
 
     # ---------- proactive drive ----------
     DRIVE_CAP = 50
@@ -1124,19 +1486,23 @@ class Engine:
             "with the question.")
 
     # ---------- cadence ----------
+    def _attention(self):
+        """Read the current campaign work state once for a state snapshot."""
+        if self.general:
+            return {}
+        try:
+            from steward_cockpit import steward_campaign as campaign
+            return campaign.read_map(self.dir).get("attention", {})
+        except Exception:
+            return {"state": "unknown", "reason": "Work status unavailable"}
+
     def _working_bg(self):
         """True when the campaign flag says commissioned/background work is
         in flight — disk truth, zero-model. The steward's own turn may be
         idle while a commissioned run (Gandalf, Foreman) works; the old
         busy-only cadence showed NOTHING for exactly the long work John
         wants to watch (handoff 2026-08-25 #2a)."""
-        if self.general:
-            return False
-        try:
-            from steward_cockpit import steward_campaign as campaign
-            return campaign.read_map(self.dir)["attention"]["state"] == "working"
-        except Exception:
-            return False
+        return self._attention().get("state") == "working"
 
     def _status_update(self, emit=True):
         """The 10-minute status OF RECORD — deterministic, two-part,

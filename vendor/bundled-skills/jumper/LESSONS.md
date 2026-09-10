@@ -26,3 +26,9 @@
    zero-survivor runs (0021/0022) asked for objects and got disciplines;
    state the pass predicate explicitly for aesthetic/naming tasks and
    instantiate frames before Gate-3. (hypothesis, 2 corroborating runs)
+
+## 2026-09-09 — notebook and model-policy maintenance
+
+Produce, persist, and register requested notebooks in the same step so the shared interface has an artifact to open.
+
+Validation: focused source tests passed. Notebook execution, authenticated opening, and recovery require acceptance on the installation host.

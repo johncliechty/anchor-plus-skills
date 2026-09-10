@@ -43,6 +43,12 @@ def stack(tmp_path, monkeypatch):
     anchor_settings.save_settings(
         default_cli="claude", coding_family="chatgpt", review_family="claude",
     )
+    import model_policy
+    model_policy._MEMORY.clear()
+    def synthetic_catalog(family, **kwargs):
+        return [{"model": "fixture-frontier", "efforts": ["max", "ultra"],
+                 "rank": 0, "upgrade": None, "evidence": "test_catalog"}], "fixture-cli"
+    monkeypatch.setattr(model_policy, "discover", synthetic_catalog)
     import session_registry
     importlib.reload(session_registry)
     import job_runner
@@ -100,6 +106,9 @@ def _trusted_preflight(jobs, *, subscription_auth=True):
         "auth_probe_at": "2026-08-30T15:00:00+00:00",
         "subscription_auth": bool(subscription_auth),
         "model_capability_verified": ready,
+        "selected_model": "fixture-frontier",
+        "selected_effort": "ultra",
+        "highest_effort_verified": ready,
         "ultra_capability_verified": ready,
         "codex_home": jobs._codex.subscription_only_env()["CODEX_HOME"],
         "user_config_ignored": ready,
@@ -206,6 +215,7 @@ def _valid_envelope(stack, output, prompt="trusted prompt", duration_ms=12):
             "output_dir": str(output),
             "permission_mode": None,
             "expected_artifacts": [artifact.name],
+            "model_policy": {"model": "fixture-frontier", "effort": "ultra"},
         },
     }
     return envelope, record
@@ -348,6 +358,7 @@ def _failure_envelope(stack, output, status, *, seat_started,
             "output_dir": str(output),
             "permission_mode": None,
             "expected_artifacts": ["report.md"],
+            "model_policy": {"model": "fixture-frontier", "effort": "ultra"},
         },
     }
     return envelope, record
@@ -1171,6 +1182,7 @@ def test_read_only_success_uses_false_mutation_aliases_and_empty_evidence(stack)
         "relaunch_spec": {
             "prompt": prompt, "output_dir": str(output),
             "permission_mode": "plan", "expected_artifacts": [],
+            "model_policy": {"model": "fixture-frontier", "effort": "ultra"},
         },
     }
     assert receipt["artifact_contract_verified"] is False
@@ -1459,6 +1471,7 @@ def test_genuine_preseat_artifact_scan_failure_round_trips(
             "output_dir": str(output),
             "permission_mode": None,
             "expected_artifacts": ["report.md"],
+            "model_policy": {"model": "fixture-frontier", "effort": "ultra"},
         },
     }
     assert adapter_exit == (130 if interrupted else 2)
@@ -1598,6 +1611,7 @@ def test_unconfigured_checkout_ignores_mirror_primary_redirect(tmp_path, monkeyp
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     import paths
     importlib.reload(paths)
+    monkeypatch.setattr(paths, "data_dir", lambda: tmp_path / "default-unconfigured-data")
     import anchor_settings
     importlib.reload(anchor_settings)
     assert anchor_settings.settings_path() == paths.data_dir() / "settings.json"
@@ -1610,7 +1624,7 @@ def test_explicit_data_dir_ignores_divergent_mirror_primary(tmp_path, monkeypatc
     explicit = tmp_path / "explicit-data"
     explicit.mkdir()
     (explicit / "settings.json").write_text(json.dumps({
-        "coding_family": "claude", "review_family": "grok",
+        "default_cli": "claude", "coding_family": "claude", "review_family": "grok",
     }), encoding="utf-8")
     other = tmp_path / "other-anchor"
     other.mkdir()

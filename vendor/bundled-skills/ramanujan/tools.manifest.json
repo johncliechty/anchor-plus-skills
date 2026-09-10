@@ -2,7 +2,7 @@
   "$schema_version": "phasef-tools-manifest/1",
   "pinned": "2026-06-22",
   "host": "win32",
-  "comment": "Wave-1 (F0) PINNED external-tool manifest. Local certifiers (lean, z3, ollama) are referenced by ABSOLUTE path (never PATH). (2026-09-04, John) The cross-family PRIMARY seat is whichever family the Anchor dashboard prefs configure — review_family first, then coding_family, never the author's own; gemini ONLY when a pref names it (src/seat.mjs, reading the prefs through <path> loadModelFamilies). This manifest pins the TRANSPORT for every family a pref may name (tools.claude / gemini / grok / chatgpt: driver_ref + run_export) + the ollama-FALLBACK. The F0 probe runs the resolved PRIMARY seat first and each tool's integrity sentinels before any certifier is trusted. Local paths verified on this host 2026-06-22; cross-family moved to the agy transport 2026-07-06; seat resolution moved to Anchor prefs 2026-09-04.",
+  "comment": "Portable subscription transport manifest. Anchor preferences alone choose production families; shared verified capability policy selects latest-supported/highest-supported models. Actual author and served-model provenance are required for cross-family verification. Local deterministic/experimental tools remain installation-specific and are never automatic subscription fallbacks.",
   "tool_lane_env": "RAMANUJAN_TOOL_TESTS",
   "wall_clock_budget_ms": {
     "smoke_reachable": 30000,
@@ -15,30 +15,30 @@
   },
   "cross_family": {
     "primary": "prefs",
-    "fallback": "ollama",
+    "fallback": null,
     "frontier_rung": "CORROBORATED",
     "fallback_rung": "PLAUSIBILITY-CORROBORATED",
     "hard_fault_rung": "CONJECTURAL",
     "tiers": {
       "frontier": "prefs",
-      "fallback": "ollama"
+      "fallback": null
     },
-    "note": "Substrate (2026-09-04): cross-family certification runs on the PREFS-RESOLVED seat (frontier tier, rung CORROBORATED after the frontier-canary self-test reproduces the normalized VERDICT) with ollama-FALLBACK (tier=fallback => PLAUSIBILITY-CORROBORATED). A seat that is unreachable / times out / errors / is unconfigured, OR whose driver SUBSTITUTES or cannot ATTEST the served model, is QUARANTINED and the probe falls back; if the fallback ALSO fails its sentinel, the lift HARD-FAULTS to CONJECTURAL (never an un-probed backend, never a same-family pass).",
-    "primary_resolution": "Anchor prefs (data-dir settings.json -> ~/.anchor/model_prefs.json): the configured family among review_family / coding_family that is not the author's; none -> no seat (cross_model:false, honest) -> the ollama fallback tier"
+    "note": "Configured independent subscription verification requires actual served-model attestation and successful integrity sentinels. An unavailable, substituted or unattested verification seat fails closed; there is no implicit local-model fallback.",
+    "primary_resolution": "Anchor primary settings, or mirror only when primary is absent: review_family then coding_family that differs from the recorded actual author; none means explicit unverified/fail-closed status."
   },
   "tools": {
     "gemini": {
       "class": "probabilistic",
       "role": "F1-cross-family-seat (only when a pref names gemini)",
       "kind": "cli-agy",
-      "driver_ref": "<path>",
-      "model": "Gemini 3.1 Pro (High)",
+      "driver_ref": "trio:gemini-cli",
+      "model": null,
       "family": "gemini",
       "tier": "frontier",
       "rung": "CORROBORATED",
       "temperature": 0,
       "request_timeout_ms": 60000,
-      "note": "The gemini seat (used ONLY when review_family or coding_family names gemini): the Antigravity CLI `agy` through the user LOGIN, addressed by a human LABEL (never an API-style id, which agy silently degrades to Flash), via the proven transport at driver_ref with served-model ATTESTATION. Env-gated (CRUCIBLE_AGENT_LIVE=1); the fast `node --test` gate injects a stub and spawns no agy.",
+      "note": "Gemini is eligible only when configured, through verified agy-dispatch subscription capabilities. Until latest-model/highest-effort discovery is established, fail before launch; do not use historical labels.",
       "run_export": "defaultRunGeminiCli"
     },
     "grok": {
@@ -48,9 +48,9 @@
       "rung": "CORROBORATED",
       "temperature": 0,
       "role": "F1-cross-family-seat (when a pref names grok)",
-      "driver_ref": "<path>",
+      "driver_ref": "trio:grok-cli",
       "run_export": "defaultRunGrokCli",
-      "model": "grok-4.5",
+      "model": null,
       "family": "grok",
       "request_timeout_ms": 600000,
       "note": "The Grok seat: the subscription Grok Build CLI (`grok.exe -p`, plan permission mode for a refuter) — never the raw xAI HTTP API. Env-gated (CRUCIBLE_AGENT_LIVE=1)."
@@ -62,12 +62,12 @@
       "rung": "CORROBORATED",
       "temperature": 0,
       "role": "F1-cross-family-seat (when a pref names chatgpt)",
-      "driver_ref": "<path>",
+      "driver_ref": "trio:chatgpt-cli",
       "run_export": "defaultRunCodexCli",
-      "model": "gpt-5.6-terra",
+      "model": null,
       "family": "chatgpt",
       "request_timeout_ms": 900000,
-      "note": "The ChatGPT seat: the subscription Codex CLI (`codex exec`, read-only sandbox for a refuter) — never the raw OpenAI HTTP API. John's dashboard on 2026-09-04: coding_family=chatgpt, review_family=claude -> with a Claude author this IS the seat. Env-gated (CRUCIBLE_AGENT_LIVE=1)."
+      "note": "ChatGPT uses the subscription Codex CLI, read-only for verification, with current capability-selected model and highest effort; never an API-key transport.",
     },
     "claude": {
       "class": "probabilistic",
@@ -76,12 +76,12 @@
       "rung": "CORROBORATED",
       "temperature": 0,
       "role": "F1-cross-family-seat (only for a claim NOT authored by Claude)",
-      "driver_ref": "<path>",
+      "driver_ref": "trio:claude",
       "run_export": "defaultRunClaude",
       "model": null,
       "family": "claude",
       "request_timeout_ms": 900000,
-      "note": "The Claude seat: `claude.exe` (subscription). The Honesty Law is generator-relative — this seat is legal only when the claim's author is another family; the driver hard-faults otherwise. model=null: the driver picks its standard notch by role."
+      "note": "Claude uses the subscription CLI and shared current model/effort policy. Independent verification requires a different recorded actual author family."
     },
     "lean": {
       "class": "deterministic",
@@ -122,7 +122,7 @@
       "version_args": [
         "--version"
       ],
-      "note": "Cross-family FALLBACK (non-Claude) verifier panel, used when the Gemini PRIMARY is quarantined (key-missing / 401|403 / 429 / unreachable). A weaker soft-check tier => PLAUSIBILITY-CORROBORATED (NOT a proof oracle). A SINGLE cold generation measured >200s on this host, so a persistent server + a paid-once warm-up is REQUIRED; per-call model reload is forbidden. The bare `ollama run` default is NOT temp 0 — deterministic decoding is pinned below.",
+      "note": "Explicit experimental local-model panel only, not a production preference seat or automatic fallback. It requires actual generator-family provenance and its own integrity sentinels.",
       "server": {
         "host": "127.0.0.1",
         "port": 11434,
