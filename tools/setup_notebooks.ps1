@@ -83,6 +83,37 @@ function Native([string]$Exe, [string[]]$Arguments, [string]$InputText='', [int]
         return $output
     } finally { $process.Dispose() }
 }
+function Read-JupyterPasswordHash([string]$PythonExecutable) {
+    while ($true) {
+        $jupyterSecret = $null; $confirmation = $null
+        $secretPointer = [IntPtr]::Zero; $confirmPointer = [IntPtr]::Zero
+        $clear = $null; $check = $null
+        try {
+            $jupyterSecret = Read-Host 'Jupyter password (at least 12 characters)' -AsSecureString
+            $confirmation = Read-Host 'Confirm Jupyter password' -AsSecureString
+            $secretPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($jupyterSecret)
+            $confirmPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirmation)
+            $clear = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretPointer)
+            $check = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($confirmPointer)
+            if ($clear.Length -lt 12) {
+                Write-Host 'Password must contain at least 12 characters. Please try again.'
+                continue
+            }
+            if (-not [string]::Equals($clear, $check, [StringComparison]::Ordinal)) {
+                Write-Host 'Passwords do not match exactly (including case). Please try again.'
+                continue
+            }
+            return (Native $PythonExecutable @('-I','-c','"import sys; from jupyter_server.auth.security import passwd; print(passwd(sys.stdin.buffer.read().decode(''utf-8'')))"') $clear).Trim()
+        } finally {
+            if ($secretPointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($secretPointer) }
+            if ($confirmPointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($confirmPointer) }
+            $clear = $null; $check = $null
+            if ($null -ne $jupyterSecret) { $jupyterSecret.Dispose() }
+            if ($null -ne $confirmation) { $confirmation.Dispose() }
+        }
+    }
+}
+
 function WriteJsonNew([string]$Target, $Object) {
     $json = $Object | ConvertTo-Json -Depth 12
     $stream = [IO.File]::Open($Target, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
@@ -199,21 +230,7 @@ $runtime = @{schema_version=1;enabled=$true;public_base_url=$PublicBaseUrl;root_
 }
 Write-Host 'One-time setup: selected project files will be writable by notebook code. Other project folders are not enrolled.'
 Write-Host 'Choose a Jupyter password here, not in chat. Your browser will remember its login subject to normal session expiry.'
-$jupyterSecret = Read-Host 'Jupyter password' -AsSecureString
-$confirmation = Read-Host 'Confirm Jupyter password' -AsSecureString
-$secretPointer = [IntPtr]::Zero; $confirmPointer = [IntPtr]::Zero
-try {
-    $secretPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($jupyterSecret)
-    $confirmPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirmation)
-    $clear = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretPointer)
-    $check = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($confirmPointer)
-    if ($clear.Length -lt 12 -or $clear -cne $check) { throw 'Passwords must match and contain at least 12 characters; no account was created.' }
-    $passwordHash = (Native $python @('-I','-c','"import sys; from jupyter_server.auth.security import passwd; print(passwd(sys.stdin.buffer.read().decode(''utf-8'')))"') $clear).Trim()
-} finally {
-    if ($secretPointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($secretPointer) }
-    if ($confirmPointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($confirmPointer) }
-    $clear = $null; $check = $null; $jupyterSecret.Dispose(); $confirmation.Dispose()
-}
+$passwordHash = Read-JupyterPasswordHash $python
 if (-not $passwordHash.StartsWith('argon2:')) { throw 'Jupyter did not produce its expected password hash.' }
 $random = New-Object byte[] 48
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()

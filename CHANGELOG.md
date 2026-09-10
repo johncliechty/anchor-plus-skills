@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1 — Retry notebook password confirmation
+
+The Windows notebook installer now explains the minimum password length and lets the user retry short or mismatched entries without restarting dependency preparation. Secure input is disposed after every attempt; dependency failures still stop setup.
+
+Remaining limits: Installation and authenticated Python/R, browser, and recovery acceptance are required on each host before notebook links are enabled.
+
 ## v1.3.0 — Provider routing and optional notebooks
 
 - Adds provider-neutral `latest_supported` / `highest_supported` model selection across Anchor, Trio, Foundry, and Ecgberht.

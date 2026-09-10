@@ -1,4 +1,4 @@
-# Install guide — Anchor + skills (v1.3.0, Package A / B)
+# Install guide — Anchor + skills (v1.3.1, Package A / B)
 
 **All rights reserved.** Not open source. Use by author permission only.
 

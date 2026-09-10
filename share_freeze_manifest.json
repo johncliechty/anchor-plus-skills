@@ -3,12 +3,12 @@
   "schema_version": 1,
   "ship_allowed": true,
   "freeze_commits": {
-    "anchor": "1837142beb92",
+    "anchor": "92fb16a40f8c",
     "trio": "b9539da9f3fd",
     "skill-foundry": "f14c94cb7715"
   },
   "freeze_tags": {
-    "anchor": "v1.3.0",
+    "anchor": "v1.3.1",
     "trio": "v1.3.0",
     "skill-foundry": "v1.3.0"
   },
@@ -16,6 +16,6 @@
     "tag": "v1.3.0",
     "commit": "f14c94cb7715"
   },
-  "package_matrix_version": "1.3.0",
-  "notes": "v1.3.0 source freeze. Anchor pins the content commit immediately before this freeze record. Ecgberht source commit 8ba78b0bd370. Notebook activation and per-host acceptance remain explicit setup requirements."
+  "package_matrix_version": "1.3.1",
+  "notes": "v1.3.1 password-confirmation correction. Anchor pins the preceding content commit. Bundled skills retain their verified v1.3.0 source commits; per-host notebook activation remains required."
 }
