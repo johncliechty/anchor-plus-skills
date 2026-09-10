@@ -240,7 +240,7 @@ $accountPassword = ('Aa1!' + [Convert]::ToBase64String($random)) | ConvertTo-Sec
 $account = $env:COMPUTERNAME + '\' + $AccountName
 $receipt = $null
 try {
-    $user = New-LocalUser -Name $AccountName -Password $accountPassword -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword -Description 'Dedicated Anchor notebook runtime; no AI credentials'
+    $user = New-LocalUser -Name $AccountName -Password $accountPassword -AccountNeverExpires -PasswordNeverExpires -UserMayNotChangePassword -Description 'Anchor notebook runtime; no AI credentials'
     $sid = $user.SID.Value
     $usersGroup = Get-LocalGroup -SID 'S-1-5-32-545'
     Add-LocalGroupMember -Group $usersGroup -Member $user
@@ -272,7 +272,12 @@ try {
     $credential = New-Object Management.Automation.PSCredential($account,$accountPassword)
     $taskResult = & $startup -Action Install -PythonExecutable $python -ServiceScript (Join-Path $app 'notebook_service.py') -SettingsFile $settings -Account $account -Credential $credential
     $taskStatus = ($taskResult -join [Environment]::NewLine) | ConvertFrom-Json
-    if (-not $taskStatus.ok -or -not $taskStatus.start_requested) { throw 'Automatic startup installation failed; notebook links remain disabled.' }
+    if (-not $taskStatus.ok -or -not $taskStatus.start_requested) {
+        $startupError = 'startup_result_invalid'
+        if ($taskStatus.PSObject.Properties['error'] -and [string]$taskStatus.error -cmatch '^[a-z][a-z0-9_]{0,127}$') { $startupError = [string]$taskStatus.error }
+        WriteJsonNew (Join-Path $install 'startup-failure.json') @{schema_version=1;error=$startupError;status='startup_failed';task='AnchorNotebookHost'}
+        throw ('Automatic startup installation failed (' + $startupError + '); notebook links remain disabled.')
+    }
     if ($tailscale) {
         CheckPrivatePort
         $null = Native $tailscale @('serve','--bg',"--https=$HttpsPort","http://127.0.0.1:$ListenPort")

@@ -16,7 +16,7 @@
     {
       "pid": 110,
       "ppid": 4,
-      "imagePath": "C:\\Users\\x\\AppData\\Local\\Programs\\cursor\\Cursor.exe",
+      "imagePath": "<path>",
       "name": "Cursor.exe",
       "createTime": 7000100,
       "commandLine": ""
@@ -24,7 +24,7 @@
     {
       "pid": 210,
       "ppid": 110,
-      "imagePath": "C:\\Users\\x\\claude.exe",
+      "imagePath": "<path>",
       "name": "claude.exe",
       "createTime": 7000200,
       "commandLine": "claude.exe -p"

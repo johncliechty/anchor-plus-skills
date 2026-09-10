@@ -8785,8 +8785,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
                Ecgberht signal anywhere in Anchor. -->
           <!-- r3: Completed / Cancelled / Saved live on the Tasks tile line now. -->
           <!-- 2026-05-12: Stop button removed. Server lifecycle is owned by
-               the NSSM "anchor" service on gwl-server. To restart, run
-               `nssm restart anchor` on gwl-server. -->
+               the host's process supervisor when installed as a service. -->
           <!-- 2026-07-02: model-flex posture chip on the HOME header too (John);
                dismissible via its inline × (localStorage 'mflexDismissed'). The
                home stylesheet lacks the project window's .mflex rules, so a
@@ -9141,7 +9140,7 @@ body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, s
     <!-- Select-existing mode (Explorer-style expandable TREE) -->
     <div id="npExistingFields" style="display:none">
       <input type="hidden" id="npFolderPath" />
-      <label>Browse to a folder on gwl-server</label>
+      <label>Browse to a folder on the Anchor host</label>
       <div class="rnd-picker-err" id="npBrowseErr" style="display:none"></div>
       <div class="rnd-tree" id="npTree" role="tree"></div>
       <button type="button" class="btn btn-sm rnd-use-btn" id="npSelectHereBtn" style="margin-top:8px" onclick="npSelectCurrent()">&#10003; Use this folder</button>
@@ -10132,7 +10131,7 @@ async function createNewProject() {{
 
 // 2026-05-12: stopServer() removed. The dashboard no longer kills its own
 // server; that responsibility now belongs to the NSSM "anchor" service
-// supervisor on gwl-server. To restart, run `nssm restart anchor`.
+// supervisor on hosts configured to run Anchor as a service.
 // /api/shutdown is also gone from the Python side, so external POSTs can
 // no longer kill the server either.
 

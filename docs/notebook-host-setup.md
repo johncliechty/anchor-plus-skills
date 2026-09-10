@@ -1,5 +1,9 @@
 # Same-host notebook setup for Anchor
 
+**Windows startup setup is under repair in this release. Skip this optional setup
+until a verified correction is available. Anchor and its bundled skills install
+independently.**
+
 This guide configures the Jupyter adapter in `notebook_service.py`. The server and
 its Python/R kernels run on the computer running Anchor; a tablet or another
 computer supplies only the browser. See [Notebook work products](notebook-work-products.md)

@@ -339,7 +339,7 @@ def select_shippable(root: Path | None = None,
 # token "C:\Users" (mentioned in a comment) does not match. The account name is
 # captured so a doc-placeholder account ("example") can be allowlisted.
 _USERPATH_RE = re.compile(
-    r"[A-Za-z]:[\\/]Users[\\/](?P<acct>[^\\/\s\"']+)[\\/][^\s\"']",
+    r"[A-Za-z]:[\\/]+Users[\\/]+(?P<acct>[^\\/\s\"']+)[\\/]+[^\\/\s\"']",
     re.IGNORECASE,
 )
 
@@ -1072,7 +1072,10 @@ python launch_anchor_dashboard.py
 The launcher opens the dashboard in your browser. Keep your project folders
 and their backups separate from replaceable notebook software.
 
-For notebooks, follow [host setup](docs/notebook-host-setup.md), then
+**Optional Windows notebook-host setup is under repair in this release. Skip it
+for now; the Anchor dashboard and bundled skills can be installed independently.**
+
+Notebook documentation: [host setup](docs/notebook-host-setup.md), then
 [notebook work products](docs/notebook-work-products.md). The Windows notebook
 installer defaults to `C:/ProgramData/AnchorNotebook` for software and asks for
 the existing folder containing your notebooks. This optional setup requires

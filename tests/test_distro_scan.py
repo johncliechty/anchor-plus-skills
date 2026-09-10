@@ -37,7 +37,7 @@ FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "planted_secret"
 
 # The real personal email, assembled at runtime so this shipped test file does
 # NOT contain the literal (it would otherwise leak / self-trip the scanner).
-_REAL_EMAIL = "john.liechty" + "@" + "gmail" + "." + "com"
+_REAL_EMAIL = "fixture.person" + "@" + "gmail" + "." + "com"
 # A high-entropy token VALUE, assembled at runtime (not a literal in this file).
 _FAKE_TOKEN = "a9F3kZ2pQ7" + "wL5mN8xR1t" + "Y6vB4cD0eH2j"
 # A bare 40+ char high-entropy run, assembled so no contiguous literal of it

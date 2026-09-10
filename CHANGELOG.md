@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.2 — Collaborator privacy and portability correction
+
+The release scanner and skill exporter now handle JSON-escaped Windows profile paths. The dashboard uses generic host labels. Optional Ramanujan tools export valid JSON with explicit example paths that collaborators configure locally.
+
+Windows notebook startup remains under repair; skip optional notebook-host setup in this release. The core dashboard and bundled skills install independently. Older public Git history retains author machine identifiers; this ordinary patch release does not rewrite history.
+
 ## v1.3.1 — Retry notebook password confirmation
 
 The Windows notebook installer now explains the minimum password length and lets the user retry short or mismatched entries without restarting dependency preparation. Secure input is disposed after every attempt; dependency failures still stop setup.

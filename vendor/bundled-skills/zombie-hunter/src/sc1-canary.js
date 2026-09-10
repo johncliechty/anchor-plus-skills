@@ -94,8 +94,8 @@ function builtInRecordedFixtures() {
     description: 'VS Code host with live-engine-shaped claude child',
     nodes: [
       services,
-      node(100, 4, 'C:\\Users\\x\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe', t0 + 100),
-      node(200, 100, 'C:\\Users\\x\\claude.exe', t0 + 200, 'claude.exe -p'),
+      node(100, 4, '<path> VS Code\\Code.exe', t0 + 100),
+      node(200, 100, '<path>', t0 + 200, 'claude.exe -p'),
     ],
     enginePid: 200,
   };
@@ -107,8 +107,8 @@ function builtInRecordedFixtures() {
     description: 'Cursor host with live-engine-shaped claude child',
     nodes: [
       services,
-      node(110, 4, 'C:\\Users\\x\\AppData\\Local\\Programs\\cursor\\Cursor.exe', t0 + 100),
-      node(210, 110, 'C:\\Users\\x\\claude.exe', t0 + 200, 'claude.exe -p'),
+      node(110, 4, '<path>', t0 + 100),
+      node(210, 110, '<path>', t0 + 200, 'claude.exe -p'),
     ],
     enginePid: 210,
   };
@@ -121,7 +121,7 @@ function builtInRecordedFixtures() {
     nodes: [
       services,
       node(120, 4, 'C:\\Windows\\System32\\WindowsTerminal.exe', t0 + 100),
-      node(220, 120, 'C:\\Users\\x\\claude.exe', t0 + 200, 'claude.exe -p'),
+      node(220, 120, '<path>', t0 + 200, 'claude.exe -p'),
     ],
     enginePid: 220,
   };
@@ -140,7 +140,7 @@ function builtInRecordedFixtures() {
         t0 + 100,
         'python.exe <path>',
       ),
-      node(230, 130, 'C:\\Users\\x\\claude.exe', t0 + 200, 'claude.exe -p'),
+      node(230, 130, '<path>', t0 + 200, 'claude.exe -p'),
     ],
     enginePid: 230,
   };
@@ -152,7 +152,7 @@ function builtInRecordedFixtures() {
     description: 'Geometry (A) reparented orphan under services.exe',
     nodes: [
       services,
-      node(300, 4, 'C:\\Users\\x\\claude.exe', t0 + 5000, 'claude.exe -p'),
+      node(300, 4, '<path>', t0 + 5000, 'claude.exe -p'),
     ],
     enginePid: 300,
     positiveControl: true,

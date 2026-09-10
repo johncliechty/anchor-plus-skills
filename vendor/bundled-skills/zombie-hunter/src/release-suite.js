@@ -168,7 +168,7 @@ function runG1Pack() {
   const eng = evaluateEngineLeg({
     pid: 9,
     ppid: 1,
-    imagePath: 'C:\\Users\\x\\.local\\bin\\claude.exe',
+    imagePath: '<path>',
     name: 'claude.exe',
     createTime: 100,
   });
@@ -189,7 +189,7 @@ function runG1Pack() {
     {
       pid: 300,
       ppid: 4,
-      imagePath: 'C:\\Users\\x\\claude.exe',
+      imagePath: '<path>',
       createTime: t0 + 5000,
     },
   ];

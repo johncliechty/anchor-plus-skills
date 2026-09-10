@@ -1,4 +1,4 @@
-# Install guide — Anchor + skills (v1.3.1, Package A / B)
+# Install guide — Anchor + skills (v1.3.2, Package A / B)
 
 **All rights reserved.** Not open source. Use by author permission only.
 
@@ -96,6 +96,9 @@ Open a terminal in the package root (the folder containing `onboard.cmd`):
    desktop icon (anchor.ico).
 
 ### 3. Start Anchor (Package B)
+
+**Skip optional Windows notebook-host setup in this release; startup is under repair.**
+The Anchor dashboard and bundled skills can be installed independently.
 
 Optional Python/R notebooks have a separate [one-time host setup](docs/notebook-host-setup.md).
 Notebook software defaults to `C:\ProgramData\AnchorNotebook`; your existing

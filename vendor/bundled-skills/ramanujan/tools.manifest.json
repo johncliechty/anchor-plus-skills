@@ -67,7 +67,7 @@
       "model": null,
       "family": "chatgpt",
       "request_timeout_ms": 900000,
-      "note": "ChatGPT uses the subscription Codex CLI, read-only for verification, with current capability-selected model and highest effort; never an API-key transport.",
+      "note": "ChatGPT uses the subscription Codex CLI, read-only for verification, with current capability-selected model and highest effort; never an API-key transport."
     },
     "claude": {
       "class": "probabilistic",
@@ -86,7 +86,7 @@
     "lean": {
       "class": "deterministic",
       "role": "F2-lean-kernel",
-      "path": "C:\\Users\\john\\.elan\\bin\\lean.exe",
+      "path": "C:/tools/ramanujan/lean.exe",
       "version": "4.31.0",
       "version_args": [
         "--version"
@@ -96,7 +96,7 @@
     "lake": {
       "class": "deterministic",
       "role": "F2-lean-build",
-      "path": "C:\\Users\\john\\.elan\\bin\\lake.exe",
+      "path": "C:/tools/ramanujan/lake.exe",
       "version": "4.31.0",
       "version_args": [
         "--version"
@@ -106,7 +106,7 @@
     "z3": {
       "class": "deterministic",
       "role": "F3-smt",
-      "path": "C:\\Users\\john\\AppData\\Roaming\\Python\\bin\\z3.exe",
+      "path": "C:/tools/ramanujan/z3.exe",
       "version": "4.16.0",
       "version_args": [
         "--version"
@@ -118,7 +118,7 @@
       "role": "F1-cross-family-FALLBACK",
       "tier": "fallback",
       "rung": "PLAUSIBILITY-CORROBORATED",
-      "path": "C:\\Users\\john\\AppData\\Local\\Programs\\Ollama\\ollama.exe",
+      "path": "C:/tools/ramanujan/ollama.exe",
       "version_args": [
         "--version"
       ],
@@ -167,5 +167,6 @@
       "min": -64,
       "max": 64
     }
-  }
+  },
+  "local_tool_setup": "Example paths only: install and configure optional local tools on this host before enabling RAMANUJAN_TOOL_TESTS. These paths do not assert installation or verification and do not change subscription family preferences."
 }

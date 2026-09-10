@@ -24,7 +24,7 @@
     {
       "pid": 220,
       "ppid": 120,
-      "imagePath": "C:\\Users\\x\\claude.exe",
+      "imagePath": "<path>",
       "name": "claude.exe",
       "createTime": 7000200,
       "commandLine": "claude.exe -p"

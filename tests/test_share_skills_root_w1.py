@@ -4,7 +4,7 @@ Frozen plan: ``planning/share-canonical-onboard-2026-07/IMPLEMENTATION-PLAN.md``
 §Wave 2.
 
 Hermetic: temp homes only; no network; no paid CLI; never edits real
-``C:\\Users\\...\\.claude`` / ``.grok`` — always ``tmp_path`` as home root.
+user-profile ``.claude`` / ``.grok`` folders — always ``tmp_path`` as home root.
 """
 
 from __future__ import annotations

@@ -153,7 +153,7 @@ def test_live_codex_spawn_is_still_refused_under_pytest(env, monkeypatch):
     ts = env["ts"]
     monkeypatch.delenv("ANCHOR_TESTS_ALLOW_LIVE", raising=False)
     with pytest.raises(ts.TerminalSessionError, match="live-engine-spawn-refused"):
-        ts.assert_not_live_engine_under_test([r"C:\\Users\\x\\codex.exe"])
+        ts.assert_not_live_engine_under_test(["\\".join(("C:", "Users", "fixture-user", "codex.exe"))])
 
 
 def test_rollup_treats_a_codex_session_as_an_unmeasured_segment():

@@ -6,12 +6,15 @@ param(
     [Parameter(Mandatory)][string]$SettingsFile,
     [Parameter(Mandatory)][string]$Account,
     [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')][string]$TaskName = 'AnchorNotebookHost',
-    [ValidateSet('Install','Plan','Status')][string]$Action = 'Install',
+    [ValidateSet('Install','Plan','Status','Validate')][string]$Action = 'Install',
+    [ValidateRange(30000,500000)][int]$MaxCodeEntries = 200000,
     [System.Management.Automation.PSCredential]$Credential
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:failure = 'startup_validation_failed'
+$script:codeEntriesChecked = 0
+$script:validationPath = $null
 $registered = $null; $credentialBstr = [IntPtr]::Zero; $plainPassword = $null
 function Fail([string]$Code) { $script:failure = $Code; throw $Code }
 
@@ -86,6 +89,7 @@ function Within([string]$Path, [string]$Root) {
 }
 function Escape-Xml([string]$Value) { return [Security.SecurityElement]::Escape($Value) }
 function Check-Acl([string]$Path, [string[]]$Owners, [string[]]$Writers, [bool]$Private = $false, [bool]$Writable = $false, [bool]$Ancestor = $false) {
+    $script:validationPath = $Path
     $acl = Get-Acl -LiteralPath $Path
     if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $Owners) { Fail 'approval_required_untrusted_path_owner' }
     if ($Private -and -not $acl.AreAccessRulesProtected) { Fail 'private_acl_must_be_protected' }
@@ -229,7 +233,8 @@ try {
         $item = $pending.Dequeue()
         if ($excludedBasePackages -and $item.FullName -ieq $excludedBasePackages) { continue }
         if ($seen.ContainsKey($item.FullName)) { continue }; $seen[$item.FullName] = $true
-        if ($seen.Count -gt 30000) { Fail 'approval_required_code_tree_size' }
+        $script:codeEntriesChecked = $seen.Count
+        if ($seen.Count -gt $MaxCodeEntries) { Fail 'code_tree_scan_limit_exceeded' }
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail 'reparse_code_tree_refused' }
         Check-Acl $item.FullName $trusted $trusted
         if ($item.PSIsContainer) { foreach ($child in Get-ChildItem -LiteralPath $item.FullName -Force) { $pending.Enqueue($child) } }
@@ -238,6 +243,10 @@ try {
     }
     $scheduler = New-Object -ComObject 'Schedule.Service'; $scheduler.Connect(); $folder = $scheduler.GetFolder('\')
     if (@($folder.GetTasks(1) | Where-Object { $_.Name -eq $TaskName }).Count) { Fail 'task_already_exists_no_overwrite' }
+    if ($Action -eq 'Validate') {
+        @{ok=$true;action='validate';task_name=$TaskName;account=$Account;readiness='not_proven';endpoint_access='not_verified';code_entries_checked=$script:codeEntriesChecked;max_code_entries=$MaxCodeEntries} | ConvertTo-Json -Compress
+        return
+    }
     if ($null -eq $Credential) { $Credential = Get-Credential -UserName $Account -Message 'Register the existing dedicated notebook account for unattended startup.' }
     if ($null -eq $Credential -or $Credential.UserName -ine $Account -or $Credential.Password.Length -eq 0) { Fail 'exact_account_credential_required' }
     $script:failure = 'task_registration_failed'
@@ -268,10 +277,10 @@ try {
     $registered.Enabled = $true
     if (-not $folder.GetTask($TaskName).Enabled) { Fail 'registered_task_enable_failed' }
     $null = $registered.Run($null)
-    @{ok=$true; installed=$true; start_requested=$true; task_name=$TaskName; account=$Account; readiness='not_proven'; reboot_proven=$false; endpoint_access='not_verified'} | ConvertTo-Json -Compress
+    @{ok=$true; installed=$true; start_requested=$true; task_name=$TaskName; account=$Account; readiness='not_proven'; reboot_proven=$false; endpoint_access='not_verified'; code_entries_checked=$script:codeEntriesChecked; max_code_entries=$MaxCodeEntries} | ConvertTo-Json -Compress
 } catch {
     $plainPassword = $null; $Credential = $null
     if ($credentialBstr -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($credentialBstr) }
-    @{ok=$false; error=$script:failure; error_line=$_.InvocationInfo.ScriptLineNumber; task_may_exist=($null -ne $registered); readiness='not_proven'} | ConvertTo-Json -Compress
+    @{ok=$false; error=$script:failure; error_line=$_.InvocationInfo.ScriptLineNumber; validation_path=$script:validationPath; task_may_exist=($null -ne $registered); readiness='not_proven'; code_entries_checked=$script:codeEntriesChecked; max_code_entries=$MaxCodeEntries} | ConvertTo-Json -Compress
     exit 1
 }

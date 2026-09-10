@@ -3,19 +3,19 @@
   "schema_version": 1,
   "ship_allowed": true,
   "freeze_commits": {
-    "anchor": "92fb16a40f8c",
+    "anchor": "704dfa0c3b33",
     "trio": "b9539da9f3fd",
-    "skill-foundry": "f14c94cb7715"
+    "skill-foundry": "99c8ce9c9404"
   },
   "freeze_tags": {
-    "anchor": "v1.3.1",
+    "anchor": "v1.3.2",
     "trio": "v1.3.0",
-    "skill-foundry": "v1.3.0"
+    "skill-foundry": "v1.3.2"
   },
   "skills_pin": {
-    "tag": "v1.3.0",
-    "commit": "f14c94cb7715"
+    "tag": "v1.3.2",
+    "commit": "99c8ce9c9404"
   },
-  "package_matrix_version": "1.3.1",
-  "notes": "v1.3.1 password-confirmation correction. Anchor pins the preceding content commit. Bundled skills retain their verified v1.3.0 source commits; per-host notebook activation remains required."
+  "package_matrix_version": "1.3.2",
+  "notes": "Current export privacy correction; optional Windows notebook hosting is not ready. Anchor pins the preceding content commit; unchanged Trio retains its verified source pin."
 }

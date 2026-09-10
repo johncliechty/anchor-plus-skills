@@ -3,7 +3,7 @@
 primitive with a per-type success contract (Wave 9).
 
 A *deliverable* is an artifact a project produces that Anchor can run/read on
-``gwl-server`` and report status for (Master Plan C8 / "Deliverables"). There are
+the Anchor host and report status for (Master Plan C8 / "Deliverables"). There are
 three TYPES, each with its own success contract (frozen design — MASTER-PLAN
 "Deliverables" + IMPLEMENTATION-PLAN Wave 9 AC1):
 

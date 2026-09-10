@@ -32,13 +32,16 @@ def test_v7_full_scan_clean():
     assert distro.scan_paths(pairs) == []
 
 
-def test_only_declared_pywinpty_exception():
-    """The sole declared native-dep exception is winpty, scoped to pty_manager.py."""
+def test_only_declared_optional_import_exceptions():
+    """Every optional import stays confined to its declared adapter."""
     allow = distro._THIRD_PARTY_IMPORT_ALLOWLIST
-    assert set(allow.keys()) == {"winpty"}, (
-        "no v7 wave may add a new third-party-import exception")
+    assert set(allow.keys()) == {"winpty", "jupyter_server", "jupyter_client", "traitlets"}
     assert allow["winpty"]["files"] == frozenset({"pty_manager.py"})
     assert distro._import_allowed("winpty", "pty_manager.py")
+    for module in ("jupyter_server", "jupyter_client", "traitlets"):
+        assert allow[module]["files"] == frozenset({"notebook_service.py"})
+        assert distro._import_allowed(module, "notebook_service.py")
+        assert not distro._import_allowed(module, "anchor.py")
 
 
 def test_v7_modules_scan_clean_individually():

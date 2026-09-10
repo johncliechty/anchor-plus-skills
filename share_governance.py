@@ -115,7 +115,7 @@ def apply_host_personal_denylist(text: str, denylist=None) -> str:
     deny = list(denylist) if denylist is not None else list(
         DEFAULT_HOST_PERSONAL_DENYLIST
     )
-    # Longest first so "C:\\Users\\john\\foo" wins over "john" alone when both present.
+    # Longest first so a full private path wins over a shorter matching token.
     deny_sorted = sorted(
         (str(t) for t in deny if t),
         key=lambda s: len(s),

@@ -36,7 +36,10 @@ python launch_anchor_dashboard.py
 The launcher opens the dashboard in your browser. Keep your project folders
 and their backups separate from replaceable notebook software.
 
-For notebooks, follow [host setup](docs/notebook-host-setup.md), then
+**Optional Windows notebook-host setup is under repair in this release. Skip it
+for now; the Anchor dashboard and bundled skills can be installed independently.**
+
+Notebook documentation: [host setup](docs/notebook-host-setup.md), then
 [notebook work products](docs/notebook-work-products.md). The Windows notebook
 installer defaults to `C:/ProgramData/AnchorNotebook` for software and asks for
 the existing folder containing your notebooks. This optional setup requires

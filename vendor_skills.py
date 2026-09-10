@@ -22,6 +22,7 @@ Money-safe: only local ``git -C <repo>``; no network publish, no paid CLI.
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
@@ -254,8 +255,10 @@ _FILE_URL_HOST_RE = re.compile(
 # which records the host source repo path) never embeds the build host's
 # user-profile tree — the distro scanner's user-profile-path detector runs over
 # vendor/ too, so this must be scrubbed.
+# Preserve closing-quote escapes when a profile path is nested inside JSON strings.
 _WIN_USER_RE = re.compile(
-    r"[A-Za-z]:\\Users\\[^\s\"'<>|]*",
+    r"[A-Za-z]:[\\/]+Users[\\/]+"
+    r"[^\s\"'<>|]*?(?=\\*[\"']|[\s<>|]|$)",
     re.IGNORECASE,
 )
 _WIN_USER_FWD_RE = re.compile(
@@ -332,8 +335,22 @@ def _scrub_file(path: Path) -> None:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         return
+    # Optional local executables are host configuration, never export author paths.
+    # Keep the Phase F manifest structurally usable with explicit example paths.
+    if path.name == "tools.manifest.json":
+        manifest = json.loads(text)
+        if manifest.get("$schema_version") == "phasef-tools-manifest/1":
+            for name in ("lean", "lake", "z3", "ollama"):
+                if name in manifest.get("tools", {}):
+                    manifest["tools"][name]["path"] = "C:/tools/ramanujan/" + name + ".exe"
+            manifest["local_tool_setup"] = (
+                "Example paths only: install and configure optional local tools on this host "
+                "before enabling RAMANUJAN_TOOL_TESTS. These paths do not assert installation "
+                "or verification and do not change subscription family preferences."
+            )
+            text = json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
     scrubbed = _scrub_text(text)
-    if scrubbed != text:
+    if scrubbed != raw.decode("utf-8"):
         try:
             path.write_text(scrubbed, encoding="utf-8")
         except OSError:
