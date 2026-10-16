@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "max_words": 200,
+  "fields": [
+    {"name":"project","label":"project","producer":"roots.json name; explicit project name or root basename","empty":"project"},
+    {"name":"unit","label":"unit","producer":"config.active_unit, last verdict unit, last accepted tuple unit","empty":"none - set with the u key at the session prompt or --unit on chekhov <project>"},
+    {"name":"cascade_position","label":"cascade","producer":"accepted locked series.cascade_position decision, latest structural book.chapter, manifest last chapter","empty":"unset"},
+    {"name":"next_action","label":"next","producer":"reconciliation HALT, T0 contradiction, receipt drift, active unit checklist, reader-order thread due, active unit open ask","empty":"none open - dictate an idea"},
+    {"name":"waiting_on_john","label":"waiting","producer":"provisional Speaking-Law asks and required HALT actions keyed by unit; bounded only when rendered","empty":"none"},
+    {"name":"last_session","label":"last","producer":"latest verdict, accept or lint event date","empty":"never"}
+  ]
+}

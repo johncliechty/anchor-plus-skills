@@ -1,0 +1,11 @@
+{
+  "name": "ramanujan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ramanujan — six-pillar mathematical-reasoning partner (autonomous Increment-1).",
+  "scripts": {
+    "test": "node --test test/",
+    "b4-ramanujan-smoke": "node ../../foundry/triage/test/b4-ramanujan-smoke.mjs"
+  }
+}

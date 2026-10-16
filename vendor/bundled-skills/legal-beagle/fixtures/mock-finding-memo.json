@@ -1,0 +1,21 @@
+{
+  "schema": "legal-finding-memo-v0",
+  "jurisdiction": {
+    "legalSystem": "US",
+    "level": "state",
+    "state": "DE",
+    "asOfDate": "2026-07-01",
+    "choiceOfLawNotes": "DE corporate"
+  },
+  "propositions": [
+    {
+      "id": "p1",
+      "quote": "The board may declare dividends.",
+      "pincite": "DGCL 170",
+      "sourceRef": "fixture:dgcl-sample",
+      "existenceStamp": "provided",
+      "supportStamp": "quoted",
+      "tags": ["corp", "dividends"]
+    }
+  ]
+}

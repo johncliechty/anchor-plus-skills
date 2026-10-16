@@ -1,0 +1,14 @@
+{
+  "id": "r-004-hash-not-hex",
+  "expect": "COMMIT_ACK_INTENT_HASH_MALFORMED",
+  "note": "Uppercase hex is a second spelling of the same value, and two spellings of a hash is how a comparison starts returning false for bytes that match.",
+  "ack": {
+    "schema": "commit-ack-v1",
+    "project_id": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+    "intent_seq": 1,
+    "intent_sha256": "E23CF0A20539EF7C2968C86829C6D6AA93C72BD1A012C6000AF2A247BFB7926C",
+    "commit_id": "9f2c1ab7d4e60f83b5a1c2d3e4f5061728394a5b",
+    "anchor": "anchor/1.2.0",
+    "acked_at": "2026-07-20T09:00:41.000Z"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "foreman-canonical-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Throwaway target project for Foreman Phase 0.5 / Phase 1 (planted bug).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

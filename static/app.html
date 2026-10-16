@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Anchor">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Anchor</title>
+<link rel="icon" href="/vendor/brand/anchor-tab-32.png" type="image/png">
+<link rel="apple-touch-icon" href="/vendor/brand/anchor-icon-180.png">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<!-- The Anchor app (Skill Foundry/planning/anchor-app-shell-2026-09-29): the title bar holds the anchor, the
+     tiles (the Cave of Wonders first), the one/two-pane toggle and - in the desktop program - the window's own
+     controls; below it one pane, or two side by side. Every page shown is Anchor's own page in a frame;
+     static/app-frame.js makes their opens land here as tiles. -->
+<header id="bar">
+  <button type="button" id="setup-gear" class="setup-gear" aria-label="Setup settings" title="Setup settings">&#9881;</button>
+  <div class="mark"><img src="/vendor/brand/anchor-tab-48.png" alt="Anchor"></div>
+  <nav id="strip" aria-label="Open in Anchor"></nav>
+  <div class="row-control"><button type="button" id="rows" aria-controls="strip" aria-expanded="false" aria-label="Show all open tiles" title="Show all open tiles" hidden><svg viewBox="0 0 16 12" aria-hidden="true"><path d="m3 4 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button></div>
+  <div class="grab"></div>
+  <div class="panes" role="group" aria-label="Panes">
+    <button type="button" id="one" title="One pane" aria-pressed="true"><svg viewBox="0 0 16 12" aria-hidden="true"><rect x=".5" y=".5" width="15" height="11" rx="2" fill="none" stroke="currentColor"/></svg></button>
+    <button type="button" id="two" title="Two panes side by side" aria-pressed="false"><svg viewBox="0 0 16 12" aria-hidden="true"><rect x=".5" y=".5" width="15" height="11" rx="2" fill="none" stroke="currentColor"/><line x1="8" y1="1" x2="8" y2="11" stroke="currentColor"/></svg></button>
+  </div>
+  <div id="winctl">
+    <button type="button" data-act="minimize" title="Minimize"><svg viewBox="0 0 10 10" aria-hidden="true"><line x1="0" y1="5" x2="10" y2="5" stroke="currentColor"/></svg></button>
+    <button type="button" data-act="maximize" title="Maximize / restore"><svg viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></svg></button>
+    <button type="button" data-act="close" class="close" title="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><line x1="0" y1="0" x2="10" y2="10" stroke="currentColor"/><line x1="10" y1="0" x2="0" y2="10" stroke="currentColor"/></svg></button>
+  </div>
+</header>
+<main id="stage">
+  <div class="head" id="head0" hidden><span class="lr">L</span><span class="name"></span><button type="button" class="x" title="Shut this pane">×</button></div>
+  <div class="gutter" id="gutter"></div>
+  <div class="head" id="head1" hidden><span class="lr">R</span><span class="name"></span><button type="button" class="x" title="Shut this pane">×</button></div>
+</main>
+<script src="/static/cockpit-feedback.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

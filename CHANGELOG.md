@@ -1,0 +1,1059 @@
+# Changelog
+
+## v1.3.2 — Collaborator privacy and portability correction
+
+The release scanner and skill exporter now handle JSON-escaped Windows profile paths. The dashboard uses generic host labels. Optional Ramanujan tools export valid JSON with explicit example paths that collaborators configure locally.
+
+Windows notebook startup remains under repair; skip optional notebook-host setup in this release. The core dashboard and bundled skills install independently. Older public Git history retains author machine identifiers; this ordinary patch release does not rewrite history.
+
+## v1.3.1 — Retry notebook password confirmation
+
+The Windows notebook installer now explains the minimum password length and lets the user retry short or mismatched entries without restarting dependency preparation. Secure input is disposed after every attempt; dependency failures still stop setup.
+
+Remaining limits: Installation and authenticated Python/R, browser, and recovery acceptance are required on each host before notebook links are enabled.
+
+## v1.3.0 — Provider routing and optional notebooks
+
+- Adds provider-neutral `latest_supported` / `highest_supported` model selection across Anchor, Trio, Foundry, and Ecgberht.
+- Adds native ChatGPT and Grok cockpit turns with conversation history continuity.
+- Adds `.py` / `.R` notebook work products with persistence, registration, and opening from the shared UI.
+- Adds an optional Windows Jupyter installer with a dedicated account, automatic startup, and Python and R support.
+
+Remaining limits: Each host must complete installation and authenticated Python/R acceptance before notebook links are enabled. Host reboot and remote tablet acceptance are not yet verified by source gates. This release targets trusted single-user deployments; installers for other operating systems and multiuser support are excluded.
+
+## v1.2.15 — HTML deliverables render; plan rows close again
+
+John, 2026-09-06: "when I open up details for plan elements, I try and close them and
+they don't seem to close" and "why am I getting htmls that I can't open and have render,
+I just see the raw code".
+
+- A project's own `.html` / `.svg` now renders — served as its real type under a
+  `Content-Security-Policy: sandbox` with no `allow-same-origin`, so the page runs in an
+  opaque origin that cannot read the dashboard's token, cookies or storage (the old rule
+  served them as plain text to keep them out of the dashboard's origin; the sandbox keeps
+  that property and renders). Both the cockpit's deliverable-file route and `/artifact`.
+- Plan outline: only the step's title line toggles it (a ▸/▾ marker shows the state);
+  reading the detail no longer collapses it; closing a step closes any open deliverable
+  details under it; a detail's own clicks never bubble up.
+
+## v1.2.14 — the cockpit's skill-icon map ships
+
+v1.2.13's bundle carried the registrar but not `steward_cockpit/static/skill-icons.js`:
+the cockpit's static files are listed one by one in the deny-by-default manifest and
+the new file was never added, so a collaborator's cockpit would have 404ed the icon
+map (the plan outline, the skill rail and the report tops fall back to no mark). Found
+by the clone verify, fixed in the manifest. Nothing else changed.
+
+## v1.2.13 — every report is a link; runs register themselves; a runnable deliverable opens in an Anchor window; icons; the plan you see is the roadmap
+
+John's asks on 2026-09-05, in his words: reports "need to show up with a clickable
+link in the plan outline … as well as they always need to have a clickable link in
+the deliverable section"; a bit of code that runs locally "still needs a clickable
+link"; the status window "managed so that the most recent status update is always
+prominent"; the skill icons "in the plan when they are mentioned … at the top of each
+report … in the list of skills in the drop down menu in the workbench terminal", and
+"into the existing projects and plans"; links labelled by "the name of the report"
+and rendered "in nice human readable formats (md, pdf, docx, pptx, …)"; files
+"searchable … sort by name, file type and date"; "open the file in a new window";
+the folder move that "does not work"; and "the plan gets updated when there are
+clear instructions to add elements".
+
+### Every report is a link (reports-links, Crucible LITE + elegance pass + Foreman)
+- The register parser classifies contained Anchor routes (`/report/<pid>/<lane>[/<job>]`,
+  `/artifact/<pid>?path=<rel>`) and a `run:` marker; hostile cells stay text.
+- Route rows open from the effort cockpit's deliverables tile, under their step in the
+  plan outline, and from the project page's deliverables list — labelled by the
+  document's name, markdown through the Reader, Word/PowerPoint/Excel as a preview
+  page, PDF inline.
+- A finished run registers itself: one registrar (`deliverables_register.py`) and three
+  hooks — a dashboard Gandalf finalize, a lane job that reaches DONE, and a commissioned
+  session at PRODUCED (a cockpit Gandalf read is a general-lane session in its own
+  worktree; its `gandalf/` folder now persists to the project before the row is written).
+  Failed or cancelled runs never register.
+- The Run link: a `shell` backend for general-lane sessions (the user's own shell in the
+  project tree, no engine, no seed, no greet) with the `run:` command staged unsent on the
+  prompt — Enter runs it; `POST /api/rnd/run_deliverable_terminal` accepts only a command
+  that matches a register row byte-for-byte, in that row's folder; "Run ▶" appears on
+  such rows in the one renderer. The session's persist, autosave, close-snapshot and
+  status-emitter paths no-op for a shell session (its working directory is the LIVE tree,
+  never a disposable worktree — a reviewer finding, proven on a git-backed folder).
+
+### The cockpit
+- The newest status block is always prominent; older ones fold to their time line.
+- Plan drift: the plan John sees is `roadmap.json`. When it has no steps but a plan
+  document exists, the outline derives proposed steps from the document; while the
+  roadmap is behind the plan documents, every human turn carries a PLAN DRIFT line to
+  the steward (law 16).
+- Skill icons: one map (`steward_cockpit/static/skill-icons.js`, `SKILL_ICONS`) —
+  plan outline steps, the workbench skill rail, the top of every report (path, file
+  name or first heading), the home project line, deliverable rows.
+- Files: search plus sort by name, type and date on both pages; a file opens rendered
+  in a new window ("app" keeps the local open).
+- Folder move: a regroup drop remembers the destination folder open before the
+  reload (a disk move is still refused while a project is being set up or a Gandalf
+  run is in flight; the grouping applies).
+
+### The skills (vendored trio at the pinned commit)
+- Elegance + Rabbit-Catcher passes inside Crucible (after the plan and after the wave
+  decomposition; CUT blocks), Foreman (after every converged wave; a CUT confirmed by
+  the second seat is one fix iteration), researchPrime (RC-6 per round); RC-8 (the
+  wave-count question) in Stage 2.
+- Grok headless seats: an explicit turn cap; a turn cancelled by a tool ask is said
+  aloud and re-prompted with the read-only constraint.
+
+### Still open, by name
+- The ChatGPT steward (a codex exec+resume adapter) — one-wave effort, parked.
+- Deliverable "app slot" / remote display / Roar — design note only.
+- The elegance HOLD on law (15)'s register text in the steward prompt — John's call.
+- A report whose file name and first heading name no skill stays unmarked.
+
+## v1.2.12 — the status says what is running and what the slice needs; a stopped model is told; Enter sends; Grok and ChatGPT review; ChatGPT drives the terminal (2026-09-05)
+
+John's evening after v1.2.11, in his words: the status window's "what's next" was
+"way too long", "what is running is always the steward", the ETA should be "the
+length of the current slice", the summary "should focus on the current slice";
+a plan for going forward must be "a clickable link in the overall work flow" AND
+"a short summary presented by the steward in the dialogue (bullet point style)";
+Enter in the project steward's box should send like the button (dictation still
+clicks Send); and "if a session limit is hit by one of the models, then Anchor
+needs to inform the user, not just stop."
+
+### The status looks through the steward (`steward_campaign.compose_status`)
+- **What is running** is the skill the steward commissioned, read from that
+  skill's OWN status log (`_foreman-status.log`, `_crucible-status*.log`, …,
+  the newest fresh one under the effort, `status_lookthrough`): its Doing,
+  Tests and ETA rows ride the status as `running`, `tests`, `eta`. "steward
+  working" is the whole story only when nothing else runs.
+- **Summary = the current slice**: `slice` = the active roadmap step, its
+  position (n/m), its part tag and its done-when in one line (≤140 chars).
+  **Effort** carries the effort name + the goal brief, so the High Seat's copy
+  says what the whole project is.
+- **ETA = the length of the current slice**: the commissioned run's own ETA when
+  it has one, else a typical length for the step's part tag minus the time
+  already in (`estimate_eta`; labelled an estimate; "over the ~45 min typical"
+  when past it, never "0 min left").
+- **What's next = ≤3 short bullets** (`next_bullets`, ≤90 chars each, split on
+  lines / semicolons / sentence ends); the map no longer rides the To do row.
+- A strip whose human-wait says "none" is not a blocker (`_real_wait`).
+- The pane (`shared.js renderStatus`), the top bar line and the dashboard row
+  (`_steward_status_tile_line`) all read the new shape: running · slice · ETA.
+
+### Grok and ChatGPT are reviewer seats (John 2026-09-05)
+- A verification seat proves its FAMILY; an unattested served MODEL is accepted and
+  stamped (trio drivers). Grok attests through JSON output; ChatGPT's verdicts carry
+  `model_attested:false`. The Reviewer/Judge pickers offer ChatGPT (`available_unattested_review`);
+  `VALID_REVIEW_FAMILIES` includes it.
+
+### A stopped model is told, never just stopped
+- A commissioned run that ENDED is said as **STOPPED** with its own reason (the
+  status log's `HALT/STOP reason` / Blocker row); a **model session / usage
+  limit** (`classify_model_limit`) is named first and becomes the Blocker row,
+  the top bar and the dashboard row ("waiting on you: model session limit (…)").
+- The engine flips an attention flag still saying "working" to `needs_you`
+  with that reason (`raise_halt_attention`, `write_attention`), so the High
+  Seat and the rail count it as "need you"; the pane gets one `STOPPED: …` line.
+- The steward's own error result is said in the pane (`result_error_text`):
+  `MODEL LIMIT: …` raises the flag (`failure_code MODEL_LIMIT`); "session
+  ended" says why.
+
+### Plans forward (steward law 14 + a mechanism)
+- Law (14): a plan for going forward lives in TWO places — a `DELIVERABLES.md`
+  row (a clickable link in the work flow and the status pane) AND a 3–6 bullet
+  summary said in the dialogue, ending with the one decision it needs.
+- Mechanism: `PLAN.md` / `MASTER-PLAN.md` / `IMPLEMENTATION-PLAN.md` /
+  `NORTH-STAR.md` / `*-PLAN.md` up to two levels under the effort appear as
+  `auto` rows in the deliverables register without anyone registering them.
+
+### Enter sends
+- In the project steward's box, Enter = Send; Shift+Enter keeps a newline;
+  dictation (Win+H) never presses Enter, so the Send button stays its path.
+
+### ChatGPT is a first-class Terminal engine (the last role; one wave, John 2026-09-05)
+- The cockpit terminal opens on the **Codex TUI** exactly as it does on Claude and Grok:
+  the `chatgpt-gated-bridge-pending` guard in `terminal_session._check_engine_allowed` is
+  gone, `VALID_DEFAULT_CLIS` widened so a saved `default_cli=chatgpt` persists, the
+  Terminal picker and capability note say **ready**, and the engine toggle switches a live
+  session to and from ChatGPT in the same worktree.
+- **Seen on the page, then fixed:** the Codex TUI opened on its own "Update available"
+  menu and dropped the lane seed typed into stdin — so a ChatGPT terminal now launches with
+  `-c check_for_update_on_startup=false` and receives the lane seed as Codex's positional
+  prompt (the Gemini `-i` pattern), at start and at switch. No launch-argument table, no
+  seed-timing machinery, no `--cd` (the PTY already starts in the worktree), no
+  `--no-alt-screen` (the TUI renders in xterm.js as is).
+- **Seen on the page, kept as is:** the first ChatGPT terminal on a project shows Codex's own
+  one-time per-repository trust question; Enter answers Yes and the lane seed then runs as the
+  first turn ("✓ researchPrime loaded — what would you like to do?" was read off the page). Anchor
+  does not auto-trust on the user's behalf.
+- **Doctor on ChatGPT is read-only by construction:** `DOCTOR_READONLY_CLI_ARGS[chatgpt] =
+  ("-s", "read-only")` overrides a `danger-full-access` Codex config; proven on the stub
+  child's argv. Grok still has no Doctor contract and stays refused.
+- **Honest accounting (RULED Option C):** a Codex session's segment is unmeasured like
+  Gemini's — stamped at start and at switch; the rollup badge reads
+  `partial (unmeasured engine segment)`, never a fabricated number.
+- The job-layer / legacy-REPL ChatGPT net (`select_engine_plan`, `rnd_terminal`, the
+  `test_chatgpt_lane_routing` pins) is deliberately untouched — that is the parked
+  ChatGPT-steward (F1B) surface, its own cycle.
+- Process record: Crucible's seven-element, four-phase plan was cut to one wave by the
+  Rabbit-Catcher (`planning/chatgpt-terminal-2026-09-05/REVIEW-FABLE-2026-09-05.md`),
+  adversarially reviewed by Grok before the build and again on the diff; Foreman was not
+  used for a one-wave change (trio journals crucible 0094, foreman 0110).
+- Tests: `test_chatgpt_terminal_2026_09_05.py` (stub PTY: start, seed-on-argv, switch,
+  Doctor fence on the spawn, live-spawn refusal, rollup); terminal pins in
+  `test_backend_chatgpt.py`, `test_anchor_settings.py`, `test_settings_api.py` rewritten.
+
+### Notes
+- `planning/deliverable-runner-2026-09-04/NOTE.md`: the design note for running
+  software deliverables from the browser (terminal / app slot / remote display;
+  puter first, Roar second). Not built.
+- Tests: `test_status_lookthrough_2026_09_04.py` (10),
+  `test_model_limit_informs_2026_09_04.py` (5). The full suite's 157 failures
+  are pre-existing (browser-timeout and runner tests fail on HEAD too).
+
+## v1.2.11 — seats are what the dashboard selects, everywhere; deliverables open well; Doctor probes first; sessions advance in the background (2026-09-04)
+
+John's day of use after v1.2.10: a math-research run went to Gemini (whose
+subscription was stopped on 08-31) because the Ramanujan skill had it
+hardwired; a PowerPoint deliverable opened as raw bytes; and two design rules
+he stated — the seats every skill uses are whatever the Anchor dashboard
+selects, and a running session must not depend on any device keeping a page
+open — were only partly true in the code. This release closes all of it.
+
+### The dashboard's seats are universal
+- `lanes.selected_families()` reads the dashboard's Terminal / Coder /
+  Reviewer selection (default_cli / coding_family / review_family) — the one
+  source. The no-preference engine plan reads it: a Gemini swarm exists only
+  when a selected family IS gemini; an installed-but-unselected agy is never
+  spawned. The classic project window's badge says what was selected
+  ("Coder Chatgpt · Reviewer Claude"), never what happens to be installed.
+- The Doctor and Zombie-Hunter engine pickers offer an engine only when it is
+  installed AND selected on the dashboard; otherwise it is shown disabled with
+  that reason. A picker defaults to the Terminal role, then the Coder family.
+  The hunter GUI is spawned with the same prefs env every seat gets.
+- Vendored skills re-pinned to the hardened sources: **Ramanujan** resolves its
+  cross-family seat from the dashboard prefs through the trio drivers
+  (review_family first, then coding_family, never the author's own; gemini
+  only when named; none → `cross_model:false`, honestly) — `src/seat.mjs`,
+  `tools.manifest.json` (`primary: "prefs"`, transports pinned for
+  claude / gemini / grok / chatgpt); legal-beagle, gandalf and jumper prose
+  stop naming Gemini or agy as the seat; crucible / foreman / researchPrime
+  runbooks say what their engines do: review_family reviews, coding_family
+  codes (the trio's documented no-prefs fallback — a host with no Anchor
+  settings and no mirror — is unchanged; it never fires where a dashboard
+  exists).
+
+### Sessions continue when your device does not
+- Sessions already live on the server (PUTER never sleeps); a closed browser
+  only detaches. But the registry reconcile, restart recovery, plan→build
+  auto-advance and in-session stage progress ran ONLY inside the project
+  window's poll. They now also run on a server ticker every
+  `ANCHOR_RECONCILE_TICK_S` seconds (default 60), so a planning session that
+  finishes with no browser open advances by itself; reopening any device
+  shows what happened.
+- Named limit: the server host itself must stay up. A service restart still
+  parks live terminals warm (resume on reopen) and a parked steward effort
+  wakes on the next page open.
+
+### Deliverables open well
+- Every deliverable is served under its honest content type: PDF and images
+  inline; Word / PowerPoint / Excel as a stdlib text-preview page
+  (`office_preview.py` — paragraphs, headings, lists, tables, slides in order
+  with titles / bullets / notes, sheets as tables) with a download that opens
+  the native app; unknown types download under their own name; html/svg stay
+  inert. Register rows written without backticks still open; a designed
+  title slide with no placeholders still shows its title; slide-number chrome
+  is dropped.
+- The cockpit's Reader typesets `$…$` and `$$…$$` with the vendored KaTeX.
+
+### Doctor probes first (the r3 Doctor rule)
+- A red banner is already a diagnosis on disk. Opening Doctor now READS the
+  newest report, says its issues in plain words, PROBES the live server for
+  the paths they name, and decides by itself: when every issue was the 5 AM
+  self-test failing to reach its own throwaway copy while the live server
+  answers, it re-runs the health check itself (no model, no cost) and the
+  banner clears when the report is clean; anything still real is named and
+  waits for your click. `GET /api/doctor/probe` (token, read-only) carries
+  the decision; Resolve all shares the same probe. The cut the scorecard
+  named — the required Diagnose click when a health issue already exists —
+  is made. Pinned by `tests/test_doctor_probe_on_open_2026_09_03.py`.
+- The home banner says what a click does: "Doctor reads it, probes the live
+  server, and re-runs the check itself when the failure is gone."
+
+## v1.2.10 — the home becomes the r3 prototype; the status pane becomes a window; restarts stop needing hands (2026-09-03)
+
+John, 2026-09-03: "there was an updated (prototype) for the main dashboard and it
+looks like it never made it into the current version … those tabs were supposed
+to be on the main dashboard. That is a big error." He was right. The r3 home
+(`_mockups/dashboard-v2`, 2026-08-27/28) was praised by the 08-29 review as the
+design contract and then never scheduled; only its Calendar/Email tiles moved,
+into the project cockpit as placeholders (v1.2.8), where he rejected them on
+09-02 — and they were deleted instead of moved. This release closes that.
+
+### The home is the r3 prototype
+- The steward owns the left rail: the move today · due today · coming up ·
+  projects (open / running / need you / folders) · workbench. The old
+  Views / Domains / Domain-balance nav is gone; Inbox, the domain filters and
+  the R&D archive live one click away inside the Tasks and Projects tiles.
+- The steward tile opens with ranked **Needs attention** rows — `home_attention.py`,
+  a deterministic v0 (health check → a session waiting on you → overdue →
+  due today → failed in 7 days); every row says which rule raised it; the
+  steward's own raise queue joins from the badge poll. No hidden score.
+- Tiles in r3 order: Steward · Tasks · Projects · Workbench · **Calendar** ·
+  **Email** · Grasscatcher. Calendar and Email are HOME tiles in an honest
+  not-connected state — nothing is sample data, no account is named, and the
+  one action says "Set up — not yet available" (no connector exists yet; the
+  08-29 email/calendar research says how one must be built).
+- The cuts the prototype made: the stats row, the Completed/Cancelled/Saved
+  header buttons (now counts on the Tasks line), "Click to expand".
+- Pinned by `tests/test_home_r3_2026_09_03.py`; the rearch census re-pinned to
+  ground truth (51) with its artifacts refreshed.
+
+### The cockpit's status pane, per John's look
+- The status is its **own window** below the deliverables tile — it shrinks
+  when the tile opens; nothing slides under it — and its header carries the
+  time of the last update.
+- The 10-minute update renders in John's locked table format (Summary · Effort ·
+  Doing · Status · Tests · Blocker · Procs · Journal · ETA · To do), every row
+  present, an honest dash where the engine has no fact.
+- An effort with no live engine shows its **last recorded update**, stamped
+  and marked as the record, instead of a fresh "nothing running".
+- Deliverables are one line each → click for the description → **Open ↗** in a
+  new window (the same two-stage line the plan's steps already had).
+- The top bar's line is the one-line status of record for the steward run; the
+  goal is one click away inside it.
+
+### Restarts stop needing elevated hands
+- `POST /api/restart` (token-authed): honored only when the process runs under
+  nssm (AppExit=Restart), it answers, drains warm, exits 0 and nssm brings the
+  fresh server up. Refuses (409) when unsupervised, so it can never leave Anchor
+  down. `/api/shutdown` stays removed and there is no UI button.
+
+### Doctor, per John's look (2026-09-03)
+- Issues read in plain words: a title, one sentence, and the raw check text
+  behind "what the check said" (`doctor_plain.py`).
+- **Resolve all** (`POST /api/doctor/resolve_all`): a live re-probe first — when
+  the only failure is the 5 AM self-test failing to reach its own throwaway copy
+  and the live service answers, the check is simply re-run; otherwise ONE doctor
+  session is opened for every issue. Resolve and Resolve all RUN the brief
+  (a settled Enter after the paste); Diagnose stays hands-off.
+- The Doctor chip sits with Update / Hunter / Foundry; the Steward pick sits on
+  the Terminal · Coder · Reviewer · Judge line; open tiles survive the reload a
+  task action triggers ("do not suddenly close the task window").
+
+### Gravestones, and a boneyard that cannot fail
+- Every effort tile in the cockpit ends in a gravestone → the effort boneyard
+  (archived, never deleted); a resting effort offers **resurrect**, which
+  repaints the tiles at once. Every project row under the steward's seal ends
+  in a gravestone → the Archive view (kept).
+- Retiring an effort whose folder Windows holds open (a deck in PowerPoint, an
+  Explorer window, a terminal) no longer fails with "there was an error
+  archiving": after brief rename retries it retires IN PLACE via a marker,
+  leaves the live list and rests in the boneyard all the same; resurrect
+  removes the marker.
+
+### The 5 AM red, root-caused (an Anchor Doctor session, launched from Resolve all)
+- On 13 of the 18 nights before the fix the health check reported
+  `[HTTP endpoints] 0/7 … timed out (20.0s) … WinError 10061`. Reproduced: the
+  server bound AND listened its port ~0.5 s into boot, then ran the boot
+  reconcile (registry PID probes, worktree reap, daemons — 80 s+ under 5 AM
+  load) BEFORE `serve_forever`; every connect in that window queued into a
+  5-slot backlog nobody drained, hung 20 s, and once the backlog was full
+  Windows refused every further connect.
+- Fix: bind early (the single-instance guard is a bind-time property) but
+  `listen()` only when ready — a connect during boot is refused, never queued —
+  with the backlog raised to 64; the health check waits for a REAL HTTP answer
+  (`GET /api/version` → 200), red only after 180 s, a timing WARN over 30 s;
+  `restart_anchor.ps1` waits 180 s for LISTENING. Pinned by
+  `tests/test_boot_readiness.py`.
+
+### The auth walk asserts what it declares
+- `GET /mockup` was declared token-authed since 08-15 but served by a legacy
+  branch that never checked — found the moment the walk ran with a token
+  configured (a Resolve-all rerun inside the live service). Gated now.
+- The nightly walk had been skipping every token row ("38 rows walked,
+  token=unset") because the 5 AM task carries no `ANCHOR_TOKEN`; the health
+  check now mints a per-run token when none is configured (the report says
+  "minted", never the value), so all 220 rows are asserted every night.
+- `tests/test_declared_auth_walk_live_2026_09_03.py` walks every declared token
+  row tokenless against an in-process server and demands 401 — the healthcheck's
+  walk, in the test net, independent of the night's environment.
+
+### The design contract is versioned
+- `_mockups/dashboard-v2` (prototype r3) is tracked as a SCRUBBED copy — every
+  real name, account and task replaced with generic sample text; the author's
+  originals stay beside it git-ignored — with reference renders (default, Tip of
+  the Hat open, phone) and a README marking every element live / projected /
+  sample / future, as the 08-29 addendum's P0 asked. Never in the bundle.
+- The home's red banner speaks plainly: what a click does, nothing about seeds.
+
+### Still open, by name
+- The r3 Doctor rule is half built: Resolve all re-probes live, but opening
+  Doctor on a red banner still starts from a seeded brief rather than probing
+  first, and the receipt in English is not built.
+- Everything in the v1.2.9 list (F1B, Doctor/Zombie Hunter ChatGPT
+  certification, Codex as a Foreman seat).
+
+## v1.2.9 — the steward's kickoff becomes the work product; the cockpit sheds what it never needed (2026-09-02)
+
+Gate 5 of the ChatGPT-foundation effort, built by Foreman in Ecgberht (nine waves,
+final gate 1240/1240) with the thin Anchor canary landing here. John's look on
+2026-09-02: "looks good for Gate 5."
+
+### Kickoff synthesis, visible in the cockpit
+- `steward_cockpit/kickoff_reader.py` — a PASS-THROUGH reader of Ecgberht's
+  `.ecgberht/kickoff/projection.json` (never derives a second truth); a
+  Node-writes/Python-reads golden test pins the byte contract.
+- `GET /api/ecgberht/kickoff_show?pid=&effort=` (`steward_cockpit/kickoff_show_route.py`)
+  — read-only; the routes inventory now names real exposure for all three kickoff
+  verbs (`kickoff-confirm` / `kickoff-replay` are conversational via the bridge CLI,
+  proven by hermetic bridge tests; no `not_exposed` rows remain).
+- The effort view's Goal bar paints the confirmed kickoff — the engine's rendered
+  prose through the one markdown renderer — or an open draft marked "not applied";
+  the confirmed outcome becomes the one-line brief. Closed by default, compact.
+  (The build shipped reader + route with no UI call; a real-browser check caught it.)
+- Restart canary (`tests/test_kickoff_canary_w9.py`) + look staging
+  (`Ecgberht/scripts/kickoff-look-staging.mjs`) — five synthetic efforts, one
+  corrected once, one left open.
+
+### Subtraction, at John's word
+- The synthetic Calendar/Email surfaces and their setup dialog are REMOVED from the
+  per-project cockpit ("we don't want email and calendar in the AI Cockpit").
+- Project folders on the home page open CLOSED; the ones you open are remembered.
+
+### Truth fixes
+- Cancelling a job record that never got a child process commits an honest
+  `cancelled` (already in v1.2.8's ledger; retained).
+- Known red unchanged from v1.2.8 (the 08-29 set); the Gate 5 files added 20 tests, all green.
+
+### Still open, by name (not in this release)
+- ChatGPT as the steward's terminal (F1B) — the UI refuses `default_cli=chatgpt` with a reason.
+- Anchor Doctor and Zombie Hunter with ChatGPT — suites green, **not certified** (no Codex canary exists).
+- Codex as Foreman's build seat — parked (Windows sandbox fixed in trio; Codex declines Claude-tool-shaped execute prompts).
+- The stale-server repair script verifies inside the ~60 s startup window ("STILL STALE" while the new build is still starting) — wait for `/api/version` instead.
+
+## v1.2.8 — ChatGPT joins as the fourth family, and the cockpit becomes the front door (2026-08-31)
+
+Built by a ChatGPT/Codex controller over four waves, then finished under a
+Claude Fable completion run: the blocker it could not clear was a compiler
+bug in the in-progress kickoff work (ids silently renamed), not fixture
+drift; the prepared three-reviewer adversarial review then ran and its
+findings were repaired. Committed on `release/v1.2.8`, fast-forwarded onto
+master, then the full 4,000-test net was run on master before this entry.
+
+### Four roles, one honest capability matrix
+- The home page exposes **Terminal · Coder · Reviewer · Judge**, driven by
+  one API capability schema so server and browser tell the same truth.
+- **ChatGPT is a Coder** when the Codex CLI is installed — a sandboxed,
+  Job-Object-contained, receipt-honest transport (`codex_adapter.py`) that
+  records the *requested* model and effort (Sol, Ultra) and never invents the
+  served model.
+- **Terminal says "bridge pending"** rather than launching a bare Codex PTY;
+  a saved `default_cli=chatgpt` is refused until the bridge lands (a persisted
+  value used to brick every terminal open).
+- **Reviewer/Judge stay fail-closed for ChatGPT** — request configuration is
+  not attestation of the served family. Judge follows `review_family`.
+
+### The cockpit is the project page
+Plain `/project/<id>` — the dashboard included — opens the AI cockpit;
+`?classic=1` remains the explicit escape to the slim window. Calendar and
+Email appear as two honestly empty synthetic surfaces with a local-only
+guided-setup preview; no network, provider, credential, or storage path.
+
+### Truth fixes surfaced by the review and the full net
+- A saved model preference can no longer silently revert: `save_settings`
+  re-reads after writing and flags `mirror_out_of_sync`.
+- An engine resolution that would have run an unsandboxed bare `codex`
+  raises instead.
+- An imported (brownfield) effort's cost reads **unknown**, never a
+  fabricated `$0.00`.
+- Cancelling a job record that never got a child process now commits an
+  honest `cancelled` (verification `no-process-recorded`) with its journal
+  event, instead of leaving the job "running" forever; recycled-PID
+  protection is unchanged.
+- The living routes inventory carries rows for the three new Ecgberht
+  kickoff verbs; the two mutators declare that no Anchor handler invokes
+  them yet — the Gate 5 canary must replace that declaration with routes.
+
+### Known red, carried honestly
+The full net on master: **3,871 passed · 112 failed · 15 skipped**, of
+which 106 are the pre-existing 08-29 set (project-window/steward cutover
+debt awaiting the author's acceptance pass, chamber routes-inventory
+guards red since v1.2.7, Playwright flows, foundry GUI journeys) — 4 of
+those now pass — and one order-dependent test
+(`test_session_summary_endpoint_generating_fallback`) passes in isolation.
+Nothing was deselected.
+
+### Not in this release
+The ChatGPT Steward-cockpit bridge (F1B), Doctor and Zombie Hunter ChatGPT
+certification, and the conversational kickoff synthesis (Gate 5) follow as
+their own Foundry cycles. `_mockups/dashboard-v2` stays untracked.
+
+## v1.2.7 — the cockpit gets quiet, the plan gets tidy, and work announces itself (2026-08-27)
+
+Three days of the author using the deliverables surface and the steward
+cockpit for real work, then three adversarial review rounds (one cross-family)
+over every diff. Everything below was verified on his screen before release.
+
+### The conversation is readable again
+- **One activity line, not a line per tool call.** A long steward turn used to
+  bury its own prose under dozens of dim tool lines. Now a single folding line
+  counts the steps, names the current one, and ticks its elapsed time — so it
+  doubles as the answer to "is it still running." Click it for the full list.
+- **The state line stops lying.** It said "waiting on you" while commissioned
+  background work ran. The engine now carries the attention flag, and the
+  steward's contract orders that flag stamped the moment background work
+  starts.
+
+### The plan reads at a glance
+Roadmap steps no longer auto-expand and no longer show filler. Each step's
+deliverables appear as one blue sentence; click it for the detail, click the
+link for the report. Register rows carry an optional Step column so a work
+product sits under the step that produced it.
+
+### The status pane is a status pane
+Deliverables on top (folded, with the newest item named in the header),
+**the status in the middle as the only section that grows**, files at the
+bottom. Both side sections fold on a click and remember the choice.
+
+### Work announces itself
+- **Soft start**: opening a parked effort wakes the steward, so the dialog
+  opens with where things stand and any question still waiting.
+- **Project setup**: creating a project lands it immediately and its tile says
+  "Setting up the project — reading what is here…" while the honest first read
+  runs. A deferred read says so too, and points at the manual button.
+- **Decision shape, enforced**: a decision put to the author with no
+  recommendation is sent back once, visibly. The law was written all along —
+  which is exactly why it drifted. A rule nothing checks is a rule that decays.
+
+### Fixed
+- Files produced were persisted but reloaded as an empty list, so every
+  restart blanked the pane.
+- Delivery receipts raised NameError into a swallowing catch for a full
+  release: `channel_verified` never flipped while the call reported success.
+- Registering a project fired an unannounced whole-tree read per click, with a
+  per-project concurrency guard — so repeat clicks stacked model swarms until
+  the machine stopped answering. One automatic read at a time now, machine-
+  wide, off the request path, with an exact-duplicate guard.
+- Deliverable links opened blank pages (they bypassed the page's auth
+  plumbing); text artifacts now render in the report viewer, PDFs inline.
+
+### Still open, by name
+Foreman checkpoint supervision and Jumper's batched funnel arm on their next
+runs. The steward M-batch (High Seat re-route, chamber cut) awaits the
+author's acceptance pass. 21 project-window/steward tests remain red from the
+cockpit cutover reconciliation — unchanged by this release, named here rather
+than quietly carried.
+
+## v1.2.6 — the deliverables surface actually opens (2026-08-26)
+
+Hotfix on v1.2.5, driven by the author's first real day using the
+deliverables surface: every repair below is verified on a live screen, and
+the defect class that caused it — tests pinning one layer below the one the
+page hits — now has dispatch-layer tests standing guard.
+
+### Fixed
+- **Register routing**: the verb "deliverables" was BOTH a project-level and
+  an effort-level route; project routing won, so the register tile read the
+  project root (always empty) and the legacy session-files tab was shadowed.
+  The register is effort-level; the files view is its own verb.
+- **Blank click-throughs**: register links were raw navigations that skipped
+  the page's auth plumbing (no project id, no token → an empty page). Links
+  are now built fully authed; text artifacts open in the rendered report
+  viewer, PDFs inline, other binaries stream through the contained route.
+- **Stale guard test**: `test_reaper_single_source` had been red since the
+  July ship-prep refactor — it counted a call the refactor legitimately
+  removed (the zombie-terminal brief now classifies straight through the
+  shared snapshot, the stricter form of the same rule). The rule it guards
+  was never broken; the counter is corrected and explained in place.
+- **Honest state line**: the header said "awake — waiting on you" while a
+  commissioned background run worked. The engine state now carries the
+  attention flag and the header says so; the steward's standing brief orders
+  the flag stamped the moment background work starts.
+
+### Added
+- **Soft start**: opening a parked effort page wakes the steward — the
+  deterministic pickup (where we left off, the pending question) lands on
+  first poll, then the model's short orientation. Guards: stored-session
+  only, never workbench terminals, never a fresh effort, 60s cooldown.
+- **Project-wide deliverables**: the cockpit's main list is the union of
+  every effort's curated register — reports a human opens, never raw
+  session files.
+- **Per-step embedding**: register rows carry an optional Step column and
+  the plan paints each work product under the roadmap step that produced it.
+
+### Still open, by name
+- Unchanged from v1.2.5: Foreman checkpoint supervision and Jumper's batched
+  funnel arm on their next runs; steward M-batch awaits the author's
+  acceptance pass; the true-VM install check remains staged.
+
+## v1.2.5 — the steward moves in, and the work shows its receipts (2026-08-25)
+
+The steward cockpit becomes the default project surface, deliverables get a
+single register the whole system answers from, and the elegance-review
+ratifications land across every vendored skill — then the whole batch is
+hardened by three adversarial review passes over its own diffs (11 confirmed
+defects, all fixed before this release).
+
+### Steward cockpit cutover + deliverables surface
+- The cockpit (`steward_cockpit/`) is now the default `/project/` page; the
+  legacy chamber remains behind `?classic=1`. `BUILD_ID` counts the cockpit
+  sources, so an open page self-reloads when they change.
+- **One deliverables register**: an effort's `DELIVERABLES.md` drives a pinned
+  package tile atop the status pane, goal-bar links, and the steward's own
+  answer to "where is the thing you produced." Files serve through a
+  realpath-contained route (escapes 404; html/svg served inert).
+- Delivery receipts: status acks flow to `.ecgberht/delivery.json`
+  (locked read-modify-write, coalesced acks) and flip `channel_verified` on
+  first ack — a render leg the engine can prove, not assume.
+- The pre-restart drain now parks the cockpit's own engines via the service
+  (`POST /api/steward/drain-all`) and names each failure class — never a
+  vacuous empty report.
+
+### The elegance ratifications land in the vendored skills
+- **Crucible** announces its band (auto-band with a loud FULL default) and
+  writes the triage lock record; stage handoffs fail closed without it.
+- **Foreman** gets a 45-minute call-timeout floor, delta-scan transparency,
+  and a sibling-repo cleanliness preflight that survives paths with spaces.
+- **Gandalf** never halts mid-run on budget: pre-flight cost consent, then
+  floor-and-stamp (critical outranks major); refuter kills leave a kill_log.
+- **Jumper** pings its cross-family gate through the named driver (no
+  failover masking a dead channel) and stamps salvage on zero-survivor runs.
+- **Legal-beagle / financial-analyst** emit deterministic gate receipts
+  (hash + checks + timestamp) required in the deliverable footer; the
+  financial chain is thin (one JSON seam, tie-out fail-closed).
+- **Literature-review** pre-flights the seed before seat binding and falls
+  back S2→OpenAlex with the fallback recorded.
+- **researchPrime** mechanizes its field laws (halt-record on violation).
+- Every SKILL.md carries its **North Star (LOCKED)** header — all nine
+  ratified 2026-08-25.
+
+### Still open, by name
+- Foreman checkpoint supervision (Move 6) arms on its next real build run;
+  Jumper's batched thinning funnel on its next run — both trigger-gated.
+- Steward M-batch awaits the author's acceptance pass: High Seat re-route,
+  chamber cut, cockpit-commissioned sentinel coverage.
+- 4 pre-existing `test_cockpit_paradigm2` failures ride the cutover
+  reconciliation; the true-VM install check (Part C) remains staged, with the
+  clean-profile run as the current approximation.
+
+## v1.2.4 — the elegance cycle: every skill sleeps, the engines stop lying about dead time (2026-08-15)
+
+A portfolio-wide sleep cycle over all 14 bundled skills, commissioned as
+"make these elegant, no rabbit holes, robust enough that scientists at any
+frontier lab would want them."
+
+### ELEGANCE.md Part II ships — what elegance IS, and the Rabbit-Catcher
+A researched, adversarially-vetted operational definition of elegance
+(three evidence sweeps, 38 rung-marked ledger items; four live cross-family
+governed rounds, new-blocker trajectory 3→1→1→0, stopped on the first
+genuinely-dry round per the Elegance Law's own rule 5). With it: the
+**Rabbit-Catcher** — a bounded per-element test battery (RC-1..7 + the RC-G
+guard clause) the steering seat runs at plan approval and on new mid-run
+elements. Needs must be INDEPENDENT of their proposer (no self-authored
+justification records); malleability work is never cut as "unused
+capability"; guards are judged by hazards, not recorded failures; verdicts
+are KEEP / HOLD-with-expiry / CUT-logged. Every SKILL.md carries the
+definition inline; `ELEGANCE.md` ships at the bundle root (emitted like
+AGENTS.md — pointed-at rule files must ship).
+
+### The engines stop blessing dead agents
+- **Foreman**: an agent whose transport reports `ok:false` is now a loud
+  `[taxonomy:agent-died]` HALT — never "execute complete". The recorded
+  failure: a 20-minute, 60-tool-call execute SIGKILLed at the per-call cap
+  with ZERO bytes written was blessed and advanced to a gate that would have
+  gone GREEN on the previous wave's tree. `go.ps1` now exposes
+  `-CallTimeoutMin` (the default 20 killed a healthy 43-minute wave).
+- **Crucible**: the first genuinely-dry held round now goes to the USER (the
+  convergence authority) instead of paying a second identical round — the
+  engine now obeys the Elegance rule its own SKILL.md carries.
+- **Steward**: `launch_failure` joins the closed run-outcome set — a session
+  dead before its greeting, with nothing written, raises "fix the engine
+  first", never "the session ended" (a blind relaunch bought the same death
+  three times, ~80 minutes, zero product). Plus the READ-BEFORE-PLAN law:
+  the steward opens its own campaign record before planning anything.
+- **researchPrime**: the plan-gate CLI's TTY-only trap and the agy field laws
+  (label-form models, fenced-JSON replies, absolute paths, `'yes'/'no'` enum)
+  are documented where the operator reads them.
+
+### The sleep cycle's own rails repaired
+LESSONS.md created for 4 skills that had none; jumper's 24 journal entries get
+their first promotions; gandalf's post-08-04 backlog promoted; NORTH-STAR.md
+promoted from in-code charters for legal-beagle and financial-analyst (marked
+as promotions — nothing newly authored); run-capture rails restored ×4;
+journal ids now law: max(NNNN)+1 over the whole directory. Standing rules
+promoted into foreman/crucible SKILL.md from ten journals. financial-analyst's
+SKILL.md mojibake (24 sequences) repaired.
+
+### Named cuts (per the law: shown, not silent)
+The full stall-detection ladder (the enabling idle-watchdog exists but no
+driver pumps heartbeats yet — turning it on would kill healthy long calls;
+deferred with the prerequisite named), cross-repo dirty-sibling checks, and
+the steward wall-clock ledger.
+
+## v1.2.3 — the skills arrive with their run contract (2026-08-15)
+
+The v1.2 line built cleanly and was never published. This release fixes what
+the built bundle was quietly getting wrong, so the skills behave on a
+collaborator's machine the way they behave on the author's.
+
+### The bundle shipped its skills without their governance
+Every vendored `SKILL.md` defers its run contract — the **LOCKED 10-minute
+status-table format**, the Heavy-vs-regular tiers, the invocation discipline —
+to `AGENTS.md`. Neither the author's user-global copy nor the Skill Foundry
+copy is in the bundle. Worse, the no-personal-data scan rewrote the author's
+absolute Skill Foundry path into a placeholder token in **ten staged files**:
+the scrub protected the author's privacy and, in doing so, converted a
+diagnosable absolute path into a string that resolves nowhere. The artifact
+linked; the symbol was missing. Collaborators got skills whose most visible
+behavior — reporting progress every ten minutes in a fixed format — was
+undefined.
+
+(This paragraph cannot quote the broken string itself: the new gate below
+correctly refuses to ship any file containing it, and it caught this changelog
+on the first build after it was written.)
+
+- **`AGENTS.md` now ships**, emitted into the staged root at build time (source
+  under `planning/`, which the manifest excludes — deliberately *not* at the
+  author repo root, where an `AGENTS.md` would hijack the
+  AGENTS.md-is-canonical convention). It carries the locked status table
+  verbatim, the launch pattern that makes the cadence actually fire
+  (background launch + armed wake-up), the tier definitions, and an honest
+  note that seat assignment resolves from Anchor's registry — so **Package A**
+  installs, which have no registry, are told to expect `cross_model:false`
+  rather than silently getting single-family verification.
+- **The 12 `SKILL.md` files were repointed** at the bundled copy (trio
+  `eb7c34e`, Skill Foundry `12d643b`) with no absolute path left for the scrub
+  to mangle.
+- **`AUTONOMOUS-MODE.md` ships** — how to run the skills unattended, what each
+  capability is for, what stays denied, and a plain no-warranty statement.
+  It documents editing the collaborator's **own** user-level settings: a
+  settings file arriving inside a cloned repo is restricted from granting
+  itself permissions, and that restriction is correct.
+- **`share_agent_rules.py` ships** — the one-command opt-in that makes the
+  above real: `python share_agent_rules.py install --settings` writes the
+  agent-level rules block into the collaborator's own `~/.claude/CLAUDE.md`
+  and merges the autonomy profile into their own `settings.json` — fill-only
+  (a value the user already set always wins), first-backup-wins
+  (`settings.json.anchor-orig`), fully reversible (`remove`, `status`).
+  Package A carries `AGENTS.md`/`AUTONOMOUS-MODE.md` too — without them the
+  skills-only install would have re-created the dangling-pointer defect.
+
+### New fail-closed gate: scrub residue
+The PII scan rewrites author paths to `<path>`; where the reference had a file
+target, that rewrite leaves a pointer to nothing — which is exactly how the
+above shipped invisibly. The new gate audits the PII scan's own output.
+Narrow by design: a general "does every referenced doc exist" check was
+refuted cross-family (staged prose legitimately names unstaged files like
+`DASHBOARD.md` and `MASTER-PLAN.md`, so its false-positive rate would get it
+switched off). Measured against the real v1.2.2 tree: **10 hits, 1 distinct
+pattern, 0 false positives**, and it fires when the defect is planted back.
+
+### Two stamps that disagreed
+- **`VERSION` said 1.2.2 while `pyproject.toml` said 1.1.3.** The G3 sandbox
+  gate could not catch it because it hard-coded the literal `"1.1.3"` instead
+  of asserting the two stamps *agree* — so it would have failed on every line
+  after 1.1.3 for a reason unrelated to product health. De-pinned to the real
+  invariant. Both stamps now read 1.2.3.
+- **`doctor.py` called a correctly-built package broken.** Its
+  `OPTIONAL_ABSENT` was a hand-maintained duplicate of the builder's
+  `_OPTIONAL_FIRST_PARTY`, frozen at `{update_transaction, tools}`; the builder
+  grew the steward-chamber declarations and doctor never did, so a good install
+  printed *"Module 'chamber_mockup_diff' is MISSING — this install is
+  INCOMPLETE"*. Doctor is the **first** thing the consumer `CLAUDE.md` tells a
+  collaborator to run, so the one free deterministic check was telling every
+  new user their install was broken. Same root cause as the v1.1.x
+  two-builders incident: one list must win, and it is the one the fail-closed
+  gate enforces. Found only because the acceptance suites had never been run
+  against the v1.2 line.
+
+### Evidence
+Build from a clean worktree of committed HEAD: **B 1052 files / A 602, all
+gates clean**. Stranger sandbox **10/10**. Pull dry run against a simulated
+collaborator install **7/7** (1056 files). Distro/doctor/share suites **111
+passed**. 13 new gates in `tests/test_share_v123.py`.
+
+### The Ecgberht steward now ships — engine only
+Anchor had been shipping the steward's **host contracts** (the `chamber_*`
+modules) while the skill itself stayed on the author machine, so collaborators
+got steward-shaped Anchor surface with nothing behind it. The bundle now
+carries **14 skills**, not 13.
+
+What does *not* ship is the point. The steward is a campaign-memory skill and
+most of its ~970 files are the author's own portfolio record. The generic
+denylist already dropped 487 (`planning` / `test` / `journal` / `.foreman`);
+the remainder carry names too generic to deny globally — a future skill may
+legitimately ship a `research/` or `drafts/` directory as product — so
+`_is_denied` / `_apply_denylist` now take an optional skill name and apply
+**scoped** denials. `ECGBERHT.md` at the steward's root is the author's
+portfolio memory and is denied by name; per-project copies mint from
+`templates/`, which ships. The steward's own `.ecgberht/attention.json` is
+denied too: it is live author state, and a stranger's fresh install must not
+open already showing someone else's pending "needs you".
+
+Result: **257 files, not 970.** Verified by leak probe — no private project
+names, no campaign record, no inherited runtime state.
+
+Safe because cross-family review confirmed the engine reads none of it at
+runtime: `rank.mjs` scores Strip projections only, `loadDispatchTable()` falls
+back to `BUILTIN_CELLS`, `prior-art/` and `ideation/` have no engine or bin
+load path, and `listJournalEntries()` is an optional per-project scan returning
+`present:false`.
+
+The sandbox harness gained the steward's source env — without it the suite
+silently exercised a 13-skill bundle while the builder shipped 14, an
+acceptance suite not testing what ships.
+
+### Still open — carried forward honestly
+- The ease count and tile retirement remain open by name from v1.2.1.
+- The Gandalf read that drove this release ran its **synthesis seat on Opus 5,
+  not Fable** (a tier-break against that skill's declared TOP tier). Its
+  refuter seat was genuinely cross-family (Gemini 3.1 Pro High), and every
+  material conclusion here was subsequently confirmed by execution — the
+  builds, the suites, and the leak probe — rather than resting on model
+  judgment.
+
+## v1.2.2 — E1 engine-enforced (2026-08-13)
+
+The steward can no longer walk away from a question you asked it.
+
+v1.2.1 shipped with E1 as a stated criterion and no implementation — the
+CHANGELOG said so plainly. This closes it. Two waves, both GREEN on the
+orchestrator gate, both adversarially reviewed by **Grok** with zero agreed
+blockers (the chamber build reviewed single-family; this is the first real
+cross-family review on this project).
+
+### What E1 now means in code
+- **`chamber_e1_bound.py`** — the deterministic, model-free question parser.
+  A direct question is a terminal-'?' sentence, an explicit `asks[]` entry,
+  or one of five committed imperative prefixes with no question mark:
+  `confirm …` · `tell me …` · `let me know …` · `did you …` ·
+  `can/could/would/will you …` (leading fillers stripped first). Each
+  question gets a deterministic id, discharged only by a typed
+  answer-reference.
+- **`chamber/E1-BOUND-RATIFICATION.md`** — bound v1, **ratified by John
+  2026-08-13**. The bound is a line the user drew, not one the model
+  inferred; E1's own "zero model involvement" clause requires that. Five
+  KNOWN-MISS forms (garble that destroys the anchor verb, prosody-only
+  questions, mid-sentence third-person asks, indirect "I was wondering…")
+  are signed as agreed out-of-bound losses — named, never silent. Widening
+  the bound requires a v2 signature; it can never widen itself.
+- **`chamber_e1_hook.py`** + the Ecgberht engine leg
+  (`enforceTurnCompletion`, `enforce_bridge_result`) — the turn-completion
+  hook on the W2-proven converse seam. A turn carrying an unanswered
+  ratified question id is structurally blocked with a named finding.
+- **Fails CLOSED, always.** An absent, altered, version-mismatched or
+  unsigned bound yields `E1-BOUND-UNRATIFIED` / `E1-F7-ARTIFACT-MISSING` and
+  refuses to enforce. An unenforceable bound never degrades to permissive.
+- **The refusal has a drawn face** (`AG-BLOCKED-TURN`), so a block never
+  reads as a hung steward — the V5 law, "the cure must not look like the
+  disease." Batched with the runcard transcript link into one signature;
+  C9 re-pinned `4a7f7953…` → `fe77d058…`.
+
+The W12 audit's E1 row moves **instrument-missing → reverified**. Test
+counts grew rather than merely holding: engine 1135 → 1146, pytest
+3173 → 3197.
+
+### Still open — carried forward honestly
+- **The ease count remains UNAVAILABLE by name.** Same missing-wave origin
+  as E1, but a separate criterion (C8); no classifier of record exists, so
+  the 5→0 re-score cannot run and `chamber/EASE-CLOSE-REPORT.md` refuses to
+  invent one.
+- **Tile retirement has still not executed.** The gate stays UNSIGNED and
+  `dismiss-finished-tile` stays deferred; no tile code deleted. The
+  transcript-link row is now resolved `equivalent`.
+- **A Foreman defect found by this build.** An execute agent SIGKILLed at
+  the per-call timeout, having written nothing, was logged
+  `execute complete` and advanced to a gate that would have returned GREEN
+  on an empty wave. The post-W12 guard only catches agents that die at
+  launch (0 tools, sub-2s); the predicate that matters is `ok:false`. Not
+  fixed here — Foreman is a separate tool.
+
+## v1.2.1 — the steward chamber (2026-08-12)
+
+The v1.2 line: a rebuild of how the steward talks to you inside a project.
+Twelve waves, all GREEN on the orchestrator gate (1135/1135), merged at
+`3dbc21c`. Planned by Crucible, built by Foreman, from the 4-stage steward
+assessment in `C:\dev\Ecgberht\planning\steward-assessment-2026-08-08`.
+
+Numbering note: `v1.2.0` was already spent on an earlier line-close commit
+(`120ddd0`, 2026-08-04), so the chamber release takes 1.2.1. A published
+version number is never reused.
+
+### The three defects this closes
+- **D1 — status was fragmented across four surfaces.** There is now ONE flow
+  surface: the M1 rail, with a STATUS overlay carrying the latest status table
+  and the remaining steps with median ETAs.
+- **D2 — talk turns took 60-160s.** The chamber renders DETERMINISTIC-FIRST:
+  it opens in under 2 seconds from projections, and the model is called only
+  when you actually speak. Enforced by a `<2s` CI budget at >=2x-real fixture
+  sizes plus a zero-model-call network/process trace.
+- **D3 — no declared pipeline.** Typed edges, a versioned manifest schema with
+  a lint, artifact contracts, and a declared deliverable per effort.
+
+### Enforcement that landed (engine-enforced, re-verified at its seam)
+- **E2** — worktree sweep before re-commissioning, with the enqueue guard.
+- **E3** — resurrection-regression diffs against the correction ledger.
+- **E5** — serialized gate queue, head-only.
+- **E6** — preference preload.
+- **E7** — mid-flight re-brief per audited mode, no relaunch.
+- **E9** — layered verification; collapsed-stage manifest-lint refusal.
+- **F3** deliverable-run execution bounds (shell:false, code-owned verb
+  allow-list, symlink/junction-resolved containment, labeled inert fallback),
+  **F4** sweep containment, **F5** DOM injection law over a registered slot
+  inventory with a growth rule, **F6** CSRF-class assertions on state-changing
+  surfaces with a caller-class threat split.
+
+### Known gaps — stated plainly, not buried
+- **E1 is NOT engine-enforced.** A steward turn can still close on an
+  unanswered direct question. W8 changed no chamber source: the bound parser,
+  the F7 ratification artifact, the turn-completion hook and the joint
+  negative-path test are all absent. Convention is the only cover. Full
+  evidence in `chamber/E1-ENFORCEMENT-REPORT.md`. Being closed in the next
+  release.
+- **The ease count is UNAVAILABLE by name.** No classifier of record was ever
+  registered, so the 5->0 same-ruler re-score cannot run.
+  `chamber/EASE-CLOSE-REPORT.md` refuses to fabricate a number.
+- **Tile retirement has NOT executed.** `chamber/TILE-RETIREMENT-GATE.md` is
+  unsigned and `chamber_retirement.retirement_allowed` refuses by name, so the
+  bottom run tiles all still render. No tile code was deleted.
+- Five test files cited in wave reports do not exist in the tree. Named in
+  `chamber/W12-AUDIT-REPORT.md` as plan defects.
+
+## v1.1.3 — share-fix (2026-08-01)
+
+The recovery release for the broken 1.1.x collaborator distribution
+(`friction-intake-2026-07-30.md`). No new product features — this release
+makes a stranger install actually work, honestly.
+
+### Packaging (the root cause)
+- `dist_manifest.txt` now lists the 13 runtime modules stranger installs never
+  received: `proc_probe`, `reaper`, `reaper_arming`, `freeze_state`,
+  `zombie_hunter`, `tidy_idy_runner`, `foundry_integrity`, `foundry_safety`,
+  `foundry_skills`, `foundry_acceptance`, `verify_freeze_manifest`, plus
+  `orientation` and `parity` (found by the new gate itself). Their absence is
+  why boot reconcile died, `/api/rnd/orphan_check` spammed
+  `ModuleNotFoundError`, and session bookkeeping ran degraded on every
+  collaborator install.
+- The entire cold-start surface USER-ONBOARD.md documents (`onboard.cmd` /
+  `onboard.ps1` / `share_onboard` and the rest of the `share_*` closure, the
+  launcher, `USER-ONBOARD.md` itself, `anchor.ico`, `VERSION`, this changelog)
+  is now on the manifest — previously it only shipped because a side build
+  script globbed it in past the manifest.
+- `distro.py` is the ONE blessed builder, and it gained an **import-closure
+  gate**: a build fails if any staged product file imports a first-party
+  module that is not staged (lazy imports included — the exact class the old
+  gates could not see). Declared optional absences: `update_transaction`,
+  `tools/` (dev-only; the healthcheck's parity walk now skip-warns without it
+  instead of false-redding the banner).
+- The package now ships a THIN consumer `CLAUDE.md` (build-time emitted, never
+  the author's) so agents debug cheaply instead of exploring blind.
+- NOTE: shipping `reaper`/`reaper_arming`/`zombie_hunter` ships the
+  process-reaping daemon; it is UNARMED by default (arming ladder + the
+  `.anchor/reaper.disarmed` brake) and boot-reconcile is process-liveness-only.
+
+### Install truthfulness
+- Onboard installs the optional terminal extra (`pywinpty`) on Windows for
+  Package B — real ConPTY terminals work without a manual `pip install`.
+- The fake "service registered / foreground fallback port N" message is gone:
+  there is no Windows service in the share path. `launch_anchor_dashboard.py`
+  (and the desktop icon that targets it) now genuinely starts the server when
+  it is down. After a reboot, run the launcher again.
+- Skill registration for Claude now tries symlink → **directory junction**
+  (works on stock Windows — no admin, no Developer Mode) → **full copy** as
+  the last resort, and reports which mechanism was used. The old silent
+  pointer-marker fallback — a folder Claude Code cannot read, reported as
+  "registered" — is retired.
+- Version stamps aligned: `VERSION` = `pyproject.toml` = this changelog. The
+  previously-circulated "1.1.2" was a hand-stamp no repo state reproduces.
+
+### Security defaults (shared installs)
+- The launcher wires the onboard-minted `ANCHOR_TOKEN` into the server
+  environment and hands it to the browser once (then it is stripped from the
+  URL and carried by localStorage + the HttpOnly auth cookie). Mutating
+  `/api/*` routes and the terminal/WS surface therefore require the token on
+  every collaborator install by default.
+- Background model summaries are OPT-IN on shared installs (the launcher sets
+  `ANCHOR_PROACTIVE_SUMMARY=0`): Anchor never spends a collaborator's Claude
+  subscription without an explicit action. Author-style installs (flag unset)
+  keep proactive summaries on.
+- Known residual (documented, accepted for 1.1.x): with the default
+  `ANCHOR_AUTH_MODE=open`, read-only data-plane GETs stay unauthenticated on
+  loopback. Full data-plane enforcement (`enforce` + the static frontend) is
+  the v1.2 hardening track.
+
+## 2026-07-30 — Steward usable with auth on · workbench tile collapsed
+
+- **The steward can set a goal again.** Three independent faults made every
+  steward act impossible on a token-authed dashboard: the POSTs sent the token
+  as `?token=` (the POST middleware never reads the query → 401 → a re-prompt
+  for a token the window already held); `handle_ecgberht_stand_up` was declared
+  `migrated=True` but never registered in `_MIGRATED_HANDLERS` (→ 404 "Unknown
+  endpoint"); and `do_POST` dispatched on the raw request line, so any POST
+  carrying a query missed its exact route row. All three fixed and gated.
+- **Two more dead endpoints found by the new route gate** — `GET
+  /api/rnd/friction` and `POST /api/rnd/journal_friction` had the same missing
+  registration and no legacy fallback. The friction journal's own read endpoint
+  was one of them.
+- **A 401 now retries instead of reloading in the project window** (home already
+  did, since 2026-07-28) — a reload discarded the goal input / saybox draft on
+  the first click after a token rotation.
+- **Workbench tile opens COLLAPSED on project dashboards**, with a click-to-
+  expand / click-to-collapse control on the tile summary.
+- **Jarvis seal label is the "Server"** (was "Salver", which reads wrong at a
+  glance). Image filenames unchanged.
+- **Repaired two long-dead tests**: the fetch-wrapper contract tests asserted a
+  `location.reload()` the product had deliberately dropped, and
+  `test_token_hygiene_lifecycle` had never run a single secret-absence
+  assertion. Both now assert the real contract (the hygiene scan is
+  mutation-checked).
+- **Standing rule added** (DECISION-LOG): auth-off green is not green — any wave
+  touching a mutating endpoint must add an auth-ON case asserting the outcome.
+
+## v1.0.0 — 2026-07-23
+
+First shareable product release of Anchor + integrated Skill Foundry skills.
+
+- Human skill cards (HUMAN.md) in Foundry GUI
+- Zombie Hunter multi-engine burn ledger + Tailscale-safe reverse proxy
+- Tidy-Idy triage panel with Grok investigator option
+- Single-use bootstrap reissue: spent nonces never dump raw JSON; HTML 410 + host reissue path
+- Spawn-cap census prune; default ANCHOR_SPAWN_CAP=32
+
+## 2026-07-23 — Tidy-Idy bootstrap reissue (share-ready)
+
+- **Spent bootstrap no longer dumps raw JSON.** Single-use SC4 nonces: Anchor re-click POSTs host-only /api/reissue-bootstrap when the panel is still live; otherwise marks status stale and starts a fresh pass.
+- **Proxy:** on /bootstrap/ 410, attempt reissue + redirect, else HTML 410 page (never forward spent JSON body over Tailscale).
+- **Never open panel_base alone** (that path is health JSON starting with {).
+
+## 2026-07 — Rearchitecture
+
+### W11 (C6) — Data-dir migration + git hygiene
+- **Runtime state moves OUT of the repo as one rollback-able unit.** The scripted
+  migration (`migrate_data_dir.ps1` → `tools/migrate_data_dir.py`) copies the data
+  allowlist into the new `ANCHOR_DATA_DIR`, path-rewrites every repo-rooted
+  absolute path to the new root, verifies zero remain, arms the reaper dry-run,
+  and **rolls back** (removes the partial new root; old dir untouched) on any
+  failure. The ops wrapper stops the service, points NSSM at the new dir, restarts,
+  healthchecks, and preserves the old dir read-only for a week.
+- **Path-audit tool** (`tools/path_audit.py`): scans every durable store
+  (`rnd_registry.json` folder_path, `.anchor/sessions.json` worktree_path,
+  `rnd_jobs/*.json` log_path/cwd, per-project `discovery.json` + job records) for
+  repo-rooted absolute paths and emits/applies a rewrite map (atomic, idempotent).
+- **`ANCHOR_REAPER_DRYRUN`** (`worktrees.py`): the first post-move boot sweeps
+  worktrees report-only (env override OR the armed `.reaper_dryrun` marker) so a
+  rewrite miss can never delete a legit parked/live worktree; live reaping re-arms
+  only after a **clean** dry report.
+- **Git hygiene** (`tools/git_hygiene.py` + `.gitignore`): un-tracks the tracked
+  runtime artifacts (`git rm --cached`, content kept) so a full healthcheck cycle
+  leaves `git status --porcelain` empty. Gate: `tests/test_data_dir_migration_w11.py`.
+
+### W10 (C5) — Markdown-parser de-fork + dead-server deletion
+- **Removed `anchor_server.py`** — the dead legacy Flask app (port 5000, retired
+  "Anchor PSU" dual-folder layout, ignored `paths.py`, imported by nothing,
+  never shipped; superseded by `anchor_gui.py`). Pre-deletion sweep results:
+  `docs/anchor_server-predeletion-sweep.md`.
+- Extracted the task/project/inbox/archived markdown parsers (and
+  `serialize_task_line`) into the single shared module **`anchor_md.py`**,
+  imported by both `anchor_gui.py` and `anchor.py`; the byte-identical twin
+  parsers are de-forked to one source of truth. Golden-corpus gate:
+  `tests/test_anchor_md_defork_w10.py` proves identical parses of the real
+  markdown files pre/post de-fork.

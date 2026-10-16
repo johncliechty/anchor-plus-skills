@@ -1,0 +1,24 @@
+{
+  "id": "i-003-roadmap-two-files",
+  "note": "A roadmap-event write persists TWO files as one durable state change, so ONE intent names both, in sorted order. Anchor must honour the pair together: committing the carrier without its container would leave a durable state nothing describes.",
+  "sha256": "77428e0fbc5946129e1c30cfee6d87e50b2c88269f5005e848734fb0c6b38aac",
+  "intent": {
+    "schema": "commit-intent-v1",
+    "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "seq": 1,
+    "reason": "ROADMAP_EVENT_WRITTEN",
+    "paths": [
+      {
+        "path": "roadmap.json",
+        "sha256": "a862d1e8b3f60473b44fb7e51ef228d525f4ea0bb7d80a1d1c2ddf0ab55677ea",
+        "byte_len": 22
+      },
+      {
+        "path": "roadmap/e-0001.jsonl",
+        "sha256": "e8ccdadcdd55821546c5700bd59f61b97f74e7aabea02eee63ef9fa04d65c417",
+        "byte_len": 22
+      }
+    ],
+    "written_at": "2026-07-21T11:30:00.000Z"
+  }
+}

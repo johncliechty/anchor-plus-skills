@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "anchor://share/readiness.schema.json",
+  "title": "Shareable package readiness stamp (v1)",
+  "description": "Machine-readable ready | degraded | not-ready stamp with closed reason codes. Green ready requires governance + coding seat OR explicit user-accepted degraded. Zero coding seats and incomplete interactive dialogue stamp not-ready (fail closed).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "schema_version", "status", "reason_codes", "package_id"],
+  "properties": {
+    "schema": { "const": "share-readiness/v1" },
+    "schema_version": { "const": 1 },
+    "status": {
+      "description": "Closed readiness status. Never claim ready without governance+seat or explicit degraded acceptance. not-ready = zero seats or silent path without full dialogue.",
+      "enum": ["ready", "degraded", "not-ready"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/reason_code" }
+    },
+    "package_id": { "enum": ["A", "B"] },
+    "governance_installed": { "type": "boolean" },
+    "coding_seat_ok": { "type": "boolean" },
+    "user_accepted_degraded": { "type": "boolean" },
+    "feedback_opt_in": {
+      "type": "boolean",
+      "description": "Feedback consent is NOT a readiness gate; default false."
+    },
+    "notes": { "type": "string" }
+  },
+  "definitions": {
+    "reason_code": {
+      "enum": [
+        "governance_missing",
+        "no_coding_seat",
+        "user_accepted_degraded",
+        "skills_pin_mismatch",
+        "journal_contract_unproven",
+        "skill_tree_forked",
+        "os_desktop_skipped",
+        "anchor_service_unavailable",
+        "seat_probe_failed",
+        "openai_sole_family_rejected",
+        "prereq_missing",
+        "interactive_onboard_required"
+      ]
+    }
+  }
+}

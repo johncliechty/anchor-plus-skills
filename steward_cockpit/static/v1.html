@@ -1,0 +1,299 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Aladdin — AI Cockpit</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/anchor.ico" type="image/x-icon">
+<link rel="stylesheet" href="/static/shared.css">
+</head>
+<body>
+<div class="app appx app3">
+  <div class="bar">
+    <span class="brand-pill"><img class="anchor-mark" src="/vendor/brand/anchor-tab-48.png" alt="Anchor" width="18" height="18" style="border-radius:4px;vertical-align:middle;flex:none"> ANCHOR · AI COCKPIT</span>
+    <span class="dot" data-att></span>
+    <span class="title" data-name>…</span>
+    <span class="persona-badge" data-persona-badge title="Active companion persona (selected in Cave of Wonders)">
+      <img data-persona-avatar src="/vendor/brand/aladdin-seal-lamp.jpg" alt="Aladdin" width="20" height="20">
+      <span data-persona-label>Aladdin</span>
+    </span>
+    <span class="busy" data-busy></span>
+    <span class="barlead" data-barlead title="the companion's stated next step"></span>
+    <div class="top-deliv-strip" data-top-deliverables hidden></div>
+    <button type="button" class="anvil-tile-btn" data-anvil-toggle title="Launch Anvil for this effort — Anvil takes over and collapses this AI Cockpit into a small clickable tile at the top"><img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="20" height="20"><span>Anvil</span></button>
+    <span class="chip" data-spend></span>
+    <button data-drive>▶ Go</button>
+    <button data-boneyard title="archive this effort to the boneyard">🪦</button>
+    <button data-min title="collapse back to the cockpit">—</button>
+  </div>
+  <div class="anvil-takeover-live" data-anvil-takeover hidden>
+    <div class="anvil-takeover-live-bar">
+      <button type="button" class="cockpit-return-tile" data-anvil-return title="Click to reopen the AI Cockpit and collapse Anvil back into a small tile in the AI Cockpit top bar">
+        <span>▴ AI Cockpit · <strong data-anvil-cockpit-name>Aladdin</strong> — Click to Return to Cockpit</span>
+      </button>
+      <span class="anvil-takeover-sub"><img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="18" height="18" style="border-radius:4px;vertical-align:middle;margin-right:6px">Anvil Workbench Active · AI Cockpit parked as top tile</span>
+      <button type="button" data-anvil-return2>↩ Back to AI Cockpit</button>
+    </div>
+    <iframe class="anvil-takeover-live-frame" data-anvil-frame src="about:blank"></iframe>
+  </div>
+
+  <div class="goalbar" data-goalbar title="click to expand or close the goal">
+    <div class="gline">
+      <span class="glabel" data-goallabel>GOAL</span>
+      <span class="gbrief" data-goalbrief>…</span>
+      <span class="gcaret">▸ click to expand</span>
+    </div>
+    <div class="gfull">
+      <div class="gkick" data-kickoff></div>
+      <div data-goalfull></div>
+      <div class="ghist" data-goalhist></div>
+      <div class="gdeliv" data-deliverables></div>
+    </div>
+  </div>
+
+  <div class="leftcol">
+    <div class="plan-grip" data-plangrip role="separator" aria-label="Resize plan" aria-orientation="vertical" tabindex="0"></div>
+    <div class="rail">
+      <button type="button" class="wptile" data-wptile hidden style="display:none" title="Open the work-product map">
+        <span class="wplab">Work product</span>
+        <span class="wpsum" data-wpsum>no map yet</span>
+      </button>
+      <div class="railhead">
+        <h2 data-plan-head>THE PLAN</h2>
+        <button data-railtoggle title="collapse the plan">« Close</button>
+      </div>
+      <div class="progress" data-progress hidden></div>
+      <div class="plan-progress-bar" data-progress-bar><i data-progress-fill style="width:0%"></i></div>
+      <ul class="steps" data-steps></ul>
+      <div class="fresh" data-fresh></div>
+      <div class="gaps" data-gaps></div>
+      <div class="tool-scout-box" data-tool-scout hidden></div>
+    </div>
+  </div>
+  <div class="railtab" data-railtoggle2 title="Click to expand the Plan panel">▸ Plan</div>
+
+  <div class="main">
+    <div class="openq" data-openq title="Show the saved decision context"></div>
+    <div class="steward-next-top" data-steward-next-top></div>
+    <div class="scroll"></div>
+    <div class="composer">
+      <textarea data-say rows="1"
+        placeholder="Talk — dictate with Win+H as long as you like. “go” drives; “pause” stops; “later: …” parks an idea."></textarea>
+      <div class="row">
+        <span class="hint">Enter or Send · Shift+Enter makes a new line · dictate with Win+H · never locked, never lost</span>
+        <button data-interrupt hidden style="display:none" title="end the running turn - partial work is kept, your queued words stay">Stop turn</button>
+        <button class="send" data-send disabled>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="statustab" data-statustoggle title="Click to expand the Status panel">
+    <span class="light quiet" id="rightTileLight" data-light2></span>
+    <span>◂ Status</span>
+    <span class="statustab-state" data-statetext2>Idle</span>
+  </div>
+  <div class="rightcol" data-statuspane>
+    <div class="pgrip" data-pgrip title="drag to resize"></div>
+    <div class="popen">
+      <div class="phead2">
+        <span class="status-state-pill">
+          <span class="light quiet" data-light></span>
+          <span data-statetext>…</span>
+        </span>
+        <button data-statustoggle2 title="collapse">Close »</button>
+      </div>
+      <!-- Pane order + sizing (2026-08-27, John): deliverables on top with a
+           one-line summary, drop file bar directly under deliverables
+           (2026-10-14, John), THE STATUS DOMINANT in the middle with a
+           click-to-open scrollable log of previous status updates, files at
+           the bottom. -->
+      <div class="pdeliv" data-delivmount></div>
+      <div class="pstatus" data-pstatus>
+        <h2 class="pstatushead">Status <span class="pcount" data-statusstamp></span></h2>
+        <div class="platest" data-latest></div>
+        <div class="pmsgs" data-msgs></div>
+        <div class="pscroll"></div>
+        <details class="prev-status-log" data-prev-status-log>
+          <summary class="psl-head">
+            <span><span class="psl-caret">▸</span> 📋 Previous Status Updates <span class="pcount" data-prev-status-count>(0)</span></span>
+            <span class="psl-hint">click to open · scroll</span>
+          </summary>
+          <div class="psl-scroll" data-prev-status-list></div>
+        </details>
+      </div>
+      <div class="pfiles psect folded" data-filesect>
+        <h2 data-filestoggle>Files produced <span class="pcount" data-filecount></span></h2>
+        <div class="fupload cockpit-dropbar" data-fupload data-cockpit-drop>📥 Drop files here &rarr; <code data-drop-dir>cockpit folder</code> &middot; <label class="cockpit-droppick" style="text-decoration:underline;cursor:pointer">browse<input type="file" data-fupfile data-cockpit-dropfile multiple style="display:none"></label> <span class="cockpit-dropmsg" data-fupmsg data-cockpit-dropmsg></span></div>
+        <div class="ftools"><input type="text" data-fsearch placeholder="search files…">
+          <button data-fsort="name">name</button><button data-fsort="type">type</button><button data-fsort="date" class="on">date</button></div>
+        <div class="flist" data-flist></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="wpmap" data-wpmap hidden>
+  <div class="wpstage">
+    <header class="wphead">
+      <div>
+        <div class="wpeyebrow">Work product</div>
+        <h3 data-wptitle>No plate yet</h3>
+        <p class="wpgoal" data-wpgoal></p>
+      </div>
+      <button type="button" data-wpclose title="close">Close</button>
+    </header>
+    <div class="wpatlas" data-wpatlas hidden></div>
+    <div class="wpflow" data-wpbody></div>
+    <p class="wphint" data-wphint>Parts of the thing you will open.</p>
+  </div>
+</div>
+<script src="/static/md.js"></script>
+<script src="/static/plate.js"></script>
+<script src="/static/skill-icons.js"></script>
+<script src="/static/shared.js"></script>
+<script>
+Proto.init({ statusPane: true });
+const app = document.querySelector(".app");
+// The status pane carries the deliverables and the 10-minute status — the two
+// things John asked to be top of mind — so it opens by DEFAULT (2026-08-26:
+// pinning the tile achieved nothing while the whole pane started collapsed).
+// His choice wins after that, and is remembered.
+try {
+  if (localStorage.getItem("steward_status_pane") !== "shut")
+    app.classList.add("statusopen");
+} catch (e) { app.classList.add("statusopen"); }
+document.querySelectorAll("[data-statustoggle],[data-statustoggle2]").forEach(b =>
+  b.onclick = () => {
+    app.classList.toggle("statusopen");
+    if (app.dataset.narrow || app.dataset.secondwin) return;   // a narrow or split window's open/close is for now, never his remembered choice
+    try {
+      localStorage.setItem("steward_status_pane",
+        app.classList.contains("statusopen") ? "open" : "shut");
+    } catch (e) { /* no-op */ }
+  });
+const t2 = document.querySelector("[data-railtoggle2]");
+if (t2) t2.onclick = () => app.classList.toggle("railhide");
+const planGrip=document.querySelector('[data-plangrip]');
+const setPlanWidth=w=>{const other=app.classList.contains('statusopen')?document.querySelector('.rightcol').offsetWidth:0;
+  const width=Math.min(620,Math.max(230,window.innerWidth-other-320),Math.max(230,w));document.documentElement.style.setProperty('--planw',width+'px');
+  try{localStorage.setItem('steward_plan_width',String(width));}catch(e){};planGrip.setAttribute('aria-valuenow',String(width));};
+if(planGrip){
+  try{const saved=Number(localStorage.getItem('steward_plan_width'));if(saved)setPlanWidth(saved);}catch(e){}
+  planGrip.addEventListener('pointerdown',e=>{e.preventDefault();planGrip.setPointerCapture(e.pointerId);
+    const move=ev=>setPlanWidth(ev.clientX-document.querySelector('.leftcol').getBoundingClientRect().left);
+    const end=()=>{planGrip.removeEventListener('pointermove',move);planGrip.removeEventListener('pointerup',end);planGrip.removeEventListener('pointercancel',end);};
+    planGrip.addEventListener('pointermove',move);planGrip.addEventListener('pointerup',end);planGrip.addEventListener('pointercancel',end);});
+  planGrip.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();setPlanWidth(document.querySelector('.leftcol').offsetWidth+(e.key==='ArrowRight'?20:-20));}});
+}
+// slide the open status pane wider/narrower by its left grip
+const grip = document.querySelector("[data-pgrip]");
+if (grip) grip.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  grip.setPointerCapture(e.pointerId);
+  const move = (ev) => {
+    const other=app.classList.contains('railhide')?0:document.querySelector('.leftcol').offsetWidth;
+    const w = Math.min(760,Math.max(280,window.innerWidth-other-320),Math.max(280, window.innerWidth - ev.clientX));
+    document.documentElement.style.setProperty("--statusw", w + "px");
+  };
+  const up = () => { grip.removeEventListener("pointermove", move);
+                     grip.removeEventListener("pointerup", up); };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", up);
+});
+// 2026-10-14 (John): When an artifact is opened in the second window, both the Plan panel and
+// the Status panel automatically close into their small clickable tiles (▸ Plan / ◂ Status) so
+// the dialogue with Aladdin/Jarvis/Ecgberht can be seen easily. When the second window closes,
+// both panels automatically reopen to their prior state.
+function enterSecondWindowMode() {
+  if (!app.dataset.secondwin) {
+    app.dataset.secondwin = "1";
+    app.dataset.preSecondRail = app.classList.contains("railhide") ? "hide" : "show";
+    app.dataset.preSecondStatus = app.classList.contains("statusopen") ? "open" : "shut";
+  }
+  app.classList.add("railhide");
+  app.classList.remove("statusopen");
+}
+function exitSecondWindowMode() {
+  if (!app.dataset.secondwin) return;
+  const wantHide = app.dataset.preSecondRail === "hide";
+  const wantOpen = app.dataset.preSecondStatus !== "shut";
+  delete app.dataset.secondwin;
+  delete app.dataset.preSecondRail;
+  delete app.dataset.preSecondStatus;
+  if (!app.dataset.narrow) {
+    app.classList.toggle("railhide", wantHide);
+    app.classList.toggle("statusopen", wantOpen);
+  }
+}
+window.addEventListener("anchor-app-split", (ev) => {
+  if (ev && ev.detail && ev.detail.split) enterSecondWindowMode();
+  else exitSecondWindowMode();
+});
+try {
+  if (window.__anchorSplit || (window.top && window.top !== window && window.top.document && window.top.document.body && window.top.document.body.classList.contains("two"))) {
+    enterSecondWindowMode();
+  }
+} catch (e) {}
+const NARROW=1100;
+function fitConversation(){
+  if(app.classList.contains('tileview')){app.classList.add('railhide');app.classList.remove('statusopen');return;}
+  if(app.dataset.secondwin) return;
+  // 2026-10-07 (John, evidence E6: a narrow cockpit squeezed the dialogue to a sliver): below 1100 px the plan rail
+  // AND the status pane close - in memory only, never written to his preferences - and both come back as they were
+  // above it. Reopened while narrow, the status pane overlays the dialogue (the 1099px media query).
+  if(innerWidth<NARROW){
+    if(!app.dataset.narrow){app.dataset.narrow='1';
+      app.dataset.wideRail=app.classList.contains('railhide')?'hide':'show';
+      app.dataset.wideStatus=app.classList.contains('statusopen')?'open':'shut';
+      app.classList.add('railhide');app.classList.remove('statusopen');}
+  }
+  else {
+    if(app.dataset.narrow){delete app.dataset.narrow;
+      app.classList.toggle('railhide',app.dataset.wideRail==='hide');
+      app.classList.toggle('statusopen',app.dataset.wideStatus==='open');}
+    const left=app.classList.contains('railhide')?0:document.querySelector('.leftcol').offsetWidth;
+    const maximum=Math.max(280,innerWidth-left-320);
+    const right=Math.min(document.querySelector('.rightcol').offsetWidth||380,maximum);
+    document.documentElement.style.setProperty('--statusw',right+'px');
+    if(planGrip)setPlanWidth(document.querySelector('.leftcol').offsetWidth||300);
+  }
+}
+window.addEventListener('resize',fitConversation);fitConversation();
+// 2026-10-14 (John): Launch Anvil from within an AI Cockpit — Anvil takes over and the AI Cockpit
+// collapses into a small clickable tile at the top of Anvil; clicking that tile reopens the AI Cockpit
+// and collapses Anvil back into the small tile inside the AI Cockpit top bar.
+const anvilToggleBtn = document.querySelector("[data-anvil-toggle]");
+const anvilTakeover = document.querySelector("[data-anvil-takeover]");
+const anvilFrame = document.querySelector("[data-anvil-frame]");
+const anvilCockpitName = document.querySelector("[data-anvil-cockpit-name]");
+function setAnvilTakeover(open) {
+  if (!anvilTakeover) return;
+  const shouldOpen = typeof open === "boolean" ? open : anvilTakeover.hidden;
+  if (shouldOpen) {
+    const titleEl = document.querySelector("[data-name]");
+    if (anvilCockpitName && titleEl && titleEl.textContent) {
+      anvilCockpitName.textContent = titleEl.textContent.trim();
+    }
+    if (anvilFrame) {
+      const qs = location.search ? "&" + location.search.replace(/^\?/, "") : "";
+      const targetSrc = "/steward-static/anvil.html?v=10&from=cockpit" + qs;
+      if (anvilFrame.getAttribute("src") !== targetSrc) {
+        anvilFrame.setAttribute("src", targetSrc);
+      }
+    }
+    anvilTakeover.hidden = false;
+    app.classList.add("anvil-mode");
+  } else {
+    anvilTakeover.hidden = true;
+    app.classList.remove("anvil-mode");
+  }
+}
+if (anvilToggleBtn) anvilToggleBtn.addEventListener("click", () => setAnvilTakeover(true));
+document.querySelectorAll("[data-anvil-return],[data-anvil-return2]").forEach(btn => {
+  btn.addEventListener("click", () => setAnvilTakeover(false));
+});
+window.addEventListener("message", (ev) => {
+  if (ev && ev.origin === window.location.origin && (!anvilFrame || ev.source === anvilFrame.contentWindow) && ev.data && ev.data.type === "anvil-return-cockpit") {
+    setAnvilTakeover(false);
+  }
+});
+</script>
+</body></html>

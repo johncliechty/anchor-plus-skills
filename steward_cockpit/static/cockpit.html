@@ -1,0 +1,1368 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>AI Cockpit — prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/anchor.ico" type="image/x-icon">
+<link rel="stylesheet" href="/static/shared.css">
+<style>
+  .cp { max-width: 1080px; margin: 0 auto; padding: 26px 20px 46vh; }
+  .cphead { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .cphead h1 { font-size: 22px; font-weight: 600; }
+  .cphead .chips { color: var(--dim); font-size: 13px; }
+  .cptotal { color: var(--dim); font-size: 12.5px; margin-top: 4px; }
+  .cpgoal { color: var(--dim); font-size: 14px; margin: 8px 0 24px;
+            max-width: 860px; }
+  .ctile { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 12px; margin-bottom: 16px; overflow: hidden;
+           box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+  .ctile > .thead { display: flex; align-items: center; gap: 12px;
+                    padding: 13px 20px; cursor: pointer; user-select: none;
+                    background: linear-gradient(180deg, var(--panel2), var(--panel));
+                    border-bottom: 1px solid transparent; }
+  .ctile.open > .thead { border-bottom-color: var(--line); }
+  .ctile > .thead img { width: 34px; height: 34px; border-radius: 8px;
+                        object-fit: cover; flex: none; }
+  .ctile > .thead .tname { font-size: 15.5px; font-weight: 600; }
+  .ctile > .thead .tsum { color: var(--dim); font-size: 12.5px;
+                          margin-left: auto; text-align: right;
+                          white-space: pre-line; }
+  .ctile > .tbody { display: none; padding: 4px 20px 18px; }
+  .ctile.open > .tbody { display: block; }
+  .efrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+           border: 1px solid var(--line); border-radius: 9px;
+           margin-bottom: 8px; cursor: pointer; }
+  .efrow:hover { border-color: var(--dim); }
+  .efrow .en { font-weight: 600; font-size: 14px; }
+  .efrow .eg { color: var(--dim); font-size: 12.5px; flex: 1;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .efrow .em { color: var(--faint); font-size: 12px; flex: none; }
+  .efrow .erename { color: var(--faint); flex: none; padding: 0 4px;
+                    cursor: pointer; }
+  .efrow .erename:hover { color: var(--steward); }
+  .efrow .ebone { flex: none; padding: 0 4px; cursor: pointer; opacity: .55; }
+  .efrow .ebone:hover { opacity: 1; }
+  .frow2 { display: flex; align-items: center; gap: 10px; padding: 5px 2px;
+           font-size: 13.5px; border-bottom: 1px solid var(--line); }
+  .frow2:last-child { border-bottom: none; }
+  .frow2 .fn { flex: 1; cursor: pointer; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+  .frow2 .fn:hover { color: var(--steward); }
+  .frow2 .fm { color: var(--faint); font-size: 12px; flex: none; }
+  .crumb { color: var(--dim); font-size: 12.5px; margin: 6px 0 10px;
+           cursor: pointer; }
+  .ftools { display: flex; gap: 8px; align-items: center; margin: 4px 0 10px; }
+  .ftools input[type=text] { flex: 1; background: var(--bg); color: var(--text);
+           border: 1px solid var(--line); border-radius: 7px;
+           padding: 6px 11px; font-size: 13px; }
+  .ftools button.on { border-color: var(--steward); color: var(--steward); }
+  .dropzone { border: 1px dashed var(--line); border-radius: 9px;
+              padding: 10px 14px; color: var(--faint); font-size: 12.5px;
+              margin-top: 12px; }
+  .dropzone.hot { border-color: var(--steward); color: var(--steward); }
+  /* full-screen effort overlay */
+  .fswrap { position: fixed; inset: 0; z-index: 40; display: none;
+            flex-direction: column; background: var(--bg); }
+  .fswrap.show { display: flex; }
+  .fswrap iframe { flex: 1; border: none; }
+  /* pull-up workbench drawer */
+  /* the workbench lives in its TILE - no standing bottom bar; closing the
+     drawer collapses it back to the tile entirely */
+  .drawer { position: fixed; left: 22px; right: 22px; bottom: 0; z-index: 30;
+            background: var(--panel); border: 1px solid var(--line);
+            border-bottom: none; border-radius: 14px 14px 0 0;
+            box-shadow: 0 -6px 24px rgba(0,0,0,.35);
+            display: none; flex-direction: column; height: 42px;
+            transition: height .18s, left .18s, right .18s; }
+  .drawer.up { display: flex; height: 54vh; }
+  .drawer .dhandle { flex: none; display: flex; align-items: center; gap: 10px;
+                     padding: 7px 20px; cursor: pointer; user-select: none;
+                     font-size: 12.5px; letter-spacing: 1.2px;
+                     text-transform: uppercase; color: var(--dim); }
+  .drawer .dhandle img { width: 24px; height: 24px; border-radius: 6px;
+                         object-fit: cover; }
+  .drawer .dhandle .dusage { margin-left: auto; text-transform: none;
+                             letter-spacing: 0; font-size: 12px;
+                             color: var(--faint); padding-right: 52px; }
+  .drawer .tidy-corner { position: absolute; top: 6px; right: 10px; z-index: 4;
+                         background: none; border: none; padding: 0; cursor: pointer;
+                         line-height: 0; border-radius: 10px; }
+  .drawer .tidy-corner img { width: 36px; height: 36px; border-radius: 10px;
+                             object-fit: cover; display: block; }
+  .drawer .tidy-corner:hover img { outline: 2px solid var(--steward); outline-offset: 1px; }
+  .tabrow { flex: none; display: none; align-items: center; gap: 6px;
+            padding: 6px 20px; border-top: 1px solid var(--line);
+            flex-wrap: nowrap; overflow-x: auto; }
+  .tabrow .tsearch { margin-left: auto; flex: none; width: 220px;
+            background: var(--bg); color: var(--text);
+            border: 1px solid var(--line); border-radius: 7px;
+            padding: 4px 10px; font-size: 12px; }
+  .drawer.fsd { height: 100vh; left: 0; right: 0; border-radius: 0; border: none; }
+  .sumcard { position: absolute; inset: 0; display: flex; align-items: center;
+             justify-content: center; background: var(--bg); z-index: 3; }
+  .sumcard .inner { width: min(560px, 90%); background: var(--panel);
+             border: 1px solid var(--line); border-radius: 12px;
+             padding: 20px 24px; }
+  .sumcard .sname { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .sumcard .smeta { color: var(--faint); font-size: 12px; margin-bottom: 10px; }
+  .sumcard .stext { color: var(--dim); font-size: 13px; white-space: pre-wrap;
+             max-height: 30vh; overflow-y: auto; margin-bottom: 14px; }
+  .gsum { color: var(--dim); font-size: 13px; max-height: 58vh;
+          overflow-y: auto; margin: 8px 0; display: none; line-height: 1.55; }
+  .gsum .mdh { font-weight: 600; margin: 10px 0 4px; color: var(--text); }
+  .gsum blockquote { border-left: 2px solid var(--steward); padding: 2px 10px;
+          margin: 8px 0; }
+  .gsum ul, .gsum ol { margin: 6px 0 6px 18px; }
+  .gsum table { border-collapse: collapse; font-size: 11.5px; }
+  .gsum th, .gsum td { border: 1px solid var(--line); padding: 3px 7px; }
+  .box.gopen .gsum { display: block; }
+  .gbtns { display: flex; gap: 8px; margin-top: 8px; }
+  button.mini { padding: 2px 10px; font-size: 11.5px; }
+  .subshelf { border: 1px solid var(--line); border-radius: 9px;
+              margin-top: 12px; overflow: hidden; }
+  .subshelf .sshead { display: flex; align-items: center; gap: 8px;
+              padding: 9px 14px; cursor: pointer; user-select: none;
+              font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+              color: var(--dim); background: var(--panel2); }
+  .subshelf .sshead .ssc { margin-left: auto; text-transform: none;
+              letter-spacing: 0; color: var(--faint); }
+  .subshelf .ssbody { display: none; padding: 10px 14px; }
+  .subshelf.open .ssbody { display: block; }
+  .subshelf .search { width: 100%; background: var(--bg); color: var(--text);
+              border: 1px solid var(--line); border-radius: 7px;
+              padding: 5px 10px; font-size: 12.5px; margin-bottom: 8px; }
+  .grassrow2 { display: flex; gap: 10px; padding: 6px 2px; font-size: 13px;
+               border-bottom: 1px solid var(--line); align-items: baseline; }
+  .grassrow2:last-child { border-bottom: none; }
+  .grassrow2 .gw { color: var(--faint); font-size: 11.5px; flex: none; width: 78px; }
+  .grassrow2 .gt { flex: 1; }
+  .grassrow2 .gf { color: var(--faint); font-size: 11.5px; flex: none; }
+  .brow.expand { flex-direction: column; align-items: stretch; cursor: pointer; }
+  .brow .bsum { display: none; color: var(--faint); font-size: 12px;
+                white-space: pre-wrap; margin-top: 6px; }
+  .brow.open .bsum { display: block; }
+  .drawer.up .tabrow { display: flex; }
+  .ttab { display: inline-flex; align-items: center; gap: 7px;
+          padding: 4px 12px; border: 1px solid var(--line); border-radius: 8px;
+          font-size: 12.5px; color: var(--dim); cursor: pointer; }
+  .ttab.on { color: var(--text); border-color: var(--steward); }
+  .ttab .tx { opacity: .5; padding-left: 2px; }
+  .ttab .tx:hover { opacity: 1; }
+  .drawer .dbody { flex: 1; min-height: 0; display: none; }
+  .drawer.up .dbody { display: flex; }
+  .drawer .dskills { width: 210px; border-right: 1px solid var(--line);
+                     overflow-y: auto; padding: 12px 16px; flex: none; }
+  .drawer .dskills h2 { font-size: 10.5px; text-transform: uppercase;
+                        letter-spacing: 1.2px; color: var(--faint);
+                        margin: 10px 0 6px; }
+  .drawer .dskills button { display: block; width: 100%; text-align: left;
+                            margin-bottom: 6px; font-size: 12.5px; }
+  .dmain { flex: 1; min-width: 0; position: relative; }
+  .dmain iframe { position: absolute; inset: 0; width: 100%; height: 100%;
+                  border: none; display: none; }
+  .dmain iframe.on { display: block; }
+  .dmain .dempty { position: absolute; inset: 0; display: flex;
+                   align-items: center; justify-content: center;
+                   color: var(--faint); font-size: 13px; }
+  .dside { width: 250px; flex: none; border-left: 1px solid var(--line);
+           overflow-y: auto; padding: 12px 16px; transition: width .18s; }
+  .dside.wide { width: min(600px, 46%); }
+  .dside .box { border: 1px solid var(--line); border-radius: 9px;
+                padding: 10px 12px; margin-bottom: 12px; }
+  .grun { border: 1px solid var(--line); border-radius: 8px;
+          padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+  .grun.open { border-color: var(--steward); }
+  .grun .verdict { font-size: 13px; font-weight: 600; display: block; }
+  .grun .gmeta { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+  .grun .gbody { display: none; margin-top: 8px; }
+  .grun.open .gbody { display: block; }
+  .grun .gcaret { display: inline-block; margin-right: 6px; color: var(--faint); }
+  .grun.open .gcaret { transform: rotate(90deg); }
+  .conflict { position: fixed; inset: 0; z-index: 80; display: none;
+              align-items: center; justify-content: center;
+              background: rgba(0,0,0,.45); }
+  .conflict.on { display: flex; }
+  .conflict .dlg { width: min(420px, 92%); background: var(--panel);
+                   border: 1px solid var(--line); border-radius: 12px;
+                   padding: 18px 20px; }
+  .conflict .dlg h4 { font-size: 15px; margin-bottom: 8px; }
+  .conflict .dlg p { color: var(--dim); font-size: 13px; margin-bottom: 8px; }
+  .conflict .dlg .same { color: var(--steward); font-size: 12.5px; margin-bottom: 10px; }
+  .conflict .acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .dside .box h3 { display: flex; align-items: center; gap: 8px;
+                   font-size: 11px; text-transform: uppercase;
+                   letter-spacing: 1.2px; color: var(--faint);
+                   margin-bottom: 7px; }
+  .dside .box h3 img { width: 20px; height: 20px; border-radius: 5px;
+                       object-fit: cover; }
+  .dside .brow { font-size: 12.5px; color: var(--dim); padding: 3px 0;
+                 display: flex; gap: 6px; align-items: center; }
+  .dside .brow .bl { flex: 1; overflow: hidden; text-overflow: ellipsis;
+                     white-space: nowrap; }
+  .dside .brow button { padding: 0 7px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div class="cp">
+  <div class="cphead">
+    <span class="dot" data-att></span>
+    <h1 data-project>…</h1>
+    <span class="chips" data-chips></span>
+    <span class="chips" style="margin-left:auto">
+      <a href="#" data-theme-toggle>switch the look</a>
+      · <span data-github></span>
+      · <a href="/">⌂ Dashboard</a></span>
+    <span class="cptotal" style="flex-basis:100%; text-align:right" data-total></span>
+  </div>
+  <div class="cpgoal" data-goal></div>
+  <div class="steward-next-top" data-steward-next-top style="margin:0 0 12px;border-radius:10px"></div>
+  <details data-other-usage style="margin:0 0 16px;font-size:13px;color:var(--dim)">
+    <summary>Other recorded runs</summary>
+    <p>Separate lane and terminal records may overlap cockpit history. These amounts are shown separately.</p>
+    <div data-other-usage-rows></div>
+  </details>
+
+  <button type="button" class="wptile" data-wptile
+          style="width:100%;margin-bottom:16px;text-align:left"
+          title="Open the work-product map">
+    <span class="wplab">Work product</span>
+    <span class="wpsum" data-wpsum>open the map of each key deliverable</span>
+  </button>
+
+  <div class="ctile" data-tile-seal>
+    <div class="thead"><img data-sealicon alt="" style="display:none">
+      <span class="tname" data-sealtitle>The Seal</span>
+      <span class="tsum" data-sealsum>…</span></div>
+    <div class="tbody">
+      <div data-efforts></div>
+      <div style="margin-top:10px"><button data-newe>＋ New effort</button></div>
+      <div class="subshelf" data-shelf-ebone>
+        <div class="sshead" data-ebonehead>🪦 Effort boneyard
+          <span class="ssc" data-ebonecount></span></div>
+        <div class="ssbody">
+          <input class="search" data-ebonesearch placeholder="search boneyarded efforts…">
+          <div data-ebonelist></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctile" data-tile-wb>
+    <div class="thead"><img src="/brand/workbench-icon.jpg" alt="">
+      <span class="tname">Workbench</span>
+      <span class="tsum" data-wbsum>terminals · Gandalf · terminal boneyard</span></div>
+    <div class="tbody"><div class="chips">Opens the bench below — terminals keep
+      themselves saved and restart where they left off.</div></div>
+  </div>
+
+  <!-- (2026-09-02, John) the synthetic Calendar/Email surfaces from the v1.2.8 Codex waves
+       were REMOVED from the per-project cockpit: "I don't think that we want email and
+       calendar in the AI Cockpit." Connectors, if ever, belong to the main dashboard. -->
+
+  <div class="ctile" data-tile-deliv>
+    <div class="thead"><span class="tname">◇ Deliverables</span>
+      <span class="tsum" data-delivsum>what the sessions produced</span></div>
+    <div class="tbody"><div data-delivlist></div></div>
+  </div>
+
+  <div class="ctile" data-tile-files>
+    <div class="thead"><span class="tname">🗀 Files</span>
+      <span class="tsum">browse · sort · search · drop files in</span></div>
+    <div class="tbody">
+      <div class="ftools">
+        <input type="text" data-fsearch placeholder="search the whole project by name…">
+        <button data-sort-name class="on">name</button>
+        <button data-sort-type>type</button>
+        <button data-sort-date>date</button>
+      </div>
+      <div class="dropzone cockpit-dropbar" data-dropzone data-cockpit-drop>📥 drop files here to load them into <code data-drop-dir>this folder</code>
+        — or <label class="cockpit-droppick" style="text-decoration:underline;cursor:pointer">pick one<input
+        type="file" data-upfile data-cockpit-dropfile multiple style="display:none"></label>
+        <span class="cockpit-dropmsg" data-upmsg data-cockpit-dropmsg></span></div>
+      <div class="crumb" data-crumb></div>
+      <div data-filelist></div>
+    </div>
+  </div>
+</div>
+
+<div class="fswrap" data-fs><iframe data-fsframe></iframe></div>
+<div class="conflict" data-conflict>
+  <div class="dlg">
+    <h4 data-conflict-title>This file already exists</h4>
+    <p data-conflict-msg></p>
+    <div class="same" data-conflict-same></div>
+    <div class="acts">
+      <button data-conflict-replace>Replace</button>
+      <button data-conflict-skip>Skip</button>
+      <button data-conflict-keep>Keep both</button>
+    </div>
+  </div>
+</div>
+
+<div class="drawer" data-drawer>
+  <div class="dhandle" data-dhandle>
+    <img src="/brand/workbench-icon.jpg" alt="">▾ Workbench — click to collapse back to the tile
+    <span class="dusage" data-dusage></span>
+    <button type="button" class="tidy-corner" data-tidy
+            title="Run Tidy-Idy repo hygiene on this project">
+      <img src="/brand/tidy-idy-icon.jpg" alt="Tidy-Idy"></button></div>
+  <div class="tabrow" data-tabrow></div>
+  <div class="dbody">
+    <div class="dskills">
+      <h2>Trio</h2><div data-sk-trio></div>
+      <h2>Foundry</h2><div data-sk-rest></div>
+    </div>
+    <div class="dmain" data-dmain>
+      <div class="dempty">open a terminal — ＋ Terminal above</div>
+    </div>
+    <div class="dside">
+      <div class="box" data-gbox>
+        <h3><img src="/brand/gandalf-icon-v5.jpg" alt="">Gandalf
+          <span style="margin-left:auto" data-gwhen></span></h3>
+        <div data-gruns><div class="brow">(no read yet)</div></div>
+        <div class="gbtns">
+          <button class="mini" data-grerun>re-run</button>
+        </div>
+      </div>
+      <div class="box"><h3>🪦 Terminal boneyard</h3>
+        <input class="search" data-bonesearch placeholder="search…"
+               style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12px;margin-bottom:6px">
+        <div data-bonelist><div class="brow">(empty)</div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="wpmap" data-wpmap hidden>
+  <div class="wpstage">
+    <header class="wphead">
+      <div>
+        <div class="wpeyebrow">Work product</div>
+        <h3 data-wptitle>No plate yet</h3>
+        <p class="wpgoal" data-wpgoal></p>
+      </div>
+      <button type="button" data-wpclose title="close">Close</button>
+    </header>
+    <div class="wpatlas" data-wpatlas></div>
+    <div class="wpflow" data-wpbody></div>
+    <p class="wphint" data-wphint>Parts of the thing you will open. Hollow = a reserved hole, not a chore.</p>
+  </div>
+</div>
+
+<script src="/static/skill-icons.js"></script>
+<script src="/static/md.js"></script>
+<script src="/static/plate.js"></script>
+<script src="/static/tidy-idy-run.js"></script>
+<script>
+"use strict";
+try { document.body.dataset.theme = localStorage.getItem("protoTheme") || "slate"; } catch (e) {}
+document.querySelector("[data-theme-toggle]").onclick = (ev) => {
+  ev.preventDefault();
+  const next = document.body.dataset.theme === "command" ? "slate" : "command";
+  try { localStorage.setItem("protoTheme", next); } catch (e) {}
+  document.body.dataset.theme = next;
+};
+const el = (t, c, x) => { const n = document.createElement(t);
+  if (c) n.className = c; if (x !== undefined) n.textContent = x; return n; };
+const LIGHTWORD = { green: "running", orange: "quiet", red: "needs a look" };
+const usageLine = (u) => {
+  const knownUsd = value => typeof value === "number" && Number.isFinite(value) && value >= 0;
+  let costText = "cost unavailable";
+  const incomplete = u.cost_complete === false || (typeof u.unpriced_turns === "number" && u.unpriced_turns > 0);
+  const unpriced = Number.isInteger(u.unpriced_turns) && u.unpriced_turns > 0 ? u.unpriced_turns : 0;
+  const family = u.billing_family || "";
+  const subLabel = family === "mixed" ? "ChatGPT/Grok subscription"
+    : family === "grok" ? "Grok subscription"
+    : family === "chatgpt" || u.billing_mode === "subscription" ? "ChatGPT subscription" : "";
+  if (typeof u.cost_text === "string" && u.cost_text) {
+    costText = u.cost_text;
+  } else if (u.billing_mode === "subscription" && subLabel && unpriced > 0) {
+    const reported = knownUsd(u.reported_spend) ? u.reported_spend : knownUsd(u.spend) ? u.spend : null;
+    const turns = " (" + unpriced.toLocaleString() + " turn" + (unpriced === 1 ? "" : "s") + ")";
+    costText = (reported !== null && reported > 0)
+      ? "$" + reported.toFixed(2) + " previously reported · " + subLabel + turns
+      : subLabel + turns;
+  } else if (u.cost_status === "unavailable") {
+    costText = "cost unavailable";
+  } else if (incomplete) {
+    const reported = knownUsd(u.reported_spend) ? u.reported_spend : knownUsd(u.spend) ? u.spend : null;
+    // Incomplete zero-only rollups cannot distinguish a reported zero from
+    // wholly unpriced usage, so they must not imply a reported charge.
+    if (reported !== null && reported > 0) costText = "$" + reported.toFixed(2) + " reported + unpriced usage";
+  } else if ((u.cost_complete === true || u.cost_complete === undefined) && knownUsd(u.spend)) {
+    costText = "$" + u.spend.toFixed(2) + " reported";
+  }
+  const tokenStatus = u.token_status;
+  const tokenKnown = typeof u.tokens === "number" && Number.isFinite(u.tokens) && u.tokens >= 0 &&
+    tokenStatus !== "unavailable" && (u.tokens > 0 || tokenStatus === "reported" ||
+      (tokenStatus === "partial" && u.checkpoint_coverage && u.checkpoint_coverage.reported_invocations > 0));
+  const tokenText = tokenKnown
+    ? Math.round(u.tokens).toLocaleString() + " recorded tokens" + (tokenStatus === "partial" ? " (partial)" : "")
+    : "tokens unavailable";
+  return costText + " · " + tokenText + " · " +
+    (u.secs >= 5400 ? ((u.secs / 3600).toFixed(1) + "h")
+                    : Math.round((u.secs || 0) / 60) + "m");
+};
+
+/* ---------- header + seal ---------- */
+async function refresh() {
+  try {
+    const j = await (await fetch("/api/efforts")).json();
+    const q = new URLSearchParams(location.search);
+    const singleRoot = Array.isArray(j.efforts) && j.efforts.length === 1 && !j.efforts[0].rel && !q.has("dir") && q.get("chooser") !== "1";
+    if (j.project === "Campaign" || singleRoot) {
+      const target = new URL("/steward/v1", location.origin);
+      target.searchParams.set("pid", window.STEWARD_PID || "");
+      target.searchParams.set("dir", q.get("dir") || "");
+      if (q.get("step")) target.searchParams.set("step", q.get("step"));
+      location.replace(target.href);
+      return;
+    }
+    document.title = j.project + " — AI Cockpit";
+    document.querySelector("[data-project]").textContent = j.project;
+    const greens = j.efforts.filter(e => e.light === "green").length;
+    const flags = j.efforts.filter(e => e.attention === "needs_you").length;
+    const chips = document.querySelector("[data-chips]");
+    chips.textContent = "";
+    chips.appendChild(document.createTextNode(
+      j.efforts.length + " efforts · " + greens + " running · " + flags +
+      " waiting on you  "));
+    const b1 = el("span", "badge blue", "seat · " + j.seats.main);
+    const b2 = el("span", "badge amber", "review · " + j.seats.review);
+    b2.style.marginLeft = "6px";
+    chips.appendChild(b1); chips.appendChild(b2);
+    document.querySelector("[data-total]").textContent =
+      "cockpit sessions: " + usageLine(j.usage.total);
+    const other = j.other_recorded_usage;
+    const otherRows = document.querySelector('[data-other-usage-rows]');
+    otherRows.replaceChildren();
+    if (!other || other.status === 'unavailable') {
+      otherRows.appendChild(el('p', '', 'Other run records are unavailable.'));
+    } else {
+      const records = Array.isArray(other.records) ? other.records : [];
+      if (other.status === 'partial') otherRows.appendChild(el('p', '', 'Some source records are unavailable or conflict; this list is incomplete.'));
+      document.querySelector('[data-other-usage] summary').textContent =
+        'Other recorded runs (' + records.length + ')';
+      if (!records.length) otherRows.appendChild(el('p', '', 'No separate run records found for this project registration.'));
+      for (const record of records) {
+        const tokens = Number.isInteger(record.tokens) && record.tokens >= 0
+          ? record.tokens.toLocaleString() + ' recorded tokens' : 'tokens unavailable';
+        const dollars = typeof record.saved_usd === 'number' && Number.isFinite(record.saved_usd)
+          ? '$' + record.saved_usd.toFixed(2) + ' saved' : 'dollars unavailable';
+        const coverage = record.cost_status === 'recorded' ? 'saved source amount' :
+          record.cost_status === 'partial' ? 'partial coverage' : 'coverage unverified';
+        const date = typeof record.created_at === 'number' && Number.isFinite(record.created_at)
+          ? ' (' + new Date(record.created_at * 1000).toLocaleDateString() + ')' : '';
+        const row = el('p', '', (record.title || record.lane || 'Recorded run') + date + ' · ' + tokens +
+          ' · ' + dollars + ' · ' + coverage + (record.conflict ? ' · conflicting source records' : ''));
+        otherRows.appendChild(row);
+      }
+    }
+    const icon = document.querySelector("[data-sealicon]");
+    if (j.seal_icon) { icon.src = "/brand/" + j.seal_icon; icon.style.display = ""; }
+    document.querySelector("[data-sealtitle]").textContent =
+      "The " + j.seal_name + " — " + j.steward;
+    document.querySelector("[data-sealsum]").textContent =
+      j.efforts.length + " efforts · " +
+      (flags ? "⚑ " + flags + " need you" : "all quiet") +
+      "\n" + usageLine(j.usage.steward);
+    document.querySelector("[data-dusage]").textContent =
+      usageLine(j.usage.terms);
+    const wbsum = document.querySelector("[data-wbsum]");
+    wbsum.textContent = "terminals · Gandalf · boneyard\n" + usageLine(j.usage.terms);
+    const root = j.efforts.find(e => e.rel === "") || j.efforts[0];
+    if (root) document.querySelector("[data-goal]").textContent = root.goal_brief;
+    const dropDir = document.querySelector("[data-drop-dir]");
+    if (dropDir) dropDir.textContent = (j.project || "project") + (SUB ? "/" + SUB : " (root)");
+    const topNext = document.querySelector("[data-steward-next-top]");
+    if (topNext) {
+      const lead = j.efforts.find(e => e.attention === "needs_you" || e.light === "orange")
+        || j.efforts.find(e => e.light === "green") || root || j.efforts[0];
+      topNext.textContent = "";
+      if (lead) {
+        const bar = el("div", "snt-bar");
+        const main = el("div", "snt-main");
+        const pName = ((j && j.steward && !/^steward$/i.test(String(j.steward).trim())) ? j.steward : (window.STEWARD_NAME || "Aladdin"));
+        main.appendChild(el("span", "snt-eyebrow", "⚡ " + pName.toUpperCase() + " — NEXT STEP · " + (lead.name || "Root")));
+        main.appendChild(el("span", "snt-text", lead.next_step || lead.goal_brief || ("Open " + lead.name + " to drive the next step (" + (lead.steps_done || 0) + "/" + (lead.steps_total || 0) + " steps).")));
+        bar.appendChild(main);
+        const acts = el("div", "snt-actions");
+        const openBtn = el("button", "snt-btn primary", "▶ Open & Run Next Step");
+        openBtn.type = "button";
+        openBtn.onclick = () => openEffort(lead.rel || "");
+        acts.appendChild(openBtn);
+        bar.appendChild(acts);
+        topNext.appendChild(bar);
+      }
+    }
+    window._plates = j.plates || [];
+    const psum = document.querySelector("[data-wpsum]");
+    if (psum) psum.textContent = window._plates.length
+      ? (window._plates.length + " map" + (window._plates.length === 1 ? "" : "s")
+         + " — " + window._plates.map(function (p) { return p.title; }).join(" · "))
+      : "no plate authored yet";
+    const wrap = document.querySelector("[data-efforts]");
+    wrap.textContent = "";
+    j.efforts.forEach(e => {
+      const r = el("div", "efrow");
+      r.appendChild(el("span", "light " + e.light));
+      r.appendChild(el("span", "en", e.name));
+      r.appendChild(el("span", "eg", e.goal_brief || "(no goal yet)"));
+      r.appendChild(el("span", "em", e.steps_done + "/" + e.steps_total));
+      const bcls = (e.attention === "needs_you" || e.light === "orange") ? "amber"
+        : e.light === "green" ? "green"
+        : e.light === "red" ? "red" : "grey";
+      const btxt = (e.attention === "needs_you" || e.light === "orange") ? "needs you"
+        : e.light === "green" ? "running"
+        : e.light === "red" ? "stuck" : "quiet";
+      r.appendChild(el("span", "badge " + bcls, btxt));
+      // rename: effort names are the user's to set (2026-08-25 — a pasted
+      // token became a live effort name; the server also guards the shape)
+      if (e.rel) {
+        const rn = el("span", "erename", "✎");
+        rn.title = "rename this effort — a few plain words";
+        rn.onclick = async (ev) => {
+          ev.stopPropagation();
+          // the steward's suggestion (derived from the goal on record)
+          // prefills the box; edit or replace freely
+          const sug = (e.suggested_name && e.suggested_name !== e.name)
+            ? e.suggested_name : "";
+          const name = prompt("New name for this effort (a few plain words):"
+            + (sug ? "\nSteward's suggestion, from the goal — edit freely:" : ""),
+            sug || e.name);
+          if (!name || name === e.name) return;
+          const rr = await fetch("/api/rename_effort", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: e.rel, name }) });
+          const jj = await rr.json();
+          if (!jj.ok) { alert(jj.error || "could not rename it"); return; }
+          if (fsframe.dataset.rel === e.rel) { fsframe.removeAttribute("src");
+            delete fsframe.dataset.rel; }
+          refresh();
+        };
+        r.appendChild(rn);
+        // (2026-09-03, John) retire a finished effort from its tile: the
+        // gravestone moves it to the effort boneyard below, where "resurrect"
+        // brings it back — nothing is deleted.
+        const bn = el("span", "ebone", "🪦");
+        bn.title = "retire this effort to the boneyard (resurrect any time)";
+        bn.onclick = async (ev) => {
+          ev.stopPropagation();
+          if (!confirm("Retire \"" + e.name + "\" to the boneyard? It is archived, not deleted — resurrect it from the boneyard below.")) return;
+          const rr = await fetch("/api/boneyard_move", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: e.rel }) });
+          const jj = await rr.json();
+          if (!jj.ok) { alert(jj.error || "could not retire it"); return; }
+          if (fsframe.dataset.rel === e.rel) { fsframe.removeAttribute("src");
+            delete fsframe.dataset.rel; }
+          refresh(); loadShelves();
+        };
+        r.appendChild(bn);
+      }
+      r.onclick = () => openEffort(e.rel);
+      wrap.appendChild(r);
+    });
+  } catch (e) {}
+  clearTimeout(window._rfT); window._rfT = setTimeout(refresh, 6000);
+}
+document.querySelectorAll(".ctile > .thead").forEach(h =>
+  h.onclick = () => {
+    const tile = h.parentNode;
+    if (tile.dataset.tileWb !== undefined) { toggleDrawer(); return; }
+    tile.classList.toggle("open");
+    if (tile.dataset.tileFiles !== undefined && tile.classList.contains("open")) loadFiles();
+    if (tile.dataset.tileDeliv !== undefined && tile.classList.contains("open")) loadDeliv();
+  });
+document.querySelector("[data-tile-seal]").classList.add("open");
+
+(function wirePlate() {
+  const ov = document.querySelector("[data-wpmap]");
+  const tile = document.querySelector("[data-wptile]");
+  const close = document.querySelector("[data-wpclose]");
+  let cur = "";
+  function show(id) {
+    const plates = window._plates || [];
+    const plate = plates.find(p => p.deliverableId === id) || plates[0];
+    cur = plate ? (plate.deliverableId || "") : "";
+    const title = document.querySelector("[data-wptitle]");
+    const sub = document.querySelector("[data-wpgoal]");
+    if (title) title.textContent = (plate && plate.title) || "No plate yet";
+    if (sub) sub.textContent = (plate && plate.subtitle) || "";
+    if (window.DeliverablePlate) {
+      DeliverablePlate.paintAtlas(document.querySelector("[data-wpatlas]"),
+        plates, cur, show);
+      DeliverablePlate.paintPlate(document.querySelector("[data-wpbody]"), plate);
+    }
+    if (ov) ov.hidden = false;
+  }
+  if (tile) tile.onclick = () => show(cur);
+  if (close) close.onclick = () => { if (ov) ov.hidden = true; };
+  if (ov) ov.addEventListener("click", (ev) => {
+    if (ev.target === ov) ov.hidden = true;
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && ov && !ov.hidden) ov.hidden = true;
+  });
+})();
+
+document.querySelector("[data-newe]").onclick = async (ev) => {
+  ev.stopPropagation();
+  const name = prompt("Short name for the new effort:");
+  if (!name) return;
+  const r = await fetch("/api/new_effort", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }) });
+  const jj = await r.json();
+  if (jj.ok) openEffort(jj.rel); else alert(jj.error || "could not create it");
+};
+
+/* ---------- full-screen effort ---------- */
+const fs = document.querySelector("[data-fs]");
+const fsframe = document.querySelector("[data-fsframe]");
+function openEffort(rel, step) {
+  fs.classList.add("show");
+  const _pid = window.STEWARD_PID ? "&pid=" + encodeURIComponent(window.STEWARD_PID) : "";
+  const _tok = window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "";
+  // W5 (2026-09-28): Resume names a step — the plan cockpit lands on it (its own ?step= handling)
+  const _step = step ? "&step=" + encodeURIComponent(step) : "";
+  const src = "/steward/v1?embed=1" + _pid + _tok + "&dir=" + encodeURIComponent(rel) + _step;
+  if (fsframe.dataset.rel !== rel || _step) { fsframe.src = src; fsframe.dataset.rel = rel; }
+}
+// W5 (2026-09-28): this page opened with ?step= (a Resume from the home) opens that effort's plan cockpit at
+// once with the step forwarded; once per load. An explicit effort directory is its cockpit address.
+(function () {
+  const q = new URLSearchParams(location.search);
+  if (!q.has("step") && q.get("open") !== "effort") return;
+  const open = () => { if (window._resumedOnce) return; window._resumedOnce = true; openEffort(q.get("dir") || "", q.get("step") || ""); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", open); else open();
+})();
+window.addEventListener("message", (ev) => {
+  if (ev.data && ev.data.proto === "min") fs.classList.remove("show");
+});
+
+/* ---------- workbench: terminals with tabs, saved + boneyard ---------- */
+const drawer = document.querySelector("[data-drawer]");
+const dmain = document.querySelector("[data-dmain]");
+let ACTIVE = null;
+function toggleDrawer() {
+  drawer.classList.toggle("up");
+  if (drawer.classList.contains("up")) loadTerms();
+}
+function openDrawer() { if (!drawer.classList.contains("up")) toggleDrawer(); }
+document.querySelector("[data-dhandle]").onclick = () => toggleDrawer();
+document.querySelector("[data-tidy]").onclick = (ev) => {
+  ev.stopPropagation();
+  if (typeof tidyIdyRun === "function") tidyIdyRun();
+};
+function showTerm(tid) {
+  ACTIVE = tid;
+  document.querySelectorAll(".dmain iframe").forEach(f =>
+    f.classList.toggle("on", f.dataset.tid === tid));
+  let f = document.querySelector('.dmain iframe[data-tid="' + tid + '"]');
+  if (!f) {
+    f = document.createElement("iframe");
+    f.dataset.tid = tid;
+    f.src = "/steward/v3?general=1" +
+      (window.STEWARD_PID ? "&pid=" + encodeURIComponent(window.STEWARD_PID) : "") +
+      (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "") +
+      "&dir=&term=" + tid;
+    f.classList.add("on");
+    dmain.appendChild(f);
+  }
+  document.querySelectorAll(".ttab").forEach(t =>
+    t.classList.toggle("on", t.dataset.tid === tid));
+}
+let TSEARCH = "";
+let TERMINAL_OPENING = false, CREATED_TERMINAL_TID = "";
+async function loadTerms() {
+  const j = await (await fetch("/api/terms?dir=")).json();
+  const row = document.querySelector("[data-tabrow]");
+  let terminalError = document.querySelector("[data-terminal-error]");
+  if (!terminalError) {
+    terminalError = el("div", "terminal-error");
+    terminalError.dataset.terminalError = "";
+    terminalError.setAttribute("role", "alert");
+    terminalError.hidden = true;
+    row.parentNode.insertBefore(terminalError, row.nextSibling);
+  }
+  row.textContent = "";
+  const plus = el("button", "", "＋ Terminal");
+  plus.dataset.terminalCreate = "";
+  plus.disabled = TERMINAL_OPENING;
+  if (TERMINAL_OPENING) plus.textContent = "Opening…";
+  plus.onclick = async () => {
+    if (TERMINAL_OPENING) return;
+    TERMINAL_OPENING = true;
+    plus.disabled = true;
+    plus.textContent = "Opening…";
+    terminalError.textContent = "";
+    terminalError.hidden = true;
+    try {
+      if (!CREATED_TERMINAL_TID) {
+        const r = await fetch("/api/term_new", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dir: "" }) });
+        let jj;
+        try { jj = await r.json(); }
+        catch (_) { throw new Error(r.ok ? "The server returned an unreadable response." : "Request failed (" + r.status + ")."); }
+        if (!r.ok || !jj || jj.ok !== true) {
+          const detail = typeof jj?.error === "string" ? jj.error : typeof jj?.message === "string" ? jj.message : "Request failed (" + r.status + ").";
+          throw new Error(detail);
+        }
+        if (typeof jj.tid !== "string" || !jj.tid) throw new Error("The server did not return a terminal ID.");
+        CREATED_TERMINAL_TID = jj.tid;
+      }
+      await loadTerms();
+      await showTerm(CREATED_TERMINAL_TID);
+      CREATED_TERMINAL_TID = "";
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "The request could not finish.";
+      terminalError.textContent = (CREATED_TERMINAL_TID ? "The terminal was created, but its view could not open. " : "Could not open terminal. ") + detail + " Please try again.";
+      terminalError.hidden = false;
+    } finally {
+      TERMINAL_OPENING = false;
+      plus.disabled = false;
+      plus.textContent = "＋ Terminal";
+      const currentPlus = document.querySelector("[data-terminal-create]");
+      if (currentPlus) { currentPlus.disabled = false; currentPlus.textContent = "＋ Terminal"; }
+    }
+  };
+  row.appendChild(plus);
+  const live = (j.terms || []).filter(t => !t.archived)
+    .filter(t => !TSEARCH || (t.label + " " + (t.last_text || "") + " " + t.cli)
+      .toLowerCase().includes(TSEARCH));
+  live.forEach(t => {
+    const tab = el("span", "ttab" + (t.tid === ACTIVE ? " on" : ""));
+    tab.dataset.tid = t.tid;
+    tab.appendChild(el("span", "light " + (t.alive ? "green" : "orange")));
+    tab.appendChild(el("span", "", t.label + " · " + t.cli +
+      (t.alive ? "" : t.saved ? " · saved" : "")));
+    const x = el("span", "tx", "🪦");
+    x.title = "archive to the terminal boneyard (saved, restorable)";
+    x.onclick = async (ev) => {
+      ev.stopPropagation();
+      await fetch("/api/term_archive", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", tid: t.tid }) });
+      const f = document.querySelector('.dmain iframe[data-tid="' + t.tid + '"]');
+      if (f) f.remove();
+      loadTerms();
+    };
+    tab.appendChild(x);
+    // a dormant saved session opens with a summary + "restart?" first
+    tab.onclick = () => {
+      if (!t.alive && t.saved && t.tid !== ACTIVE) showSummary(t);
+      else showTerm(t.tid);
+    };
+    row.appendChild(tab);
+  });
+  const search = el("input", "tsearch");
+  search.placeholder = "search sessions…";
+  search.value = TSEARCH;
+  search.oninput = () => { TSEARCH = search.value.toLowerCase();
+    clearTimeout(window._tt); window._tt = setTimeout(loadTerms, 250); };
+  row.appendChild(search);
+  const fsb = el("button", "", "⛶");
+  fsb.title = "full-screen the workbench (click again to restore)";
+  fsb.onclick = () => drawer.classList.toggle("fsd");
+  row.appendChild(fsb);
+  // terminal boneyard: searchable, each row opens to a summary + restore
+  const bone = document.querySelector("[data-bonelist]");
+  bone.textContent = "";
+  const bq = (document.querySelector("[data-bonesearch]").value || "").toLowerCase();
+  const archived = (j.terms || []).filter(t => t.archived)
+    .filter(t => !bq || (t.label + " " + (t.last_text || "") + " " + t.cli)
+      .toLowerCase().includes(bq));
+  archived.forEach(t => {
+    const r = el("div", "brow expand");
+    const head = el("div", "bl", "🪦 " + t.label + " · " + t.cli +
+      (t.last_used ? " · " + t.last_used : ""));
+    r.appendChild(head);
+    const sum = el("div", "bsum",
+      (t.last_text ? "Last it was doing:\n" + t.last_text
+                   : "(no record of its last activity)") +
+      (t.usage ? "\n" + usageLine(t.usage) : ""));
+    const rb = el("button", "mini", "restore");
+    rb.style.marginTop = "6px";
+    rb.onclick = async (ev) => {
+      ev.stopPropagation();
+      await fetch("/api/term_restore", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", tid: t.tid }) });
+      loadTerms();
+    };
+    sum.appendChild(rb);
+    r.appendChild(sum);
+    r.onclick = () => r.classList.toggle("open");
+    bone.appendChild(r);
+  });
+  if (!archived.length) bone.appendChild(el("div", "brow",
+    bq ? "nothing matches" : "(empty)"));
+  if (!ACTIVE) {
+    const first = (j.terms || []).find(t => !t.archived);
+    if (first) showTerm(first.tid);
+  }
+}
+function showSummary(t) {
+  document.querySelectorAll(".sumcard").forEach(c => c.remove());
+  const card = el("div", "sumcard");
+  const inner = el("div", "inner");
+  inner.appendChild(el("div", "sname", t.label + " · " + t.cli));
+  inner.appendChild(el("div", "smeta", "created " + t.created +
+    (t.last_used ? " · last active " + t.last_used : "") +
+    (t.usage ? " · " + usageLine(t.usage) : "")));
+  inner.appendChild(el("div", "stext",
+    t.last_text ? "Last it was doing:\n\n" + t.last_text
+                : "(no record of its last activity)"));
+  const row = el("div", "gbtns");
+  row.style.display = "flex";
+  const rb = el("button", "", "Restart it");
+  rb.onclick = async () => {
+    card.remove();
+    await fetch("/api/engine", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dir: "", general: true, term: t.tid,
+                             action: "wake" }) });
+    showTerm(t.tid);
+  };
+  const ob = el("button", "", "Open without waking");
+  ob.onclick = () => { card.remove(); showTerm(t.tid); };
+  const cb = el("button", "", "Not now");
+  cb.onclick = () => card.remove();
+  row.appendChild(rb); row.appendChild(ob); row.appendChild(cb);
+  inner.appendChild(row);
+  card.appendChild(inner);
+  dmain.appendChild(card);
+}
+
+/* ---------- Gandalf: dashboard-style expandable summary ---------- */
+function gandalfFinding(summary) {
+  const lines = (summary || "").split("\n").map(l => l.trim());
+  for (const l of lines) {
+    if (!l || l.startsWith("#") || l.startsWith(">") || l.startsWith("|")) continue;
+    const clean = l.replace(/^[-*]\s*/, "").replace(/\*\*/g, "").replace(/`/g, "");
+    if (clean.length > 25) return clean.slice(0, 150);
+  }
+  return "read available — click to expand";
+}
+function renderGandalfRun(run) {
+  const row = el("div", "grun");
+  const top = el("div");
+  top.appendChild(el("span", "gcaret", "▸"));
+  top.appendChild(el("span", "verdict",
+    run.finding || gandalfFinding(run.summary)));
+  row.appendChild(top);
+  row.appendChild(el("div", "gmeta",
+    (run.when || "") + (run.points && run.points.length
+      ? " · " + run.points.length + " points" : "")));
+  const body = el("div", "gbody");
+  if ((run.points || []).length) {
+    const ul = el("ul");
+    run.points.forEach(pt => ul.appendChild(el("li", "", pt)));
+    body.appendChild(ul);
+  }
+  const sum = el("div", "gsum");
+  sum.style.display = "block";
+  if (typeof mdRender === "function") mdRender(sum, run.summary || "");
+  else sum.textContent = run.summary || "";
+  body.appendChild(sum);
+  if (run.report_rel) {
+    const a = el("button", "mini", "Full report");
+    a.onclick = (ev) => {
+      ev.stopPropagation();
+      window.open("/report?dir=&path=" + encodeURIComponent(run.report_rel), "_blank");
+    };
+    body.appendChild(a);
+  }
+  row.appendChild(body);
+  row.onclick = () => {
+    const open = row.classList.toggle("open");
+    document.querySelector(".dside").classList.toggle("wide", open);
+  };
+  return row;
+}
+async function loadGandalf() {
+  try {
+    const j = await (await fetch("/api/gandalf?dir=")).json();
+    const runs = j.runs || [];
+    document.querySelector("[data-gwhen]").textContent =
+      runs.length ? runs.length + " read" + (runs.length === 1 ? "" : "s") : "";
+    const host = document.querySelector("[data-gruns]");
+    host.textContent = "";
+    if (!runs.length) {
+      host.appendChild(el("div", "brow", "(no read yet)"));
+      return;
+    }
+    runs.forEach(r => host.appendChild(renderGandalfRun(r)));
+  } catch (e) {}
+}
+document.querySelector("[data-grerun]").onclick = () => {
+  if (!confirm("Commission a fresh Gandalf read of the whole project through the steward?")) return;
+  fetch("/api/say", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dir: "",
+      text: "Commission a Gandalf read of the whole project now (LITE depth). " +
+            "Write it under gandalf/ as usual, and have exec-summary.md OPEN " +
+            "with one line: '**Bottom line:** <one interesting, plain-English " +
+            "sentence on what is really going on in this project>' - a human " +
+            "reads that line on a tile. Tell me when it lands." }) });
+  alert("Asked the steward — watch its session (the Seal tile) for the run.");
+};
+loadGandalf();
+setInterval(loadGandalf, 30000);
+document.querySelector("[data-bonesearch]").addEventListener("input",
+  () => { clearTimeout(window._bt); window._bt = setTimeout(loadTerms, 250); });
+
+/* ---------- GitHub (same remote as the project window) ---------- */
+async function loadGithub() {
+  const host = document.querySelector("[data-github]");
+  if (!host) return;
+  host.textContent = "";
+  const pid = window.STEWARD_PID || "";
+  if (!pid) return;
+  try {
+    const j = await (await fetch("/api/rnd/remote_status?project_id=" +
+      encodeURIComponent(pid))).json();
+    if (j && j.linked && j.remote_url) {
+      const a = document.createElement("a");
+      a.href = j.remote_url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "GitHub";
+      host.appendChild(a);
+    } else {
+      const b = document.createElement("a");
+      b.href = "#";
+      b.textContent = "Link GitHub";
+      b.onclick = (ev) => { ev.preventDefault(); linkGithub(); };
+      host.appendChild(b);
+    }
+  } catch (e) {}
+}
+async function linkGithub() {
+  const pid = window.STEWARD_PID || "";
+  if (!pid) return;
+  const value = prompt(
+    "Link GitHub — paste an existing repo URL, or type C to create a new private repo:",
+    "");
+  if (value === null || !String(value).trim()) return;
+  const v = String(value).trim();
+  const payload = (v === "C" || v === "c")
+    ? { project_id: pid, mode: "create", value: "" }
+    : { project_id: pid, mode: "existing", value: v };
+  try {
+    const r = await fetch("/api/rnd/link_github", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!d || !d.ok) { alert((d && (d.error || d.reason)) || "could not link"); return; }
+    loadGithub();
+  } catch (e) { alert("could not link GitHub"); }
+}
+loadGithub();
+
+/* ---------- seal tile: effort boneyard ---------- */
+let EBONES = [];
+function renderEbones() {
+  const q = (document.querySelector("[data-ebonesearch]").value || "").toLowerCase();
+  const list = document.querySelector("[data-ebonelist]");
+  list.textContent = "";
+  const rows = EBONES.filter(b => !q ||
+    (b.name + " " + b.goal_brief).toLowerCase().includes(q));
+  rows.forEach(b => {
+    const r = el("div", "brow expand");
+    r.appendChild(el("div", "bl", "🪦 " + b.name + " · " + b.boneyarded +
+      " · " + b.steps_done + "/" + b.steps_total +
+      (b.in_place ? " · resting in place (a file in it was open)" : "")));
+    const sum = el("div", "bsum", b.goal_brief || "(no goal recorded)");
+    const rb = el("button", "mini", "resurrect");
+    rb.style.marginTop = "6px";
+    rb.onclick = async (ev) => {
+      ev.stopPropagation();
+      const rr = await fetch("/api/boneyard_restore", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: b.name }) });
+      const jj = await rr.json();
+      if (!jj.ok) alert(jj.error || "could not resurrect it");
+      loadShelves(); refresh();   // the tile comes back at once, not at the next tick
+    };
+    sum.appendChild(rb);
+    r.appendChild(sum);
+    r.onclick = () => r.classList.toggle("open");
+    list.appendChild(r);
+  });
+  if (!rows.length) list.appendChild(el("div", "brow",
+    q ? "nothing matches" : "the boneyard is empty"));
+  document.querySelector("[data-ebonecount]").textContent = EBONES.length + " resting";
+}
+async function loadShelves() {
+  try {
+    EBONES = (await (await fetch("/api/boneyard")).json()).boneyard || [];
+    renderEbones();
+  } catch (e) {}
+}
+document.querySelector("[data-ebonehead]").onclick = (ev) => {
+  ev.stopPropagation();
+  document.querySelector("[data-shelf-ebone]").classList.toggle("open"); };
+document.querySelector("[data-ebonesearch]").addEventListener("input", renderEbones);
+loadShelves();
+setInterval(loadShelves, 20000);
+
+(async () => {
+  try {
+    const sk = (await (await fetch("/api/skills")).json()).skills || [];
+    const mk = (list, sel) => {
+      const box = document.querySelector(sel);
+      list.forEach(name => {
+        const b = el("button", "");
+        try { const im = window.SkillIcons && window.SkillIcons.img(name, 18); if (im) b.appendChild(im); } catch (e) {}
+        b.appendChild(document.createTextNode(name));
+        b.onclick = () => {
+          if (!ACTIVE) { alert("open a terminal first (＋ Terminal)"); return; }
+          fetch("/api/say", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: "", general: true, term: ACTIVE,
+              text: "Invoke the " + name + " skill and await my instructions." }) });
+        };
+        box.appendChild(b);
+      });
+    };
+    mk(sk.slice(0, 3), "[data-sk-trio]"); mk(sk.slice(3), "[data-sk-rest]");
+  } catch (e) {}
+})();
+
+/* ---------- deliverables ---------- */
+async function loadDeliv() {
+  /* The list combines the root workbench register with every effort's curated
+     DELIVERABLES.md register — the reports a human would open (Gandalf reads,
+     researchPrime reports, the special PDFs) — NEVER raw session files;
+     those are computer-facing and live in the workbench file explorer.
+     Text docs open in the rendered report viewer; PDFs/binaries stream
+     through the contained deliverable-file route. */
+  const [j, terms] = await Promise.all([
+    fetch("/api/register-all?dir=").then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch("/api/terms?dir=").then(r => r.ok ? r.json() : null).catch(() => null)
+  ]);
+  let items = j && j.items || [], rootUnavailable = terms === null;
+  const term = (terms && terms.terms || []).find(t => !t.archived && /^\d{1,6}$/.test(t.tid));
+  const key = it => it.route ? "route:" + it.route + "|" + (it.run || "")
+    : [it.dir || "", it.path || ""].filter(Boolean).join("/").replace(/\\/g, "/").toLowerCase()
+      + "|" + (it.run || "") + (it.path ? "" : "|" + it.what);
+  if (term) {
+    try {
+      const response = await fetch("/api/deliverables?dir=&general=1&term=" + encodeURIComponent(term.tid));
+      if (!response.ok) throw new Error("root register unavailable");
+      const root = await response.json();
+      if (root.error || !Array.isArray(root.items)) throw new Error("root register unavailable");
+      const existing = new Set(items.map(key)), seen = new Set();
+      const workbench = root.items.map(it => ({...it, dir: "", effort: "Project workbench"}))
+        .filter(it => !existing.has(key(it)));
+      items = [...workbench, ...items].filter(it => {
+        const k = key(it); if (seen.has(k)) return false; seen.add(k); return true;
+      });
+    } catch (e) { rootUnavailable = true; }
+  }
+  const list = document.querySelector("[data-delivlist]");
+  list.textContent = "";
+  items.forEach(it => {
+    const row = el("div", "frow2");
+    if (it.notebook_product && window.AnchorNotebooks) {
+      row.appendChild(window.AnchorNotebooks.render(it, it.dir || ""));
+      row.appendChild(el("span", "fm", (it.effort || "") + (it.date ? " · " + it.date : "")));
+      list.appendChild(row); return;
+    }
+    /* (2026-09-05) a contained Anchor route the parser classified
+       (classify_route) opens by ANCHOR — href = route + the page token,
+       target _blank, rel noopener, labelled with the deliverable's NAME —
+       the same way delivRow opens it. NEVER window.open for a route: the
+       page shim rewrites window.open("/report…") to /steward/report…,
+       which serve_page_doc 404s (wave-1 reviewer finding, 2026-09-05).
+       Hostile cells arrive route:null and stay text. */
+    const isClickable = !!(it.route || (it.openable && it.path));
+    const fn = el(isClickable ? "a" : "span", "fn", "• " + it.what);
+    try { const S = window.SkillIcons; const im = S && S.img(S.forItem(it, null) || "", 14); if (im) fn.insertBefore(im, fn.firstChild); } catch (e) {}
+    fn.title = it.path || "";
+    if (it.route) {
+      // markdown renders in the Reader, Office documents preview (2026-09-05)
+      const _sep = it.route.indexOf("?") >= 0 ? "&" : "?";
+      fn.href = it.route + (/\.(md|markdown)(&|$)/i.test(it.route) ? _sep + "render=1"
+        : /\.(docx|pptx|xlsx)(&|$)/i.test(it.route) ? _sep + "view=1" : "") +
+        (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      fn.target = "_blank";
+      fn.rel = "noopener";
+    } else if (it.openable && it.path) {
+      const isMd = /\.(md|markdown)$/i.test(it.path);
+      const isOffice = /\.(docx|pptx|xlsx)$/i.test(it.path);
+      fn.href = "/api/steward/deliverable-file?pid=" +
+        encodeURIComponent(window.STEWARD_PID || "") +
+        "&dir=" + encodeURIComponent(it.dir || "") +
+        "&path=" + encodeURIComponent(it.path) +
+        (isOffice ? "&view=1" : "") +
+        (isMd ? "&render=1" : "") +
+        (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      fn.target = "_blank";
+      fn.rel = "noopener";
+    }
+    row.appendChild(fn);
+    if (it.path) {
+      const dl = el("a", "ddl-inline", "\u2b07");
+      dl.href = "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") +
+        "&dir=" + encodeURIComponent(it.dir || "") +
+        "&path=" + encodeURIComponent(it.path) +
+        "&download=1" +
+        (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      dl.setAttribute("download", "");
+      dl.title = "Download " + (it.path || it.what || "file");
+      dl.onclick = (ev) => ev.stopPropagation();
+      row.appendChild(dl);
+    }
+    row.appendChild(el("span", "fm", (it.effort || "") + (it.date ? " · " + it.date : "")));
+    list.appendChild(row);
+  });
+  if (!items.length)
+    list.appendChild(el("div", "frow2",
+      "no deliverables registered yet — each effort's steward lists the things worth opening as they land"));
+  if (rootUnavailable) list.appendChild(el("div", "frow2", "Project workbench reports could not be read; reopen this list to retry."));
+  if (j === null) list.appendChild(el("div", "frow2", "Effort reports could not be read; reopen this list to retry."));
+  document.querySelector("[data-delivsum]").textContent = items.length + " registered";
+}
+
+/* ---------- files: sort · search · drag-drop ---------- */
+let SUB = "", SORT = "name", FILES = [];
+async function loadFiles() {
+  const q = document.querySelector("[data-fsearch]").value.trim();
+  const list = document.querySelector("[data-filelist]");
+  try {
+    const r = await fetch("/api/files?dir=&sub=" + encodeURIComponent(SUB) +
+                          "&q=" + encodeURIComponent(q));
+    const j = await r.json();
+    if (j && j.error) {
+      FILES = [];
+      list.textContent = "";
+      list.appendChild(el("div", "frow2", "could not list files — " + j.error));
+      return;
+    }
+    FILES = j.entries || [];
+    renderFiles(q);
+  } catch (e) {
+    FILES = [];
+    list.textContent = "";
+    list.appendChild(el("div", "frow2", "could not list files"));
+  }
+}
+function renderFiles(q) {
+  const crumb = document.querySelector("[data-crumb]");
+  crumb.textContent = q ? "🔍 matches across the project (click to clear)"
+    : "📁 " + (SUB ? "project / " + SUB.replace(/\//g, " / ") + "   (click to go up)"
+                   : "project root");
+  crumb.onclick = () => {
+    const s = document.querySelector("[data-fsearch]");
+    if (s.value) { s.value = ""; loadFiles(); return; }
+    SUB = SUB.split("/").slice(0, -1).join("/"); loadFiles();
+  };
+  const rows = FILES.slice();
+  rows.sort((a, b) => a.dir !== b.dir ? (a.dir ? -1 : 1)
+    : SORT === "date" ? b.mtime - a.mtime
+    : SORT === "type" ? (((a.name.split(".").pop() || "").toLowerCase()).localeCompare((b.name.split(".").pop() || "").toLowerCase()) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+    : a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  const list = document.querySelector("[data-filelist]");
+  list.textContent = "";
+  rows.forEach(f => {
+    const row = el("div", "frow2");
+    if (f.notebook_product && window.AnchorNotebooks) {
+      row.appendChild(window.AnchorNotebooks.render(f, ""));
+      list.appendChild(row); return;
+    }
+    // (2026-09-05, John) a file is a LINK that opens rendered in a new window
+    // (text in the Reader, PDF inline, Office as a preview page); the small
+    // "app" button still opens it on this computer.
+    const fn = el(f.dir ? "span" : "a", "fn", (f.dir ? "📁 " : "· ") + f.name);
+    if (!f.dir) {
+      const rel = q ? f.name : (SUB ? SUB + "/" : "") + f.name;
+      fn.href = /\.(md|txt|csv|json|log)$/i.test(f.name)
+        ? "/report?dir=&path=" + encodeURIComponent(rel)
+        : "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") +
+          "&dir=&path=" + encodeURIComponent(rel) + (/\.(docx|pptx|xlsx)$/i.test(f.name) ? "&view=1" : "") +
+          (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      fn.target = "_blank"; fn.rel = "noopener";
+      fn.onclick = (ev) => { if (/^\/report\?/.test(fn.getAttribute("href"))) { ev.preventDefault(); window.open(fn.getAttribute("href")); } };
+    }
+    const appBtn = f.dir ? null : el("button", "fapp", "app");
+    if (appBtn) appBtn.title = "open on this computer";
+    const openInApp = async () => {
+      if (f.dir) { SUB = SUB ? SUB + "/" + f.name : f.name; loadFiles(); }
+      else {
+        const msg = document.querySelector("[data-upmsg]");
+        try {
+          const response = await fetch("/api/open", { method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dir: "", path: q ? f.name
+              : (SUB ? SUB + "/" : "") + f.name }) });
+          const result = await response.json();
+          msg.textContent = result.ok ? " · opened " + f.name
+            : " · " + (result.error || "could not open " + f.name);
+        } catch (error) {
+          msg.textContent = " · could not open " + f.name + " (connection failed)";
+        }
+      }
+    };
+    if (f.dir) fn.onclick = openInApp; else if (appBtn) appBtn.onclick = openInApp;
+    row.appendChild(fn);
+    if (!f.dir) {
+      const rel = q ? f.name : (SUB ? SUB + "/" : "") + f.name;
+      const dl = el("a", "ddl-inline", "\u2b07");
+      dl.href = "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") +
+        "&dir=&path=" + encodeURIComponent(rel) + "&download=1" +
+        (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
+      dl.setAttribute("download", f.name);
+      dl.title = "Download " + f.name;
+      dl.onclick = (ev) => ev.stopPropagation();
+      row.appendChild(dl);
+    }
+    if (appBtn) row.appendChild(appBtn);
+    row.appendChild(el("span", "fm",
+      new Date(f.mtime * 1000).toISOString().slice(0, 10) +
+      (f.dir ? "" : " · " + (f.size > 1048576
+        ? (f.size / 1048576).toFixed(1) + " MB"
+        : Math.max(1, Math.round(f.size / 1024)) + " KB"))));
+    list.appendChild(row);
+  });
+  if (!rows.length) list.appendChild(el("div", "frow2",
+    q ? "nothing matches" : "(empty folder)"));
+}
+document.querySelector("[data-fsearch]").addEventListener("input",
+  () => { clearTimeout(window._ft); window._ft = setTimeout(loadFiles, 300); });
+["name", "type", "date"].forEach(k => {
+  document.querySelector("[data-sort-" + k + "]").onclick = (e) => {
+    SORT = k;
+    ["name", "type", "date"].forEach(o => document.querySelector("[data-sort-" + o + "]").classList.toggle("on", o === k));
+    renderFiles(document.querySelector("[data-fsearch]").value.trim()); };
+});
+
+function fmtSize(n) {
+  n = Number(n) || 0;
+  if (n > 1048576) return (n / 1048576).toFixed(1) + " MB";
+  return Math.max(1, Math.round(n / 1024)) + " KB";
+}
+function conflictChoice(file, info) {
+  return new Promise((resolve) => {
+    const box = document.querySelector("[data-conflict]");
+    document.querySelector("[data-conflict-title]").textContent =
+      "“" + file.name + "” is already in this folder";
+    const exist = (info.size ? fmtSize(info.size) : "existing file")
+      + (info.mtime ? " · " + new Date(info.mtime * 1000).toISOString().slice(0, 10) : "");
+    document.querySelector("[data-conflict-msg]").textContent =
+      "Already here: " + exist + ". Incoming: " + fmtSize(file.size) + ".";
+    document.querySelector("[data-conflict-same]").textContent = info.same
+      ? "Same bytes as the file already there — Skip is the usual choice."
+      : "";
+    const done = (mode) => {
+      box.classList.remove("on");
+      resolve(mode);
+    };
+    document.querySelector("[data-conflict-replace]").onclick = () => done("replace");
+    document.querySelector("[data-conflict-skip]").onclick = () => done("skip");
+    document.querySelector("[data-conflict-keep]").onclick = () => done("keepboth");
+    box.classList.add("on");
+  });
+}
+async function uploadOne(file) {
+  const msg = document.querySelector("[data-upmsg]");
+  const topMsg = document.querySelector("[data-cockpit-dropmsg]");
+  const setMsg = (t) => { if (msg) msg.textContent = t; if (topMsg) topMsg.textContent = t.replace(/^\s*·\s*/, ""); };
+  if (file.size > 30000000) {
+    setMsg(" · " + file.name + " is over the 30 MB limit");
+    return;
+  }
+  try {
+    setMsg(" · loading " + file.name + "…");
+    const buf = await file.arrayBuffer();
+    let bin = ""; const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const b64 = btoa(bin);
+    const send = async (mode, ifMatch) => {
+      const response = await fetch("/api/upload", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dir: "", sub: SUB, name: file.name,
+          data_b64: b64, mode, if_match: ifMatch || undefined }) });
+      const result = await response.json();
+      result.http_status = response.status;
+      return result;
+    };
+    let result = await send("new");
+    for (let review = 0; !result.ok && result.exists && review < 3; review++) {
+      const choice = await conflictChoice(file, result);
+      if (choice === "skip") {
+        setMsg(" · skipped " + file.name);
+        return;
+      }
+      result = await send(choice,
+        choice === "replace" ? result.version : undefined);
+    }
+    setMsg(result.ok ? " · ✓ landed " + result.name : " · " + (result.error || "failed"));
+  } catch (error) {
+    setMsg(" · " + file.name + " failed (connection or read error)");
+  }
+}
+const dz = document.querySelector("[data-dropzone]");
+const topDz = document.querySelector("[data-cockpit-drop]");
+let uploadQueue = Promise.resolve();
+function enqueueUploads(files) {
+  for (const file of Array.from(files || [])) {
+    uploadQueue = uploadQueue.then(() => uploadOne(file));
+  }
+  uploadQueue = uploadQueue.catch(() => {}).then(() => loadFiles());
+  return uploadQueue;
+}
+dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("hot"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("hot"));
+dz.addEventListener("drop", (e) => {
+  e.preventDefault(); dz.classList.remove("hot");
+  enqueueUploads(e.dataTransfer.files);
+});
+document.querySelector("[data-upfile]").addEventListener("change", (ev) => {
+  enqueueUploads(ev.target.files);
+  ev.target.value = "";
+});
+if (topDz) {
+  topDz.addEventListener("dragover", (e) => { e.preventDefault(); topDz.classList.add("hot"); });
+  topDz.addEventListener("dragleave", () => topDz.classList.remove("hot"));
+  topDz.addEventListener("drop", (e) => {
+    e.preventDefault(); topDz.classList.remove("hot");
+    enqueueUploads(e.dataTransfer.files);
+  });
+}
+const topUp = document.querySelector("[data-cockpit-dropfile]");
+if (topUp) {
+  topUp.addEventListener("change", (ev) => {
+    enqueueUploads(ev.target.files);
+    ev.target.value = "";
+  });
+}
+document.body.addEventListener("dragover", (e) => {
+  if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+    e.preventDefault();
+    if (topDz) topDz.classList.add("hot");
+  }
+});
+document.body.addEventListener("dragleave", (e) => {
+  if (!e.relatedTarget && topDz) topDz.classList.remove("hot");
+});
+document.body.addEventListener("drop", (e) => {
+  if (e.defaultPrevented) return;
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    e.preventDefault();
+    if (topDz) topDz.classList.remove("hot");
+    enqueueUploads(e.dataTransfer.files);
+  }
+});
+
+window.addEventListener("anchor-notebooks-changed", () => {
+  Promise.allSettled([loadDeliv(), loadFiles()]);
+});
+refresh();
+</script>
+</body></html>

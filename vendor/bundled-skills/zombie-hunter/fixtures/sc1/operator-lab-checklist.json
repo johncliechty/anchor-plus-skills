@@ -1,0 +1,52 @@
+{
+  "id": "ol3-operator-lab-evidence-bundle",
+  "version": "w5-ol3-v1",
+  "description": "OL3 operator-lab evidence bundle checklist for SC1 canary / G5 evidence paths",
+  "items": [
+    {
+      "id": "recorded_vscode",
+      "required": true,
+      "description": "Recorded VS Code tree zero dual-run RED"
+    },
+    {
+      "id": "recorded_cursor",
+      "required": true,
+      "description": "Recorded Cursor tree zero dual-run RED"
+    },
+    {
+      "id": "recorded_wt",
+      "required": true,
+      "description": "Recorded Windows Terminal tree zero dual-run RED"
+    },
+    {
+      "id": "recorded_anchor",
+      "required": true,
+      "description": "Recorded Anchor tree zero dual-run RED"
+    },
+    {
+      "id": "orphan_positive_control",
+      "required": true,
+      "description": "ORPHAN_DETACHED_SPENDER would-be RED on dual-run"
+    },
+    {
+      "id": "live_interactive_or_shaped",
+      "required": true,
+      "description": "Live or live-shaped interactive zero RED on banner+tile"
+    },
+    {
+      "id": "residual_attestation_or_matrix",
+      "required": true,
+      "description": "Residual hosts attested or live matrix"
+    },
+    {
+      "id": "canary_receipt_hashes",
+      "required": true,
+      "description": "Receipt hash tuple matches live classifier/atlases"
+    },
+    {
+      "id": "freeze_kill_still_off",
+      "required": true,
+      "description": "Freeze/Kill not enabled by SC1 alone (requires freezeCapability on sole boundary)"
+    }
+  ]
+}

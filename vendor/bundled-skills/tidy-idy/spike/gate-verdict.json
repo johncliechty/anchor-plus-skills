@@ -1,0 +1,22 @@
+{
+  "artifact": "wave-0-gate-verdict",
+  "wave": "Wave 0 — Seam Spike & Coupling Inventory (Gate)",
+  "date": "2026-07-21",
+  "threshold_N": 5,
+  "threshold_basis": "MASTER-PLAN Phase 0: 'Set the gate threshold N=5 seams (agreed number, adjustable at review)'",
+  "counting_rule": "one record per (module × coupling kind) — the natural key of the coupling-inventory.json schema ({module, kind, ...}); seam_count = number of inventory records. spike/seam-harness.test.mjs re-derives the same (module × kind) set from live measurement on every `node --test` run and fails the suite on any drift, so this count can never silently rot.",
+  "seam_count": 13,
+  "comparison": "13 > N=5",
+  "verdict": "refactor-in-place",
+  "verdict_statement": "Wave 1 first deliverable = refactor-in-place with suite kept green",
+  "seams_by_mechanism": {
+    "hardcoded trio-driver path (fil<path>": ["bin/analyze.mjs", "bin/debate.mjs", "bin/compress.mjs"],
+    "North-Star/Foundry-marker existence assumption": ["bin/scanner.mjs", "bin/analyze.mjs", "bin/debate.mjs"],
+    "runtime hard git dependency (non-git refusal / process.exit in library paths)": ["bin/hygiene.mjs"],
+    "delete-before-commit ordering (files gone before git holds the undo)": ["bin/remove.mjs"],
+    "CWD-relative .tidy-idy shared state transport in CLI main()s": ["bin/scanner.mjs", "bin/hygiene.mjs", "bin/analyze.mjs", "bin/debate.mjs", "bin/compress.mjs"]
+  },
+  "counting_sensitivity": "Recorded for honesty: the 13 per-module records collapse to 5 distinct coupling MECHANISMS (see seams_by_mechanism). Under that maximally-merged counting the count would be 5 = N, which would read 'proceed as extension'. The schema-defined per-record counting (13) is normative for this verdict. The divergence is immaterial to what gets built: both readings land on the same first work item, because the frozen plan's engine-core wave already carries the refactor-in-place deliverables (see plan_impact) — so no counting debate changes the build order, and the review retains its 'adjustable at review' authority over N.",
+  "import_time_finding": "All six stage modules import cleanly outside a Foundry git repo (measured): zero import-time git commands, zero import-time marker checks, zero import-time writes. The gate question 'importable and runnable outside a Foundry git repo' therefore splits: IMPORTABLE — yes, everywhere; RUNNABLE — no, five runtime mechanisms block or corrupt ordinary-folder runs.",
+  "plan_impact": "No plan amendment required. The frozen IMPLEMENTATION-PLAN 'Wave 1 — Engine Core' wave already lists as leading deliverables: stage functions with signature stage(ctx), 'module-level shared state from the Wave-0 inventory eliminated', and 'tidy-idy suite green after each stage's conversion' — exactly the >N branch's required scope. This verdict makes that scoping FORMAL: engine-core work begins with the refactor-in-place of the 13 recorded seams, keeping the legacy suite green throughout, before any new-behavior stage lands."
+}

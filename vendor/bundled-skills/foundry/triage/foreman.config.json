@@ -1,0 +1,19 @@
+{
+  "budget": {
+    "max_waves_per_run": 6,
+    "max_fix_iters_per_wave": 3
+  },
+  "git": {
+    "enabled": false
+  },
+  "docs": {
+    "description": "<path>",
+    "plan": "<path>",
+    "execution_log": "<path>"
+  },
+  "models": {
+    "execute": "claude:claude-fable-5",
+    "fix": "claude:claude-fable-5",
+    "review": "gemini-cli:gemini-3.1-pro"
+  }
+}

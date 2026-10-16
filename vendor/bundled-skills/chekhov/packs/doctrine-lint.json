@@ -1,0 +1,14 @@
+{
+  "terms": {
+    "kishotenketsu": ["kishotenketsu", "ki", "sho", "ten", "ketsu", "withholding", "recontextualisation"],
+    "four-part": ["four-part", "dynamic quartet", "dark night", "midpoint", "false path", "lie", "scene/sequel", "setup", "reaction", "attack", "realignment", "resolution"],
+    "eddy": ["eddy", "concerto", "symphony"],
+    "prosecution": ["prosecution", "charge", "evidence", "verdict", "rebuttal"]
+  },
+  "heading_terms": [["kishotenketsu", "kishotenketsu"], ["four-part", "four-part"], ["dynamic quartet", "four-part"], ["eddy", "eddy"], ["prosecution", "prosecution"]],
+  "collisions_whitelisted": ["ki", "sho", "ten", "withholding", "recontextualisation", "midpoint", "lie", "setup", "reaction", "attack", "realignment", "resolution", "eddy", "concerto", "symphony", "prosecution", "charge", "evidence", "verdict", "rebuttal"],
+  "repudiation": {
+    "family": "kishotenketsu",
+    "version_note_pattern": "kish[oō]tenketsu framing repudiated"
+  }
+}

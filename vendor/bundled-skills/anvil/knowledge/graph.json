@@ -1,0 +1,39 @@
+{
+  "nodes": [
+    {
+      "id": "anvil-root",
+      "title": "Anvil Core Architecture (Rev 3)",
+      "ring": 0,
+      "parent_ids": [],
+      "resourceId": "anvil-north-star"
+    },
+    {
+      "id": "anvil-comprehension",
+      "title": "Conceptual Groupings & Process Map (Mode 1)",
+      "ring": 1,
+      "parent_ids": ["anvil-root"],
+      "resourceId": "anvil-human-guide"
+    },
+    {
+      "id": "anvil-drilldown",
+      "title": "Single-Block Drill-Down & Empirical Claim Runner (Mode 2)",
+      "ring": 1,
+      "parent_ids": ["anvil-root"],
+      "resourceId": "anvil-engine-py"
+    },
+    {
+      "id": "anvil-remap-nullspace",
+      "title": "Best-in-Class Remapping, Null Space & 3-Stage Pipeline (Mode 3)",
+      "ring": 1,
+      "parent_ids": ["anvil-root"],
+      "resourceId": "anvil-skill-protocol"
+    },
+    {
+      "id": "anvil-paper-mathml",
+      "title": "Paper-to-Code Native MathML & Verification (Mode 4)",
+      "ring": 1,
+      "parent_ids": ["anvil-root"],
+      "resourceId": "anvil-engine-tests"
+    }
+  ]
+}

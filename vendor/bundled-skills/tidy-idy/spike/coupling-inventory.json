@@ -1,0 +1,123 @@
+{
+  "artifact": "wave-0-coupling-inventory",
+  "wave": "Wave 0 — Seam Spike & Coupling Inventory (Gate)",
+  "date": "2026-07-21",
+  "schema": "one record per seam: {module, kind: hardcoded-path|import-time-git|shared-mutable-state|foundry-marker-assumption, phase, status: open|resolved, evidence, proposed-fix, resolution?}; `phase` is an additive honesty field stating WHEN the seam fires (import-time vs runtime); `status` is the Wave-1 addition recording whether the seam is still present or has had its proposed-fix applied, and `resolution` (required when status=resolved) states HOW",
+  "measurement": "every record is cross-checked against live measurement by spike/seam-harness.test.mjs on each `node --test` run — static source scans for path/ordering seams, plain-temp-folder runtime probes (no .git, no North-Star, no SKILL.md) for behavioral seams; drift between this file and measurement on (module × kind × status) fails the suite. A record marked `resolved` is asserted GONE, so the fix is now permanently regression-guarded; a record marked `open` is asserted STILL PRESENT, so it cannot silently vanish without this file being updated.",
+  "import_time_summary": "all six stage modules (scanner, hygiene, analyze, debate, remove, compress) import cleanly with NO import-time git commands, no import-time Foundry-marker checks, and no import-time writes (measured by the harness); every recorded seam below fires at RUNTIME — the coupling problem is runtime coupling, not import failure",
+  "wave_1_disposition": "The Wave-0 gate verdict (13 > N=5) formally scoped Wave 1's first deliverable as refactor-in-place. Wave 1 applied the recorded proposed-fix to the 8 seams whose fix the frozen Wave-1 deliverable list owns — the 3 hardcoded-path records ('inject the LLM seam ... never an absolute hardcoded path') and the 5 shared-mutable-state records ('module-level shared state from the Wave-0 inventory eliminated'). The remaining 5 records stay OPEN by plan, not by omission: the 3 foundry-marker-assumption records are fixed at the ENGINE layer (engine/context.mjs selects ctx.mode from marker presence; engine/stages/scan.stage.mjs treats ctx.rootPath itself as the target) while the legacy library functions keep their current behaviour until Wave 2 ships heuristic mode; hygiene's runtime git refusal is superseded at the engine layer by the git:null contract (engine/stages/hygiene.stage.mjs) but is retained on the legacy MUTATING CLI path until Wave 4's reversible Trash subsystem supplies the non-git undo story it stands in for; and remove.mjs's delete-before-commit ordering is explicitly replaced by the Wave-3 Apply executor, which the frozen plan defers.",
+  "seams": [
+    {
+      "module": "bin/analyze.mjs",
+      "kind": "hardcoded-path",
+      "phase": "runtime (lazy default agentFn, not import-time)",
+      "status": "resolved",
+      "evidence": "Default agentFn dynamically imported 'fil<path>' (analyze.mjs:123) — an absolute machine-local path outside the package. Any run that did not inject options.agent failed on a machine without <path> Verified by static source scan in the seam harness.",
+      "proposed-fix": "Wave-1 stage(ctx): inject the LLM seam through ctx (ctx.agent / a driver registry); resolve the driver from configuration or an env var with a loud failure when absent — never an absolute hardcoded path.",
+      "resolution": "Wave 1: bin/analyze.mjs builds its agent via engine/agent-seam.mjs resolveAgent({agent, driverPath, model, log}) — injected agent → config driverPath → TIDY_IDY_DRIVER/TRIO_DRIVER env var — and throws AgentSeamUnavailable LOUDLY at the call site when none resolves. The absolute path literal is absent from the source; engine/stages/analyze.stage.mjs passes ctx.agent."
+    },
+    {
+      "module": "bin/debate.mjs",
+      "kind": "hardcoded-path",
+      "phase": "runtime (lazy default agentFn, not import-time)",
+      "status": "resolved",
+      "evidence": "Default agentFn dynamically imported 'fil<path>' (debate.mjs:59) — same absolute machine-local driver path as analyze.mjs. Verified by static source scan.",
+      "proposed-fix": "Same as analyze.mjs: ctx-injected agent seam with config/env-resolved driver, loud failure when unresolvable.",
+      "resolution": "Wave 1: identical fix — resolveAgent() from engine/agent-seam.mjs; engine/stages/debate.stage.mjs supplies ctx.agent."
+    },
+    {
+      "module": "bin/compress.mjs",
+      "kind": "hardcoded-path",
+      "phase": "runtime (lazy default agentFn, not import-time)",
+      "status": "resolved",
+      "evidence": "Default agentFn dynamically imported 'fil<path>' (compress.mjs:61) — same absolute machine-local driver path. Verified by static source scan. (Runtime probe also shows compress is the ONLY LLM stage with no git or Foundry-marker assumption: it runs to completion on a plain non-git folder when an agent is injected.)",
+      "proposed-fix": "Same ctx-injected agent seam. Additionally Wave-1 demotes compress to an in-memory proposal stage (diff finding), removing its direct writes from the analysis pass.",
+      "resolution": "Wave 1: resolveAgent() replaces the hardcoded driver import, AND engine/stages/compress.stage.mjs demotes compression inside the staged pipeline to an in-memory PROPOSAL finding carrying a rendered diff — the analysis pass writes nothing. The legacy writing path in bin/compress.mjs remains only on the legacy CLI."
+    },
+    {
+      "module": "bin/scanner.mjs",
+      "kind": "foundry-marker-assumption",
+      "phase": "runtime",
+      "status": "open",
+      "evidence": "scan() recognizes a directory as a project ONLY if it contains NORTH-STAR.md, INTENT.md, or SKILL.md (scanner.mjs:44-51). Measured by the harness: scan(<plain temp folder>) returns [] — an ordinary folder is invisible to the whole pipeline, so every downstream stage silently no-ops on it.",
+      "proposed-fix": "Wave-1 stage(ctx) with ctx.mode ∈ {north-star, heuristic, advisory}: treat ctx.rootPath itself as the target when no North-Star marker exists; marker detection selects the MODE, never existence."
+    },
+    {
+      "module": "bin/analyze.mjs",
+      "kind": "foundry-marker-assumption",
+      "phase": "runtime",
+      "status": "open",
+      "evidence": "runAnalysis() throws 'No North Star file found in project' on a folder without NORTH-STAR.md/INTENT.md/SKILL.md (analyze.mjs:73-76). Measured by the harness on a plain temp folder.",
+      "proposed-fix": "North-Star alignment analysis runs only in north-star mode; heuristic mode (Wave-2 spec: age/duplicate-hash/orphan/untracked evidence, labelled 'heuristic candidate') covers ordinary folders; ctx.mode drives the branch."
+    },
+    {
+      "module": "bin/debate.mjs",
+      "kind": "foundry-marker-assumption",
+      "phase": "runtime",
+      "status": "open",
+      "evidence": "runDebate() resolves the North Star FIRST and throws 'No North Star file found' on a plain folder even when the suspect list is empty (debate.mjs:37-40). Measured by the harness on a plain temp folder.",
+      "proposed-fix": "Debate consumes ctx (mode + ruleset); in heuristic mode it is re-scoped to argue evidence sufficiency rather than North-Star alignment (frozen Wave-2 deliverable)."
+    },
+    {
+      "module": "bin/hygiene.mjs",
+      "kind": "import-time-git",
+      "phase": "runtime (import succeeds; the git assumption fires when run)",
+      "status": "open",
+      "evidence": "runHygieneCheck() hard-refuses any non-git directory with a throw (hygiene.mjs:151-154) — correct under the current 'git IS the archive' safety story, but a hard coupling for ordinary-folder runs. Library code additionally calls process.exit(1) on non-interactive failure paths (hygiene.mjs:187, 210, 218, 226), killing the host process instead of returning a result. Measured by the harness: checkProjectHygiene(<plain temp folder>) → isGit:false, and runHygieneCheck throws the refusal (no exit) with zero writes.",
+      "proposed-fix": "Wave-1 git:null contract: hygiene becomes a stage(ctx) that reports {git:null} as declared advisory semantics instead of throwing; process.exit removed from library paths in favor of thrown errors (the CLI shell owns exit codes). The Wave-4 reversible Trash subsystem supplies the non-git undo story that the refusal currently protects."
+    },
+    {
+      "module": "bin/remove.mjs",
+      "kind": "import-time-git",
+      "phase": "runtime",
+      "status": "open",
+      "evidence": "runRemoval() deletes files with fs.rm BEFORE any git command runs (remove.mjs:117-127); when the follow-up commit fails — e.g. the folder is not a git repository — it throws 'removal commit FAILED after deleting N file(s)' (remove.mjs:131-135) with the files already gone and no archive. Measured by the harness on a plain temp folder: the junk file is deleted, then the hard error fires. The upstream hygiene gate is the ONLY protection; the module itself has no git preflight.",
+      "proposed-fix": "Wave-3 Apply executor replaces this path entirely: temp-index compiled single-commit plan (zero working-tree writes until the commit object exists) per the canonical Apply table; non-git removals flow through the Wave-4 reversible Trash subsystem instead of fs.rm."
+    },
+    {
+      "module": "bin/scanner.mjs",
+      "kind": "shared-mutable-state",
+      "phase": "runtime (CLI main() layer; exported scan() is unaffected and measured zero-write)",
+      "status": "resolved",
+      "evidence": "main() wrote the cross-stage state file to a CWD-relative location — path.resolve('.tidy-idy') → .tidy-idy/projects.json (scanner.mjs:105-108) — NOT under the target root. Measured dynamically by the harness: `node bin/scanner.mjs <target>` run from a different CWD created .tidy-idy/projects.json in the CWD and nothing under the target — a write outside the target root. The stray bin/.tidy-idy/projects.json committed in this repo is a fossil of exactly this seam (someone ran the CLI from bin/).",
+      "proposed-fix": "Wave-1 ctx.reportDir: one explicit state/report location derived from the target root (tidy.mjs already does this for the orchestrated path — tidy.mjs:81) passed through ctx; CLI mains become thin shells over stage(ctx).",
+      "resolution": "Wave 1: engine/report-dir.mjs reportDirFor(root) is the single policy and bin/scanner.mjs's main() derives its state dir from the RESOLVED TARGET. The harness's CLI probe now asserts the inverse of the original measurement — state lands under the target root and nothing is written into the CWD."
+    },
+    {
+      "module": "bin/hygiene.mjs",
+      "kind": "shared-mutable-state",
+      "phase": "runtime (CLI main() layer)",
+      "status": "resolved",
+      "evidence": "main() READ the CWD-relative .tidy-idy/projects.json (hygiene.mjs:240) as its work list — launched from any other directory it consumed another run's stale state or silently fell back to CWD. Verified by static source scan (path.resolve('.tidy-idy'…)).",
+      "proposed-fix": "Same ctx.reportDir fix: state location is an explicit ctx member, never CWD-derived.",
+      "resolution": "Wave 1: reportDirFor(targetRoot) — with no target argument the target IS the current directory, explicitly by derivation rather than by accident of launch location."
+    },
+    {
+      "module": "bin/analyze.mjs",
+      "kind": "shared-mutable-state",
+      "phase": "runtime (CLI main() layer)",
+      "status": "resolved",
+      "evidence": "main() read CWD-relative .tidy-idy/projects.json (analyze.mjs:222) and wrote CWD-relative .tidy-idy/suspects_batch.json (analyze.mjs:254-257). Verified by static source scan.",
+      "proposed-fix": "Same ctx.reportDir fix; suspects become part of the stage result envelope instead of an implicit file handoff.",
+      "resolution": "Wave 1: reportDirFor(target) for the CLI shell, AND the staged pipeline drops file handoff entirely — engine/stages/analyze.stage.mjs returns suspects inside its stage result envelope, which engine/stages/debate.stage.mjs consumes from ctx.state."
+    },
+    {
+      "module": "bin/debate.mjs",
+      "kind": "shared-mutable-state",
+      "phase": "runtime (CLI main() layer)",
+      "status": "resolved",
+      "evidence": "main() read CWD-relative .tidy-idy/projects.json (debate.mjs:280) and .tidy-idy/suspects_batch.json (debate.mjs:305), and wrote CWD-relative .tidy-idy/judgments.json (debate.mjs:322-325). Verified by static source scan.",
+      "proposed-fix": "Same ctx.reportDir fix; judgments flow through the envelope.",
+      "resolution": "Wave 1: reportDirFor(target) for the CLI shell; in the staged pipeline judgments are emitted as REMOVE findings inside the debate stage's result envelope."
+    },
+    {
+      "module": "bin/compress.mjs",
+      "kind": "shared-mutable-state",
+      "phase": "runtime (CLI main() layer)",
+      "status": "resolved",
+      "evidence": "main() read CWD-relative .tidy-idy/projects.json (compress.mjs:262) and wrote CWD-relative .tidy-idy/compression.json (compress.mjs:291-294). Verified by static source scan.",
+      "proposed-fix": "Same ctx.reportDir fix; compression output becomes a proposal finding in the envelope (Wave-1 demotion).",
+      "resolution": "Wave 1: reportDirFor(target) for the CLI shell; in the staged pipeline compression output is a proposal finding carrying an in-memory diff (engine/stages/compress.stage.mjs) — no state file at all."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "l-003-unknown-project",
+  "expect": "ANCHOR_ACK_UNKNOWN_PROJECT",
+  "note": "A minted id no registration event in this log ever produced. An acknowledgement cannot create membership; it is reported and not applied.",
+  "ack": {
+    "schema": "commit-ack-v1",
+    "project_id": "11111111-2222-3333-4444-555555555555",
+    "intent_seq": 1,
+    "intent_sha256": "e23cf0a20539ef7c2968c86829c6d6aa93c72bd1a012c6000af2a247bfb7926c",
+    "commit_id": "9f2c1ab7d4e60f83b5a1c2d3e4f5061728394a5b",
+    "anchor": "anchor/1.2.0",
+    "acked_at": "2026-07-20T09:00:41.000Z"
+  }
+}

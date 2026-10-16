@@ -1,0 +1,16 @@
+{
+  "schema": "canary-set/v1",
+  "skill": "superjump",
+  "version": 1,
+  "append_only": true,
+  "canaries": [
+    { "id": "NG-1", "kind": "non-goal", "name": "no independent-review bypass", "input": { "skipReview": true }, "expected": { "judgeRan": true } },
+    { "id": "NG-2", "kind": "non-goal", "name": "no kill on a clock", "input": { "flag": "--deadline" }, "expected": { "exists": false } },
+    { "id": "NG-3", "kind": "non-goal", "name": "not a build engine", "input": { "brief": "implement the winner" }, "expected": { "refused": true } },
+    { "id": "NG-4", "kind": "non-goal", "name": "no fabricated diversity", "input": { "sameMechanism": true }, "expected": { "grouped": true } },
+    { "id": "NG-5", "kind": "non-goal", "name": "rank only by the brief", "input": {}, "expected": { "ranking": "by anchored ratings on the contract axes; reweightable" } },
+    { "id": "NG-6", "kind": "non-goal", "name": "no self-assessment as verdict", "input": { "noJudge": true }, "expected": { "status": "unjudged" } },
+    { "id": "NG-7", "kind": "non-goal", "name": "no kill on inferred requirement", "input": { "explicitItem": null }, "expected": { "eligible": true } },
+    { "id": "NG-8", "kind": "non-goal", "name": "do not hide a stall", "input": { "elapsedPast2x": true }, "expected": { "recommend_kill": true } }
+  ]
+}

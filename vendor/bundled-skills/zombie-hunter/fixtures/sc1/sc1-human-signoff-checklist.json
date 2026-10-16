@@ -1,0 +1,32 @@
+{
+  "id": "sc1-human-signoff",
+  "version": "w10-sc1-human-signoff-v1",
+  "description": "Optional human SC1 promotion sign-off bound to the same G5 evidence paths + canaryReceipt hash tuple as sc1_canary_gate. Never enables Freeze/Kill alone.",
+  "items": [
+    {
+      "id": "sc1_canary_gate_green",
+      "required": true,
+      "description": "sc1_canary_gate is green (recorded ∧ live ∧ orphan TP ∧ residual)"
+    },
+    {
+      "id": "g5_evidence_paths_bound",
+      "required": true,
+      "description": "Sign-off references ≥4 G5 evidence paths from the same canary gate pack"
+    },
+    {
+      "id": "same_g5_paths_as_gate",
+      "required": true,
+      "description": "Evidence path strings are non-empty and match the gate pack binding"
+    },
+    {
+      "id": "receipt_hash_tuple",
+      "required": true,
+      "description": "canaryReceipt hash tuple (classifierVersion, hostAllowlistHash, engineAtlasHash, spendAtlasHash) matches live hashes when a receipt is present; otherwise live tuple is present for binding"
+    },
+    {
+      "id": "freeze_kill_not_implied_by_signoff",
+      "required": true,
+      "description": "Human SC1 sign-off does not enable Freeze/Kill (requires freezeCapability + armed mode on sole boundary)"
+    }
+  ]
+}

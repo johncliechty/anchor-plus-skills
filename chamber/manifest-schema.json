@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "artifact": "chamber-pipeline-manifest-schema",
+  "owner_file": "chamber_manifest.py",
+  "plan_ref": "planning/steward-chamber-2026-08-09/IMPLEMENTATION-PLAN.md :: Wave 4 (F2 versioned manifest schema; C2 typed edges + declared deliverable; E9 distinct stages)",
+  "law": "The chamber-owned sidecar pipeline manifest is a VERSIONED, JSON-schema'd document (F2): two developers (or Foreman waves) derive identical manifests from THIS schema, never from prose braces. Schema evolution is an explicit versioned change: bump schema_version, append a migration note below, keep the prior version readable. The manifest lives in the project's chamber sidecar (.anchor/chamber/pipeline-manifest.json) — chamber-owned derived data; the engine spine (roadmap_events, receipts, reflection payloads) is never touched by manifest machinery.",
+  "migration_notes": [
+    {
+      "schema_version": 1,
+      "note": "Initial schema (steward-chamber W4, 2026-08-09): scaffold key, steps with per-step yield contracts {shape, report_link} and E9-distinct verification stages, typed edges {from, to, artifact_kind}, honest declared-deliverable ({declared:false} when none is declared — never fabricated). Future migrations: bump schema_version, append a note here, and teach chamber_manifest.validate_manifest the prior version explicitly."
+    }
+  ],
+  "e9_distinct_stages": ["reflection", "delta_verification"],
+  "e9_law": "Reflection and delta verification are DISTINCT scaffold stages (E9): every step's stages list carries BOTH exact tokens, and a single collapsed token standing in for both is refused by the lint — layered verification holds at the data layer.",
+  "document": {
+    "type": "object",
+    "required": ["schema_version", "scaffold", "steps", "edges", "deliverable"],
+    "properties": {
+      "schema_version": { "type": "integer", "const": 1 },
+      "scaffold": {
+        "type": "object",
+        "required": ["proposal_id"],
+        "properties": {
+          "proposal_id": { "type": "string", "minLength": 1 },
+          "roadmap_id": { "type": "string" }
+        }
+      },
+      "steps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["id", "name", "stages", "yield"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "name": { "type": "string", "minLength": 1 },
+            "skill": { "type": "string" },
+            "stages": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "yield": {
+              "type": "object",
+              "required": ["shape", "report_link"],
+              "properties": {
+                "shape": { "type": "string", "minLength": 1 },
+                "report_link": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      },
+      "edges": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["from", "to", "artifact_kind"],
+          "properties": {
+            "from": { "type": "string", "minLength": 1 },
+            "to": { "type": "string", "minLength": 1 },
+            "artifact_kind": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "deliverable": {
+        "type": "object",
+        "required": ["declared"],
+        "properties": {
+          "declared": { "type": "boolean" },
+          "type": {
+            "type": "string",
+            "enum": ["doc", "script", "skill", "service", "program"]
+          },
+          "output_path": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

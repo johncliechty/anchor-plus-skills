@@ -1,0 +1,13 @@
+{
+  "name": "superjump",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Superjump structured ideation engine",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "bin": {
+    "superjump-run": "bin/superjump-run.mjs"
+  }
+}

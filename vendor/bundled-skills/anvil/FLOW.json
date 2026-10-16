@@ -1,0 +1,101 @@
+{
+  "qualification": "Source-anchored Anvil v1.1 programmatic orchestrator process map (5-Stage Orchestrator + Parable of the Oranges + Modes 1–4 + LibCST/Hypothesis Verification)",
+  "steps": [
+    {
+      "id": "stage0-orange-split",
+      "title": "Stage 0: Programmatic Orchestrator & The Parable of the Oranges (Proactive Completed Staff Work)",
+      "kind": "program",
+      "description": "Governs the 5-stage state machine (RUN-STATE.json), applies the Parable of the Oranges (thinking 2–3 steps ahead to solve the boss's wife's party oranges problem in one trip), and decomposes the repository into Essential Domain Logic (Juice), Surface I/O Contracts (Peel), and Legacy Scaffolding (Pith & Seeds / Null Space).",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def orchestrate_anvil"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "Stage 0: The Parable of the Oranges (Proactive One-Trip Problem Solving) & Programmatic Orchestration"
+      }
+    },
+    {
+      "id": "mode1-map",
+      "title": "Mode 1: Conceptual Groupings + Process Map + AI Agent Seams",
+      "kind": "program",
+      "description": "Partitions the codebase into human-digestible Conceptual Buckets with function summaries and builds the Block-to-Block Process Map with AI Agent Interaction Badges.",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def build_map"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "Mode 1: Conceptual Groupings & Block-to-Block Process Map"
+      }
+    },
+    {
+      "id": "mode2-inspect",
+      "title": "Mode 2: Single-Block Drill-Down + Empirical Claim Runner",
+      "kind": "program",
+      "description": "Isolates one code block with its Inner Process Map, executes the block empirically to test whether its stated summary matches runtime behavior, and locks a Validated description.",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def inspect_block"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "Mode 2: Single-Block Drill-Down & Empirical Claim Testing"
+      }
+    },
+    {
+      "id": "mode3-remap",
+      "title": "Mode 3: Lossless LibCST Remapping + Explicit Null Space + Hypothesis Equivalence Gate",
+      "kind": "program",
+      "description": "Rewrites code structurally via LibCST/parso, isolates unmapped legacy Pith/Seeds into the Null Space, verifies 1. Get Data, 2. Do Analysis, 3. Create Output, and runs Hypothesis differential equivalence tests.",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def remap_code"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "Mode 3: Best-in-Class Code Remapping & Explicit `∅ Null Space`"
+      }
+    },
+    {
+      "id": "mode4-paper-map",
+      "title": "Mode 4: Paper-to-Code Mapping + Native MathML + Empirical Verification",
+      "kind": "program",
+      "description": "Aligns paper equations (in native typeset MathML), algorithms, and figures to implementing code functions and runs empirical reproduction harnesses.",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def paper_to_code_map"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "Mode 4: Paper-to-Code Mapping & Native Typeset Math"
+      }
+    },
+    {
+      "id": "persistent-dialogue",
+      "title": "Persistent Anvil Agent Dialogue Across All 4 Pages",
+      "kind": "program",
+      "description": "Context-aware interactive dialogue docked across all 4 modes so the human can ask questions, refine descriptions, and lock validated comprehension.",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def anvil_chat"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "How to run (operator manual)"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "stage0-orange-split", "to": "mode1-map" },
+    { "from": "mode1-map", "to": "mode2-inspect" },
+    { "from": "mode2-inspect", "to": "mode3-remap" },
+    { "from": "mode4-paper-map", "to": "mode3-remap" },
+    { "from": "stage0-orange-split", "to": "persistent-dialogue" },
+    { "from": "mode1-map", "to": "persistent-dialogue" },
+    { "from": "mode2-inspect", "to": "persistent-dialogue" },
+    { "from": "mode3-remap", "to": "persistent-dialogue" },
+    { "from": "mode4-paper-map", "to": "persistent-dialogue" }
+  ],
+  "exits": ["RUN-STATE.json", "ANVIL-REPORT.md", "anvil-remap.json", "anvil-paper-map.json"]
+}

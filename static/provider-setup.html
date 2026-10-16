@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Anchor · Setup</title>
+  <link rel="stylesheet" href="/static/provider-setup.css">
+</head>
+<body class="provider-setup">
+  <header class="setup-top">
+    <span class="setup-brand">⚓ Anchor · Cave of Wonders</span>
+    <span id="setup-host" class="muted"></span>
+    <button id="setup-return" type="button">Return to Cave</button>
+  </header>
+  <div class="setup-app-frame">
+    <aside class="cave-rail" aria-label="Cave of Wonders navigation">
+      <div class="cave-rail-section">
+        <div class="cave-rail-label">SURFACES</div>
+        <a class="cave-rail-item" href="/high-seat">🏛 The High Seat</a>
+        <a class="cave-rail-item" href="/high-seat#camp">🧭 Star Chart &amp; Acts</a>
+        <a class="cave-rail-item" href="/desk">🗂 The Desk (Admin)</a>
+        <a class="cave-rail-item" href="/doctor">🩺 Doctor &amp; Health</a>
+        <a class="cave-rail-item is-active" href="/setup" aria-current="page">⚙ Host &amp; Provider Setup</a>
+      </div>
+      <div class="cave-rail-section">
+        <div class="cave-rail-label">3-STAGE ONBOARDING</div>
+        <button type="button" class="cave-rail-stage" data-rail-section="host">
+          <span class="stage-num">1</span>
+          <span class="stage-meta"><strong>Mother Ship &amp; Remote</strong><small>Host, Tailscale &amp; GitHub</small></span>
+        </button>
+        <button type="button" class="cave-rail-stage is-active" data-rail-section="providers">
+          <span class="stage-num">2</span>
+          <span class="stage-meta"><strong>AI Engines &amp; Tiers</strong><small>4 Providers · Native CLI</small></span>
+        </button>
+        <button type="button" class="cave-rail-stage" data-rail-section="chart">
+          <span class="stage-num">3</span>
+          <span class="stage-meta"><strong>Star Chart &amp; Roots</strong><small id="rail-status-chart">Workspace &amp; Goal Tiles</small></span>
+        </button>
+        <button type="button" class="cave-rail-stage" data-rail-section="comms">
+          <span class="stage-num">4</span>
+          <span class="stage-meta"><strong>Calendar &amp; Email</strong><small id="rail-status-comms">Gmail · Outlook · IMAP/ICS</small></span>
+        </button>
+      </div>
+    </aside>
+
+    <main>
+      <nav class="setup-steps" aria-label="Setup sections">
+        <button data-section="host" aria-current="step">1 · Mother Ship, Tailscale &amp; GitHub</button>
+        <button data-section="providers">2 · AI Engines, Credentials &amp; Tier Routing</button>
+        <button data-section="chart">3 · Star Chart &amp; Workspace Onboarding</button>
+        <button data-section="comms">4 · Calendar &amp; Email</button>
+      </nav>
+      <p id="setup-message" role="status" aria-live="polite"></p>
+
+      <!-- =================================================================== -->
+      <!-- WAVE 1: MOTHER SHIP, TAILSCALE & GITHUB                             -->
+      <!-- =================================================================== -->
+      <section id="setup-section-host">
+        <p class="eyebrow">One personal home for your work</p>
+        <h1>Your mother ship</h1>
+        <p>Anchor runs on the mother ship. Other computers and phones connect to its existing projects, provider accounts and Aladdin.</p>
+        <div class="setup-grid">
+          <article class="setup-card">
+            <h2>This computer is my mother ship</h2>
+            <p id="host-runtime">Reading existing setup…</p>
+            <p>First installation uses Anchor’s existing installer: Anchor and Foundry skills, directories, then service startup. This page continues that setup after the service is reachable.</p>
+            <a href="/setup/install" target="_blank" rel="noopener">Installation instructions</a>
+          </article>
+          <article class="setup-card">
+            <h2>Connect to my existing mother ship</h2>
+            <p>Join the same personal Tailscale network, confirm the host is online, and use Anchor’s existing secure pairing flow. The client uses the host’s providers and projects.</p>
+            <p id="host-network" class="muted"></p>
+            <p>Opening these settings keeps the established connection. No pairing token is created or replaced.</p>
+          </article>
+        </div>
+
+        <div class="wave1-cards-grid">
+          <article class="setup-card">
+            <h3>🖥 Mother Ship Service &amp; Runtime</h3>
+            <p class="muted small">Single-instance port :8777 guard, ConPTY terminal pump &amp; Zombie Hunter protection.</p>
+            <div class="wave1-code-row"><code id="w1-svc-cmd">http://127.0.0.1:8777/high-seat</code></div>
+          </article>
+          <article class="setup-card">
+            <h3>📡 Tailscale Private HTTPS Bridge</h3>
+            <p class="muted small">Expose Anchor privately to your phone or laptop on the same tailnet without opening firewall ports.</p>
+            <div class="wave1-code-row"><code id="w1-ts-cmd">tailscale serve --bg 8777</code></div>
+          </article>
+          <article class="setup-card">
+            <h3>🐙 GitHub Offsite Backup &amp; CLI</h3>
+            <p class="muted small">Verify GitHub CLI sign-in on the Mother Ship for offsite project backups and Foreman branch pushes.</p>
+            <div class="wave1-code-row"><code id="w1-gh-cmd">gh auth status</code></div>
+          </article>
+        </div>
+
+        <p class="setup-notice">Sign-in, account tests, API credentials and usage reads run on the mother ship, wherever you connect from.</p>
+        <button id="setup-initialize" class="primary" hidden>Save first setup with Aladdin</button>
+        <p id="initialize-message" role="status"></p>
+        <button data-section="providers" class="primary">Continue to providers →</button>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- WAVE 2: AI ENGINES, CREDENTIALS & TIER ROUTING                      -->
+      <!-- =================================================================== -->
+      <section id="setup-section-providers" hidden>
+        <p class="eyebrow">Shared Setup and Cave settings</p>
+        <h1>Your AI providers &amp; Cave setup on the mother ship</h1>
+        <p>Existing native sign-ins work without an open terminal. Each named subscription keeps its own account and allowance. API billing is a separate, optional mode.</p>
+
+        <!-- Unified 3-Wave Summary & Companion Persona Bar -->
+        <div class="wave1-cards-grid" id="wave2-summary-strip" aria-label="Setup overview and companion persona">
+          <article class="setup-card">
+            <div class="wave2-matrix-top">
+              <h3>1 · Mother Ship &amp; Remote</h3>
+              <span class="w3-badge w3-badge-emerald">✓ Active :8777</span>
+            </div>
+            <p class="muted small">Local Mother Ship runtime, Tailscale private HTTPS bridge, and GitHub CLI backup.</p>
+            <button type="button" class="btn-mini btn-amber" data-section="host">Open Wave 1 (Host &amp; Remote) →</button>
+          </article>
+          <article class="setup-card">
+            <div class="wave2-matrix-top">
+              <h3>Companion Persona</h3>
+              <span class="w3-badge w3-badge-amber" id="persona-active-badge">Aladdin · Cave of Wonders</span>
+            </div>
+            <p class="muted small">Global steward persona for Cave of Wonders &amp; Star Chart (set once here, never inside individual AI cockpits).</p>
+            <div class="w3-preset-pills" id="wave2-persona-strip" role="group" aria-label="Companion persona">
+              <button type="button" class="btn-mini is-active" data-persona-choice="aladdin">🪔 Aladdin · Cave</button>
+              <button type="button" class="btn-mini" data-persona-choice="jarvis">🛡 Jarvis · Helm</button>
+              <button type="button" class="btn-mini" data-persona-choice="ecgberht">👑 Ecgberht · High Seat</button>
+            </div>
+          </article>
+          <article class="setup-card">
+            <div class="wave2-matrix-top">
+              <h3>3 · Star Chart &amp; Folders</h3>
+              <span class="w3-badge w3-badge-sky" id="wave2-chart-summary-badge">C:\dev · 3-State Triage</span>
+            </div>
+            <p class="muted small" id="wave2-spend-summary-line">Configure primary root, ★ Active / ↳ Subordinate / ○ Excluded folders, and Star Chart Goal Tiles.</p>
+            <button type="button" class="btn-mini btn-amber" data-section="chart">Open Wave 3 (Star Chart Onboarding) →</button>
+          </article>
+        </div>
+
+        <p id="provider-host-note" class="setup-notice"></p>
+        <div class="setup-actions">
+          <button id="provider-refresh">Refresh host sign-ins &amp; reports</button>
+          <span id="refresh-message" role="status"></span>
+        </div>
+
+        <!-- Wave 2 Overview Matrix across all 4 families -->
+        <div id="wave2-provider-matrix" class="wave2-provider-matrix" aria-label="Provider overview matrix"></div>
+
+        <div id="provider-tabs" class="provider-tabs" role="group" aria-label="AI providers"></div>
+        <div class="setup-grid provider-grid">
+          <article class="setup-card">
+            <h2>Named connections</h2>
+            <div id="provider-accounts"></div>
+            <form id="add-account-form">
+              <label for="new-account-name">New connection nickname</label>
+              <input id="new-account-name" maxlength="70" required autocomplete="off">
+              <label for="new-account-mode">Billing mode</label>
+              <select id="new-account-mode">
+                <option value="subscription">Native subscription</option>
+                <option value="api">Optional API connection</option>
+              </select>
+              <button id="add-account" type="submit">+ Add account</button>
+              <p id="add-account-limit" class="muted small"></p>
+            </form>
+          </article>
+          <article id="provider-detail" class="setup-card" aria-live="polite"></article>
+        </div>
+        <article class="setup-card quality-card">
+          <h2>Provider · account · model · reasoning</h2>
+          <p>Apply chooses the source for newly started work. Existing conversations retain their account and native session.</p>
+          <div class="quality-grid">
+            <div><label for="setup-family">Provider</label><select id="setup-family"></select></div>
+            <div><label for="setup-account">Account</label><select id="setup-account"></select></div>
+            <div><label for="setup-model">Model</label><select id="setup-model"></select></div>
+            <div><label for="setup-effort">Reasoning</label><select id="setup-effort"></select></div>
+          </div>
+          <div class="quality-grid">
+            <div>
+              <label for="setup-threshold">Warn at remaining allowance</label>
+              <select id="setup-threshold">
+                <option value="10">10%</option>
+                <option value="20">20%</option>
+                <option value="30">30%</option>
+                <option value="40">40%</option>
+                <option value="50">50%</option>
+              </select>
+            </div>
+            <div>
+              <label for="setup-warning">Near-limit response</label>
+              <select id="setup-warning">
+                <option value="warn">Warn + keep full strength</option>
+                <option value="offer">Offer a quality change for me to apply</option>
+                <option value="manual">Ask me to choose another route</option>
+              </select>
+            </div>
+          </div>
+          <p class="setup-notice">Low allowance never lowers the model, reasoning effort or changes accounts automatically. Unknown allowance is not confirmed capacity.</p>
+          <button id="setup-apply" class="primary">Save / apply to new work</button>
+          <p id="apply-message" role="status"></p>
+        </article>
+        <div class="setup-actions">
+          <button data-section="host">Mother ship details</button>
+          <button data-section="chart">Continue to Star Chart →</button>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- WAVE 3: STAR CHART & WORKSPACE ONBOARDING                           -->
+      <!-- =================================================================== -->
+      <section id="setup-section-chart" hidden>
+        <div class="w3-card-top">
+          <div>
+            <p class="eyebrow">Star Chart · Aladdin · Workspace Onboarding</p>
+            <h1>Your goals, project folders &amp; Star Chart acts</h1>
+            <p class="muted">Existing goals, initiatives and project folders are retained. Configure your Mother Ship workspace root, assign 3-state folder roles (★ Active, ↳ Subordinate, ○ Excluded), group projects with AI cockpits, and shape Star Chart campaign acts.</p>
+          </div>
+          <div class="setup-actions">
+            <a id="setup-star-chart" class="primary" style="display:inline-block;padding:9px 14px;border-radius:7px;text-decoration:none;" href="/high-seat#camp">Open Star Chart</a>
+            <button id="chart-return" type="button">Return to Cave</button>
+          </div>
+        </div>
+
+        <!-- 4-Stage Pipeline Status Strip -->
+        <div class="w3-pipeline-strip" role="region" aria-label="Workspace onboarding pipeline">
+          <div class="w3-pipe-step is-done">
+            <span class="w3-pipe-num">1</span>
+            <div class="w3-pipe-body">
+              <strong>Workspace Root</strong>
+              <span id="pipe-badge-1" class="w3-pipe-sub">C:\dev + 1 External</span>
+            </div>
+          </div>
+          <div class="w3-pipe-step is-done">
+            <span class="w3-pipe-num">2</span>
+            <div class="w3-pipe-body">
+              <strong>Folder Roles (3-State)</strong>
+              <span id="pipe-badge-2" class="w3-pipe-sub">4 Active · 3 Sub · 1 Excl</span>
+            </div>
+          </div>
+          <div class="w3-pipe-step is-active">
+            <span class="w3-pipe-num">3</span>
+            <div class="w3-pipe-body">
+              <strong>Projects &amp; AI Cockpits</strong>
+              <span id="pipe-badge-3" class="w3-pipe-sub">4 Groups · 5 Cockpits</span>
+            </div>
+          </div>
+          <div class="w3-pipe-step is-active">
+            <span class="w3-pipe-num">4</span>
+            <div class="w3-pipe-body">
+              <strong>Star Chart Goal Tiles</strong>
+              <span id="pipe-badge-4" class="w3-pipe-sub">3 Campaign Acts</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workspace Root Configuration Bar -->
+        <div class="w3-root-bar" id="panel-workspace-root">
+          <div class="w3-root-info">
+            <div class="w3-root-primary">
+              <span class="w3-root-label">PRIMARY WORKSPACE ROOT</span>
+              <code id="root-path-display" class="w3-root-code">C:\dev</code>
+              <span class="w3-badge w3-badge-emerald">✓ Indexed &amp; Writable</span>
+            </div>
+            <div class="w3-ext-list" id="external-roots-pills"></div>
+          </div>
+          <div class="w3-root-actions">
+            <button type="button" id="btn-toggle-change-root">📁 Change / Create Root</button>
+            <button type="button" id="btn-toggle-add-external">🔗 + Add External Folder</button>
+            <button type="button" class="btn-amber" id="btn-toggle-search-pull">🔍 AI Search &amp; Pull</button>
+          </div>
+        </div>
+
+        <!-- Drawer 1: Change / Create Primary Root -->
+        <div id="drawer-change-root" class="w3-drawer" hidden>
+          <div class="w3-drawer-head">
+            <h4>📁 Set or Create Primary Mother Ship Workspace Root</h4>
+            <button type="button" class="btn-mini" data-close-drawer="drawer-change-root">✕ Close</button>
+          </div>
+          <p class="muted small">Point Anchor at your main development directory (e.g. <code>C:\dev</code> or <code>D:\Workspace</code>). Existing files are never deleted.</p>
+          <div class="w3-drawer-form">
+            <input type="text" id="input-new-root" value="C:\dev" placeholder="C:\dev or D:\Projects">
+            <label class="w3-checkbox-label">
+              <input type="checkbox" id="chk-create-root" checked>
+              <span>Create directory on disk if missing</span>
+            </label>
+            <button type="button" class="primary" id="btn-apply-root">Apply Workspace Root</button>
+          </div>
+        </div>
+
+        <!-- Drawer 2: Add External Folder -->
+        <div id="drawer-add-external" class="w3-drawer" hidden>
+          <div class="w3-drawer-head">
+            <h4>🔗 Attach External Folder (No File Copying Required)</h4>
+            <button type="button" class="btn-mini" data-close-drawer="drawer-add-external">✕ Close</button>
+          </div>
+          <p class="muted small">Link an external directory (such as an Obsidian vault or secondary drive) directly into the Star Chart without moving or duplicating files.</p>
+          <div class="w3-drawer-form">
+            <input type="text" id="input-ext-path" placeholder="D:\ObsidianVault\ResearchNotes or E:\DataLake">
+            <select id="sel-ext-mode">
+              <option value="read_write">Read / Write (Full Cockpit Access)</option>
+              <option value="read_only">Read-Only Reference (Protected)</option>
+            </select>
+            <button type="button" class="primary" id="btn-attach-external">Attach External Root</button>
+          </div>
+        </div>
+
+        <!-- Drawer 3: AI-Assisted Search & Pull (Copy-Only + Undo) -->
+        <div id="drawer-search-pull" class="w3-drawer" hidden>
+          <div class="w3-drawer-head">
+            <div>
+              <h4>🔍 AI-Assisted Search &amp; Pull into Workspace Root</h4>
+              <span class="w3-badge w3-badge-emerald">🛡 Copy-Only · Originals Never Deleted · SHA-256 Verified + 1-Click Undo</span>
+            </div>
+            <button type="button" class="btn-mini" data-close-drawer="drawer-search-pull">✕ Close</button>
+          </div>
+          <div class="w3-preset-pills">
+            <button type="button" class="btn-mini is-active" data-search-preset="recent">⚡ Recent Desktop &amp; Downloads</button>
+            <button type="button" class="btn-mini" data-search-preset="code">💻 Scattered Git / Python Repos</button>
+            <button type="button" class="btn-mini" data-search-preset="docs">📊 Research &amp; Deal Models</button>
+          </div>
+          <div class="w3-drawer-form">
+            <input type="text" id="input-search-pull" placeholder="Filter by keyword (e.g., options, neuro, series-b, mcp)...">
+            <button type="button" class="primary" id="btn-run-search">Scan Machine</button>
+          </div>
+          <div id="search-pull-results" class="w3-search-results"></div>
+          <div class="w3-pull-history">
+            <div class="small muted">Recent Non-Destructive Pulls &amp; 1-Click Undo</div>
+            <div id="pull-undo-list"></div>
+          </div>
+        </div>
+
+        <!-- Two-Column Workbench -->
+        <div class="w3-workbench">
+          <!-- LEFT COLUMN: Project Storage Roots (3-State Triage) -->
+          <div class="w3-col-left" id="panel-folder-roots">
+            <h3>Project Storage Roots (3-State Triage)</h3>
+            <p class="muted small">Assign each folder a role: <strong>★ Active</strong> (top-level), <strong>↳ Subordinate</strong> (helper/library under a parent), or <strong>○ Excluded</strong> (sorted to bottom). Drag any folder onto a project group or goal tile on the right.</p>
+            <div class="w3-filter-bar">
+              <input type="text" id="input-folder-filter" placeholder="Filter folders by name or path...">
+              <div class="w3-role-filters">
+                <button type="button" class="btn-mini is-active" data-role-filter="all">All</button>
+                <button type="button" class="btn-mini" data-role-filter="active">★ Active</button>
+                <button type="button" class="btn-mini" data-role-filter="subordinate">↳ Subordinate</button>
+                <button type="button" class="btn-mini" data-role-filter="excluded">○ Excluded</button>
+              </div>
+            </div>
+
+            <div id="exclude-undo-toast" class="w3-undo-toast" hidden>
+              <span id="exclude-undo-text">Folder moved to Excluded.</span>
+              <button type="button" class="btn-mini" id="btn-undo-exclude">Undo</button>
+            </div>
+
+            <div id="folder-list-container" class="w3-folder-list"></div>
+
+            <article class="setup-card" style="margin-top:12px;">
+              <h2>Existing project folders on the mother ship</h2>
+              <ul id="setup-project-roots"></ul>
+            </article>
+          </div>
+
+          <!-- RIGHT COLUMN: 3-Mode Switcher -->
+          <div class="w3-col-right" id="panel-right-modes">
+            <div class="w3-mode-tabs" role="tablist" aria-label="Workspace onboarding views">
+              <button type="button" class="w3-mode-tab is-active" id="tab-mode-projects" data-w3-mode="projects">🗂 1 · Projects &amp; AI Cockpits</button>
+              <button type="button" class="w3-mode-tab" id="tab-mode-starchart" data-w3-mode="starchart">🧭 2 · Star Chart Goal Tiles</button>
+              <button type="button" class="w3-mode-tab" id="tab-mode-guide" data-w3-mode="guide">💡 3 · Interactive Setup Coach</button>
+            </div>
+
+            <!-- MODE 1: PROJECTS & AI COCKPITS -->
+            <div id="view-mode-projects">
+              <div class="w3-mode-toolbar">
+                <div>
+                  <h3>Project Groupings &amp; Dedicated AI Cockpits</h3>
+                  <p class="muted small">Group multiple folders into cohesive campaigns and pre-configure Steward / specialist AI cockpits.</p>
+                </div>
+                <div class="w3-toolbar-btns">
+                  <button type="button" class="btn-amber" id="btn-auto-group">✨ Auto-Group Folders</button>
+                  <button type="button" id="btn-open-new-group">+ New Project Group</button>
+                  <button type="button" id="btn-open-combine-groups">⇄ Combine Groups</button>
+                </div>
+              </div>
+
+              <div id="form-new-group" class="w3-inline-form" hidden>
+                <h4>Create New Project Grouping</h4>
+                <div class="w3-form-row">
+                  <input type="text" id="input-new-group-name" placeholder="Group name (e.g. Bio-Compute &amp; Neural Sim)">
+                  <input type="text" id="input-new-group-desc" placeholder="Short description of the campaign scope">
+                  <button type="button" class="primary" id="btn-save-new-group">Create Group</button>
+                  <button type="button" class="btn-mini" data-close-inline="form-new-group">Cancel</button>
+                </div>
+              </div>
+
+              <div id="form-combine-groups" class="w3-inline-form" hidden>
+                <h4>Combine Two Project Groups</h4>
+                <div class="w3-form-row">
+                  <select id="sel-combine-src" aria-label="Source project group"></select>
+                  <select id="sel-combine-dst" aria-label="Target project group"></select>
+                  <button type="button" class="primary" id="btn-confirm-combine-groups">Merge Groups</button>
+                  <button type="button" class="btn-mini" data-close-inline="form-combine-groups">Cancel</button>
+                </div>
+              </div>
+
+              <div id="projects-grid-container" class="w3-projects-grid"></div>
+            </div>
+
+            <!-- MODE 2: STAR CHART GOAL TILES -->
+            <div id="view-mode-starchart" hidden>
+              <div class="w3-mode-toolbar">
+                <div>
+                  <h3>Star Chart Acts &amp; Strategic Goal Tiles</h3>
+                  <p class="muted small">Define the high-level North Star acts and milestones that govern your projects on The High Seat.</p>
+                </div>
+                <div class="w3-toolbar-btns">
+                  <button type="button" class="btn-amber" id="btn-open-goal-shaper">✨ Steward Goal Shaper</button>
+                  <button type="button" id="btn-open-new-goal">+ New Goal Tile</button>
+                  <button type="button" id="btn-open-combine-goals">⇄ Combine Goals</button>
+                </div>
+              </div>
+
+              <div id="drawer-goal-shaper" class="w3-inline-form" hidden>
+                <h4>✨ Steward Ecgberht · Interactive Goal Shaper</h4>
+                <p class="muted small">Paste rough notes or bullet points; Steward Ecgberht structures them into a Star Chart Act with milestones.</p>
+                <textarea id="input-goal-shaper" rows="3" placeholder="Example: Launch BioCompute spike simulator v2&#10;- Benchmark CUDA kernel latency&#10;- Generate publication figures"></textarea>
+                <div class="w3-form-row">
+                  <select id="sel-shaper-group" aria-label="Linked project group"></select>
+                  <button type="button" class="primary" id="btn-generate-shaped-goals">Shape into Star Chart Act</button>
+                  <button type="button" class="btn-mini" data-close-inline="drawer-goal-shaper">Cancel</button>
+                </div>
+              </div>
+
+              <div id="form-new-goal" class="w3-inline-form" hidden>
+                <h4>Create Star Chart Goal Tile (Act)</h4>
+                <div class="w3-form-row">
+                  <input type="text" id="input-goal-act" placeholder="Act label (e.g. ACT IV · BIO-COMPUTE)">
+                  <input type="text" id="input-goal-horizon" placeholder="Horizon (e.g. Q4 2026)" value="Q4 2026">
+                  <select id="sel-goal-group" aria-label="Goal project group"></select>
+                </div>
+                <div class="w3-form-row">
+                  <input type="text" id="input-goal-title" placeholder="Goal title (North Star outcome)">
+                  <input type="text" id="input-goal-desc" placeholder="Brief description &amp; verification criteria">
+                  <button type="button" class="primary" id="btn-save-new-goal">Add Goal Tile</button>
+                  <button type="button" class="btn-mini" data-close-inline="form-new-goal">Cancel</button>
+                </div>
+              </div>
+
+              <div id="form-combine-goals" class="w3-inline-form" hidden>
+                <h4>Combine Two Star Chart Goal Tiles</h4>
+                <div class="w3-form-row">
+                  <select id="sel-combine-goal-src" aria-label="Source goal tile"></select>
+                  <select id="sel-combine-goal-dst" aria-label="Target goal tile"></select>
+                  <button type="button" class="primary" id="btn-confirm-combine-goals">Combine Goal Tiles</button>
+                  <button type="button" class="btn-mini" data-close-inline="form-combine-goals">Cancel</button>
+                </div>
+              </div>
+
+              <div id="goals-grid-container" class="w3-goals-grid"></div>
+            </div>
+
+            <!-- MODE 3: INTERACTIVE SETUP COACH -->
+            <div id="view-mode-guide" hidden>
+              <div class="w3-mode-toolbar">
+                <div>
+                  <h3>Interactive Setup Coach &amp; Onboarding Walkthrough</h3>
+                  <p class="muted small">Step-by-step guidance for organizing your Mother Ship workspace, subordinate repos, and Star Chart acts.</p>
+                </div>
+              </div>
+              <div class="w3-coach-grid">
+                <div class="w3-coach-card">
+                  <span class="eyebrow">STEP 1 · WORKSPACE ROOT &amp; EXTERNAL LINKS</span>
+                  <h4>Keep <code>C:\dev</code> clean while linking external vaults in place</h4>
+                  <p class="muted small">Your primary workspace root holds your main repositories. External folders attach via reference without duplicating files. Scattered folders can be pulled in with <strong>Copy-Only Search &amp; Pull</strong> (SHA-256 verified, 1-click Undo).</p>
+                  <button type="button" data-coach-focus="panel-workspace-root">Highlight Workspace Root Bar →</button>
+                </div>
+                <div class="w3-coach-card">
+                  <span class="eyebrow">STEP 2 · 3-STATE FOLDER TRIAGE</span>
+                  <h4>★ Active vs ↳ Subordinate vs ○ Excluded</h4>
+                  <p class="muted small">Mark primary products as <strong>★ Active</strong>. Mark shared libraries or sub-engines (like <code>trio</code> under <code>Skill Foundry</code>) as <strong>↳ Subordinate</strong> so they nest under their parent. Mark old scratch folders <strong>○ Excluded</strong> to sink them to the bottom tray.</p>
+                  <button type="button" data-coach-focus="panel-folder-roots">Highlight Folder Storage Roots →</button>
+                </div>
+                <div class="w3-coach-card">
+                  <span class="eyebrow">STEP 3 · PROJECT GROUPINGS &amp; AI COCKPITS</span>
+                  <h4>Group related folders &amp; pre-assign Steward cockpits</h4>
+                  <p class="muted small">A Project Grouping binds one or more Active + Subordinate folders into a single High Seat campaign area, complete with pre-drafted AI cockpits.</p>
+                  <button type="button" data-coach-switch-mode="projects">Go to Projects &amp; Cockpits →</button>
+                </div>
+                <div class="w3-coach-card">
+                  <span class="eyebrow">STEP 4 · STAR CHART ACTS &amp; MILESTONES</span>
+                  <h4>Connect every folder group to a North Star outcome</h4>
+                  <p class="muted small">Star Chart Goal Tiles represent your strategic Campaign Acts. Use the <strong>Steward Goal Shaper</strong> to convert rough notes into structured milestones.</p>
+                  <button type="button" data-coach-switch-mode="starchart">Go to Star Chart Goal Tiles →</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="setup-actions" style="margin-top:16px;">
+          <button data-section="providers">← Back to Providers</button>
+          <button data-section="comms" class="primary">Continue to Calendar &amp; Email →</button>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- WAVE 9 / STAGE 4: CALENDAR & EMAIL CONNECTORS                       -->
+      <!-- =================================================================== -->
+      <section id="setup-section-comms" hidden>
+        <div class="w3-card-top">
+          <div>
+            <p class="eyebrow">Wave 9 · Multi-Provider Calendar &amp; Email Connectors · OS Credential Vault</p>
+            <h1>Your Calendar &amp; Email connectors on the mother ship</h1>
+            <p class="muted">Connect Google / Gmail, Microsoft 365 / Outlook, or any Custom / Institutional IMAP &amp; CalDAV/ICS feed. Credentials are stored exclusively in the Windows OS Credential Vault (<code>advapi32</code>) — never in JSON files on disk. Sync is strictly read-only and reconciles correspondence and calendar deadlines directly against your active project roadmaps.</p>
+          </div>
+          <div class="setup-actions">
+            <button type="button" class="primary" id="btn-comms-sync-now">↻ Sync Calendar &amp; Email Now</button>
+            <button type="button" id="comms-return">Return to Cave</button>
+          </div>
+        </div>
+
+        <p id="comms-status-banner" class="setup-notice" role="status" aria-live="polite">
+          🛡 <strong>Read-Only &amp; OS Vault Guardrail:</strong> Anchor reads envelope headers and ICS calendar windows to reconcile project milestones (e.g. Family Trusts, MBA Teaching AI, Campaign). It never sends email or modifies external calendar events without your explicit approval.
+        </p>
+
+        <!-- Provider Preset Cards -->
+        <div class="wave1-cards-grid" id="comms-provider-cards" aria-label="Calendar and Email Provider Presets">
+          <article class="setup-card comms-preset-card is-selected" data-comms-preset="gmail">
+            <div class="wave2-matrix-top">
+              <h3>📧 Google / Gmail + Calendar</h3>
+              <span class="w3-badge w3-badge-emerald">Preset · Port 993</span>
+            </div>
+            <p class="muted small">Connect Gmail IMAP (<code>imap.gmail.com:993</code>) with a 16-character App Password or OAuth token, plus your private Google Calendar ICS feed.</p>
+            <button type="button" class="btn-mini btn-amber" data-select-comms-preset="gmail">Use Google / Gmail Preset</button>
+          </article>
+
+          <article class="setup-card comms-preset-card" data-comms-preset="outlook">
+            <div class="wave2-matrix-top">
+              <h3>📅 Microsoft 365 / Outlook</h3>
+              <span class="w3-badge w3-badge-sky">Preset · Exchange</span>
+            </div>
+            <p class="muted small">Connect Outlook / Office 365 (<code>outlook.office365.com:993</code>) and published Exchange / Outlook ICS calendar feeds.</p>
+            <button type="button" class="btn-mini btn-amber" data-select-comms-preset="outlook">Use Microsoft 365 Preset</button>
+          </article>
+
+          <article class="setup-card comms-preset-card" data-comms-preset="custom">
+            <div class="wave2-matrix-top">
+              <h3>🏛 Custom / Institutional IMAP &amp; ICS</h3>
+              <span class="w3-badge w3-badge-amber">University / Counsel</span>
+            </div>
+            <p class="muted small">Connect any standard TLS IMAP server and CalDAV / RFC 5545 ICS calendar feed for university, legal counsel, or private domain accounts.</p>
+            <button type="button" class="btn-mini btn-amber" data-select-comms-preset="custom">Use Custom IMAP / ICS Preset</button>
+          </article>
+        </div>
+
+        <div class="setup-grid" style="margin-top:16px;">
+          <!-- Left: Add / Update Connector Form -->
+          <article class="setup-card" id="comms-account-form-card">
+            <h2 id="comms-form-title">Connect or Update Calendar &amp; Email Account</h2>
+            <p class="muted small" id="comms-form-hint">Use a 16-character Google App Password (or OAuth token) for read-only IMAP header sync, plus your private ICS feed URL for Google Calendar.</p>
+            <div class="quality-grid" style="margin-top:10px;">
+              <div>
+                <label for="comms-family">Provider Family</label>
+                <select id="comms-family">
+                  <option value="gmail">Google Workspace / Gmail + Calendar</option>
+                  <option value="outlook">Microsoft 365 / Outlook + Calendar</option>
+                  <option value="custom">Custom / Institutional IMAP &amp; ICS</option>
+                </select>
+              </div>
+              <div>
+                <label for="comms-label">Connection Label</label>
+                <input type="text" id="comms-label" placeholder="Primary Gmail &amp; Calendar" value="Primary Gmail &amp; Calendar">
+              </div>
+              <div>
+                <label for="comms-email">Email Address</label>
+                <input type="email" id="comms-email" placeholder="researcher@example.com" autocomplete="off">
+              </div>
+              <div>
+                <label for="comms-auth-mode">Authentication Mode</label>
+                <select id="comms-auth-mode">
+                  <option value="app_password">App Password / IMAP + ICS (OS Vault)</option>
+                  <option value="oauth_token">OAuth2 Bearer Token + ICS (OS Vault)</option>
+                  <option value="ics_only">Calendar ICS Feed Only (No Email)</option>
+                </select>
+              </div>
+              <div>
+                <label for="comms-imap-host">IMAP SSL Host</label>
+                <input type="text" id="comms-imap-host" value="imap.gmail.com" placeholder="imap.gmail.com">
+              </div>
+              <div>
+                <label for="comms-imap-port">IMAP SSL Port</label>
+                <input type="number" id="comms-imap-port" value="993">
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <label for="comms-secret">App Password or OAuth Token (Stored in Windows OS Vault, never in JSON)</label>
+              <input type="password" id="comms-secret" placeholder="Paste App Password or token — stored via provider_secrets.put()" autocomplete="off">
+            </div>
+            <div style="margin-top:10px;">
+              <label for="comms-ics-url">Calendar ICS / CalDAV Feed URL (RFC 5545)</label>
+              <input type="text" id="comms-ics-url" placeholder="https://calendar.google.com/calendar/ical/example/private/basic.ics" autocomplete="off">
+            </div>
+            <div class="setup-actions" style="margin-top:14px;">
+              <button type="button" class="primary" id="btn-comms-save-account">Save to OS Vault &amp; Connect</button>
+              <button type="button" id="btn-comms-test-account">Test Connection</button>
+              <button type="button" id="btn-comms-oauth-pkce">🔑 OAuth2 PKCE Flow</button>
+              <button type="button" id="btn-comms-toggle-poller">⟳ Start Auto-Poller (15m)</button>
+            </div>
+            <p id="comms-form-feedback" class="small" role="status"></p>
+          </article>
+
+          <!-- Right: Configured Accounts & Reconciled Preview -->
+          <article class="setup-card" id="comms-configured-card">
+            <h2>Configured Accounts &amp; Live Roadmap Reconciliation</h2>
+            <div id="comms-accounts-list" style="margin-bottom:14px;"></div>
+
+            <h3>Reconciled Correspondence &amp; Deadlines Preview</h3>
+            <p class="muted small">Items below are automatically matched between your Calendar/Email pulse and project roadmaps (e.g. Family Trusts, MBA Teaching AI, Campaign, and Desk).</p>
+            <div id="comms-reconciled-preview"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/provider-controls.js"></script>
+  <script src="/static/provider-setup.js"></script>
+</body>
+</html>

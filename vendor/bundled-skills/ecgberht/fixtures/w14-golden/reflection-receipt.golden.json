@@ -1,0 +1,49 @@
+{
+  "at": "2026-08-03T12:00:00.000Z",
+  "content_hash": "c0ce312c5b544363afb0a7fdac8f8dc0ed9cb7dff707abb2d04a10c47613cff1",
+  "coverage": {
+    "available": 5,
+    "ratio": "5/6",
+    "total": 6
+  },
+  "deterministic": true,
+  "gate_decision": 4,
+  "handback_id": "golden-hb-001",
+  "handback_summary": {
+    "active_effort": "Wave 14 golden stage",
+    "human_wait": "none",
+    "uncertainty_flags": [
+      "golden",
+      "wave-14"
+    ],
+    "why_next": "Emit next-stage proposal for stage-b from ledger facts."
+  },
+  "job_id": "golden-job-001",
+  "kind": "reflection_receipt",
+  "message": "ZERO-MODEL reflection receipt emitted at handback (gate decision 4) — not a queued split.",
+  "oranges_prompts": [
+    "What would John ask next about this stage?",
+    "What artifact must exist before the stage can close?",
+    "What decision, if any, requires a human gate?"
+  ],
+  "provenance": "ledger-facts-deterministic",
+  "schema": "ecgberht-reflection-receipt-v0",
+  "skill": "researchPrime",
+  "stage_produced": {
+    "active_effort": "Wave 14 golden stage",
+    "depth": "LITE",
+    "grasscatch_why": null,
+    "human_wait": "none",
+    "skill": "researchPrime",
+    "tool_depth_why": "LITE golden fixture — zero model.",
+    "uncertainty_flags": [
+      "golden",
+      "wave-14"
+    ],
+    "why_next": "Emit next-stage proposal for stage-b from ledger facts."
+  },
+  "step_id": "stage-a",
+  "zero_model": true,
+  "zero_network": true,
+  "zero_spend": true
+}

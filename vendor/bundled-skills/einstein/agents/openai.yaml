@@ -1,0 +1,6 @@
+interface:
+  display_name: "Einstein"
+  short_description: "Visual learning packs from foundations to mastery"
+  icon_small: "./assets/icon.png"
+  icon_large: "./assets/icon.png"
+  default_prompt: "Use $einstein to build a beginner-accessible learning pack from my course materials."

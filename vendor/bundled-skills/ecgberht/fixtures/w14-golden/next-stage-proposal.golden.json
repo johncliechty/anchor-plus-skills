@@ -1,0 +1,35 @@
+{
+  "at": "2026-08-03T12:00:00.000Z",
+  "campaign_complete": false,
+  "confirmed": false,
+  "content_hash": "e0b0de34a44bfd2723740cb7777437a54829f16a75199973bbe42ce77b500e55",
+  "deterministic": true,
+  "enters_propose_confirm_path": true,
+  "from_step_id": "stage-a",
+  "gate_decision": 4,
+  "kind": "next_stage_proposal",
+  "message": "ZERO-MODEL next-stage proposal for 'stage-b' emitted at handback (gate decision 4).",
+  "next_step": {
+    "done_when": "Stage B deliverable reviewable",
+    "name": "Stage B",
+    "oranges_annotations": [
+      "What would John ask next about this stage?",
+      "What artifact must exist before the stage can close?",
+      "What decision, if any, requires a human gate?"
+    ],
+    "step_id": "stage-b"
+  },
+  "next_step_id": "stage-b",
+  "oranges_prompts": [
+    "What would John ask next about this stage?",
+    "What artifact must exist before the stage can close?",
+    "What decision, if any, requires a human gate?"
+  ],
+  "provenance": "ledger-facts-deterministic",
+  "requires_confirm": true,
+  "schema": "ecgberht-next-stage-proposal-v0",
+  "why": "Emit next-stage proposal for stage-b from ledger facts.",
+  "zero_model": true,
+  "zero_network": true,
+  "zero_spend": true
+}

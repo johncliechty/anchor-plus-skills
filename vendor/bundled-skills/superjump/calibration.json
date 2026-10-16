@@ -1,0 +1,14 @@
+{
+  "source": "Wave 0 prototype 2026-09-14",
+  "unit": "seconds",
+  "table": {
+    "chatgpt:ultra:read": { "min": 73, "median": 86, "max": 97, "n": 3, "tier": "C" },
+    "chatgpt:max:read": { "min": 202, "median": 202, "max": 208, "n": 2, "tier": "C" },
+    "chatgpt:ultra:leap": { "min": 109, "median": 175, "max": 206, "n": 9, "tier": "C" },
+    "chatgpt:max:leap": { "min": 178, "median": 266, "max": 552, "n": 6, "tier": "C" },
+    "grok:xhigh:judge": { "min": 103, "median": 150, "max": 239, "n": 12, "tier": "C" },
+    "grok:high:judge": { "min": 121, "median": 121, "max": 128, "n": 3, "tier": "C" },
+    "grok:xhigh:dedupe": { "min": 26, "median": 27, "max": 203, "n": 4, "tier": "C" },
+    "grok:high:dedupe": { "min": 19, "median": 19, "max": 19, "n": 1, "tier": "C" }
+  }
+}
