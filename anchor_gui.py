@@ -8177,9 +8177,18 @@ def render_desk_page(logged_in=False) -> str:
             camp = next((e for e in _rnd.list_projects() if e.get("folder_path") and Path(e["folder_path"]).resolve() == camp_dir), None)
         except Exception:
             pass
+        ms_info = {}
+        try:
+            import mothership_collab as _mc
+            ms_info = {
+                "identity": _mc.local_mothership_identity(),
+                "peers": _mc.list_peers(),
+            }
+        except Exception:
+            ms_info = {}
         ctx = {"build": BUILD_ID, "steward": _steward_ui(), "logged_in": bool(logged_in),
                "auth_required": bool(_paths.expected_token()), "entry": entry, "desk": summ,
-               "campaign_pid": (camp or {}).get("id") or ""}
+               "campaign_pid": (camp or {}).get("id") or "", "mothership": ms_info}
         return _dp.render_desk_html(ctx)
     except Exception as e:
         return ("<!DOCTYPE html><html><body style=\"font-family:system-ui;background:#0b0e14;color:#e6e9ef;padding:24px\">"
@@ -8188,7 +8197,7 @@ def render_desk_page(logged_in=False) -> str:
 
 
 def handle_desk(handler, path, body):
-    """POST /api/desk {act, ...} - the Desk page's acts: add / done / undone / promote an item, start a cockpit.
+    """POST /api/desk {act, ...} - the Desk page's acts: add / done / undone / done_all / promote an item, start a cockpit, or steward_say.
     Seating a cockpit is the Campaign's own act (seat_new / withdraw on /api/high-seat/campaign)."""
     import desk as _desk
     b = body or {}
@@ -8199,10 +8208,17 @@ def handle_desk(handler, path, body):
         out = _desk.add_item(b.get("text"))
     elif a in ("done", "undone"):
         out = _desk.set_done(str(b.get("item") or ""), done=(a == "done"))
+    elif a == "done_all":
+        items = [i for i in _desk.read_items() if i.get("status") == "open"]
+        for it in items:
+            _desk.set_done(it["id"], done=True)
+        out = {"ok": True, "count": len(items), "receipt": "Marked %d small item(s) done." % len(items)}
     elif a == "promote":
         out = _desk.promote(str(b.get("item") or ""))
     elif a == "new_cockpit":
         out = _desk.new_cockpit(b.get("name"))
+    elif a == "steward_say":
+        out = _desk.steward_command(b.get("text"))
     else:
         out = {"ok": False, "error": "no such act"}
     handler._send_json(out, 200 if out.get("ok") else 400)
@@ -17757,7 +17773,8 @@ def _doctor_sync_live_code():
     try:
         import importlib
         for mod_name in ("doctor_plain", "deliverables_register", "home_rows", "high_seat_page",
-                         "campaign_page", "foundry_page", "foundry_api", "usage_allowance_monitor",
+                         "campaign_page", "desk", "desk_page", "mothership_collab",
+                         "foundry_page", "foundry_api", "usage_allowance_monitor",
                          "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
                          "steward_cockpit.gui_surface_emit",
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",

@@ -193,3 +193,90 @@ def summary(light_of, seat_of=None, root=None):
         cockpits.append(c)
     waits = int(small["light"] == "orange") + sum(1 for c in cockpits if c["light"] == "orange")
     return {"small": small, "cockpits": cockpits, "waits": waits}
+
+
+def steward_command(text, root=None):
+    """Wave 21: Sub-20ms deterministic Desk Steward command execution."""
+    import re
+    raw = " ".join(str(text or "").split())
+    if not raw:
+        return {"ok": False, "error": "Say what you want the Desk Steward to do."}
+    low = raw.lower()
+
+    # 1. Mark all small items done
+    if re.search(r"\b(mark|check|complete|finish)\s+(all|every(?:thing)?)\b", low):
+        open_its = [i for i in read_items(root) if i.get("status") == "open"]
+        for it in open_its:
+            set_done(it["id"], done=True, root=root)
+        msg = "Marked %d open small item(s) done." % len(open_its)
+        return {"ok": True, "say": msg, "receipt": msg, "mutated": True}
+
+    # 2. Create / start a new substantial cockpit
+    m_new = re.match(
+        r"^(?:please\s+)?(?:create|start|open|new|launch)\s+(?:a\s+)?(?:new\s+)?(?:substantial\s+)?(?:ai\s+)?cockpit(?:\s+(?:called|named|for))?\s*[:\-]?\s*(.+)$",
+        raw,
+        re.I,
+    )
+    if m_new:
+        cname = m_new.group(1).strip(" .\"'")
+        res = new_cockpit(cname, root=root)
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error") or "Could not create cockpit."}
+        msg = 'Created substantial Desk cockpit "%s".' % res["dir"]
+        return {"ok": True, "say": msg, "receipt": msg, "dir": res["dir"], "mutated": True}
+
+    # 3. Promote an existing small item to its own cockpit
+    m_prom = re.match(
+        r"^(?:please\s+)?(?:promote|upgrade|move)\s+(.+?)(?:\s+to\s+(?:its\s+own\s+|a\s+)?cockpit)?$",
+        raw,
+        re.I,
+    )
+    if m_prom:
+        q = m_prom.group(1).strip(" .\"'").lower()
+        open_its = [i for i in read_items(root) if i.get("status") == "open"]
+        hit = next((i for i in open_its if q in i.get("text", "").lower() or i.get("id") == q), None)
+        if hit:
+            res = promote(hit["id"], root=root)
+            if res.get("ok"):
+                msg = 'Promoted "%s" to its own Desk cockpit (%s).' % (hit["text"], res.get("dir"))
+                return {"ok": True, "say": msg, "receipt": msg, "dir": res.get("dir"), "mutated": True}
+
+    # 4. Mark a specific small item done
+    m_done = re.match(
+        r"^(?:please\s+)?(?:mark|check|complete|finish)\s+(.+?)(?:\s+as\s+done|\s+done)?$",
+        raw,
+        re.I,
+    )
+    if m_done:
+        q = m_done.group(1).strip(" .\"'").lower()
+        open_its = [i for i in read_items(root) if i.get("status") == "open"]
+        hit = next((i for i in open_its if q in i.get("text", "").lower() or i.get("id") == q), (open_its[0] if (q in ("next", "first", "top") and open_its) else None))
+        if hit:
+            set_done(hit["id"], done=True, root=root)
+            msg = 'Marked "%s" done.' % hit["text"]
+            return {"ok": True, "say": msg, "receipt": msg, "item": hit, "mutated": True}
+
+    # 5. Add a small item
+    m_add = re.match(
+        r"^(?:please\s+)?(?:add|create|note|put|log)(?:\s+(?:a\s+)?(?:small\s+)?(?:admin\s+)?item)?\s*[:\-]?\s*(.+)$",
+        raw,
+        re.I,
+    )
+    if m_add:
+        txt = m_add.group(1).strip(" .\"'")
+        res = add_item(txt, root=root)
+        if res.get("ok"):
+            msg = 'Added small item: "%s".' % res["item"]["text"]
+            return {"ok": True, "say": msg, "receipt": msg, "item": res["item"], "mutated": True}
+
+    # 6. Triage / status summary
+    items = read_items(root)
+    open_its = [i for i in items if i.get("status") == "open"]
+    done_cnt = sum(1 for i in items if i.get("status") == "done")
+    c_dirs = cockpit_dirs(root)
+    msg = (
+        "Desk Triage Summary: %d open small item(s), %d completed, and %d substantial cockpit(s) (%s)."
+        % (len(open_its), done_cnt, len(c_dirs), ", ".join(c_dirs[:4]) if c_dirs else "none yet")
+    )
+    return {"ok": True, "say": msg, "receipt": msg, "mutated": False}
+

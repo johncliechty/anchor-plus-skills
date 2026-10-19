@@ -1585,3 +1585,14 @@ def render_high_seat_html(ctx) -> str:
          ctx.get("prefs_html") or "", board, _panel(ctx), _brand_img(ctx["build"], "gwl-m-icon.svg"), esc(ctx["build"]), esc(ctx["build"]), esc(ctx["build"]), esc(ctx["build"]))
     return page.replace('</head>', '<link rel="stylesheet" href="/static/provider-setup.css?v=%s"></head>' % esc(ctx["build"])).replace('</body>',
         '<script src="/static/provider-controls.js?v=%s"></script></body>' % esc(ctx["build"]))
+
+
+try:
+    import sys as _sys_mod
+    import importlib as _il_mod
+    for _mname in ("desk", "desk_page", "mothership_collab", "steward_cockpit.campaign_say"):
+        if _mname in _sys_mod.modules:
+            _il_mod.reload(_sys_mod.modules[_mname])
+except Exception:
+    pass
+

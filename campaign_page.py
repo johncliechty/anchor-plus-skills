@@ -748,7 +748,7 @@ def render_campaign_html(ctx, open_id=None) -> str:
          _areas(ctx), _bands(ctx), _places(ctx), _calendar(ctx))
     desk_href = ("/steward/v1?pid=%s&amp;dir=Small%%20items" % esc(ctx["desk_pid"])) if ctx.get("desk_pid") else "/desk"
     cave_label = esc(st.get("high_seat_name") or "Cave of Wonders")
-    cave_icon = esc(st.get("high_seat") or "aladdin-high-seat.jpg")
+    cave_icon = esc(st.get("high_seat") or "aladdin-high-seat-cave.jpg")
     star_icon = esc(st.get("campaign_icon") or "campaign-aladdin-star-chart.jpg")
     b = esc(ctx["build"])
     hdr = (
