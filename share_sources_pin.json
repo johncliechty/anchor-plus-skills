@@ -1,0 +1,35 @@
+{
+  "schema": "share-sources-pin/v1",
+  "schema_version": 1,
+  "ship_allowed": true,
+  "ship_allowed_stamp_text": "Publication authorized for the scrubbed notebook maintenance release; distribution gates remain required.",
+  "skills_pin": {
+    "tag": "v1.3.2",
+    "commit": "99c8ce9c9404"
+  },
+  "pins": [
+    {
+      "repo": "anchor",
+      "tag": "v1.3.2",
+      "commit": "704dfa0c3b33"
+    },
+    {
+      "repo": "trio",
+      "tag": "v1.3.0",
+      "commit": "b9539da9f3fd"
+    },
+    {
+      "repo": "skill-foundry",
+      "tag": "v1.3.2",
+      "commit": "99c8ce9c9404"
+    }
+  ],
+  "package_versions": {
+    "A": "1.3.2",
+    "B": "1.3.2"
+  },
+  "scrub_tool_versions": {
+    "vendor_skills.py": "GREEN-share-distro",
+    "distro.py": "GREEN-share-distro"
+  }
+}

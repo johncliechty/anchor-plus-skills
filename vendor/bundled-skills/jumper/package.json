@@ -1,0 +1,10 @@
+{
+  "name": "jumper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Jumper Ideation Engine",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  }
+}

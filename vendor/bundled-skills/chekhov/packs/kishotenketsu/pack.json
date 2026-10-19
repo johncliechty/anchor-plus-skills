@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "name": "kishotenketsu",
+  "coordinate": "book.chapter",
+  "default_orders": {
+    "reader_order": [1, 2, 3, 4, 5, 6, 7],
+    "written_order": [1, 3, 2, 6, 4, 5, 7],
+    "cascade_position": null
+  },
+  "beat_table": {
+    "note": "ki/sho/ten/ketsu per book — the per-book beat template; ten and ketsu are structural entries in the ledger",
+    "per_book": [
+      { "name": "ki", "position": 1, "structural": false, "gloss": "introduction — the world and the want, no promise spent" },
+      { "name": "sho", "position": 2, "structural": false, "gloss": "development — deepening without escalation" },
+      { "name": "ten", "position": 3, "structural": true, "gloss": "the turn — recontextualisation; the promise contract falls due here" },
+      { "name": "ketsu", "position": 4, "structural": true, "gloss": "reconciliation — the elements re-seen together; closure is a choice" }
+    ]
+  },
+  "predicate_catalog": {
+    "title": { "cardinality": "single" },
+    "alive": { "cardinality": "single" },
+    "location": { "cardinality": "single" },
+    "age": { "cardinality": "single", "note": "age claims are kept as age with interval and compared directly — an age-to-birth-year conversion is never applied to a recorded drift; c3-08 replays as the two recorded ages" },
+    "birth_year": { "cardinality": "single" },
+    "doctrine_tag": { "cardinality": "single" },
+    "book_count": { "cardinality": "single" },
+    "chapter_rule": { "cardinality": "single" },
+    "knows": { "cardinality": "multi" },
+    "has_item": { "cardinality": "multi" },
+    "relation": { "cardinality": "multi" },
+    "first_meets": { "cardinality": "multi" }
+  },
+  "structural_template": {
+    "kind": "structural",
+    "value": { "beat": "<beat name from beat_table>", "position": "<1-4 within the book>" },
+    "interval": { "from": "<book>.<first chapter of the beat>", "to": "<book>.<last chapter of the beat> or null for scope end" }
+  },
+  "checklist": [
+    "is the ten a recontextualisation, not an escalation borrowed from a conflict spine",
+    "is the promise contract named and spent at the ten",
+    "is closure at the ketsu a recorded choice (open endings carry a stated market risk)",
+    "is withholding doing the work conflict would otherwise do",
+    "does any Western conflict layer appear only where the decision record allows it"
+  ],
+  "doctrine_terms": {
+    "terms": ["ki", "sho", "ten", "ketsu", "kishotenketsu", "recontextualisation", "withholding"],
+    "collisions_whitelisted": [
+      { "term": "ten", "collides_with": "the English numeral ten", "rule": "flag only when used as a beat name (heading, beat sheet or structural entry), never in running prose" }
+    ]
+  },
+  "pick_a_side_points": [
+    { "point": "promise-contract-at-the-ten", "question": "what promise falls due at the ten of this book, and where was it planted" },
+    { "point": "closure-at-the-ketsu", "question": "does the ketsu close or stay open — an open ending is a choice with a stated market risk" },
+    { "point": "is-conflict-required-at-all", "question": "does this book carry any conflict spine, or does withholding do the work — recorded per book in the decision record" }
+  ],
+  "value_normaliser": ["case-fold", "article-strip"],
+  "sources": [
+    { "file": ".claude/skills/three-rivers/SKILL.md", "heading": "The Core Synthesis: Three Rivers Running Simultaneously", "root": "bright-heart", "note": "the 2026 doctrine text this pack extracts the kishotenketsu river from; whether any Western layer stays is the FIRST entry in Bright-Heart's decision record" },
+    { "file": ".claude/skills/storytelling-craft/SKILL.md", "heading": "I. Four-Part Pacing (J. Scott Savage)", "root": "bright-heart", "note": "the conflict-spine vocabulary this pack's doctrine terms are linted AGAINST" }
+  ]
+}

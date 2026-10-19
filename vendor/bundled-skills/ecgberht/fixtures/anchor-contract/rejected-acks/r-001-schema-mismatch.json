@@ -1,0 +1,14 @@
+{
+  "id": "r-001-schema-mismatch",
+  "expect": "COMMIT_ACK_SCHEMA_MISMATCH",
+  "note": "An older release's acknowledgement. It is refused rather than best-effort parsed: the schema id is the version handshake, and guessing at an unversioned document is how two repositories start disagreeing silently.",
+  "ack": {
+    "schema": "commit-ack-v0",
+    "project_id": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+    "intent_seq": 1,
+    "intent_sha256": "e23cf0a20539ef7c2968c86829c6d6aa93c72bd1a012c6000af2a247bfb7926c",
+    "commit_id": "9f2c1ab7d4e60f83b5a1c2d3e4f5061728394a5b",
+    "anchor": "anchor/1.1.0",
+    "acked_at": "2026-07-20T09:00:41.000Z"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "pass": true,
+  "claims": [
+    {
+      "id": "durability",
+      "why": "a durability claim is a STORAGE claim; validating a rule is not providing it",
+      "requires": [
+        "atomic write (temp + fsync + rename)",
+        "lock or documented serialization",
+        "a concurrency test"
+      ],
+      "matched": "/durable/i"
+    },
+    {
+      "id": "idempotence",
+      "why": "idempotence is only real if something re-invokes and asserts no change",
+      "requires": [
+        "a repeat-invocation test"
+      ],
+      "matched": "/exactly once/i"
+    },
+    {
+      "id": "boundedness",
+      "why": "an unnamed bound cannot be tested and an unbounded read is a shared-thread hazard",
+      "requires": [
+        "the numeric bound named in the plan",
+        "a refusal path when the bound is exceeded"
+      ],
+      "matched": "/bounded/i"
+    },
+    {
+      "id": "containment",
+      "why": "containment is asserted far more often than it is exercised",
+      "requires": [
+        "an escape-attempt test (.., absolute path, symlink)"
+      ],
+      "matched": "/contain(ment|ed)/i"
+    }
+  ],
+  "missing": [],
+  "detail": "4 asserted propert(ies) all carry a mechanical gate",
+  "injected": false,
+  "ts": "2026-09-04T23:49:40.015Z"
+}

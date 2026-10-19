@@ -1,0 +1,4 @@
+# Foreman runtime artifacts — transient, regenerated each run; never part of the build.
+_foreman-status.log
+foreman-checkpoint.json
+.foreman/

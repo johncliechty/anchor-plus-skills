@@ -1,0 +1,17 @@
+# Runtime + build artifacts — never commit
+telemetry.db
+telemetry.db-*
+*.log
+_sentinel-out.log
+_sentinel-err.log
+_foreman-status.log
+_foreman-output.log
+_foreman-error.log
+foreman-checkpoint.json
+# Build-harness debris — added 2026-08-24 elegance sweep so the next build cannot re-litter
+.foreman/
+.foreman-archive-*
+foreman.config.json
+_archive-*
+_halt-archive-*
+EXECUTION-LOG.md

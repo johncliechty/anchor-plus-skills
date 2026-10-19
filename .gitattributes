@@ -1,0 +1,6 @@
+# Re-architecture 2026-07 · W4 — extracted static frontend assets.
+# The byte-parity gate compares static/ file BYTES to the source raw string
+# (which Python always reads with LF newlines), so these files must never be
+# CRLF-translated on checkout. Keep them LF everywhere.
+static/*.js text eol=lf
+static/*.css text eol=lf

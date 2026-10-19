@@ -1,0 +1,14 @@
+{
+  "id": "a-003-roadmap",
+  "honours": "i-003-roadmap-two-files",
+  "note": "One acknowledgement for the whole two-file intent. There is no per-path ack and there must never be one: the intent is the unit of durability, and a half-honoured intent is a state neither side could describe.",
+  "ack": {
+    "schema": "commit-ack-v1",
+    "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "intent_seq": 1,
+    "intent_sha256": "77428e0fbc5946129e1c30cfee6d87e50b2c88269f5005e848734fb0c6b38aac",
+    "commit_id": "release-2026.07.21-a",
+    "anchor": "anchor/1.2.0",
+    "acked_at": "2026-07-21T11:31:12.000Z"
+  }
+}

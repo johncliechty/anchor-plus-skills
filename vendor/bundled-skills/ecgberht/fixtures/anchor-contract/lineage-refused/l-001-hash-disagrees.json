@@ -1,0 +1,15 @@
+{
+  "id": "l-001-hash-disagrees",
+  "honours": "i-001-register",
+  "expect": "ANCHOR_ACK_HASH_DISAGREES",
+  "note": "Well-formed, and still refused. It claims intent 1 of a project this log knows, with a hash that log does not record - which is exactly what an acknowledgement of a DIFFERENT number one looks like after a restore-from-backup. Matched on the sequence alone it would mark the wrong receipt safe.",
+  "ack": {
+    "schema": "commit-ack-v1",
+    "project_id": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+    "intent_seq": 1,
+    "intent_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "commit_id": "9f2c1ab7d4e60f83b5a1c2d3e4f5061728394a5b",
+    "anchor": "anchor/1.2.0",
+    "acked_at": "2026-07-20T09:00:41.000Z"
+  }
+}

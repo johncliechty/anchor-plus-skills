@@ -1,0 +1,260 @@
+"""Wave 6 — CLI mirror of the v5 "Durable Work" data seams (anchor.py rnd ...).
+
+Proves IMPLEMENTATION-PLAN.md "## Wave 6 — CLI mirror": the three new read/data
+subcommands DELEGATE to the shared v5 modules (no forked logic):
+
+  - rnd session-summary <pid> --lane --session  → summarizer.load_cached
+  - rnd grass <pid>                             → effort_history.grass_workbench_data
+  - rnd build-deliverable <pid> --session       → deliverables.resolve_build_deliverable
+
+Each is read-only: it NEVER runs the model synchronously and is HONEST when data
+is absent. Hermetic: tmp ANCHOR_DATA_DIR, stub PTY backend, ANCHOR_RUNNER_CMD →
+tests/fake_claude.py (NEVER live claude / real PTY / :8777). Exercised in-process
+via the mirror functions + the `_rnd_cli` dispatcher with argv lists.
+"""
+import importlib
+from pathlib import Path
+
+import pytest
+
+FAKE = (Path(__file__).resolve().parent / "fake_claude.py").as_posix()
+
+
+@pytest.fixture
+def env(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ANCHOR_RUNNER_CMD", f"python {FAKE}")
+    monkeypatch.setenv("ANCHOR_PTY_BACKEND", "stub")
+    monkeypatch.setenv("ANCHOR_WORKTREE_BASE", str(tmp_path / "wt"))
+    monkeypatch.setenv("ANCHOR_SKILLS_DIR", str(tmp_path / "skills"))
+    monkeypatch.delenv("ANCHOR_TOKEN", raising=False)
+    import paths
+    importlib.reload(paths)
+    paths.ensure_data_dirs()
+    for name in ("job_runner", "rnd_registry", "effort_history", "sessions",
+                 "deliverables", "report_viewer", "summarizer",
+                 "session_registry", "worktrees", "pty_manager",
+                 "terminal_session", "anchor_marker", "brownfield_scan",
+                 "anchor"):
+        mod = importlib.import_module(name)
+        importlib.reload(mod)
+    import anchor
+    import effort_history
+    import sessions
+    import deliverables
+    import summarizer
+    import rnd_registry
+    import job_runner
+    yield {
+        "tmp": tmp_path, "anchor": anchor, "eh": effort_history,
+        "sessions": sessions, "deliverables": deliverables,
+        "summarizer": summarizer, "rnd": rnd_registry, "jr": job_runner,
+    }
+    for rec in job_runner.list_records():
+        if rec.get("status") == job_runner.STATUS_RUNNING:
+            try:
+                job_runner.cancel(rec["job_id"])
+            except Exception:
+                pass
+    job_runner._reset_live_table_for_tests()
+    try:
+        import pty_manager
+        for sid in list(pty_manager.live_sessions()):
+            try:
+                pty_manager.kill(sid)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _mkproject(env, name="Anchor"):
+    folder = env["tmp"] / "proj"
+    folder.mkdir(parents=True, exist_ok=True)
+    return env["rnd"].add_project(name, str(folder)), folder
+
+
+def _adopt_research(env, folder, pid):
+    """Adopt a discovered research session; return its session id."""
+    rd = folder / "research" / "v5-cli"
+    rd.mkdir(parents=True, exist_ok=True)
+    (rd / "REPORT.md").write_text(
+        "# Report\n\n## Findings\nv5 cli session summary.\n", encoding="utf-8")
+    import brownfield_scan
+    importlib.reload(brownfield_scan)
+    scan = brownfield_scan.scan(str(folder))
+    env["eh"].adopt_discovered(folder, pid, scan)
+    sess = env["sessions"].list_sessions(str(folder), pid, "research")
+    return sess[0]["session_id"] if sess else None
+
+
+# ── session-summary mirror ──────────────────────────────────────────────────
+
+def test_cli_session_summary_cached_delegates(env, capsys):
+    anchor = env["anchor"]
+    proj, folder = _mkproject(env)
+    pid = proj["id"]
+    sid = _adopt_research(env, folder, pid)
+    assert sid
+
+    # Uncached → mirror returns None and the CLI prints the honest "no cache".
+    assert anchor.rnd_session_summary(pid, "research", sid) is None
+    anchor._rnd_cli(["session-summary", pid, "--lane", "research",
+                     "--session", sid])
+    out = capsys.readouterr().out
+    assert "No cached summary" in out
+
+    # Generate via the summarizer (stub runner), then the mirror reads the cache.
+    sess = env["sessions"].list_sessions(str(folder), pid, "research")[0]
+    env["summarizer"].summarize_session(str(folder), pid, "research", sess)
+    summ = anchor.rnd_session_summary(pid, "research", sid)
+    assert isinstance(summ, dict)
+    assert "skill" in summ and "prompts" in summ and "actions" in summ
+
+    # Mirror returns the SAME object the shared cache reader returns.
+    direct = env["summarizer"].load_cached(
+        str(folder), pid, env["eh"]._resolve_subdir("research"), sid)
+    assert summ == direct
+
+    anchor._rnd_cli(["session-summary", pid, "--lane", "research",
+                     "--session", sid])
+    out2 = capsys.readouterr().out
+    assert "Session summary" in out2 and "skill:" in out2
+
+
+def test_cli_session_summary_no_model_run_on_read(env):
+    """The mirror is read-only: an uncached summary is NOT generated by it."""
+    anchor = env["anchor"]
+    proj, folder = _mkproject(env)
+    pid = proj["id"]
+    sid = _adopt_research(env, folder, pid)
+    assert anchor.rnd_session_summary(pid, "research", sid) is None
+    # Still uncached afterward (the read did not synchronously run the model).
+    assert env["summarizer"].load_cached(
+        str(folder), pid, env["eh"]._resolve_subdir("research"), sid) is None
+
+
+# ── grass mirror ────────────────────────────────────────────────────────────
+
+def test_cli_grass_lists_ideas_with_status(env, capsys):
+    anchor = env["anchor"]
+    proj, folder = _mkproject(env)
+    pid = proj["id"]
+    # Empty → honest zero.
+    assert anchor.rnd_grass(pid) == []
+    anchor._rnd_cli(["grass", pid])
+    assert "0 grass idea(s)" in capsys.readouterr().out
+
+    idea = env["eh"].add_idea(str(folder), pid, "a v5 cli idea")
+    iid = idea["job_id"]
+    ideas = anchor.rnd_grass(pid)
+    assert len(ideas) == 1
+    it = ideas[0]
+    assert it["idea_id"] == iid
+    assert it["status"] == "raw"
+    assert it["refinements"] == []
+
+    # Save a refinement → status flips to refined, count = 1.
+    env["eh"].save_grass_refinement(str(folder), pid, iid, text="x",
+                                    label="dev-1")
+    ideas2 = anchor.rnd_grass(pid)
+    assert ideas2[0]["status"] == "refined"
+    assert len(ideas2[0]["refinements"]) == 1
+
+    # Mirror equals the shared reader.
+    assert anchor.rnd_grass(pid) == env["eh"].grass_workbench_data(
+        str(folder), pid)
+
+    anchor._rnd_cli(["grass", pid])
+    out = capsys.readouterr().out
+    assert "1 grass idea(s)" in out and "refined" in out and "refinements=1" in out
+
+
+def test_cli_grass_handles_non_ascii_idea_title(env, capsys):
+    """A grass idea title with non-ASCII (e.g. a "→" arrow / em-dash) must print
+    without raising. On a Windows cp1252 console the old code raised
+    UnicodeEncodeError; main() now reconfigures stdout to UTF-8. Here we at least
+    lock that the subcommand renders the unicode title rather than crashing."""
+    anchor = env["anchor"]
+    proj, folder = _mkproject(env)
+    pid = proj["id"]
+    env["eh"].add_idea(str(folder), pid,
+                       "Crucible/Foreman → Gemini adapter — notes")
+    anchor._rnd_cli(["grass", pid])          # must not raise
+    out = capsys.readouterr().out
+    assert "→" in out and "Gemini adapter" in out
+
+
+# ── build-deliverable mirror ────────────────────────────────────────────────
+
+def test_cli_build_deliverable_resolved(env, capsys):
+    anchor = env["anchor"]
+    proj, folder = _mkproject(env)
+    pid = proj["id"]
+    # A discovered build session is formed from a foreman checkpoint/config; its
+    # single (non-plan) product member resolves as the build's deliverable.
+    bd = folder / "build" / "v5-build"
+    bd.mkdir(parents=True, exist_ok=True)
+    (bd / "foreman.config.json").write_text("{}\n", encoding="utf-8")
+    import brownfield_scan
+    importlib.reload(brownfield_scan)
+    scan = brownfield_scan.scan(str(folder))
+    env["eh"].adopt_discovered(folder, pid, scan)
+    sess = env["sessions"].list_sessions(str(folder), pid, "build")
+    assert sess
+    sid = sess[0]["session_id"]
+
+    res = anchor.rnd_build_deliverable(pid, sid)
+    assert isinstance(res, dict) and "resolved" in res
+    # Mirror equals the shared resolver.
+    direct = env["deliverables"].resolve_build_deliverable(
+        str(folder), pid, sess[0])
+    assert res == direct
+
+    anchor._rnd_cli(["build-deliverable", pid, "--session", sid])
+    out = capsys.readouterr().out
+    assert "Build deliverable for session" in out
+
+
+def test_cli_build_deliverable_unresolved_honest(env, capsys):
+    """A build with NO product file → honest UNRESOLVED, deliverable=None."""
+    anchor = env["anchor"]
+    proj, folder = _mkproject(env)
+    pid = proj["id"]
+    # A build session with TWO candidate product members and no pin to
+    # disambiguate → genuinely ambiguous → honest unresolved (never a guess).
+    bd = folder / "build" / "v5-ambiguous"
+    bd.mkdir(parents=True, exist_ok=True)
+    (bd / "foreman.config.json").write_text("{}\n", encoding="utf-8")
+    (bd / "foreman-checkpoint.json").write_text("{}\n", encoding="utf-8")
+    import brownfield_scan
+    importlib.reload(brownfield_scan)
+    scan = brownfield_scan.scan(str(folder))
+    env["eh"].adopt_discovered(folder, pid, scan)
+    sess = env["sessions"].list_sessions(str(folder), pid, "build")
+    assert sess
+    sid = sess[0]["session_id"]
+    res = anchor.rnd_build_deliverable(pid, sid)
+    assert not res.get("resolved")
+    assert res.get("deliverable") is None  # never fabricated
+    anchor._rnd_cli(["build-deliverable", pid, "--session", sid])
+    out = capsys.readouterr().out
+    assert "UNRESOLVED" in out
+
+
+def test_cli_build_deliverable_unknown_session_clean(env, capsys):
+    anchor = env["anchor"]
+    proj, _folder = _mkproject(env)
+    anchor._rnd_cli(["build-deliverable", proj["id"],
+                     "--session", "no-such-session"])
+    out = capsys.readouterr().out
+    assert "Error:" in out and "unknown session" in out
+
+
+# ── unknown project is clean (no traceback) ─────────────────────────────────
+
+def test_cli_v5_unknown_project_clean(env, capsys):
+    anchor = env["anchor"]
+    anchor._rnd_cli(["grass", "deadbeef-not-real"])
+    out = capsys.readouterr().out
+    assert "Unknown project" in out

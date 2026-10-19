@@ -1,0 +1,47 @@
+{
+  "schema": "ecgberht-face-markers-v0",
+  "spelling": "Ecgberht",
+  "description": "Human-narrative Face section markers. Face may rewrite these; depth/grasscatch instruments live on Strip only.",
+  "markers": [
+    {
+      "id": "north_star",
+      "heading": "North star",
+      "surface": "face",
+      "write_authority": "human_narrative"
+    },
+    {
+      "id": "active_effort",
+      "heading": "Active effort",
+      "surface": "face",
+      "write_authority": "human_narrative"
+    },
+    {
+      "id": "why_next",
+      "heading": "Why next",
+      "surface": "face",
+      "write_authority": "human_narrative"
+    },
+    {
+      "id": "human_wait",
+      "heading": "Human wait",
+      "surface": "face",
+      "write_authority": "human_narrative"
+    }
+  ],
+  "forbidden_on_face": [
+    "tool_depth_cell",
+    "grasscatch",
+    "capacity",
+    "negative_heartbeat",
+    "uncertainty_flags",
+    "dispatch_outcome"
+  ],
+  "notes": [
+    "Face is cold-start plain English: north star, active effort, why-next stakes, human-wait.",
+    "No depth codes or grasscatch jargon on Face (those are Strip instruments).",
+    "Heal law: Face wins narrative; Strip wins append-only clocks; crisis = explicit re-sync only.",
+    "Silence = negative-heartbeat (not invented green); chat cannot invent truth.",
+    "Fence/schema drift repair rewrites Face fence text from Strip projection — never silent Strip history rewrite.",
+    "Write authority: Face narrative fields may be rewritten; Strip instruments/receipts are append-only."
+  ]
+}

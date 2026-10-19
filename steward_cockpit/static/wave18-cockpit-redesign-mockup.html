@@ -1,0 +1,2790 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Anchor AI Cockpit — Wave 18 Redesign Mockup (v3)</title>
+<link rel="icon" href="/anchor.ico" type="image/x-icon">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117;
+    --panel: #1a1d27;
+    --panel2: #232733;
+    --panel3: #141821;
+    --line: #2e3340;
+    --text: #e2e4e9;
+    --dim: #8b8f9a;
+    --faint: #5d6270;
+    --john: #e8c268;
+    --steward: #6c9cfc;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --flag: #f87171;
+    --teal: #10b981;
+    --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+    --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui);
+    font-size: 14px;
+    line-height: 1.45;
+    overflow: hidden;
+  }
+  button {
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+  button:hover { border-color: var(--steward); color: #fff; }
+  a { color: var(--steward); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Red flashing animation for approval flags when collapsed */
+  @keyframes redFlagFlash {
+    0%, 100% {
+      background: rgba(248, 113, 113, 0.22);
+      border-color: #f87171;
+      box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.55), inset 0 0 8px rgba(248, 113, 113, 0.25);
+    }
+    50% {
+      background: rgba(239, 68, 68, 0.45);
+      border-color: #fca5a5;
+      box-shadow: 0 0 12px 2px rgba(248, 113, 113, 0.45), inset 0 0 12px rgba(248, 113, 113, 0.35);
+    }
+  }
+  @keyframes redDotBlink {
+    0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px #f87171; }
+    50% { opacity: 0.3; transform: scale(0.82); box-shadow: 0 0 2px #f87171; }
+  }
+
+  /* App Frame — dynamically adjusts columns when Left Plan or Right Status are collapsed! */
+  .cockpit-app {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+  }
+  .left-rail {
+    grid-column: 1;
+    grid-row: 4;
+    width: 365px;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    transition: width 0.16s ease;
+  }
+  .cockpit-app.railhide .left-rail {
+    display: none;
+  }
+  .center-main {
+    grid-column: 2;
+    grid-row: 4;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  /* Split-screen layout when a deliverable is opened side-by-side */
+  .center-split-wrap {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .dialogue-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .deliverable-viewer-pane {
+    display: none;
+    width: 48%;
+    border-left: 2px solid rgba(108, 156, 252, 0.5);
+    background: #121722;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .cockpit-app.secondwin .deliverable-viewer-pane {
+    display: flex;
+  }
+  .dv-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, #1b2434 0%, #141b27 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  .dv-title {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--steward);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dv-body {
+    flex: 1;
+    padding: 16px 20px;
+    overflow-y: auto;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+
+  .right-rail {
+    grid-column: 3;
+    grid-row: 4;
+    width: 445px;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .cockpit-app:not(.statusopen) .right-rail {
+    display: none;
+  }
+
+  /* ============================================================================
+     COLLAPSED EDGE TABS: ▸ Plan (.railtab) on Left, ◂ Status (.statustab) on Right
+     (Exact match to v1.html / shared.css lines 267-275 & 357-367)
+     ============================================================================ */
+  .railtab {
+    position: fixed;
+    left: 0;
+    top: 40%;
+    z-index: 30;
+    display: none;
+    writing-mode: vertical-rl;
+    padding: 16px 7px;
+    font-size: 11.5px;
+    letter-spacing: 2px;
+    font-weight: 700;
+    color: var(--steward);
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 1px solid var(--line);
+    border-left: none;
+    border-radius: 0 9px 9px 0;
+    cursor: pointer;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.45);
+    user-select: none;
+  }
+  .railtab:hover {
+    color: #fff;
+    border-color: var(--steward);
+    background: #252d3d;
+  }
+  .cockpit-app.railhide .railtab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .statustab {
+    position: fixed;
+    right: 0;
+    top: 40%;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+    writing-mode: vertical-rl;
+    padding: 16px 7px;
+    font-size: 11.5px;
+    letter-spacing: 2px;
+    font-weight: 700;
+    color: var(--steward);
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 1px solid var(--line);
+    border-right: none;
+    border-radius: 9px 0 0 9px;
+    cursor: pointer;
+    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.45);
+    user-select: none;
+  }
+  .statustab:hover {
+    color: #fff;
+    border-color: var(--steward);
+    background: #252d3d;
+  }
+  .cockpit-app.statusopen .statustab {
+    display: none;
+  }
+  .light-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 7px var(--ok);
+  }
+  .statustab-state {
+    font-size: 10.5px;
+    letter-spacing: 0.8px;
+    color: var(--dim);
+    font-weight: 500;
+  }
+
+  /* ROW 1: Top Header Bar */
+  .top-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 14px;
+    background: linear-gradient(180deg, #17202d 0%, #121822 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    color: var(--steward);
+    background: rgba(108, 156, 252, 0.12);
+    border: 1px solid rgba(108, 156, 252, 0.35);
+    padding: 3px 9px;
+    border-radius: 6px;
+  }
+  .brand-pill img {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+  }
+  .cockpit-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .persona-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 9px 2px 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .persona-pill img {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .top-spacer { flex: 1; }
+  .mockup-sim-btn {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    color: var(--warn);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .mockup-sim-btn:hover {
+    background: rgba(251, 191, 36, 0.22);
+    border-color: var(--warn);
+    color: #fff;
+  }
+  .mockup-sim-btn.split-active {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: #38bdf8;
+    color: #e0f2fe;
+  }
+  .skill-launch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 5px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .skill-launch-btn img {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+  .skill-launch-btn.anvil {
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.22), rgba(245, 158, 11, 0.14));
+    border: 1px solid rgba(56, 189, 248, 0.65);
+    color: #e0f2fe;
+  }
+  .skill-launch-btn.aegis {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.22), rgba(14, 165, 233, 0.14));
+    border: 1px solid rgba(16, 185, 129, 0.65);
+    color: #d1fae5;
+  }
+  .spend-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--panel2);
+    border: 1px solid rgba(74, 222, 128, 0.42);
+    color: #e2e8f0;
+  }
+
+  /* ROW 2: Goal Bar (Collapsible, starts collapsed) */
+  .goal-bar {
+    grid-column: 1 / -1;
+    background: linear-gradient(180deg, #151d2a 0%, #111722 100%);
+    border-bottom: 1px solid var(--line);
+    padding: 4px 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .goal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .goal-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--steward);
+    background: rgba(108, 156, 252, 0.14);
+    border: 1px solid rgba(108, 156, 252, 0.38);
+    padding: 1px 8px;
+    border-radius: 999px;
+  }
+  .goal-text {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .goal-drawer {
+    display: none;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--line);
+    font-size: 12px;
+    color: var(--dim);
+  }
+  .goal-bar.open .goal-drawer { display: block; }
+
+  /* ROW 3: Top Approval / Next-Step Line (Starts Collapsed; RED Flashing Flag when approval needed; NO Anvil icon inside) */
+  .top-approval-bar {
+    grid-column: 1 / -1;
+    background: #141923;
+    border-bottom: 1px solid var(--line);
+    padding: 5px 16px;
+    transition: all 0.18s ease;
+  }
+  .top-approval-bar.needs-approval:not(.open) {
+    background: linear-gradient(90deg, rgba(248, 113, 113, 0.16) 0%, #161b26 65%);
+    border-bottom-color: rgba(248, 113, 113, 0.55);
+  }
+  .top-approval-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .red-flag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #fecaca;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid #f87171;
+    animation: redFlagFlash 1.6s infinite ease-in-out;
+    flex: none;
+  }
+  .red-flag-pill.resolved {
+    animation: none;
+    color: var(--ok);
+    border-color: rgba(74, 222, 128, 0.45);
+    background: rgba(74, 222, 128, 0.12);
+  }
+  .red-flag-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f87171;
+    animation: redDotBlink 1.1s infinite ease-in-out;
+  }
+  .red-flag-pill.resolved .red-flag-dot {
+    background: var(--ok);
+    animation: none;
+    box-shadow: 0 0 6px var(--ok);
+  }
+  .top-approval-headline {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .top-approval-hint {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #fca5a5;
+    flex: none;
+  }
+  .top-approval-bar.resolved .top-approval-hint {
+    color: var(--dim);
+  }
+  .top-approval-details {
+    display: none;
+    margin-top: 7px;
+    padding: 9px 12px;
+    background: rgba(248, 113, 113, 0.07);
+    border: 1px solid rgba(248, 113, 113, 0.38);
+    border-radius: 8px;
+  }
+  .top-approval-bar.open .top-approval-details {
+    display: block;
+  }
+  .approval-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .approval-why {
+    color: var(--dim);
+    line-height: 1.4;
+  }
+  .approval-rec {
+    padding: 5px 9px;
+    border-radius: 6px;
+    background: rgba(74, 222, 128, 0.1);
+    border: 1px solid rgba(74, 222, 128, 0.35);
+    color: #bbf7d0;
+    font-size: 11.5px;
+  }
+  .approval-links-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 11.5px;
+  }
+  .deliv-link-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: rgba(108, 156, 252, 0.14);
+    border: 1px solid rgba(108, 156, 252, 0.4);
+    color: #bfdbfe;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .deliv-link-chip:hover {
+    background: rgba(108, 156, 252, 0.25);
+    color: #fff;
+    text-decoration: none;
+  }
+  .approval-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+  .btn-approve {
+    background: rgba(74, 222, 128, 0.18);
+    border-color: rgba(74, 222, 128, 0.55);
+    color: var(--ok);
+    font-weight: 700;
+  }
+  .btn-approve:hover {
+    background: rgba(74, 222, 128, 0.3);
+    color: #fff;
+  }
+
+  /* ============================================================================
+     LEFT COLUMN: PLAN RAIL
+     - Header with « Close button (collapses to ▸ Plan edge tab)
+     - Steward Plan Evaluation (starts collapsed ▸)
+     - 2-Button View Switcher: [ 🗺️ Hierarchical Plan ] vs [ 🌊 Wave Plan ]
+     - Both views start with all waves collapsed (▸) by default!
+     ============================================================================ */
+  .rail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.015);
+    flex: none;
+  }
+  .rail-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--dim);
+  }
+  .rail-close-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--dim);
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+  .rail-close-btn:hover {
+    color: var(--text);
+    border-color: var(--steward);
+  }
+
+  /* 2-Button Switcher: Hierarchical Plan Summary vs Wave Plan Summary */
+  .plan-mode-switcher {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 3px;
+    background: #11151e;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    flex: none;
+  }
+  .pms-btn {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 5px 6px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--dim);
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+  .pms-btn:hover {
+    color: var(--text);
+  }
+  .pms-btn.active {
+    background: rgba(108, 156, 252, 0.16);
+    border-color: rgba(108, 156, 252, 0.5);
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  }
+
+  .plan-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  /* 1. Steward Plan Evaluation Tile (Starts Collapsed by default!) */
+  .plan-eval-tile {
+    background: var(--panel3);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+    flex: none;
+  }
+  .plan-eval-tile.has-proposal {
+    border-color: rgba(251, 191, 36, 0.55);
+    background: rgba(251, 191, 36, 0.06);
+  }
+  .plan-eval-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--steward);
+  }
+  .plan-eval-tile.has-proposal .plan-eval-head {
+    color: var(--warn);
+  }
+  .plan-eval-body {
+    display: none;
+    padding: 7px 10px 9px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--text);
+  }
+  .plan-eval-tile.open .plan-eval-body {
+    display: block;
+  }
+  .plan-diff-box {
+    margin: 5px 0;
+    padding: 5px 8px;
+    background: rgba(16, 185, 129, 0.08);
+    border-left: 3px solid var(--ok);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: #a7f3d0;
+  }
+
+  /* View Containers for Hierarchical vs Wave Plan */
+  .plan-view-pane {
+    display: none;
+    flex-direction: column;
+    gap: 7px;
+    flex: none;
+    flex-shrink: 0;
+  }
+  .plan-view-pane.active {
+    display: flex;
+  }
+
+  /* Hierarchical Summary Header ("Where We Are" + Macro Roll-Up) */
+  .hierarchy-overview-box {
+    background: #131822;
+    border: 1px solid rgba(108, 156, 252, 0.35);
+    border-radius: 8px;
+    padding: 8px 10px;
+    flex: none;
+  }
+  .hob-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--steward);
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+  .you-are-here-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: rgba(232, 194, 104, 0.12);
+    border: 1px solid rgba(232, 194, 104, 0.45);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--john);
+    font-weight: 700;
+  }
+  .macro-progress-track {
+    display: grid;
+    grid-template-columns: 11fr 6fr 2fr;
+    gap: 3px;
+    margin-top: 6px;
+    height: 6px;
+  }
+  .mp-seg {
+    background: #252b3b;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .mp-fill {
+    height: 100%;
+    border-radius: 999px;
+  }
+  .mp-legend {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    color: var(--dim);
+    margin-top: 3px;
+  }
+
+  /* Hierarchical Macro Phase Cards -> Indented Collapsible Wave Cards -> Sub-Steps -> Iterative Passes */
+  .phase-card {
+    background: #141822;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    flex: none;
+  }
+  .phase-card.active-phase {
+    border-color: rgba(232, 194, 104, 0.45);
+  }
+  .phase-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 7px 10px;
+    background: rgba(255, 255, 255, 0.02);
+    cursor: pointer;
+    user-select: none;
+  }
+  .phase-card.active-phase .phase-card-head {
+    background: rgba(232, 194, 104, 0.07);
+  }
+  .phase-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .phase-card-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    flex: none;
+  }
+  .phase-tree-children {
+    padding: 6px 8px 8px 14px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: relative;
+  }
+  .phase-tree-children::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 8px;
+    bottom: 10px;
+    width: 1.5px;
+    background: rgba(108, 156, 252, 0.3);
+  }
+  .phase-card.collapsed .phase-tree-children {
+    display: none;
+  }
+
+  /* Wave Cards (used in both Hierarchical View and Wave Plan View) */
+  .wave-card {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: visible;
+    flex: none;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+  .wave-card:hover { border-color: #454d63; }
+  .wave-card.now {
+    border-color: var(--john);
+    box-shadow: 0 0 0 1px rgba(232, 194, 104, 0.25);
+  }
+  .wave-card.done {
+    opacity: 0.88;
+  }
+  .wave-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    padding: 8px 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .w-pill {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 999px;
+    flex: none;
+    margin-top: 1px;
+  }
+  .w-pill.done {
+    color: var(--ok);
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.35);
+  }
+  .w-pill.now {
+    color: var(--john);
+    background: rgba(232, 194, 104, 0.16);
+    border: 1px solid rgba(232, 194, 104, 0.5);
+  }
+  .w-pill.next {
+    color: var(--steward);
+    background: rgba(108, 156, 252, 0.14);
+    border: 1px solid rgba(108, 156, 252, 0.4);
+  }
+  .w-pill.todo {
+    color: var(--dim);
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+  .w-title {
+    font-size: 12px;
+    line-height: 1.38;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+    white-space: normal;
+  }
+  .w-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    flex: none;
+    margin-top: 2px;
+  }
+  .w-caret {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    flex: none;
+    margin-top: 1px;
+  }
+  .wave-body {
+    display: none;
+    padding: 7px 9px 9px;
+    border-top: 1px solid var(--line);
+    background: #12161f;
+  }
+  .wave-card.open .wave-body {
+    display: block;
+  }
+  .wave-summary {
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  .substep-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding-left: 8px;
+    border-left: 1.5px dashed rgba(232, 194, 104, 0.35);
+  }
+  .substep-item {
+    padding: 5px 7px;
+    border-radius: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+  }
+  .substep-item.active {
+    border-color: rgba(108, 156, 252, 0.5);
+    background: rgba(108, 156, 252, 0.06);
+  }
+  .substep-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  /* Iterative 4-Pass Refinement Bar inside Sub-Steps */
+  .iter-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+  .iter-step {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    color: var(--faint);
+    background: var(--bg);
+  }
+  .iter-step.done {
+    color: var(--ok);
+    border-color: rgba(74, 222, 128, 0.35);
+    background: rgba(74, 222, 128, 0.08);
+  }
+  .iter-step.active {
+    color: var(--warn);
+    border-color: rgba(251, 191, 36, 0.55);
+    background: rgba(251, 191, 36, 0.14);
+    font-weight: 700;
+  }
+
+  /* 4. Bottom-Left Foundry Tool Governance Dock (Starts Collapsed) */
+  .tool-gov-dock {
+    border-top: 1px solid var(--line);
+    background: #141822;
+    flex: none;
+  }
+  .tool-gov-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .tool-gov-title {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--steward);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tool-gov-body {
+    display: none;
+    padding: 8px 12px 10px;
+    border-top: 1px solid var(--line);
+    max-height: 260px;
+    overflow-y: auto;
+    font-size: 11.5px;
+  }
+  .tool-gov-dock.open .tool-gov-body {
+    display: block;
+  }
+  .gov-step-box {
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    margin-bottom: 6px;
+  }
+  .gov-step-box.alert {
+    border-color: rgba(248, 113, 113, 0.5);
+    background: rgba(248, 113, 113, 0.07);
+  }
+  .gov-step-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+
+  /* ============================================================================
+     CENTER COLUMN: STEWARD DIALOGUE (EXACT EXISTING v1.html / shared.css FLOW!)
+     ============================================================================ */
+  .scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 20px 8% 30px;
+  }
+  .blk {
+    margin: 0 auto 18px;
+    max-width: 1050px;
+    width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .blk .who {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 1.5px;
+    margin-bottom: 4px;
+  }
+  .blk.john .who { color: var(--john); }
+  .blk.steward .who { color: var(--steward); }
+  .blk .body {
+    white-space: pre-wrap;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
+    line-height: 1.5;
+  }
+  .blk.john .body { color: #efe6cd; }
+  .blk.steward .body { color: var(--text); }
+  .blk .body p { margin: 0 0 8px; }
+  .blk .body p:last-child { margin-bottom: 0; }
+  .blk .body code {
+    font-family: var(--mono);
+    background: var(--panel2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .blk.turnend {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--faint);
+    margin: -10px auto 16px;
+    max-width: 1050px;
+  }
+  .steward-interject-inline {
+    margin: 8px 0 4px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.45);
+    font-size: 13.5px;
+    white-space: normal;
+  }
+
+  .composer {
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    padding: 12px 8%;
+  }
+  .composer textarea {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font: 15px var(--ui);
+    resize: none;
+    min-height: 46px;
+  }
+  .composer textarea:focus { outline: none; border-color: var(--dim); }
+  .composer .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 7px;
+  }
+  .composer .hint { color: var(--faint); font-size: 12px; flex: 1; }
+  .composer .send { background: #24466e; border-color: #35577f; color: #fff; font-weight: 600; }
+
+  /* ============================================================================
+     RIGHT COLUMN: STATUS & DELIVERABLES PANE
+     ============================================================================ */
+  .right-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* 1. DELIVERABLES HUB (4 Collapsible Sub-Tiles: Pending, For Review, Final, All — ALL start collapsed!) */
+  .deliv-hub {
+    background: var(--panel3);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    flex: none;
+  }
+  .deliv-hub-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background: rgba(108, 156, 252, 0.08);
+    cursor: pointer;
+    user-select: none;
+  }
+  .deliv-hub-title {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: var(--steward);
+    text-transform: uppercase;
+  }
+  .deliv-hub-counts {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+  }
+  .deliv-hub-body {
+    display: none;
+    padding: 5px 7px;
+    border-top: 1px solid var(--line);
+    flex-direction: column;
+    gap: 4px;
+  }
+  .deliv-hub.open .deliv-hub-body {
+    display: flex;
+  }
+
+  /* Each of the 4 Deliverable Sub-Tiles (Pending, For Review, Final, All) */
+  .d-tile {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .d-tile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4.5px 9px;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+  }
+  .d-tile-head:hover { background: rgba(255, 255, 255, 0.03); }
+  .d-tile.pending .d-tile-head { color: #38bdf8; }
+  .d-tile.review .d-tile-head { color: var(--warn); }
+  .d-tile.final .d-tile-head { color: var(--ok); }
+  .d-tile.all .d-tile-head { color: #c4b5fd; }
+
+  .d-count-pill {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text);
+  }
+  .d-tile-body {
+    display: none;
+    padding: 6px 8px;
+    border-top: 1px solid var(--line);
+    background: #12161f;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .d-tile.open .d-tile-body {
+    display: flex;
+  }
+
+  .d-item {
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    font-size: 11.5px;
+  }
+  .d-item.highlight-pulse {
+    border-color: var(--warn);
+    box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.35);
+  }
+  .d-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .d-item-title {
+    font-weight: 600;
+    color: var(--steward);
+    cursor: pointer;
+  }
+  .d-item-meta {
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .btn-done-sm {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(74, 222, 128, 0.14);
+    border: 1px solid rgba(74, 222, 128, 0.45);
+    color: var(--ok);
+  }
+  .btn-done-sm:hover {
+    background: rgba(74, 222, 128, 0.28);
+    color: #fff;
+  }
+  .wave-deliv-group {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+  .wave-deliv-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--dim);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .wave-deliv-body {
+    display: none;
+    padding: 5px 8px;
+    border-top: 1px solid var(--line);
+    flex-direction: column;
+    gap: 4px;
+  }
+  .wave-deliv-group.open .wave-deliv-body {
+    display: flex;
+  }
+
+  /* 2. RIGHT-RAIL RED APPROVAL FLAG BAR (Starts Collapsed, Flashes Red When Approval Needed) */
+  .right-approval-flag {
+    background: #171b26;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+    flex: none;
+  }
+  .right-approval-flag.needs-approval:not(.open) {
+    animation: redFlagFlash 1.6s infinite ease-in-out;
+  }
+  .right-approval-flag.needs-approval.open {
+    border-color: #f87171;
+    background: rgba(248, 113, 113, 0.08);
+  }
+  .raf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5.5px 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .raf-title {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #fecaca;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .right-approval-flag.resolved .raf-title {
+    color: var(--ok);
+  }
+  .raf-body {
+    display: none;
+    padding: 7px 10px 9px;
+    border-top: 1px solid rgba(248, 113, 113, 0.35);
+    font-size: 11.5px;
+  }
+  .right-approval-flag.open .raf-body {
+    display: block;
+  }
+
+  /* 3. CURRENT 10-MINUTE STATUS CARD (wave4-mockup.html Format, Always Front & Center!) */
+  .status-card-current {
+    background: var(--panel2);
+    border: 1px solid rgba(108, 156, 252, 0.42);
+    border-left: 3px solid var(--steward);
+    border-radius: 8px;
+    padding: 8px 10px;
+    flex: none;
+  }
+  .sc-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding-bottom: 4px;
+    margin-bottom: 5px;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--steward);
+  }
+  .sc-timer-pill {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--ok);
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.35);
+    padding: 1px 7px;
+    border-radius: 999px;
+  }
+  .stab {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+  }
+  .stab td {
+    padding: 2.5px 4px;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .stab td.k {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--dim);
+    width: 62px;
+    white-space: nowrap;
+  }
+  .stab td.v {
+    color: var(--text);
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+  .eta-milestone-box {
+    margin-top: 5px;
+    padding: 5px 8px;
+    background: #141923;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .eta-head {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--steward);
+    margin-bottom: 2px;
+  }
+  .eta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 11px;
+    padding: 1px 0;
+  }
+  .eta-row .ek { color: var(--dim); font-family: var(--mono); font-size: 10px; }
+  .eta-row .ev { color: var(--text); font-weight: 600; text-align: right; }
+  .stodo-footer {
+    margin-top: 5px;
+    padding-top: 4px;
+    border-top: 1px dashed var(--line);
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.35;
+  }
+  .stodo-footer strong {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text);
+  }
+
+  /* 4. EARLIER 10-MINUTE UPDATES (Collapsed Stack Below Current Status) */
+  .earlier-updates-box {
+    background: var(--panel3);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    overflow: hidden;
+    flex: none;
+  }
+  .eu-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5.5px 10px;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--dim);
+  }
+  .eu-body {
+    display: none;
+    padding: 5px 8px;
+    border-top: 1px solid var(--line);
+    flex-direction: column;
+    gap: 4px;
+  }
+  .earlier-updates-box.open .eu-body {
+    display: flex;
+  }
+  .old-tick-item {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .old-tick-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+  }
+  .old-tick-body {
+    display: none;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed var(--line);
+    font-size: 10.5px;
+    color: var(--dim);
+  }
+  .old-tick-item.open .old-tick-body {
+    display: block;
+  }
+
+  /* 5. DROP FILES BAR AT BOTTOM OF RIGHT RAIL */
+  .right-drop-zone {
+    margin: 4px 10px 6px;
+    padding: 6px 10px;
+    border: 1px dashed rgba(108, 156, 252, 0.45);
+    border-radius: 7px;
+    background: rgba(108, 156, 252, 0.06);
+    font-size: 11px;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="cockpit-app statusopen" id="cockpitApp">
+
+  <!-- ========================================================================
+       ROW 1: TOP HEADER BAR (Anvil & Aegis tiles live here ONLY)
+       ======================================================================== -->
+  <header class="top-bar">
+    <span class="brand-pill">
+      <img src="/vendor/brand/anchor-tab-48.png" alt="Anchor">
+      <span>ANCHOR · AI COCKPIT</span>
+    </span>
+    <span class="cockpit-title">Anchor Refactoring &amp; Security Hardening</span>
+    <span class="persona-pill">
+      <img src="/vendor/brand/aladdin-seal-lamp.jpg" alt="Aladdin">
+      <span>Aladdin</span>
+    </span>
+
+    <div class="top-spacer"></div>
+
+    <button class="skill-launch-btn anvil" title="Open Anvil Codebase Comprehension & Refactoring">
+      <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil">
+      <span>Anvil</span>
+    </button>
+    <button class="skill-launch-btn aegis" title="Open Aegis Security Scanner & Remediation">
+      <img src="/vendor/brand/aegis-icon.svg" alt="Aegis">
+      <span>Aegis</span>
+    </button>
+
+    <span class="spend-pill">$4.82 today · $38.10 total</span>
+    <button style="background:rgba(74,222,128,0.14);border-color:rgba(74,222,128,0.45);color:var(--ok);font-weight:600;padding:4px 11px;">▶ Go</button>
+    <button title="Archive this effort to the boneyard" style="padding:4px 8px;">🪦</button>
+    <button title="Collapse back to the Cave of Wonders" style="padding:4px 9px;">—</button>
+  </header>
+
+  <!-- ========================================================================
+       ROW 2: GOAL BAR (Starts Collapsed by Default)
+       ======================================================================== -->
+  <section class="goal-bar" id="goalBar" onclick="this.classList.toggle('open')">
+    <div class="goal-row">
+      <span class="goal-badge">GOAL</span>
+      <span class="goal-text">Complete Anchor codebase refactoring (Juice / Peel / Pith parity), remediate Aegis security findings, and package Cave of Wonders for collaborator sharing.</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--dim);">Expand Goal ▸</span>
+    </div>
+    <div class="goal-drawer">
+      <strong>North Star &amp; Acceptance Criteria:</strong>
+      1. Achieve 100% Hypothesis differential equivalence across refactored modules via Anvil.<br>
+      2. Remediate all high-confidence CWE-78 / CWE-22 findings via Aegis AST patches.<br>
+      3. Ship clean AI Cockpit UX &amp; multi-mothership collaborator sharing in the Cave of Wonders.
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       ROW 3: TOP APPROVAL / NEXT-STEP LINE
+       - Starts COLLAPSED by default
+       - Flashes RED when an approval is waiting on you
+       - Expands on click to show full details, recommendation, and For Review links
+       - NO Anvil icon inside here!
+       ======================================================================== -->
+  <section class="top-approval-bar needs-approval" id="topApprovalBar">
+    <div class="top-approval-summary" onclick="toggleTopApproval()">
+      <span class="red-flag-pill" id="topFlagPill">
+        <span class="red-flag-dot"></span>
+        <span id="topFlagLabel">🚩 APPROVAL NEEDED (1)</span>
+      </span>
+      <span class="top-approval-headline" id="topApprovalHeadline">
+        Steward Decision Request: Approve Aegis CWE-78 Batch Remediation Patch (3 sites in job_runner.py) &amp; Advance to Wave 18
+      </span>
+      <span class="top-approval-hint" id="topApprovalCaret">Click to open approval details ▸</span>
+    </div>
+
+    <div class="top-approval-details">
+      <div class="approval-grid">
+        <div>
+          <strong>What the Steward is asking you to decide:</strong>
+          Should we apply the verified LibCST security remediation patch for <code>job_runner.py</code> (3 subprocess shell-injection sinks) and mark Wave 17 complete, or hold for manual line-by-line edits?
+        </div>
+        <div class="approval-why">
+          <strong>Why this ask is here (Context):</strong>
+          Aegis finished scanning the Anvil-refactored codebase and generated a deterministic AST patch plus regression tests (<code>18/18 passing</code>). Both artifacts are now sitting in your <strong>For Review (2 items)</strong> queue on the right.
+        </div>
+        <div class="approval-rec">
+          <strong>★ Steward Recommendation:</strong> <strong>Option A (Recommended) — Approve &amp; Apply Batch Patch + Mark Wave 17 Done.</strong> All 18 regression tests and cross-family adversarial checks passed with zero behavioral drift.
+        </div>
+        <div class="approval-links-row">
+          <span style="font-family:var(--mono);font-size:11px;color:var(--dim);">Relevant For-Review Deliverables (click to open deliverable &amp; auto-collapse side panels, or inspect in queue):</span>
+          <a href="#" class="deliv-link-chip" onclick="openDeliverableSplit(event, 'Aegis CWE-78 Remediation Diff & Test Receipt', 'Wave 17 · 3 subprocess sinks patched in job_runner.py · 18/18 regression tests passing')">📄 Open Aegis CWE-78 Remediation Diff</a>
+          <a href="#" class="deliv-link-chip" onclick="openDeliverableSplit(event, 'Anvil Old→New Parity Verification Report', 'Wave 16 · 100% Hypothesis differential equivalence across Juice / Peel / Pith modules')">📄 Open Anvil Old→New Parity Report</a>
+          <a href="#" class="deliv-link-chip" onclick="openAndHighlightReviewItem(event, 'rev-1')">👁 Highlight in For Review</a>
+        </div>
+        <div class="approval-actions-row">
+          <button class="btn-approve" onclick="approveDecision(event)">✓ Approve Recommended (Option A)</button>
+          <button onclick="discussDecisionInChat(event)">Option B: Hold &amp; Inspect Manually in Chat</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       COLLAPSED LEFT EDGE TILE: ▸ Plan (Appears whenever Left Plan Rail is collapsed!)
+       ======================================================================== -->
+  <div class="railtab" id="leftRailTab" onclick="toggleLeftRail()" title="Click to expand the Plan panel">
+    <span>▸ Plan</span>
+  </div>
+
+  <!-- ========================================================================
+       LEFT COLUMN: PLAN RAIL
+       - « Close button in header (collapses to ▸ Plan edge tile)
+       - Steward Plan Evaluation (starts collapsed ▸)
+       - 2-Button Switcher: [ 🗺️ Hierarchical Plan ] vs [ 🌊 Wave Plan ]
+       - Both views start with all waves collapsed (▸) by default!
+       - Bottom Foundry Tool Governance Dock (starts collapsed ▸)
+       ======================================================================== -->
+  <aside class="left-rail" id="leftRail">
+    <div class="rail-header">
+      <span class="rail-title">THE PLAN</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--steward);">16/19 Waves</span>
+        <button class="rail-close-btn" onclick="toggleLeftRail()" title="Collapse the Plan panel to left edge tile">« Close</button>
+      </div>
+    </div>
+
+    <div class="plan-scroll">
+
+      <!-- 1. Steward Plan Evaluation Tile (Starts COLLAPSED by default!) -->
+      <div class="plan-eval-tile has-proposal" id="planEvalTile">
+        <div class="plan-eval-head" onclick="togglePlanEval()">
+          <span id="planEvalTitle">⚡ STEWARD PLAN EVALUATION · 1 Update</span>
+          <span id="planEvalCaret">▸</span>
+        </div>
+        <div class="plan-eval-body">
+          <div style="color:var(--dim);margin-bottom:4px;">
+            Triggered after <em>Aegis CWE-78 Scan</em> finished + your chat guidance on Cockpit UX:
+          </div>
+          <div class="plan-diff-box" id="planDiffText">
+            + Sub-step 17.3: Verify CWE-78 LibCST patch parity<br>
+            + Wave 18.1: Consolidate 4-tile Deliverables hub &amp; live Status table
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button class="btn-approve" style="font-size:11px;padding:3px 8px;" onclick="applyPlanProposal(event)">✓ Apply to Plan</button>
+            <button style="font-size:11px;padding:3px 8px;" onclick="dismissPlanProposal(event)">Dismiss</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. View Switcher Buttons: Hierarchical Plan Summary vs Wave Plan Summary -->
+      <div class="plan-mode-switcher" role="tablist" aria-label="Switch between Hierarchical Plan Summary and Wave Plan Summary">
+        <button type="button" class="pms-btn active" id="btnModeHierarchy" onclick="switchPlanMode('hierarchy')">
+          🗺️ Hierarchical Plan
+        </button>
+        <button type="button" class="pms-btn" id="btnModeWave" onclick="switchPlanMode('wave')">
+          🌊 Wave Plan
+        </button>
+      </div>
+
+      <!-- ====================================================================
+           VIEW A: HIERARCHICAL PLAN SUMMARY (Phases -> Waves -> Sub-Steps -> Passes)
+           ==================================================================== -->
+      <div class="plan-view-pane active" id="paneHierarchy">
+
+        <div class="hierarchy-overview-box">
+          <div class="hob-top">
+            <span>🗺️ Hierarchical Plan Summary</span>
+            <span style="color:var(--ok);">3 Phases · 84%</span>
+          </div>
+          <div class="you-are-here-banner">
+            <span>📍 NOW: Phase II › Wave 17 › Step 17.2</span>
+            <span>Pass 2/4 (Review)</span>
+          </div>
+          <div class="macro-progress-track" title="Phase I (100%) · Phase II (88%) · Phase III (0%)">
+            <div class="mp-seg"><div class="mp-fill" style="width:100%;background:var(--ok);"></div></div>
+            <div class="mp-seg"><div class="mp-fill" style="width:88%;background:var(--john);"></div></div>
+            <div class="mp-seg"><div class="mp-fill" style="width:0%;background:var(--steward);"></div></div>
+          </div>
+          <div class="mp-legend">
+            <span style="color:var(--ok);">I. Core (11/11 ✓)</span>
+            <span style="color:var(--john);">II. Refactor/Sec (5/6 ●)</span>
+            <span>III. UX/Collab (0/2 ○)</span>
+          </div>
+        </div>
+
+        <!-- MACRO PHASE I (Completed Phase — Starts Collapsed ▸) -->
+        <div class="phase-card collapsed" id="phaseCard1">
+          <div class="phase-card-head" onclick="togglePhaseCard('phaseCard1')">
+            <span class="phase-card-title">
+              <span style="color:var(--ok);">✓</span>
+              <span>Phase I: Core &amp; Cave Foundation</span>
+            </span>
+            <span class="phase-card-meta">Waves 1–11 · 100% ▸</span>
+          </div>
+          <div class="phase-tree-children">
+            <div class="wave-card done">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill done">✓ Done</span>
+                <span class="w-title">Waves 1–6: Steward Engine &amp; Canonical Status</span>
+                <span class="w-meta">6/6</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Built core Steward campaign runner, durable event stream, and canonical 10-minute status table.</div>
+              </div>
+            </div>
+            <div class="wave-card done">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill done">✓ Done</span>
+                <span class="w-title">Waves 7–11: Cave Star Chart &amp; Multi-Mothership</span>
+                <span class="w-meta">5/5</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Shipped Star Chart orbital view, Comms Pulse, 4-stage gear setup, and multi-mothership federation.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MACRO PHASE II (Active Phase — Shows its Waves; ALL Waves inside start COLLAPSED ▸!) -->
+        <div class="phase-card active-phase" id="phaseCard2">
+          <div class="phase-card-head" onclick="togglePhaseCard('phaseCard2')">
+            <span class="phase-card-title">
+              <span style="color:var(--john);">●</span>
+              <span>Phase II: Anvil Refactor &amp; Aegis Security</span>
+            </span>
+            <span class="phase-card-meta" style="color:var(--john);">Waves 12–17 · 5/6 ▾</span>
+          </div>
+          <div class="phase-tree-children">
+
+            <div class="wave-card done">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill done">✓ Done</span>
+                <span class="w-title">Waves 12–15: Anvil AST &amp; Process Maps</span>
+                <span class="w-meta">4/4</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Built Anvil Mode 1 Agreed Architecture Map, Mode 3 Old→New Map, and interactive block comprehension.</div>
+              </div>
+            </div>
+
+            <div class="wave-card done">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill done">✓ Done</span>
+                <span class="w-title">Wave 16: Live Refactoring &amp; Parity</span>
+                <span class="w-meta">3/3</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Decomposed Juice / Peel / Pith across core modules and verified 100% Hypothesis equivalence.</div>
+                <div class="substep-list">
+                  <div class="substep-item"><div class="substep-top"><span>16.1 Essential Core Decomposition</span><span style="color:var(--ok);">✓ Lock</span></div></div>
+                  <div class="substep-item"><div class="substep-top"><span>16.2 LibCST Lossless Remapping</span><span style="color:var(--ok);">✓ Lock</span></div></div>
+                  <div class="substep-item"><div class="substep-top"><span>16.3 Differential Equivalence Suite</span><span style="color:var(--ok);">✓ Lock</span></div></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Wave 17: CURRENT ACTIVE WAVE (Starts COLLAPSED ▸ by default!) -->
+            <div class="wave-card now" id="wave17CardHier">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill now">● Now</span>
+                <span class="w-title">Wave 17: Aegis Cockpit &amp; Remediation</span>
+                <span class="w-meta">2/3</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Auto-sync Aegis with Anvil's refactored codebase, remediate CWE-78/22 sinks, and verify regression gates.</div>
+                <div class="substep-list">
+                  <div class="substep-item">
+                    <div class="substep-top"><span>17.1 Auto-Connect Anvil Codebase Target</span><span style="color:var(--ok);">✓ Done</span></div>
+                    <div class="iter-bar">
+                      <span class="iter-step done">1. Draft ✓</span>
+                      <span class="iter-step done">2. Review ✓</span>
+                      <span class="iter-step done">3. Refine ✓</span>
+                      <span class="iter-step done">4. Lock ✓</span>
+                    </div>
+                  </div>
+                  <div class="substep-item active">
+                    <div class="substep-top"><span>17.2 CWE-78 Subprocess AST Patch</span><span style="color:var(--warn);">● Review</span></div>
+                    <div class="iter-bar">
+                      <span class="iter-step done">1. Draft ✓</span>
+                      <span class="iter-step active">2. Review ●</span>
+                      <span class="iter-step">3. Refine ○</span>
+                      <span class="iter-step">4. Lock ○</span>
+                    </div>
+                  </div>
+                  <div class="substep-item">
+                    <div class="substep-top"><span>17.3 Post-Patch Regression &amp; Signoff</span><span style="color:var(--dim);">○ Next</span></div>
+                    <div class="iter-bar">
+                      <span class="iter-step">1. Draft ○</span>
+                      <span class="iter-step">2. Review ○</span>
+                      <span class="iter-step">3. Refine ○</span>
+                      <span class="iter-step">4. Lock ○</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- MACRO PHASE III (Upcoming Phase — Shows its Waves; ALL Waves inside start COLLAPSED ▸!) -->
+        <div class="phase-card" id="phaseCard3">
+          <div class="phase-card-head" onclick="togglePhaseCard('phaseCard3')">
+            <span class="phase-card-title">
+              <span style="color:var(--steward);">○</span>
+              <span>Phase III: Cockpit UX &amp; Collab Sharing</span>
+            </span>
+            <span class="phase-card-meta">Waves 18–19 · 0/2 ▾</span>
+          </div>
+          <div class="phase-tree-children">
+
+            <div class="wave-card">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill next">○ Next Up</span>
+                <span class="w-title">Wave 18: AI Cockpit UX &amp; Status Overhaul</span>
+                <span class="w-meta">0/4</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Wire 4-tile Deliverables hub, live non-truncated Status table with 3-row Milestone ETA, and Living Wave Plan.</div>
+                <div class="substep-list">
+                  <div class="substep-item"><div class="substep-top"><span>18.1 4-Tile Deliverables Hub (Pending/Review/Final/All)</span><span style="color:var(--dim);">○ Planned</span></div></div>
+                  <div class="substep-item"><div class="substep-top"><span>18.2 Live Status Table &amp; 3-Row Milestone ETA</span><span style="color:var(--dim);">○ Planned</span></div></div>
+                  <div class="substep-item"><div class="substep-top"><span>18.3 Red Flashing Approval Flag &amp; Review Links</span><span style="color:var(--dim);">○ Planned</span></div></div>
+                  <div class="substep-item"><div class="substep-top"><span>18.4 Hierarchical/Wave Switcher &amp; Tool Governance</span><span style="color:var(--dim);">○ Planned</span></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="wave-card">
+              <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+                <span class="w-pill todo">○ Planned</span>
+                <span class="w-title">Wave 19: Collaborator Sharing &amp; Release</span>
+                <span class="w-meta">0/3</span>
+                <span class="w-caret">▸</span>
+              </div>
+              <div class="wave-body">
+                <div class="wave-summary">Final Cave of Wonders UX polish and one-click collaborator sharing package.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ====================================================================
+           VIEW B: WAVE PLAN SUMMARY (Sequential Wave-by-Wave Spine like wave4-mockup.html)
+           - All Wave cards start COLLAPSED (▸) by default!
+           ==================================================================== -->
+      <div class="plan-view-pane" id="paneWave">
+
+        <div class="hierarchy-overview-box">
+          <div class="hob-top">
+            <span>🌊 Wave Plan Summary</span>
+            <span style="color:var(--ok);">16 Done · 1 Now · 2 Next</span>
+          </div>
+          <div class="you-are-here-banner">
+            <span>📍 CURRENT WAVE: Wave 17 of 19</span>
+            <span>2/3 Sub-steps</span>
+          </div>
+        </div>
+
+        <!-- Earlier Waves 1-14 Rollup Card (Collapsed ▸) -->
+        <div class="wave-card done">
+          <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+            <span class="w-pill done">✓ Done</span>
+            <span class="w-title">Waves 1–14: Core Engine, Cave &amp; Early Anvil</span>
+            <span class="w-meta">14/14</span>
+            <span class="w-caret">▸</span>
+          </div>
+          <div class="wave-body">
+            <div class="wave-summary">Waves 1–11 (Steward Engine, Star Chart, Comms Pulse, Multi-Mothership) + Waves 12–14 (Anvil AST Parser &amp; Mode 1–2 Maps).</div>
+          </div>
+        </div>
+
+        <!-- Wave 15 (Collapsed ▸) -->
+        <div class="wave-card done">
+          <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+            <span class="w-pill done">✓ Done</span>
+            <span class="w-title">Wave 15: Anvil Mode 3 Old→New Map &amp; Chat</span>
+            <span class="w-meta">4/4</span>
+            <span class="w-caret">▸</span>
+          </div>
+          <div class="wave-body">
+            <div class="wave-summary">Interactive block-by-block Old→New remapping explorer and persistent Anvil Agent dialogue.</div>
+          </div>
+        </div>
+
+        <!-- Wave 16 (Collapsed ▸) -->
+        <div class="wave-card done">
+          <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+            <span class="w-pill done">✓ Done</span>
+            <span class="w-title">Wave 16: Anvil Live Refactoring &amp; Parity</span>
+            <span class="w-meta">3/3</span>
+            <span class="w-caret">▸</span>
+          </div>
+          <div class="wave-body">
+            <div class="wave-summary">Decomposed Juice / Peel / Pith across core modules and verified 100% Hypothesis equivalence.</div>
+            <div class="substep-list">
+              <div class="substep-item"><div class="substep-top"><span>16.1 Essential Core Decomposition</span><span style="color:var(--ok);">✓ Lock</span></div></div>
+              <div class="substep-item"><div class="substep-top"><span>16.2 LibCST Lossless Remapping</span><span style="color:var(--ok);">✓ Lock</span></div></div>
+              <div class="substep-item"><div class="substep-top"><span>16.3 Differential Equivalence Suite</span><span style="color:var(--ok);">✓ Lock</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wave 17: CURRENT WAVE (Starts COLLAPSED ▸ by default!) -->
+        <div class="wave-card now" id="wave17CardFlat">
+          <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+            <span class="w-pill now">● Now</span>
+            <span class="w-title">Wave 17: Aegis Cockpit &amp; Remediation</span>
+            <span class="w-meta">2/3</span>
+            <span class="w-caret">▸</span>
+          </div>
+          <div class="wave-body">
+            <div class="wave-summary">Auto-sync Aegis with Anvil's refactored codebase, remediate CWE-78/22 sinks, and verify regression gates.</div>
+            <div class="substep-list">
+              <div class="substep-item">
+                <div class="substep-top"><span>17.1 Auto-Connect Anvil Codebase Target</span><span style="color:var(--ok);">✓ Done</span></div>
+                <div class="iter-bar">
+                  <span class="iter-step done">1. Draft ✓</span>
+                  <span class="iter-step done">2. Review ✓</span>
+                  <span class="iter-step done">3. Refine ✓</span>
+                  <span class="iter-step done">4. Lock ✓</span>
+                </div>
+              </div>
+              <div class="substep-item active">
+                <div class="substep-top"><span>17.2 CWE-78 Subprocess AST Patch</span><span style="color:var(--warn);">● Review</span></div>
+                <div class="iter-bar">
+                  <span class="iter-step done">1. Draft ✓</span>
+                  <span class="iter-step active">2. Review ●</span>
+                  <span class="iter-step">3. Refine ○</span>
+                  <span class="iter-step">4. Lock ○</span>
+                </div>
+              </div>
+              <div class="substep-item">
+                <div class="substep-top"><span>17.3 Post-Patch Regression &amp; Signoff</span><span style="color:var(--dim);">○ Next</span></div>
+                <div class="iter-bar">
+                  <span class="iter-step">1. Draft ○</span>
+                  <span class="iter-step">2. Review ○</span>
+                  <span class="iter-step">3. Refine ○</span>
+                  <span class="iter-step">4. Lock ○</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wave 18 (Starts COLLAPSED ▸ by default!) -->
+        <div class="wave-card">
+          <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+            <span class="w-pill next">○ Next Up</span>
+            <span class="w-title">Wave 18: AI Cockpit UX &amp; Status Overhaul</span>
+            <span class="w-meta">0/4</span>
+            <span class="w-caret">▸</span>
+          </div>
+          <div class="wave-body">
+            <div class="wave-summary">Wire 4-tile Deliverables hub, live non-truncated Status table with 3-row Milestone ETA, and Living Wave Plan.</div>
+            <div class="substep-list">
+              <div class="substep-item"><div class="substep-top"><span>18.1 4-Tile Deliverables Hub (Pending/Review/Final/All)</span><span style="color:var(--dim);">○ Planned</span></div></div>
+              <div class="substep-item"><div class="substep-top"><span>18.2 Live Status Table &amp; 3-Row Milestone ETA</span><span style="color:var(--dim);">○ Planned</span></div></div>
+              <div class="substep-item"><div class="substep-top"><span>18.3 Red Flashing Approval Flag &amp; Review Links</span><span style="color:var(--dim);">○ Planned</span></div></div>
+              <div class="substep-item"><div class="substep-top"><span>18.4 Hierarchical/Wave Switcher &amp; Tool Governance</span><span style="color:var(--dim);">○ Planned</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wave 19 (Starts COLLAPSED ▸ by default!) -->
+        <div class="wave-card">
+          <div class="wave-head" onclick="toggleWaveCard(this.parentElement)">
+            <span class="w-pill todo">○ Planned</span>
+            <span class="w-title">Wave 19: Collaborator Sharing &amp; Release</span>
+            <span class="w-meta">0/3</span>
+            <span class="w-caret">▸</span>
+          </div>
+          <div class="wave-body">
+            <div class="wave-summary">Final Cave of Wonders UX polish and one-click collaborator sharing package.</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- 4. Bottom-Left Foundry Tool Governance Dock (Starts COLLAPSED ▸ by default!) -->
+    <div class="tool-gov-dock" id="toolGovDock">
+      <div class="tool-gov-head" onclick="toggleToolGov()">
+        <span class="tool-gov-title">
+          <span>🛠️ Foundry Tools</span>
+          <span class="d-count-pill" style="color:var(--ok);">13 vetted · 1 proposal</span>
+        </span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--dim);" id="toolGovCaret">▸</span>
+      </div>
+      <div class="tool-gov-body">
+        <div class="gov-step-box">
+          <div class="gov-step-title" style="color:var(--ok);">1. Skill Foundry Catalog Checked First (ft.py)</div>
+          <div style="color:var(--dim);">Verified active tools: <code>chrome-open</code>, <code>look</code>, <code>cst-rewrite</code>, <code>reading-copy</code>, <code>scout</code>.</div>
+        </div>
+        <div class="gov-step-box alert" id="customToolProposalBox">
+          <div class="gov-step-title" style="color:#fca5a5;">2. Agent Proposing New Tool + Justification</div>
+          <div><strong>Proposed by Aegis Worker:</strong> <code>sarif-export</code></div>
+          <div style="color:var(--dim);margin-top:2px;"><strong>Why needed:</strong> Exports Aegis CWE findings to GitHub SARIF v2.1.0; not covered by existing 13 Foundry tools.</div>
+          <div class="gov-step-title" style="color:var(--warn);margin-top:6px;">3. Steward &amp; User Permission Gate</div>
+          <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;">
+            <button class="btn-approve" style="font-size:10.5px;padding:2px 7px;" onclick="approveCustomTool(event, true)">✓ Approve &amp; Add to Foundry</button>
+            <button style="font-size:10.5px;padding:2px 7px;" onclick="approveCustomTool(event, false)">One-Off Only</button>
+            <button style="font-size:10.5px;padding:2px 7px;color:#fca5a5;" onclick="rejectCustomTool(event)">✕ Reject</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========================================================================
+       CENTER COLUMN: STEWARD DIALOGUE (+ Optional Deliverable Split-View Preview)
+       - Preserves the EXACT existing unboxed transcript flow, labeling, and
+         coloring from v1.html / shared.css (.blk.john in gold #e8c268,
+         .blk.steward in blue #6c9cfc, .blk.turnend in muted #5d6270)
+       - When a deliverable is opened, Plan & Status auto-collapse to ▸ Plan / ◂ Status
+         edge tiles; closing the deliverable returns to 1-Window Mode and auto-reopens them!
+       ======================================================================== -->
+  <main class="center-main">
+    <div class="center-split-wrap">
+
+      <!-- Left/Main Dialogue Column -->
+      <div class="dialogue-col">
+        <div class="scroll" id="chatScroll">
+
+          <div class="blk john">
+            <div class="who">JOHN</div>
+            <div class="body"><p>Aladdin, how is Wave 17 coming along? Make sure Aegis is profiling the exact same refactored codebase that Anvil just finished verifying, and keep the status window and deliverables clean so I can see what needs my review and what the ETAs are.</p></div>
+          </div>
+
+          <div class="blk steward">
+            <div class="who">ALADDIN</div>
+            <div class="body"><p>Wave 17 is on its final review gate (Step 17.2). Aegis automatically connected to the Anvil-refactored workspace (<code>C:\dev\Anchor</code>) and completed the deterministic AST taint scan across all 6 CWE families.</p><p>Here is where things stand right now:</p><p>1. <strong>For Review (2 items in Deliverables on the right):</strong> The <em>Aegis CWE-78 Remediation Diff &amp; Test Receipt</em> (<code>18/18 tests passing</code>) and the <em>Anvil Old→New Parity Report</em> are ready for your inspection.<br>2. <strong>Pending (3 items in Deliverables):</strong> Aegis is finishing the CWE-22 path-traversal verification (ETA ~4 mins) and updating the security ledger.<br>3. <strong>Approval Flag (flashing red at the top):</strong> Whenever you're ready, expand the red approval banner to inspect the two artifacts and approve applying the CWE-78 patch so we can advance to Wave 18.</p></div>
+          </div>
+          <div class="blk turnend">· turn done in 4.2s · $0.018 reported · 2,410 tokens</div>
+
+          <div class="blk john">
+            <div class="who">JOHN</div>
+            <div class="body"><p>What happens when I click a deliverable to review it, or switch back to a single cockpit window?</p></div>
+          </div>
+
+          <div class="blk steward">
+            <div class="who">ALADDIN</div>
+            <div class="body"><p>When you click any deliverable to look at it (for example inside <strong>For Review</strong>, <strong>Final Deliverables</strong>, <strong>All Deliverables</strong>, or the <strong>Approval Needed</strong> banner), the <strong>Plan</strong> and <strong>Status</strong> panels automatically fold into their compact edge tiles (<code>▸ Plan</code> on the left edge and <code>◂ Status</code> on the right edge) so you have full room to read and talk with me—while still letting you click either edge tile at any time to peek at the Plan or Status. When you close the deliverable and return to a single cockpit window, both panels automatically open right back up.</p></div>
+          </div>
+          <div class="blk turnend">· turn done in 3.1s · $0.012 reported · 1,640 tokens</div>
+
+        </div>
+
+        <div class="composer">
+          <textarea id="chatInput" rows="2" placeholder="Talk to Aladdin — try typing: 'Start Wave 18 now' while items are still in For Review..."></textarea>
+          <div class="row">
+            <span class="hint">Enter to send · Shift+Enter for newline · Steward checks unreviewed items &amp; plan impact automatically</span>
+            <button class="send" onclick="sendUserMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Second-Window Deliverable Preview Pane (Shows auto-collapse of Plan & Status into edge tiles!) -->
+      <div class="deliverable-viewer-pane" id="deliverableViewerPane">
+        <div class="dv-head">
+          <span class="dv-title" id="dvTitle">📄 Deliverable Viewer · Aegis CWE-78 Remediation Diff &amp; Test Receipt</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn-approve" style="font-size:11px;padding:3px 9px;" onclick="exitSecondWindowMode()">🗖 Close Deliverable &amp; Return to 1-Window (Auto-Reopen Panels)</button>
+          </div>
+        </div>
+        <div class="dv-body">
+          <div style="padding:10px 12px;border-radius:8px;background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.4);margin-bottom:14px;font-size:12.5px;">
+            <strong>2-Window Deliverable Mode Active:</strong> Notice that both the <strong>Left Plan Panel</strong> and <strong>Right Status Panel</strong> automatically collapsed into their vertical edge tiles (<strong><code>▸ Plan</code></strong> on the far-left edge and <strong><code>◂ Status</code></strong> on the far-right edge). You can still click either edge tile anytime while viewing this deliverable, and clicking <strong>Close Deliverable &amp; Return to 1-Window</strong> above automatically reopens both panels!
+          </div>
+          <h3 style="color:var(--steward);margin-bottom:6px;" id="dvDocHeading">Aegis CWE-78 Remediation Diff &amp; Test Receipt</h3>
+          <p style="color:var(--dim);font-family:var(--mono);font-size:11.5px;margin-bottom:12px;" id="dvDocSub">Target: C:\dev\Anchor\job_runner.py · Verified by Aegis + Foreman Gate (18/18 tests ✓)</p>
+          <pre style="background:#0b0e14;border:1px solid var(--line);padding:12px;border-radius:7px;font-family:var(--mono);font-size:12px;color:#cbd5e1;overflow-x:auto;">
+--- a/job_runner.py
++++ b/job_runner.py
+@@ -142,7 +142,7 @@ def spawn_worker_cmd(cmd_args, cwd):
+-    proc = subprocess.Popen(cmd_str, shell=True, cwd=cwd)
++    proc = subprocess.Popen( shlex.split(cmd_str) if isinstance(cmd_str, str) else list(cmd_str), shell=False, cwd=cwd )
+          </pre>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ========================================================================
+       COLLAPSED RIGHT EDGE TILE: ◂ Status (Appears whenever Right Status Rail is collapsed!)
+       ======================================================================== -->
+  <div class="statustab" id="rightStatusTab" onclick="toggleRightStatus()" title="Click to expand the Status & Deliverables panel">
+    <span class="light-dot"></span>
+    <span>◂ Status</span>
+    <span class="statustab-state">Running</span>
+  </div>
+
+  <!-- ========================================================================
+       RIGHT COLUMN: STATUS & DELIVERABLES PANE
+       - Close » button in header (collapses to ◂ Status edge tile)
+       1. Deliverables Hub (4 sub-tiles: Pending, For Review, Final, All — ALL start collapsed!)
+       2. Red Flashing Approval Flag (starts collapsed, tied to For Review items)
+       3. Live 10-Min Status Report (wave4-mockup.html format, always front & center!)
+       4. Earlier 10-Min Updates (collapsed stack)
+       5. Drop Files Bar at the bottom
+       ======================================================================== -->
+  <aside class="right-rail" id="rightRail">
+    <div class="rail-header">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span class="light-dot"></span>
+        <span class="rail-title">STATUS &amp; DELIVERABLES</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="sc-timer-pill" id="liveRuntimePill">14m · Next 3m 40s</span>
+        <button class="rail-close-btn" onclick="toggleRightStatus()" title="Collapse the Status panel to right edge tile">Close »</button>
+      </div>
+    </div>
+
+    <div class="right-scroll">
+
+      <!-- 1. DELIVERABLES HUB (4 Collapsible Sub-Tiles — ALL start collapsed by default!) -->
+      <div class="deliv-hub open" id="delivHub">
+        <div class="deliv-hub-head" onclick="toggleDelivHub()">
+          <span class="deliv-hub-title">📦 Deliverables</span>
+          <span class="deliv-hub-counts" id="delivHubSummary">3 Pending · 2 Review · 2 Final · 14 All ▾</span>
+        </div>
+
+        <div class="deliv-hub-body">
+
+          <!-- Sub-Tile 1: PENDING (Starts COLLAPSED!) -->
+          <div class="d-tile pending" id="tilePending">
+            <div class="d-tile-head" onclick="toggleSubTile('tilePending')">
+              <span>⏳ Pending</span>
+              <span class="d-count-pill" id="countPending">3 items ▸</span>
+            </div>
+            <div class="d-tile-body" id="listPending">
+              <div class="d-item" id="pend-1">
+                <div class="d-item-top">
+                  <span class="d-item-title">Aegis CWE-22 Path-Traversal Verification</span>
+                  <span class="w-pill now">Running</span>
+                </div>
+                <div class="d-item-meta">
+                  <span>Worker: Aegis AST Verifier · Step 17.2</span>
+                  <span style="color:var(--warn);font-weight:700;">ETA: ~4 mins</span>
+                </div>
+              </div>
+              <div class="d-item" id="pend-2">
+                <div class="d-item-top">
+                  <span class="d-item-title">Wave 17 Security Ledger &amp; Regression Receipt</span>
+                  <span class="w-pill next">Queued</span>
+                </div>
+                <div class="d-item-meta">
+                  <span>Worker: Foreman Gate Runner · Step 17.3</span>
+                  <span style="color:var(--dim);">ETA: ~9 mins</span>
+                </div>
+              </div>
+              <div class="d-item" id="pend-3">
+                <div class="d-item-top">
+                  <span class="d-item-title">Updated DELIVERABLES.md Projection</span>
+                  <span class="w-pill next">Queued</span>
+                </div>
+                <div class="d-item-meta">
+                  <span>Worker: Steward Register Sync · Step 17.3</span>
+                  <span style="color:var(--dim);">ETA: ~11 mins</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-Tile 2: FOR REVIEW (Starts COLLAPSED!) -->
+          <div class="d-tile review" id="tileReview">
+            <div class="d-tile-head" onclick="toggleSubTile('tileReview')">
+              <span>👁 For Review</span>
+              <span class="d-count-pill" id="countReview">2 items ▸</span>
+            </div>
+            <div class="d-tile-body" id="listReview">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+                <span style="font-size:11px;color:var(--dim);">Click artifact to open (auto-collapses side panels); click <strong>✓ Done</strong> when reviewed:</span>
+                <button class="btn-done-sm" onclick="markAllReviewDone(event)">✓ Mark All Done</button>
+              </div>
+              <div class="d-item" id="rev-1">
+                <div class="d-item-top">
+                  <a href="#" onclick="openDeliverableSplit(event, 'Aegis CWE-78 Remediation Diff & Test Receipt', 'Wave 17 · 3 subprocess sinks patched · 18/18 tests ✓')" class="d-item-title">📄 Aegis CWE-78 Remediation Diff &amp; Test Receipt</a>
+                  <button class="btn-done-sm" onclick="markOneReviewDone(event, 'rev-1', 'Aegis CWE-78 Remediation Diff & Test Receipt', 'Wave 17')">✓ Done</button>
+                </div>
+                <div class="d-item-meta">
+                  <span>Wave 17 · 3 subprocess sinks patched · 18/18 tests ✓</span>
+                  <span>Just now</span>
+                </div>
+              </div>
+              <div class="d-item" id="rev-2">
+                <div class="d-item-top">
+                  <a href="#" onclick="openDeliverableSplit(event, 'Anvil Old→New Parity Verification Report', 'Wave 16 · 100% Hypothesis equivalence')" class="d-item-title">📄 Anvil Old→New Parity Verification Report</a>
+                  <button class="btn-done-sm" onclick="markOneReviewDone(event, 'rev-2', 'Anvil Old→New Parity Verification Report', 'Wave 16')">✓ Done</button>
+                </div>
+                <div class="d-item-meta">
+                  <span>Wave 16 · 100% Hypothesis equivalence</span>
+                  <span>18m ago</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-Tile 3: FINAL DELIVERABLES (Main/Permanent Deliverables — Starts COLLAPSED!) -->
+          <div class="d-tile final" id="tileFinal">
+            <div class="d-tile-head" onclick="toggleSubTile('tileFinal')">
+              <span>🏛 Final Deliverables</span>
+              <span class="d-count-pill" id="countFinal">2 items ▸</span>
+            </div>
+            <div class="d-tile-body" id="listFinal">
+              <div style="font-size:11px;color:var(--dim);margin-bottom:2px;">Main permanent deliverables across the campaign:</div>
+              <div class="d-item">
+                <div class="d-item-top">
+                  <a href="#" onclick="openDeliverableSplit(event, 'Anchor Essential Core Architecture (Juice/Peel/Pith)', 'Wave 16 Final · Verified lossless LibCST refactor + parity')" class="d-item-title">🏛 Anchor Essential Core Architecture (Juice/Peel/Pith)</a>
+                  <span class="w-pill done">Wave 16 Final</span>
+                </div>
+                <div class="d-item-meta"><span>Verified lossless LibCST refactor + parity</span><span>Approved</span></div>
+              </div>
+              <div class="d-item">
+                <div class="d-item-top">
+                  <a href="#" onclick="openDeliverableSplit(event, 'Cave of Wonders Multi-Mothership Cockpit', 'Wave 11 Final · Live Star Chart + Comms Pulse + Collab Sync')" class="d-item-title">🏛 Cave of Wonders Multi-Mothership Cockpit</a>
+                  <span class="w-pill done">Wave 11 Final</span>
+                </div>
+                <div class="d-item-meta"><span>Live Star Chart + Comms Pulse + Collab Sync</span><span>Approved</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-Tile 4: ALL DELIVERABLES (All deliverables made, grouped by Wave — Starts COLLAPSED!) -->
+          <div class="d-tile all" id="tileAll">
+            <div class="d-tile-head" onclick="toggleSubTile('tileAll')">
+              <span>📚 All Deliverables</span>
+              <span class="d-count-pill" id="countAll">14 items ▸</span>
+            </div>
+            <div class="d-tile-body" id="listAll">
+              <div style="font-size:11px;color:var(--dim);margin-bottom:2px;">Every deliverable produced in the campaign, ordered by Wave (click a wave to expand):</div>
+
+              <div class="wave-deliv-group" id="allWave17">
+                <div class="wave-deliv-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span>Wave 17 — Aegis Security &amp; Auto-Remediation</span>
+                  <span id="allWave17Count">3 items ▸</span>
+                </div>
+                <div class="wave-deliv-body" id="allWave17Body">
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Aegis CWE-78 Remediation Diff & Test Receipt', 'Wave 17 Deliverable')">• Aegis CWE-78 Remediation Diff &amp; Test Receipt</a> <span style="color:var(--warn);font-size:10.5px;">(For Review)</span></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Aegis Initial 6-Family AST Taint Scan Log', 'Wave 17 Intermediate Deliverable')">• Aegis Initial 6-Family AST Taint Scan Log</a> <span style="color:var(--dim);font-size:10.5px;">(Intermediate)</span></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Wave 17 Aegis Workpage Mockup', 'Wave 17 Reviewed Deliverable')">• Wave 17 Aegis Workpage Mockup</a> <span style="color:var(--ok);font-size:10.5px;">(Reviewed)</span></div>
+                </div>
+              </div>
+
+              <div class="wave-deliv-group" id="allWave16">
+                <div class="wave-deliv-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span>Wave 16 — Anvil Live Refactoring &amp; Parity</span>
+                  <span>5 items ▸</span>
+                </div>
+                <div class="wave-deliv-body">
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Anchor Essential Core Architecture (Final)', 'Wave 16 Final')">• Anchor Essential Core Architecture (Final)</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Anvil Old→New Parity Verification Report', 'Wave 16 Report')">• Anvil Old→New Parity Verification Report</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Mode 1 Agreed Architecture Process Map', 'Wave 16 Artifact')">• Mode 1 Agreed Architecture Process Map</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Mode 3 Old-to-New Block Remapping', 'Wave 16 Artifact')">• Mode 3 Old-to-New Block Remapping</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Hypothesis Equivalence Receipts (100% pass)', 'Wave 16 Receipt')">• Hypothesis Equivalence Receipts (100% pass)</a></div>
+                </div>
+              </div>
+
+              <div class="wave-deliv-group" id="allWave1_15">
+                <div class="wave-deliv-head" onclick="this.parentElement.classList.toggle('open')">
+                  <span>Waves 1–15 — Core Engine &amp; Cave of Wonders</span>
+                  <span>6 items ▸</span>
+                </div>
+                <div class="wave-deliv-body">
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Cave of Wonders Multi-Mothership Cockpit (Final)', 'Wave 11 Final')">• Cave of Wonders Multi-Mothership Cockpit (Final)</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Wave 11 Multi-Mothership Spec & Mockup', 'Wave 11')">• Wave 11 Multi-Mothership Spec &amp; Mockup</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Wave 9 Comms Pulse & 4-Stage Gear Setup', 'Wave 9')">• Wave 9 Comms Pulse &amp; 4-Stage Gear Setup</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Wave 7 Star Chart & Done Lifecycle', 'Wave 7')">• Wave 7 Star Chart &amp; Done Lifecycle</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Wave 4 Canonical Status & Plan Surface', 'Wave 4')">• Wave 4 Canonical Status &amp; Plan Surface</a></div>
+                  <div class="d-item"><a href="#" onclick="openDeliverableSplit(event, 'Campaign Master Plan & North Star Charter', 'Wave 1')">• Campaign Master Plan &amp; North Star Charter</a></div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- 2. RIGHT-RAIL RED FLASHING APPROVAL FLAG (Starts COLLAPSED, tied to For Review items!) -->
+      <div class="right-approval-flag needs-approval" id="rightApprovalFlag">
+        <div class="raf-head" onclick="toggleRightApproval()">
+          <span class="raf-title" id="rightFlagTitle">
+            <span class="red-flag-dot"></span>
+            <span>🚩 APPROVAL NEEDED (1) · Tied to 2 For Review items</span>
+          </span>
+          <span style="font-family:var(--mono);font-size:11px;color:#fca5a5;" id="rightFlagCaret">▸</span>
+        </div>
+        <div class="raf-body">
+          <div style="font-weight:600;margin-bottom:4px;">Approve Aegis CWE-78 Batch Patch (3 sites in <code>job_runner.py</code>)?</div>
+          <div style="color:var(--dim);margin-bottom:6px;">
+            <strong>Why:</strong> Aegis verified the AST patch (`18/18 tests passing`) on the Anvil-refactored codebase. Approving locks Wave 17 and starts Wave 18.
+          </div>
+          <div style="padding:5px 8px;border-radius:5px;background:rgba(74,222,128,0.1);border:1px solid rgba(74,222,128,0.35);color:#bbf7d0;margin-bottom:6px;">
+            <strong>★ Recommendation:</strong> Approve Option A &amp; advance to Wave 18.
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px;">
+            <a href="#" class="deliv-link-chip" onclick="openDeliverableSplit(event, 'Aegis CWE-78 Remediation Diff & Test Receipt', 'Wave 17 · 3 subprocess sinks patched')">📄 Open CWE-78 Diff</a>
+            <a href="#" class="deliv-link-chip" onclick="openDeliverableSplit(event, 'Anvil Old→New Parity Verification Report', 'Wave 16 · 100% Hypothesis parity')">📄 Open Parity Report</a>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-approve" onclick="approveDecision(event)">✓ Approve Recommended</button>
+            <button onclick="discussDecisionInChat(event)">Discuss in Chat</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. CURRENT 10-MINUTE STATUS REPORT (wave4-mockup.html Format, Always Up Center!) -->
+      <div class="status-card-current" id="currentStatusCard">
+        <div class="sc-head">
+          <span>[15:50] Aegis + Foreman build · Anchor</span>
+          <span class="sc-timer-pill">Live · 10m cadence</span>
+        </div>
+
+        <table class="stab">
+          <tbody>
+            <tr>
+              <td class="k">Effort</td>
+              <td class="v">Anchor Refactoring &amp; Security Hardening (19 waves · Phase II, Wave 17)</td>
+            </tr>
+            <tr>
+              <td class="k">Doing</td>
+              <td class="v">Running Aegis AST verification on CWE-22 path-traversal guards in <code>steward_campaign.py</code> while awaiting your approval on CWE-78 patch.</td>
+            </tr>
+            <tr>
+              <td class="k">Status</td>
+              <td class="v">17/19 waves · Wave 17 Step 17.2 (Pass 2/4: Review &amp; Verification)</td>
+            </tr>
+            <tr>
+              <td class="k">Tests</td>
+              <td class="v"><span style="color:var(--ok);font-weight:700;">pass ✓</span> · 18/18 Aegis regression tests + 42/42 Anvil parity checks green</td>
+            </tr>
+            <tr>
+              <td class="k">Blocker</td>
+              <td class="v" id="statusBlockerCell"><span style="color:#fca5a5;font-weight:600;">Waiting on your approval</span> for CWE-78 batch patch (red flag above) · 0 deaths</td>
+            </tr>
+            <tr>
+              <td class="k">Procs</td>
+              <td class="v"><code>py 2 · claude 1 · node 2</code> (all healthy, 0 zombies)</td>
+            </tr>
+            <tr>
+              <td class="k">Journal</td>
+              <td class="v">Diagnosed double string-clipping (`oneLine(58)` + CSS ellipsis) &amp; zeroed live skill logs in <code>compose_status</code>; staged Wave 18 fix.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- 3-Row Milestone ETA (Current Wave -> Next Wave -> Whole Plan) -->
+        <div class="eta-milestone-box">
+          <div class="eta-head">⏱ Milestone ETA Breakdown (Elapsed: 14m)</div>
+          <div class="eta-row">
+            <span class="ek">1. Current Wave (Wave 17 · Aegis)</span>
+            <span class="ev" style="color:var(--warn);">~11 mins left (done ~16:01)</span>
+          </div>
+          <div class="eta-row">
+            <span class="ek">2. Next Wave (Wave 18 · Cockpit UX)</span>
+            <span class="ev">~25 mins (16:01 → 16:26)</span>
+          </div>
+          <div class="eta-row">
+            <span class="ek">3. Whole Plan (Through Wave 19)</span>
+            <span class="ev" style="color:var(--ok);">~50 mins total (done ~16:40)</span>
+          </div>
+        </div>
+
+        <div class="stodo-footer">
+          <strong>To do:</strong> Finish CWE-22 check (~4m) → Apply approved CWE-78 patch → Lock Wave 17 → Wire Wave 18 Cockpit UX → Package Wave 19 sharing.
+        </div>
+      </div>
+
+      <!-- 4. EARLIER 10-MINUTE INTERVAL UPDATES (Collapsed Stack Below Current Status) -->
+      <div class="earlier-updates-box" id="earlierUpdatesBox">
+        <div class="eu-head" onclick="toggleEarlierUpdates()">
+          <span>🕒 Earlier 10-Min Status Updates (3 archived)</span>
+          <span id="euCaret">▸</span>
+        </div>
+        <div class="eu-body">
+          <div class="old-tick-item" onclick="this.classList.toggle('open')">
+            <div class="old-tick-head">
+              <span>[15:40] Aegis + Foreman · Wave 17 (Step 17.2 Draft)</span>
+              <span>pass ✓ · 18/18 ▸</span>
+            </div>
+            <div class="old-tick-body">
+              <strong>Doing:</strong> Synthesized minimal LibCST patch for 3 subprocess sinks in <code>job_runner.py</code>.<br>
+              <strong>ETA at 15:40:</strong> Wave 17 ~20m → Wave 18 ~25m → Whole Plan ~60m.
+            </div>
+          </div>
+          <div class="old-tick-item" onclick="this.classList.toggle('open')">
+            <div class="old-tick-head">
+              <span>[15:30] Aegis + Foreman · Wave 17 (Step 17.1 Lock)</span>
+              <span>pass ✓ · 42/42 ▸</span>
+            </div>
+            <div class="old-tick-body">
+              <strong>Doing:</strong> Auto-connected Aegis to Anvil codebase target <code>C:\dev\Anchor</code>; completed 6-family AST taint scan.<br>
+              <strong>ETA at 15:30:</strong> Wave 17 ~30m → Wave 18 ~25m → Whole Plan ~70m.
+            </div>
+          </div>
+          <div class="old-tick-item" onclick="this.classList.toggle('open')">
+            <div class="old-tick-head">
+              <span>[15:20] Anvil · Wave 16 (Step 16.3 Complete)</span>
+              <span>pass ✓ · 42/42 ▸</span>
+            </div>
+            <div class="old-tick-body">
+              <strong>Doing:</strong> Verified 100% Hypothesis differential equivalence on refactored modules; handed off to Wave 17.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 5. DROP FILES ZONE AT BOTTOM OF RIGHT RAIL -->
+    <div class="right-drop-zone">
+      <span>📥 Drop files here to attach to campaign</span>
+      <a href="#" onclick="event.preventDefault();alert('File picker opens in live cockpit');">Browse files…</a>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  const app = document.getElementById('cockpitApp');
+  let pendingCount = 3;
+  let reviewCount = 2;
+  let finalCount = 2;
+  let allCount = 14;
+
+  // ==========================================================================
+  // 1) SWITCH BETWEEN HIERARCHICAL PLAN SUMMARY & WAVE PLAN SUMMARY
+  // ==========================================================================
+  function switchPlanMode(mode) {
+    const isHier = mode === 'hierarchy';
+    document.getElementById('btnModeHierarchy').classList.toggle('active', isHier);
+    document.getElementById('btnModeWave').classList.toggle('active', !isHier);
+    document.getElementById('paneHierarchy').classList.toggle('active', isHier);
+    document.getElementById('paneWave').classList.toggle('active', !isHier);
+  }
+
+  // ==========================================================================
+  // 2) COLLAPSIBLE LEFT PLAN PANEL & RIGHT STATUS PANEL + AUTO-COLLAPSE ON
+  //    DELIVERABLE OPEN (2-WINDOW SPLIT) & AUTO-REOPEN ON 1-WINDOW RETURN
+  // ==========================================================================
+  function toggleLeftRail() {
+    app.classList.toggle('railhide');
+  }
+
+  function toggleRightStatus() {
+    app.classList.toggle('statusopen');
+  }
+
+  function enterSecondWindowMode(title, subtitle) {
+    if (!app.dataset.secondwin) {
+      app.dataset.secondwin = '1';
+      app.dataset.preSecondRail = app.classList.contains('railhide') ? 'hide' : 'show';
+      app.dataset.preSecondStatus = app.classList.contains('statusopen') ? 'open' : 'shut';
+    }
+    if (title) {
+      document.getElementById('dvTitle').textContent = '📄 Deliverable Viewer · ' + title;
+      document.getElementById('dvDocHeading').textContent = title;
+    }
+    if (subtitle) {
+      document.getElementById('dvDocSub').textContent = subtitle;
+    }
+    app.classList.add('secondwin');
+    // Auto-collapse both Plan and Status into their edge tiles (▸ Plan / ◂ Status)
+    app.classList.add('railhide');
+    app.classList.remove('statusopen');
+  }
+
+  function exitSecondWindowMode() {
+    if (!app.dataset.secondwin) return;
+    const wantHide = app.dataset.preSecondRail === 'hide';
+    const wantOpen = app.dataset.preSecondStatus !== 'shut';
+    delete app.dataset.secondwin;
+    delete app.dataset.preSecondRail;
+    delete app.dataset.preSecondStatus;
+    app.classList.remove('secondwin');
+    // Automatically reopen Plan & Status back to their prior 1-window state!
+    app.classList.toggle('railhide', wantHide);
+    app.classList.toggle('statusopen', wantOpen);
+  }
+
+  function toggleDeliverableSplitDemo() {
+    if (app.dataset.secondwin) {
+      exitSecondWindowMode();
+    } else {
+      enterSecondWindowMode(
+        'Aegis CWE-78 Remediation Diff & Test Receipt',
+        'Target: C:\\dev\\Anchor\\job_runner.py · Verified by Aegis + Foreman Gate (18/18 tests ✓)'
+      );
+    }
+  }
+
+  function openDeliverableSplit(ev, title, subtitle) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    enterSecondWindowMode(title, subtitle);
+  }
+
+  // ==========================================================================
+  // DELIVERABLES & APPROVAL INTERACTIONS
+  // ==========================================================================
+  function updateDelivCounts() {
+    const pCaret = document.getElementById('tilePending').classList.contains('open') ? '▾' : '▸';
+    const rCaret = document.getElementById('tileReview').classList.contains('open') ? '▾' : '▸';
+    const fCaret = document.getElementById('tileFinal').classList.contains('open') ? '▾' : '▸';
+    const aCaret = document.getElementById('tileAll').classList.contains('open') ? '▾' : '▸';
+    const hCaret = document.getElementById('delivHub').classList.contains('open') ? '▾' : '▸';
+
+    document.getElementById('countPending').textContent = pendingCount + (pendingCount === 1 ? ' item ' : ' items ') + pCaret;
+    document.getElementById('countReview').textContent = reviewCount + (reviewCount === 1 ? ' item ' : ' items ') + rCaret;
+    document.getElementById('countFinal').textContent = finalCount + (finalCount === 1 ? ' item ' : ' items ') + fCaret;
+    document.getElementById('countAll').textContent = allCount + (allCount === 1 ? ' item ' : ' items ') + aCaret;
+    document.getElementById('delivHubSummary').textContent =
+      `${pendingCount} Pending · ${reviewCount} Review · ${finalCount} Final · ${allCount} All ${hCaret}`;
+  }
+
+  function toggleDelivHub() {
+    document.getElementById('delivHub').classList.toggle('open');
+    updateDelivCounts();
+  }
+
+  function toggleSubTile(id) {
+    document.getElementById(id).classList.toggle('open');
+    updateDelivCounts();
+  }
+
+  function toggleTopApproval() {
+    const bar = document.getElementById('topApprovalBar');
+    const open = bar.classList.toggle('open');
+    document.getElementById('topApprovalCaret').textContent = open
+      ? 'Hide approval details ▾'
+      : 'Click to open approval details ▸';
+  }
+
+  function toggleRightApproval() {
+    const flag = document.getElementById('rightApprovalFlag');
+    const open = flag.classList.toggle('open');
+    document.getElementById('rightFlagCaret').textContent = open ? '▾' : '▸';
+  }
+
+  function openAndHighlightReviewItem(ev, itemId) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    app.classList.add('statusopen');
+    const hub = document.getElementById('delivHub');
+    const revTile = document.getElementById('tileReview');
+    hub.classList.add('open');
+    revTile.classList.add('open');
+    updateDelivCounts();
+    const item = document.getElementById(itemId);
+    if (item) {
+      item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      item.classList.add('highlight-pulse');
+      setTimeout(() => item.classList.remove('highlight-pulse'), 2200);
+    }
+  }
+
+  function markOneReviewDone(ev, itemId, title, waveLabel) {
+    ev.stopPropagation();
+    const el = document.getElementById(itemId);
+    if (el) el.remove();
+    reviewCount = Math.max(0, reviewCount - 1);
+    finalCount += 1;
+    const listFinal = document.getElementById('listFinal');
+    const d = document.createElement('div');
+    d.className = 'd-item';
+    d.innerHTML = `
+      <div class="d-item-top">
+        <a href="#" onclick="openDeliverableSplit(event, '${title}', '${waveLabel} Final')" class="d-item-title">🏛 ${title}</a>
+        <span class="w-pill done">${waveLabel} Final</span>
+      </div>
+      <div class="d-item-meta"><span>Marked Done by John</span><span>Just now</span></div>
+    `;
+    listFinal.appendChild(d);
+    updateDelivCounts();
+  }
+
+  function markAllReviewDone(ev) {
+    if (ev) ev.stopPropagation();
+    const items = Array.from(document.querySelectorAll('#listReview .d-item'));
+    items.forEach(it => it.remove());
+    finalCount += reviewCount;
+    reviewCount = 0;
+    updateDelivCounts();
+  }
+
+  function approveDecision(ev) {
+    ev.stopPropagation();
+    const topBar = document.getElementById('topApprovalBar');
+    topBar.classList.remove('needs-approval', 'open');
+    topBar.classList.add('resolved');
+    document.getElementById('topFlagPill').classList.add('resolved');
+    document.getElementById('topFlagLabel').textContent = '✓ APPROVED';
+    document.getElementById('topApprovalHeadline').textContent =
+      'Approved Option A: Applying CWE-78 Batch Patch & Advancing to Wave 18';
+    document.getElementById('topApprovalCaret').textContent = 'Details ▸';
+
+    const rightFlag = document.getElementById('rightApprovalFlag');
+    rightFlag.classList.remove('needs-approval', 'open');
+    rightFlag.classList.add('resolved');
+    document.getElementById('rightFlagTitle').innerHTML =
+      '<span class="red-flag-dot" style="background:var(--ok);animation:none;"></span><span>✓ APPROVAL COMPLETE · CWE-78 Patch Applied</span>';
+    document.getElementById('rightFlagCaret').textContent = '▸';
+
+    document.getElementById('statusBlockerCell').innerHTML =
+      '<span style="color:var(--ok);font-weight:600;">none</span> · CWE-78 patch approved; advancing to Step 17.3';
+
+    appendTurn('john', 'Approve Option A — apply the CWE-78 batch patch and advance to Wave 18.');
+    appendTurn('steward', 'Approved! I have applied the verified CWE-78 LibCST patch to `job_runner.py`, cleared the red approval flag, and started Step 17.3 final gate verification.');
+  }
+
+  function discussDecisionInChat(ev) {
+    ev.stopPropagation();
+    const input = document.getElementById('chatInput');
+    input.value = 'Before we apply the CWE-78 patch in job_runner.py, show me the 3 call sites: ';
+    input.focus();
+  }
+
+  function simulateFinishPending() {
+    const firstPend = document.querySelector('#listPending .d-item');
+    if (!firstPend) {
+      alert('All Pending items have already finished and moved to For Review!');
+      return;
+    }
+    const title = firstPend.querySelector('.d-item-title').textContent;
+    firstPend.remove();
+    pendingCount = Math.max(0, pendingCount - 1);
+    reviewCount += 1;
+    allCount += 1;
+
+    const listReview = document.getElementById('listReview');
+    const newId = 'rev-sim-' + Date.now();
+    const div = document.createElement('div');
+    div.className = 'd-item highlight-pulse';
+    div.id = newId;
+    div.innerHTML = `
+      <div class="d-item-top">
+        <a href="#" onclick="openDeliverableSplit(event, '${title}', 'Wave 17 Deliverable')" class="d-item-title">📄 ${title}</a>
+        <button class="btn-done-sm" onclick="markOneReviewDone(event, '${newId}', '${title}', 'Wave 17')">✓ Done</button>
+      </div>
+      <div class="d-item-meta">
+        <span>Moved from Pending → For Review</span>
+        <span>Just finished</span>
+      </div>
+    `;
+    listReview.appendChild(div);
+
+    const w17Body = document.getElementById('allWave17Body');
+    const aDiv = document.createElement('div');
+    aDiv.className = 'd-item';
+    aDiv.innerHTML = `<a href="#" onclick="openDeliverableSplit(event, '${title}', 'Wave 17 Deliverable')">• ${title}</a> <span style="color:var(--warn);font-size:10.5px;">(For Review)</span>`;
+    w17Body.prepend(aDiv);
+
+    document.getElementById('tileReview').classList.add('open');
+    updateDelivCounts();
+  }
+
+  function togglePlanEval() {
+    const tile = document.getElementById('planEvalTile');
+    const open = tile.classList.toggle('open');
+    document.getElementById('planEvalCaret').textContent = open ? '▾' : '▸';
+  }
+
+  function applyPlanProposal(ev) {
+    ev.stopPropagation();
+    const tile = document.getElementById('planEvalTile');
+    tile.classList.remove('has-proposal', 'open');
+    document.getElementById('planEvalTitle').textContent = '✓ STEWARD PLAN EVALUATION · In Sync';
+    document.getElementById('planEvalCaret').textContent = '▸';
+    const w17H = document.getElementById('wave17CardHier');
+    const w17F = document.getElementById('wave17CardFlat');
+    if (w17H) { w17H.classList.add('open'); w17H.querySelector('.w-caret').textContent = '▾'; }
+    if (w17F) { w17F.classList.add('open'); w17F.querySelector('.w-caret').textContent = '▾'; }
+  }
+
+  function dismissPlanProposal(ev) {
+    ev.stopPropagation();
+    const tile = document.getElementById('planEvalTile');
+    tile.classList.remove('has-proposal', 'open');
+    document.getElementById('planEvalTitle').textContent = '🧭 STEWARD PLAN EVALUATION · In Sync';
+    document.getElementById('planEvalCaret').textContent = '▸';
+  }
+
+  function simulatePlanProposal() {
+    const tile = document.getElementById('planEvalTile');
+    tile.classList.add('has-proposal', 'open');
+    document.getElementById('planEvalTitle').textContent = '⚡ STEWARD PLAN EVALUATION · 1 New Proposal';
+    document.getElementById('planEvalCaret').textContent = '▾';
+  }
+
+  function togglePhaseCard(id) {
+    const card = document.getElementById(id);
+    const collapsed = card.classList.toggle('collapsed');
+    const meta = card.querySelector('.phase-card-meta');
+    if (meta) {
+      meta.textContent = meta.textContent.replace(/[▸▾]$/, collapsed ? '▸' : '▾');
+    }
+  }
+
+  function toggleWaveCard(card) {
+    const open = card.classList.toggle('open');
+    const caret = card.querySelector('.w-caret');
+    if (caret) caret.textContent = open ? '▾' : '▸';
+  }
+
+  function toggleToolGov() {
+    const dock = document.getElementById('toolGovDock');
+    const open = dock.classList.toggle('open');
+    document.getElementById('toolGovCaret').textContent = open ? '▾' : '▸';
+  }
+
+  function approveCustomTool(ev, registerInFoundry) {
+    ev.stopPropagation();
+    const box = document.getElementById('customToolProposalBox');
+    box.classList.remove('alert');
+    box.innerHTML = `<div style="color:var(--ok);font-weight:700;">✓ Approved: <code>sarif-export</code> (${registerInFoundry ? 'Registered in Skill Foundry INDEX.json' : 'One-off execution'})</div>`;
+  }
+
+  function rejectCustomTool(ev) {
+    ev.stopPropagation();
+    const box = document.getElementById('customToolProposalBox');
+    box.classList.remove('alert');
+    box.innerHTML = `<div style="color:var(--dim);">✕ Rejected <code>sarif-export</code> — instructed agent to use existing Foundry JSON output.</div>`;
+  }
+
+  function toggleEarlierUpdates() {
+    const box = document.getElementById('earlierUpdatesBox');
+    const open = box.classList.toggle('open');
+    document.getElementById('euCaret').textContent = open ? '▾' : '▸';
+  }
+
+  function appendTurn(role, text, extraHtml) {
+    const scroll = document.getElementById('chatScroll');
+    const blk = document.createElement('div');
+    blk.className = 'blk ' + (role === 'john' ? 'john' : 'steward');
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = role === 'john' ? 'JOHN' : 'ALADDIN';
+    const body = document.createElement('div');
+    body.className = 'body';
+    const p = document.createElement('p');
+    p.textContent = text;
+    body.appendChild(p);
+    if (extraHtml) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = extraHtml;
+      body.appendChild(wrap);
+    }
+    blk.appendChild(who);
+    blk.appendChild(body);
+    scroll.appendChild(blk);
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  function sendUserMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    appendTurn('john', text);
+
+    if (reviewCount > 0) {
+      const interjectHtml = `
+        <div class="steward-interject-inline">
+          <div style="font-weight:700;color:var(--warn);margin-bottom:4px;">⚠️ Unreviewed Deliverables Check (${reviewCount} items still in For Review)</div>
+          <div style="margin-bottom:8px;">Before I start new deliverables for <em>"${text.replace(/</g, '&lt;')}"</em>, what would you like to do with the <strong>${reviewCount} items currently in For Review</strong>?</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-approve" onclick="markAllReviewDone(event); this.closest('.steward-interject-inline').innerHTML='<span style=color:var(--ok)>✓ Marked all previous review items Done and moved to Final Deliverables. Proceeding with your command!</span>';">✓ We're Done with Them (Move to Final &amp; Proceed)</button>
+            <button onclick="this.closest('.steward-interject-inline').innerHTML='<span style=color:var(--steward)>→ Keeping existing items in For Review and proceeding with your command.</span>';">Keep Them in For Review &amp; Proceed</button>
+          </div>
+        </div>
+      `;
+      appendTurn('steward', `I also checked whether your request affects the Wave Plan (see Steward Plan Evaluation on the left rail).`, interjectHtml);
+      simulatePlanProposal();
+    } else {
+      appendTurn('steward', 'Got it — starting on that now and updating the Pending Deliverables queue and Wave Plan.');
+    }
+  }
+
+  document.getElementById('chatInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendUserMessage();
+    }
+  });
+
+  if (location.search.includes('view=wave')) {
+    switchPlanView('wave');
+  }
+</script>
+</body>
+</html>

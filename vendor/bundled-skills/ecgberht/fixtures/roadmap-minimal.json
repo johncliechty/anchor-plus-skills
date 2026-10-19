@@ -1,0 +1,58 @@
+{
+  "schema": "ecgberht-roadmap-v0",
+  "project_id": "fixture-roadmap-minimal",
+  "as_of": "2026-07-26",
+  "roadmap_events": [
+    {
+      "seq": 1,
+      "kind": "step_create",
+      "step_id": "tw1-roadmap",
+      "at": "2026-07-26",
+      "name": "TW1 Campaign Roadmap schema + append-only events",
+      "status": "planned",
+      "done_when": "Roadmap is engine truth via events + projection",
+      "waiting_on": null
+    },
+    {
+      "seq": 2,
+      "kind": "step_create",
+      "step_id": "tw2-brief",
+      "at": "2026-07-26",
+      "name": "TW2 Decision Packet / brief engine",
+      "status": "proposed",
+      "done_when": "Deterministic packet assembly works offline",
+      "waiting_on": null
+    },
+    {
+      "seq": 3,
+      "kind": "status_flip",
+      "step_id": "tw1-roadmap",
+      "at": "2026-07-26",
+      "from": "planned",
+      "to": "active",
+      "receipt": {
+        "who": "steward",
+        "when": "2026-07-26",
+        "why": "TW1 build started"
+      }
+    }
+  ],
+  "roadmap_projection": [
+    {
+      "id": "tw1-roadmap",
+      "name": "TW1 Campaign Roadmap schema + append-only events",
+      "status": "active",
+      "done_when": "Roadmap is engine truth via events + projection",
+      "waiting_on": null,
+      "commissioned_as": null
+    },
+    {
+      "id": "tw2-brief",
+      "name": "TW2 Decision Packet / brief engine",
+      "status": "proposed",
+      "done_when": "Deterministic packet assembly works offline",
+      "waiting_on": null,
+      "commissioned_as": null
+    }
+  ]
+}

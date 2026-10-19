@@ -1,0 +1,9 @@
+Campaign stage: Research the campaign substrate.
+Objective (recorded): Deliver continuity through the ONE open-project pipeline.
+Scaffolding (recorded): Campaign scaffold.
+Last confirmation (recorded): john at 2026-08-01T18:00:00.000Z.
+Dead run NAMED: run-dead-001 — process identity no longer live; marked DEAD, not absorbed.
+Missing handback NAMED: Commission comm-dead-001 confirmed 3h ago; no handback. Named as overdue, not absorbed.
+Waiting on you: name the dead run and decide recommission vs park; dead run named; missing handback.
+Next step: Name the dead run; do not re-ask scaffold.
+Why: Continuity criterion 11 — dead run + missing handback NAMED from the post-reconcile ledger.

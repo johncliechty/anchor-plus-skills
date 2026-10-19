@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "artifact": "rebrief-channel-audit",
+  "owner_file": "chamber_rebrief.py",
+  "plan_ref": "planning/steward-chamber-2026-08-09/IMPLEMENTATION-PLAN.md :: Wave 2 (inbox/message-channel audit) + Wave 11 (E7 re-brief per the audited mode) + Verification fold V2",
+  "law": "The machine-readable outcome record the W2 commission-runtime inbox audit owes Phase 3: it FIXES the mid-flight re-brief mode. chamber_rebrief delivers in exactly this mode; a mode change here is a design change and re-opens the V2 gate.",
+  "mode": "live-with-receipt",
+  "audit": {
+    "question": "Does a LIVE message-into-session channel exist on the commission runtime as it exists (no relaunch)?",
+    "outcome": "YES - a commissioned run IS a live terminal session (commission_session.confirm_and_launch -> terminal_session.start_session) whose stdin accepts mid-flight writes through the paced-PTY path.",
+    "channel": {
+      "repo": "anchor",
+      "file": "pty_manager.py",
+      "symbol": "def write(session_id, data)",
+      "pacing": ">512-char payloads chunked at 256 chars, paced (the wire-homing row paced_pty; its M1 consumer names 'say-box talk path + re-brief writes')",
+      "consumer": "chamber_rebrief.rebrief -> _default_deliver"
+    },
+    "receipt": "chamber_rebrief mints a durable acknowledgment receipt on the step (.anchor/chamber/rebrief.json :: receipts), surfaced by receipts_for_step - the E7 'acknowledgment receipt on the step'.",
+    "no_relaunch": true,
+    "evidence": [
+      "wire-homing.json row paced_pty (W8, resolved): m1_consumer = 'say-box talk path + re-brief writes'",
+      "W2 GREEN with no V2 JOHN-HALT recorded (EXECUTION-LOG 2026-08-10T00:36Z): the no-live-channel HALT branch was never entered",
+      "the W8 say box writes user turns onto the live commission session over this same path"
+    ]
+  },
+  "boundary_mode": {
+    "state": "not-applicable",
+    "note": "The V2 amendment's accept-boundary-vs-fund-the-channel gate fires ONLY when NO live channel exists. A live channel exists; boundary mode (effective-time statement drawn into the confirm card) remains the drawn fallback ONLY if this record's mode is ever re-audited to next-step-boundary, which requires John's signature per V2."
+  }
+}

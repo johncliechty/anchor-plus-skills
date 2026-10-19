@@ -1,0 +1,22 @@
+{
+  "artifact": "wave-0-no-overlay-verdict",
+  "wave": "Wave 0 — Seam Spike & Coupling Inventory (Gate)",
+  "date": "2026-07-21",
+  "claim": "git checkout --no-overlay <C> -- <pathspecs> (a) updates pathspec-matched files changed in <C>, (b) DELETES pathspec-matched files that are absent from <C> — deletion propagation is the load-bearing behavior the Wave-3 Apply executor's working-tree realization step depends on — and (c) behaves identically across the supported git version range.",
+  "verdict": "CONFIRMED",
+  "load_bearing_behavior": "deletion propagation: a working-tree file matched by the pathspec but absent from <C>'s tree is removed from BOTH the working tree and the index, making them match <C> exactly for the approved paths",
+  "observed": {
+    "how": "spike/no-overlay-repro.test.mjs builds a fixture repo (commit A holds f1..f4; commit C modifies f1 and f4 and removes f2; working tree reset to A so it holds both pathspec files), runs `git checkout --no-overlay <C> -- f1.txt f2.txt`, and asserts: f1 updated to C's content, f2 deleted from working tree AND index, f3/f4 untouched (pathspec scoping — f4 differs in C but is outside the pathspec), and re-running converges to the same state (idempotency, required for journaled retry).",
+    "verification_discipline": "the repro runs on the gate runner's installed git on EVERY `node --test` run and FAILS the suite if measurement ever contradicts this verdict — the stamp cannot silently rot; the runner's git version is asserted >= the supported floor"
+  },
+  "supported_git_range": {
+    "floor": "2.22",
+    "basis": "--no-overlay and checkout.overlayMode were introduced in git 2.22; the documented no-overlay semantics ('files that appear in the index and working tree, but not in <tree-ish> are removed, to make them match <tree-ish> exactly') have been stable through current releases",
+    "single_version_honesty": "only the gate runner's installed git version is OBSERVED by the repro; the claim across the rest of the range is DOCUMENTED (git release notes / man page), not observed. Mitigation carried into the executor design: the Wave-3 Apply executor MUST assert `git version >= 2.22` at runtime before using --no-overlay, and this repro re-verifies real behavior on every suite run on whatever git the host has, so a behavioral regression in a future git surfaces as a red gate, not a silent executor corruption."
+  },
+  "refuted_fallback_spec": {
+    "status": "pre-specified, DORMANT — activates ONLY if the repro ever measures REFUTED (per the frozen plan: the executor is neither built on an unverified claim nor redesigned to appease an unverified objection)",
+    "realization": "per-path journaled realization under the SAME Apply journal, replacing the single --no-overlay call in the executor's step 5 while every other step (lock, revalidation vs S, temp-index compile, one commit via commit-tree, compare-and-swap update-ref) is unchanged: for each approved path p in the plan — if p exists in <C>'s tree, run `git -C <root> checkout <C> -- <p>` (checkout-for-content: updates index + working tree for p); if p is absent from <C>'s tree, delete the working-tree file at p, then reconcile the index entry with `git -C <root> update-index --force-remove -- <p>` (delete-for-deletion).",
+    "invariants": "each per-path step is journaled as {path, op, state} before execution and marked done after; the whole realization is idempotent (a missing file / already-absent index entry counts as done) and is retried from the journal on interruption; the commit and ref are already durable before realization begins, so no interruption can lose content — identical durability semantics to the CONFIRMED branch"
+  }
+}

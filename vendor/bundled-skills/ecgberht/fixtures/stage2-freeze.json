@@ -1,0 +1,162 @@
+{
+  "schema": "ecgberht-stage2-freeze-v0",
+  "spelling": "Ecgberht",
+  "depth": "LITE",
+  "description": "Stage-2-ready freeze set: locked file tree, schemas, fixture matrix, verb contracts, heal law, A1 discovery rules, non-goals. Depth remains LITE skill+engine MVP.",
+  "locked_file_tree": [
+    "SKILL.md",
+    "package.json",
+    "bin/ecgberht.mjs",
+    "engine/index.mjs",
+    "engine/verbs.mjs",
+    "engine/load.mjs",
+    "engine/face-strip.mjs",
+    "engine/write-authority.mjs",
+    "engine/heal.mjs",
+    "engine/discovery.mjs",
+    "engine/rank.mjs",
+    "engine/receipt-validate.mjs",
+    "engine/dispatch-table.mjs",
+    "engine/seating.mjs",
+    "engine/commission.mjs",
+    "engine/verb-bodies.mjs",
+    "engine/roadmap.mjs",
+    "engine/brief.mjs",
+    "engine/job-lifecycle.mjs",
+    "engine/dialogue.mjs",
+    "engine/seat-hop.mjs",
+    "engine/anchor-knowledge.mjs",
+    "engine/grasscatcher-ledger.mjs",
+    "engine/canary-pack.mjs",
+    "engine/stage2-freeze.mjs",
+    "engine/verification-pack.mjs",
+    "templates/ECGBERHT.md",
+    "templates/strip.json",
+    "templates/strip-fence.md",
+    "templates/verb-help/status.md",
+    "templates/verb-help/next.md",
+    "templates/verb-help/update.md",
+    "templates/verb-help/heartbeat.md",
+    "templates/verb-help/depth-suggest.md",
+    "templates/verb-help/soft-vet.md",
+    "templates/verb-help/grasscatch.md",
+    "templates/verb-help/receipt-validate.md",
+    "templates/verb-help/roadmap-show.md",
+    "templates/verb-help/roadmap-propose.md",
+    "templates/verb-help/roadmap-set.md",
+    "templates/verb-help/brief.md",
+    "templates/verb-help/commission-propose.md",
+    "templates/verb-help/commission-confirm.md",
+    "templates/verb-help/seat-hop.md",
+    "templates/roadmap.json",
+    "schema/strip.schema.json",
+    "schema/receipt.schema.json",
+    "schema/face-markers.json",
+    "schema/roadmap.schema.json",
+    "fixtures/strip-minimal.json",
+    "fixtures/dispatch-table-seed.json",
+    "fixtures/grasscatcher-ledger.json",
+    "fixtures/stage2-freeze.json",
+    "fixtures/roadmap-minimal.json",
+    "scripts/run-all-tests.mjs",
+    "strip.json",
+    "ECGBERHT.md"
+  ],
+  "schemas": [
+    "schema/strip.schema.json",
+    "schema/receipt.schema.json",
+    "schema/face-markers.json",
+    "schema/roadmap.schema.json"
+  ],
+  "fixture_matrix": [
+    "fixtures/strip-minimal.json",
+    "fixtures/dispatch-table-seed.json",
+    "fixtures/grasscatcher-ledger.json",
+    "fixtures/stage2-freeze.json",
+    "fixtures/roadmap-minimal.json"
+  ],
+  "verb_contracts": {
+    "closed_list": [
+      "status",
+      "next",
+      "update",
+      "heartbeat",
+      "depth-suggest",
+      "soft-vet",
+      "grasscatch",
+      "receipt-validate",
+      "roadmap-show",
+      "roadmap-propose",
+      "roadmap-set",
+      "brief",
+      "commission-propose",
+      "commission-confirm",
+      "seat-hop"
+    ],
+    "primary": [
+      "status",
+      "next",
+      "update",
+      "depth-suggest",
+      "soft-vet",
+      "receipt-validate",
+      "roadmap-show",
+      "roadmap-propose",
+      "roadmap-set",
+      "brief",
+      "commission-propose",
+      "commission-confirm",
+      "seat-hop"
+    ],
+    "aliases": {
+      "heartbeat": "update",
+      "grasscatch": "soft-vet"
+    },
+    "unknown_verb": "structured refuse (error: unknown_verb); no open plugin dispatch"
+  },
+  "heal_law": {
+    "face_wins": "narrative",
+    "strip_wins": "append_only_clocks",
+    "crisis": "explicit_re_sync",
+    "silence": "negative_heartbeat",
+    "chat_invents_truth": false,
+    "silent_strip_rewrite": false
+  },
+  "a1_discovery_rules": {
+    "registry": false,
+    "roots": [
+      "CLI --roots",
+      "env ECGBERHT_STRIP_ROOTS"
+    ],
+    "first_match": [
+      "strip.json",
+      "ECGBERHT.md Strip fence"
+    ],
+    "scan_depth": "listed roots + one level of subdirs",
+    "junk": [
+      "node_modules",
+      ".git",
+      "vendor"
+    ],
+    "empty_roots": "structured empty result"
+  },
+  "non_goals": [
+    "OpenClaw harness product",
+    "calendar/email OAuth",
+    "Anchor v1.0.x release edits",
+    "default chat gateway",
+    "Family-Finances domain",
+    "Anchor 1.1 portfolio UI",
+    "launch-tree merge",
+    "Replacing Anchor job_runner",
+    "In-app chat personality product"
+  ],
+  "north_star_criteria": [
+    "skill pack installable",
+    "closed engine verbs + write authority",
+    "Face+Strip heal law + strip-first rank + A1 discovery",
+    "dispatch table LITE bias + override receipts",
+    "compose-only commission + subscription seating",
+    "non-goals enforced via Grasscatcher ledger + canaries"
+  ]
+}

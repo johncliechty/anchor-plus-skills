@@ -1,0 +1,46 @@
+{
+  "resources": [
+    {
+      "id": "anvil-human-guide",
+      "title": "Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "People-first guide to Anvil: when to use it, the Parable of the Oranges, what you get across all 4 modes, and honest limits."
+    },
+    {
+      "id": "anvil-north-star",
+      "title": "Locked North Star (NORTH-STAR.md Rev 3)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked objective and Idea Log (ANV-01 through ANV-11) covering Conceptual Groupings, Process Map, Single-Block Drill-Down, Null Space Remapping, Paper-to-Code MathML, and Persistent Anvil Dialogue."
+    },
+    {
+      "id": "anvil-researchprime-tools",
+      "title": "researchPrime: Best-in-Class Code-Rewriting Tools & Parable of the Oranges",
+      "category": "material",
+      "path": "references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "description": "Empirical synthesis of lossless CST/AST code-rewriting tools (LibCST, parso, ast-grep, Ruff, Hypothesis differential equivalence) and the Parable of the Oranges (Juice vs. Peel vs. Pith/Seeds)."
+    },
+    {
+      "id": "anvil-skill-protocol",
+      "title": "Agent & Orchestrator Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Programmatic 5-stage orchestrator protocol and CLI invocations for orchestrate, orange-split, map, inspect, remap, cst-rewrite, verify-equivalence, paper-map, and chat."
+    },
+    {
+      "id": "anvil-engine-py",
+      "title": "Anvil Programmatic Orchestrator & Engine (scripts/anvil_engine.py)",
+      "category": "tools",
+      "path": "scripts/anvil_engine.py",
+      "description": "Deterministic 5-stage orchestrator state machine, Parable of the Oranges analyzer, LibCST/parso structural codemod engine, Hypothesis differential equivalence verifier, and Paper-to-Code MathML verifier."
+    },
+    {
+      "id": "anvil-engine-tests",
+      "title": "Anvil Test Suite (tests/test_anvil_engine.py)",
+      "category": "tools",
+      "path": "tests/test_anvil_engine.py",
+      "description": "Automated verification suite for the 5-stage Orchestrator, Parable of the Oranges decomposition, LibCST structural rewriting, Hypothesis differential equivalence, Modes 1–4, Null Space gate, and native MathML enforcement."
+    }
+  ]
+}

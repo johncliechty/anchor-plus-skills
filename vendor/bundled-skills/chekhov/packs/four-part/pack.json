@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "coordinate": "book.chapter",
+  "default_orders": {
+    "reader_order": [],
+    "written_order": [],
+    "cascade_position": null
+  },
+  "predicate_catalog": {
+    "title": {
+      "cardinality": "single"
+    },
+    "alive": {
+      "cardinality": "single"
+    },
+    "location": {
+      "cardinality": "single"
+    },
+    "age": {
+      "cardinality": "single"
+    },
+    "birth_year": {
+      "cardinality": "single"
+    },
+    "doctrine_tag": {
+      "cardinality": "single"
+    },
+    "book_count": {
+      "cardinality": "single"
+    },
+    "chapter_rule": {
+      "cardinality": "single"
+    },
+    "knows": {
+      "cardinality": "multi"
+    },
+    "has_item": {
+      "cardinality": "multi"
+    },
+    "relation": {
+      "cardinality": "multi"
+    },
+    "first_meets": {
+      "cardinality": "multi"
+    }
+  },
+  "structural_template": {
+    "kind": "structural",
+    "value": {
+      "beat": "<beat>",
+      "position": "<position>"
+    },
+    "interval": {
+      "from": "<book>.<first scene>",
+      "to": "<book>.<last scene> or null for scope end"
+    }
+  },
+  "doctrine_terms": {
+    "terms": [],
+    "collisions_whitelisted": []
+  },
+  "value_normaliser": [
+    "case-fold",
+    "article-strip"
+  ],
+  "name": "four-part",
+  "beat_table": {
+    "per_book": [
+      {
+        "name": "setup",
+        "position": 1,
+        "structural": true,
+        "gloss": "About 25% in this project's pacing guidance: establish the protagonist's false belief, visible flaw, world rules and personal stakes. This is the canonical Western conflict structure for Artificial Magi, not kishotenketsu."
+      },
+      {
+        "name": "reaction",
+        "position": 2,
+        "structural": true,
+        "gloss": "About 30%: the False Path develops through try-fail cycles and accumulating costs; the midpoint moves the protagonist from reaction toward action."
+      },
+      {
+        "name": "realignment",
+        "position": 3,
+        "structural": true,
+        "gloss": "About 20%: a relationship-delivered dark night leads through confrontation and clarity toward a viable plan. The extended exhale or macro-sequel is this project's extrapolation, not a universal literary law."
+      },
+      {
+        "name": "resolution",
+        "position": 4,
+        "structural": true,
+        "gloss": "About 25%: false success tests the change; the changed self must cause the breakthrough victory. Full-circle payoff and breathing room let the result register."
+      }
+    ]
+  },
+  "checklist": [
+    "A vague idea or scene seed is enough to begin. These outline-review questions become useful as the material develops; they do not block exploratory intake.",
+    "Does the working map use Setup, Reaction, Realignment and Resolution from canonical Appendix A? Its Western conflict approach supersedes the older storytelling-craft account and repudiates the earlier kishotenketsu claim.",
+    "Can we identify the protagonist and the concrete external goal in plain language?",
+    "What Lie or false belief shapes the protagonist's choices, and how does the visible flaw expose its personal cost?",
+    "What is the villain's scheme, and what causes it to collide with the protagonist's goal?",
+    "Do the try-fail cycles increase the cost of the False Path, with a midpoint that changes reaction into action?",
+    "Which relationship delivers the dark night, and how do confrontation and clarity make a viable plan possible?",
+    "Does a false success test the proposed change before the changed self causes the breakthrough victory?",
+    "What returns full circle, and where does the ending allow the payoff to breathe?",
+    "Could a twelve-year-old repeat the central pitch, with no more than two principal antagonist fronts to keep track of?",
+    "Does each novel carry its own quartet and Lie/Truth movement? The source's series grouping is books 1\u20132, 3\u20134, 5\u20136 and 7; it is guidance to describe, not an automatically approved ordering.",
+    "Is the theme clearly a working interpretation for human review, and does the structural reading distinguish an observed pattern, a proposal and any actual author-approved choice?",
+    "The approximate proportions guide this project's pacing; they do not prescribe chapter coordinates or establish a universal rule for fiction."
+  ],
+  "pick_a_side_points": [
+    {
+      "point": "working_theme",
+      "question": "What tension between the protagonist's Lie and a possible Truth should guide this draft provisionally?"
+    },
+    {
+      "point": "realignment_relationship",
+      "question": "Which relationship is the strongest candidate to confront the protagonist's False Path during Realignment?"
+    },
+    {
+      "point": "changed_self_payoff",
+      "question": "What would make the final breakthrough depend on the protagonist's change rather than an external rescue?"
+    }
+  ],
+  "sources": [
+    {
+      "file": "Series Bible/Appendix_A_Four_Part_Pacing_CANONICAL_v0.6.md",
+      "heading": "A.1",
+      "root": "artificial-magi"
+    },
+    {
+      "file": "Series Bible/Appendix_A_Four_Part_Pacing_CANONICAL_v0.6.md",
+      "heading": "A.2",
+      "root": "artificial-magi"
+    },
+    {
+      "file": "Series Bible/Appendix_A_Four_Part_Pacing_CANONICAL_v0.6.md",
+      "heading": "A.6",
+      "root": "artificial-magi"
+    }
+  ]
+}

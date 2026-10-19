@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "coordinate": "book.chapter",
+  "default_orders": {
+    "reader_order": [],
+    "written_order": [],
+    "cascade_position": null
+  },
+  "predicate_catalog": {
+    "title": {
+      "cardinality": "single"
+    },
+    "alive": {
+      "cardinality": "single"
+    },
+    "location": {
+      "cardinality": "single"
+    },
+    "age": {
+      "cardinality": "single"
+    },
+    "birth_year": {
+      "cardinality": "single"
+    },
+    "doctrine_tag": {
+      "cardinality": "single"
+    },
+    "book_count": {
+      "cardinality": "single"
+    },
+    "chapter_rule": {
+      "cardinality": "single"
+    },
+    "knows": {
+      "cardinality": "multi"
+    },
+    "has_item": {
+      "cardinality": "multi"
+    },
+    "relation": {
+      "cardinality": "multi"
+    },
+    "first_meets": {
+      "cardinality": "multi"
+    }
+  },
+  "structural_template": {
+    "kind": "structural",
+    "value": {
+      "beat": "<beat>",
+      "position": "<position>"
+    },
+    "interval": {
+      "from": "<book>.<first scene>",
+      "to": "<book>.<last scene> or null for scope end"
+    }
+  },
+  "doctrine_terms": {
+    "terms": [],
+    "collisions_whitelisted": []
+  },
+  "value_normaliser": [
+    "case-fold",
+    "article-strip"
+  ],
+  "name": "eddy",
+  "beat_table": {
+    "per_book": [
+      {
+        "name": "Grounding",
+        "position": 1,
+        "structural": true,
+        "gloss": "Establish a physical, sensory present and a central presence. This anchors the reader before associations move through time."
+      },
+      {
+        "name": "Temporal Spiral",
+        "position": 2,
+        "structural": true,
+        "gloss": "Sensory or emotional bridges carry associations across time layers, accumulating meaning. This is not free stream of consciousness or a required conflict escalation."
+      },
+      {
+        "name": "Grace Intrusion",
+        "position": 3,
+        "structural": true,
+        "gloss": "The sacred arrives embodied and unbidden through a person or action. It is not an earned plot climax, sentimental reward or theological explanation."
+      },
+      {
+        "name": "Transfiguration",
+        "position": 4,
+        "structural": true,
+        "gloss": "A final physical image echoes the opening with meaning transformed by what has accumulated. The ending is not a stated moral or a required twist."
+      }
+    ]
+  },
+  "checklist": [
+    "A sensory fragment, memory, person or vague idea is enough to begin. The movement questions help develop a seed without requiring a completed outline.",
+    "What physical, sensory present and central presence ground the piece?",
+    "Can the reader follow the sensory or emotional bridges between time layers as meaning accumulates?",
+    "Does grace arrive through an embodied person or action, without becoming an earned reward, sentimental explanation or theological lecture?",
+    "Does the final physical image echo the opening while carrying the meaning accumulated through the piece?",
+    "The four movements can overlap, recur and have unequal lengths. Their order numbers identify functions, not prescribed chapter starts, word counts or deadlines.",
+    "Is the unit better understood as a Concerto Eddy, with four movements in a single spiral for a shorter work, or a Symphony Eddy, with four macro movements and nested sub-eddies for a novella?",
+    "Concerto and Symphony describe scale within this one pack. They do not require another runtime framework or a fixed collection order.",
+    "Does collection sequencing support thematic connections and variety without forcing every story into one character arc or treating separate characters as shared factual identities?",
+    "Is the theme a provisional human reading, with any proposed structure distinguished from an observed pattern or an actual author-approved choice?",
+    "Does the reading preserve the Eddy's own associative and spiritual movement instead of imposing either a conflict-driven plot or free stream of consciousness?"
+  ],
+  "pick_a_side_points": [
+    {
+      "point": "unit_scale",
+      "question": "Does this piece currently suggest one Concerto spiral or the nested scale of a Symphony novella?"
+    },
+    {
+      "point": "working_theme",
+      "question": "What emotional or spiritual tension should guide this seed as a provisional theme?"
+    },
+    {
+      "point": "grounding_presence",
+      "question": "Which physical presence offers the clearest sensory anchor for this piece?"
+    }
+  ],
+  "sources": [
+    {
+      "file": ".claude/skills/eddy-engine/SKILL.md",
+      "heading": "The Four Movements",
+      "root": "sing-for-the-dead"
+    },
+    {
+      "file": ".claude/skills/eddy-engine/SKILL.md",
+      "heading": "Applying The Eddy to Story Seeds",
+      "root": "sing-for-the-dead"
+    },
+    {
+      "file": "Collection_Bible.md",
+      "heading": "The Concerto Eddy (Short Stories)",
+      "root": "sing-for-the-dead"
+    },
+    {
+      "file": "Collection_Bible.md",
+      "heading": "The Symphony Eddy (Novellas)",
+      "root": "sing-for-the-dead"
+    }
+  ]
+}

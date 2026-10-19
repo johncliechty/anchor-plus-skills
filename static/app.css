@@ -1,0 +1,129 @@
+/* The Anchor app (static/app.html): the title bar (anchor, tiles, panes toggle, window controls) + one or two
+   panes. Dark; the tiles keep their rounded outlined look; the cave's warm tones for its tile. */
+:root {
+  --ground: #0f141c; --bar: #0b1018; --tile: #1a2230; --tline: #334057; --text: #e6ebf2; --dim: #98a4b8;
+  --faint: #6a7689; --amber: #e0a836; --blue: #6fa2ff; --cave: #1f1a12; --caveline: #5a4a22; --line: #2b3546;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--ground); color: var(--text); font: 13px/1.3 var(--sans); display: grid;
+       grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+body.hosted { border: 1px solid #2f3a4d; box-sizing: border-box; }
+
+/* ---- the title bar: in the desktop program its empty parts move the window (WebView2 app-region) ---- */
+#bar { display: flex; align-items: flex-start; gap: 6px; min-width: 0; min-height: 44px; padding-left: 8px;
+       padding-top: env(safe-area-inset-top, 0px); background: var(--bar); border-bottom: 1px solid var(--line);
+       -webkit-app-region: drag; app-region: drag; user-select: none; -webkit-user-select: none; }
+/* His rule: the Setup gear sits at the very upper left of Anchor itself, the mark to its right. */
+#bar .setup-gear { flex: none; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 8px;
+                   padding: 0; border: 1px solid var(--line); border-radius: 7px; background: none;
+                   color: var(--amber); font-size: 17px; line-height: 1; cursor: pointer; }
+#bar .setup-gear:hover { color: var(--text); background: var(--tile); }
+#bar .setup-gear:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+#bar .mark { flex: none; display: grid; place-items: center; width: 34px; height: 34px; margin-top: 5px; }
+#bar .mark img { width: 24px; height: 24px; border-radius: 6px; box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+#strip { display: flex; flex: 1; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 6px;
+         min-width: 0; height: var(--strip-height, 30px); overflow: hidden; padding: 7px 2px; }
+#strip.expanded { max-height: calc(100dvh - 120px); overflow-y: auto; }
+#strip .overflow-row { visibility: hidden; }
+/* Keep the arrow's small slot reserved so showing it cannot change the measured rows. */
+#bar .row-control { flex: none; width: 28px; margin-top: 8px; }
+#rows { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line);
+        border-radius: 7px; background: none; color: var(--dim); cursor: pointer; }
+#rows:hover { color: var(--text); background: var(--tile); }
+#rows svg { width: 16px; height: 12px; }
+#rows[aria-expanded="true"] svg { transform: rotate(180deg); }
+#bar .grab { flex: none; width: 24px; align-self: stretch; }
+.tile, #bar button { -webkit-app-region: no-drag; app-region: no-drag; }
+
+.tile { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px 0 11px; max-width: min(260px, 100%); flex: none; box-sizing: border-box; min-width: 0;
+        border: 1px solid var(--tline); border-radius: 14px; background: var(--tile); color: var(--dim);
+        font: 600 12px var(--sans); cursor: pointer; white-space: nowrap; transition: border-color .12s, color .12s; }
+.tile:hover { color: var(--text); }
+.tile .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tile .x { border: 0; background: none; color: var(--faint); font: 600 15px/1 var(--sans); cursor: pointer;
+           width: 20px; height: 20px; border-radius: 10px; padding: 0; flex: none; }
+.tile .x:hover, .tile .x:focus-visible { color: var(--text); background: #2a3344; }
+.tile.cave { background: var(--cave); border-color: var(--caveline); padding-right: 11px; color: #e9d9a8; }
+.tile img { width: 18px; height: 18px; border-radius: 4px; flex: none; }
+.tile-icon { display: block; width: 18px; height: 18px; border-radius: 4px; overflow: hidden; flex: none; }
+.tile-icon.star-chart img { width: 30px; height: 30px; max-width: none; transform: translate(-6px, -6px); }
+.tile.doc { border-style: dashed; }
+.tile.shown { color: var(--text); border-color: #4a5a75; }
+.tile.focus { border-color: var(--blue); }
+.tile .side { font: 700 9.5px var(--sans); color: var(--amber); border: 1px solid rgba(224,168,54,.5); border-radius: 4px; padding: 0 4px; }
+.tile .activity-dot{flex:none;width:7px;height:7px;border-radius:50%;background:#8995a7}
+.tile .activity-dot.green{background:#4ade80;box-shadow:0 0 6px #4ade80}
+.tile .activity-dot.orange{background:#fbbf24;box-shadow:0 0 5px rgba(251,191,36,.6)}
+.tile .activity-dot.red{background:#e05f5f}
+.tile.ready{border-color:var(--amber);box-shadow:none;animation:attentionedge 2.8s ease-in-out infinite}
+@keyframes attentionedge{0%,100%{border-color:var(--amber)}50%{border-color:#78521e}}
+/* Attention flashes independently of the activity colour, including green work. */
+.tile.ready .activity-dot{animation:attentiondot 1.2s steps(1,end) infinite}
+@keyframes attentiondot{0%,100%{opacity:1}50%{opacity:.2}}
+@media(prefers-reduced-motion:reduce){.tile.ready{animation:attentionedge 2.8s ease-in-out infinite;border-color:var(--amber)}.tile.ready .activity-dot{animation:none;opacity:1;outline:1px solid var(--amber);outline-offset:2px;box-shadow:none}}
+.tile .side.r { color: var(--blue); border-color: rgba(111,162,255,.5); }
+.tile .pos { display: none; }
+.tile.dragging { opacity: .6; outline: 1px dashed var(--faint); }
+.tile:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+#bar .panes { display: flex; flex: none; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 8px 6px 0 0; }
+#bar .panes button { background: none; border: 0; color: var(--faint); width: 32px; height: 26px; cursor: pointer; display: grid; place-items: center; }
+#bar .panes button[aria-pressed="true"] { background: #2a3344; color: var(--text); }
+#bar .panes button:hover { color: var(--text); }
+#bar .panes svg { width: 16px; height: 12px; }
+#winctl { display: none; flex: none; height: 44px; }
+body.hosted #winctl { display: flex; }
+#winctl button { background: none; border: 0; color: var(--dim); width: 46px; cursor: pointer; display: grid; place-items: center; }
+#winctl button svg { width: 10px; height: 10px; }
+#winctl button:hover { background: #1f2735; color: var(--text); }
+#winctl button.close:hover { background: #c42b1c; color: #fff; }
+
+/* ---- the panes ---- */
+#stage { --left: .5; position: relative; min-height: 0; display: grid;
+         grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+body.two #stage { grid-template-columns: minmax(0, calc(var(--left) * 100%)) 6px minmax(0, 1fr);
+                  grid-template-rows: 28px minmax(0, 1fr); }
+#stage > iframe.pane { grid-row: 1; grid-column: 1; width: 100%; height: 100%; border: 0; background: var(--ground); min-width: 0; }
+body.two #stage > iframe.pane { grid-row: 2; }
+body.two #stage > iframe.pane[data-pane="1"] { grid-column: 3; }
+.head { grid-row: 1; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 10px; background: #121925;
+        border-bottom: 1px solid var(--line); color: var(--dim); font: 600 12px var(--sans); min-width: 0; cursor: pointer; }
+#head0 { grid-column: 1; } #head1 { grid-column: 3; }
+.head .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head .lr { font: 700 9.5px var(--sans); color: var(--faint); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.head.active { background: #1e2634; color: var(--text); box-shadow: inset 0 -2px 0 var(--amber); }
+.head.active .lr { color: var(--amber); border-color: rgba(224,168,54,.5); }
+.head .x { border: 0; background: none; color: var(--faint); font: 600 16px/1 var(--sans); cursor: pointer; width: 24px; height: 22px; border-radius: 6px; }
+.head .x:hover { color: var(--text); background: #2a3344; }
+.gutter { display: none; grid-row: 1 / span 2; grid-column: 2; background: var(--bar); cursor: col-resize;
+          border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+body.two .gutter { display: block; }
+body.resizing iframe { pointer-events: none; }
+body.resizing { cursor: col-resize; }
+
+/* ---- narrow: rows still wrap; two panes stack, the deliverable under the dialogue ---- */
+@media (max-width: 760px) {
+  body:not(.hosted) #strip .tile .side { display: none; }
+  body:not(.hosted).two #stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: 26px minmax(0, 1fr) 26px minmax(0, 1.2fr); }
+  body:not(.hosted).two #stage > iframe.pane[data-pane="0"] { grid-row: 2; grid-column: 1; }
+  body:not(.hosted).two #stage > iframe.pane[data-pane="1"] { grid-row: 4; grid-column: 1; }
+  body:not(.hosted) #head0 { grid-row: 1; grid-column: 1; }
+  body:not(.hosted) #head1 { grid-row: 3; grid-column: 1; }
+  body:not(.hosted).two .gutter { display: none; }
+}
+@media (max-width: 520px) {
+  #bar { gap: 3px; padding-left: 4px; }
+  #bar .setup-gear { width: 24px; height: 24px; font-size: 14px; }
+  #bar .mark { width: 24px; }
+  #bar .row-control, #rows { width: 24px; }
+  #bar .panes { margin-right: 2px; }
+  #bar .panes button { width: 24px; }
+  #winctl button { width: 28px; }
+  #strip .tile .side { display: none; }
+  .tile { padding: 0 4px 0 7px; gap: 4px; }
+  .tile.cave { padding-right: 7px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

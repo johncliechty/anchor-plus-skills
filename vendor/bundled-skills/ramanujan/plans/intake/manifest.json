@@ -1,0 +1,71 @@
+{
+  "tier": "tier2",
+  "brownfield": true,
+  "projectDir": "<path> Foundry\\skills\\ramanujan",
+  "versions": [
+    "NORTH-STAR-CANDIDATE.md",
+    "NORTH-STAR-CANDIDATE-v2.md",
+    "NORTH-STAR-CANDIDATE-v3.md",
+    "SCOPE-EXPANSION-2026-06-21.md",
+    "NORTH-STAR.md",
+    "MASTER-PLAN.md",
+    "IMPLEMENTATION-PLAN.md",
+    "SKILL.md"
+  ],
+  "items": [
+    {
+      "id": "core-engine",
+      "fact": "The 6-pillar core engine (Understand, Solve, Verify, Dialogue, Formalize, Contextualize) with Lean/z3 certifier arm is fully implemented and verified.",
+      "label": "Confirmed",
+      "tested": true
+    },
+    {
+      "id": "skill-discipline-shift",
+      "fact": "The skill's primary mode is now prompt-side discipline (The Honesty Law). The autonomous engine is relegated to an explicit-request certificate appendix per the 2026-07-11 Operator Rewrite.",
+      "label": "Confirmed",
+      "tested": null
+    },
+    {
+      "id": "expansion-parked",
+      "fact": "Stage 2 expansions (7-pillar empirical sandbox, persistent synthesizer, cross-session persistence, Lean-mathlib translator) are officially PARKED under a construction freeze.",
+      "label": "Confirmed",
+      "tested": null
+    },
+    {
+      "id": "sandbox-code-functionality",
+      "fact": "Code for the empirical sandbox (src/empirical-sandbox.mjs) and synthesizer (src/synthesizer.mjs) is written but not backed by test suites.",
+      "label": "Inferred",
+      "tested": false
+    },
+    {
+      "id": "router-integration",
+      "fact": "It is unknown if the always-on verify-router correctly intercepts Claim<Empirical> as planned in Wave 3, or if the freeze halted it mid-implementation.",
+      "label": "Gap",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null
+    },
+    {
+      "id": "ledger-typing",
+      "fact": "It is unknown if Claim<Empirical> typing is actually supported in the claim ledger, as src/ledger.mjs is just an export proxy.",
+      "label": "Gap",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": null
+    },
+    {
+      "id": "sandbox-tests-missing",
+      "fact": "Missing test suites (empirical-sandbox.test.mjs and synthesizer.test.mjs) for the Stage 2 expansion features.",
+      "label": "Gap",
+      "touchesCriterion": false,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": false
+    }
+  ],
+  "reproduces": null,
+  "archaeologyRun": false,
+  "generatedFrom": "stage0:ingest"
+}

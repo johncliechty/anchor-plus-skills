@@ -1,0 +1,88 @@
+{
+  "tier": "tier2",
+  "brownfield": true,
+  "projectDir": "<path> Foundry\\skills\\literature-review",
+  "versions": [
+    "planning/crucible/MASTER-PLAN-DRAFT.md",
+    "planning/crucible/MASTER-PLAN.md",
+    "planning/crucible/IMPLEMENTATION-PLAN-DRAFT.md",
+    "planning/crucible/IMPLEMENTATION-PLAN.md",
+    "planning/crucible/NORTH-STAR.md",
+    "SKILL.md"
+  ],
+  "items": [
+    {
+      "id": "wave1",
+      "fact": "Data Foundation (Venue Whitelist, Matrix Schema, & Enums). System defines and validates exact JSON schemas.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true,
+      "note": "Confirmed via src/validateSchema.mjs and test/validateSchema.test.mjs."
+    },
+    {
+      "id": "wave2",
+      "fact": "Core Engine Integration, CLI, & Seed Ingestion. CLI fetches seed URL, parses PDF via semantic chunking, and maps to Semantic Scholar Entity ID.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true,
+      "note": "Confirmed via src/ingest.mjs and test/ingestion.test.mjs."
+    },
+    {
+      "id": "wave3",
+      "fact": "LEAN extraction: ONE model call per paper with deterministic VERBATIM quote grounding.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true,
+      "note": "Deduped truth: SKILL.md overrides IMPLEMENTATION-PLAN.md's 3-Shark loop. Confirmed via test/lean-extraction.test.mjs."
+    },
+    {
+      "id": "wave4",
+      "fact": "Search, Visual Snowballing & PRISMA-Auditable Exclusion Logs via Semantic Scholar API.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true,
+      "note": "Confirmed via src/search.mjs and test/search.test.mjs."
+    },
+    {
+      "id": "wave5",
+      "fact": "Mixed-Initiative Gates & On-Demand Copilot for vetting candidate lists.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true,
+      "note": "Confirmed via src/gate.mjs and test/gate.test.mjs."
+    },
+    {
+      "id": "wave6",
+      "fact": "Final Synthesis & Weighted Consensus Aggregator producing Assumptions Ledger.",
+      "label": "Confirmed",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": true,
+      "note": "Confirmed via src/synthesis.mjs and test/synthesis.test.mjs."
+    },
+    {
+      "id": "stage6",
+      "fact": "ONE adversarial governed round over the synthesized ledger through researchPrime's REAL surface.",
+      "label": "Inferred",
+      "touchesCriterion": true,
+      "resolvable": true,
+      "peopleOnly": false,
+      "tested": false,
+      "note": "Implemented in bin/cli.mjs and declared in SKILL.md, but lacks direct unit tests in the test directory."
+    }
+  ],
+  "reproduces": null,
+  "archaeologyRun": false,
+  "generatedFrom": "stage0:ingest"
+}

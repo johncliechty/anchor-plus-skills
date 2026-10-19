@@ -1,0 +1,74 @@
+{
+  "artifact": "single-pass-baseline",
+  "schema_version": 1,
+  "description": "Frozen single-pass (\"current researchPrime Phase-3\") recall baseline. Content-addressed by `hash` = sha256 of the canonical `payload`. Later waves load it by hash; regeneration ⇒ RED.",
+  "power_calc": {
+    "minCbs": 21,
+    "minSinglePassMisses": 29,
+    "C_min": 0.3,
+    "G": 0.6,
+    "design": {
+      "cbsHalfWidth": 0.2,
+      "closureHalfWidth": 0.18
+    }
+  },
+  "payload": {
+    "artifact": "single-pass-baseline",
+    "schema_version": 1,
+    "mode": "single-pass",
+    "fixture": {
+      "total_defects": 53,
+      "by_class_count": {
+        "ordinary": 24,
+        "correlated-blind-spot": 24,
+        "path-defect": 3,
+        "declared-low-but-irreversible": 2
+      },
+      "corpus_size": 53
+    },
+    "single_pass": {
+      "planted": 48,
+      "caught": 12,
+      "missed": 36,
+      "recall": 0.25,
+      "by_class": {
+        "correlated-blind-spot": {
+          "planted": 24,
+          "caught": 0,
+          "missed": 24,
+          "recall": 0
+        },
+        "ordinary": {
+          "planted": 24,
+          "caught": 12,
+          "missed": 12,
+          "recall": 0.5
+        }
+      },
+      "by_gate": {
+        "G1": {
+          "planted": 24,
+          "caught": 12,
+          "missed": 12,
+          "recall": 0.5
+        },
+        "G3": {
+          "planted": 12,
+          "caught": 0,
+          "missed": 12,
+          "recall": 0
+        },
+        "G8": {
+          "planted": 24,
+          "caught": 0,
+          "missed": 24,
+          "recall": 0
+        }
+      }
+    },
+    "gap_closure_denominator": {
+      "single_pass_misses": 36
+    }
+  },
+  "hash": "67792c6f6f78b4c9f58b2d2c4158921a540465a9400cbbc248e81d3119f4221d"
+}

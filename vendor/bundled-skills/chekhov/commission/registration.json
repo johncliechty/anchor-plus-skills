@@ -1,0 +1,39 @@
+{
+  "schema": "chekhov-commission-registration-v1",
+  "skill": "chekhov",
+  "registered_with": "Ecgberht (the Steward) — engine/halt-inventory.mjs HALT_GATES + HALT_PATH_ROOTS",
+  "g4_executor_evidence": {
+    "kind": "session-receipt",
+    "path_pattern": "<root>/chekhov/session.json",
+    "written_by": "lib/store.mjs appendReceipt (atomic temp + fsync + rename)",
+    "externally_observable": true,
+    "note": "every transition of the session engine writes a receipt {transition, at, inputs_hash, outputs_hash, manifest_hash, seat?}; a run is proven by the receipt file, never by a claim"
+  },
+  "halt_inventory": [
+    {
+      "id": "chekhov-reconciliation-halt",
+      "path": "lib/engine.mjs",
+      "line": 234,
+      "symbol": "confirmReconciliation (TTY-only confirm key)",
+      "description": "an engine-owned file changed outside the engine: unmanaged edit on line 2, no status published, John confirms or reverts at the session prompt",
+      "class": "EXTERNALLY-OBSERVABLE"
+    },
+    {
+      "id": "chekhov-first-sitting-halt",
+      "path": "HUMAN.md",
+      "line": 19,
+      "symbol": "First sitting after the W1 build",
+      "description": "the bounded first-accept walk (RIDER B, W11): chekhov accept walks a NAMED id list with John at the terminal",
+      "class": "EXTERNALLY-OBSERVABLE"
+    },
+    {
+      "id": "chekhov-decision-sitting-halt",
+      "path": "HUMAN.md",
+      "line": 53,
+      "symbol": "When a reconciliation HALT opens",
+      "description": "the decision sitting (W13 HALT-2): Bright-Heart decision record — Western layer, six vs seven books, Book-1 boundary, chapter rule — answered by John with full context (RIDER 2)",
+      "class": "EXTERNALLY-OBSERVABLE"
+    }
+  ],
+  "note": "Full COMMISSION_SKILLS membership requires an Ecgberht-side compose adapter (its registry pins five skills with per-skill compose-hook canaries); the halt rows above and this evidence contract are the W1 registration. The cockpit fixture that launches a session through Anchor lands in W10 (RIDER 7)."
+}

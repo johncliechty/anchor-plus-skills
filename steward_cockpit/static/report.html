@@ -1,0 +1,107 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/shared.css">
+<!-- (2026-09-04) math in a report typesets: the vendored KaTeX the main Reader already ships (no network) -->
+<link rel="stylesheet" href="/vendor/katex/katex.min.css">
+<script defer src="/vendor/katex/katex.min.js"></script>
+<script defer src="/vendor/katex/auto-render.min.js"></script>
+<style>
+  body { overflow-y: auto; }
+  .rep { max-width: 860px; margin: 0 auto; padding: 34px 26px 80px; }
+  .rephead { display: flex; align-items: baseline; gap: 12px;
+             color: var(--dim); font-size: 12.5px; margin-bottom: 22px;
+             border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .repbody { font-size: 15px; line-height: 1.65; }
+  .repbody .mdh { margin: 26px 0 10px; font-weight: 600; }
+  .repbody h2.mdh { font-size: 21px; border-bottom: 1px solid var(--line);
+                    padding-bottom: 6px; }
+  .repbody h3.mdh { font-size: 17px; }
+  .repbody h4.mdh, .repbody h5.mdh { font-size: 15px; color: var(--dim); }
+  .repbody p { margin: 9px 0; }
+  .repbody ul, .repbody ol { margin: 9px 0 9px 26px; }
+  .repbody li { margin: 4px 0; }
+  .repbody blockquote { border-left: 3px solid var(--steward);
+      padding: 4px 14px; margin: 12px 0; color: var(--dim);
+      background: var(--panel); border-radius: 0 8px 8px 0; }
+  .repbody pre { background: var(--panel2); border: 1px solid var(--line);
+      border-radius: 8px; padding: 12px 14px; overflow-x: auto;
+      font: 13px var(--mono); margin: 12px 0; }
+  .repbody code { font-family: var(--mono); background: var(--panel2);
+      padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .repbody pre code { background: none; padding: 0; }
+  .repbody .tblwrap { overflow-x: auto; margin: 12px 0; }
+  .repbody table { border-collapse: collapse; font-size: 13.5px; }
+  .repbody th, .repbody td { border: 1px solid var(--line);
+      padding: 6px 12px; text-align: left; }
+  .repbody th { background: var(--panel2); color: var(--dim); }
+  .repbody hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+</style>
+</head>
+<body>
+<div class="rep">
+  <div class="rephead"><span data-path>…</span>
+    <span style="margin-left:auto"><a href="#" onclick="window.close();return false">close</a></span></div>
+  <div class="repbody" data-body>loading…</div>
+</div>
+<script src="/static/skill-icons.js"></script>
+<script src="/static/md.js"></script>
+<script>
+try { document.body.dataset.theme = localStorage.getItem("protoTheme") || "slate"; } catch (e) {}
+// KaTeX loads deferred; typeset once it is there (a report with no math is untouched).
+function typesetMath(el, tries) {
+  tries = tries || 0;
+  if (typeof window.renderMathInElement !== "function") {
+    if (tries < 40) setTimeout(function () { typesetMath(el, tries + 1); }, 100);
+    return;
+  }
+  try {
+    window.renderMathInElement(el, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\[", right: "\\]", display: true },
+        { left: "$", right: "$", display: false },
+        { left: "\\(", right: "\\)", display: false }
+      ],
+      throwOnError: false,
+      ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code"]
+    });
+  } catch (e) {}
+}
+const qp = new URLSearchParams(location.search);
+const dir = qp.get("dir") || "", path = qp.get("path") || "";
+document.querySelector("[data-path]").textContent = path.split("/").pop() || path;
+document.querySelector("[data-path]").title = path;
+// (2026-09-05, John) the producing skill's mark tops the report
+// the mark comes from the path, else from the file name and the first heading once the text is in
+function markReport(text) {
+  try {
+    const head = document.querySelector("[data-path]");
+    if (!window.SkillIcons || head.querySelector("img.skico")) return;
+    const h1 = ((text || "").match(/^#\s+(.*)$/m) || [])[1] || "";
+    const sk = window.SkillIcons.fromPath(path) || (window.SkillIcons.entryFor((path.split("/").pop() || "") + " " + h1) || {}).name;
+    const im = sk && window.SkillIcons.img(sk, 34);
+    if (!im) return;
+    im.style.marginRight = "10px"; im.style.verticalAlign = "middle"; im.style.borderRadius = "8px";
+    const who = document.createElement("span");
+    who.textContent = sk + " · "; who.style.cssText = "font-weight:700;margin-right:6px";
+    head.insertBefore(who, head.firstChild); head.insertBefore(im, head.firstChild);
+  } catch (e) {}
+}
+markReport("");
+fetch("/api/filetext?dir=" + encodeURIComponent(dir) + "&path=" + encodeURIComponent(path))
+  .then(r => r.json())
+  .then(j => {
+    if (j.error) { document.querySelector("[data-body]").textContent = j.error; return; }
+    const body = document.querySelector("[data-body]");
+    mdRender(body, j.text);
+    typesetMath(body);
+    markReport(j.text);
+    const h = (j.text.match(/^#\s+(.*)$/m) || [])[1];
+    if (h) document.title = h.replace(/[*`]/g, "");
+  })
+  .catch(() => document.querySelector("[data-body]").textContent = "could not load the report");
+</script>
+</body></html>

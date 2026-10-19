@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "anchor://share/package_matrix.schema.json",
+  "title": "Shareable Anchor+Skills package matrix (v1)",
+  "description": "Contract for dual packages Skills-only (A) and Anchor+Skills (B). Anchor-only is hard-blocked. Closed enums live here; share_package_matrix.py reads them at import.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "schema_version", "packages", "forbidden_artifact_patterns"],
+  "properties": {
+    "schema": { "const": "share-package-matrix/v1" },
+    "schema_version": { "const": 1 },
+    "packages": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "#/definitions/package" }
+    },
+    "forbidden_artifact_patterns": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Lowercased name patterns that match Anchor-only (or other forbidden) artifact names. Exact match after normalize."
+    }
+  },
+  "definitions": {
+    "package_id": {
+      "description": "Closed package ids: A = Skills-only, B = Anchor+Skills.",
+      "enum": ["A", "B"]
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)([.-][A-Za-z0-9.-]+)?$"
+    },
+    "skills_pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "commit"],
+      "properties": {
+        "tag": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string", "minLength": 1 }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "artifact_names",
+        "includes_anchor",
+        "includes_skills",
+        "requires_skills_pin",
+        "requires_skills_subtree"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/package_id" },
+        "name": { "type": "string", "minLength": 1 },
+        "artifact_names": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "includes_anchor": { "type": "boolean" },
+        "includes_skills": { "type": "boolean" },
+        "requires_skills_pin": { "type": "boolean" },
+        "requires_skills_subtree": { "type": "boolean" },
+        "version": { "$ref": "#/definitions/semver" }
+      }
+    },
+    "publish_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_name"],
+      "properties": {
+        "package_id": { "$ref": "#/definitions/package_id" },
+        "artifact_name": { "type": "string", "minLength": 1 },
+        "version": { "$ref": "#/definitions/semver" },
+        "skills_pin": { "$ref": "#/definitions/skills_pin" },
+        "skills_subtree_present": { "type": "boolean" }
+      }
+    },
+    "reason_code": {
+      "description": "Closed validation reason codes for package matrix / freeze checks.",
+      "enum": [
+        "anchor_only_forbidden",
+        "unknown_package_id",
+        "unknown_artifact_name",
+        "skills_pin_required",
+        "skills_subtree_required",
+        "package_id_artifact_mismatch",
+        "emit_refused"
+      ]
+    }
+  }
+}

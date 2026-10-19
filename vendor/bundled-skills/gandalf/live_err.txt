@@ -1,0 +1,1 @@
+refuter budget PRE-FLIGHT: 4 firing elevation(s) exceed budget 3 — FLOORING, not halting: refuting top 3 (e-1, e-2, e-3); 1 ship SPECULATIVE un-refuted (e-4). Re-run with --budget 4 to cover all.

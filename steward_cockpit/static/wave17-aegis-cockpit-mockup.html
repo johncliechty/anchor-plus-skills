@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aegis Security Workbench — AI Cockpit Interactive Mockup</title>
+<style>
+  :root {
+    --bg-dark: #0a0e14;
+    --bg-panel: #111823;
+    --bg-card: #162030;
+    --bg-input: #0c121b;
+    --border: #243247;
+    --border-emerald: rgba(16, 185, 129, 0.55);
+    --text: #e6edf3;
+    --text-dim: #94a3b8;
+    --text-muted: #64748b;
+    --emerald: #10b981;
+    --emerald-bright: #34d399;
+    --cyan: #38bdf8;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100vh;
+    overflow: hidden;
+    background: var(--bg-dark);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+
+  .aegis-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100vh;
+  }
+
+  /* 1. Top Cockpit Return & Cross-Skill Bar */
+  .cockpit-parked-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 16px;
+    background: linear-gradient(90deg, #101b24 0%, #15222e 50%, #101824 100%);
+    border-bottom: 1px solid var(--border-emerald);
+    flex-shrink: 0;
+  }
+
+  .cockpit-return-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 13px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(108, 156, 252, 0.25), rgba(108, 156, 252, 0.12));
+    border: 1.5px solid rgba(108, 156, 252, 0.75);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .cockpit-return-btn:hover {
+    background: rgba(108, 156, 252, 0.35);
+  }
+
+  .shared-target-strip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    font-size: 11.5px;
+    color: #d1fae5;
+  }
+  .shared-target-strip code {
+    font-family: var(--mono);
+    color: #fff;
+    font-weight: 700;
+  }
+  .sync-pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.16);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #bae6fd;
+  }
+
+  .anvil-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 7px;
+    background: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.55);
+    color: #fde68a;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .anvil-switch-btn:hover {
+    background: rgba(245, 158, 11, 0.28);
+    color: #fff;
+  }
+
+  /* 2. Aegis Workbench Header */
+  .aegis-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 18px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .brand-cluster {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+  .brand-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1.5px solid var(--emerald-bright);
+    background: #0d1f22;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .brand-title {
+    font-size: 15px;
+    font-weight: 800;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .verdict-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .verdict-pill.pass {
+    background: rgba(16, 185, 129, 0.2);
+    border: 1px solid var(--emerald-bright);
+    color: #6ee7b7;
+  }
+  .verdict-pill.warn {
+    background: rgba(245, 158, 11, 0.2);
+    border: 1px solid var(--amber);
+    color: #fcd34d;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s;
+  }
+  .btn:hover { border-color: var(--cyan); color: #fff; }
+  .btn-emerald {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.28), rgba(16, 185, 129, 0.16));
+    border-color: var(--emerald-bright);
+    color: #d1fae5;
+  }
+  .btn-emerald:hover { background: rgba(16, 185, 129, 0.38); color: #fff; }
+  .btn-cyan {
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.24), rgba(56, 189, 248, 0.12));
+    border-color: var(--cyan);
+    color: #e0f2fe;
+  }
+
+  /* 3. Main Split Layout: Left Workspace + Right Persistent Aegis Agent Dock */
+  .aegis-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 375px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .aegis-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+  }
+
+  /* Mode Tabs */
+  .tab-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    background: #0d131d;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    padding: 7px 13px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tab-btn:hover { color: #fff; background: rgba(255,255,255,0.04); }
+  .tab-btn.active {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.55);
+    color: #6ee7b7;
+  }
+  .tab-badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+  }
+
+  .tab-panel {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .tab-panel.active { display: flex; }
+
+  /* Auto-Connected Anvil Target Banner */
+  .auto-bind-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(15, 23, 42, 0.95) 70%);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+  }
+  .auto-bind-banner h3 {
+    margin: 0 0 4px 0;
+    font-size: 13.5px;
+    color: #6ee7b7;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .auto-bind-banner p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  /* 6 CWE Family Summary Strip */
+  .cwe-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .cwe-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .cwe-card.clean { border-top: 3px solid var(--emerald-bright); }
+  .cwe-card.fixed { border-top: 3px solid var(--cyan); }
+  .cwe-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .cwe-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .cwe-meta {
+    font-size: 10.5px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+  }
+
+  /* Anvil Architectural Buckets Security Matrix */
+  .bucket-sec-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .bucket-sec-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .bucket-sec-card:hover { border-color: var(--emerald-bright); }
+  .bucket-sec-card.refactored {
+    border-left: 3px solid var(--emerald-bright);
+  }
+  .bsec-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .bsec-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .bsec-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+  }
+  .chip-mod {
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: #bae6fd;
+  }
+  .chip-guard {
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #6ee7b7;
+  }
+
+  /* Diff / Remediation Box */
+  .patch-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .diff-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .diff-pane {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.45;
+    overflow-x: auto;
+  }
+  .diff-before {
+    background: rgba(239, 68, 68, 0.09);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #fecaca;
+  }
+  .diff-after {
+    background: rgba(16, 185, 129, 0.09);
+    border: 1px solid rgba(16, 185, 129, 0.38);
+    color: #a7f3d0;
+  }
+
+  /* Right-Side Persistent Aegis Agent Dialogue Dock */
+  .agent-dock {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .dock-header {
+    padding: 12px 14px;
+    background: linear-gradient(180deg, #132226 0%, var(--bg-panel) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .dock-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .persona-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 700;
+    font-size: 13px;
+    color: #6ee7b7;
+  }
+  .seating-bar {
+    margin-top: 6px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.28);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: #d1fae5;
+    display: flex;
+    justify-content: space-between;
+  }
+  .dock-quick-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.18);
+  }
+  .quick-chip {
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .quick-chip:hover {
+    border-color: var(--emerald-bright);
+    color: #fff;
+  }
+
+  .chat-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .msg {
+    padding: 10px 12px;
+    border-radius: 9px;
+    font-size: 12.5px;
+    line-height: 1.48;
+  }
+  .msg.user {
+    background: rgba(56, 189, 248, 0.13);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    align-self: flex-end;
+    max-width: 90%;
+  }
+  .msg.aegis {
+    background: #15222b;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    border-left: 3px solid var(--emerald-bright);
+  }
+  .msg-who {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #6ee7b7;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .msg.user .msg-who { color: #7dd3fc; }
+
+  .dock-composer {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: #0d131c;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .dock-composer textarea {
+    width: 100%;
+    min-height: 52px;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 10px;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    resize: none;
+  }
+  .dock-composer textarea:focus {
+    outline: none;
+    border-color: var(--emerald-bright);
+  }
+  .composer-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+<div class="aegis-shell">
+  <!-- 1. Top Cockpit Return Tile & Shared Anvil Binding Bar -->
+  <div class="cockpit-parked-bar">
+    <button type="button" class="cockpit-return-btn" onclick="alert('Returns to the AI Cockpit and collapses Aegis back into its top-bar tile.')">
+      <span>▴ AI Cockpit · <strong>Anchor Refactoring (Aladdin)</strong> — Click to Return to Cockpit</span>
+    </button>
+
+    <div class="shared-target-strip" title="Automatically synced with Anvil's active codebase in this AI Cockpit">
+      <span>🔗 Auto-Bound via Anvil:</span>
+      <code id="boundTargetLabel">C:\dev\Anchor</code>
+      <span class="sync-pill">✓ Shared w/ Anvil (6 Buckets + 5 Refactored Modules)</span>
+      <button type="button" class="btn" style="padding:2px 8px;font-size:10.5px" onclick="toggleTargetSelector()">Change Target ▾</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px">
+      <button type="button" class="anvil-switch-btn" onclick="alert('Switches directly to Anvil on C:\\dev\\Anchor')">
+        <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="16" height="16" style="border-radius:3px">
+        <span>Switch to Anvil Workbench</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Optional inline target switcher (hidden unless user clicks Change Target or Anvil has not set a target yet) -->
+  <div id="targetSwitcherDrawer" style="display:none;padding:10px 18px;background:#0e1722;border-bottom:1px solid var(--border);align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:11.5px;font-weight:700;color:#6ee7b7">Select or Switch Cockpit Codebase (Syncs to both Aegis &amp; Anvil):</span>
+    <input type="text" id="targetInputBox" value="C:\dev\Anchor" style="flex:1;min-width:260px;background:#0a0e14;color:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-family:var(--mono);font-size:12px">
+    <button type="button" class="quick-chip" onclick="setBoundTarget('C:\\dev\\Anchor')">Anchor Root (C:\dev\Anchor)</button>
+    <button type="button" class="quick-chip" onclick="setBoundTarget('C:\\dev\\Anchor\\steward_cockpit')">steward_cockpit/ (Refactored Core)</button>
+    <button type="button" class="btn btn-emerald" style="padding:4px 10px" onclick="applyBoundTarget()">Bind &amp; Scan</button>
+  </div>
+
+  <!-- 2. Aegis Workbench Header -->
+  <div class="aegis-header">
+    <div class="brand-cluster">
+      <div class="brand-icon">🛡</div>
+      <div>
+        <div class="brand-title">
+          <span>AEGIS DEFENSIVE SECURITY WORKBENCH</span>
+          <span class="verdict-pill pass" id="verdictBadge">VERDICT: PASS (0 OPEN · 5 REMEDIATED)</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-dim);margin-top:2px">
+          Profiling the same codebase &amp; refactored modules as <strong>Anvil</strong> · AST Taint/Sink Scanner + LibCST Auto-Remediation
+        </div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <button type="button" class="btn btn-emerald" onclick="runLiveScanDemo()">▶ Re-Scan Bound Codebase</button>
+      <button type="button" class="btn btn-cyan" onclick="runRemediateDemo()">🛠 Auto-Remediate Fixable Issues</button>
+      <button type="button" class="btn" onclick="alert('Opens AEGIS-SECURITY-REPORT.md in the Cockpit Reader')">📄 Open AEGIS-SECURITY-REPORT.md</button>
+    </div>
+  </div>
+
+  <!-- 3. Split Body: Left Security Workbench + Right Persistent Aegis Chat Window -->
+  <div class="aegis-body">
+    <div class="aegis-main">
+      <div class="tab-strip">
+        <button type="button" class="tab-btn active" onclick="switchTab('posture', this)">
+          1. Anvil Refactored Code &amp; Bucket Security Posture <span class="tab-badge">6/6 Clean</span>
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('patches', this)">
+          2. AST Auto-Remediation &amp; Defensive Patches <span class="tab-badge">5 Applied</span>
+        </button>
+        <button type="button" class="tab-btn" onclick="switchTab('taint', this)">
+          3. Ingress-to-Sink Trust Boundary Map <span class="tab-badge">Get-Data → Emit</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: Posture & Anvil Bucket Alignment -->
+      <div class="tab-panel active" id="tab-posture">
+        <div class="auto-bind-banner">
+          <div>
+            <h3>🔗 Automatic Anvil ↔ Aegis Codebase Synchronization Active</h3>
+            <p>
+              Aegis automatically detected your active Anvil session for <code>C:\dev\Anchor</code> and profiled all <strong>6 Agreed-Upon Architectural Buckets</strong> plus the <strong>5 newly extracted Wave 13–14 pure modules</strong> (<code>high_seat_core.py</code>, <code>steward_core.py</code>, <code>gui_ingress_routes.py</code>, <code>gui_domain_core.py</code>, <code>gui_surface_emit.py</code>).
+            </p>
+          </div>
+          <span class="verdict-pill pass" style="white-space:nowrap">45 Modules Scanned · 0 Open CWEs</span>
+        </div>
+
+        <!-- 6 CWE Families -->
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">
+            6 OWASP / CWE Defensive Security Families
+          </div>
+          <div class="cwe-grid">
+            <div class="cwe-card clean">
+              <div class="cwe-head"><span>AEG-01</span><span style="color:#6ee7b7">✓ PASS</span></div>
+              <div class="cwe-title">Shell Injection</div>
+              <div class="cwe-meta">CWE-78 · shell=False enforced</div>
+            </div>
+            <div class="cwe-card clean">
+              <div class="cwe-head"><span>AEG-02</span><span style="color:#6ee7b7">✓ PASS</span></div>
+              <div class="cwe-title">Dynamic Exec / Deser</div>
+              <div class="cwe-meta">CWE-94/502 · safe_load / AST</div>
+            </div>
+            <div class="cwe-card clean">
+              <div class="cwe-head"><span>AEG-03</span><span style="color:#6ee7b7">✓ PASS</span></div>
+              <div class="cwe-title">Path Traversal</div>
+              <div class="cwe-meta">CWE-22 · unsafe_path_seg guard</div>
+            </div>
+            <div class="cwe-card clean">
+              <div class="cwe-head"><span>AEG-04</span><span style="color:#6ee7b7">✓ PASS</span></div>
+              <div class="cwe-title">SSRF / URL Scheme</div>
+              <div class="cwe-meta">CWE-918 · https allowlist</div>
+            </div>
+            <div class="cwe-card clean">
+              <div class="cwe-head"><span>AEG-05</span><span style="color:#6ee7b7">✓ PASS</span></div>
+              <div class="cwe-title">Timing / Weak Crypto</div>
+              <div class="cwe-meta">CWE-208 · hmac.compare_digest</div>
+            </div>
+            <div class="cwe-card clean">
+              <div class="cwe-head"><span>AEG-06</span><span style="color:#6ee7b7">✓ PASS</span></div>
+              <div class="cwe-title">Hardcoded Secrets</div>
+              <div class="cwe-meta">CWE-798 · 1,820 distro files clean</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anvil Architectural Buckets & Refactored Modules -->
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-dim);margin-bottom:8px">
+            Anvil Refactored Modules &amp; Architectural Buckets — Security Verification Matrix (Click any bucket to ask Aegis Agent)
+          </div>
+          <div class="bucket-sec-grid">
+            <div class="bucket-sec-card refactored" onclick="askAgentAboutBucket('Stage 1 Get-Data (gui_ingress_routes.py)')">
+              <div class="bsec-top">
+                <span class="bsec-title">1. Stage 1 · Get-Data HTTP Ingress (Refactored Wave 14)</span>
+                <span class="verdict-pill pass">✓ VERIFIED CLEAN</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-dim)">
+                Centralizes path traversal guards (<code>unsafe_path_seg</code>), Bearer token extraction, loopback/Tailscale origin checks, and JSON upload validation.
+              </div>
+              <div class="bsec-tags">
+                <span class="chip-mod">steward_cockpit/gui_ingress_routes.py</span>
+                <span class="chip-guard">🛡 Guards CWE-22 &amp; CWE-208</span>
+              </div>
+            </div>
+
+            <div class="bucket-sec-card refactored" onclick="askAgentAboutBucket('Stage 2 Do-Analysis Pure Cores (gui_domain_core.py, high_seat_core.py, steward_core.py)')">
+              <div class="bsec-top">
+                <span class="bsec-title">2. Stage 2 · Do-Analysis Pure Domain Cores (Waves 13–14)</span>
+                <span class="verdict-pill pass">✓ VERIFIED CLEAN</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-dim)">
+                100% pure deterministic computation with zero subprocess, filesystem, or network sinks (`0` Pith/Seeds).
+              </div>
+              <div class="bsec-tags">
+                <span class="chip-mod">gui_domain_core.py</span>
+                <span class="chip-mod">high_seat_core.py</span>
+                <span class="chip-mod">steward_core.py</span>
+                <span class="chip-guard">🛡 Zero I/O Sinks</span>
+              </div>
+            </div>
+
+            <div class="bucket-sec-card refactored" onclick="askAgentAboutBucket('Stage 3 Create-Output Surface Emitters (gui_surface_emit.py)')">
+              <div class="bsec-top">
+                <span class="bsec-title">3. Stage 3 · Create-Output Surface Emitters (Refactored Wave 14)</span>
+                <span class="verdict-pill pass">✓ VERIFIED CLEAN</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-dim)">
+                Strict HTML/MathML escaping (`html.escape(..., quote=True)`), JSON script-tag sanitization, and CSP/Cache-Control header emission.
+              </div>
+              <div class="bsec-tags">
+                <span class="chip-mod">steward_cockpit/gui_surface_emit.py</span>
+                <span class="chip-guard">🛡 Guards XSS &amp; Header Injection</span>
+              </div>
+            </div>
+
+            <div class="bucket-sec-card refactored" onclick="askAgentAboutBucket('Steward & Anvil Subprocess / Path Hardening (Wave 15)')">
+              <div class="bsec-top">
+                <span class="bsec-title">4. Steward, Anvil &amp; Foundry Tool Subprocess Layer (Wave 15)</span>
+                <span class="verdict-pill pass">✓ 5 REMEDIATED</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-dim)">
+                All `subprocess.run` / `Popen` calls hardened to `shell=False` argument lists; `_validate_and_resolve_local_path` blocks UNC/SMB, dot-dirs, and symlinks.
+              </div>
+              <div class="bsec-tags">
+                <span class="chip-mod">anvil_session.py</span>
+                <span class="chip-mod">steward_routes.py</span>
+                <span class="chip-guard">🛡 CWE-78 &amp; CWE-22 Hardened</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: AST Auto-Remediation & Defensive Patches -->
+      <div class="tab-panel" id="tab-patches">
+        <div class="patch-card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <strong style="color:#fff;font-size:13px">AEG-01 (CWE-78 · HIGH) — Subprocess Shell Injection Hardening</strong>
+              <div style="font-size:11.5px;color:var(--text-dim)">Verified across <code>anvil_session.py</code>, <code>anvil_engine.py</code>, and <code>steward_routes.py</code></div>
+            </div>
+            <span class="verdict-pill pass">✓ APPLIED &amp; TEST-VERIFIED</span>
+          </div>
+          <div class="diff-grid">
+            <div class="diff-pane diff-before">
+              <div style="font-weight:700;margin-bottom:4px;color:#fca5a5">— BEFORE (Vulnerable Sink)</div>
+              subprocess.run(user_cmd, shell=True, capture_output=True)
+            </div>
+            <div class="diff-pane diff-after">
+              <div style="font-weight:700;margin-bottom:4px;color:#6ee7b7">+ AFTER (Aegis AST Auto-Remediation)</div>
+              subprocess.run([sys.executable, "-m", "ruff", "check", ...], shell=False, capture_output=True)
+            </div>
+          </div>
+        </div>
+
+        <div class="patch-card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <strong style="color:#fff;font-size:13px">AEG-03 (CWE-22 · HIGH) — Workspace &amp; Cockpit Path Containment Guard</strong>
+              <div style="font-size:11.5px;color:var(--text-dim)">Enforced in <code>gui_ingress_routes.py</code> and <code>anvil_session.py:_validate_and_resolve_local_path</code></div>
+            </div>
+            <span class="verdict-pill pass">✓ APPLIED &amp; TEST-VERIFIED</span>
+          </div>
+          <div class="diff-grid">
+            <div class="diff-pane diff-before">
+              <div style="font-weight:700;margin-bottom:4px;color:#fca5a5">— BEFORE (Unchecked Path Join)</div>
+              resolved = (cdir / spec).resolve()<br>
+              return open(resolved).read()
+            </div>
+            <div class="diff-pane diff-after">
+              <div style="font-weight:700;margin-bottom:4px;color:#6ee7b7">+ AFTER (Containment + UNC/Dot/Symlink Guard)</div>
+              if unsafe_path_seg(part) or resolved.is_symlink(): raise ValueError(...)<br>
+              assert any(resolved.is_relative_to(r) for r in allowed_roots)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Ingress-to-Sink Trust Boundary Map -->
+      <div class="tab-panel" id="tab-taint">
+        <div class="patch-card">
+          <h3 style="margin:0;color:#fff;font-size:13.5px">3-Stage Parable-of-the-Oranges Security Boundary Flow</h3>
+          <p style="margin:0;color:var(--text-dim);font-size:12px">
+            Because Anvil separated the codebase into <strong>1. Get-Data (Ingress Peel)</strong> → <strong>2. Do-Analysis (Pure Juice)</strong> → <strong>3. Create-Output (Egress Peel)</strong>, Aegis enforces security guards strictly at Stage 1 and Stage 3 while keeping Stage 2 100% sink-free:
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">
+            <div style="padding:12px;border-radius:8px;background:#0d1520;border:1px solid rgba(56,189,248,0.4)">
+              <div style="font-family:var(--mono);font-size:11px;font-weight:700;color:#38bdf8;margin-bottom:6px">STAGE 1 · GET-DATA (INGRESS)</div>
+              <div style="font-size:12px;color:var(--text-dim);line-height:1.45">
+                • <code>extract_bearer_token</code> + <code>hmac.compare_digest</code><br>
+                • <code>unsafe_path_seg</code> traversal filter<br>
+                • <code>validate_upload_meta</code> extension deny-list<br>
+                • <code>https://</code> scheme allowlist
+              </div>
+            </div>
+            <div style="padding:12px;border-radius:8px;background:#0d1f1a;border:1px solid rgba(16,185,129,0.45)">
+              <div style="font-family:var(--mono);font-size:11px;font-weight:700;color:#6ee7b7;margin-bottom:6px">STAGE 2 · DO-ANALYSIS (PURE CORE)</div>
+              <div style="font-size:12px;color:var(--text-dim);line-height:1.45">
+                • <code>gui_domain_core.py</code><br>
+                • <code>high_seat_core.py</code><br>
+                • <code>steward_core.py</code><br>
+                • <strong>Zero OS/FS/Network Sinks</strong>
+              </div>
+            </div>
+            <div style="padding:12px;border-radius:8px;background:#161524;border:1px solid rgba(168,85,247,0.4)">
+              <div style="font-family:var(--mono);font-size:11px;font-weight:700;color:#d8b4fe;margin-bottom:6px">STAGE 3 · CREATE-OUTPUT (EMIT)</div>
+              <div style="font-size:12px;color:var(--text-dim);line-height:1.45">
+                • <code>gui_surface_emit.py</code><br>
+                • Strict <code>html.escape</code> + MathML sentinel sanitizer<br>
+                • Subprocess <code>shell=False</code> list args
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right-Side Persistent Aegis Agent Dialogue Dock (Works Like Anvil & AI Cockpit Chat) -->
+    <aside class="agent-dock">
+      <div class="dock-header">
+        <div class="dock-header-top">
+          <span class="persona-pill">🛡 Aladdin · Aegis Security Steward</span>
+          <span class="sync-pill">Live Cockpit Chat</span>
+        </div>
+        <div class="seating-bar">
+          <span>Coding: <strong>gemini-4-argon · high</strong></span>
+          <span>Review: <strong>claude-fable-5-1 · max</strong></span>
+        </div>
+      </div>
+
+      <div class="dock-quick-actions">
+        <button type="button" class="quick-chip" onclick="sendPresetChat('Audit the refactored code from Anvil and fix any open issues.')">🛡 Audit Refactored Code</button>
+        <button type="button" class="quick-chip" onclick="sendPresetChat('Auto-remediate all fixable CWE findings and run pytest.')">🛠 Auto-Remediate All</button>
+        <button type="button" class="quick-chip" onclick="sendPresetChat('Switch target codebase to C:\\dev\\Anchor\\steward_cockpit')">📂 Change Codebase via Chat</button>
+      </div>
+
+      <div class="chat-log" id="aegisChatLog">
+        <div class="msg aegis">
+          <div class="msg-who">
+            <span>ALADDIN · AEGIS STEWARD</span>
+            <span>just now</span>
+          </div>
+          <div>
+            I'm connected automatically to your active Anvil codebase (<code>C:\dev\Anchor</code>) and the 5 refactored modules from Waves 13–14 (<code>gui_ingress_routes.py</code>, <code>gui_domain_core.py</code>, <code>gui_surface_emit.py</code>, <code>high_seat_core.py</code>, and <code>steward_core.py</code>).<br><br>
+            All <strong>45 Python modules</strong> pass across the 6 OWASP/CWE families (<strong>0 open vulnerabilities</strong>). Ask me anything about the security posture, tell me to scan or fix a specific module, or tell me to switch to a different codebase if Anvil isn't set up yet.
+          </div>
+        </div>
+      </div>
+
+      <div class="dock-composer">
+        <textarea id="aegisChatInput" placeholder="Talk to Aegis Steward (just like the AI Cockpit & Anvil) — ask about findings, fix vulnerabilities, or identify a codebase…"></textarea>
+        <div class="composer-foot">
+          <span>Enter sends · Shift+Enter newline · Win+H dictation ready</span>
+          <button type="button" class="btn btn-emerald" style="padding:4px 12px" onclick="sendChat()">Send</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+  function switchTab(id, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  function toggleTargetSelector() {
+    const el = document.getElementById('targetSwitcherDrawer');
+    el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  function setBoundTarget(path) {
+    document.getElementById('targetInputBox').value = path;
+  }
+
+  function applyBoundTarget() {
+    const val = document.getElementById('targetInputBox').value.trim() || '.';
+    document.getElementById('boundTargetLabel').textContent = val;
+    document.getElementById('targetSwitcherDrawer').style.display = 'none';
+    appendChat('user', 'Bind shared cockpit codebase to ' + val + ' and run Aegis scan.');
+    setTimeout(() => {
+      appendChat('aegis', 'Updated the shared cockpit codebase binding to `' + val + '` (synced with Anvil so both tools point to the same code) and completed the 6-family AST security audit: **PASS (0 open findings)**.');
+    }, 250);
+  }
+
+  function askAgentAboutBucket(bucketTitle) {
+    sendPresetChat('How is "' + bucketTitle + '" guarded against CWE vulnerabilities?');
+  }
+
+  function appendChat(role, text) {
+    const log = document.getElementById('aegisChatLog');
+    const div = document.createElement('div');
+    div.className = 'msg ' + (role === 'user' ? 'user' : 'aegis');
+    const who = document.createElement('div');
+    who.className = 'msg-who';
+    who.innerHTML = '<span>' + (role === 'user' ? 'JOHN' : 'ALADDIN · AEGIS STEWARD') + '</span><span>just now</span>';
+    const body = document.createElement('div');
+    body.textContent = text;
+    div.appendChild(who);
+    div.appendChild(body);
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function sendPresetChat(q) {
+    const input = document.getElementById('aegisChatInput');
+    input.value = q;
+    sendChat();
+  }
+
+  function sendChat() {
+    const input = document.getElementById('aegisChatInput');
+    const q = input.value.trim();
+    if (!q) return;
+    input.value = '';
+    appendChat('user', q);
+    const ql = q.toLowerCase();
+    setTimeout(() => {
+      if (ql.includes('switch') || ql.includes('c:\\')) {
+        document.getElementById('boundTargetLabel').textContent = 'C:\\dev\\Anchor\\steward_cockpit';
+        appendChat('aegis', 'Bound the cockpit target to `C:\\dev\\Anchor\\steward_cockpit` (shared with Anvil) and scanned all 44 modules: **PASS (0 open vulnerabilities)** across AEG-01 through AEG-06.');
+      } else if (ql.includes('remediate') || ql.includes('fix')) {
+        appendChat('aegis', 'Verified all auto-fixable rules (`AEG-01` shell=False, `AEG-02` safe_load/literal_eval, `AEG-05` hmac.compare_digest, `AEG-06` env vars) across the bound Anvil codebase. Zero unpatched sinks remain, and all 26 equivalence & security tests pass.');
+      } else {
+        appendChat('aegis', 'In the refactored 3-stage architecture from Anvil, all untrusted inputs are validated in `gui_ingress_routes.py` (`unsafe_path_seg`, `extract_bearer_token`), pure domain logic in `gui_domain_core.py` / `high_seat_core.py` / `steward_core.py` has zero I/O sinks, and `gui_surface_emit.py` enforces strict HTML/JSON escaping.');
+      }
+    }, 220);
+  }
+
+  function runLiveScanDemo() {
+    appendChat('aegis', 'Re-scanned bound Anvil target `' + document.getElementById('boundTargetLabel').textContent + '`: **45 Python files audited · 0 open vulnerabilities · Verdict: PASS**. Updated `AEGIS-SECURITY-REPORT.md`.');
+  }
+
+  function runRemediateDemo() {
+    appendChat('aegis', 'Ran AST auto-remediation (`remediate --apply`) across `' + document.getElementById('boundTargetLabel').textContent + '`: all 6 CWE families verified clean.');
+  }
+
+  document.getElementById('aegisChatInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChat();
+    }
+  });
+</script>
+</body>
+</html>

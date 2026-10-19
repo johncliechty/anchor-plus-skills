@@ -1,0 +1,3379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anvil — Per-Cockpit Code &amp; Paper-to-Software Workbench</title>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --bg-panel: #111826;
+    --bg-card: #161f30;
+    --bg-card-hover: #1c283d;
+    --bg-elev: #0d1320;
+    --border: #26334d;
+    --border-bright: #3b507a;
+    --text: #e6edf7;
+    --text-dim: #94a3b8;
+    --text-muted: #64748b;
+    --amber: #f59e0b;
+    --amber-glow: rgba(245, 158, 11, 0.16);
+    --cyan: #38bdf8;
+    --cyan-glow: rgba(56, 189, 248, 0.14);
+    --green: #22c55e;
+    --green-glow: rgba(34, 197, 94, 0.14);
+    --red: #ef4444;
+    --red-glow: rgba(239, 68, 68, 0.14);
+    --purple: #a855f7;
+    --purple-glow: rgba(168, 85, 247, 0.15);
+    --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.45;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .anvil-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Top Bar */
+  .anvil-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 14px;
+    background: linear-gradient(90deg, #0f172a 0%, #172136 55%, #0f172a 100%);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .cockpit-return-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(30, 41, 59, 0.92));
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    color: #e0f2fe;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .cockpit-return-btn:hover {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: var(--cyan);
+  }
+
+  .anvil-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-weight: 800;
+    font-size: 13.5px;
+    letter-spacing: 0.03em;
+    color: #fff;
+  }
+
+  .anvil-brand img {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid rgba(245, 158, 11, 0.55);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.28);
+  }
+
+  .cockpit-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: var(--cyan);
+  }
+
+  .target-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fde68a;
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 6px;
+    border: 1px solid var(--border-bright);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+
+  .btn:hover:not(:disabled) {
+    background: var(--bg-card-hover);
+    border-color: var(--cyan);
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: wait;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #0b0f17;
+    border-color: #fbbf24;
+    font-weight: 700;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+    border-color: #fde68a;
+  }
+
+  .btn-success {
+    background: rgba(34, 197, 94, 0.16);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, 0.45);
+  }
+
+  .btn-success:hover:not(:disabled) {
+    background: rgba(34, 197, 94, 0.25);
+    border-color: var(--green);
+  }
+
+  .btn-danger {
+    background: rgba(239, 68, 68, 0.12);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.35);
+  }
+
+  /* Error Banner */
+  .error-banner {
+    display: none;
+    background: rgba(239, 68, 68, 0.15);
+    border-bottom: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+    padding: 8px 16px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  /* Main Split Body: Left Workspace + Right Persistent Dialogue Dock */
+  .anvil-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 365px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .anvil-main-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+  }
+
+  /* Launcher View */
+  .launcher-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .launcher-hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(17, 24, 38, 0.96) 65%);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
+
+  .launcher-hero img {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    border: 1px solid var(--amber);
+    flex-shrink: 0;
+  }
+
+  .launcher-hero h1 {
+    margin: 0 0 4px 0;
+    font-size: 17px;
+    font-weight: 800;
+  }
+
+  .launcher-hero p {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 12.5px;
+  }
+
+  .launcher-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+  }
+
+  .launch-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .launch-card h2 {
+    margin: 0;
+    font-size: 14.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #fff;
+  }
+
+  .launch-card p.desc {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .field-group label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+
+  .field-input {
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border-bright);
+    background: var(--bg-elev);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .field-input:focus {
+    outline: none;
+    border-color: var(--amber);
+  }
+
+  .candidate-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 2px;
+  }
+
+  .cand-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+
+  .cand-chip:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(56, 189, 248, 0.08);
+  }
+
+  /* Active Workbench View */
+  .workbench-left {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* 4-Mode Navigation Tabs (Matches Locked Wave 5 Mockup) */
+  .tab-strip {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px 0;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+
+  .tab-btn {
+    padding: 8px 13px;
+    border-radius: 7px 7px 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    background: transparent;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .tab-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .tab-btn.active {
+    background: var(--bg);
+    color: var(--amber);
+    border-color: var(--border);
+    font-weight: 700;
+  }
+
+  .tab-badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+  }
+
+  .tab-content {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .tab-content.active {
+    display: flex;
+  }
+
+  /* Mode Header & View Toggle */
+  .mode-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .mode-title {
+    font-size: 15.5px;
+    font-weight: 800;
+    color: #fff;
+    margin: 0 0 3px 0;
+  }
+
+  .mode-subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0;
+    max-width: 820px;
+  }
+
+  .view-toggle {
+    display: inline-flex;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 3px;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .view-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.14s;
+  }
+
+  .view-btn.active {
+    background: var(--bg-card);
+    color: var(--amber);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Metrics Row */
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 10px;
+  }
+
+  .metric-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+  }
+
+  .metric-card .m-val {
+    font-family: var(--mono);
+    font-size: 17px;
+    font-weight: 800;
+    color: #fff;
+  }
+
+  .metric-card .m-lab {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Parable of the Oranges Banner */
+  .orange-banner {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.11), rgba(56, 189, 248, 0.07));
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 9px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .orange-banner-text {
+    font-size: 12px;
+    color: #e2e8f0;
+  }
+
+  .orange-banner-text strong {
+    color: #fde68a;
+  }
+
+  /* Mode 1A: Conceptual Groupings Grid (bucket-grid & bucket-card from Locked Wave 5 Mockup) */
+  .bucket-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 14px;
+  }
+
+  .bucket-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .bucket-card:hover {
+    border-color: var(--amber);
+    background: var(--bg-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .bucket-card.validated {
+    border-color: rgba(34, 197, 94, 0.45);
+  }
+
+  .bucket-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .bucket-name {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .bucket-tag {
+    font-size: 10px;
+    font-family: var(--mono);
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .tag-ingest { background: var(--cyan-glow); color: var(--cyan); border: 1px solid rgba(56, 189, 248, 0.35); }
+  .tag-compute { background: var(--amber-glow); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.35); }
+  .tag-emit { background: var(--green-glow); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.35); }
+  .tag-ai { background: var(--purple-glow); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4); }
+
+  .bucket-file {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--cyan);
+  }
+
+  .bucket-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .bucket-fns {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .fn-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+    padding: 4px 7px;
+    border-radius: 5px;
+    background: rgba(11, 15, 23, 0.55);
+  }
+
+  .fn-sig {
+    font-family: var(--mono);
+    color: #f8fafc;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .fn-meta {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    white-space: nowrap;
+  }
+
+  .ai-callout {
+    background: var(--purple-glow);
+    border: 1px solid rgba(168, 85, 247, 0.4);
+    border-radius: 7px;
+    padding: 7px 10px;
+    font-size: 11px;
+    color: #e9d5ff;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ai-callout strong {
+    color: #d8b4fe;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Mode 1B & Mode 4: Block-to-Block System Process Map (process-map-box, proc-node, proc-arrow) */
+  .process-map-box {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .process-stage-lane {
+    background: rgba(22, 31, 48, 0.55);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .lane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .lane-title {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .process-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    overflow-x: auto;
+    padding: 4px 2px 8px;
+  }
+
+  .proc-node {
+    min-width: 215px;
+    max-width: 245px;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border-bright);
+    border-radius: 9px;
+    padding: 11px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .proc-node:hover {
+    border-color: var(--amber);
+    transform: translateY(-2px);
+  }
+
+  .proc-node.ai-seam {
+    border-color: var(--purple);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.14);
+  }
+
+  .proc-node.validated {
+    border-color: var(--green);
+  }
+
+  .proc-step-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--amber);
+    font-weight: 700;
+  }
+
+  .proc-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .proc-io {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    background: rgba(11, 15, 23, 0.65);
+    padding: 4px 6px;
+    border-radius: 4px;
+  }
+
+  .proc-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    padding: 0 2px;
+    flex-shrink: 0;
+  }
+
+  .proc-arrow span {
+    font-size: 9.5px;
+    color: var(--text-muted);
+    font-weight: 500;
+    max-width: 90px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Mode 2: Single-Block Drill-Down & Live Probe (Matches Locked Wave 5 Mockup) */
+  .drill-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .drill-select {
+    background: var(--bg-elev);
+    color: #fff;
+    border: 1px solid var(--border-bright);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 250px;
+  }
+
+  .inner-map-box {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .inner-map-title {
+    font-size: 11.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--amber);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .inner-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+
+  .inner-step {
+    background: var(--bg-card);
+    border: 1px solid var(--border-bright);
+    border-radius: 8px;
+    padding: 10px 12px;
+    min-width: 185px;
+    max-width: 235px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .inner-step.ai-step {
+    border-color: var(--purple);
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.12), var(--bg-card));
+  }
+
+  .inner-step .step-fn {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--cyan);
+  }
+
+  .inner-step .step-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .inner-arrow {
+    color: var(--amber);
+    font-weight: 700;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .claim-verify-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .cv-box {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .cv-box h4 {
+    margin: 0;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .terminal-out {
+    background: #070a10;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: #a7f3d0;
+    white-space: pre-wrap;
+    min-height: 88px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .verdict-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: 7px;
+    background: var(--green-glow);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #bbf7d0;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .verdict-strip.pending {
+    background: var(--amber-glow);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #fde68a;
+  }
+
+  /* Mode 3: 3-Column Old-to-New Map & Explicit Null Space + 3-Stage Pipeline Strip */
+  .remap-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 0.95fr;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .remap-col {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    max-height: 520px;
+    overflow-y: auto;
+  }
+
+  .remap-col.null-col {
+    border-color: rgba(239, 68, 68, 0.45);
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.06) 0%, var(--bg-panel) 100%);
+  }
+
+  .remap-col h4 {
+    margin: 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    position: sticky;
+    top: 0;
+    background: inherit;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+  }
+
+  .map-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 11px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .map-item.new-card {
+    border-left: 3px solid var(--green);
+    cursor: pointer;
+    transition: all 0.14s;
+  }
+
+  .map-item.new-card:hover {
+    border-color: var(--amber);
+    background: var(--bg-card-hover);
+  }
+
+  .map-item.null-card {
+    border-left: 3px solid var(--red);
+    background: rgba(239, 68, 68, 0.07);
+  }
+
+  .map-item.null-card.signed {
+    border-left-color: var(--green);
+    background: rgba(34, 197, 94, 0.06);
+  }
+
+  .map-link-badge {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .pipeline-3stage {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .stage-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stage-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+    font-size: 12.5px;
+  }
+
+  .stage-pass { color: var(--green); font-family: var(--mono); font-size: 11px; }
+  .stage-warn { color: var(--amber); font-family: var(--mono); font-size: 11px; }
+
+  /* Mode 4: Paper-to-Software Process & Math Map */
+  .math-tie-badge {
+    margin-top: 4px;
+    padding: 4px 7px;
+    border-radius: 5px;
+    background: rgba(168, 85, 247, 0.15);
+    border: 1px solid rgba(168, 85, 247, 0.45);
+    color: #e9d5ff;
+    font-size: 10.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .paper-claim-row {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: grid;
+    grid-template-columns: 1.15fr 1.15fr 0.9fr;
+    gap: 14px;
+    align-items: start;
+  }
+
+  .paper-col h5 {
+    margin: 0 0 6px 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .math-display-box {
+    background: #090d15;
+    border: 1px solid #283655;
+    border-left: 3px solid var(--purple);
+    border-radius: 7px;
+    padding: 10px 12px;
+    margin: 6px 0;
+    color: #f8fafc;
+    overflow-x: auto;
+  }
+
+  .math-display-box math {
+    font-size: 14.5px;
+    color: #f1f5f9;
+  }
+
+  /* Tables & Generic Sections */
+  .section-box {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .section-head h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .anvil-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .anvil-table th, .anvil-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  .anvil-table th {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+  }
+
+  .badge-core { background: rgba(245, 158, 11, 0.16); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); }
+  .badge-scaf { background: rgba(56, 189, 248, 0.14); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); }
+  .badge-ok   { background: rgba(34, 197, 94, 0.15); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.4); }
+  .badge-warn { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
+  .badge-purp { background: rgba(168, 85, 247, 0.16); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4); }
+
+  /* Right-Side Persistent Steward & Anvil Dialogue Dock */
+  .agent-dock {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .agent-head {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.75);
+  }
+
+  .agent-head-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .agent-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    font-size: 13px;
+  }
+
+  .agent-title img {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px solid var(--amber);
+  }
+
+  .agent-modes {
+    display: flex;
+    gap: 4px;
+  }
+
+  .mode-pill {
+    flex: 1;
+    padding: 4px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  .mode-pill.active {
+    border-color: var(--amber);
+    color: #fde68a;
+    background: rgba(245, 158, 11, 0.12);
+  }
+
+  .agent-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .msg-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .msg-q {
+    color: var(--cyan);
+    font-weight: 600;
+  }
+
+  .msg-a {
+    color: #e2e8f0;
+    white-space: pre-wrap;
+  }
+
+  .agent-composer {
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    background: var(--bg-elev);
+  }
+
+  .agent-composer textarea {
+    width: 100%;
+    min-height: 62px;
+    max-height: 130px;
+    resize: vertical;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border-bright);
+    background: var(--bg-panel);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+  }
+
+  .agent-composer textarea:focus {
+    outline: none;
+    border-color: var(--amber);
+  }
+
+  .foundry-flow-wrap {
+    background: #0c121e;
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+
+  .foundry-flow-wrap .fd-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .member-files-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .member-file-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    color: #bae6fd;
+  }
+</style>
+<link rel="stylesheet" href="/static/foundry-display/display.css">
+<script src="/static/foundry-display/flow-diagram.js"></script>
+</head>
+<body>
+<div class="anvil-shell">
+  <!-- Top Bar -->
+  <header class="anvil-topbar">
+    <div class="topbar-left">
+      <button type="button" class="cockpit-return-btn" id="btnReturnCockpit" title="Return to AI Cockpit view">
+        <span>▴ AI Cockpit</span>
+      </button>
+      <div class="anvil-brand">
+        <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil">
+        <span>ANVIL · CODE &amp; PAPER-TO-SOFTWARE WORKBENCH</span>
+      </div>
+      <span class="cockpit-pill" id="cockpitNamePill">Cockpit: Loading…</span>
+      <span class="target-pill" id="softwareTargetPill" hidden></span>
+      <span class="target-pill" id="paperTargetPill" hidden></span>
+    </div>
+    <div class="topbar-right">
+      <button type="button" class="btn" id="btnOpenAegisWorkbench" style="background:rgba(16,185,129,0.16);border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="Switch to the Aegis Security Workbench on this same bound codebase">
+        <img src="/vendor/brand/aegis-icon.svg" alt="Aegis" width="16" height="16" style="border-radius:3px">
+        <span>🛡 Switch to Aegis Workbench</span>
+      </button>
+      <button type="button" class="btn" id="btnSwitchLauncher" hidden>⚙ Configure / New Session</button>
+      <button type="button" class="btn btn-danger" id="btnResetSession" hidden>Reset Session</button>
+    </div>
+  </header>
+
+  <div class="error-banner" id="errorBanner"></div>
+
+  <!-- Split Body: Left Workspace + Right Persistent Dialogue Dock -->
+  <div class="anvil-body">
+    <div class="anvil-main-col">
+      <!-- STATE A: Empty / Session Launcher -->
+      <div class="launcher-wrap" id="launcherView">
+        <div class="launcher-hero">
+          <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil Icon">
+          <div>
+            <h1 id="launcherTitle">Anvil Session Launcher</h1>
+            <p id="launcherSubtitle">
+              Each AI Cockpit has its own dedicated Anvil session. Launch below OR tell the <strong>Steward &amp; Anvil Dialogue</strong> on the right what to set up (e.g. <em>"Look for the paper loaded locally and map it to code"</em> or <em>"Analyze Anchor steward_cockpit/"</em>).
+            </p>
+          </div>
+        </div>
+
+        <div class="launcher-grid">
+          <!-- Card 1: Software Analysis & Remap -->
+          <div class="launch-card" data-launch-card="code">
+            <h2>
+              <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="" width="20" height="20" style="border-radius:4px">
+              1. Analyze &amp; Improve Software
+            </h2>
+            <p class="desc">
+              Decompose a codebase into <strong>Conceptual Groupings &amp; System Process Map</strong>, drill into single blocks with live probes, and view the <strong>3-Column Old-to-New Best-in-Class Map + Explicit ∅ Null Space</strong>.
+            </p>
+            <div class="field-group">
+              <label for="codeTargetInput">Software Path (inside Cockpit or Workspace) or GitHub Repo URL</label>
+              <input type="text" id="codeTargetInput" class="field-input" value="." placeholder="e.g. . or C:\dev\Anchor\steward_cockpit or https://github.com/owner/repo">
+              <div class="candidate-chips" id="codeCandidateChips"></div>
+            </div>
+            <div class="field-group">
+              <label for="compareTargetInput">Optional Remap / Comparison Target (for Null Space &amp; Differential Check)</label>
+              <input type="text" id="compareTargetInput" class="field-input" value="" placeholder="Optional: path to refactored module or leave blank for Best-in-Class Architecture synthesis">
+            </div>
+            <div style="margin-top:auto;padding-top:6px">
+              <button type="button" class="btn btn-primary" id="btnStartCode" style="width:100%;justify-content:center;padding:9px 14px">
+                Launch Software Analysis Session
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 2: Paper-to-Software Mapping -->
+          <div class="launch-card" data-launch-card="paper">
+            <h2>
+              <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="" width="20" height="20" style="border-radius:4px">
+              2. Map a Paper to Software
+            </h2>
+            <p class="desc">
+              Pull a paper from the internet (<code>arXiv:ID</code>, arXiv URL, or HTTPS link) or select a local paper in this Cockpit, extract its mathematical equations into native MathML &amp; claims, and tie them directly to the Software Process Map.
+            </p>
+            <div class="field-group">
+              <label for="paperCodeTargetInput">Software Path (inside Cockpit) or GitHub Repo URL</label>
+              <input type="text" id="paperCodeTargetInput" class="field-input" value="." placeholder="e.g. . or https://github.com/owner/repo">
+              <div class="candidate-chips" id="paperCodeCandidateChips"></div>
+            </div>
+            <div class="field-group">
+              <label for="paperSourceInput">Paper Source (arXiv ID / URL / HTTPS URL / Local PDF or Markdown)</label>
+              <input type="text" id="paperSourceInput" class="field-input" value="" placeholder="e.g. arXiv:2310.06825 or https://arxiv.org/abs/... or paper.pdf">
+              <div class="candidate-chips" id="paperCandidateChips"></div>
+            </div>
+            <div style="margin-top:auto;padding-top:6px">
+              <button type="button" class="btn btn-primary" id="btnStartPaper" style="width:100%;justify-content:center;padding:9px 14px">
+                Launch Paper ↔ Software Mapping
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STATE B: Active Per-Cockpit Workbench (Locked 4-Mode Wave 5 Architecture) -->
+      <div class="workbench-left" id="workbenchView" hidden>
+        <div class="tab-strip">
+          <button type="button" class="tab-btn active" data-tab="map">
+            1. Conceptual &amp; Process Map <span class="tab-badge" id="badgeMapCount">0</span>
+          </button>
+          <button type="button" class="tab-btn" data-tab="validate">
+            2. Block Drill-Down &amp; Live Probe <span class="tab-badge" id="badgeValidateCount">0/0</span>
+          </button>
+          <button type="button" class="tab-btn" data-tab="remap">
+            3. Old-to-New Map &amp; ∅ Null Space <span class="tab-badge" id="badgeRemapCount">0</span>
+          </button>
+          <button type="button" class="tab-btn" data-tab="paper">
+            4. Paper-to-Software Process &amp; Math Map <span class="tab-badge" id="badgePaperCount">0</span>
+          </button>
+        </div>
+
+        <!-- ================================================================== -->
+        <!-- MODE 1: Conceptual Groupings & Block-to-Block System Process Map    -->
+        <!-- ================================================================== -->
+        <div class="tab-content active" data-tab-panel="map">
+          <div class="mode-header">
+            <div>
+              <h2 class="mode-title">1. Codebase Comprehension — Conceptual Groupings &amp; System Process Map</h2>
+              <p class="mode-subtitle">
+                Functions are organized into human-scale conceptual blocks with explicit <strong>🤖 AI Agent Interaction Seams</strong>. Toggle between <strong>Conceptual Groupings</strong> and the <strong>System Process Map</strong>, or click any block to drill into its inner call flow and live probe.
+              </p>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <div class="view-toggle">
+                <button type="button" class="view-btn active" id="btnViewConceptual">🗂️ Conceptual Groupings</button>
+                <button type="button" class="view-btn" id="btnViewProcess">🔀 System Process Map</button>
+              </div>
+              <div class="view-toggle">
+                <button type="button" class="view-btn active" data-filter-stage="all">All Blocks</button>
+                <button type="button" class="view-btn" data-filter-stage="ingest">Ingest</button>
+                <button type="button" class="view-btn" data-filter-stage="compute">Essential Core</button>
+                <button type="button" class="view-btn" data-filter-stage="emit">Emit</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="orange-banner" id="orangeRecommendationBanner"></div>
+          <div class="metrics-row" id="mapMetricsRow"></div>
+
+          <!-- View 1A: Conceptual Groupings (Cards with Functions & AI Agent Seams) -->
+          <div id="conceptualView">
+            <div id="conceptualFlowDiagramBanner" style="margin-bottom:10px"></div>
+            <div class="bucket-grid" id="conceptualBucketsGrid"></div>
+          </div>
+
+          <!-- View 1B: End-to-End Block-to-Block System Process Map -->
+          <div id="processView" hidden>
+            <div class="process-map-box" id="systemProcessMapContainer"></div>
+          </div>
+        </div>
+
+        <!-- ================================================================== -->
+        <!-- MODE 2: Single-Block Drill-Down, Inner Process Map & Live Probe    -->
+        <!-- ================================================================== -->
+        <div class="tab-content" data-tab-panel="validate">
+          <div class="drill-header">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <button type="button" class="btn" id="btnBackToMap">← Process Map</button>
+              <div>
+                <div style="font-size:10.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em">Single-Block Focus · Select Module to Inspect</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:3px">
+                  <button type="button" class="btn" id="btnPrevBlock" style="padding:4px 8px">◀</button>
+                  <select id="drillBlockSelect" class="drill-select"></select>
+                  <button type="button" class="btn" id="btnNextBlock" style="padding:4px 8px">▶</button>
+                  <span id="drillBlockStatusBadge" class="badge badge-warn">PENDING PROBE</span>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-primary" id="btnRunBlockProbe">▶ Run Code &amp; Test Claim</button>
+              <button type="button" class="btn btn-success" id="btnLockBlockDesc">✓ Lock Validated Description → Anvil Report</button>
+            </div>
+          </div>
+
+          <!-- 1. Inner Process Map (How the Functions Inside This Block Interact) -->
+          <div class="inner-map-box">
+            <div class="inner-map-title">
+              <span id="innerMapHeading">1. Inner Process Map (How the Functions Inside This Block Interact)</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim)" id="innerMapMeta"></span>
+            </div>
+            <div id="innerMemberFilesStrip" class="member-files-strip" style="margin-bottom:8px"></div>
+            <div id="innerFlowDiagramWrap" class="foundry-flow-wrap" style="margin-bottom:10px" hidden></div>
+            <div class="inner-flow" id="innerProcessFlow"></div>
+            <div id="innerCallEdgesStrip" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+          </div>
+
+          <!-- 2 & 3. Claimed Behavior vs. Live Empirical Execution -->
+          <div class="claim-verify-grid">
+            <div class="cv-box">
+              <h4>
+                <span>2. How the Code Is Supposed to Work (Claimed Summary)</span>
+                <span class="badge badge-core" id="drillStageBadge">COMPUTE</span>
+              </h4>
+              <div style="font-size:12px;color:var(--text-dim)" id="drillClaimedText"></div>
+              <label for="drillLockDescInput" style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--amber);margin-top:4px">
+                Validated Description (Editable — Lock into ANVIL-REPORT.md):
+              </label>
+              <textarea id="drillLockDescInput" class="field-input" style="min-height:66px;font-family:var(--sans);resize:vertical"></textarea>
+              <div id="drillOrangeBreakdown" style="font-size:11.5px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px"></div>
+            </div>
+
+            <div class="cv-box">
+              <h4>
+                <span>3. Live Code Execution Test (Claim vs. Actual)</span>
+                <span style="font-family:var(--mono);font-size:11px;color:var(--cyan)" id="drillProbeTimestamp"></span>
+              </h4>
+              <div class="terminal-out" id="drillTerminalOut"></div>
+              <div class="verdict-strip pending" id="drillVerdictStrip"></div>
+            </div>
+          </div>
+
+          <!-- 4. Functions Inside This Block -->
+          <div class="section-box">
+            <div class="section-head">
+              <h3 id="drillFunctionsHeading">4. Functions Inside This Block (Lines, Stage &amp; Role)</h3>
+              <span style="font-size:11px;color:var(--text-dim)">Click "Ask Agent" on any function to discuss its dependencies or refactoring in the right dock</span>
+            </div>
+            <table class="anvil-table">
+              <thead>
+                <tr>
+                  <th>Function</th>
+                  <th>Module &amp; Lines</th>
+                  <th>Stage &amp; Layer</th>
+                  <th>Calls</th>
+                  <th>Plain-English Role</th>
+                  <th>Agent</th>
+                </tr>
+              </thead>
+              <tbody id="drillFunctionsTableBody"></tbody>
+            </table>
+          </div>
+
+          <!-- 5. All-Blocks Validation Ledger (Quick Jump) -->
+          <details class="section-box">
+            <summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--text-dim)">
+              All Blocks Empirical Validation Overview (<span id="allBlocksSummaryCount">0/0</span> Locked — Click to Expand)
+            </summary>
+            <table class="anvil-table" style="margin-top:10px">
+              <thead>
+                <tr>
+                  <th>Block / Module</th>
+                  <th>Stage</th>
+                  <th>Functions</th>
+                  <th>Lines</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="blocksTableBody"></tbody>
+            </table>
+          </details>
+        </div>
+
+        <!-- ================================================================== -->
+        <!-- MODE 3: Old-to-New Best-in-Class Process Map & Explicit Null Space -->
+        <!-- ================================================================== -->
+        <div class="tab-content" data-tab-panel="remap">
+          <div class="mode-header">
+            <div>
+              <h2 class="mode-title">3. Old-to-New Best-in-Class Process Map &amp; Explicit ∅ Null Space</h2>
+              <p class="mode-subtitle">
+                Every module and function in the <strong>Old Monolithic Code</strong> is traced either to the <strong>New Best-in-Class Process Map</strong> (<code>Get-Data</code> → <code>Do-Analysis Essential Core</code> → <code>Create-Output</code>) or to the <strong>Explicit ∅ Null Space</strong> (requiring your sign-off so nothing is dropped by accident).
+              </p>
+            </div>
+            <div class="view-toggle">
+              <button type="button" class="view-btn active" id="btnRemapOverview">🔀 Old-to-New Process Map + ∅ Null Space</button>
+              <button type="button" class="view-btn" id="btnRemapDrill">🔍 Drill Down Into New Code Inner Workings</button>
+            </div>
+          </div>
+
+          <!-- Sub-view 3A: Top Old-to-New Architecture Process Map + 3-Column Old -> New -> Null Space + 3-Stage Pipeline -->
+          <div id="remapOverviewSub" style="display:flex;flex-direction:column;gap:16px">
+            <div id="remapFlowDiagramWrap" class="foundry-flow-wrap" hidden></div>
+            <div class="remap-layout">
+              <!-- Column 1: Old Monolithic Code -->
+              <div class="remap-col">
+                <h4>
+                  <span>Old Monolithic Code</span>
+                  <span class="bucket-tag tag-compute" id="oldMonolithBadge">Before Refactor</span>
+                </h4>
+                <div id="oldMonolithsContainer" style="display:flex;flex-direction:column;gap:8px"></div>
+              </div>
+
+              <!-- Column 2: New Best-in-Class Process Map -->
+              <div class="remap-col">
+                <h4>
+                  <span>New Best-in-Class Process Map (Click to Drill In)</span>
+                  <span class="bucket-tag tag-emit" id="newBestInClassBadge">Target Architecture</span>
+                </h4>
+                <div id="newBestInClassContainer" style="display:flex;flex-direction:column;gap:8px"></div>
+              </div>
+
+              <!-- Column 3: Explicit Null Space -->
+              <div class="remap-col null-col">
+                <h4>
+                  <span style="color:#fca5a5">∅ Null Space (Old Code Not in New Code)</span>
+                  <span class="bucket-tag" id="nullSpaceHeaderBadge" style="background:rgba(239,68,68,0.2);color:#fca5a5">0 Unaccounted</span>
+                </h4>
+                <div style="font-size:11px;color:#fecaca;line-height:1.4">
+                  Every unreferenced or legacy function from the Old Code that is excluded from the New Best-in-Class Core is isolated here. Sign off intentional drops so zero capabilities are lost silently.
+                </div>
+                <div id="nullSpaceCardsContainer" style="display:flex;flex-direction:column;gap:8px"></div>
+              </div>
+            </div>
+
+            <!-- 3-Stage Pipeline Validation Strip -->
+            <div>
+              <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;color:var(--amber);margin-bottom:8px">
+                End-to-End 3-Stage Pipeline Validation — New Best-in-Class Code
+              </div>
+              <div class="pipeline-3stage" id="pipeline3StageContainer"></div>
+            </div>
+          </div>
+
+          <!-- Sub-view 3B: Drill Down Into New Code Inner Workings & Purity Ledger -->
+          <div id="remapDrillSub" hidden style="display:flex;flex-direction:column;gap:14px">
+            <div class="section-box">
+              <div class="section-head">
+                <h3 id="newBlockDrillTitle">New Best-in-Class Architecture — Function-by-Function Mapping &amp; Stage Purity</h3>
+                <button type="button" class="btn" id="btnBackToRemapMap">← Back to 3-Column Old-to-New Map</button>
+              </div>
+              <div id="newBlockCardsDrill" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px"></div>
+            </div>
+
+            <div class="section-box">
+              <div class="section-head">
+                <h3>Get-Data / Do-Analysis / Create-Output Purity Classification</h3>
+              </div>
+              <table class="anvil-table">
+                <thead>
+                  <tr>
+                    <th>Function</th>
+                    <th>Source Module</th>
+                    <th>Target Best-in-Class Stage</th>
+                    <th>Purity</th>
+                    <th>Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody id="purityTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================================================================== -->
+        <!-- MODE 4: Paper-to-Software Process & Native MathML Map               -->
+        <!-- ================================================================== -->
+        <div class="tab-content" data-tab-panel="paper">
+          <div class="mode-header">
+            <div>
+              <h2 class="mode-title">4. Paper-to-Software Process Map &amp; Rendered Mathematical Alignment</h2>
+              <p class="mode-subtitle">
+                See the <strong>Software Process Map</strong> at the top with direct callouts showing where each Paper Equation ties in, followed by 3-column <strong>Paper Equation (Native MathML) ↔ Code Implementation ↔ Live Empirical Verification</strong> cards.
+              </p>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="inlinePaperInput" class="field-input" style="width:270px" placeholder="arXiv:2310.06825, URL, or paper.pdf">
+              <button type="button" class="btn btn-primary" id="btnInlineAttachPaper" style="white-space:nowrap">Attach &amp; Align Paper</button>
+            </div>
+          </div>
+
+          <div id="paperResultsContainer" style="display:flex;flex-direction:column;gap:16px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right-Side Persistent Steward & Anvil Dialogue Dock (Always Visible Across Setup & All 4 Modes) -->
+    <aside class="agent-dock anvil-dialogue-dock" id="anvilDialogueDock">
+      <div class="agent-head">
+        <div class="agent-head-top">
+          <span class="agent-title">
+            <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil">
+            <span>Steward &amp; Anvil Dialogue</span>
+          </span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge badge-core" id="agentTargetBadge">setup · ready</span>
+            <button type="button" class="btn" id="btnToggleDialogueSurface" hidden style="padding:2px 7px;font-size:10px" title="Switch between the live AI Cockpit dialogue stream and the Anvil session log">📋 Anvil Log</button>
+          </div>
+        </div>
+        <div id="anvilModelSeatingStrip" style="font-family:var(--mono);font-size:10px;color:#93c5fd;background:rgba(15,23,42,0.75);border:1px solid rgba(56,189,248,0.25);border-radius:5px;padding:3px 7px;display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <span>⚡ Code: <strong>gemini-4-argon · high</strong></span>
+          <span>🛡 Review: <strong>claude-fable-5-1 · max</strong></span>
+        </div>
+        <div id="anvilLiveQuickBar" hidden style="display:flex;flex-wrap:wrap;gap:4px">
+          <button type="button" class="cand-chip" id="btnQuickVerifyAll" style="font-size:10px;padding:3px 7px;color:#fde68a;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1)">✓ Verify All Buckets</button>
+          <button type="button" class="cand-chip" id="btnQuickSignOffNull" style="font-size:10px;padding:3px 7px;color:#86efac;border-color:rgba(34,197,94,0.35);background:rgba(34,197,94,0.1)">✓ Sign Off ∅ Null Space</button>
+          <button type="button" class="cand-chip" id="btnQuickAegisAudit" style="font-size:10px;padding:3px 7px;color:#c4b5fd;border-color:rgba(167,139,250,0.35);background:rgba(167,139,250,0.12)">🛡 Aegis Security Audit</button>
+        </div>
+        <div class="agent-modes" id="agentModePillsBar">
+          <button type="button" class="mode-pill active" data-agent-mode="map">1. Map</button>
+          <button type="button" class="mode-pill" data-agent-mode="validate">2. Probe</button>
+          <button type="button" class="mode-pill" data-agent-mode="remap">3. Remap</button>
+          <button type="button" class="mode-pill" data-agent-mode="paper">4. Paper</button>
+        </div>
+      </div>
+      <div id="cockpitLiveDialogueWrap" hidden style="flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg-deep)">
+        <iframe id="cockpitLiveDialogueFrame" title="AI Cockpit Steward Dialogue" src="about:blank" style="flex:1;width:100%;height:100%;border:0;min-height:0;background:transparent"></iframe>
+      </div>
+      <div class="agent-messages" id="agentMessages"></div>
+      <div class="agent-composer" id="agentFallbackComposer">
+        <textarea id="agentInput" placeholder="Ask Steward / Anvil about any block, process flow, Old-to-New Best-in-Class remap, or Null Space drop..."></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;color:var(--text-muted)" id="agentStatusHint">Persistent across all 4 pages of Anvil</span>
+          <button type="button" class="btn btn-primary" id="btnAgentSend">Send to Steward / Anvil</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const pid = params.get("pid") || "";
+  const dir = params.get("dir") || "";
+  let token = params.get("token") || "";
+  if (!token) {
+    try { token = localStorage.getItem("anchor_token") || ""; } catch (_) {}
+  }
+
+  let currentState = null;
+  let currentStageFilter = "all";
+  let currentMapSubView = "conceptual"; // "conceptual" | "process"
+  let currentRemapSubView = "overview"; // "overview" | "drill"
+  let selectedDrillBlockId = "";
+  let selectedNewBlockId = "new-block-compute";
+  let currentAgentMode = "map";
+  let currentAgentTarget = "";
+  let preLaunchMessages = [];
+  let dialogueSurfaceMode = pid ? "cockpit" : "log"; // "cockpit" (real AI Cockpit v1 tileview) | "log" (Anvil session log/setup)
+
+  function apiUrl(verb) {
+    const q = new URLSearchParams();
+    if (pid) q.set("pid", pid);
+    if (dir) q.set("dir", dir);
+    if (token) q.set("token", token);
+    const qs = q.toString();
+    return "/api/steward/" + verb + (qs ? "?" + qs : "");
+  }
+
+  function headers() {
+    const h = { "Content-Type": "application/json" };
+    if (token) {
+      h["X-Anchor-Token"] = token;
+      h["Authorization"] = "Bearer " + token;
+    }
+    return h;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById("errorBanner");
+    if (!msg) {
+      el.style.display = "none";
+      el.textContent = "";
+      return;
+    }
+    el.textContent = msg;
+    el.style.display = "block";
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  const ALLOWED_MATHML_TAGS = new Set([
+    "math", "mrow", "mi", "mn", "mo", "mfrac", "msup", "msub",
+    "msubsup", "msqrt", "mroot", "munderover", "munder", "mover",
+    "mtext", "mspace", "mtable", "mtr", "mtd"
+  ]);
+
+  function sanitizeMathML(raw) {
+    if (!raw || typeof raw !== "string") return "";
+    try {
+      const doc = new DOMParser().parseFromString(raw, "text/html");
+      const mathEl = doc.querySelector("math");
+      if (!mathEl) return "";
+      function serializeNode(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          return esc(node.nodeValue || "");
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return "";
+        const tag = (node.tagName || "").toLowerCase();
+        if (!ALLOWED_MATHML_TAGS.has(tag)) return "";
+        const attrs = tag === "math"
+          ? " xmlns=\"http://www.w3.org/1998/Math/MathML\" display=\"block\""
+          : "";
+        let childrenHtml = "";
+        node.childNodes.forEach(ch => {
+          childrenHtml += serializeNode(ch);
+        });
+        return `<${tag}${attrs}>${childrenHtml}</${tag}>`;
+      }
+      return serializeNode(mathEl);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function loadSession() {
+    showError("");
+    if (!currentState) {
+      currentState = {
+        ok: true,
+        active: false,
+        session: null,
+        cockpit_name: params.get("name") || dir || "AI Cockpit",
+        candidates: { software: [{ path: ".", label: "This Cockpit Folder" }], papers: [] }
+      };
+      renderAll();
+    }
+    try {
+      const r = await fetch(apiUrl("anvil"), { headers: headers() });
+      const data = await r.json();
+      if (!r.ok || data.ok === false) {
+        showError(data.error || ("Anvil status returned HTTP " + r.status));
+        return;
+      }
+      if (data.warning) showError(data.warning);
+      currentState = data;
+      renderAll();
+    } catch (err) {
+      showError("Failed to load Anvil session: " + err.message);
+    }
+  }
+
+  async function postAnvil(payload, btn) {
+    showError("");
+    const origText = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Working…";
+    }
+    try {
+      const bodyObj = Object.assign({}, payload);
+      if (dir) bodyObj.dir = dir;
+      if (pid) bodyObj.pid = pid;
+      const r = await fetch(apiUrl("anvil"), {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(bodyObj),
+      });
+      const data = await r.json();
+      if (!r.ok || data.ok === false) {
+        showError(data.error || "Anvil operation failed");
+        return null;
+      }
+      currentState = data;
+      renderAll();
+      return data;
+    } catch (err) {
+      showError("Anvil request failed: " + err.message);
+      return null;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  }
+
+  function renderCandidateChips(containerId, items, inputId) {
+    const host = document.getElementById(containerId);
+    const input = document.getElementById(inputId);
+    if (!host || !input) return;
+    host.innerHTML = "";
+    (items || []).slice(0, 8).forEach(item => {
+      const val = typeof item === "string" ? item : (item.path || ".");
+      const label = typeof item === "string" ? item : (item.label || item.path || ".");
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "cand-chip";
+      chip.textContent = label;
+      chip.title = val;
+      chip.addEventListener("click", () => {
+        input.value = val;
+      });
+      host.appendChild(chip);
+    });
+  }
+
+  function openBlockDrillDown(blockId) {
+    if (!blockId) return;
+    selectedDrillBlockId = blockId;
+    currentAgentTarget = blockId;
+    const badge = document.getElementById("agentTargetBadge");
+    if (badge) badge.textContent = blockId;
+    if (currentState && currentState.session) {
+      renderValidateTab(currentState.session);
+    }
+    switchTab("validate");
+  }
+
+  function renderAll() {
+    if (!currentState) return;
+    const cname = currentState.cockpit_name || "AI Cockpit";
+    document.getElementById("cockpitNamePill").textContent = "Cockpit: " + cname;
+    document.getElementById("launcherTitle").textContent = "Anvil Session Launcher — " + cname;
+
+    const cands = currentState.candidates || {};
+    const swCands = (cands.software && cands.software.length) ? cands.software : [{ path: ".", label: "This Cockpit Folder" }];
+    const paperCands = cands.papers || [];
+    renderCandidateChips("codeCandidateChips", swCands, "codeTargetInput");
+    renderCandidateChips("paperCodeCandidateChips", swCands, "paperCodeTargetInput");
+    renderCandidateChips("paperCandidateChips", paperCands, "paperSourceInput");
+
+    const isActive = Boolean(currentState.active && currentState.session);
+    document.getElementById("launcherView").hidden = isActive;
+    document.getElementById("workbenchView").hidden = !isActive;
+    const switchBtn = document.getElementById("btnSwitchLauncher");
+    switchBtn.hidden = !isActive;
+    switchBtn.textContent = "⚙ Configure / New Session";
+    document.getElementById("btnResetSession").hidden = !isActive;
+
+    const swPill = document.getElementById("softwareTargetPill");
+    const paperPill = document.getElementById("paperTargetPill");
+    if (!isActive) {
+      swPill.hidden = true;
+      paperPill.hidden = true;
+      renderAgentDock(null, cands, cname);
+      return;
+    }
+
+    const sess = currentState.session;
+    const sw = sess.software || {};
+    swPill.hidden = false;
+    swPill.textContent = "Software: " + (sw.label || sw.spec || ".");
+    swPill.title = sw.path || sw.label || "";
+
+    const paper = sess.paper_map || null;
+    if (paper && paper.paper_title) {
+      paperPill.hidden = false;
+      paperPill.textContent = "Paper: " + paper.paper_title;
+    } else {
+      paperPill.hidden = true;
+    }
+
+    renderMapTab(sess);
+    renderValidateTab(sess);
+    renderRemapTab(sess);
+    renderPaperTab(sess);
+    renderAgentDock(sess, cands, cname);
+  }
+
+  function normalizeFlowForFoundry(raw) {
+    if (!raw || !Array.isArray(raw.steps) || !raw.steps.length) return null;
+    const dRaw = raw.diagram || {};
+    const nodesMap = {};
+    if (Array.isArray(dRaw.nodes)) {
+      dRaw.nodes.forEach((n, idx) => {
+        if (n && n.id) {
+          nodesMap[n.id] = {
+            col: Number.isFinite(n.col) ? n.col : (idx % 4),
+            row: Number.isFinite(n.row) ? n.row : Math.floor(idx / 4)
+          };
+        }
+      });
+    } else if (dRaw.nodes && typeof dRaw.nodes === "object") {
+      Object.entries(dRaw.nodes).forEach(([k, v]) => {
+        if (v && typeof v === "object") {
+          nodesMap[k] = {
+            col: Number.isFinite(v.col) ? v.col : 0,
+            row: Number.isFinite(v.row) ? v.row : 0
+          };
+        }
+      });
+    }
+    const steps = raw.steps.map((s, idx) => {
+      const id = String(s.id || `step-${idx + 1}`);
+      if (!nodesMap[id]) {
+        nodesMap[id] = { col: idx % 4, row: Math.floor(idx / 4) };
+      }
+      const numPrefix = s.num ? `${s.num}. ` : "";
+      const rawTitle = String(s.title || s.label || id);
+      const cleanTitle = rawTitle.startsWith(numPrefix) ? rawTitle : `${numPrefix}${rawTitle}`;
+      return {
+        id,
+        title: cleanTitle,
+        display_type: String(s.display_type || s.shape || "program"),
+        kind: s.kind || "step",
+        summary: String(s.summary || s.Summary || ""),
+      };
+    });
+    const stepSet = new Set(steps.map(s => s.id));
+    const bands = [];
+    const edges = (raw.edges || [])
+      .map(e => ({
+        source: String(e.source || e.from || ""),
+        target: String(e.target || e.to || ""),
+        label: String(e.label || e.via || ""),
+      }))
+      .filter(e => e.source && e.target && e.source !== e.target && stepSet.has(e.source) && stepSet.has(e.target) && nodesMap[e.source] && nodesMap[e.target]);
+
+    return {
+      steps,
+      edges,
+      disagreements: raw.disagreements || [],
+      diagram: {
+        col_width: dRaw.col_width || 228,
+        row_height: dRaw.row_height || 92,
+        node_width: dRaw.node_width || 180,
+        node_height: dRaw.node_height || 54,
+        bands,
+        nodes: nodesMap,
+      },
+    };
+  }
+
+  function renderFoundryFlowInto(hostEl, flowObj, onSelectId, headerLabel) {
+    if (!hostEl) return;
+    const normalized = normalizeFlowForFoundry(flowObj);
+    if (!normalized || !window.FoundryFlowDiagram) {
+      hostEl.innerHTML = "";
+      return;
+    }
+    try {
+      if (window.FoundryFlowDiagram.style && !document.querySelector("style[data-foundry-flow]")) {
+        document.head.insertAdjacentHTML("beforeend", window.FoundryFlowDiagram.style);
+      }
+      const legendHtml = (typeof window.FoundryFlowDiagram.legend === "function")
+        ? window.FoundryFlowDiagram.legend()
+        : "";
+      const svgHtml = window.FoundryFlowDiagram.renderFlowDiagram(normalized, {
+        selected: selectedDrillBlockId || null
+      });
+      hostEl.innerHTML = `
+        <div class="foundry-flow-host">
+          <div class="foundry-flow-header">
+            <div class="foundry-flow-title">🗺 ${esc(headerLabel || flowObj.summary || flowObj.title || "Agreed-Upon Anchor Architecture Process Map")}</div>
+          </div>
+          ${legendHtml}
+          <div style="overflow-x:auto;padding-bottom:4px">${svgHtml}</div>
+        </div>`;
+      if (typeof onSelectId === "function") {
+        hostEl.querySelectorAll("a.fd-node[data-step]").forEach(node => {
+          node.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            const stepId = node.getAttribute("data-step");
+            if (stepId) onSelectId(stepId);
+          });
+        });
+      }
+    } catch (err) {
+      console.warn("FoundryFlowDiagram render warning:", err);
+      hostEl.innerHTML = "";
+    }
+  }
+
+  /* ====================================================================== */
+  /* MODE 1: Conceptual Groupings & Block-to-Block System Process Map       */
+  /* ====================================================================== */
+  function renderMapTab(sess) {
+    const codeMap = sess.code_map || {};
+    const buckets = codeMap.conceptual_buckets || [];
+    const procMap = codeMap.process_map || { nodes: [], edges: [] };
+    const orange = sess.orange_split || {};
+    const counts = orange.counts || {};
+
+    const totalFns = buckets.reduce((acc, b) => acc + ((b.functions || []).length), 0) || counts.total_symbols || 0;
+    const totalModules = (codeMap.module_buckets || buckets).length;
+    const juiceCount = counts.juice_count || 0;
+    const peelCount = counts.peel_count || 0;
+    const pithCount = counts.pith_and_seeds_count || 0;
+    const verifiedBlocks = buckets.filter(b => b.validated).length;
+    const aiTouchBlocks = buckets.filter(b => (b.ai_agent_touchpoints || []).length > 0 || b.ai_agent_summary).length;
+
+    document.getElementById("badgeMapCount").textContent = buckets.length + " blocks · " + totalFns + " fn";
+
+    // Parable of the Oranges Banner
+    const bannerEl = document.getElementById("orangeRecommendationBanner");
+    const shortRec = `Synthesized ${totalModules} source modules (${totalFns} functions) into ${buckets.length} Agreed-Upon Conceptual Architectural Buckets (${juiceCount} Essential Core Juice + ${peelCount} Peel I/O Contracts) and isolated ${pithCount} unreferenced helper(s) in the ∅ Null Space Ledger.`;
+    bannerEl.innerHTML = `
+      <div class="orange-banner-text">
+        <strong>🍊 Parable of the Oranges (One-Trip Staff Work):</strong>
+        ${esc(shortRec)}
+      </div>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="btn" id="btnJumpToProcessFromBanner" style="font-size:11px;padding:4px 9px">
+          🗺 View Process Map
+        </button>
+        <button type="button" class="btn btn-primary" id="btnJumpToRemapFromBanner" style="font-size:11px;padding:4px 9px">
+          View Old → New Best-in-Class Map ──▶
+        </button>
+      </div>`;
+    const jumpProcBtn = document.getElementById("btnJumpToProcessFromBanner");
+    if (jumpProcBtn) {
+      jumpProcBtn.addEventListener("click", () => {
+        currentMapSubView = "process";
+        renderMapTab(sess);
+      });
+    }
+    const jumpBtn = document.getElementById("btnJumpToRemapFromBanner");
+    if (jumpBtn) {
+      jumpBtn.addEventListener("click", () => switchTab("remap"));
+    }
+
+    // Metrics Row
+    document.getElementById("mapMetricsRow").innerHTML = [
+      { val: buckets.length + " Buckets", lab: totalModules + " Modules · " + totalFns + " Functions" },
+      { val: juiceCount, lab: "Essential Core (Juice · Do-Analysis)" },
+      { val: peelCount, lab: "Surface I/O Contracts (Peel · Ingest/Emit)" },
+      { val: pithCount, lab: "∅ Null Space Candidates (Pith & Seeds)" },
+      { val: aiTouchBlocks, lab: "🤖 Buckets with AI Agent Seams" },
+      { val: verifiedBlocks + " / " + buckets.length, lab: "Empirically Locked Buckets" }
+    ].map(m => `<div class="metric-card"><div class="m-val">${esc(m.val)}</div><div class="m-lab">${esc(m.lab)}</div></div>`).join("");
+
+    // Toggle Conceptual vs Process View
+    document.getElementById("conceptualView").hidden = (currentMapSubView !== "conceptual");
+    document.getElementById("processView").hidden = (currentMapSubView !== "process");
+    document.getElementById("btnViewConceptual").classList.toggle("active", currentMapSubView === "conceptual");
+    document.getElementById("btnViewProcess").classList.toggle("active", currentMapSubView === "process");
+
+    const filteredBuckets = buckets.filter(b => currentStageFilter === "all" || b.pipeline_stage === currentStageFilter);
+
+    const conceptualFlowHost = document.getElementById("conceptualFlowDiagramBanner");
+    if (conceptualFlowHost) {
+      if (procMap.flow_diagram) {
+        renderFoundryFlowInto(
+          conceptualFlowHost,
+          procMap.flow_diagram,
+          (stepId) => openBlockDrillDown(stepId),
+          "Agreed-Upon Anchor Architecture · End-to-End System Process Map (Click any node or card below to drill down)"
+        );
+      } else {
+        conceptualFlowHost.innerHTML = "";
+      }
+    }
+
+    // 1A. Render Conceptual Groupings Cards (bucket-card)
+    const gridHost = document.getElementById("conceptualBucketsGrid");
+    if (!filteredBuckets.length) {
+      gridHost.innerHTML = `<div class="section-box" style="color:var(--text-dim)">No conceptual blocks match the current stage filter.</div>`;
+    } else {
+      gridHost.innerHTML = filteredBuckets.map((b, idx) => {
+        const stg = b.pipeline_stage || "compute";
+        const tagClass = stg === "ingest" ? "tag-ingest" : (stg === "emit" ? "tag-emit" : "tag-compute");
+        const tagLabel = stg === "ingest" ? "INGEST · GET-DATA" : (stg === "emit" ? "EMIT · CREATE-OUTPUT" : "COMPUTE · ESSENTIAL CORE");
+        const fns = b.functions || [];
+        const aiTouch = (b.ai_agent_touchpoints || []);
+        const memberFiles = b.member_files || (b.file ? [b.file] : []);
+        const memberChipsHtml = memberFiles.length ? `
+          <div class="member-files-strip">
+            ${memberFiles.slice(0, 8).map(mf => `<span class="member-chip">${esc(mf)}</span>`).join("")}
+            ${memberFiles.length > 8 ? `<span class="member-chip">+${memberFiles.length - 8} more</span>` : ""}
+          </div>` : "";
+        const fnRows = fns.slice(0, 5).map(fn => {
+          const sig = fn.name + "(" + (fn.args || []).slice(0, 3).join(", ") + ")";
+          const filePrefix = (memberFiles.length > 1 && fn.file) ? (fn.file.split("/").pop() + ":") : "L";
+          return `
+            <div class="fn-item">
+              <span class="fn-sig" title="${esc(sig)}">${esc(sig)}</span>
+              <span class="fn-meta">${esc(filePrefix)}${esc(fn.lineno)} · ${esc((fn.stage || stg).toUpperCase())}</span>
+            </div>`;
+        }).join("");
+        const moreCount = Math.max(0, fns.length - 5);
+
+        const aiSummaryText = b.ai_agent_summary || (aiTouch[0] ? (aiTouch[0].badge + " · Keywords: " + (aiTouch[0].keywords || []).join(", ")) : "");
+        const aiHtml = (aiTouch.length || b.ai_agent_summary) ? `
+          <div class="ai-callout">
+            <strong>🤖 Where &amp; How AI Agents Interact (${esc(aiTouch.length || 1)} seam${(aiTouch.length || 1) > 1 ? 's' : ''})</strong>
+            <span>${esc(aiSummaryText)}</span>
+          </div>` : "";
+
+        return `
+          <div class="bucket-card ${b.validated ? 'validated' : ''}" data-open-block="${esc(b.id)}">
+            <div class="bucket-head">
+              <div class="bucket-name">${esc(b.title || ("Block " + (idx + 1) + " · " + b.id))}</div>
+              <span class="bucket-tag ${tagClass}">${esc(tagLabel)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="bucket-file">${esc(b.file || "")} · ${esc(fns.length)} fn (${esc(b.total_lines || "—")} lines)</span>
+              <span class="badge ${b.validated ? 'badge-ok' : 'badge-warn'}">${b.validated ? '✓ Validated' : '⏳ Click to Probe'}</span>
+            </div>
+            ${memberChipsHtml}
+            <div class="bucket-desc">${esc(b.validated_description || b.summary || "")}</div>
+            <div class="bucket-fns">
+              ${fnRows}
+              ${moreCount > 0 ? `<div style="font-size:10.5px;color:var(--amber);font-family:var(--mono);padding-left:4px">+ ${moreCount} more functions across ${memberFiles.length} module(s) (click card to drill in)</div>` : ""}
+            </div>
+            ${aiHtml}
+          </div>`;
+      }).join("");
+
+      gridHost.querySelectorAll("[data-open-block]").forEach(card => {
+        card.addEventListener("click", () => {
+          openBlockDrillDown(card.getAttribute("data-open-block"));
+        });
+      });
+    }
+
+    // 1B. Render Block-to-Block System Process Map (FoundryFlowDiagram + 3 Pipeline Lanes + Cross-Block Edges)
+    const procHost = document.getElementById("systemProcessMapContainer");
+    const edges = procMap.edges || [];
+    const edgeByFrom = {};
+    edges.forEach(e => {
+      if (!edgeByFrom[e.from]) edgeByFrom[e.from] = [];
+      edgeByFrom[e.from].push(e);
+    });
+
+    const lanes = [
+      {
+        key: "ingest",
+        title: "Stage 1 · Getting the Data (Ingest & State Readers)",
+        color: "var(--cyan)",
+        badge: "PEEL · INGEST",
+        items: buckets.filter(b => b.pipeline_stage === "ingest")
+      },
+      {
+        key: "compute",
+        title: "Stage 2 · Doing the Analysis (Essential Core / Juice & AI Agent Seams)",
+        color: "var(--amber)",
+        badge: "JUICE · DO-ANALYSIS",
+        items: buckets.filter(b => (b.pipeline_stage || "compute") === "compute")
+      },
+      {
+        key: "emit",
+        title: "Stage 3 · Creating the Output (Emit, UI Renderers & HTTP Routes)",
+        color: "var(--green)",
+        badge: "PEEL · EMIT",
+        items: buckets.filter(b => b.pipeline_stage === "emit")
+      }
+    ];
+
+    const lanesHtml = lanes.map(lane => {
+      if (!lane.items.length) {
+        return `
+          <div class="process-stage-lane">
+            <div class="lane-header">
+              <span class="lane-title" style="color:${lane.color}">${esc(lane.title)}</span>
+              <span class="badge badge-scaf">0 blocks</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--text-muted)">Functions in this stage are currently embedded inside mixed-stage modules (see Mode 3 Old-to-New Map for extraction).</div>
+          </div>`;
+      }
+      let flowHtml = "";
+      lane.items.forEach((b, idx) => {
+        const aiTouch = (b.ai_agent_touchpoints || []);
+        const outEdges = edgeByFrom[b.id] || [];
+        const firstFn = (b.functions && b.functions[0]) ? b.functions[0].name + "()" : b.file;
+        const lastFn = (b.functions && b.functions.length > 1) ? b.functions[b.functions.length - 1].name + "()" : "";
+        flowHtml += `
+          <div class="proc-node ${aiTouch.length || b.ai_agent_summary ? 'ai-seam' : ''} ${b.validated ? 'validated' : ''}" data-proc-block="${esc(b.id)}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="proc-step-num">${esc(lane.key.toUpperCase())} · ${idx + 1}</span>
+              <span style="font-size:10px;font-family:var(--mono);color:${b.validated ? 'var(--green)' : 'var(--text-muted)'}">${b.validated ? '✓ LOCKED' : (b.total_lines || 0) + 'L'}</span>
+            </div>
+            <div class="proc-title">${esc(b.title || b.id)}</div>
+            <div style="font-family:var(--mono);font-size:10.5px;color:var(--cyan)">${esc(b.file)} · ${(b.functions || []).length} fn</div>
+            <div class="proc-io">Entry: ${esc(firstFn)}${lastFn ? " → " + esc(lastFn) : ""}</div>
+            ${(aiTouch.length || b.ai_agent_summary) ? `<div style="font-size:10.5px;color:#d8b4fe;font-weight:600">🤖 ${esc((aiTouch[0] && aiTouch[0].badge) || "AI Agent Seam")}</div>` : ""}
+          </div>`;
+        if (idx < lane.items.length - 1) {
+          const viaLabel = (outEdges[0] && outEdges[0].via) ? outEdges[0].via : "──▶";
+          flowHtml += `<div class="proc-arrow">──▶<span>${esc(viaLabel)}</span></div>`;
+        }
+      });
+      return `
+        <div class="process-stage-lane">
+          <div class="lane-header">
+            <span class="lane-title" style="color:${lane.color}">${esc(lane.title)}</span>
+            <span class="badge badge-core">${lane.items.length} bucket${lane.items.length > 1 ? 's' : ''} · Click any node to drill into Mode 2</span>
+          </div>
+          <div class="process-flow">${flowHtml}</div>
+        </div>`;
+    }).join(`<div style="text-align:center;color:var(--amber);font-family:var(--mono);font-size:12px;font-weight:700">⬇ Pipeline Data &amp; State Handoff ⬇</div>`);
+
+    const crossEdgesHtml = edges.length ? `
+      <div style="border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">
+          Cross-Bucket Call Edges Discovered (${edges.length} inter-bucket links)
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${edges.slice(0, 24).map(e => `
+            <span class="cand-chip" data-edge-from="${esc(e.from)}" title="Click to inspect caller bucket">
+              ${esc(e.via || (e.from + " -> " + e.to))}
+            </span>`).join("")}
+        </div>
+      </div>` : "";
+
+    procHost.innerHTML = `<div id="systemFoundryDiagramMount"></div>` + lanesHtml + crossEdgesHtml;
+    if (procMap.flow_diagram) {
+      renderFoundryFlowInto(
+        document.getElementById("systemFoundryDiagramMount"),
+        procMap.flow_diagram,
+        (stepId) => openBlockDrillDown(stepId),
+        "Agreed-Upon Anchor Architecture · Orthogonal System Process Map (Click any block to drill down)"
+      );
+    }
+    procHost.querySelectorAll("[data-proc-block]").forEach(node => {
+      node.addEventListener("click", () => openBlockDrillDown(node.getAttribute("data-proc-block")));
+    });
+    procHost.querySelectorAll("[data-edge-from]").forEach(chip => {
+      chip.addEventListener("click", () => openBlockDrillDown(chip.getAttribute("data-edge-from")));
+    });
+  }
+
+  /* ====================================================================== */
+  /* MODE 2: Single-Block Drill-Down, Inner Process Map & Live Probe        */
+  /* ====================================================================== */
+  function renderValidateTab(sess) {
+    const buckets = (sess.code_map && sess.code_map.conceptual_buckets) || [];
+    const orange = sess.orange_split || {};
+    const juiceNames = new Set((orange.juice || []).map(j => j.name));
+    const pithNames = new Set((orange.pith_and_seeds || []).map(p => p.name));
+
+    const verifiedCount = buckets.filter(b => b.validated).length;
+    document.getElementById("badgeValidateCount").textContent = verifiedCount + "/" + buckets.length;
+    document.getElementById("allBlocksSummaryCount").textContent = verifiedCount + "/" + buckets.length;
+
+    if (!buckets.length) {
+      document.getElementById("innerProcessFlow").innerHTML = `<div style="color:var(--text-dim)">No blocks discovered.</div>`;
+      return;
+    }
+
+    if (!selectedDrillBlockId || !buckets.some(b => b.id === selectedDrillBlockId)) {
+      selectedDrillBlockId = sess.selected_block_id || buckets[0].id;
+    }
+    const blockIdx = Math.max(0, buckets.findIndex(b => b.id === selectedDrillBlockId));
+    const block = buckets[blockIdx] || buckets[0];
+    selectedDrillBlockId = block.id;
+
+    // Populate Block Selector Dropdown
+    const selEl = document.getElementById("drillBlockSelect");
+    selEl.innerHTML = buckets.map((b, i) => `
+      <option value="${esc(b.id)}" ${b.id === block.id ? "selected" : ""}>
+        ${esc(b.title || ("Block " + (i + 1) + ": " + b.id))} (${esc(b.file)}) — ${(b.functions || []).length} fn ${b.validated ? "✓" : ""}
+      </option>`).join("");
+
+    const verified = Boolean(block.validated);
+    const stBadge = document.getElementById("drillBlockStatusBadge");
+    stBadge.className = "badge " + (verified ? "badge-ok" : "badge-warn");
+    stBadge.textContent = verified ? "✓ VALIDATED & LOCKED IN ANVIL REPORT" : "⏳ UNVALIDATED CLAIM — READY FOR PROBE";
+
+    // 1. Inner Process Map
+    const fns = block.functions || [];
+    const innerMap = block.inner_process_map || { steps: fns, edges: [] };
+    const steps = (innerMap.steps && innerMap.steps.length) ? innerMap.steps : fns.slice(0, 12);
+    const innerEdges = innerMap.edges || [];
+    const memberFiles = block.member_files || (block.file ? [block.file] : []);
+
+    document.getElementById("innerMapHeading").textContent =
+      `1. Inner Process Map — How Functions Inside ${block.title || block.file} Interact`;
+    document.getElementById("innerMapMeta").textContent =
+      `${memberFiles.length} module(s) · ${fns.length} functions · ${block.total_lines || "—"} lines · ${innerEdges.length} internal call links`;
+
+    const memberStripEl = document.getElementById("innerMemberFilesStrip");
+    if (memberStripEl) {
+      memberStripEl.innerHTML = memberFiles.length
+        ? `<span style="font-size:11px;color:var(--text-muted);align-self:center">Member Modules:</span>` +
+          memberFiles.map(mf => `<span class="member-chip">${esc(mf)}</span>`).join("")
+        : "";
+    }
+
+    const innerDiagramWrap = document.getElementById("innerFlowDiagramWrap");
+    if (innerDiagramWrap) {
+      if (innerMap.flow_diagram) {
+        renderFoundryFlowInto(
+          innerDiagramWrap,
+          innerMap.flow_diagram,
+          null,
+          `${block.title || block.id} · Inner Function Call & Stage Flow`
+        );
+      } else {
+        innerDiagramWrap.innerHTML = "";
+      }
+    }
+
+    const innerFlowEl = document.getElementById("innerProcessFlow");
+    if (!steps.length) {
+      innerFlowEl.innerHTML = `<div style="color:var(--text-dim)">No functions extracted in this block.</div>`;
+    } else {
+      let stepsHtml = "";
+      steps.forEach((st, idx) => {
+        const ai = st.ai_interaction;
+        const roleTag = st.is_entrypoint ? "ENTRYPOINT" : (st.stage || "compute").toUpperCase();
+        const sig = st.name + "(" + (st.args || []).slice(0, 2).join(", ") + ")";
+        stepsHtml += `
+          <div class="inner-step ${ai ? 'ai-step' : ''}">
+            <div style="display:flex;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--amber)">
+              <span>STEP ${idx + 1} · L${esc(st.lineno)}</span>
+              <span>${esc(roleTag)}</span>
+            </div>
+            <div class="step-fn" title="${esc(sig)}">${esc(sig)}</div>
+            <div class="step-desc">${esc(st.summary || "")}</div>
+            ${ai ? `<div style="font-size:10px;color:#d8b4fe;margin-top:auto">🤖 ${esc(ai.badge || "AI Agent Seam")}</div>` : ""}
+          </div>`;
+        if (idx < steps.length - 1) {
+          stepsHtml += `<div class="inner-arrow">──▶</div>`;
+        }
+      });
+      innerFlowEl.innerHTML = stepsHtml;
+    }
+
+    const edgesStrip = document.getElementById("innerCallEdgesStrip");
+    if (innerEdges.length) {
+      edgesStrip.innerHTML = `<span style="font-size:11px;color:var(--text-muted)">Internal Call Chain:</span>` +
+        innerEdges.slice(0, 14).map(e => `<span class="cand-chip" style="cursor:default">${esc(e.from)}() ──▶ ${esc(e.to)}()</span>`).join("");
+    } else {
+      edgesStrip.innerHTML = `<span style="font-size:11px;color:var(--text-muted)">Functions in this bucket act as independent handlers/utilities (0 internal cross-calls).</span>`;
+    }
+
+    // 2. Claimed Behavior & Parable of the Oranges Breakdown
+    document.getElementById("drillStageBadge").textContent = (block.pipeline_stage || "compute").toUpperCase();
+    document.getElementById("drillClaimedText").textContent =
+      block.summary || `Bucket ${block.title || block.file} implements ${fns.length} functions in the ${(block.pipeline_stage || "compute").toUpperCase()} stage.`;
+    const lockInput = document.getElementById("drillLockDescInput");
+    lockInput.value = block.validated_description || block.summary || "";
+
+    const bJuice = fns.filter(f => !pithNames.has(f.name) && (juiceNames.has(f.name) || f.stage === "compute")).length;
+    const bPeel = fns.filter(f => !pithNames.has(f.name) && !juiceNames.has(f.name) && f.stage !== "compute").length;
+    const bPith = fns.filter(f => pithNames.has(f.name)).length;
+    document.getElementById("drillOrangeBreakdown").innerHTML =
+      `<strong>Parable of the Oranges Split inside <code>${esc(block.title || block.file)}</code>:</strong> ` +
+      `<span class="badge badge-core">${bJuice} Juice (Essential Core)</span> · ` +
+      `<span class="badge badge-scaf">${bPeel} Peel (I/O Contracts)</span> · ` +
+      `<span class="badge ${bPith > 0 ? 'badge-warn' : 'badge-ok'}">${bPith} Pith &amp; Seeds (Null Space)</span>`;
+
+    // 3. Live Code Execution Test (Claim vs. Actual)
+    const emp = block.empirical_validation || {};
+    document.getElementById("drillProbeTimestamp").textContent = emp.checked_at ? ("Last Probed: " + emp.checked_at.slice(11, 19) + " UTC") : "Not yet probed";
+    const termEl = document.getElementById("drillTerminalOut");
+    if (emp.stdout) {
+      termEl.textContent = "$ anvil probe_block --block " + block.id + " (" + (block.file || "") + ")\n" + emp.stdout;
+    } else {
+      termEl.textContent =
+        "$ anvil probe_block --block " + block.id + " (" + (block.file || "") + ")\n" +
+        "# Ready to run deterministic AST parse, bytecode compile, and Ruff undefined-name/syntax gate across all member modules.\n" +
+        "# Click '▶ Run Code & Test Claim' above to execute.";
+    }
+
+    const vStrip = document.getElementById("drillVerdictStrip");
+    if (verified) {
+      vStrip.className = "verdict-strip";
+      vStrip.innerHTML = `<span>✓ Empirical Verdict: Code Execution Matches Claimed Behavior (${esc(emp.status || "PASS")})</span><span>Locked in ANVIL-REPORT.md</span>`;
+    } else {
+      vStrip.className = "verdict-strip pending";
+      vStrip.innerHTML = `<span>⏳ Empirical Status: ${esc(emp.status || "PENDING LIVE PROBE")}</span><span>Click "▶ Run Code &amp; Test Claim" to verify</span>`;
+    }
+
+    // 4. Functions Table inside Selected Block
+    document.getElementById("drillFunctionsHeading").textContent =
+      `4. Functions Inside ${block.title || block.file} (${fns.length} functions)`;
+    const fnTbody = document.getElementById("drillFunctionsTableBody");
+    fnTbody.innerHTML = fns.map(fn => {
+      const isPith = pithNames.has(fn.name);
+      const isCore = !isPith && (juiceNames.has(fn.name) || fn.stage === "compute");
+      const layerBadge = isPith
+        ? `<span class="badge badge-warn">PITH · NULL SPACE</span>`
+        : (isCore ? `<span class="badge badge-core">JUICE · CORE</span>` : `<span class="badge badge-scaf">PEEL · ${(fn.stage || "IO").toUpperCase()}</span>`);
+      const locLabel = (fn.file ? (fn.file.split("/").pop() + ":") : "L") + fn.lineno + "–" + (fn.end_lineno || fn.lineno);
+      return `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700;color:#fff">${esc(fn.name)}(${esc((fn.args || []).join(", "))})</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">${esc(locLabel)}</td>
+          <td>${layerBadge}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--cyan)">${esc((fn.calls || []).slice(0, 4).join(", ") || "—")}</td>
+          <td style="color:var(--text-dim)">${esc(fn.summary || "")}</td>
+          <td>
+            <button type="button" class="btn" style="padding:2px 7px;font-size:11px" data-ask-fn="${esc(fn.name)}" data-ask-block="${esc(block.id)}">Ask Agent</button>
+          </td>
+        </tr>`;
+    }).join("");
+
+    fnTbody.querySelectorAll("[data-ask-fn]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const fnName = btn.getAttribute("data-ask-fn");
+        const promptText =
+          "In `" + (block.title || block.file) + "`, explain how `" + fnName + "` works, what it calls, and how we should refactor it into the Best-in-Class architecture.";
+        prefillCockpitOrAnvilComposer(promptText, fnName, "validate");
+      });
+    });
+
+    // 5. All-Blocks Table
+    const tbody = document.getElementById("blocksTableBody");
+    tbody.innerHTML = buckets.map(b => {
+      const isVer = Boolean(b.validated);
+      const stg = (b.pipeline_stage || "compute").toUpperCase();
+      const fnNames = (b.functions || []).map(f => f.name);
+      return `
+        <tr style="${b.id === block.id ? 'background:rgba(245,158,11,0.08)' : ''}">
+          <td>
+            <div style="font-family:var(--mono);font-weight:700;cursor:pointer;color:var(--cyan)" data-select-block-row="${esc(b.id)}">${esc(b.title || b.id)}</div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">${esc(b.file || "")}</div>
+          </td>
+          <td><span class="badge ${b.pipeline_stage === 'compute' ? 'badge-core' : 'badge-scaf'}">${esc(stg)}</span></td>
+          <td style="font-family:var(--mono);font-size:11px">${esc(fnNames.slice(0, 5).join(", "))}${fnNames.length > 5 ? "…" : ""}</td>
+          <td style="font-family:var(--mono)">${esc(b.total_lines || "—")}</td>
+          <td><span class="badge ${isVer ? 'badge-ok' : 'badge-warn'}">${isVer ? 'LOCKED & VERIFIED' : 'PENDING PROBE'}</span></td>
+          <td>
+            <button type="button" class="btn ${isVer ? '' : 'btn-primary'}" data-probe-block="${esc(b.id)}" style="padding:3px 9px;font-size:11px">
+              ${isVer ? '↻ Re-Probe' : '✓ Probe & Lock'}
+            </button>
+          </td>
+        </tr>`;
+    }).join("");
+
+    tbody.querySelectorAll("[data-select-block-row]").forEach(el => {
+      el.addEventListener("click", () => openBlockDrillDown(el.getAttribute("data-select-block-row")));
+    });
+    tbody.querySelectorAll("[data-probe-block]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const bid = btn.getAttribute("data-probe-block");
+        selectedDrillBlockId = bid;
+        postAnvil({ action: "probe_block", block_id: bid, lock_description: "" }, btn);
+      });
+    });
+  }
+
+  /* ====================================================================== */
+  /* MODE 3: 3-Column Old-to-New Best-in-Class Map & Explicit Null Space    */
+  /* ====================================================================== */
+  function renderRemapTab(sess) {
+    const remap = sess.remap || {};
+    const nsObj = remap.null_space || {};
+    const nsItems = nsObj.items || [];
+    const bic = remap.best_in_class_map || { old_monoliths: [], new_blocks: [], architecture_blocks: [], totals: {} };
+    const buckets = (sess.code_map && sess.code_map.conceptual_buckets) || [];
+    const pipeVal = remap.pipeline_validation || {};
+
+    const unaccountedCount = nsItems.filter(it => it.disposition !== "intentional_drop_signed_off").length;
+    document.getElementById("badgeRemapCount").textContent =
+      unaccountedCount > 0 ? (unaccountedCount + " null-space") : "✓ PASS";
+
+    document.getElementById("remapOverviewSub").hidden = (currentRemapSubView !== "overview");
+    document.getElementById("remapDrillSub").hidden = (currentRemapSubView !== "drill");
+    document.getElementById("btnRemapOverview").classList.toggle("active", currentRemapSubView === "overview");
+    document.getElementById("btnRemapDrill").classList.toggle("active", currentRemapSubView === "drill");
+
+    // Top FoundryFlowDiagram for Old-to-New Best-in-Class Architecture Map
+    const remapDiagramWrap = document.getElementById("remapFlowDiagramWrap");
+    if (remapDiagramWrap) {
+      if (bic.flow_diagram) {
+        remapDiagramWrap.hidden = false;
+        renderFoundryFlowInto(
+          remapDiagramWrap,
+          bic.flow_diagram,
+          (stepId) => {
+            if (buckets.some(b => b.id === stepId)) {
+              openBlockDrillDown(stepId);
+            }
+          },
+          "Old-to-New Best-in-Class Architecture Process Map (Source Monoliths → Stage 1 Get-Data → Stage 2 Essential Core → Stage 3 Create-Output + ∅ Null Space Gate)"
+        );
+      } else {
+        remapDiagramWrap.hidden = true;
+        remapDiagramWrap.innerHTML = "";
+      }
+    }
+
+    // Column 1: Old Monolithic Code
+    const oldList = bic.old_monoliths || [];
+    document.getElementById("oldMonolithBadge").textContent = oldList.length + " Modules";
+    const oldHost = document.getElementById("oldMonolithsContainer");
+    if (!oldList.length) {
+      oldHost.innerHTML = `<div style="color:var(--text-dim)">No source modules found.</div>`;
+    } else {
+      oldHost.innerHTML = oldList.map(m => {
+        const c = m.counts || {};
+        const targetsHtml = (m.mapped_targets || []).map(t => {
+          const color = t.kind === "null" ? "var(--red)" : "var(--cyan)";
+          return `<div class="map-link-badge" style="color:${color}">──▶ ${esc(t.label)}</div>`;
+        }).join("");
+        return `
+          <div class="map-item" style="cursor:pointer" data-old-monolith="${esc(m.block_id)}">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong style="font-family:var(--mono);color:#fff">${esc(m.file || m.title)}</strong>
+              <span class="badge ${m.mixed_concerns ? 'badge-warn' : 'badge-scaf'}">
+                ${esc(m.total_lines || 0)}L · ${esc(m.function_count || 0)} fn${m.mixed_concerns ? ' · MIXED' : ''}
+              </span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim)">
+              Ingest: <strong>${c.ingest || 0}</strong> · Essential Core: <strong>${c.compute || 0}</strong> · Emit: <strong>${c.emit || 0}</strong> · Null Space: <strong>${c.null_space || 0}</strong>
+            </div>
+            ${targetsHtml}
+          </div>`;
+      }).join("");
+      oldHost.querySelectorAll("[data-old-monolith]").forEach(el => {
+        el.addEventListener("click", () => {
+          const bid = el.getAttribute("data-old-monolith");
+          if (buckets.some(b => b.id === bid)) {
+            openBlockDrillDown(bid);
+          } else if (buckets.length) {
+            openBlockDrillDown(buckets[0].id);
+          }
+        });
+      });
+    }
+
+    // Column 2: New Best-in-Class Process Map (3 Pure Stage Modules + Agreed-Upon Architecture Buckets)
+    const newBlocks = bic.new_blocks || [];
+    const archBlocks = bic.architecture_blocks || [];
+    const newHost = document.getElementById("newBestInClassContainer");
+    if (!newBlocks.length) {
+      newHost.innerHTML = `<div style="color:var(--text-dim)">No target blocks synthesized.</div>`;
+    } else {
+      let nbHtml = "";
+      newBlocks.forEach((nb, idx) => {
+        const sampleFns = (nb.functions || []).slice(0, 5).map(f => f.name + "()").join(", ");
+        const stgClass = nb.stage === "ingest" ? "tag-ingest" : (nb.stage === "emit" ? "tag-emit" : "tag-compute");
+        nbHtml += `
+          <div class="map-item new-card" data-new-block-id="${esc(nb.id)}" data-drill-block-id="${esc(nb.drill_block_id || '')}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+              <span class="bucket-tag ${stgClass}">${esc(nb.stage_badge || nb.stage)}</span>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--green)">${esc(nb.function_count || 0)} functions mapped</span>
+            </div>
+            <div style="font-weight:700;color:#fff;font-size:12.5px;margin-top:2px">${esc(nb.title)}</div>
+            <div style="font-size:11.5px;color:var(--text-dim)">${esc(nb.summary)}</div>
+            <div style="font-family:var(--mono);font-size:10.5px;color:var(--cyan);background:rgba(11,15,23,0.6);padding:5px 7px;border-radius:4px">
+              Functions: ${esc(sampleFns || "None")}${(nb.function_count || 0) > 5 ? " + " + (nb.function_count - 5) + " more" : ""}
+            </div>
+            ${nb.ai_hook ? `<div style="font-size:10.5px;color:#d8b4fe;font-weight:600">${esc(nb.ai_hook)}</div>` : ""}
+            <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:3px">
+              <button type="button" class="btn" style="padding:2px 8px;font-size:10.5px" data-inspect-new-block="${esc(nb.id)}">
+                🔍 Inspect Mapped Functions
+              </button>
+              ${nb.drill_block_id ? `<button type="button" class="btn btn-primary" style="padding:2px 8px;font-size:10.5px" data-probe-new-block="${esc(nb.drill_block_id)}">▶ Live Probe</button>` : ""}
+            </div>
+          </div>`;
+        if (idx < newBlocks.length - 1) {
+          nbHtml += `<div style="text-align:center;color:var(--amber);font-family:var(--mono);font-weight:700;font-size:13px">↓ Pure Typed Data Handoff ↓</div>`;
+        }
+      });
+
+      if (archBlocks.length > 1) {
+        nbHtml += `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--amber);margin-bottom:6px">
+              🏛 Agreed-Upon Anchor Target Architectural Buckets (${archBlocks.length})
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              ${archBlocks.map(ab => `
+                <div class="map-item" style="border-left:3px solid var(--cyan);cursor:pointer" data-probe-new-block="${esc(ab.id)}">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <strong style="font-size:11.5px;color:#fff">${esc(ab.title)}</strong>
+                    <span class="badge badge-core">${esc(ab.function_count)} fn · ${esc((ab.member_files || []).length)} mod</span>
+                  </div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--cyan)">${esc((ab.member_files || []).join(", "))}</div>
+                </div>`).join("")}
+            </div>
+          </div>`;
+      }
+
+      newHost.innerHTML = nbHtml;
+
+      newHost.querySelectorAll("[data-inspect-new-block]").forEach(btn => {
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          selectedNewBlockId = btn.getAttribute("data-inspect-new-block");
+          currentRemapSubView = "drill";
+          renderRemapTab(sess);
+        });
+      });
+      newHost.querySelectorAll("[data-probe-new-block]").forEach(btn => {
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          openBlockDrillDown(btn.getAttribute("data-probe-new-block"));
+        });
+      });
+      newHost.querySelectorAll(".map-item.new-card").forEach(card => {
+        card.addEventListener("click", () => {
+          selectedNewBlockId = card.getAttribute("data-new-block-id");
+          currentRemapSubView = "drill";
+          renderRemapTab(sess);
+        });
+      });
+    }
+
+    // Column 3: Explicit Null Space
+    const nsBadge = document.getElementById("nullSpaceHeaderBadge");
+    if (unaccountedCount === 0) {
+      nsBadge.style.background = "rgba(34,197,94,0.2)";
+      nsBadge.style.color = "#86efac";
+      nsBadge.textContent = "✓ 0 Unaccounted (" + nsItems.length + " Signed Off)";
+    } else {
+      nsBadge.style.background = "rgba(239,68,68,0.22)";
+      nsBadge.style.color = "#fca5a5";
+      nsBadge.textContent = unaccountedCount + " Unaccounted";
+    }
+
+    const nsHost = document.getElementById("nullSpaceCardsContainer");
+    if (!nsItems.length) {
+      nsHost.innerHTML = `<div class="map-item signed" style="border-left:3px solid var(--green);color:var(--green)">✓ Zero unreferenced or dropped functions detected (Null Space is empty).</div>`;
+    } else {
+      nsHost.innerHTML = nsItems.map(item => {
+        const signed = item.disposition === "intentional_drop_signed_off";
+        const fnName = item.old_function || item.name || "";
+        return `
+          <div class="map-item null-card ${signed ? 'signed' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;flex-wrap:wrap">
+              <strong style="font-family:var(--mono);color:${signed ? '#86efac' : '#fca5a5'};word-break:break-all">${esc(fnName)}()</strong>
+              <span class="badge ${signed ? 'badge-ok' : 'badge-warn'}" style="flex-shrink:0">${signed ? '✓ SIGNED OFF' : 'UNACCOUNTED DROP'}</span>
+            </div>
+            <div style="font-family:var(--mono);font-size:10.5px;color:var(--text-dim)">File: ${esc(item.old_file || "—")} · Stage: ${esc((item.stage || "compute").toUpperCase())}</div>
+            <div style="font-size:11px;color:#e2e8f0">${esc(item.summary || "Unreferenced private helper / legacy scaffolding candidate.")}</div>
+            <div style="display:flex;justify-content:flex-end;margin-top:3px">
+              ${signed
+                ? `<span style="font-size:10.5px;color:var(--green);font-family:var(--mono)">✓ Approved Intentional Drop</span>`
+                : `<button type="button" class="btn btn-primary" data-signoff-fn="${esc(fnName)}" style="padding:3px 9px;font-size:11px">✓ Sign Off Drop</button>`}
+            </div>
+          </div>`;
+      }).join("");
+      nsHost.querySelectorAll("[data-signoff-fn]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          postAnvil({ action: "sign_off_drop", function_name: btn.getAttribute("data-signoff-fn") }, btn);
+        });
+      });
+    }
+
+    // Bottom 3-Stage Pipeline Validation Strip
+    const stages = [
+      {
+        num: "1. Getting the Data (INGEST)",
+        data: pipeVal.ingest_get_data || { status: "PASS", functions: [] },
+        desc: "Validates that all file/JSON/network inputs are parsed into clean structures without hidden compute side effects."
+      },
+      {
+        num: "2. Doing the Analysis (COMPUTE · CORE)",
+        data: pipeVal.compute_do_analysis || { status: "PASS", functions: [] },
+        desc: "Validates that Essential Core domain & math functions run deterministically and pass Hypothesis equivalence."
+      },
+      {
+        num: "3. Creating the Output (EMIT)",
+        data: pipeVal.emit_create_output || { status: "PASS", functions: [] },
+        desc: "Validates that HTML/JSON/file outputs serialize cleanly from pure Essential Core return dicts."
+      }
+    ];
+    document.getElementById("pipeline3StageContainer").innerHTML = stages.map(st => {
+      const ok = st.data.status === "PASS";
+      const fnCount = (st.data.functions || []).length;
+      return `
+        <div class="stage-card">
+          <div class="stage-head">
+            <span>${esc(st.num)}</span>
+            <span class="${ok ? 'stage-pass' : 'stage-warn'}">${ok ? '✓ PASS' : '⚠ NEEDS REVIEW'} (${fnCount} fn)</span>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-dim)">${esc(st.desc)}</div>
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--cyan)">
+            Sample: ${esc((st.data.functions || []).slice(0, 4).join(", ") || "—")}
+          </div>
+        </div>`;
+    }).join("");
+
+    // Sub-view 3B: Drill Down Into New Code Inner Workings & Purity Table
+    const newDrillHost = document.getElementById("newBlockCardsDrill");
+    newDrillHost.innerHTML = newBlocks.map(nb => `
+      <div class="map-item new-card" style="${nb.id === selectedNewBlockId ? 'border-color:var(--amber)' : ''}">
+        <div style="font-weight:700;color:#fff">${esc(nb.title)}</div>
+        <div style="font-size:11px;color:var(--text-dim)">${esc(nb.summary)}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--cyan);max-height:140px;overflow-y:auto;margin-top:4px">
+          ${(nb.functions || []).map(f => `<div>• <strong>${esc(f.name)}</strong> <span style="color:var(--text-muted)">← ${esc(f.old_file)}:${esc(f.lineno)}</span></div>`).join("")}
+        </div>
+      </div>`).join("");
+
+    const allFns = [];
+    buckets.forEach(b => (b.functions || []).forEach(fn => allFns.push({ ...fn, block_stage: b.pipeline_stage })));
+    const stageMap = {
+      ingest: "New Block 1 · Get-Data (Ingest)",
+      compute: "New Block 2 · Do-Analysis (Essential Core)",
+      emit: "New Block 3 · Create-Output (Emit)"
+    };
+    const pBody = document.getElementById("purityTableBody");
+    pBody.innerHTML = allFns.slice(0, 120).map(fn => {
+      const pure = !fn.block_stage || fn.stage === fn.block_stage;
+      return `
+        <tr>
+          <td style="font-family:var(--mono);font-weight:700">${esc(fn.name)}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--cyan)">${esc(fn.file || "")}:${esc(fn.lineno)}</td>
+          <td><span class="badge badge-purp">${esc(stageMap[fn.stage] || fn.stage)}</span></td>
+          <td><span class="badge ${pure ? 'badge-ok' : 'badge-warn'}">${pure ? 'STAGE_PURE' : 'MIXED_STAGE_MODULE'}</span></td>
+          <td style="color:var(--text-dim)">${pure ? "Clean separation of stage concerns." : "Extract into dedicated Best-in-Class stage module during refactoring."}</td>
+        </tr>`;
+    }).join("");
+  }
+
+  /* ====================================================================== */
+  /* MODE 4: Paper-to-Software Process & Native MathML Map                  */
+  /* ====================================================================== */
+  function renderPaperTab(sess) {
+    const paper = sess.paper_map || null;
+    const buckets = (sess.code_map && sess.code_map.conceptual_buckets) || [];
+    const alignments = (paper && paper.alignments) || [];
+    document.getElementById("badgePaperCount").textContent = paper ? String(alignments.length) : "0";
+
+    const host = document.getElementById("paperResultsContainer");
+    if (!paper) {
+      host.innerHTML = `
+        <div class="section-box" style="color:var(--text-dim)">
+          No paper is currently attached to this session. Enter an <code>arXiv:ID</code>, HTTPS URL, or local PDF/Markdown path above and click <strong>Attach &amp; Align Paper</strong>, or ask Steward in the right-hand dialogue dock.
+        </div>`;
+      return;
+    }
+
+    const verifiedCount = alignments.filter(a => a.empirical_status === "VERIFIED").length;
+    const heuristicCount = alignments.filter(a => a.empirical_status === "HEURISTIC_MATCH").length;
+    const gapCount = alignments.filter(a => !a.mapped_function || a.empirical_status === "UNMAPPED").length;
+
+    // 1. Software Process Map with Math Tie-In Badges
+    const claimsByBucket = {};
+    alignments.forEach(a => {
+      if (a.bucket_id) {
+        if (!claimsByBucket[a.bucket_id]) claimsByBucket[a.bucket_id] = [];
+        claimsByBucket[a.bucket_id].push(a);
+      }
+    });
+
+    const procNodesHtml = buckets.slice(0, 8).map((b, idx) => {
+      const tied = claimsByBucket[b.id] || [];
+      const tieBadges = tied.map(t => `
+        <div class="math-tie-badge">
+          <span>📐 ${esc(t.claim_id)}: ${esc((t.title || "").slice(0, 26))}</span>
+          <span>${t.empirical_status === "VERIFIED" ? "✓" : "⏳"}</span>
+        </div>`).join("");
+      return `
+        <div class="proc-node ${tied.length ? 'ai-seam' : ''}" data-paper-proc-block="${esc(b.id)}">
+          <div class="proc-step-num">BLOCK ${idx + 1} · ${esc((b.pipeline_stage || "compute").toUpperCase())}</div>
+          <div class="proc-title">${esc(b.title || b.id)}</div>
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--cyan)">${esc(b.file)}</div>
+          ${tieBadges || `<div style="font-size:10.5px;color:var(--text-muted)">Infrastructure / I/O Support</div>`}
+        </div>`;
+    }).join(`<div class="proc-arrow">──▶</div>`);
+
+    // 2. 3-Column Equation-by-Equation Cards
+    const claimRowsHtml = alignments.map(a => {
+      const st = a.empirical_status || "UNMAPPED";
+      const badgeCls = st === "VERIFIED" ? "badge-ok" : (st === "HEURISTIC_MATCH" ? "badge-core" : "badge-warn");
+      const safeMml = sanitizeMathML(a.mathml);
+      return `
+        <div class="paper-claim-row">
+          <div class="paper-col">
+            <h5>1. Paper Section &amp; Rendered Equation (Native MathML)</h5>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span class="badge badge-purp">${esc(a.claim_id)}</span>
+              <strong style="color:#fff">${esc(a.title)}</strong>
+            </div>
+            ${safeMml ? `<div class="math-display-box">${safeMml}</div>` : `<div style="font-size:11.5px;color:var(--text-dim)">Conceptual/algorithmic claim in paper text.</div>`}
+          </div>
+
+          <div class="paper-col">
+            <h5>2. Software Block &amp; Function Mapping</h5>
+            ${a.mapped_function ? `
+              <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:7px;padding:9px 11px">
+                <div style="font-family:var(--mono);font-weight:700;color:var(--cyan)">${esc(a.mapped_function)}()</div>
+                <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">File: ${esc(a.mapped_file || "")}:${esc(a.lineno || "")}</div>
+                <div style="font-size:11.5px;color:#e2e8f0;margin-top:4px">${esc(a.match_rationale || "")}</div>
+              </div>` : `
+              <div style="color:var(--amber);font-size:12px">No direct function match discovered in current software target.</div>`}
+          </div>
+
+          <div class="paper-col">
+            <h5>3. Live Empirical Verification</h5>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div><span class="badge ${badgeCls}">${esc(st)}</span></div>
+              <div style="font-size:11.5px;color:var(--text-dim)">
+                ${st === "VERIFIED"
+                  ? "✓ Mapped block has been empirically probed and locked."
+                  : "Run live probe on the mapped block to upgrade from heuristic match to empirically verified."}
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                ${a.bucket_id ? `<button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-probe-paper-block="${esc(a.bucket_id)}">▶ Probe Mapped Block</button>` : ""}
+                <button type="button" class="btn" style="padding:3px 9px;font-size:11px" data-ask-claim="${esc(a.claim_id)}">Ask Agent</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+
+    host.innerHTML = `
+      <div class="process-map-box">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-size:12px;font-weight:800;text-transform:uppercase;color:var(--amber)">
+              Software Process Map — Where Paper Equations Tie In (${esc(paper.paper_title)})
+            </div>
+            <div style="font-size:11.5px;color:var(--text-dim)">Source: <code>${esc(paper.paper_url || paper.paper_path || paper.paper_source_type)}</code> · Native MathML Enforced</div>
+          </div>
+          <span class="badge badge-ok">${esc(verifiedCount)} Verified · ${esc(heuristicCount)} Heuristic · ${esc(gapCount)} Unmapped</span>
+        </div>
+        <div class="process-flow">${procNodesHtml}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">${claimRowsHtml}</div>`;
+
+    host.querySelectorAll("[data-paper-proc-block], [data-probe-paper-block]").forEach(el => {
+      el.addEventListener("click", () => {
+        const bid = el.getAttribute("data-paper-proc-block") || el.getAttribute("data-probe-paper-block");
+        openBlockDrillDown(bid);
+      });
+    });
+
+    host.querySelectorAll("[data-ask-claim]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const cid = btn.getAttribute("data-ask-claim");
+        const promptText =
+          "Analyze paper alignment item `" + cid + "` and explain how the software implements this equation or what needs to be refactored.";
+        prefillCockpitOrAnvilComposer(promptText, cid, "paper");
+      });
+    });
+  }
+
+  function buildCockpitTileDialogueUrl() {
+    if (!pid) return "";
+    const q = new URLSearchParams();
+    q.set("pid", pid);
+    if (dir) q.set("dir", dir);
+    q.set("embed", "1");
+    q.set("view", "tile");
+    q.set("inst", "anvil");
+    if (token) q.set("token", token);
+    return "/steward/v1?" + q.toString();
+  }
+
+  function prefillCockpitOrAnvilComposer(promptText, targetLabel, modeName) {
+    if (modeName) {
+      currentAgentMode = modeName;
+      document.querySelectorAll("[data-agent-mode]").forEach(b => {
+        b.classList.toggle("active", b.getAttribute("data-agent-mode") === modeName);
+      });
+    }
+    if (targetLabel) {
+      currentAgentTarget = targetLabel;
+      const badge = document.getElementById("agentTargetBadge");
+      if (badge) badge.textContent = targetLabel;
+    }
+    const qInput = document.getElementById("agentInput");
+    if (qInput) {
+      qInput.value = promptText;
+    }
+    const frame = document.getElementById("cockpitLiveDialogueFrame");
+    const wrap = document.getElementById("cockpitLiveDialogueWrap");
+    if (frame && frame.contentWindow && wrap && !wrap.hidden) {
+      try {
+        frame.contentWindow.postMessage(
+          { proto: "anchor-tile", inst: "anvil", kind: "prefill", text: promptText, focus: true },
+          window.location.origin
+        );
+        return;
+      } catch (_) {}
+    }
+    if (qInput) qInput.focus();
+  }
+
+  /* ====================================================================== */
+  /* Right-Side Persistent Steward & Anvil Dialogue Dock                    */
+  /* ====================================================================== */
+  function renderAgentDock(sess, cands, cname) {
+    const host = document.getElementById("agentMessages");
+    const badge = document.getElementById("agentTargetBadge");
+    const hint = document.getElementById("agentStatusHint");
+    const liveWrap = document.getElementById("cockpitLiveDialogueWrap");
+    const liveFrame = document.getElementById("cockpitLiveDialogueFrame");
+    const fallbackComposer = document.getElementById("agentFallbackComposer");
+    const toggleBtn = document.getElementById("btnToggleDialogueSurface");
+    const quickBar = document.getElementById("anvilLiveQuickBar");
+    const modePillsBar = document.getElementById("agentModePillsBar");
+
+    if (!sess) {
+      if (liveWrap) liveWrap.hidden = true;
+      if (quickBar) quickBar.hidden = true;
+      if (toggleBtn) toggleBtn.hidden = true;
+      if (host) host.hidden = false;
+      if (fallbackComposer) fallbackComposer.hidden = false;
+      if (modePillsBar) modePillsBar.hidden = false;
+      if (badge) badge.textContent = "setup · ready";
+      if (hint) hint.textContent = "Type or click a prompt to set up Anvil via Steward";
+      const swList = ((cands && cands.software) || []).slice(0, 3);
+      const paperList = ((cands && cands.papers) || []).slice(0, 4);
+      const quickPrompts = [];
+      if (paperList.length > 0) {
+        const p0 = paperList[0];
+        const pPath = typeof p0 === "string" ? p0 : (p0.path || "paper.md");
+        const pLabel = typeof p0 === "string" ? p0 : (p0.label || pPath);
+        quickPrompts.push({
+          label: "📄 Set up with local paper: " + pLabel,
+          prompt: "Look for local paper " + pPath + " loaded locally in this cockpit and set up Anvil Paper ↔ Software mapping."
+        });
+      }
+      if (swList.length > 0) {
+        const s0 = swList[0];
+        const sPath = typeof s0 === "string" ? s0 : (s0.path || ".");
+        const sLabel = typeof s0 === "string" ? s0 : (s0.label || sPath);
+        quickPrompts.push({
+          label: "⚙ Analyze Essential Core: " + sLabel,
+          prompt: "Set up Anvil Software Analysis on " + sPath + " and decompose Essential Core vs. Scaffolding."
+        });
+      }
+      quickPrompts.push({
+        label: "🌐 Pull arXiv paper & map to code",
+        prompt: "Pull arXiv:1706.03762 and map its attention equations to the local software in this cockpit."
+      });
+
+      const preMsgsHtml = preLaunchMessages.map(m => `
+        <div class="msg-card">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-muted)">
+            <span>${m.role === "user" ? "You" : "Steward · Anvil"}</span>
+            <span>setup</span>
+          </div>
+          <div class="${m.role === 'user' ? 'msg-q' : 'msg-a'}">${esc(m.text)}</div>
+        </div>`).join("");
+
+      const chipsHtml = quickPrompts.map(qp => `
+        <button type="button" class="cand-chip" data-quick-setup-prompt="${esc(qp.prompt)}" style="text-align:left;padding:6px 9px;font-family:var(--font);font-size:11.5px;color:#e0f2fe;border-color:rgba(56,189,248,0.35);background:rgba(56,189,248,0.09)">
+          ${esc(qp.label)}
+        </button>`).join("");
+
+      host.innerHTML = `
+        <div class="msg-card" style="border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.07)">
+          <div style="font-weight:700;color:#fde68a;font-size:12px">Steward &amp; Anvil Setup Dialogue — ${esc(cname || "AI Cockpit")}</div>
+          <div class="msg-a" style="font-size:11.5px;color:#cbd5e1">No Anvil session is active yet. You can set it up right here in the dialogue—just tell Steward what paper or codebase to look for, or click a one-step starter below:</div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">${chipsHtml}</div>
+        </div>
+        ${preMsgsHtml}`;
+
+      host.querySelectorAll("[data-quick-setup-prompt]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const p = btn.getAttribute("data-quick-setup-prompt") || "";
+          const qInput = document.getElementById("agentInput");
+          qInput.value = p;
+          document.getElementById("btnAgentSend").click();
+        });
+      });
+      host.scrollTop = host.scrollHeight;
+      return;
+    }
+
+    if (badge && (!currentAgentTarget || badge.textContent === "setup · ready")) {
+      badge.textContent = selectedDrillBlockId || sess.selected_block_id || "session";
+    }
+    if (hint) hint.textContent = "Grounded in this cockpit's .anvil/session.json";
+    if (quickBar) quickBar.hidden = false;
+
+    const useLiveCockpitDialogue = Boolean(pid && dialogueSurfaceMode === "cockpit");
+    if (toggleBtn) {
+      toggleBtn.hidden = !pid;
+      toggleBtn.textContent = useLiveCockpitDialogue ? "📋 Anvil Log" : "💬 Live Cockpit";
+    }
+    if (useLiveCockpitDialogue && liveWrap && liveFrame) {
+      const targetUrl = buildCockpitTileDialogueUrl();
+      if (targetUrl && liveFrame.getAttribute("src") !== targetUrl) {
+        liveFrame.setAttribute("src", targetUrl);
+      }
+      liveWrap.hidden = false;
+      if (host) host.hidden = true;
+      if (fallbackComposer) fallbackComposer.hidden = true;
+      if (modePillsBar) modePillsBar.hidden = true;
+    } else {
+      if (liveWrap) liveWrap.hidden = true;
+      if (host) host.hidden = false;
+      if (fallbackComposer) fallbackComposer.hidden = false;
+      if (modePillsBar) modePillsBar.hidden = false;
+    }
+
+    function formatAgentMsg(raw) {
+      let s = esc(raw || "");
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong style='color:#fff'>$1</strong>");
+      s = s.replace(/`([^`]+)`/g, "<code style='font-family:var(--mono);color:var(--cyan);background:rgba(15,23,42,0.75);padding:1px 4px;border-radius:3px'>$1</code>");
+      s = s.replace(/\n/g, "<br>");
+      return s;
+    }
+
+    const activeQuickActions = [
+      { label: "✓ Verify All & Go Forward", prompt: "Verify all blocks, check the map from old to new, and go forward." },
+      { label: "🤖 Status & Model Seating", prompt: "Please give me updates of what you are doing, and who is doing it (skill and model + adversarial review)." },
+      { label: "✓ Sign Off Null Space", prompt: "Sign off null space drops and lock the Old-to-New remap." }
+    ];
+    const quickBarHtml = `
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px">
+        ${activeQuickActions.map(qa => `
+          <button type="button" class="cand-chip" data-agent-quick="${esc(qa.prompt)}" style="font-size:10.5px;padding:4px 8px;color:#fde68a;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1)">
+            ${esc(qa.label)}
+          </button>`).join("")}
+      </div>`;
+
+    const msgs = sess.chat_history || [];
+    if (!msgs.length) {
+      host.innerHTML = quickBarHtml + `<div style="color:var(--text-dim);font-size:12px">Ask Steward / Anvil Agent any question about this cockpit's Conceptual &amp; Process Map, Single-Block Probes, Old-to-New Best-in-Class Remap, or Paper-to-Code MathML alignment.</div>`;
+    } else {
+      host.innerHTML = quickBarHtml + msgs.map(m => `
+        <div class="msg-card">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-muted)">
+            <span>${m.role === "user" ? "You" : "Steward · Anvil"} · Mode: ${esc(m.mode || "map")}${m.target ? " · " + esc(m.target) : ""}</span>
+            <span>${esc((m.at || "").slice(11, 19))}</span>
+          </div>
+          <div class="${m.role === 'user' ? 'msg-q' : 'msg-a'}" style="line-height:1.5">${formatAgentMsg(m.text)}</div>
+        </div>`).join("");
+    }
+    host.querySelectorAll("[data-agent-quick]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const p = btn.getAttribute("data-agent-quick") || "";
+        const qInput = document.getElementById("agentInput");
+        qInput.value = p;
+        document.getElementById("btnAgentSend").click();
+      });
+    });
+    host.scrollTop = host.scrollHeight;
+  }
+
+  function switchTab(tabId) {
+    document.querySelectorAll(".tab-btn").forEach(b => {
+      b.classList.toggle("active", b.getAttribute("data-tab") === tabId);
+    });
+    document.querySelectorAll(".tab-content").forEach(p => {
+      p.classList.toggle("active", p.getAttribute("data-tab-panel") === tabId);
+    });
+    currentAgentMode = tabId;
+    document.querySelectorAll("[data-agent-mode]").forEach(b => {
+      b.classList.toggle("active", b.getAttribute("data-agent-mode") === tabId);
+    });
+  }
+
+  /* ====================================================================== */
+  /* Wire UI Event Listeners                                                */
+  /* ====================================================================== */
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.getAttribute("data-tab")));
+  });
+
+  document.getElementById("btnViewConceptual").addEventListener("click", () => {
+    currentMapSubView = "conceptual";
+    if (currentState && currentState.session) renderMapTab(currentState.session);
+  });
+
+  document.getElementById("btnViewProcess").addEventListener("click", () => {
+    currentMapSubView = "process";
+    if (currentState && currentState.session) renderMapTab(currentState.session);
+  });
+
+  document.querySelectorAll("[data-filter-stage]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentStageFilter = btn.getAttribute("data-filter-stage");
+      document.querySelectorAll("[data-filter-stage]").forEach(b => b.classList.toggle("active", b === btn));
+      if (currentState && currentState.session) renderMapTab(currentState.session);
+    });
+  });
+
+  document.getElementById("btnBackToMap").addEventListener("click", () => {
+    currentMapSubView = "process";
+    if (currentState && currentState.session) renderMapTab(currentState.session);
+    switchTab("map");
+  });
+
+  document.getElementById("drillBlockSelect").addEventListener("change", function() {
+    selectedDrillBlockId = this.value;
+    currentAgentTarget = selectedDrillBlockId;
+    document.getElementById("agentTargetBadge").textContent = selectedDrillBlockId;
+    if (currentState && currentState.session) renderValidateTab(currentState.session);
+  });
+
+  document.getElementById("btnPrevBlock").addEventListener("click", () => {
+    if (!currentState || !currentState.session) return;
+    const buckets = (currentState.session.code_map && currentState.session.code_map.conceptual_buckets) || [];
+    if (!buckets.length) return;
+    const idx = Math.max(0, buckets.findIndex(b => b.id === selectedDrillBlockId));
+    const prevIdx = (idx - 1 + buckets.length) % buckets.length;
+    selectedDrillBlockId = buckets[prevIdx].id;
+    renderValidateTab(currentState.session);
+  });
+
+  document.getElementById("btnNextBlock").addEventListener("click", () => {
+    if (!currentState || !currentState.session) return;
+    const buckets = (currentState.session.code_map && currentState.session.code_map.conceptual_buckets) || [];
+    if (!buckets.length) return;
+    const idx = Math.max(0, buckets.findIndex(b => b.id === selectedDrillBlockId));
+    const nextIdx = (idx + 1) % buckets.length;
+    selectedDrillBlockId = buckets[nextIdx].id;
+    renderValidateTab(currentState.session);
+  });
+
+  document.getElementById("btnRunBlockProbe").addEventListener("click", function() {
+    if (!selectedDrillBlockId) return;
+    const desc = document.getElementById("drillLockDescInput").value.trim();
+    postAnvil({ action: "probe_block", block_id: selectedDrillBlockId, lock_description: desc }, this);
+  });
+
+  document.getElementById("btnLockBlockDesc").addEventListener("click", function() {
+    if (!selectedDrillBlockId) return;
+    const desc = document.getElementById("drillLockDescInput").value.trim();
+    postAnvil({ action: "probe_block", block_id: selectedDrillBlockId, lock_description: desc }, this);
+  });
+
+  document.getElementById("btnRemapOverview").addEventListener("click", () => {
+    currentRemapSubView = "overview";
+    if (currentState && currentState.session) renderRemapTab(currentState.session);
+  });
+
+  document.getElementById("btnRemapDrill").addEventListener("click", () => {
+    currentRemapSubView = "drill";
+    if (currentState && currentState.session) renderRemapTab(currentState.session);
+  });
+
+  document.getElementById("btnBackToRemapMap").addEventListener("click", () => {
+    currentRemapSubView = "overview";
+    if (currentState && currentState.session) renderRemapTab(currentState.session);
+  });
+
+  document.querySelectorAll("[data-agent-mode]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentAgentMode = btn.getAttribute("data-agent-mode");
+      document.querySelectorAll("[data-agent-mode]").forEach(b => b.classList.toggle("active", b === btn));
+    });
+  });
+
+  document.getElementById("btnStartCode").addEventListener("click", function() {
+    const sw = document.getElementById("codeTargetInput").value.trim() || ".";
+    const cmp = document.getElementById("compareTargetInput").value.trim();
+    postAnvil({ action: "start_code", mode: "code", software_target: sw, compare_target: cmp }, this);
+  });
+
+  document.getElementById("btnStartPaper").addEventListener("click", function() {
+    const sw = document.getElementById("paperCodeTargetInput").value.trim() || ".";
+    const paper = document.getElementById("paperSourceInput").value.trim();
+    if (!paper) {
+      showError("Please enter an arXiv ID, HTTPS URL, or local paper file path.");
+      return;
+    }
+    postAnvil({ action: "start_paper", mode: "paper", software_target: sw, paper_target: paper }, this).then(res => {
+      if (res && res.active) switchTab("paper");
+    });
+  });
+
+  document.getElementById("btnInlineAttachPaper").addEventListener("click", function() {
+    const paper = document.getElementById("inlinePaperInput").value.trim();
+    if (!paper) {
+      showError("Please specify a paper source (arXiv ID, URL, or local path).");
+      return;
+    }
+    postAnvil({ action: "attach_paper", paper_target: paper }, this);
+  });
+
+  document.getElementById("btnAgentSend").addEventListener("click", function() {
+    const qInput = document.getElementById("agentInput");
+    const q = qInput.value.trim();
+    if (!q) return;
+    postAnvil({ action: "chat", question: q, mode: currentAgentMode, target: currentAgentTarget || selectedDrillBlockId }, this).then(res => {
+      if (res) {
+        qInput.value = "";
+        if (!res.active && res.reply) {
+          preLaunchMessages.push({ role: "user", text: q });
+          preLaunchMessages.push({ role: "anvil", text: res.reply });
+          renderAll();
+        } else if (res.active && res.session && res.session.paper_map && currentAgentMode === "paper") {
+          switchTab("paper");
+        }
+      }
+    });
+  });
+
+  document.getElementById("agentInput").addEventListener("keydown", function(ev) {
+    if (ev.key === "Enter" && !ev.shiftKey) {
+      ev.preventDefault();
+      document.getElementById("btnAgentSend").click();
+    }
+  });
+
+  document.getElementById("btnSwitchLauncher").addEventListener("click", function() {
+    const launcher = document.getElementById("launcherView");
+    const wb = document.getElementById("workbenchView");
+    const showLauncher = launcher.hidden;
+    launcher.hidden = !showLauncher;
+    wb.hidden = showLauncher;
+    this.textContent = showLauncher ? "↩ Back to Active Session" : "⚙ Configure / New Session";
+  });
+
+  document.getElementById("btnResetSession").addEventListener("click", function() {
+    postAnvil({ action: "reset" }, this);
+  });
+
+  const toggleSurfBtn = document.getElementById("btnToggleDialogueSurface");
+  if (toggleSurfBtn) {
+    toggleSurfBtn.addEventListener("click", () => {
+      dialogueSurfaceMode = dialogueSurfaceMode === "cockpit" ? "log" : "cockpit";
+      if (currentState) {
+        renderAgentDock(currentState.session || null, currentState.candidates || {}, currentState.cockpit_name || "");
+      }
+    });
+  }
+
+  const quickVerifyBtn = document.getElementById("btnQuickVerifyAll");
+  if (quickVerifyBtn) {
+    quickVerifyBtn.addEventListener("click", function() {
+      postAnvil({ action: "chat", question: "Verify all blocks, check the map from old to new, and go forward.", mode: currentAgentMode, target: currentAgentTarget || selectedDrillBlockId }, this);
+    });
+  }
+
+  const quickSignOffBtn = document.getElementById("btnQuickSignOffNull");
+  if (quickSignOffBtn) {
+    quickSignOffBtn.addEventListener("click", function() {
+      postAnvil({ action: "chat", question: "Sign off null space drops and lock the Old-to-New remap.", mode: "remap", target: "null-space" }, this);
+    });
+  }
+
+  const quickAegisBtn = document.getElementById("btnQuickAegisAudit");
+  if (quickAegisBtn) {
+    quickAegisBtn.addEventListener("click", async function() {
+      const orig = this.textContent;
+      this.disabled = true;
+      this.textContent = "Scanning…";
+      try {
+        const swSpec = (currentState && currentState.session && currentState.session.software && currentState.session.software.path) || ".";
+        const bodyObj = { action: "scan", target: swSpec };
+        if (dir) bodyObj.dir = dir;
+        if (pid) bodyObj.pid = pid;
+        const r = await fetch(apiUrl("aegis"), { method: "POST", headers: headers(), body: JSON.stringify(bodyObj) });
+        const j = await r.json();
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: "anvil-open-aegis", payload: j }, window.location.origin);
+        }
+      } catch (err) {
+        showError("Aegis security audit failed: " + err.message);
+      } finally {
+        this.disabled = false;
+        this.textContent = orig;
+      }
+    });
+  }
+
+  const openAegisWbBtn = document.getElementById("btnOpenAegisWorkbench");
+  if (openAegisWbBtn) {
+    openAegisWbBtn.addEventListener("click", () => {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "anvil-open-aegis" }, window.location.origin);
+      } else {
+        window.location.href = "/steward-static/aegis.html?" + params.toString();
+      }
+    });
+  }
+
+  document.getElementById("btnReturnCockpit").addEventListener("click", () => {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: "anvil-return-cockpit" }, window.location.origin);
+    }
+  });
+
+  loadSession();
+
+  let _lastKnownUpdatedAt = null;
+  setInterval(async () => {
+    try {
+      const resp = await fetch(apiUrl("anvil"), { headers: headers() });
+      const data = await resp.json();
+      if (data && data.ok && data.session) {
+        const up = data.session.updated_at || "";
+        if (_lastKnownUpdatedAt === null) {
+          _lastKnownUpdatedAt = up;
+        } else if (up && up !== _lastKnownUpdatedAt) {
+          _lastKnownUpdatedAt = up;
+          currentState = data;
+          renderAll();
+        }
+      }
+    } catch (_) {}
+  }, 4000);
+
+  let _initialBuildVer = null;
+  setInterval(async () => {
+    try {
+      const r = await fetch("/api/version", { cache: "no-store" });
+      const j = await r.json();
+      const v = j && j.version;
+      if (!v) return;
+      if (_initialBuildVer === null) {
+        _initialBuildVer = v;
+      } else if (v !== _initialBuildVer) {
+        _initialBuildVer = v;
+        location.reload();
+      }
+    } catch (_) {}
+  }, 15000);
+})();
+</script>
+</body>
+</html>

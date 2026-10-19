@@ -1,0 +1,8 @@
+# Private material never ships with the skill (privacy scaffold, W1).
+# Voice profiles and calibration passages live in the writing project roots,
+# never in this folder; these globs are a second fence, not the first.
+profiles/
+calibration/
+node_modules/
+.foreman/
+_foreman-*.log

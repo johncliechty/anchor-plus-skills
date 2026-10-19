@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ecgberht-receipt-v0",
+  "title": "Ecgberht structured receipt",
+  "description": "Structured receipts for soft-vet/grasscatch/depth/handback/override/heartbeat/seen/commission_abnormal/seat_hop/face_confirm. Monologue-only invalid. W4: override requires who/when/why/from→to; depth requires tool_depth_why; soft-vet carries deferred/why/suggested_later_owner/uncertainty_flags. W5: handback requires active_effort, why_next, grasscatch_why (nullable), tool_depth_why, human_wait, uncertainty_flags array. TW2: seen is the brief delta anchor and requires who/when/altitude (project|portfolio). TW3 (M2): commission_abnormal is the abnormal job-exit receipt (crash/timeout/kill/orphan/reap) and requires who/when/last_known_state/why_known — a dead terminal must never persist as silent green. TW4: seat_hop is the non-event seat-switch transition document and requires who/when/from→to (seat families claude|gemini|grok; next turn continues from Face/Strip/Roadmap/packet with no re-brief); face_confirm is the Face-only 'Still the goal' acknowledgement and requires who/when.",
+  "type": "object",
+  "required": ["schema", "kind", "as_of"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "const": "ecgberht-receipt-v0"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "soft-vet",
+        "grasscatch",
+        "depth",
+        "handback",
+        "heartbeat",
+        "override",
+        "seen",
+        "commission_abnormal",
+        "seat_hop",
+        "face_confirm"
+      ]
+    },
+    "as_of": {
+      "type": "string",
+      "description": "ISO date or datetime of the receipt"
+    },
+    "active_effort": { "type": "string" },
+    "why_next": { "type": "string" },
+    "grasscatch_why": { "type": ["string", "null"] },
+    "tool_depth_why": {
+      "type": ["string", "null"],
+      "description": "Why the dispatch table (or human override) chose this depth cell"
+    },
+    "human_wait": { "type": "string" },
+    "uncertainty_flags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Uncertainty / capacity flags carried on soft-vet/depth/handback receipts"
+    },
+    "deferred": {
+      "type": ["string", "null"],
+      "description": "What was deferred (soft-vet / grasscatch)"
+    },
+    "what_deferred": {
+      "type": ["string", "null"],
+      "description": "Alias for deferred"
+    },
+    "suggested_later_owner": {
+      "type": ["string", "null"],
+      "description": "Suggested later owner for deferred work (soft-vet/grasscatch/handback)"
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "description": "Dispatch outcome on depth/override receipts (LITE|FULL|SPIKE|commission|refuse)"
+    },
+    "capacity": {
+      "type": ["string", "null"],
+      "description": "Capacity signal snapshot (known|unknown) on depth receipts"
+    },
+    "who": {
+      "type": ["string", "null"],
+      "description": "Who viewed the brief (seen receipts) / who observed the terminal (commission_abnormal)"
+    },
+    "when": {
+      "type": ["string", "null"],
+      "description": "When the brief was viewed / terminal was observed (ISO date or datetime)"
+    },
+    "last_known_state": {
+      "type": ["string", "null"],
+      "description": "Last known lifecycle state before the abnormal exit (commission_abnormal; M2 lifecycle queued|running)"
+    },
+    "why_known": {
+      "type": ["string", "null"],
+      "description": "How the abnormal terminal is known (kill signal, non-zero exit, timeout, out-of-process liveness evidence)"
+    },
+    "terminal": {
+      "type": ["string", "null"],
+      "description": "Observed terminal state on commission_abnormal receipts (failed|orphaned|reaped)"
+    },
+    "job_id": {
+      "type": ["string", "null"],
+      "description": "Composed Anchor job id (commission_abnormal receipts)"
+    },
+    "commission_id": {
+      "type": ["string", "null"],
+      "description": "Commission id (handback / commission_abnormal receipts)"
+    },
+    "step_id": {
+      "type": ["string", "null"],
+      "description": "Roadmap step the commissioned job was bound to (commission_abnormal receipts)"
+    },
+    "from": {
+      "type": ["string", "null"],
+      "description": "Seat family before the hop (seat_hop receipts: claude|gemini|grok)"
+    },
+    "to": {
+      "type": ["string", "null"],
+      "description": "Seat family after the hop (seat_hop receipts: claude|gemini|grok)"
+    },
+    "goal": {
+      "type": ["string", "null"],
+      "description": "Goal text acknowledged on face_confirm receipts (Still the goal)"
+    },
+    "confirmed": {
+      "type": ["boolean", "null"],
+      "description": "face_confirm receipts: the goal was confirmed unchanged"
+    },
+    "altitude": {
+      "type": ["string", "null"],
+      "enum": ["project", "portfolio", null],
+      "description": "Brief altitude on seen receipts"
+    },
+    "override": {
+      "type": "object",
+      "description": "Human override of dispatch outcome requires who/when/why/from→to",
+      "required": ["who", "when", "why", "from", "to"],
+      "properties": {
+        "who": { "type": "string" },
+        "when": { "type": "string" },
+        "why": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

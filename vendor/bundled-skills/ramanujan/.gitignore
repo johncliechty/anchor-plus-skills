@@ -1,0 +1,6 @@
+node_modules/
+.foreman/
+_foreman-status.log
+foreman-checkpoint.json
+_run*.out
+*.tmp
