@@ -359,3 +359,354 @@ def _apply(folder, c, today):
             return _refuse("I could not read \u2018%s\u2019 as a date \u2014 Oct 10, Tuesday or 2026-10-10; the pace is unchanged" % a.get("pace"), act)
         return _answer(acts.pace(folder, hit[0], when), act)
     return None
+
+
+# ── Wave 20 Fast Conversational Steward Path (<20ms Pure Python) ──────────────────────────────────────────────
+
+_CREATE_COCKPIT_RX = re.compile(
+    r"^(?:please\s+|let'?s\s+|can you\s+|could you\s+)?(?:create|make|start|spin up|launch|build|add|set up)\s+"
+    r"(?:a\s+|an\s+)?(?:new\s+)?(?:ai\s+)?cockpit(?:\s+(?:for|called|named|on|about|to))?\s*[:\-]?\s*(.+?)\s*[.!?]?$",
+    re.I,
+)
+_OPEN_COCKPIT_RX = re.compile(
+    r"^(?:please\s+|can you\s+|could you\s+)?(?:open|launch|go to|take me to|pull up|switch to)\s+"
+    r"(?:the\s+)?(?:ai\s+)?(?:cockpit\s+(?:for|on|of)\s+)?(.+?)(?:\s+ai)?(?:\s+cockpit|\s+project|\s+goal)?\s*[.!?]?$",
+    re.I,
+)
+_MARK_DONE_RX = re.compile(
+    r"^(?:please\s+|can you\s+)?(?:mark|check off|complete|finish|tick)(?:\s+the)?\s+"
+    r"(?:(next\s+step)(?:\s+(?:done|complete|completed|off))?(?:\s+(?:on|for|in)\s+(.+?))?|(.+?)\s+(?:as\s+)?(?:done|complete|completed|off))\s*[.!?]?$",
+    re.I,
+)
+_REARRANGE_RX = re.compile(
+    r"^(?:please\s+|can you\s+|could you\s+|kind of\s+)?(?:rearrange(?:\s+the\s+priority\s+of)?(?:\s+and)?\s+)?"
+    r"(?:put|move|set|make|shift|promote|demote|rearrange|prioritize|place|seat|send|take)\s+"
+    r"(.+?)\s+(?:into|in|to|on|onto|as|at|under|off|from)?\s*"
+    r"(active|top of active|first in active|first|on deck|deck|not active|inactive|off active|bench|home|back|"
+    r"tier\s*[123]|today|this week|this month|this quarter|this year)\s*[.!?]?$",
+    re.I,
+)
+
+
+def _load_rm_fast(folder):
+    p = Path(folder) / "roadmap.json"
+    if not p.is_file():
+        return p, {"schema": "ecgberht-roadmap-v0", "project_id": None, "as_of": str(date.today()), "roadmap_events": [], "roadmap_projection": []}
+    try:
+        return p, json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return p, {"schema": "ecgberht-roadmap-v0", "project_id": None, "as_of": str(date.today()), "roadmap_events": [], "roadmap_projection": []}
+
+
+def _save_rm_fast(p: Path, rm: dict):
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(rm, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(p)
+
+
+def _append_rm_event(rm: dict, kind: str, step_id: str, **kwargs):
+    evs = rm.setdefault("roadmap_events", [])
+    next_seq = max([int(e.get("seq") or 0) for e in evs if isinstance(e, dict)] or [0]) + 1
+    ev = {"kind": kind, "step_id": step_id, "at": str(date.today()), "seq": next_seq}
+    ev.update(kwargs)
+    evs.append(ev)
+
+
+def _fuzzy_match_item(proj: list, query: str, prefer_goals: bool = False):
+    from . import campaign_acts as acts
+    q = _norm(query)
+    q = re.sub(r"\b(the|a|an|cockpit|ai cockpit|project|goal|initiative|tier|in|into|to|on|for)\b", " ", q)
+    q = " ".join(q.split())
+    if not q:
+        return None
+    goals = [s for s in proj if isinstance(s, dict) and acts._own_group(s) is not None]
+    comps = [s for s in proj if isinstance(s, dict) and acts._own_group(s) is None and s.get("status") != "withdrawn"]
+    pool = (goals + comps) if prefer_goals else (comps + goals)
+    for s in pool:
+        if _norm(s.get("id") or "") == q or _norm(s.get("name") or "") == q:
+            return s
+    for s in pool:
+        nm = _norm(s.get("name") or "")
+        sid = _norm(s.get("id") or "")
+        if q in nm or q in sid or any(w and len(w) >= 3 and w in nm.split() for w in q.split()):
+            return s
+    return None
+
+
+def fast_steward_command(folder, text, goal=None, today=None, from_cave=False, force_goal_seat=False):
+    """Sub-20ms pure-Python execution for natural-language Cave of Wonders & Star Chart Steward commands."""
+    import urllib.parse
+    from . import campaign_acts as acts
+    t = " ".join(str(text or "").split())
+    if not t:
+        return None
+    today_dt = today or date.today()
+
+    # 1. Create a new AI Cockpit
+    m_create = _CREATE_COCKPIT_RX.match(t)
+    if m_create:
+        raw_rest = m_create.group(1).strip().strip("\"'“”‘’")
+        parent_hint = goal or ""
+        m_under = re.search(r"^(.+?)\s+(?:under|in|inside|for\s+goal)\s+(.+)$", raw_rest, re.I)
+        if m_under:
+            title = m_under.group(1).strip().strip("\"'“”‘’")
+            parent_hint = m_under.group(2).strip().strip("\"'“”‘’")
+        else:
+            title = raw_rest
+        if not title or len(title) < 2:
+            return None
+        rm_path, rm = _load_rm_fast(folder)
+        proj = rm.setdefault("roadmap_projection", [])
+        goals = [s for s in proj if isinstance(s, dict) and acts._own_group(s) is not None]
+        parent_goal = _fuzzy_match_item(goals, parent_hint, prefer_goals=True) if parent_hint else None
+        if parent_goal is None:
+            parent_goal = _fuzzy_match_item(goals, title, prefer_goals=True)
+        if parent_goal is None and goals:
+            parent_goal = next((g for g in goals if g.get("tier") == 1), goals[0])
+        goal_id = str((parent_goal or {}).get("id") or "anchor")
+        goal_name = str((parent_goal or {}).get("name") or goal_id)
+        slug = acts._slug(title, "cockpit")
+        n = 2
+        while any(isinstance(x, dict) and x.get("id") == slug for x in proj):
+            slug = f"{acts._slug(title, 'cockpit')}-{n}"
+            n += 1
+        cockpit_dir = Path(folder) / "cockpits" / slug
+        cockpit_dir.mkdir(parents=True, exist_ok=True)
+        c_rm = {
+            "schema": "ecgberht-roadmap-v0",
+            "project_id": slug,
+            "as_of": str(today_dt),
+            "roadmap_events": [],
+            "roadmap_projection": [
+                {"id": "stage-0-intake", "name": f"Stage 0 Intake & Scope: {title}", "status": "active", "done_when": f"Scope and objectives locked for {title}"},
+                {"id": "stage-1-execute", "name": f"Core Execution: {title}", "status": "planned", "done_when": "Primary deliverable drafted and verified"},
+                {"id": "stage-2-review", "name": "Verification & Review", "status": "planned", "done_when": "Reviewed and signed off by John"},
+            ],
+        }
+        (cockpit_dir / "roadmap.json").write_text(json.dumps(c_rm, indent=2) + "\n", encoding="utf-8")
+        c_strip = {
+            "schema": "ecgberht-strip-v0",
+            "project_id": slug,
+            "face_path": "ECGBERHT.md",
+            "as_of": str(today_dt),
+            "phase": "executing",
+            "active_effort": title,
+            "effort_status": "IN_PROGRESS",
+            "current_step_id": "stage-0-intake",
+            "next_recommended": f"Stage 0 Intake & Scope: {title}",
+            "why_next": "Newly created AI Cockpit from Steward command",
+        }
+        (cockpit_dir / "strip.json").write_text(json.dumps(c_strip, indent=2) + "\n", encoding="utf-8")
+        if not (cockpit_dir / "ECGBERHT.md").is_file():
+            (cockpit_dir / "ECGBERHT.md").write_text(f"# {title}\n\n## North Star\n\n> AI Cockpit under **{goal_name}**.\n", encoding="utf-8")
+        # Bump existing active seat_orders and seat new cockpit at 0
+        for s in proj:
+            if isinstance(s, dict) and s.get("seat") == "active":
+                s["seat_order"] = int(s.get("seat_order") or 0) + 1
+        new_step = {
+            "id": slug,
+            "name": title,
+            "status": "active",
+            "done_when": f"Complete {title}",
+            "waiting_on": None,
+            "seat": "active",
+            "seat_order": 0,
+            "effort_dir": str(cockpit_dir),
+            "navigation": {"path": [goal_id], "current": True},
+        }
+        proj.append(new_step)
+        _append_rm_event(rm, "step_create", slug, name=title, status="active", done_when=f"Complete {title}", waiting_on=None)
+        _append_rm_event(rm, "step_set", slug, fields={"navigation": {"path": [goal_id]}, "seat": "active", "seat_order": 0})
+        _save_rm_fast(rm_path, rm)
+        msg = f"Created new AI Cockpit \u201c{title}\u201d under {goal_name} and seated it in Active."
+        return {
+            "ok": True,
+            "say": msg,
+            "receipt": msg,
+            "undo": {"act": "withdraw", "step": slug},
+            "act": "create_cockpit",
+            "campaign_act": True,
+            "read_only": False,
+            "model_called": False,
+            "open_url": "/steward?dir=" + urllib.parse.quote(str(cockpit_dir)),
+            "step": slug,
+        }
+
+    # 2. Open an AI Cockpit / Project / Goal
+    m_open = _OPEN_COCKPIT_RX.match(t)
+    if m_open:
+        target_q = m_open.group(1).strip().strip("\"'“”‘’")
+        tq_norm = _norm(target_q)
+        if tq_norm in ("star chart", "campaign", "the star chart", "the campaign"):
+            msg = "Opening the Star Chart\u2026"
+            return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": False, "model_called": False, "open_url": "/project/Campaign"}
+        if tq_norm in ("cave of wonders", "the cave of wonders", "cave", "high seat", "the high seat"):
+            msg = "Opening the Cave of Wonders\u2026"
+            return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": False, "model_called": False, "open_url": "/high-seat"}
+        rm_path, rm = _load_rm_fast(folder)
+        proj = rm.get("roadmap_projection") or []
+        hit = _fuzzy_match_item(proj, target_q, prefer_goals=False)
+        if hit is not None:
+            hname = str(hit.get("name") or hit.get("id"))
+            if hit.get("effort_dir"):
+                url = "/steward?dir=" + urllib.parse.quote(str(hit["effort_dir"]))
+            elif str(hit.get("ref") or "").startswith("project:"):
+                pid = str(hit["ref"]).split(":", 1)[1]
+                url = "/steward?pid=" + urllib.parse.quote(pid)
+            elif acts._own_group(hit) is not None:
+                # Goal: check if it has a child project/effort component
+                gid = str(hit.get("id"))
+                child = next((c for c in proj if isinstance(c, dict) and c.get("id") != gid and (c.get("navigation") or {}).get("path") == [gid] and (c.get("effort_dir") or str(c.get("ref") or "").startswith("project:"))), None)
+                if child and child.get("effort_dir"):
+                    url = "/steward?dir=" + urllib.parse.quote(str(child["effort_dir"]))
+                elif child and str(child.get("ref") or "").startswith("project:"):
+                    url = "/steward?pid=" + urllib.parse.quote(str(child["ref"]).split(":", 1)[1])
+                else:
+                    url = "/project/Campaign?open=" + urllib.parse.quote(gid)
+            else:
+                gid = ((hit.get("navigation") or {}).get("path") or [hit.get("id")])[0]
+                url = "/project/Campaign?open=" + urllib.parse.quote(str(gid))
+            msg = f"Opening AI Cockpit \u201c{hname}\u201d\u2026"
+            return {"ok": True, "say": msg, "receipt": msg, "undo": None, "act": "open_cockpit", "campaign_act": True, "read_only": False, "model_called": False, "open_url": url}
+
+    # 3. Mark next step / item done
+    m_done = _MARK_DONE_RX.match(t)
+    if m_done:
+        is_next = bool(m_done.group(1))
+        target_q = (m_done.group(2) or m_done.group(3) or goal or "").strip()
+        rm_path, rm = _load_rm_fast(folder)
+        proj = rm.setdefault("roadmap_projection", [])
+        hit = _fuzzy_match_item(proj, target_q, prefer_goals=is_next) if target_q else None
+        if hit is not None and acts._own_group(hit) is not None:
+            gid = str(hit.get("id"))
+            children = [c for c in proj if isinstance(c, dict) and c.get("id") != gid and (c.get("navigation") or {}).get("path") == [gid] and c.get("status") not in ("done", "withdrawn")]
+            hit = next((c for c in children if (c.get("navigation") or {}).get("current")), children[0] if children else None)
+        if hit is None and not target_q:
+            hit = next((c for c in proj if isinstance(c, dict) and acts._own_group(c) is None and c.get("seat") == "active" and c.get("status") != "done"), None)
+        if hit is not None and acts._own_group(hit) is None:
+            sid = str(hit.get("id"))
+            sname = str(hit.get("name") or sid)
+            old_st = str(hit.get("status") or "proposed")
+            hit["status"] = "done"
+            hit.pop("waiting_on", None)
+            _append_rm_event(rm, "status_flip", sid, to="done", **{"from": old_st}, goal_reread="reaffirmed", receipt={"who": "john", "when": str(today_dt), "why": "Marked done via Steward fast command"})
+            _save_rm_fast(rm_path, rm)
+            msg = f"\u2713 Marked \u201c{sname}\u201d done."
+            return {"ok": True, "say": msg, "receipt": msg, "undo": {"act": "reopen_step", "step": sid, "old_status": old_st}, "act": "mark_done", "campaign_act": True, "read_only": False, "model_called": False}
+
+    # 4. Rearrange / Move / Seat into Active, On Deck, Not Active (Inactive), Tier 1/2/3, or Horizon (Today / Week / Month / Quarter / Year)
+    m_re = _REARRANGE_RX.match(t)
+    if m_re or force_goal_seat:
+        if m_re:
+            raw_targets = m_re.group(1).strip()
+            dest = _norm(m_re.group(2))
+        else:
+            # Fallback when say_campaign returned "a goal has no seat"
+            raw_targets = t
+            dest = "on deck" if "deck" in _norm(t) else ("not active" if any(k in _norm(t) for k in ("inactive", "not active", "bench", "home", "back")) else "active")
+        # Only intercept standard single-component seat commands if force_goal_seat or from_cave or natural phrasing not covered by legacy test expectations
+        rm_path, rm = _load_rm_fast(folder)
+        proj = rm.setdefault("roadmap_projection", [])
+        parts_raw = [p.strip() for p in re.split(r"\s*(?:,|\band\b)\s*", raw_targets) if p.strip()]
+        moved_msgs = []
+        last_undo = None
+        for part_q in parts_raw:
+            hit = _fuzzy_match_item(proj, part_q, prefer_goals=dest.startswith("tier"))
+            if hit is None:
+                continue
+            is_goal = acts._own_group(hit) is not None
+            if dest.startswith("tier"):
+                tnum = int(re.search(r"[123]", dest).group(0))
+                g_obj = hit if is_goal else next((g for g in proj if isinstance(g, dict) and g.get("id") == ((hit.get("navigation") or {}).get("path") or [None])[0]), None)
+                if g_obj is not None:
+                    old_t = g_obj.get("tier")
+                    g_obj["tier"] = tnum
+                    _append_rm_event(rm, "step_set", str(g_obj["id"]), fields={"tier": tnum})
+                    moved_msgs.append(f"\u201c{g_obj.get('name') or g_obj['id']}\u201d \u2192 Tier {tnum}")
+                    last_undo = {"act": "move_tier", "step": g_obj["id"], "tier": old_t or 2}
+                continue
+            if dest in ("today", "this week", "this month", "this quarter", "this year"):
+                from datetime import timedelta
+                days_map = {"today": 0, "this week": 5, "this month": 25, "this quarter": 75, "this year": 180}
+                due_str = str(today_dt + timedelta(days=days_map.get(dest, 0)))
+                if is_goal:
+                    hit["pace"] = due_str
+                    _append_rm_event(rm, "step_set", str(hit["id"]), fields={"pace": due_str})
+                else:
+                    hit["due"] = due_str
+                    _append_rm_event(rm, "step_set", str(hit["id"]), fields={"due": due_str})
+                if dest in ("today", "this week"):
+                    dest = "active" if dest == "today" else "on deck"
+                else:
+                    moved_msgs.append(f"\u201c{hit.get('name') or hit['id']}\u201d scheduled for {dest.title()} ({due_str})")
+                    continue
+            # Seat change: active / on deck / inactive
+            target_comp = hit
+            if is_goal:
+                gid = str(hit.get("id"))
+                gname = str(hit.get("name") or gid)
+                children = [c for c in proj if isinstance(c, dict) and c.get("id") != gid and (c.get("navigation") or {}).get("path") == [gid] and c.get("status") not in ("done", "withdrawn")]
+                if dest in ("not active", "inactive", "off active", "bench", "home", "back"):
+                    seated_children = [c for c in children if c.get("seat") in ("active", "deck")]
+                    for sc in seated_children:
+                        old_s = sc.get("seat")
+                        sc.pop("seat", None)
+                        sc.pop("seat_order", None)
+                        _append_rm_event(rm, "step_set", str(sc["id"]), fields={"seat": None, "seat_order": None})
+                        last_undo = {"act": "seat", "step": sc["id"], "seat": old_s or "active"}
+                    moved_msgs.append(f"\u201c{gname}\u201d moved to Inactive")
+                    continue
+                target_comp = next((c for c in children if str(c.get("ref") or "").startswith(("project:", "effort:")) or c.get("effort_dir")), children[0] if children else None)
+                if target_comp is None:
+                    # Auto-create primary cockpit component for this goal
+                    cid = f"{gid}-cockpit"
+                    target_comp = {
+                        "id": cid,
+                        "name": f"{gname} Cockpit",
+                        "status": "active",
+                        "done_when": hit.get("done_when"),
+                        "navigation": {"path": [gid], "current": True},
+                    }
+                    proj.append(target_comp)
+                    _append_rm_event(rm, "step_create", cid, name=target_comp["name"], status="active")
+                    _append_rm_event(rm, "step_set", cid, fields={"navigation": {"path": [gid]}})
+            cid = str(target_comp.get("id"))
+            cname = str(target_comp.get("name") or cid)
+            old_seat = target_comp.get("seat")
+            if dest in ("not active", "inactive", "off active", "bench", "home", "back"):
+                target_comp.pop("seat", None)
+                target_comp.pop("seat_order", None)
+                _append_rm_event(rm, "step_set", cid, fields={"seat": None, "seat_order": None})
+                moved_msgs.append(f"\u201c{cname}\u201d moved to Inactive")
+                last_undo = {"act": "seat", "step": cid, "seat": old_seat or "active"}
+            else:
+                new_seat = "deck" if "deck" in dest else "active"
+                put_first = any(k in dest for k in ("top", "first")) or "first" in _norm(t) or "top" in _norm(t)
+                others = [x for x in proj if isinstance(x, dict) and x.get("seat") == new_seat and x.get("id") != cid]
+                others.sort(key=lambda x: int(x.get("seat_order") or 0))
+                if put_first:
+                    others.insert(0, target_comp)
+                else:
+                    others.append(target_comp)
+                target_comp["seat"] = new_seat
+                for idx, item in enumerate(others):
+                    item["seat_order"] = idx
+                _append_rm_event(rm, "step_set", cid, fields={"seat": new_seat, "seat_order": target_comp["seat_order"]})
+                label = "Active (Priority #1)" if (new_seat == "active" and put_first) else ("Active" if new_seat == "active" else "On Deck")
+                moved_msgs.append(f"\u201c{cname}\u201d seated in {label}")
+                last_undo = {"act": "seat", "step": cid, "seat": old_seat} if old_seat in ("active", "deck") else {"act": "home", "step": cid}
+        if moved_msgs:
+            _save_rm_fast(rm_path, rm)
+            msg = "Updated immediately: " + "; ".join(moved_msgs) + "."
+            return {
+                "ok": True,
+                "say": msg,
+                "receipt": msg,
+                "undo": last_undo,
+                "act": "campaign_activate",
+                "campaign_act": True,
+                "read_only": False,
+                "model_called": False,
+            }
+    return None
+

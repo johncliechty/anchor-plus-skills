@@ -7,6 +7,8 @@
 const Proto = (() => {
   const PARAMS = new URLSearchParams(location.search);
   const DIR = PARAMS.get("dir") || "";
+  window.STEWARD_DIR = DIR;
+  const _dismissedSessionKeys = new Set();
   const STEP = PARAMS.get("step") || "";   // W5 (2026-09-28): Resume from the High Seat lands on this step
   let _stepShown = false;
   const GENERAL = PARAMS.get("general") === "1";
@@ -856,6 +858,21 @@ const Proto = (() => {
       btnApp.onclick = (ev) => executeApprove(ev, btnApp);
       actRow.appendChild(btnApp);
 
+      const btnStepDone = el("button", "btn-mark-step-done", "\u2713 Mark Next Step Done");
+      btnStepDone.type = "button";
+      btnStepDone.onclick = async (ev) => {
+        ev.stopPropagation();
+        btnStepDone.disabled = true;
+        btnStepDone.textContent = "\u2713 Done!";
+        _approvalResolvedSession = true;
+        try {
+          await post("/api/step-done", {});
+          await loadMap();
+          await renderDeliverablesTile();
+        } catch (e) {}
+      };
+      actRow.appendChild(btnStepDone);
+
       const btnHold = el("button", "", "Option B: Hold & Inspect Manually in Chat");
       btnHold.type = "button";
       btnHold.onclick = (ev) => {
@@ -1534,8 +1551,22 @@ const Proto = (() => {
     const lnk = detail.querySelector(".drow a");
     // a route row is labelled by the document it opens (report.md), never the
     // whole route string (2026-09-05, seen on the page)
-    if (lnk) lnk.textContent = it.managed ? "Open current version" : "Open ↗" +
-      (it.path ? "  " + it.path : (it.route ? "  " + routeName(it.route) : ""));
+    if (lnk) {
+      lnk.textContent = it.managed ? "Open current version" : "Open ↗" +
+        (it.path ? "  " + it.path : (it.route ? "  " + routeName(it.route) : ""));
+      const quickOpen = el("button", "sdone-open-btn", "Open \u25eb");
+      quickOpen.type = "button";
+      quickOpen.title = "Open deliverable in Right Split-Screen Window";
+      quickOpen.style.cssText = "margin-left:8px;padding:1px 6px;font-size:10.5px;border-radius:4px;border:1px solid rgba(56,189,248,0.35);background:rgba(56,189,248,0.1);color:#38bdf8;cursor:pointer;";
+      quickOpen.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (typeof lnk.onclick === "function") lnk.onclick(ev);
+        else if (typeof window.enterSecondWindowMode === "function") window.enterSecondWindowMode(one, lnk.href);
+        else window.open(lnk.href, "_blank");
+      };
+      line.appendChild(quickOpen);
+    }
     row.dataset.key = key;
     if (_openDelivs.has(key)) row.classList.add("open");
     line.onclick = (ev) => {
@@ -2086,6 +2117,26 @@ const Proto = (() => {
       const smEl = el("span", "sm", smText);
       smEl.title = smText;
       metaRow.appendChild(smEl);
+      if (!isLegacyNavTest && !isStepDone && (isStepNow || isStepActive || isStepWait || isNextUp)) {
+        const stepDoneBtn = el("button", "step-done-btn", "\u2713 Mark Done");
+        stepDoneBtn.type = "button";
+        stepDoneBtn.title = "Mark this step done and advance to the next step";
+        stepDoneBtn.style.cssText = "margin-left:auto;padding:2px 8px;font-size:11px;font-weight:600;border-radius:5px;border:1px solid rgba(52,211,153,0.4);background:rgba(52,211,153,0.12);color:#34d399;cursor:pointer;flex-shrink:0;";
+        stepDoneBtn.onclick = async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          stepDoneBtn.disabled = true;
+          stepDoneBtn.textContent = "\u2713 Done";
+          li.classList.remove("active", "wait");
+          li.classList.add("done");
+          try {
+            await post("/api/step-done", { step_id: st.id || "" });
+            await loadMap();
+            await renderDeliverablesTile();
+          } catch (e) {}
+        };
+        metaRow.appendChild(stepDoneBtn);
+      }
       wrap.appendChild(metaRow);
 
       const detailsWrap = el("div", "step-card-details");
@@ -2540,7 +2591,13 @@ const Proto = (() => {
     catch (e) { _delivBusy = false; return; }
     _delivBusy = false;
     const named = registeredReviewNames((d && d.items) || [], (d && d.approved) || [], (d && d.acts) || []);
-    const items = named.items;
+    const isDismissedInSession = (it) => {
+      if (!it || !_dismissedSessionKeys.size) return false;
+      const k = String(it.open_path || it.path || it.product_id || it.what || "");
+      return Boolean(k && _dismissedSessionKeys.has(k));
+    };
+    const items = (named.items || []).filter(it => !isDismissedInSession(it));
+    named.items = items;
     const hasCurrent = items.some(i => i.is_current === true);
     const focusKey=document.activeElement && document.activeElement.dataset.navFocus;
     _deliv = {...named, warning: (d && d.current_warning) || ""};
@@ -3023,16 +3080,24 @@ const Proto = (() => {
           markAllBtn.onclick = async (ev) => {
             ev.stopPropagation();
             markAllBtn.disabled = true;
+            markAllBtn.textContent = "\u2713 All Marked Done";
+            const batchItems = reviewNow.map((it) => {
+              const k = String(it.open_path || it.path || it.product_id || it.what || "");
+              if (k) _dismissedSessionKeys.add(k);
+              return {
+                path: it.open_path || it.path || "",
+                product_id: it.product_id || "",
+                what: it.what || "",
+                revision_id: it.revision_id || "",
+                hash: it.hash || ""
+              };
+            });
+            revBody.textContent = "";
+            revBody.appendChild(el("div", "sdmeta", "No items waiting for review."));
+            const cntSpan = revSum.querySelector(".deliv-tier-count");
+            if (cntSpan) cntSpan.textContent = "0 items \u25b8";
             try {
-              for (const it of reviewNow) {
-                await post("/api/dismiss-deliverable", {
-                  path: it.open_path || it.path || "",
-                  product_id: it.product_id || "",
-                  what: it.what || "",
-                  revision_id: it.revision_id || "",
-                  hash: it.hash || ""
-                });
-              }
+              await post("/api/dismiss-deliverable", { items: batchItems });
             } catch (e) {}
             await renderDeliverablesTile();
           };
@@ -3482,6 +3547,10 @@ const Proto = (() => {
         ev.preventDefault();
         ev.stopPropagation();
         xbtn.disabled = true;
+        const itemKey = String(it.open_path || it.path || it.product_id || it.what || "");
+        if (itemKey) _dismissedSessionKeys.add(itemKey);
+        const host = xbtn.closest(".file-row") || xbtn.closest(".navfile") || xbtn.closest(".sdrow") || row.closest(".navfile") || row.closest(".sdrow") || row;
+        if (host) host.remove();
         const link = row.querySelector("a");
         const href = link ? link.getAttribute("href") || link.href : "";
         try {
@@ -3498,8 +3567,6 @@ const Proto = (() => {
             hash: it.hash || ""
           });
         } catch (e) {}
-        const host = row.closest(".navfile") || row.closest(".sdrow") || row;
-        if (host) host.remove();
         await renderDeliverablesTile();
       };
       row.appendChild(xbtn);

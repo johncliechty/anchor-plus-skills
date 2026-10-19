@@ -463,6 +463,12 @@ anchor.ico
 
 # ── Vendored brand assets (Ghost World Labs mark, Steward personas, Foundry skill icons) ─
 vendor/brand/**
+vendor/brand/campaign-aladdin-star-chart.jpg
+vendor/brand/campaign-jarvis-chart-room.jpg
+vendor/brand/campaign-ecgberht-beacon.jpg
+vendor/brand/new-cockpit-icon.jpg
+vendor/brand/brainstorm-icon.jpg
+vendor/brand/crucible-icon.svg
 
 # ── Vendored, dependency-free assets (KaTeX for the report viewer) ──────────
 vendor/katex/katex.min.js

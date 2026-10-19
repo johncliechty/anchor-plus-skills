@@ -2338,8 +2338,24 @@ def handle_post(cdir, verb, body):
             cleared.append("engine.questions")
         except Exception:
             pass
+        _DELIV_CACHE.clear()
         return {"ok": True, "cleared": cleared}, 200
     if verb in ("dismiss-deliverable", "deliverables/dismiss"):
+        items = body.get("items")
+        if isinstance(items, list) and items:
+            last_res = {"ok": True, "dismissed_count": 0}
+            for it in items:
+                if isinstance(it, dict):
+                    last_res = campaign.dismiss_deliverable(
+                        cdir,
+                        path=str(it.get("path") or ""),
+                        product_id=str(it.get("product_id") or ""),
+                        what=str(it.get("what") or ""),
+                        revision_id=str(it.get("revision_id") or ""),
+                        hash_val=str(it.get("hash") or ""),
+                    )
+            _DELIV_CACHE.clear()
+            return last_res, 200
         result = campaign.dismiss_deliverable(
             cdir,
             path=str(body.get("path") or ""),
@@ -2348,7 +2364,57 @@ def handle_post(cdir, verb, body):
             revision_id=str(body.get("revision_id") or ""),
             hash_val=str(body.get("hash") or ""),
         )
+        _DELIV_CACHE.clear()
         return result, 200 if result.get("ok") else 400
+    if verb in ("step-done", "mark-step-done"):
+        req_id = str(body.get("step_id") or body.get("step") or "").strip()
+        rm_path = Path(cdir) / "roadmap.json"
+        st_path = Path(cdir) / "strip.json"
+        done_id, done_name, next_id, next_name = "", "", "", ""
+        try:
+            st_data = json.loads(st_path.read_text(encoding="utf-8")) if st_path.is_file() else {}
+        except Exception:
+            st_data = {}
+        cur_strip_id = str((st_data.get("strip") or st_data).get("current_step_id") or "").strip()
+        if rm_path.is_file():
+            try:
+                rm = json.loads(rm_path.read_text(encoding="utf-8"))
+                steps = rm.get("roadmap_projection") if isinstance(rm.get("roadmap_projection"), list) else (rm.get("steps") if isinstance(rm.get("steps"), list) else [])
+                target = None
+                if req_id:
+                    target = next((s for s in steps if isinstance(s, dict) and (str(s.get("id") or "") == req_id or str(s.get("name") or "") == req_id)), None)
+                if target is None and cur_strip_id:
+                    target = next((s for s in steps if isinstance(s, dict) and str(s.get("id") or "") == cur_strip_id and s.get("status") != "done"), None)
+                if target is None:
+                    target = next((s for s in steps if isinstance(s, dict) and s.get("status") in ("active", "in_progress", "waiting", "review")), None)
+                if target is None:
+                    target = next((s for s in steps if isinstance(s, dict) and s.get("status") not in ("done", "completed", "withdrawn")), None)
+                if target is not None:
+                    target["status"] = "done"
+                    target.pop("waiting_on", None)
+                    done_id = str(target.get("id") or "")
+                    done_name = str(target.get("name") or target.get("title") or done_id)
+                    nxt = next((s for s in steps if isinstance(s, dict) and str(s.get("id") or "") != done_id and s.get("status") not in ("done", "completed", "withdrawn")), None)
+                    if nxt is not None:
+                        if not any(isinstance(s, dict) and s.get("status") == "active" for s in steps):
+                            nxt["status"] = "active"
+                        next_id = str(nxt.get("id") or "")
+                        next_name = str(nxt.get("name") or nxt.get("title") or next_id)
+                    rm_path.write_text(json.dumps(rm, indent=2), encoding="utf-8")
+            except Exception as exc:
+                return {"ok": False, "error": str(exc)}, 400
+        if st_path.is_file() and isinstance(st_data, dict):
+            try:
+                inner = st_data.get("strip") if isinstance(st_data.get("strip"), dict) else st_data
+                if next_id:
+                    inner["current_step_id"] = next_id
+                if inner.get("waiting_on"):
+                    inner["waiting_on"] = None
+                st_path.write_text(json.dumps(st_data, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+        _DELIV_CACHE.clear()
+        return {"ok": True, "step_id": done_id or req_id, "step_name": done_name or req_id, "next_step_id": next_id, "next_step_name": next_name}, 200
     if verb == "anvil":
         import importlib
         from steward_cockpit import anvil_session as _as
@@ -2598,13 +2664,24 @@ def handle_post(cdir, verb, body):
         # word that it is NOT a Campaign verb hands the text to the steward: a failed compile or a writer error
         # answers a refusal here, never a model turn.
         if not body.get("question_id") and not isinstance(body.get("refinement_context"), dict):
-            from steward_cockpit.campaign_say import is_campaign_folder, say_campaign
-            if is_campaign_folder(cdir):
+            from steward_cockpit.campaign_say import is_campaign_folder, is_cave_folder, say_campaign, fast_steward_command
+            _is_cave = is_cave_folder(cdir)
+            if is_campaign_folder(cdir) or _is_cave:
+                _camp_dir = str(Path(cdir).parent) if _is_cave and (Path(cdir).parent / "roadmap.json").is_file() else cdir
                 _goal = str(body.get("goal") or "").strip() or None
-                spoken = say_campaign(cdir, str(body.get("text") or ""), goal=_goal)
+                _txt = str(body.get("text") or "")
+                spoken = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave)
+                if spoken is None:
+                    spoken = say_campaign(_camp_dir, _txt, goal=_goal)
+                    if spoken and not spoken.get("ok") and "a goal has no seat" in str(spoken.get("say") or ""):
+                        spoken_goal = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave, force_goal_seat=True)
+                        if spoken_goal is not None:
+                            spoken = spoken_goal
                 if spoken is not None:
-                    if _goal and spoken.get("ok"):
-                        note_goal_receipt(cdir, _goal, str(body.get("text") or ""), str(spoken.get("receipt") or spoken.get("say") or ""))
+                    if spoken.get("ok"):
+                        note_goal_receipt(cdir, _goal, _txt, str(spoken.get("receipt") or spoken.get("say") or ""))
+                        if _camp_dir != cdir:
+                            note_goal_receipt(_camp_dir, _goal, _txt, str(spoken.get("receipt") or spoken.get("say") or ""))
                     return spoken, (200 if spoken.get("ok") else 400)
         context = body.get("refinement_context")
         _refined_turn = False

@@ -17761,6 +17761,7 @@ def _doctor_sync_live_code():
                          "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
                          "steward_cockpit.gui_surface_emit",
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",
+                         "steward_cockpit.campaign_say",
                          "steward_cockpit.anvil_session", "steward_cockpit.aegis_session",
                          "steward_cockpit.steward_routes",
                          "terminal_session"):

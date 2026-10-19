@@ -13,12 +13,17 @@ function mdFileHref(rawPath) {
     try { p = decodeURIComponent(new URL(p).pathname).replace(/^\/([A-Za-z]:\/)/, "$1"); }
     catch (_) { p = p.replace(/^file:\/\/\/+/i, ""); }
   }
+  p = p.replace(/#L?\d+(?:-L?\d+)?$/i, "");
   const dirRel = String(window.STEWARD_DIR || "");
   if (/^[A-Za-z]:\//.test(p)) {
     // Extract relative path inside the project/effort if possible
     const marker = p.match(/(?:\/|^)((?:BA 815|\.ecgberht|deliverables|planning|lectures|homework|quiz|syllabus|ta-feedback|code-job-outputs|chapters|story-arc|editorial|Finished Deliverables|skills|foundry-tools|steward_cockpit|tools|docs|tests)\/.+)$/i);
     if (marker) p = marker[1];
-    else return null;
+    else {
+      const devMatch = p.match(/^[A-Za-z]:\/dev\/[^/]+\/(.+)$/i);
+      if (devMatch) p = devMatch[1];
+      else return null;
+    }
   }
   if (typeof window.__resolveDeliverablePath === "function") {
     const resolved = window.__resolveDeliverablePath(p);
@@ -123,9 +128,10 @@ function wireMdSplitLink(a, label, href) {
         node.appendChild(a);
         const dlHref = mdDownloadHref(href);
         if (dlHref) {
-          const dl = el("a", "md-dl", "⬇"); dl.href = dlHref;
-          dl.target = "_blank"; dl.rel = "noopener noreferrer";
+          const dl = el("span", "md-dl", "⬇");
+          dl.setAttribute("role", "button");
           dl.title = "Download file";
+          dl.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); window.open(dlHref, "_blank", "noopener,noreferrer"); };
           node.appendChild(dl);
         }
         return;
@@ -135,7 +141,7 @@ function wireMdSplitLink(a, label, href) {
         else if (/^`[^`]+`$/.test(p)) {
           const inner = p.slice(1, -1).trim();
           const isDocPath = !/^\s*-/.test(inner) && !/\s{2,}/.test(inner) &&
-            /\.(?:md|markdown|pdf|html?|docx|pptx|xlsx|csv|txt|json|py|m?js|css|zip)$/i.test(inner);
+            /\.(?:md|markdown|pdf|html?|docx|pptx|xlsx|csv|txt|json|py|m?js|css|zip)(?:#L?\d+(?:-L?\d+)?)?$/i.test(inner);
           const href = isDocPath ? mdFileHref(inner) : null;
           if (href) {
             const a = el("a", "md-file-link"); a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
@@ -145,9 +151,10 @@ function wireMdSplitLink(a, label, href) {
             node.appendChild(a);
             const dlHref = mdDownloadHref(href);
             if (dlHref) {
-              const dl = el("a", "md-dl", "⬇"); dl.href = dlHref;
-              dl.target = "_blank"; dl.rel = "noopener noreferrer";
+              const dl = el("span", "md-dl", "⬇");
+              dl.setAttribute("role", "button");
               dl.title = "Download " + inner;
+              dl.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); window.open(dlHref, "_blank", "noopener,noreferrer"); };
               node.appendChild(dl);
             }
           } else {

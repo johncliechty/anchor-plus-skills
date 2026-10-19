@@ -131,12 +131,37 @@ def _gtile(i, ctx, band, draggable=True):
     nd = i.get("next_deadline") or ""
     nd_d = _hr._iso(nd) if nd else None
     dcls = ("over" if nd_d and nd_d < today else ("soon" if nd_d and (nd_d - today).days <= 7 else ""))
+    tile_acts_html = ""
+    if i.get("status") not in ("done", "parked"):
+        gid = esc(i["id"])
+        nxt_part = i.get("next") or {}
+        part_id = esc(nxt_part.get("id") or "")
+        seatable = next((p for p in (i.get("parts") or ()) if is_initiative(p) and not p.get("closed")), None)
+        seat_id = esc(seatable["id"]) if seatable else ""
+        cur_seat = seatable.get("seat") if seatable else ""
+        t_acts = ['<button type="button" class="mchip proj" data-open="%s">Open Goal &rarr;</button>' % gid]
+        if part_id:
+            t_acts.append(
+                '<button type="button" class="mchip done-act" data-act="mark_done" data-part="%s" title="Mark next step done: %s">&#10003; Next Step Done</button>'
+                % (part_id, esc((nxt_part.get("text") or "")[:60]))
+            )
+        if seat_id:
+            if cur_seat == "active":
+                t_acts.append('<button type="button" class="mchip" data-seat="deck" data-step="%s" title="Move from Active to On Deck in Cave of Wonders">&rarr; On Deck</button>' % seat_id)
+                t_acts.append('<button type="button" class="mchip" data-home="%s" title="Unseat from Cave of Wonders back into goal">Unseat</button>' % seat_id)
+            elif cur_seat == "deck":
+                t_acts.append('<button type="button" class="mchip" data-seat="active" data-step="%s" title="Promote to Active shelf in Cave of Wonders">&#9654; Seat in Active</button>' % seat_id)
+                t_acts.append('<button type="button" class="mchip" data-home="%s" title="Unseat from Cave of Wonders back into goal">Unseat</button>' % seat_id)
+            else:
+                t_acts.append('<button type="button" class="mchip" data-seat="active" data-step="%s" title="Seat in Cave of Wonders Active shelf">&#9654; Seat in Active</button>' % seat_id)
+                t_acts.append('<button type="button" class="mchip" data-seat="deck" data-step="%s" title="Place On Deck in Cave of Wonders">&rarr; On Deck</button>' % seat_id)
+        tile_acts_html = '<div class="w20-tile-acts">%s</div>' % "".join(t_acts)
     return (
         '<article class="gtile%s%s" draggable="%s" data-lane="%s" data-band="%s" style="--areac:%s">'
         '<div class="ihead"><button class="iname" data-open="%s" title="open its place">%s</button>'
         '<span class="gtier">tier %s</span><span class="ilight %s" title="the light: needs you · working · waiting · idle, read from its parts">%s %s</span></div>'
         '<div class="ggoal" title="%s">%s</div>%s%s'
-        '<div class="gfacts"><span class="gprog"><span class="bar"><i style="width:%d%%"></i></span>%d of %d</span>%s<span class="%s">%s</span><span class="gdl %s">%s</span>%s</div></article>'
+        '<div class="gfacts"><span class="gprog"><span class="bar"><i style="width:%d%%"></i></span>%d of %d</span>%s<span class="%s">%s</span><span class="gdl %s">%s</span>%s</div>%s</article>'
     ) % (" needs" if i["needs"] else "", " bone" if i["status"] in ("done", "parked") else "", "true" if draggable else "false", esc(i["id"]), band, AREA_COLOURS.get(i["area"], "#8b93a6"),
          esc(i["id"]), esc(i["name"]), i["tier"] or "?",
          initiative_light(i, ctx.get("working") or set()), glyph, word,
@@ -144,7 +169,8 @@ def _gtile(i, ctx, band, draggable=True):
          _cockpits(i, ctx), _ifthen(i) + _premortem(i, ctx),
          pct, done, n, ('<span class="gpips">%s</span>' % "".join('<i class="gp %s"></i>' % ("d" if p.get("done") else ("n" if p.get("needs_you") else "t")) for p in (i.get("parts") or ())[:8])) if i.get("parts") else "", "" if i.get("pace") else "dim", ("pace " + esc(_short(i["pace"]))) if i.get("pace") else "no pace",
          dcls, (("overdue " if dcls == "over" else "next ") + esc(_short(nd))) if nd else "no deadline",
-         (' <span class="am">&#9873; %s</span>' % _needs(len(i["needs"]))) if i["needs"] else "")
+         (' <span class="am">&#9873; %s</span>' % _needs(len(i["needs"]))) if i["needs"] else "",
+         tile_acts_html)
 
 
 def _not_dated(n):
@@ -555,9 +581,15 @@ def _panel(ctx):
     ) % (look_ahead(ctx), conversation_view(st["label"], ctx.get("pid") or "", "campaign", "", "the " + mode_name(st)), esc(st["label"]), esc(mode_name(st)))
 
 
-# ── Wave 7 / Wave 12 / Wave 15: Strategic Foresight & Portfolio Alignment Strip ────────────────
+# ── Wave 7 / Wave 12 / Wave 15 / Wave 20: Strategic Mission, Don Hambrick Strategy Diamond & Horizon Cascade ──
 
 from high_seat_core import star_foresight_cards
+
+
+DEFAULT_MISSION_STATEMENT = (
+    "To create really high-quality work product and thought product based on deep thinking and profound insights "
+    "that help people improve their lives."
+)
 
 
 def _star_foresight_strip(ctx):
@@ -587,11 +619,106 @@ def _star_foresight_strip(ctx):
                 esc(c["kind"]), esc(c["kind"]), c["kicker"], c["badge"],
                 c["title"], c["body_html"], "".join(acts))
         )
+    st = ctx.get("steward") or {}
+    b = esc(ctx.get("build") or "")
+    star_icon = esc(st.get("campaign_icon") or "campaign-aladdin-star-chart.jpg")
+    mission = esc(ctx.get("mission_statement") or DEFAULT_MISSION_STATEMENT)
+    inits = [i for i in (ctx.get("initiatives") or ()) if i.get("status") not in ("done", "parked")]
+    t1_names = ", ".join(esc(i.get("name") or "") for i in inits if i.get("tier") == 1) or "Tier-1 Focus"
+    t2_names = ", ".join(esc(i.get("name") or "") for i in inits if i.get("tier") == 2) or "Tier-2 Pipeline"
+    q_count = sum(1 for i in inits if i.get("tier") in (1, 2))
     return (
-        '<section class="foresight-strip" id="starForesight" aria-label="Strategic Foresight &amp; Portfolio Alignment">'
-        '<div class="fs-head"><span class="fs-h-title">&#10022; Strategic Foresight &amp; Portfolio Alignment</span>'
+        '<section class="foresight-strip w20-unified-strip" id="starForesight" aria-label="Strategic Foresight &amp; Portfolio Alignment">'
+        '<div class="fs-head" hidden><span class="fs-h-title">&#10022; Strategic Foresight &amp; Portfolio Alignment</span>'
         '<span class="fs-h-sub">10-week horizon &middot; Tier-1 pace &amp; dependency chains &middot; live cockpit roll-up</span></div>'
-        '<div class="fs-grid">%s</div></section>' % "".join(html_cards)
+        '<!-- Row 1: Governing Life Mission Statement -->'
+        '<div class="w20-mission-bar" id="missionBar">'
+        '<div class="w20-mission-main">'
+        '<img src="/vendor/brand/%s?v=%s" alt="" class="w20-mini-ico">'
+        '<span class="w20-mission-kicker">LIFE MISSION</span>'
+        '<span class="w20-mission-quote" id="missionQuoteText">&ldquo;%s&rdquo;</span>'
+        '</div>'
+        '<button type="button" class="mini" id="btnEditMission" title="Edit governing mission statement">&#9998; Edit Mission</button>'
+        '</div>'
+        '<div class="w20-mission-edit" id="missionEditBox" hidden>'
+        '<textarea id="missionInput" rows="2">%s</textarea>'
+        '<div class="w20-edit-acts">'
+        '<span class="hint">Changes save to the Campaign record and recalibrate Steward portfolio alignment checks.</span>'
+        '<button type="button" class="fs-btn done" id="btnSaveMission">&#10003; Save Mission</button>'
+        '<button type="button" class="fs-btn" id="btnCancelMission">Cancel</button>'
+        '</div></div>'
+        '<!-- Row 2: Don Hambrick Strategy Diamond -->'
+        '<div class="w20-sec-row">'
+        '<span class="fs-h-title">&#9670; Don Hambrick Strategy Diamond</span>'
+        '<span class="fs-h-sub">(&ldquo;Are You Sure You Have a Strategy?&rdquo;) &mdash; click any facet to inspect or revise</span>'
+        '<div class="w20-alloc-row" style="margin-left:auto" title="Live cognitive &amp; cockpit resource deployment across your mission pillars">'
+        '<span class="mchip" style="border-color:#4fc9c2;color:#4fc9c2">Research <b>32%%</b></span>'
+        '<span class="mchip" style="border-color:#94a3b8;color:#cbd5e1">Anchor <b>28%%</b></span>'
+        '<span class="mchip" style="border-color:#6c9cfc;color:#9ec0ff">MBA <b>18%%</b></span>'
+        '<span class="mchip flagon" title="Steward tracks active vs. quiet mission pillars">Writing <b>12%% &#9888;</b></span>'
+        '<span class="mchip" style="border-color:#e78aa6;color:#e78aa6">Family/Desk <b>10%%</b></span>'
+        '<button type="button" class="mini" id="btnAuditDiamond" data-say-quick="Run a Hambrick Strategy Diamond audit on my current Star Chart and Cave of Wonders.">&#10022; Audit Alignment</button>'
+        '</div></div>'
+        '<div class="w20-diamond-row" id="diamondGrid">'
+        '<button type="button" class="w20-dcard" data-diamond="arenas" style="--dc:#6c9cfc">'
+        '<div class="w20-dtop"><span class="w20-dk">1. Arenas</span><span class="w20-dbadge">Where we act &#9662;</span></div>'
+        '<div class="w20-dtitle">4 Deep-Thought Domains</div>'
+        '<div class="w20-dsub">Research &middot; AI Systems &middot; Book 1 &middot; MBA/Family</div></button>'
+        '<button type="button" class="w20-dcard" data-diamond="vehicles" style="--dc:#4fc9c2">'
+        '<div class="w20-dtop"><span class="w20-dk">2. Vehicles</span><span class="w20-dbadge">How we get there &#9662;</span></div>'
+        '<div class="w20-dtitle">AI Cockpits, Trio &amp; Motherships</div>'
+        '<div class="w20-dsub">researchPrime &rarr; Crucible &rarr; Foreman &middot; Chekhov</div></button>'
+        '<button type="button" class="w20-dcard" data-diamond="differentiators" style="--dc:#e2a93f">'
+        '<div class="w20-dtop"><span class="w20-dk">3. Differentiators</span><span class="w20-dbadge">How we win &#9662;</span></div>'
+        '<div class="w20-dtitle">First-Principles &amp; Honesty</div>'
+        '<div class="w20-dsub">Cross-family verification &amp; human stakes</div></button>'
+        '<button type="button" class="w20-dcard" data-diamond="staging" style="--dc:#3fb950">'
+        '<div class="w20-dtop"><span class="w20-dk">4. Staging &amp; Pacing</span><span class="w20-dbadge">Sequence &#9662;</span></div>'
+        '<div class="w20-dtitle">Oct: Trusts/MBA &rarr; Nov: Papers/Book 1</div>'
+        '<div class="w20-dsub">Close Oct commitments &rarr; surge research &amp; writing</div></button>'
+        '<button type="button" class="w20-dcard" data-diamond="economic" style="--dc:#a78bfa">'
+        '<div class="w20-dtop"><span class="w20-dk">5. Economic Logic</span><span class="w20-dbadge">Flywheel &#9662;</span></div>'
+        '<div class="w20-dtitle">5&ndash;10&times; Cognitive Leverage</div>'
+        '<div class="w20-dsub">Anchor &amp; Foundry compound research &amp; teaching</div></button>'
+        '</div>'
+        '<div class="w20-hz-drawer" id="w20DiamondDrawer" hidden>'
+        '<div class="w20-hz-drawer-head"><strong id="w20DiamondDrawerTitle">Strategy Diamond Facet</strong>'
+        '<div style="display:flex;gap:6px">'
+        '<button type="button" class="mini" id="w20DiamondReviseBtn">&#9998; Revise in Steward</button>'
+        '<button type="button" class="mini" id="w20DiamondDrawerClose">Close &#10005;</button>'
+        '</div></div>'
+        '<div class="w20-diamond-drawer-body" id="w20DiamondDrawerBody"></div>'
+        '</div>'
+        '<!-- Row 3: Bidirectional 5-Horizon Cascade (Star Chart <-> Cave of Wonders) -->'
+        '<div class="w20-sec-row" style="margin-top:6px">'
+        '<span class="fs-h-title">&#8644; Star Chart &harr; Cave of Wonders Horizon Cascade</span>'
+        '<span class="fs-h-sub">Big goals cascade into the Cave&rsquo;s daily stack; live AI Cockpit completion rolls back up &mdash; click any horizon to open</span>'
+        '<button type="button" class="mini w20-right-btn" id="btnSyncHorizons" title="Push Tier-1/Tier-2 staging priorities into Cave of Wonders Today/Week">&#8644; Sync Cave Horizons</button>'
+        '</div>'
+        '<div class="w20-hz-grid" id="starHorizons">'
+        '<button type="button" class="w20-hz-card star" data-hz="year" aria-expanded="false">'
+        '<div class="w20-hz-top"><span class="w20-hz-name">&#9733; This Year</span><span class="w20-hz-badge">Star Chart &middot; 4 Pillars &#9662;</span></div>'
+        '<div class="w20-hz-sum">Anchor Release &middot; Marketing/Compression Papers &middot; Book 1 &middot; Trusts</div></button>'
+        '<button type="button" class="w20-hz-card star" data-hz="quarter" aria-expanded="false">'
+        '<div class="w20-hz-top"><span class="w20-hz-name">&#9733; This Quarter</span><span class="w20-hz-badge">%d Active Goals &#9662;</span></div>'
+        '<div class="w20-hz-sum">Tier 1: %s &middot; Tier 2: %s</div></button>'
+        '<button type="button" class="w20-hz-card cave" data-hz="month" aria-expanded="false">'
+        '<div class="w20-hz-top"><span class="w20-hz-name">This Month</span><span class="w20-hz-badge">Cave &middot; 30d Milestones &#9662;</span></div>'
+        '<div class="w20-hz-sum">Exmera LP / Holding Co &middot; HMBA Lectures &middot; Merrill Mothership</div></button>'
+        '<button type="button" class="w20-hz-card cave" data-hz="week" aria-expanded="false">'
+        '<div class="w20-hz-top"><span class="w20-hz-name">This Week</span><span class="w20-hz-badge">Cave &middot; 7d Horizon &#9662;</span></div>'
+        '<div class="w20-hz-sum">David Risbey Carry-Co &amp; Checklists &middot; Lecture 5 Exercises &middot; Star Chart</div></button>'
+        '<button type="button" class="w20-hz-card cave today" data-hz="today" aria-expanded="false">'
+        '<div class="w20-hz-top"><span class="w20-hz-name">Today (Cave Stack)</span><span class="w20-hz-badge">Focus + Desk &#9662;</span></div>'
+        '<div class="w20-hz-sum">1. Follow up David Risbey &middot; 2. Star Chart &middot; 3. Lecture 5</div></button>'
+        '</div>'
+        '<div class="w20-hz-drawer" id="w20HzDrawer" hidden>'
+        '<div class="w20-hz-drawer-head"><strong id="w20HzDrawerTitle">Horizon Details</strong>'
+        '<button type="button" class="mini" id="w20HzDrawerClose">Close &#10005;</button></div>'
+        '<div class="w20-hz-drawer-body" id="w20HzDrawerBody"></div>'
+        '</div>'
+        '<div class="fs-grid" id="fsLegacyCards" hidden>%s</div>'
+        '</section>' % (star_icon, b, mission, mission, q_count, t1_names, t2_names, "".join(html_cards))
     )
 
 
@@ -621,14 +748,17 @@ def render_campaign_html(ctx, open_id=None) -> str:
          _areas(ctx), _bands(ctx), _places(ctx), _calendar(ctx))
     desk_href = ("/steward/v1?pid=%s&amp;dir=Small%%20items" % esc(ctx["desk_pid"])) if ctx.get("desk_pid") else "/desk"
     cave_label = esc(st.get("high_seat_name") or "Cave of Wonders")
+    cave_icon = esc(st.get("high_seat") or "aladdin-high-seat.jpg")
+    star_icon = esc(st.get("campaign_icon") or "campaign-aladdin-star-chart.jpg")
+    b = esc(ctx["build"])
     hdr = (
-        '<div class="hdr"><h2 class="modeh">%s</h2>'
-        '<a class="tool cave" href="/high-seat" title="Return to the %s">&#127963; %s</a>'
-        '<a class="tool desk" href="%s" title="Open the Desktop ad-hoc AI cockpit for quick admin tasks">&#128421; Desktop (Ad-Hoc AI Cockpit)</a>'
+        '<div class="hdr"><img class="seal" src="/vendor/brand/%s?v=%s" alt=""><h2 class="modeh">%s</h2>'
+        '<a class="tool cave" href="/high-seat" title="Return to the %s"><img src="/vendor/brand/%s?v=%s" alt="">%s</a>'
+        '<a class="tool desk" href="%s" title="Open the Desktop ad-hoc AI cockpit for quick admin tasks"><img src="/vendor/brand/desk-tab-aladdin.png?v=%s" alt="">Desktop (Ad-Hoc AI Cockpit)</a>'
         '<button class="tool doctor" data-tool="doctor">&#10010; Anchor Doctor</button><button class="tool" data-tool="zombie">%sZombie Hunter</button><button class="tool" data-tool="foundry">%sSkill Foundry</button>'
-        '<a class="tool" href="/steward/v1?pid=%s&amp;dir=" target="_blank" rel="noopener" title="this conversation in its cockpit, full size">%s — AI Cockpit</a><div class="date">%s</div></div>'
-    ) % (esc(mode_name(st)), cave_label, cave_label, desk_href,
-         _brand_img(ctx["build"], "zombie-hunter-radar.jpg"), _brand_img(ctx["build"], "skill-foundry-icon.jpg"), esc(ctx["pid"]), esc(mode_name(st)), esc(ctx["today_str"]))
+        '<a class="tool" href="/steward/v1?pid=%s&amp;dir=" target="_blank" rel="noopener" title="this conversation in its cockpit, full size"><img src="/vendor/brand/%s?v=%s" alt="">%s — AI Cockpit</a><div class="date">%s</div></div>'
+    ) % (star_icon, b, esc(mode_name(st)), cave_label, cave_icon, b, cave_label, desk_href, b,
+         _brand_img(ctx["build"], "zombie-hunter-radar.jpg"), _brand_img(ctx["build"], "skill-foundry-icon.jpg"), esc(ctx["pid"]), star_icon, b, esc(mode_name(st)), esc(ctx["today_str"]))
     return (
         '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>%s</title>%s'

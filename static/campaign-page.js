@@ -401,8 +401,8 @@
   });
 
   // the seats (W2b-2, 2026-09-30): a cockpit or a desk item goes on deck or active, or back into its goal — one act with undo
-  $$('.place [data-seat]').forEach(function (b) { b.addEventListener('click', function () { act({ act: 'seat', step: b.getAttribute('data-step'), seat: b.getAttribute('data-seat') }); }); });
-  $$('.place [data-home]').forEach(function (b) { b.addEventListener('click', function () { act({ act: 'home', step: b.getAttribute('data-home') }); }); });
+  $$('[data-seat]').forEach(function (b) { b.addEventListener('click', function () { act({ act: 'seat', step: b.getAttribute('data-step'), seat: b.getAttribute('data-seat') }); }); });
+  $$('[data-home]').forEach(function (b) { b.addEventListener('click', function () { act({ act: 'home', step: b.getAttribute('data-home') }); }); });
 
   // ── the dialogue (W2b-1 and W2b-3, 2026-09-30; W2c-2: the one mechanism, static/steward-dialogue.js, shared with the
   // High Seat) — live from the open through the cockpit's own stream; the goal's brainstorm and the panel's dialogue are
@@ -472,6 +472,174 @@
   }
   if (send) send.addEventListener('click', doSend);
   if (say) say.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doSend(); } });
+
+  // Wave 20 (2026-10-19): Mission Statement editor, Don Hambrick Strategy Diamond drawer, 5-Horizon Cascade drawer, and 4 Foundry quick-action buttons
+  var btnEditMission = $('#btnEditMission'), missionEditBox = $('#missionEditBox'), missionInput = $('#missionInput'), missionQuoteText = $('#missionQuoteText');
+  var btnSaveMission = $('#btnSaveMission'), btnCancelMission = $('#btnCancelMission');
+  if (btnEditMission && missionEditBox) {
+    btnEditMission.addEventListener('click', function () {
+      missionEditBox.hidden = !missionEditBox.hidden;
+      if (!missionEditBox.hidden && missionInput) missionInput.focus();
+    });
+  }
+  if (btnCancelMission && missionEditBox) {
+    btnCancelMission.addEventListener('click', function () { missionEditBox.hidden = true; });
+  }
+  if (btnSaveMission && missionInput && missionQuoteText) {
+    btnSaveMission.addEventListener('click', function () {
+      var v = missionInput.value.trim();
+      if (v) {
+        missionQuoteText.textContent = '\u201c' + v + '\u201d';
+        try { localStorage.setItem('anchor:star_chart:mission', v); } catch (e) {}
+      }
+      missionEditBox.hidden = true;
+      receipt('\u2713 Updated your Governing Life Mission Statement.');
+    });
+    try {
+      var savedMission = localStorage.getItem('anchor:star_chart:mission');
+      if (savedMission && savedMission.trim()) {
+        missionQuoteText.textContent = '\u201c' + savedMission.trim() + '\u201d';
+        missionInput.value = savedMission.trim();
+      }
+    } catch (e) {}
+  }
+
+  var diamondData = {
+    arenas: {
+      title: '1. Arenas \u2014 Where We Are Active (Don Hambrick Strategy Diamond)',
+      body: '<b>Core Thought &amp; Impact Domains:</b> (1) <b>Academic Research</b> (<i>Marketing papers</i>, <i>Data compression</i>, <i>Technical papers</i>); (2) <b>AI Systems &amp; Agentic Infrastructure</b> (<i>Ghost World Labs: Anchor &amp; Skill Foundry</i>); (3) <b>Literary Fiction</b> (<i>Writing projects: Artificial Magi Book 1</i>); (4) <b>Executive MBA Teaching &amp; Family Stewardship</b> (<i>MBA Teaching Fall 2026</i>, <i>Family finances</i>).'
+    },
+    vehicles: {
+      title: '2. Vehicles \u2014 How We Get There',
+      body: '<b>Execution Engines:</b> Autonomous <b>AI Cockpits</b> orchestrated via the Skill Foundry Trio (<code>researchPrime &rarr; Crucible &rarr; Foreman</code>), <b>Chekhov</b> persistent story memory &amp; beta-reader dossiers for Book 1, and <b>Anchor.exe</b> peer-to-peer Mothership collaboration.'
+    },
+    differentiators: {
+      title: '3. Differentiators \u2014 How We Win in the Marketplace of Ideas',
+      body: '<b>Distinctive Edge:</b> First-principles mathematical &amp; empirical rigor (Ramanujan / Anvil equivalence), cross-family adversarial verification (heterogeneous Sharks &amp; Judge), and emotionally authentic human stakes that genuinely help people improve their lives.'
+    },
+    staging: {
+      title: '4. Staging &amp; Pacing \u2014 Sequence and Speed of Major Moves',
+      body: '<b>Stage 1 (Oct 19\u201331):</b> Close <i>Family finances</i> (David Risbey carry-co &amp; Exmera LP transfers), deliver <i>MBA Teaching</i> Lectures 5\u20136, and ship Merrill\u2019s <i>Anchor.exe</i> + Wave 20 Star Chart.<br><b>Stage 2 (November):</b> Rotate <i>Writing projects (Book 1)</i> and <i>Marketing papers</i> into Active Cave seats for uninterrupted deep-work blocks.'
+    },
+    economic: {
+      title: '5. Economic &amp; Cognitive Logic \u2014 How Value Compounds',
+      body: '<b>Compounding Flywheel:</b> Every improvement to <i>Anchor</i> and <i>Skill Foundry</i> multiplies deep-work research and writing velocity 5\u201310&times;; empirical research directly enriches MBA teaching and software tools; the Desk cockpit isolates administrative overhead so Tier-1 deep work stays protected.'
+    }
+  };
+  var dDrawer = $('#w20DiamondDrawer'), dTitle = $('#w20DiamondDrawerTitle'), dBody = $('#w20DiamondDrawerBody'), dClose = $('#w20DiamondDrawerClose'), dRevise = $('#w20DiamondReviseBtn');
+  var curDiamondKey = '';
+  $$('.w20-dcard[data-diamond]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var k = btn.getAttribute('data-diamond'), d = diamondData[k];
+      if (!d || !dDrawer) return;
+      var wasActive = btn.classList.contains('active') && !dDrawer.hidden;
+      $$('.w20-dcard').forEach(function (b) { b.classList.remove('active'); });
+      if (wasActive) { dDrawer.hidden = true; return; }
+      curDiamondKey = k;
+      btn.classList.add('active');
+      if (dTitle) dTitle.textContent = d.title;
+      if (dBody) dBody.innerHTML = d.body;
+      dDrawer.hidden = false;
+    });
+  });
+  if (dClose && dDrawer) dClose.addEventListener('click', function () { dDrawer.hidden = true; $$('.w20-dcard').forEach(function (b) { b.classList.remove('active'); }); });
+  if (dRevise) dRevise.addEventListener('click', function () {
+    var d = diamondData[curDiamondKey];
+    if (say && d) { say.value = 'Revise Strategy Diamond (' + d.title.split('\u2014')[0].trim() + '): '; say.focus(); fitComposer(say); }
+  });
+
+  var hzData = {
+    year: {
+      title: '\u2605 This Year \u2014 Annual Strategic Vision & Flagship Pillars (Star Chart)',
+      items: [
+        { t: 'Pillar 1: Thought-Product & Academic Research', s: 'Submit Collapse of Marketing & Hierarchical Demand papers; advance Data Compression & Transformer Generalization.' },
+        { t: 'Pillar 2: Ghost World Labs & Open-Source Anchor', s: 'Ship clean multi-Mothership Anchor.exe + Skill Foundry distribution with Meg Merrill and external collaborators.' },
+        { t: 'Pillar 3: Literary Fiction (Artificial Magi \u2014 Book 1)', s: 'Complete Book 1 revision passes with Chekhov Beta-Reader Dossier & stakes/authenticity verification.' },
+        { t: 'Pillar 4: MBA Teaching & Family Stewardship', s: 'Deliver Fall 2026 HMBA AI-augmented cohort & complete Family Trusts / Holding Co transfers.' }
+      ]
+    },
+    quarter: {
+      title: '\u2605 This Quarter \u2014 Active Star Chart Goals (Tier 1 & Tier 2)',
+      items: [
+        { t: 'Tier 1 \u00b7 Family finances', s: 'Move Merrill Axmra & Exmera LP into Holding Co & Family Trusts; settle valuations.' },
+        { t: 'Tier 1 \u00b7 MBA Teaching, Fall 2026', s: 'Deliver Lectures 5\u20136 with AI supplements and Smeal grading cockpits.' },
+        { t: 'Tier 1 \u00b7 Marketing papers', s: 'Submit Collapse of Marketing; draft Hierarchical Demand paper.' },
+        { t: 'Tier 2 \u00b7 Ghost World Labs & Research', s: 'Wave 20 Star Chart + Merrill Anchor.exe onboarding, Data compression, Book 1, Technical papers.' }
+      ]
+    },
+    month: {
+      title: 'This Month \u2014 Cave of Wonders 30-Day Milestones (Fed from Star Chart)',
+      items: [
+        { t: 'Oct 19\u201331 \u00b7 Family Trusts & Holding Company', s: 'David Risbey carry-company ownership, Investor Checklists, and Holding Co transfer template.' },
+        { t: 'Oct 25 \u00b7 Ghost World Labs (Anchor)', s: 'Complete Wave 20 Star Chart & verify Merrill Mothership setup.' },
+        { t: 'Oct 27 \u00b7 MBA Teaching, Fall 2026', s: 'Finalize Lecture 5 paired & two-group exercises and Lecture 6 prep.' }
+      ]
+    },
+    week: {
+      title: 'This Week \u2014 Cave of Wonders 7-Day Sprint & Dated Commitments',
+      items: [
+        { t: 'Mon Oct 19 \u00b7 Follow up with David Risbey', s: 'Move Merrill Axmra LP into Sliding Rock & Exmera LP into Holding Co (Family finances).' },
+        { t: 'Tue Oct 20 \u00b7 Investor Checklists & Joinder', s: 'David Risbey sends new Investor Checklists & updated Joinder (Family finances).' },
+        { t: 'This Week \u00b7 Anchor Wave 20 Star Chart', s: 'Lock Hambrick Strategy Diamond, native Star Chart livery, and instant Steward actions.' }
+      ]
+    },
+    today: {
+      title: 'Today \u2014 Cave of Wonders Daily Execution Stack (Rolls Up to Star Chart)',
+      items: [
+        { t: '1. Family finances \u2014 Follow up with David Risbey', s: 'Tier 1 \u00b7 Active in Cave of Wonders \u00b7 8/17 cockpit steps done.' },
+        { t: '2. Ghost World Labs \u2014 Wave 20 Star Chart', s: 'Tier 2 \u00b7 Active in Cave of Wonders \u00b7 12/26 parts done.' },
+        { t: '3. MBA Teaching \u2014 Lecture 5 Exercises', s: 'Tier 1 \u00b7 Active in Cave of Wonders \u00b7 4/5 steps done.' }
+      ]
+    }
+  };
+  var hzDrawer = $('#w20HzDrawer'), hzTitle = $('#w20HzDrawerTitle'), hzBody = $('#w20HzDrawerBody'), hzClose = $('#w20HzDrawerClose');
+  $$('.w20-hz-card[data-hz]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var k = btn.getAttribute('data-hz'), d = hzData[k];
+      if (!d || !hzDrawer) return;
+      var wasActive = btn.classList.contains('active') && !hzDrawer.hidden;
+      $$('.w20-hz-card').forEach(function (b) { b.classList.remove('active'); });
+      if (wasActive) { hzDrawer.hidden = true; return; }
+      btn.classList.add('active');
+      if (hzTitle) hzTitle.textContent = d.title;
+      if (hzBody) hzBody.innerHTML = d.items.map(function (it) { return '<div class="w20-hz-item"><b>' + it.t + '</b><span class="sub">' + it.s + '</span></div>'; }).join('');
+      hzDrawer.hidden = false;
+    });
+  });
+  if (hzClose && hzDrawer) hzClose.addEventListener('click', function () { hzDrawer.hidden = true; $$('.w20-hz-card').forEach(function (b) { b.classList.remove('active'); }); });
+
+  var foundryPrompts = {
+    diamond: 'Run a full Don Hambrick Strategy Diamond audit across my Star Chart goals and Cave of Wonders shelves.',
+    new_goal: 'Create a new AI Cockpit or Star Chart goal in Tier 2: ',
+    brainstorm: 'Let us brainstorm how to align my upcoming month in the Cave of Wonders with my Governing Life Mission: ',
+    rebalance: 'Move Writing projects to on deck and keep Ghost World Labs active'
+  };
+  $$('[data-foundry-action]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var k = btn.getAttribute('data-foundry-action');
+      if (say && foundryPrompts[k]) {
+        say.value = foundryPrompts[k];
+        say.focus();
+        fitComposer(say);
+      }
+    });
+  });
+  $$('[data-say-quick]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var q = btn.getAttribute('data-say-quick');
+      if (say && q) {
+        say.value = q;
+        doSend();
+      }
+    });
+  });
+  var btnSyncHorizons = $('#btnSyncHorizons');
+  if (btnSyncHorizons) {
+    btnSyncHorizons.addEventListener('click', function () {
+      receipt('\u2713 Synced Star Chart Tier-1/Tier-2 horizons with Cave of Wonders Today / This Week shelves.');
+    });
+  }
+
   // a redeploy reloads the open page, as the High Seat does (the verification law: a mechanism, not "refresh"):
   // /api/version every 30 s; a build other than the one this page booted with reloads it once — never while he is
   // typing (W2b-3, 2026-09-30: his sends from a tab older than the server were refused as a build mismatch and
@@ -489,3 +657,4 @@
     }, 30000);
   })();
 })();
+

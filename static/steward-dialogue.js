@@ -223,6 +223,8 @@
           }
           try { if (DK) localStorage.removeItem(DK); } catch (e) {}
           if (j.campaign_act && !j.read_only) {   // a Campaign verb: the record changed; the receipt and its undo are his
+            live.target = list; live.goal = goal || null; appendLine('you', text); appendLine('st', j.say || j.receipt || 'Done.'); live.target = null; live.goal = null;
+            if (j.open_url && j.act === 'open_cockpit') { box.value = ''; try { box.dispatchEvent(new Event('input')); } catch (e) {} receipt(j.say, false); window.location.href = j.open_url; return; }
             if (o.onRecord) { box.value = ''; try { box.dispatchEvent(new Event('input')); } catch (e) {} o.onRecord(j.say, j.undo || null, false); return; }
             keep(j.say, false, j.undo || null);
             location.reload(); return;
@@ -353,6 +355,6 @@
     }
     box.style.overflowY = box.scrollHeight > box.clientHeight ? 'auto' : 'hidden';
   }
-  window.StewardDialogue = { init: init, authHeaders: authHeaders, loginBox: loginBox, fitComposer: fitComposer };
+  window.StewardDialogue = { init: init, authHeaders: authHeaders, loginBox: loginBox }; window.StewardDialogue.fitComposer = fitComposer;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', deliverablesBar); else deliverablesBar();   // authHeaders: the one way a GET on these pages carries the token; loginBox: the one login script
 })();

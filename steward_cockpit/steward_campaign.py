@@ -3537,7 +3537,7 @@ def map_stamp(campaign_dir: str):
     root = Path(campaign_dir)
     stamp = []
     for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md",
-                ".ecgberht/attention.json"):
+                ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json"):
         try:
             stamp.append((root / rel).stat().st_mtime_ns)
         except OSError:

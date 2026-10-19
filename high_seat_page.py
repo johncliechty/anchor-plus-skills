@@ -1178,6 +1178,7 @@ def conversation_view(label, camp_pid, inst="main", dir_="", title="the conversa
     lists what that conversation made."""
     src = "/steward/v1?embed=1&amp;view=talk&amp;inst=%s&amp;pid=%s&amp;dir=%s" % (esc(inst), esc(camp_pid), esc(_quote(dir_)))
     foundry_bar = ""
+    head_ico = ""
     if inst == "cave":
         foundry_bar = (
             '<div class="cos-foundry-bar" id="cosFoundryBar" aria-label="Steward quick actions">'
@@ -1191,15 +1192,29 @@ def conversation_view(label, camp_pid, inst="main", dir_="", title="the conversa
             '<img src="/vendor/brand/desk-tab-aladdin.png" alt=""><span>+ Desk / Calendar</span></button>'
             '</div>'
         )
+    elif inst == "campaign":
+        head_ico = '<img class="w20-mini-ico" src="/vendor/brand/campaign-aladdin-star-chart.jpg" alt="">'
+        foundry_bar = (
+            '<div class="cos-foundry-bar" id="cosFoundryBar" aria-label="Star Chart Steward quick actions">'
+            '<button type="button" class="cos-fbtn" data-foundry-action="diamond" title="Run a Don Hambrick Strategy Diamond alignment audit">'
+            '<img src="/vendor/brand/campaign-aladdin-star-chart.jpg" alt=""><span>Strategy Diamond</span></button>'
+            '<button type="button" class="cos-fbtn" data-foundry-action="new_goal" title="Create a new Goal or AI Cockpit">'
+            '<img src="/vendor/brand/new-cockpit-icon.jpg" alt=""><span>+ New Goal / Cockpit</span></button>'
+            '<button type="button" class="cos-fbtn" data-foundry-action="brainstorm" title="Brainstorm strategy &amp; resource timing with the Steward">'
+            '<img src="/vendor/brand/brainstorm-icon.jpg" alt=""><span>Brainstorm</span></button>'
+            '<button type="button" class="cos-fbtn" data-foundry-action="rebalance" title="Rebalance Star Chart tiers &amp; Cave of Wonders shelves">'
+            '<img src="/vendor/brand/crucible-icon.svg" alt=""><span>Rebalance Tiers</span></button>'
+            '</div>'
+        )
     return (
-        '<section class="exwrap cview" id="dialogue" data-dir="%s"><div class="exhead"><h3>%s &mdash; %s</h3><span class="exstate" id="exState" data-state="">&hellip;</span>'
+        '<section class="exwrap cview" id="dialogue" data-dir="%s"><div class="exhead">%s<h3>%s &mdash; %s</h3><span class="exstate" id="exState" data-state="">&hellip;</span>'
         '<a class="note" href="/steward/v1?pid=%s&amp;dir=%s" target="_blank" rel="noopener" title="this conversation in its cockpit, full size">open in the cockpit &#8599;</a></div>'
         '<iframe class="cview-frame" src="%s" title="%s &mdash; %s"></iframe>'
         '<ul class="ex" id="exList" hidden></ul>%s</section>'
         '<section class="delivbar" id="delivBar" data-pid="%s" data-dir="%s"><button class="db-h" id="delivToggle" type="button" aria-expanded="false" aria-controls="delivList">'
         '<span class="db-t">Deliverables</span><span class="db-c" id="delivCount">&hellip;</span><span class="db-caret">&#9662;</span></button>'
         '<ul class="db-list" id="delivList" hidden></ul></section>'
-    ) % (esc(dir_), esc(label), esc(title), esc(camp_pid), esc(_quote(dir_)),
+    ) % (esc(dir_), head_ico, esc(label), esc(title), esc(camp_pid), esc(_quote(dir_)),
          src, esc(label), esc(title), foundry_bar, esc(camp_pid), esc(dir_))
 
 
