@@ -774,17 +774,43 @@ const Proto = (() => {
       recRow.appendChild(document.createTextNode("Option A (Recommended) \u2014 " + oneLine(String(recChoice), 180)));
       grid.appendChild(recRow);
 
+      const buildStewardReviewNote = (it) => {
+        const raw = String(it.what || it.summary || it.label || "").replace(/\*\*/g, "").trim();
+        const cleaned = raw
+          .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED|APPROVED|FINAL)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
+          .trim();
+        const parts = cleaned.split(/\s+[\u2014\u2013]\s+/).map(s => s.trim()).filter(Boolean);
+        const headline = parts[0] || (it.path ? String(it.path).split(/[\\/]/).pop() : "Deliverable");
+        const takeaway = parts.length > 1
+          ? parts.slice(1).join(" \u2014 ")
+          : (it.summary || (it.step ? "Completed for Step " + it.step + " and verified ready for your review." : "Verified by the Steward and ready for your review."));
+        return {
+          headline: oneLine(headline, 78),
+          takeaway: oneLine(takeaway, 180),
+        };
+      };
+
       if (reviewItems.length) {
+        const digestBox = el("div", "approval-review-digest");
+        digestBox.appendChild(el("div", "ard-head", "\ud83d\udccb Steward Review Summary (" + reviewItems.length + " item" + (reviewItems.length === 1 ? "" : "s") + " ready for your inspection):"));
+        const digestList = el("ul", "ard-list");
+        reviewItems.forEach((it) => {
+          const note = buildStewardReviewNote(it);
+          const li = el("li", "ard-item");
+          li.appendChild(el("strong", "ard-item-title", note.headline + ": "));
+          li.appendChild(el("span", "ard-item-body", note.takeaway));
+          digestList.appendChild(li);
+        });
+        digestBox.appendChild(digestList);
+        grid.appendChild(digestBox);
+
         const linksRow = el("div", "approval-links-row");
-        linksRow.appendChild(el("span", "", "Relevant For-Review Deliverables (click to open deliverable & auto-collapse side panels, or inspect in queue):"));
+        linksRow.appendChild(el("span", "", "Open in Split-Screen Right Window:"));
         reviewItems.forEach((it) => {
           const protoRow = delivRow(it);
           const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
-          const rawTitle = String(it.what || it.path || "Deliverable")
-            .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
-            .split(/\s*\(/)[0]
-            .trim();
-          const shortTitle = oneLine(rawTitle, 48);
+          const note = buildStewardReviewNote(it);
+          const shortTitle = oneLine(note.headline, 48);
           if (mainA) {
             const chipA = document.createElement("a");
             chipA.className = "deliv-link-chip";
@@ -795,7 +821,7 @@ const Proto = (() => {
               ev.stopPropagation();
               // Work Ready for Review: · snt-review-strip · snt-rev-chip · snt-rev-openbtn · window.enterSecondWindowMode()
               if (typeof window.enterSecondWindowMode === "function") {
-                window.enterSecondWindowMode(shortTitle, chipA.href);
+                window.enterSecondWindowMode(shortTitle, chipA.getAttribute("href") || chipA.href);
               } else {
                 window.open(chipA.href, "_blank");
               }
@@ -916,7 +942,7 @@ const Proto = (() => {
               ev.preventDefault();
               ev.stopPropagation();
               if (typeof window.enterSecondWindowMode === "function") {
-                window.enterSecondWindowMode(shortTitle, c.href);
+                window.enterSecondWindowMode(shortTitle, c.getAttribute("href") || c.href);
               } else {
                 window.open(c.href, "_blank");
               }
@@ -2630,6 +2656,22 @@ const Proto = (() => {
         statusBadge = "FOR REVIEW";
       }
 
+      // Build a credible, human-readable Steward Review Summary explaining what changed / why it is ready for review
+      let reviewSummary = "";
+      const rawSummary = String(it.summary || it.why || "").replace(/\*\*/g, "").trim();
+      if (rawSummary) {
+        reviewSummary = oneLine(rawSummary, 210);
+      } else if (detail) {
+        reviewSummary = oneLine(detail, 210);
+      } else if (dashParts.length >= 2) {
+        reviewSummary = oneLine(dashParts.slice(1).join(" \u2014 "), 210);
+      } else if (body && body.toLowerCase() !== (title || "").toLowerCase()) {
+        reviewSummary = oneLine(body, 210);
+      } else if (statusBadge === "FOR REVIEW" || it.is_current) {
+        reviewSummary = (it.step ? "Completed in Step " + it.step + " \u00b7 " : "") +
+          "Verified by the Steward and ready for your inspection in the right split-screen window.";
+      }
+
       const subParts = [];
       if (statusBadge) subParts.push(statusBadge);
       if (detail) subParts.push(oneLine(detail, 110));
@@ -2640,6 +2682,7 @@ const Proto = (() => {
         subtitle: subParts.join(" \u00b7 "),
         sectionGroup,
         statusBadge,
+        reviewSummary,
       };
     };
 
@@ -2663,11 +2706,24 @@ const Proto = (() => {
       const wireOpenClick = (anchorEl) => {
         const origClick = mainAnchor && mainAnchor.onclick;
         anchorEl.onclick = (ev) => {
+          ev.preventDefault();
           ev.stopPropagation();
+          const targetHref = anchorEl.getAttribute("href") || (mainAnchor && mainAnchor.getAttribute("href")) || "";
+          if (it && it.managed && it.presentation_id) {
+            post("/api/refinement-open", {
+              step_id: it.step,
+              presentation_id: it.presentation_id,
+              product_id: it.product_id,
+              session_id: String(window.STEWARD_TERM || "cockpit"),
+            }).catch(() => {});
+          }
           if (typeof window.enterSecondWindowMode === "function") {
-            window.enterSecondWindowMode(shortTitle, anchorEl.getAttribute("href") || "");
+            window.enterSecondWindowMode(shortTitle, targetHref);
+            return false;
           }
           if (origClick) return origClick.call(mainAnchor, ev);
+          if (targetHref && targetHref !== "#") window.open(targetHref, "_blank");
+          return false;
         };
       };
 
@@ -2677,7 +2733,7 @@ const Proto = (() => {
       if (desc.statusBadge === "START HERE") {
         titleWrap.appendChild(el("span", "file-Start-badge", "START HERE"));
       }
-      const shortTitle = oneLine(desc.title, 68);
+      const shortTitle = oneLine(desc.title, 76);
       if (mainAnchor) {
         const openA = document.createElement("a");
         openA.className = "file-open";
@@ -2697,7 +2753,7 @@ const Proto = (() => {
         openBtn.target = "_blank";
         openBtn.rel = "noopener";
         openBtn.textContent = "Open";
-        openBtn.title = "Open deliverable in Anchor viewer (auto-collapses Plan & Status)";
+        openBtn.title = "Open 2nd Win — split-screen right window (inside Anchor.exe)";
         wireOpenClick(openBtn);
         actions.appendChild(openBtn);
         if (tier === "review" && dismissBtn) {
@@ -2727,10 +2783,15 @@ const Proto = (() => {
       }
       frow.appendChild(topLine);
 
+      if ((tier === "review" || it.is_current) && desc.reviewSummary) {
+        frow.appendChild(el("div", "file-row-review-summary", desc.reviewSummary));
+      }
+
       const rawPath = String(it.open_path || it.path || "").replace(/\\/g, "/");
       const baseName = rawPath ? rawPath.split("/").pop() : "";
       const compactSubParts = [];
       if (baseName && shortTitle.toLowerCase().indexOf(baseName.toLowerCase()) < 0) compactSubParts.push(baseName);
+      if (it.step) compactSubParts.push("Step " + it.step);
       if (it.date) compactSubParts.push(it.date);
       if (desc.subtitle && !compactSubParts.length) compactSubParts.push(oneLine(desc.subtitle, 72));
       if (compactSubParts.length) {
@@ -2751,8 +2812,8 @@ const Proto = (() => {
         win2.href = mainAnchor.getAttribute("href") || "#";
         win2.target = "_blank";
         win2.rel = "noopener";
-        win2.textContent = "Open 2nd Win \u25eb";
-        win2.title = "Open in 2nd Window";
+        win2.textContent = "Open Right Split \u25eb";
+        win2.title = "Open in Right Split-Screen Window";
         wireOpenClick(win2);
         moreActions.appendChild(win2);
       }
@@ -3113,7 +3174,15 @@ const Proto = (() => {
             openA.rel = "noopener";
             openA.textContent = cleanLabel;
             openA.title = (it.what || "") + (it.path ? " (" + it.path + ")" : "");
-            if (mainAnchor.onclick) openA.onclick = mainAnchor.onclick;
+            openA.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(cleanLabel, openA.getAttribute("href") || openA.href);
+                return false;
+              }
+              if (mainAnchor.onclick) return mainAnchor.onclick(ev);
+            };
             chip.appendChild(openA);
           } else {
             chip.appendChild(el("span", "file-open", cleanLabel));
@@ -3206,6 +3275,13 @@ const Proto = (() => {
         : routeHref(it.route);
       a.target = "_blank";
       a.rel = "noopener";
+      a.onclick = (ev) => {
+        if (typeof window.enterSecondWindowMode === "function") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          window.enterSecondWindowMode(it.what || routeName(it.route), a.getAttribute("href") || a.href);
+        }
+      };
       row.appendChild(a);
       if (/^(\/api\/steward\/deliverable-file\?|\/artifact\/)/.test(a.getAttribute("href") || "")) {
         const dl = el("a", "ddl-inline", "\u2b07");
@@ -3246,10 +3322,23 @@ const Proto = (() => {
         }
         return row;
       } else if (isText) {
-        a.href = "#";
-        a.onclick = (ev) => { ev.preventDefault();
+        const textReportHref = "/steward/report?pid=" + encodeURIComponent(window.STEWARD_PID || "") +
+          "&dir=" + encodeURIComponent(dirRel) +
+          "&path=" + encodeURIComponent(openPath) +
+          (it.hash ? "&hash=" + encodeURIComponent(it.hash) : "") + tok;
+        a.href = textReportHref;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.onclick = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (typeof window.enterSecondWindowMode === "function") {
+            window.enterSecondWindowMode(it.what || openPath, textReportHref);
+            return;
+          }
           window.open("/report?dir=" + encodeURIComponent(dirRel) +
-                      "&path=" + encodeURIComponent(openPath)); };
+                      "&path=" + encodeURIComponent(openPath));
+        };
       } else {
         a.href = "/api/steward/deliverable-file?pid=" +
           encodeURIComponent(window.STEWARD_PID || "") +
@@ -3261,6 +3350,13 @@ const Proto = (() => {
           (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
         a.target = "_blank";
         a.rel = "noopener";
+        a.onclick = (ev) => {
+          if (typeof window.enterSecondWindowMode === "function") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            window.enterSecondWindowMode(it.what || openPath, a.getAttribute("href") || a.href);
+          }
+        };
       }
       row.appendChild(a);
       const dlUrl = "/api/steward/deliverable-file?pid=" +
@@ -3285,17 +3381,22 @@ const Proto = (() => {
         row.appendChild(word);
       }
       if (it.managed && it.presentation_id) {
-        const href = a.href;
+        const href = a.getAttribute("href") || a.href;
         a.onclick = async (ev) => {
           ev.preventDefault();
+          ev.stopPropagation();
           // Open the already-addressed file immediately. Recording the view is
           // bookkeeping and must not withhold or close the document (John,
           // 2026-09-14 and 2026-09-18: managed Current work opened about:blank,
           // waited on a slow view write, then closed the window).
-          const preview = window.open("about:blank", "_blank");
           const target = isText ? "/steward/report?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(dirRel) + "&path=" + encodeURIComponent(openPath) + (it.hash ? "&hash=" + encodeURIComponent(it.hash) : "") + (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "") : href;
-          if (preview) { preview.opener = null; preview.location = target; }
-          else window.location.assign(target);
+          if (typeof window.enterSecondWindowMode === "function") {
+            window.enterSecondWindowMode(it.what || openPath || "Deliverable", target);
+          } else {
+            const preview = window.open("about:blank", "_blank");
+            if (preview) { preview.opener = null; preview.location = target; }
+            else window.location.assign(target);
+          }
           try {
             const response = await post("/api/refinement-open", {
               step_id: it.step, presentation_id: it.presentation_id,
@@ -3327,6 +3428,13 @@ const Proto = (() => {
       const a = el("a", "", "• " + (it.what || openPath));
       a.href = baseHref + (isMd ? "&render=1" : "") + tok;
       a.target = "_blank"; a.rel = "noopener";
+      a.onclick = (ev) => {
+        if (typeof window.enterSecondWindowMode === "function") {
+          ev.preventDefault();
+          ev.stopPropagation();
+          window.enterSecondWindowMode(it.what || openPath, a.getAttribute("href") || a.href);
+        }
+      };
       row.appendChild(a);
       const dl = el("a", "ddl-inline", "\u2b07");
       dl.href = baseHref + "&download=1" + tok;
@@ -4200,17 +4308,32 @@ const Proto = (() => {
     const root = (_lastMap && _lastMap.dir) || "";
     const norm = (x) => String(x || "").replace(/\\/g, "/");
     const fn = norm(fStr), rn = norm(root).replace(/\/$/, "");
+    const openInSplitOrWin = (label, url) => {
+      if (typeof window.enterSecondWindowMode === "function") {
+        window.enterSecondWindowMode(label || "Deliverable", url);
+        return;
+      }
+      window.open(url);
+    };
     if (rn && fn.toLowerCase().indexOf(rn.toLowerCase() + "/") === 0) {
       const rel = fn.slice(rn.length + 1);
-      if (/\.(md|txt|csv|json|log)$/i.test(rel)) { window.open("/report?dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(rel)); return; }
-      window.open("/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) +
+      if (/\.(md|txt|csv|json|log)$/i.test(rel)) {
+        const isMd = /\.(md|markdown|txt)$/i.test(rel);
+        const url = isMd
+          ? ("/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(rel) + "&render=1" + (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""))
+          : ("/steward/report?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(rel) + (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""));
+        if (typeof window.enterSecondWindowMode === "function") { openInSplitOrWin(rel.split("/").pop(), url); return; }
+        window.open("/report?dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(rel));
+        return;
+      }
+      openInSplitOrWin(rel.split("/").pop(), "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) +
         "&path=" + encodeURIComponent(rel) + (/\.(docx|pptx|xlsx)$/i.test(rel) ? "&view=1" : "") +
         (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""));
       return;
     }
     if (fn && !/^[A-Za-z]:\//.test(fn) && !fn.startsWith("/")) {
       const isMd = /\.(md|markdown|txt)$/i.test(fn);
-      window.open("/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) +
+      openInSplitOrWin(fn.split("/").pop(), "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID || "") + "&dir=" + encodeURIComponent(DIR) +
         "&path=" + encodeURIComponent(fn) + (/\.(docx|pptx|xlsx)$/i.test(fn) ? "&view=1" : "") + (isMd ? "&render=1" : "") +
         (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : ""));
       return;

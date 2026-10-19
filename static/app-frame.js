@@ -25,9 +25,17 @@
 
   var nativeOpen = window.open;
   window.open = function (url, target, features) {
+    try { if (app.download(url, window)) return null; } catch (e) {}
     var w = null;
     try { w = app.open(url, target, window, features); } catch (e) { w = null; }
-    return w || nativeOpen.call(window, url, target, features);
+    if (w) return w;
+    try {
+      var u = new URL(String(url || ""), window.location.href);
+      if (u.origin === window.top.location.origin && !/^(ms-\w+|mailto|tel|file):/i.test(String(url || ""))) {
+        return null;
+      }
+    } catch (e) {}
+    return nativeOpen.call(window, url, target, features);
   };
 
   function onDocClick(ev, isCapture) {

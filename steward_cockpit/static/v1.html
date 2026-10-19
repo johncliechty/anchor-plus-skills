@@ -204,10 +204,10 @@ const t2 = document.querySelector("[data-railtoggle2]");
 if (t2) t2.onclick = () => app.classList.toggle("railhide");
 const planGrip=document.querySelector('[data-plangrip]');
 const setPlanWidth=w=>{const other=app.classList.contains('statusopen')?document.querySelector('.rightcol').offsetWidth:0;
-  const width=Math.min(620,Math.max(230,window.innerWidth-other-320),Math.max(230,w));document.documentElement.style.setProperty('--planw',width+'px');
+  const width=Math.min(620,Math.max(340,window.innerWidth-other-320),Math.max(340,w));document.documentElement.style.setProperty('--planw',width+'px');
   try{localStorage.setItem('steward_plan_width',String(width));}catch(e){};planGrip.setAttribute('aria-valuenow',String(width));};
 if(planGrip){
-  try{const saved=Number(localStorage.getItem('steward_plan_width'));if(saved)setPlanWidth(saved);}catch(e){}
+  try{const saved=Number(localStorage.getItem('steward_plan_width'));if(saved)setPlanWidth(Math.max(340,saved));}catch(e){}
   planGrip.addEventListener('pointerdown',e=>{e.preventDefault();planGrip.setPointerCapture(e.pointerId);
     const move=ev=>setPlanWidth(ev.clientX-document.querySelector('.leftcol').getBoundingClientRect().left);
     const end=()=>{planGrip.removeEventListener('pointermove',move);planGrip.removeEventListener('pointerup',end);planGrip.removeEventListener('pointercancel',end);};
@@ -229,31 +229,50 @@ if (grip) grip.addEventListener("pointerdown", (e) => {
   grip.addEventListener("pointermove", move);
   grip.addEventListener("pointerup", up);
 });
-// 2026-10-14 (John): When an artifact is opened in the second window, both the Plan panel and
-// the Status panel automatically close into their small clickable tiles (▸ Plan / ◂ Status) so
-// the dialogue with Aladdin/Jarvis/Ecgberht can be seen easily. When the second window closes,
-// both panels automatically reopen to their prior state.
+// 2026-10-14 / 2026-10-19 (John): When a deliverable is opened, it opens a split screen and displays
+// in the right window (inside Anchor.exe / app.html's right pane #pane1 when hosted in the app shell,
+// never inside the Status column and never in external Chrome). Both the Plan panel and Status panel
+// collapse into their clickable tiles while the split window is open, and closing the deliverable
+// closes both the right window and the document and restores the Cockpit panels.
+function getTopAnchorApp() {
+  try {
+    if (window.top && window.top !== window && window.top.ANCHOR_APP) return window.top.ANCHOR_APP;
+  } catch (e) {}
+  return null;
+}
 function enterSecondWindowMode() {
   const title = arguments[0];
   const href = arguments[1];
+  const fromSplitEvent = Boolean(arguments[2]);
   if (!app.dataset.secondwin) {
     app.dataset.secondwin = "1";
     app.dataset.preSecondRail = app.classList.contains("railhide") ? "hide" : "show";
     app.dataset.preSecondStatus = app.classList.contains("statusopen") ? "open" : "shut";
   }
+  const topApp = getTopAnchorApp();
   if (href) {
-    const dvTitle = document.querySelector("[data-dv-title]");
-    const dvFrame = document.querySelector("[data-dv-frame]");
-    const dvNewTab = document.querySelector("[data-dv-newtab]");
-    if (dvTitle && title) dvTitle.textContent = "📄 Deliverable Viewer · " + title;
-    if (dvNewTab) dvNewTab.href = href;
-    if (dvFrame && dvFrame.getAttribute("src") !== href) dvFrame.setAttribute("src", href);
-    app.classList.add("secondwin");
+    if (topApp && typeof topApp.open === "function") {
+      app.classList.remove("secondwin");
+      const dvFrame = document.querySelector("[data-dv-frame]");
+      if (dvFrame && dvFrame.getAttribute("src") !== "about:blank") dvFrame.setAttribute("src", "about:blank");
+      if (!fromSplitEvent) {
+        try { topApp.open(href, "_blank", window); } catch (e) {}
+      }
+    } else {
+      const dvTitle = document.querySelector("[data-dv-title]");
+      const dvFrame = document.querySelector("[data-dv-frame]");
+      const dvNewTab = document.querySelector("[data-dv-newtab]");
+      if (dvTitle && title) dvTitle.textContent = "📄 Deliverable Viewer · " + title;
+      if (dvNewTab) { dvNewTab.href = href; dvNewTab.style.display = "none"; }
+      if (dvFrame && dvFrame.getAttribute("src") !== href) dvFrame.setAttribute("src", href);
+      app.classList.add("secondwin");
+    }
   }
   app.classList.add("railhide");
   app.classList.remove("statusopen");
 }
 function exitSecondWindowMode() {
+  const fromSplitEvent = Boolean(arguments[0]);
   if (!app.dataset.secondwin) return;
   const wantHide = app.dataset.preSecondRail === "hide";
   const wantOpen = app.dataset.preSecondStatus !== "shut";
@@ -263,6 +282,12 @@ function exitSecondWindowMode() {
   app.classList.remove("secondwin");
   const dvFrame = document.querySelector("[data-dv-frame]");
   if (dvFrame) dvFrame.setAttribute("src", "about:blank");
+  if (!fromSplitEvent) {
+    const topApp = getTopAnchorApp();
+    if (topApp && typeof topApp.closeRightDeliverable === "function") {
+      try { topApp.closeRightDeliverable(); } catch (e) {}
+    }
+  }
   if (!app.dataset.narrow) {
     app.classList.toggle("railhide", wantHide);
     app.classList.toggle("statusopen", wantOpen);
@@ -271,12 +296,12 @@ function exitSecondWindowMode() {
 window.enterSecondWindowMode = enterSecondWindowMode;
 window.exitSecondWindowMode = exitSecondWindowMode;
 window.addEventListener("anchor-app-split", (ev) => {
-  if (ev && ev.detail && ev.detail.split) enterSecondWindowMode();
-  else exitSecondWindowMode();
+  if (ev && ev.detail && ev.detail.split) enterSecondWindowMode(null, null, true);
+  else exitSecondWindowMode(true);
 });
 try {
   if (window.__anchorSplit || (window.top && window.top !== window && window.top.document && window.top.document.body && window.top.document.body.classList.contains("two"))) {
-    enterSecondWindowMode();
+    enterSecondWindowMode(null, null, true);
   }
 } catch (e) {}
 const NARROW=1100;

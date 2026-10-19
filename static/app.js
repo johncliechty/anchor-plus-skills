@@ -394,7 +394,10 @@
     if (!t || t.kind === "cave") return;                       // the Cave never closes
     var hadFocus = t.el && t.el.contains(document.activeElement);
     var i = tiles.indexOf(t), k = shownIn(id);
-    if (t.frame) t.frame.remove();
+    if (t.frame) {
+      try { t.frame.src = "about:blank"; } catch (e) {}
+      t.frame.remove();
+    }
     if (t.el) t.el.remove();
     tiles.splice(i, 1);
     var d = pendingDrop.indexOf(id);
@@ -698,6 +701,9 @@
     doc.addEventListener("wheel", function (ev) {
       if (ev.ctrlKey && ev.deltaY && api.zoom(ev.deltaY < 0 ? 1 : -1)) ev.preventDefault();
     }, { capture: true, passive: false });
+  };
+  api.closeRightDeliverable = function () {
+    if (two && panes[1]) closePane(1);
   };
   api.zoomKeys(document);
 

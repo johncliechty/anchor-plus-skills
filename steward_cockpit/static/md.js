@@ -103,12 +103,24 @@ function mdDownloadHref(href) {
   const cleaned = h.replace(/([?&])(render|view)=1(&|$)/g, (m, p1, _k, p3) => p3 ? p1 : "");
   return cleaned + (cleaned.includes("?") ? "&" : "?") + "download=1";
 }
+function wireMdSplitLink(a, label, href) {
+  if (!href || /^(?:https?:\/\/|mailto:|ms-\w+:)/i.test(href)) return;
+  a.onclick = (ev) => {
+    if (typeof window.enterSecondWindowMode === "function") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.enterSecondWindowMode(String(label || "Deliverable"), href);
+    }
+  };
+}
   function inline(node, s) {
     splitLinks(String(s)).forEach(seg => {
       if (typeof seg !== "string") {
         const href = mdReportHref(seg.target);
         const a = el("a", "md-file-link", seg.label); a.href = href;
-        a.target = "_blank"; a.rel = "noopener noreferrer"; node.appendChild(a);
+        a.target = "_blank"; a.rel = "noopener noreferrer";
+        wireMdSplitLink(a, seg.label, href);
+        node.appendChild(a);
         const dlHref = mdDownloadHref(href);
         if (dlHref) {
           const dl = el("a", "md-dl", "⬇"); dl.href = dlHref;
@@ -129,6 +141,7 @@ function mdDownloadHref(href) {
             const a = el("a", "md-file-link"); a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
             a.title = "Open " + inner;
             a.appendChild(el("code", "", inner));
+            wireMdSplitLink(a, inner, href);
             node.appendChild(a);
             const dlHref = mdDownloadHref(href);
             if (dlHref) {

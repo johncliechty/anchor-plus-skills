@@ -121,22 +121,22 @@ a { color: var(--steward); text-decoration: none; }
              color: var(--steward); margin-bottom: 4px; }
 .wphead h3 { font-size: 20px; font-weight: 600; }
 .wpgoal { color: var(--dim); font-size: 13.5px; margin-top: 6px; max-width: 46em; }
-.wpflow { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px;
+.wpflow { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px;
           flex: 1; min-height: 0; align-items: flex-start; }
-.wpcol { flex: 1 1 180px; min-width: 168px; }
+.wpcol { flex: 1 1 240px; min-width: 240px; }
 .wpcolh { font-size: 11px; letter-spacing: 1.1px; text-transform: uppercase;
           color: var(--faint); margin-bottom: 8px; display: flex;
           justify-content: space-between; gap: 8px; }
 .wpcard { background: var(--panel2); border: 1px solid var(--line);
-          border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
-          cursor: pointer; }
+          border-radius: 10px; padding: 11px 13px; margin-bottom: 9px;
+          cursor: pointer; word-break: normal; overflow-wrap: break-word; }
 .wpcard:hover { border-color: var(--dim); }
 .wpcard.on { border-color: var(--steward);
              box-shadow: 0 0 0 1px rgba(108,156,252,.35); }
-.wpcard .wn { font-size: 13.5px; font-weight: 600; }
-.wpcard .ws { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+.wpcard .wn { font-size: 13.5px; font-weight: 600; line-height: 1.35; word-break: normal; overflow-wrap: break-word; }
+.wpcard .ws { font-size: 11.5px; color: var(--dim); margin-top: 3px; line-height: 1.35; word-break: normal; overflow-wrap: break-word; }
 .wpcard .wd { display: none; font-size: 12.5px; color: var(--dim);
-              margin-top: 8px; white-space: pre-wrap; }
+              margin-top: 8px; white-space: pre-wrap; line-height: 1.42; word-break: normal; overflow-wrap: break-word; }
 .wpcard.on .wd { display: block; }
 .wpcard .wgo { margin-top: 10px; font-size: 12px; }
 .wpcard.done .wn { color: var(--dim); }
@@ -1359,7 +1359,7 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   color: #fff;
 }
 .step-status-pill {
-  margin-left: auto;
+  margin-left: 0;
   padding: 1px 7px;
   border-radius: 999px;
   font-family: var(--mono);
@@ -2109,6 +2109,23 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.app3 .pdeliv .file-row-review-summary {
+  margin-top: 3px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: rgba(108, 156, 252, 0.09);
+  border-left: 2px solid var(--steward);
+  font-size: 11px;
+  color: #e2e8f0;
+  line-height: 1.38;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.app3 .pdeliv .file-row.flag .file-row-review-summary {
+  background: rgba(232, 194, 104, 0.11);
+  border-left-color: var(--john);
+}
 .app3 .pdeliv .file-row .file-actions {
   display: inline-flex;
   align-items: center;
@@ -2511,8 +2528,8 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   flex: none;
 }
 .app3 .steps li.step-card .step-card-body {
-  flex: 1 1 0%;
-  width: 0;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
 }
@@ -2533,11 +2550,11 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 }
 .app3 .steps li.step-card .stitle-text {
   white-space: normal !important;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  line-height: 1.32;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.38;
   font-size: 12px;
-  flex: 1 1 0%;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .app3 .steps li.step-card .step-meta-row {
@@ -2573,17 +2590,20 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   flex: none;
 }
 .app3 .steps li.step-card .sm {
-  font-size: 10.8px;
+  font-size: 11px;
   color: var(--dim);
-  line-height: 1.28;
+  line-height: 1.38;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  flex: 1 1 120px;
-  min-width: 0;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
+  margin-top: 3px;
 }
 .app3 .steps li.step-card.open .sm {
   display: block;
@@ -2863,6 +2883,7 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   grid-column: 1;
   grid-row: 4;
   width: var(--planw, 365px);
+  min-width: 340px;
   max-width: var(--planw, 365px);
   background: var(--panel);
   border-right: 1px solid var(--line);
@@ -3047,6 +3068,36 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   border: 1px solid rgba(74, 222, 128, 0.35);
   color: #bbf7d0;
   font-size: 11.5px;
+}
+.approval-review-digest {
+  margin-top: 2px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(108, 156, 252, 0.32);
+}
+.approval-review-digest .ard-head {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--steward);
+  margin-bottom: 5px;
+}
+.approval-review-digest .ard-list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.approval-review-digest .ard-item {
+  font-size: 11.5px;
+  line-height: 1.42;
+  color: #e2e8f0;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 .approval-links-row {
   display: flex;
@@ -3369,8 +3420,8 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: nowrap;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.02);
   font-family: var(--ui);
@@ -3389,12 +3440,14 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   color: var(--text);
 }
 .app3 .steps .plan-sec-group.hier-group > .plan-sec-sum > .plan-sec-title {
-  flex: 1 1 auto;
+  flex: 1 1 180px;
   min-width: 0;
   white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
   overflow: visible;
   text-overflow: clip;
-  line-height: 1.35;
+  line-height: 1.38;
   font-size: 12px;
   font-weight: 700;
   color: var(--text);
@@ -3411,30 +3464,30 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   color: var(--john);
 }
 .app3 .steps .plan-sec-list.hier-list {
-  padding: 6px 8px 8px 14px;
+  padding: 6px 8px 8px 12px;
   margin: 0;
   border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   position: relative;
 }
 .app3 .steps .plan-sec-list.hier-list::before {
   content: "";
   position: absolute;
-  left: 7px;
+  left: 6px;
   top: 8px;
   bottom: 10px;
   width: 1.5px;
   background: rgba(108, 156, 252, 0.3);
 }
 
-/* Wave Cards inside Plan (.step-card styled identically to .wave-card in mockup) */
+/* Wave Cards inside Plan (.step-card styled for human-readable multi-word lines) */
 .app3 .steps li.step-card {
   background: var(--panel2);
   border: 1px solid var(--line);
   border-radius: 7px;
-  padding: 8px 10px;
+  padding: 9px 11px;
   gap: 6px;
   display: flex;
   flex-direction: column;
@@ -3465,12 +3518,14 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 }
 .app3 .steps li.step-card .wave-head-row {
   display: flex;
-  align-items: flex-start;
-  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 7px;
   width: 100%;
   min-width: 0;
 }
 .w-pill {
+  order: 1;
   font-family: var(--mono);
   font-size: 9.5px;
   font-weight: 700;
@@ -3478,7 +3533,7 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   padding: 2px 6px;
   border-radius: 999px;
   flex: none;
-  margin-top: 1px;
+  margin-top: 0;
 }
 .w-pill.done {
   color: var(--ok);
@@ -3503,35 +3558,44 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   border: 1px solid rgba(148, 163, 184, 0.25);
 }
 .app3 .steps li.step-card .stitle.st {
-  flex: 1 1 0%;
-  min-width: 0;
+  order: 4;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: 6px;
+  margin-top: 2px;
 }
+.app3 .steps li.step-card .stitle-text,
 .app3 .steps li.step-card:not(.open) .stitle-text {
   white-space: normal !important;
   overflow: visible !important;
   text-overflow: clip !important;
-  font-size: 12px;
-  line-height: 1.38;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  font-size: 12.2px;
+  line-height: 1.4;
   font-weight: 600;
 }
 .app3 .steps li.step-card .w-meta {
+  order: 2;
+  margin-left: auto;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--dim);
   flex: none;
-  margin-top: 2px;
+  margin-top: 0;
 }
 .app3 .steps li.step-card .w-caret {
+  order: 3;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--dim);
   flex: none;
-  margin-top: 1px;
+  margin-top: 0;
 }
-/* Hide secondary meta row when collapsed so Wave Cards are crisp 1-line rows like wave18-cockpit-redesign-mockup.html */
+/* Hide secondary meta row when collapsed so Wave Cards remain clean while keeping full-width readable titles */
 .app3 .steps li.step-card:not(.open) .step-meta-row {
   display: none;
 }
