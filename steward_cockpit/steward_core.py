@@ -180,10 +180,10 @@ def status_facts(
     out: List[Dict[str, str]] = []
     for label, value in rows:
         if label in ("Doing", "Status", "Procs"):
-            lim = 180 if label == "Doing" else 140
+            lim = 320 if label == "Doing" else 280
             v = compact_line(value, limit=lim) or "—"
         else:
-            v = one_line(value, limit=400 if label == "ETA" else 110) or "—"
+            v = one_line(value, limit=400 if label == "ETA" else 280) or "—"
         out.append({"label": label, "value": v})
     return out
 

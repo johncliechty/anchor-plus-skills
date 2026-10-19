@@ -20,10 +20,14 @@
     <span class="barlead" data-barlead title="the companion's stated next step"></span>
     <div class="top-deliv-strip" data-top-deliverables hidden></div>
     <button type="button" class="anvil-tile-btn" data-anvil-toggle title="Launch Anvil for this effort — Anvil takes over and collapses this AI Cockpit into a small clickable tile at the top"><img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="20" height="20"><span>Anvil</span></button>
+    <button type="button" class="aegis-tile-btn" data-aegis-toggle title="Launch Aegis Security Audit & Auto-Remediation for this effort"><img src="/vendor/brand/aegis-icon.svg" alt="Aegis" width="20" height="20"><span>Aegis</span></button>
     <span class="chip" data-spend></span>
     <button data-drive>▶ Go</button>
     <button data-boneyard title="archive this effort to the boneyard">🪦</button>
     <button data-min title="collapse back to the cockpit">—</button>
+  </div>
+  <div class="anvil-takeover-live" data-aegis-takeover hidden>
+    <iframe class="anvil-takeover-live-frame" data-aegis-frame src="about:blank"></iframe>
   </div>
   <div class="anvil-takeover-live" data-anvil-takeover hidden>
     <div class="anvil-takeover-live-bar">
@@ -223,6 +227,8 @@ function exitSecondWindowMode() {
     app.classList.toggle("statusopen", wantOpen);
   }
 }
+window.enterSecondWindowMode = enterSecondWindowMode;
+window.exitSecondWindowMode = exitSecondWindowMode;
 window.addEventListener("anchor-app-split", (ev) => {
   if (ev && ev.detail && ev.detail.split) enterSecondWindowMode();
   else exitSecondWindowMode();
@@ -264,17 +270,34 @@ const anvilToggleBtn = document.querySelector("[data-anvil-toggle]");
 const anvilTakeover = document.querySelector("[data-anvil-takeover]");
 const anvilFrame = document.querySelector("[data-anvil-frame]");
 const anvilCockpitName = document.querySelector("[data-anvil-cockpit-name]");
+const aegisToggleBtn = document.querySelector("[data-aegis-toggle]");
+const aegisTakeover = document.querySelector("[data-aegis-takeover]");
+const aegisFrame = document.querySelector("[data-aegis-frame]");
+const _anvilQ = new URLSearchParams(location.search || "");
+const _isEmbeddedAnvilDock = _anvilQ.get("inst") === "anvil" || _anvilQ.get("view") === "tile";
+const anvilStorageKey = "anchor_anvil_open:" + (_anvilQ.get("pid") || "") + ":" + (_anvilQ.get("dir") || "");
+const aegisStorageKey = "anchor_aegis_open:" + (_anvilQ.get("pid") || "") + ":" + (_anvilQ.get("dir") || "");
+
 function setAnvilTakeover(open) {
-  if (!anvilTakeover) return;
+  if (!anvilTakeover || _isEmbeddedAnvilDock) return;
   const shouldOpen = typeof open === "boolean" ? open : anvilTakeover.hidden;
+  try {
+    sessionStorage.setItem(anvilStorageKey, shouldOpen ? "1" : "0");
+    if (shouldOpen) sessionStorage.setItem(aegisStorageKey, "0");
+  } catch (_) {}
   if (shouldOpen) {
+    if (aegisTakeover) aegisTakeover.hidden = true;
     const titleEl = document.querySelector("[data-name]");
     if (anvilCockpitName && titleEl && titleEl.textContent) {
       anvilCockpitName.textContent = titleEl.textContent.trim();
     }
     if (anvilFrame) {
-      const qs = location.search ? "&" + location.search.replace(/^\?/, "") : "";
-      const targetSrc = "/steward-static/anvil.html?v=10&from=cockpit" + qs;
+      const p = new URLSearchParams(location.search || "");
+      p.set("v", window.STEWARD_BUILD || "17");
+      p.set("from", "cockpit");
+      if (!p.get("pid") && window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+      if (!p.get("token") && window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
+      const targetSrc = "/steward-static/anvil.html?" + p.toString();
       if (anvilFrame.getAttribute("src") !== targetSrc) {
         anvilFrame.setAttribute("src", targetSrc);
       }
@@ -283,17 +306,72 @@ function setAnvilTakeover(open) {
     app.classList.add("anvil-mode");
   } else {
     anvilTakeover.hidden = true;
-    app.classList.remove("anvil-mode");
+    if (!aegisTakeover || aegisTakeover.hidden) {
+      app.classList.remove("anvil-mode");
+    }
   }
 }
+
+function setAegisTakeover(open) {
+  if (!aegisTakeover || _isEmbeddedAnvilDock) return;
+  const shouldOpen = typeof open === "boolean" ? open : aegisTakeover.hidden;
+  try {
+    sessionStorage.setItem(aegisStorageKey, shouldOpen ? "1" : "0");
+    if (shouldOpen) sessionStorage.setItem(anvilStorageKey, "0");
+  } catch (_) {}
+  if (shouldOpen) {
+    if (anvilTakeover) anvilTakeover.hidden = true;
+    if (aegisFrame) {
+      const p = new URLSearchParams(location.search || "");
+      p.set("v", window.STEWARD_BUILD || "17");
+      p.set("from", "cockpit");
+      if (!p.get("pid") && window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+      if (!p.get("token") && window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
+      const targetSrc = "/steward-static/aegis.html?" + p.toString();
+      if (aegisFrame.getAttribute("src") !== targetSrc) {
+        aegisFrame.setAttribute("src", targetSrc);
+      }
+    }
+    aegisTakeover.hidden = false;
+    app.classList.add("anvil-mode");
+  } else {
+    aegisTakeover.hidden = true;
+    if (!anvilTakeover || anvilTakeover.hidden) {
+      app.classList.remove("anvil-mode");
+    }
+  }
+}
+
 if (anvilToggleBtn) anvilToggleBtn.addEventListener("click", () => setAnvilTakeover(true));
+if (aegisToggleBtn) aegisToggleBtn.addEventListener("click", () => setAegisTakeover(true));
 document.querySelectorAll("[data-anvil-return],[data-anvil-return2]").forEach(btn => {
   btn.addEventListener("click", () => setAnvilTakeover(false));
 });
+
 window.addEventListener("message", (ev) => {
-  if (ev && ev.origin === window.location.origin && (!anvilFrame || ev.source === anvilFrame.contentWindow) && ev.data && ev.data.type === "anvil-return-cockpit") {
-    setAnvilTakeover(false);
+  if (ev && ev.origin === window.location.origin && ev.data) {
+    if (ev.data.type === "anvil-return-cockpit") {
+      setAnvilTakeover(false);
+    } else if (ev.data.type === "anvil-open-aegis") {
+      setAegisTakeover(true);
+    } else if (ev.data.type === "aegis-return-cockpit") {
+      setAegisTakeover(false);
+    } else if (ev.data.type === "aegis-switch-to-anvil") {
+      setAnvilTakeover(true);
+    }
   }
 });
+
+if (!_isEmbeddedAnvilDock) {
+  try {
+    const savedAegis = sessionStorage.getItem(aegisStorageKey);
+    const savedAnvil = sessionStorage.getItem(anvilStorageKey);
+    if (savedAegis === "1" || _anvilQ.get("tool") === "aegis") {
+      setAegisTakeover(true);
+    } else if (savedAnvil === "1" || _anvilQ.get("tool") === "anvil") {
+      setAnvilTakeover(true);
+    }
+  } catch (_) {}
+}
 </script>
 </body></html>

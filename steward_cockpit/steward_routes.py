@@ -137,7 +137,7 @@ _UPLOAD_TEMP_PREFIX = ".anchor-upload-"
 CONFIG = {"steward": "Ecgberht", "fake": False, "permission_mode": "bypassPermissions"}
 BONEYARD = campaign.BONEYARD_DIRNAME
 SKILLS = ["researchPrime", "Crucible", "Foreman", "Gandalf", "Jumper",
-          "Superjump", "Anvil",
+          "Superjump", "Anvil", "Aegis",
           "ramanujan", "legal-beagle", "financial-analyst",
           "literature-review", "tidy-idy", "chekhov"]
 # (2026-09-05, John) every skill has a brand mark under /vendor/brand/; the cockpit
@@ -146,28 +146,7 @@ SKILL_ICONS = {
     "researchPrime": "research-prime-icon.jpg", "Crucible": "crucible-icon.svg",
     "Foreman": "foreman-icon.svg", "Gandalf": "gandalf-icon.jpg", "Jumper": "jumper-icon.jpg",
     "Superjump": "superjump-icon.jpg", "Anvil": "anvil-icon.jpg", "anvil": "anvil-icon.jpg",
-    "ramanujan": "ramanujan-icon.jpg", "legal-beagle": "legal-beagle-icon.jpg",
-    "financial-analyst": "financial-analyst-icon.jpg",
-    "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
-    "zombie-hunter": "zombie-hunter-radar.jpg", "Ecgberht": "ecgberht-project-seal.jpg",
-    "chekhov": "chekhov-icon.svg",
-}
-SKILL_ICON_FALLBACK = "gwl-m-icon.svg"
-
-
-def skill_icon(name):
-    """The brand file for a skill name (case-insensitive); the GWL mark when unknown."""
-    key = str(name or "").strip().lower()
-    for k, v in SKILL_ICONS.items():
-        if k.lower() == key:
-            return v
-    return SKILL_ICON_FALLBACK
-# (2026-09-05, John) every skill has a brand mark under /vendor/brand/; the cockpit
-# reaches it as /brand/<file>. The client twin is static/skill-icons.js.
-SKILL_ICONS = {
-    "researchPrime": "research-prime-icon.jpg", "Crucible": "crucible-icon.svg",
-    "Foreman": "foreman-icon.svg", "Gandalf": "gandalf-icon.jpg", "Jumper": "jumper-icon.jpg",
-    "Superjump": "superjump-icon.jpg", "Anvil": "anvil-icon.jpg", "anvil": "anvil-icon.jpg",
+    "Aegis": "aegis-icon.svg", "aegis": "aegis-icon.svg",
     "ramanujan": "ramanujan-icon.jpg", "legal-beagle": "legal-beagle-icon.jpg",
     "financial-analyst": "financial-analyst-icon.jpg",
     "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
@@ -1977,8 +1956,27 @@ def handle_get(cdir, verb, qs):
     if verb == "gandalf":
         return {"runs": _gandalf_runs(cdir)}, 200
     if verb == "anvil":
+        import importlib
         from steward_cockpit import anvil_session as _as
+        try:
+            _as_mtime = Path(_as.__file__).stat().st_mtime_ns
+            if getattr(_as, "_LOADED_MTIME_NS", None) != _as_mtime:
+                _as = importlib.reload(_as)
+                _as._LOADED_MTIME_NS = _as_mtime
+        except Exception:
+            pass
         return _as.get_session_status(cdir), 200
+    if verb == "aegis":
+        import importlib
+        from steward_cockpit import aegis_session as _aeg
+        try:
+            _aeg_mtime = Path(_aeg.__file__).stat().st_mtime_ns
+            if getattr(_aeg, "_LOADED_MTIME_NS", None) != _aeg_mtime:
+                _aeg = importlib.reload(_aeg)
+                _aeg._LOADED_MTIME_NS = _aeg_mtime
+        except Exception:
+            pass
+        return _aeg.get_cockpit_aegis_state(cdir, auto_init=True), 200
     if verb == "session-files":
         # legacy project-level view: files WORK SESSIONS wrote (engine state),
         # distinct from the curated effort register above
@@ -2352,7 +2350,15 @@ def handle_post(cdir, verb, body):
         )
         return result, 200 if result.get("ok") else 400
     if verb == "anvil":
+        import importlib
         from steward_cockpit import anvil_session as _as
+        try:
+            _as_mtime = Path(_as.__file__).stat().st_mtime_ns
+            if getattr(_as, "_LOADED_MTIME_NS", None) != _as_mtime:
+                _as = importlib.reload(_as)
+                _as._LOADED_MTIME_NS = _as_mtime
+        except Exception:
+            pass
         act = str(body.get("action") or "start_code").strip()
         try:
             if act in ("start_code", "start_paper"):
@@ -2391,17 +2397,102 @@ def handle_post(cdir, verb, body):
                     str(body.get("paper_target") or ""),
                 ), 200
             if act == "chat":
-                return _as.chat_in_session(
+                q_str = str(body.get("question") or "").strip()
+                res = _as.chat_in_session(
                     cdir,
-                    str(body.get("question") or ""),
+                    q_str,
                     str(body.get("mode") or "map"),
                     str(body.get("target") or ""),
-                ), 200
+                )
+                try:
+                    eng = get_engine(cdir, create=False)
+                    if eng is not None and q_str:
+                        dlg = ((res.get("session") or {}).get("dialogue") or [])
+                        last_asst = next((m.get("text") for m in reversed(dlg) if m.get("role") == "assistant" and m.get("text")), "")
+                        eng._emit({"t": "john", "text": q_str})
+                        if last_asst:
+                            eng._emit({"t": "delta", "text": str(last_asst)})
+                            eng._emit({"t": "turn_end", "tokens": 0})
+                except Exception:
+                    pass
+                return res, 200
             if act == "reset":
                 return _as.reset_cockpit_session(cdir), 200
             return {"ok": False, "error": f"unknown anvil action: {act}"}, 400
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}, 400
+    if verb == "aegis":
+        import importlib
+        from steward_cockpit import aegis_session as _aeg
+        try:
+            _aeg_mtime = Path(_aeg.__file__).stat().st_mtime_ns
+            if getattr(_aeg, "_LOADED_MTIME_NS", None) != _aeg_mtime:
+                _aeg = importlib.reload(_aeg)
+                _aeg._LOADED_MTIME_NS = _aeg_mtime
+        except Exception:
+            pass
+        act = str(body.get("action") or "scan").strip()
+        if act in ("scan", "bind_target"):
+            res = _aeg.run_cockpit_aegis_scan(
+                cdir,
+                target_spec=str(body.get("target") or "."),
+                signed_off_ids=body.get("signed_off_ids") if isinstance(body.get("signed_off_ids"), list) else None,
+                sync_anvil=bool(body.get("sync_anvil", act == "bind_target")),
+            )
+            try:
+                import deliverables_register as _dr
+                _dr.register(cdir, f"Aegis Security Audit Report ({res.get('cockpit_name') or 'Cockpit'})", "`AEGIS-SECURITY-REPORT.md`")
+            except Exception:
+                pass
+            try:
+                eng = get_engine(cdir, create=False)
+                if eng is not None:
+                    sc = (res.get("session") or {}).get("scan") or {}
+                    seat = (res.get("session") or {}).get("model_seating") or {}
+                    msg = (
+                        f"🛡 **Aegis Security Audit (`{sc.get('verdict', 'PASS')}`):** Scanned `{sc.get('files_scanned', 0)}` Python files "
+                        f"across all 6 OWASP/CWE families (`AEG-01`–`AEG-06`) — `{sc.get('total_findings', 0)}` open finding(s) "
+                        f"(`{sc.get('auto_fixable_count', 0)}` auto-fixable). Seated on **`{seat.get('coding_model_id', 'gemini-4-argon')} · {seat.get('coding_effort', 'high')}`** "
+                        f"+ **`{seat.get('review_model_id', 'claude-fable-5-1')} · {seat.get('review_effort', 'max')}`**; report saved to `AEGIS-SECURITY-REPORT.md`."
+                    )
+                    eng._emit({"t": "delta", "text": msg})
+                    eng._emit({"t": "turn_end", "tokens": 0})
+            except Exception:
+                pass
+            return res, 200
+        if act == "remediate":
+            res = _aeg.run_cockpit_aegis_remediate(
+                cdir,
+                apply=bool(body.get("apply")),
+                rule_filter=str(body.get("rule") or ""),
+            )
+            return res, 200
+        if act == "sign_off":
+            res = _aeg.sign_off_aegis_finding(
+                cdir,
+                str(body.get("finding_id") or ""),
+            )
+            return res, 200
+        if act == "chat":
+            q_str = str(body.get("question") or "").strip()
+            res = _aeg.chat_in_aegis_session(
+                cdir,
+                q_str,
+                str(body.get("target") or ""),
+            )
+            try:
+                eng = get_engine(cdir, create=False)
+                if eng is not None and q_str:
+                    dlg = ((res.get("session") or {}).get("dialogue") or [])
+                    last_asst = next((m.get("text") for m in reversed(dlg) if m.get("role") == "assistant" and m.get("text")), "")
+                    eng._emit({"t": "john", "text": q_str})
+                    if last_asst:
+                        eng._emit({"t": "delta", "text": str(last_asst)})
+                        eng._emit({"t": "turn_end", "tokens": 0})
+            except Exception:
+                pass
+            return res, 200
+        return {"ok": False, "error": f"unknown aegis action: {act}"}, 400
     if verb == "refinement-accept":
         from steward_cockpit.refinement_client import update
         import uuid
@@ -2534,6 +2625,12 @@ def handle_post(cdir, verb, body):
             from steward_cockpit import horizon as _horizon
             _horizon.refresh(cdir, "refined")       # W3 (2026-09-28): the line moves when the feedback is recorded
             _refined_turn = True
+        if (Path(cdir) / ".anvil" / "session.json").is_file():
+            try:
+                from steward_cockpit import anvil_session as _as_say
+                _as_say.apply_conversational_anvil_side_effects(cdir, str(body.get("text", "")))
+            except Exception:
+                pass
         eng = get_engine(cdir, bool(body.get("general")),
                          str(body.get("term") or "") or None)
         if eng is None:

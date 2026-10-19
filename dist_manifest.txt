@@ -303,6 +303,7 @@ chamber/rebrief-channel-audit.json
 # runtime state lives OUTSIDE the repo (data_dir steward-cockpit-state.json,
 # per-project .anchor/ + .ecgberht/) — no repo data files.
 steward_cockpit/__init__.py
+steward_cockpit/aegis_session.py
 steward_cockpit/anvil_session.py
 steward_cockpit/boundaries.py
 steward_cockpit/campaign_acts.py
@@ -322,6 +323,9 @@ steward_cockpit/forecasts.py
 steward_cockpit/foundry_tools.py
 steward_cockpit/gemini_turn_bridge.py
 steward_cockpit/grok_turn_bridge.py
+steward_cockpit/gui_domain_core.py
+steward_cockpit/gui_ingress_routes.py
+steward_cockpit/gui_surface_emit.py
 steward_cockpit/high_seat_card.py
 steward_cockpit/horizon.py
 steward_cockpit/job_ledger.py
@@ -347,6 +351,9 @@ steward_cockpit/static/v1.html
 steward_cockpit/static/v3.html
 steward_cockpit/static/report.html
 steward_cockpit/static/anvil.html
+steward_cockpit/static/aegis.html
+steward_cockpit/static/wave17-aegis-cockpit-mockup.html
+steward_cockpit/static/wave18-cockpit-redesign-mockup.html
 steward_cockpit/static/shared.js
 steward_cockpit/static/notebook-actions.js
 steward_cockpit/static/shared.css
@@ -456,6 +463,7 @@ anchor.ico
 
 # ── Vendored brand asset (Ghost World Labs mark; pure-data SVG) ─────────────
 vendor/brand/gwl-m-icon.svg
+vendor/brand/aegis-icon.svg
 # Steward persona icon pairs (2026-07-29): the selectable steward UI
 # (anchor_settings.STEWARDS) renders these on the High Seat + Projects
 # tiles; product art, ships with the bundle.
@@ -472,6 +480,7 @@ vendor/brand/jarvis-seal-salver.jpg
 # NOTE: the anvil candidate is RESERVED for the future 'anvil'
 # code-validation skill's icon — do not reuse it for the workbench.
 vendor/brand/workbench-icon.jpg
+vendor/brand/anvil-option-2-sword-crystal-v1.jpg
 # Tidy-Idy workbench launcher icon. The cockpit references this directly, so
 # it must ride with the launcher script in the deny-by-default distribution.
 vendor/brand/tidy-idy-icon.jpg

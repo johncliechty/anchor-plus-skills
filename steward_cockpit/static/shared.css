@@ -706,7 +706,8 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 1 1 280px;
+  flex: 1 1 0;
+  overflow: hidden;
 }
 .snt-chevron {
   font-family: var(--mono);
@@ -721,7 +722,11 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   font-weight: 700;
   letter-spacing: 0.6px;
   color: var(--steward);
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .snt-preview {
   color: var(--dim);
@@ -1190,11 +1195,72 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   border-color: #38bdf8;
   color: #fff;
 }
-.anvil-tile-btn img {
+.anvil-tile-btn img,
+.aegis-tile-btn img {
   width: 20px;
   height: 20px;
   border-radius: 4px;
   object-fit: cover;
+}
+.aegis-tile-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.22), rgba(14, 165, 233, 0.14));
+  border: 1px solid rgba(16, 185, 129, 0.65);
+  color: #d1fae5;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex: none;
+}
+.aegis-tile-btn:hover {
+  background: rgba(16, 185, 129, 0.32);
+  border-color: #34d399;
+  color: #fff;
+}
+.aegis-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  background: rgba(8, 12, 18, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.aegis-overlay[hidden] {
+  display: none !important;
+}
+.aegis-dialog {
+  width: min(860px, 95vw);
+  max-height: 86vh;
+  background: #121822;
+  border: 1px solid rgba(16, 185, 129, 0.55);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.aegis-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, #162429 0%, #121822 100%);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.35);
+}
+.aegis-dialog-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 12.5px;
 }
 .anvil-takeover-live {
   position: fixed;
@@ -1334,7 +1400,8 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 .app3 [data-gaps],
 .app3 .bar [data-busy],
 .app3 .bar [data-barlead],
-.app3 .prev-status-log {
+.app3 .bar > .top-deliv-strip,
+.app3 .gdeliv {
   display: none !important;
 }
 
@@ -1540,7 +1607,7 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 .app3 .pdeliv .blk.deliv:not(.folded) > .body {
   padding: 8px 10px;
   border-top: 1px solid var(--line);
-  max-height: min(40vh, 330px);
+  max-height: min(48vh, 420px);
   overflow-y: auto;
 }
 .app3 .rightcol > .popen > .cockpit-dropbar {
@@ -1622,8 +1689,8 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   font-size: 11.5px;
   color: var(--text);
   vertical-align: top;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  word-break: break-word;
 }
 .app3 .rightcol .pscroll .blk.status table.stab td.ok-val,
 .app3 .rightcol .pscroll .blk.status table.stab td.ok-val > span {
@@ -1631,9 +1698,11 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
 }
 .app3 .rightcol .pscroll .blk.status table.stab td > span {
   display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+  line-height: 1.38;
 }
 .app3 .rightcol .pscroll .blk.status table.stab .eta-compact {
   display: flex;
@@ -1661,9 +1730,11 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   margin: 0;
   padding: 0;
   display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+  line-height: 1.38;
 }
 .app3 .rightcol .pscroll .blk.status table.stab .stodo li {
   display: inline;
@@ -2754,4 +2825,443 @@ body[data-theme="command"] .composer textarea { border-color: #1e3357; }
   background: rgba(108, 156, 252, 0.14);
   color: var(--text);
 }
+
+/* ============================================================================
+   Wave 18 (2026-10-18, John): AI Cockpit Redesign
+   - Red flashing approval flag (collapsed by default)
+   - Single Right-Rail Deliverables Hub with 4 collapsible sub-tiles (Pending, For Review, Final Deliverables, All Deliverables)
+   - Steward Plan Evaluation collapsible tile + Hierarchical Plan / Wave Plan switcher + summary boxes
+   - Collapsible bottom-left Foundry Tools Governance Dock
+   ============================================================================ */
+@keyframes redFlagFlash {
+  0%, 100% {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7), 0 0 12px rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+  }
+  50% {
+    background: rgba(239, 68, 68, 0.92);
+    border-color: #fca5a5;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.25), 0 0 20px rgba(239, 68, 68, 0.85);
+    color: #ffffff;
+  }
+}
+.snt-red-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid #ef4444;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  flex: none;
+  animation: redFlagFlash 1.6s infinite ease-in-out;
+}
+.steward-next-top.needs-approval {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(21, 29, 42, 0.96) 100%);
+}
+.steward-next-top.needs-approval:not(.open) {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+.snt-approval-deliv-box {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.snt-approval-deliv-lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+/* Right-Rail Collapsible Approval Bar */
+.right-approval-fold {
+  margin-bottom: 6px;
+  border-radius: 7px;
+  background: rgba(239, 68, 68, 0.09);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  overflow: hidden;
+}
+.right-approval-fold summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  user-select: none;
+}
+.right-approval-fold summary::-webkit-details-marker {
+  display: none;
+}
+.right-approval-fold summary .raf-caret {
+  font-family: var(--mono);
+  color: #fca5a5;
+}
+.right-approval-fold[open] summary .raf-caret {
+  transform: rotate(90deg);
+}
+.right-approval-body {
+  padding: 7px 10px 9px;
+  border-top: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+/* 4-Tier Deliverables Hub inside .pdeliv */
+.deliv-tier-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deliv-tier-fold {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(13, 17, 23, 0.65);
+  overflow: hidden;
+}
+.deliv-tier-fold.tier-pending {
+  border-color: rgba(56, 189, 248, 0.38);
+}
+.deliv-tier-fold.tier-review {
+  border-color: rgba(251, 191, 36, 0.45);
+}
+.deliv-tier-fold.tier-final {
+  border-color: rgba(74, 222, 128, 0.40);
+}
+.deliv-tier-fold.tier-all {
+  border-color: rgba(167, 139, 250, 0.42);
+}
+.deliv-tier-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  user-select: none;
+}
+.deliv-tier-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.deliv-tier-fold.tier-pending > summary {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+.deliv-tier-fold.tier-review > summary {
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.10);
+}
+.deliv-tier-fold.tier-final > summary {
+  color: #86efac;
+  background: rgba(74, 222, 128, 0.08);
+}
+.deliv-tier-fold.tier-all > summary {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.09);
+}
+.deliv-tier-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.deliv-tier-body {
+  padding: 7px 9px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deliv-pending-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  font-size: 11.5px;
+  line-height: 1.36;
+}
+.deliv-pending-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+}
+.deliv-pending-eta {
+  color: #38bdf8;
+  font-weight: 700;
+}
+.mark-all-done-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed rgba(251, 191, 36, 0.28);
+  font-size: 10.5px;
+  color: var(--dim);
+}
+.mark-all-done-btn,
+.deliverable-dismiss.mark-done-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(74, 222, 128, 0.14);
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  color: var(--ok);
+  cursor: pointer;
+}
+.mark-all-done-btn:hover,
+.deliverable-dismiss.mark-done-btn:hover {
+  background: rgba(74, 222, 128, 0.25);
+}
+.deliv-wave-subfold {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+.deliv-wave-subfold > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+.deliv-wave-subfold > summary::-webkit-details-marker {
+  display: none;
+}
+.deliv-wave-subbody {
+  padding: 6px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Steward Unreviewed-Items Interjection Card in Center Chat */
+.steward-interject-card {
+  margin-top: 6px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.09);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.steward-interject-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Left Rail: Steward Plan Evaluation + View Switcher + Hierarchical/Wave Summary Boxes + Collapsible Foundry Tools */
+.steward-eval-fold {
+  margin: 0 0 7px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(108, 156, 252, 0.12) 0%, rgba(26, 29, 39, 0.92) 100%);
+  border: 1px solid rgba(108, 156, 252, 0.38);
+  overflow: hidden;
+  flex: none;
+}
+.steward-eval-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--steward);
+  user-select: none;
+}
+.steward-eval-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.steward-eval-badge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(74, 222, 128, 0.14);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: var(--ok);
+}
+.steward-eval-body {
+  padding: 7px 9px 9px;
+  border-top: 1px solid rgba(108, 156, 252, 0.25);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+}
+.plan-summary-box {
+  margin: 0 0 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgba(13, 17, 23, 0.78);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  font-size: 11px;
+  line-height: 1.38;
+}
+.psb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-bottom: 3px;
+}
+.psb-crumb {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.psb-crumb b {
+  color: #fbbf24;
+}
+.hier-phase-fold {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.02);
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.hier-phase-fold.phase-active {
+  border-color: rgba(108, 156, 252, 0.42);
+}
+.hier-phase-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--steward);
+  background: rgba(108, 156, 252, 0.07);
+  user-select: none;
+}
+.hier-phase-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.hier-phase-children {
+  padding: 5px 6px 5px 12px;
+  border-left: 2px solid rgba(108, 156, 252, 0.3);
+  margin-left: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.wave-pass-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+.wave-pass-pill {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+  background: rgba(13, 17, 23, 0.65);
+}
+.wave-pass-pill.done {
+  border-color: rgba(74, 222, 128, 0.4);
+  color: var(--ok);
+  background: rgba(74, 222, 128, 0.08);
+}
+.wave-pass-pill.now {
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  font-weight: 700;
+}
+.foundry-dock {
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 7px;
+  background: rgba(167, 139, 250, 0.06);
+  overflow: hidden;
+}
+.foundry-dock > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #c4b5fd;
+  user-select: none;
+}
+.foundry-dock > summary::-webkit-details-marker {
+  display: none;
+}
+.foundry-dock-body {
+  padding: 7px 9px;
+  border-top: 1px solid rgba(167, 139, 250, 0.25);
+  font-size: 11px;
+  line-height: 1.38;
+  color: var(--text);
+}
+/* Hide step-level deliverable chips in left rail so Deliverables live in one place (Right Rail) */
+.app3 .steps .pcc-rev,
+.app3 .steps .sdeliv {
+  display: none !important;
+}
+
 

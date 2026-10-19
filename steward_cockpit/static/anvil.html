@@ -1260,7 +1260,45 @@
     outline: none;
     border-color: var(--amber);
   }
+
+  .foundry-flow-wrap {
+    background: #0c121e;
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+
+  .foundry-flow-wrap .fd-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .member-files-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .member-file-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    color: #bae6fd;
+  }
 </style>
+<link rel="stylesheet" href="/static/foundry-display/display.css">
+<script src="/static/foundry-display/flow-diagram.js"></script>
 </head>
 <body>
 <div class="anvil-shell">
@@ -1279,6 +1317,10 @@
       <span class="target-pill" id="paperTargetPill" hidden></span>
     </div>
     <div class="topbar-right">
+      <button type="button" class="btn" id="btnOpenAegisWorkbench" style="background:rgba(16,185,129,0.16);border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="Switch to the Aegis Security Workbench on this same bound codebase">
+        <img src="/vendor/brand/aegis-icon.svg" alt="Aegis" width="16" height="16" style="border-radius:3px">
+        <span>🛡 Switch to Aegis Workbench</span>
+      </button>
       <button type="button" class="btn" id="btnSwitchLauncher" hidden>⚙ Configure / New Session</button>
       <button type="button" class="btn btn-danger" id="btnResetSession" hidden>Reset Session</button>
     </div>
@@ -1402,6 +1444,7 @@
 
           <!-- View 1A: Conceptual Groupings (Cards with Functions & AI Agent Seams) -->
           <div id="conceptualView">
+            <div id="conceptualFlowDiagramBanner" style="margin-bottom:10px"></div>
             <div class="bucket-grid" id="conceptualBucketsGrid"></div>
           </div>
 
@@ -1440,6 +1483,8 @@
               <span id="innerMapHeading">1. Inner Process Map (How the Functions Inside This Block Interact)</span>
               <span style="font-family:var(--mono);font-size:11px;color:var(--text-dim)" id="innerMapMeta"></span>
             </div>
+            <div id="innerMemberFilesStrip" class="member-files-strip" style="margin-bottom:8px"></div>
+            <div id="innerFlowDiagramWrap" class="foundry-flow-wrap" style="margin-bottom:10px" hidden></div>
             <div class="inner-flow" id="innerProcessFlow"></div>
             <div id="innerCallEdgesStrip" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
           </div>
@@ -1479,7 +1524,7 @@
               <thead>
                 <tr>
                   <th>Function</th>
-                  <th>Lines</th>
+                  <th>Module &amp; Lines</th>
                   <th>Stage &amp; Layer</th>
                   <th>Calls</th>
                   <th>Plain-English Role</th>
@@ -1528,8 +1573,9 @@
             </div>
           </div>
 
-          <!-- Sub-view 3A: 3-Column Old -> New Best-in-Class Process Map -> Null Space + 3-Stage Pipeline -->
+          <!-- Sub-view 3A: Top Old-to-New Architecture Process Map + 3-Column Old -> New -> Null Space + 3-Stage Pipeline -->
           <div id="remapOverviewSub" style="display:flex;flex-direction:column;gap:16px">
+            <div id="remapFlowDiagramWrap" class="foundry-flow-wrap" hidden></div>
             <div class="remap-layout">
               <!-- Column 1: Old Monolithic Code -->
               <div class="remap-col">
@@ -1631,17 +1677,32 @@
             <img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil">
             <span>Steward &amp; Anvil Dialogue</span>
           </span>
-          <span class="badge badge-core" id="agentTargetBadge">setup · ready</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge badge-core" id="agentTargetBadge">setup · ready</span>
+            <button type="button" class="btn" id="btnToggleDialogueSurface" hidden style="padding:2px 7px;font-size:10px" title="Switch between the live AI Cockpit dialogue stream and the Anvil session log">📋 Anvil Log</button>
+          </div>
         </div>
-        <div class="agent-modes">
+        <div id="anvilModelSeatingStrip" style="font-family:var(--mono);font-size:10px;color:#93c5fd;background:rgba(15,23,42,0.75);border:1px solid rgba(56,189,248,0.25);border-radius:5px;padding:3px 7px;display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <span>⚡ Code: <strong>gemini-4-argon · high</strong></span>
+          <span>🛡 Review: <strong>claude-fable-5-1 · max</strong></span>
+        </div>
+        <div id="anvilLiveQuickBar" hidden style="display:flex;flex-wrap:wrap;gap:4px">
+          <button type="button" class="cand-chip" id="btnQuickVerifyAll" style="font-size:10px;padding:3px 7px;color:#fde68a;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1)">✓ Verify All Buckets</button>
+          <button type="button" class="cand-chip" id="btnQuickSignOffNull" style="font-size:10px;padding:3px 7px;color:#86efac;border-color:rgba(34,197,94,0.35);background:rgba(34,197,94,0.1)">✓ Sign Off ∅ Null Space</button>
+          <button type="button" class="cand-chip" id="btnQuickAegisAudit" style="font-size:10px;padding:3px 7px;color:#c4b5fd;border-color:rgba(167,139,250,0.35);background:rgba(167,139,250,0.12)">🛡 Aegis Security Audit</button>
+        </div>
+        <div class="agent-modes" id="agentModePillsBar">
           <button type="button" class="mode-pill active" data-agent-mode="map">1. Map</button>
           <button type="button" class="mode-pill" data-agent-mode="validate">2. Probe</button>
           <button type="button" class="mode-pill" data-agent-mode="remap">3. Remap</button>
           <button type="button" class="mode-pill" data-agent-mode="paper">4. Paper</button>
         </div>
       </div>
+      <div id="cockpitLiveDialogueWrap" hidden style="flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg-deep)">
+        <iframe id="cockpitLiveDialogueFrame" title="AI Cockpit Steward Dialogue" src="about:blank" style="flex:1;width:100%;height:100%;border:0;min-height:0;background:transparent"></iframe>
+      </div>
       <div class="agent-messages" id="agentMessages"></div>
-      <div class="agent-composer">
+      <div class="agent-composer" id="agentFallbackComposer">
         <textarea id="agentInput" placeholder="Ask Steward / Anvil about any block, process flow, Old-to-New Best-in-Class remap, or Null Space drop..."></textarea>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:11px;color:var(--text-muted)" id="agentStatusHint">Persistent across all 4 pages of Anvil</span>
@@ -1671,6 +1732,7 @@
   let currentAgentMode = "map";
   let currentAgentTarget = "";
   let preLaunchMessages = [];
+  let dialogueSurfaceMode = pid ? "cockpit" : "log"; // "cockpit" (real AI Cockpit v1 tileview) | "log" (Anvil session log/setup)
 
   function apiUrl(verb) {
     const q = new URLSearchParams();
@@ -1889,6 +1951,110 @@
     renderAgentDock(sess, cands, cname);
   }
 
+  function normalizeFlowForFoundry(raw) {
+    if (!raw || !Array.isArray(raw.steps) || !raw.steps.length) return null;
+    const dRaw = raw.diagram || {};
+    const nodesMap = {};
+    if (Array.isArray(dRaw.nodes)) {
+      dRaw.nodes.forEach((n, idx) => {
+        if (n && n.id) {
+          nodesMap[n.id] = {
+            col: Number.isFinite(n.col) ? n.col : (idx % 4),
+            row: Number.isFinite(n.row) ? n.row : Math.floor(idx / 4)
+          };
+        }
+      });
+    } else if (dRaw.nodes && typeof dRaw.nodes === "object") {
+      Object.entries(dRaw.nodes).forEach(([k, v]) => {
+        if (v && typeof v === "object") {
+          nodesMap[k] = {
+            col: Number.isFinite(v.col) ? v.col : 0,
+            row: Number.isFinite(v.row) ? v.row : 0
+          };
+        }
+      });
+    }
+    const steps = raw.steps.map((s, idx) => {
+      const id = String(s.id || `step-${idx + 1}`);
+      if (!nodesMap[id]) {
+        nodesMap[id] = { col: idx % 4, row: Math.floor(idx / 4) };
+      }
+      const numPrefix = s.num ? `${s.num}. ` : "";
+      const rawTitle = String(s.title || s.label || id);
+      const cleanTitle = rawTitle.startsWith(numPrefix) ? rawTitle : `${numPrefix}${rawTitle}`;
+      return {
+        id,
+        title: cleanTitle,
+        display_type: String(s.display_type || s.shape || "program"),
+        kind: s.kind || "step",
+        summary: String(s.summary || s.Summary || ""),
+      };
+    });
+    const stepSet = new Set(steps.map(s => s.id));
+    const bands = [];
+    const edges = (raw.edges || [])
+      .map(e => ({
+        source: String(e.source || e.from || ""),
+        target: String(e.target || e.to || ""),
+        label: String(e.label || e.via || ""),
+      }))
+      .filter(e => e.source && e.target && e.source !== e.target && stepSet.has(e.source) && stepSet.has(e.target) && nodesMap[e.source] && nodesMap[e.target]);
+
+    return {
+      steps,
+      edges,
+      disagreements: raw.disagreements || [],
+      diagram: {
+        col_width: dRaw.col_width || 228,
+        row_height: dRaw.row_height || 92,
+        node_width: dRaw.node_width || 180,
+        node_height: dRaw.node_height || 54,
+        bands,
+        nodes: nodesMap,
+      },
+    };
+  }
+
+  function renderFoundryFlowInto(hostEl, flowObj, onSelectId, headerLabel) {
+    if (!hostEl) return;
+    const normalized = normalizeFlowForFoundry(flowObj);
+    if (!normalized || !window.FoundryFlowDiagram) {
+      hostEl.innerHTML = "";
+      return;
+    }
+    try {
+      if (window.FoundryFlowDiagram.style && !document.querySelector("style[data-foundry-flow]")) {
+        document.head.insertAdjacentHTML("beforeend", window.FoundryFlowDiagram.style);
+      }
+      const legendHtml = (typeof window.FoundryFlowDiagram.legend === "function")
+        ? window.FoundryFlowDiagram.legend()
+        : "";
+      const svgHtml = window.FoundryFlowDiagram.renderFlowDiagram(normalized, {
+        selected: selectedDrillBlockId || null
+      });
+      hostEl.innerHTML = `
+        <div class="foundry-flow-host">
+          <div class="foundry-flow-header">
+            <div class="foundry-flow-title">🗺 ${esc(headerLabel || flowObj.summary || flowObj.title || "Agreed-Upon Anchor Architecture Process Map")}</div>
+          </div>
+          ${legendHtml}
+          <div style="overflow-x:auto;padding-bottom:4px">${svgHtml}</div>
+        </div>`;
+      if (typeof onSelectId === "function") {
+        hostEl.querySelectorAll("a.fd-node[data-step]").forEach(node => {
+          node.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            const stepId = node.getAttribute("data-step");
+            if (stepId) onSelectId(stepId);
+          });
+        });
+      }
+    } catch (err) {
+      console.warn("FoundryFlowDiagram render warning:", err);
+      hostEl.innerHTML = "";
+    }
+  }
+
   /* ====================================================================== */
   /* MODE 1: Conceptual Groupings & Block-to-Block System Process Map       */
   /* ====================================================================== */
@@ -1898,30 +2064,40 @@
     const procMap = codeMap.process_map || { nodes: [], edges: [] };
     const orange = sess.orange_split || {};
     const counts = orange.counts || {};
-    const staffWork = orange.proactive_staff_work || {};
 
     const totalFns = buckets.reduce((acc, b) => acc + ((b.functions || []).length), 0) || counts.total_symbols || 0;
+    const totalModules = (codeMap.module_buckets || buckets).length;
     const juiceCount = counts.juice_count || 0;
     const peelCount = counts.peel_count || 0;
     const pithCount = counts.pith_and_seeds_count || 0;
     const verifiedBlocks = buckets.filter(b => b.validated).length;
-    const aiTouchBlocks = buckets.filter(b => (b.ai_agent_touchpoints || []).length > 0).length;
+    const aiTouchBlocks = buckets.filter(b => (b.ai_agent_touchpoints || []).length > 0 || b.ai_agent_summary).length;
 
     document.getElementById("badgeMapCount").textContent = buckets.length + " blocks · " + totalFns + " fn";
 
     // Parable of the Oranges Banner
     const bannerEl = document.getElementById("orangeRecommendationBanner");
-    const shortRec = `Proceed with lossless LibCST remap of ${juiceCount + peelCount} essential functions (${juiceCount} Essential Core Juice + ${peelCount} Peel I/O Contracts) into Get-Data / Do-Analysis / Create-Output modules, and review ${pithCount} legacy/unreferenced function(s) in the ∅ Null Space Ledger.`;
+    const shortRec = `Synthesized ${totalModules} source modules (${totalFns} functions) into ${buckets.length} Agreed-Upon Conceptual Architectural Buckets (${juiceCount} Essential Core Juice + ${peelCount} Peel I/O Contracts) and isolated ${pithCount} unreferenced helper(s) in the ∅ Null Space Ledger.`;
     bannerEl.innerHTML = `
       <div class="orange-banner-text">
         <strong>🍊 Parable of the Oranges (One-Trip Staff Work):</strong>
         ${esc(shortRec)}
       </div>
       <div style="display:flex;gap:6px">
-        <button type="button" class="btn" id="btnJumpToRemapFromBanner" style="font-size:11px;padding:4px 9px">
+        <button type="button" class="btn" id="btnJumpToProcessFromBanner" style="font-size:11px;padding:4px 9px">
+          🗺 View Process Map
+        </button>
+        <button type="button" class="btn btn-primary" id="btnJumpToRemapFromBanner" style="font-size:11px;padding:4px 9px">
           View Old → New Best-in-Class Map ──▶
         </button>
       </div>`;
+    const jumpProcBtn = document.getElementById("btnJumpToProcessFromBanner");
+    if (jumpProcBtn) {
+      jumpProcBtn.addEventListener("click", () => {
+        currentMapSubView = "process";
+        renderMapTab(sess);
+      });
+    }
     const jumpBtn = document.getElementById("btnJumpToRemapFromBanner");
     if (jumpBtn) {
       jumpBtn.addEventListener("click", () => switchTab("remap"));
@@ -1929,12 +2105,12 @@
 
     // Metrics Row
     document.getElementById("mapMetricsRow").innerHTML = [
-      { val: buckets.length + " Blocks", lab: totalFns + " Total Functions Mapped" },
+      { val: buckets.length + " Buckets", lab: totalModules + " Modules · " + totalFns + " Functions" },
       { val: juiceCount, lab: "Essential Core (Juice · Do-Analysis)" },
       { val: peelCount, lab: "Surface I/O Contracts (Peel · Ingest/Emit)" },
       { val: pithCount, lab: "∅ Null Space Candidates (Pith & Seeds)" },
-      { val: aiTouchBlocks, lab: "🤖 Blocks with AI Agent Seams" },
-      { val: verifiedBlocks + " / " + buckets.length, lab: "Empirically Locked Blocks" }
+      { val: aiTouchBlocks, lab: "🤖 Buckets with AI Agent Seams" },
+      { val: verifiedBlocks + " / " + buckets.length, lab: "Empirically Locked Buckets" }
     ].map(m => `<div class="metric-card"><div class="m-val">${esc(m.val)}</div><div class="m-lab">${esc(m.lab)}</div></div>`).join("");
 
     // Toggle Conceptual vs Process View
@@ -1944,6 +2120,20 @@
     document.getElementById("btnViewProcess").classList.toggle("active", currentMapSubView === "process");
 
     const filteredBuckets = buckets.filter(b => currentStageFilter === "all" || b.pipeline_stage === currentStageFilter);
+
+    const conceptualFlowHost = document.getElementById("conceptualFlowDiagramBanner");
+    if (conceptualFlowHost) {
+      if (procMap.flow_diagram) {
+        renderFoundryFlowInto(
+          conceptualFlowHost,
+          procMap.flow_diagram,
+          (stepId) => openBlockDrillDown(stepId),
+          "Agreed-Upon Anchor Architecture · End-to-End System Process Map (Click any node or card below to drill down)"
+        );
+      } else {
+        conceptualFlowHost.innerHTML = "";
+      }
+    }
 
     // 1A. Render Conceptual Groupings Cards (bucket-card)
     const gridHost = document.getElementById("conceptualBucketsGrid");
@@ -1956,36 +2146,45 @@
         const tagLabel = stg === "ingest" ? "INGEST · GET-DATA" : (stg === "emit" ? "EMIT · CREATE-OUTPUT" : "COMPUTE · ESSENTIAL CORE");
         const fns = b.functions || [];
         const aiTouch = (b.ai_agent_touchpoints || []);
+        const memberFiles = b.member_files || (b.file ? [b.file] : []);
+        const memberChipsHtml = memberFiles.length ? `
+          <div class="member-files-strip">
+            ${memberFiles.slice(0, 8).map(mf => `<span class="member-chip">${esc(mf)}</span>`).join("")}
+            ${memberFiles.length > 8 ? `<span class="member-chip">+${memberFiles.length - 8} more</span>` : ""}
+          </div>` : "";
         const fnRows = fns.slice(0, 5).map(fn => {
           const sig = fn.name + "(" + (fn.args || []).slice(0, 3).join(", ") + ")";
+          const filePrefix = (memberFiles.length > 1 && fn.file) ? (fn.file.split("/").pop() + ":") : "L";
           return `
             <div class="fn-item">
               <span class="fn-sig" title="${esc(sig)}">${esc(sig)}</span>
-              <span class="fn-meta">L${esc(fn.lineno)}–${esc(fn.end_lineno || fn.lineno)} · ${esc((fn.stage || stg).toUpperCase())}</span>
+              <span class="fn-meta">${esc(filePrefix)}${esc(fn.lineno)} · ${esc((fn.stage || stg).toUpperCase())}</span>
             </div>`;
         }).join("");
         const moreCount = Math.max(0, fns.length - 5);
 
-        const aiHtml = aiTouch.length ? `
+        const aiSummaryText = b.ai_agent_summary || (aiTouch[0] ? (aiTouch[0].badge + " · Keywords: " + (aiTouch[0].keywords || []).join(", ")) : "");
+        const aiHtml = (aiTouch.length || b.ai_agent_summary) ? `
           <div class="ai-callout">
-            <strong>🤖 Where &amp; How AI Agents Interact (${esc(aiTouch.length)} seam${aiTouch.length > 1 ? 's' : ''})</strong>
-            <span>${esc(aiTouch[0].badge || "AI Agent Seam")} · Keywords: <code>${esc((aiTouch[0].keywords || []).join(", "))}</code></span>
+            <strong>🤖 Where &amp; How AI Agents Interact (${esc(aiTouch.length || 1)} seam${(aiTouch.length || 1) > 1 ? 's' : ''})</strong>
+            <span>${esc(aiSummaryText)}</span>
           </div>` : "";
 
         return `
           <div class="bucket-card ${b.validated ? 'validated' : ''}" data-open-block="${esc(b.id)}">
             <div class="bucket-head">
-              <div class="bucket-name">Block ${idx + 1} · ${esc(b.title || b.id)}</div>
+              <div class="bucket-name">${esc(b.title || ("Block " + (idx + 1) + " · " + b.id))}</div>
               <span class="bucket-tag ${tagClass}">${esc(tagLabel)}</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <span class="bucket-file">${esc(b.file || "")} (${esc(b.total_lines || "—")} lines)</span>
+              <span class="bucket-file">${esc(b.file || "")} · ${esc(fns.length)} fn (${esc(b.total_lines || "—")} lines)</span>
               <span class="badge ${b.validated ? 'badge-ok' : 'badge-warn'}">${b.validated ? '✓ Validated' : '⏳ Click to Probe'}</span>
             </div>
+            ${memberChipsHtml}
             <div class="bucket-desc">${esc(b.validated_description || b.summary || "")}</div>
             <div class="bucket-fns">
               ${fnRows}
-              ${moreCount > 0 ? `<div style="font-size:10.5px;color:var(--amber);font-family:var(--mono);padding-left:4px">+ ${moreCount} more functions (click card to drill in)</div>` : ""}
+              ${moreCount > 0 ? `<div style="font-size:10.5px;color:var(--amber);font-family:var(--mono);padding-left:4px">+ ${moreCount} more functions across ${memberFiles.length} module(s) (click card to drill in)</div>` : ""}
             </div>
             ${aiHtml}
           </div>`;
@@ -1998,7 +2197,7 @@
       });
     }
 
-    // 1B. Render Block-to-Block System Process Map (3 Pipeline Lanes + Flow Arrows + Cross-Block Edges)
+    // 1B. Render Block-to-Block System Process Map (FoundryFlowDiagram + 3 Pipeline Lanes + Cross-Block Edges)
     const procHost = document.getElementById("systemProcessMapContainer");
     const edges = procMap.edges || [];
     const edgeByFrom = {};
@@ -2049,7 +2248,7 @@
         const firstFn = (b.functions && b.functions[0]) ? b.functions[0].name + "()" : b.file;
         const lastFn = (b.functions && b.functions.length > 1) ? b.functions[b.functions.length - 1].name + "()" : "";
         flowHtml += `
-          <div class="proc-node ${aiTouch.length ? 'ai-seam' : ''} ${b.validated ? 'validated' : ''}" data-proc-block="${esc(b.id)}">
+          <div class="proc-node ${aiTouch.length || b.ai_agent_summary ? 'ai-seam' : ''} ${b.validated ? 'validated' : ''}" data-proc-block="${esc(b.id)}">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span class="proc-step-num">${esc(lane.key.toUpperCase())} · ${idx + 1}</span>
               <span style="font-size:10px;font-family:var(--mono);color:${b.validated ? 'var(--green)' : 'var(--text-muted)'}">${b.validated ? '✓ LOCKED' : (b.total_lines || 0) + 'L'}</span>
@@ -2057,7 +2256,7 @@
             <div class="proc-title">${esc(b.title || b.id)}</div>
             <div style="font-family:var(--mono);font-size:10.5px;color:var(--cyan)">${esc(b.file)} · ${(b.functions || []).length} fn</div>
             <div class="proc-io">Entry: ${esc(firstFn)}${lastFn ? " → " + esc(lastFn) : ""}</div>
-            ${aiTouch.length ? `<div style="font-size:10.5px;color:#d8b4fe;font-weight:600">🤖 ${esc(aiTouch[0].badge || "AI Agent Seam")}</div>` : ""}
+            ${(aiTouch.length || b.ai_agent_summary) ? `<div style="font-size:10.5px;color:#d8b4fe;font-weight:600">🤖 ${esc((aiTouch[0] && aiTouch[0].badge) || "AI Agent Seam")}</div>` : ""}
           </div>`;
         if (idx < lane.items.length - 1) {
           const viaLabel = (outEdges[0] && outEdges[0].via) ? outEdges[0].via : "──▶";
@@ -2068,7 +2267,7 @@
         <div class="process-stage-lane">
           <div class="lane-header">
             <span class="lane-title" style="color:${lane.color}">${esc(lane.title)}</span>
-            <span class="badge badge-core">${lane.items.length} block${lane.items.length > 1 ? 's' : ''} · Click any node to drill into Mode 2</span>
+            <span class="badge badge-core">${lane.items.length} bucket${lane.items.length > 1 ? 's' : ''} · Click any node to drill into Mode 2</span>
           </div>
           <div class="process-flow">${flowHtml}</div>
         </div>`;
@@ -2077,17 +2276,25 @@
     const crossEdgesHtml = edges.length ? `
       <div style="border-top:1px solid var(--border);padding-top:10px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">
-          Cross-Module Call Edges Discovered (${edges.length} inter-block links)
+          Cross-Bucket Call Edges Discovered (${edges.length} inter-bucket links)
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           ${edges.slice(0, 24).map(e => `
-            <span class="cand-chip" data-edge-from="${esc(e.from)}" title="Click to inspect caller block">
+            <span class="cand-chip" data-edge-from="${esc(e.from)}" title="Click to inspect caller bucket">
               ${esc(e.via || (e.from + " -> " + e.to))}
             </span>`).join("")}
         </div>
       </div>` : "";
 
-    procHost.innerHTML = lanesHtml + crossEdgesHtml;
+    procHost.innerHTML = `<div id="systemFoundryDiagramMount"></div>` + lanesHtml + crossEdgesHtml;
+    if (procMap.flow_diagram) {
+      renderFoundryFlowInto(
+        document.getElementById("systemFoundryDiagramMount"),
+        procMap.flow_diagram,
+        (stepId) => openBlockDrillDown(stepId),
+        "Agreed-Upon Anchor Architecture · Orthogonal System Process Map (Click any block to drill down)"
+      );
+    }
     procHost.querySelectorAll("[data-proc-block]").forEach(node => {
       node.addEventListener("click", () => openBlockDrillDown(node.getAttribute("data-proc-block")));
     });
@@ -2125,7 +2332,7 @@
     const selEl = document.getElementById("drillBlockSelect");
     selEl.innerHTML = buckets.map((b, i) => `
       <option value="${esc(b.id)}" ${b.id === block.id ? "selected" : ""}>
-        Block ${i + 1}: ${esc(b.title || b.id)} (${esc(b.file)}) — ${(b.functions || []).length} fn ${b.validated ? "✓" : ""}
+        ${esc(b.title || ("Block " + (i + 1) + ": " + b.id))} (${esc(b.file)}) — ${(b.functions || []).length} fn ${b.validated ? "✓" : ""}
       </option>`).join("");
 
     const verified = Boolean(block.validated);
@@ -2138,11 +2345,34 @@
     const innerMap = block.inner_process_map || { steps: fns, edges: [] };
     const steps = (innerMap.steps && innerMap.steps.length) ? innerMap.steps : fns.slice(0, 12);
     const innerEdges = innerMap.edges || [];
+    const memberFiles = block.member_files || (block.file ? [block.file] : []);
 
     document.getElementById("innerMapHeading").textContent =
-      `1. Inner Process Map — How Functions Inside ${block.file || block.title} Interact`;
+      `1. Inner Process Map — How Functions Inside ${block.title || block.file} Interact`;
     document.getElementById("innerMapMeta").textContent =
-      `${fns.length} functions · ${block.total_lines || "—"} lines · ${innerEdges.length} internal call links`;
+      `${memberFiles.length} module(s) · ${fns.length} functions · ${block.total_lines || "—"} lines · ${innerEdges.length} internal call links`;
+
+    const memberStripEl = document.getElementById("innerMemberFilesStrip");
+    if (memberStripEl) {
+      memberStripEl.innerHTML = memberFiles.length
+        ? `<span style="font-size:11px;color:var(--text-muted);align-self:center">Member Modules:</span>` +
+          memberFiles.map(mf => `<span class="member-chip">${esc(mf)}</span>`).join("")
+        : "";
+    }
+
+    const innerDiagramWrap = document.getElementById("innerFlowDiagramWrap");
+    if (innerDiagramWrap) {
+      if (innerMap.flow_diagram) {
+        renderFoundryFlowInto(
+          innerDiagramWrap,
+          innerMap.flow_diagram,
+          null,
+          `${block.title || block.id} · Inner Function Call & Stage Flow`
+        );
+      } else {
+        innerDiagramWrap.innerHTML = "";
+      }
+    }
 
     const innerFlowEl = document.getElementById("innerProcessFlow");
     if (!steps.length) {
@@ -2175,13 +2405,13 @@
       edgesStrip.innerHTML = `<span style="font-size:11px;color:var(--text-muted)">Internal Call Chain:</span>` +
         innerEdges.slice(0, 14).map(e => `<span class="cand-chip" style="cursor:default">${esc(e.from)}() ──▶ ${esc(e.to)}()</span>`).join("");
     } else {
-      edgesStrip.innerHTML = `<span style="font-size:11px;color:var(--text-muted)">Functions in this module act as independent handlers/utilities (0 internal cross-calls).</span>`;
+      edgesStrip.innerHTML = `<span style="font-size:11px;color:var(--text-muted)">Functions in this bucket act as independent handlers/utilities (0 internal cross-calls).</span>`;
     }
 
     // 2. Claimed Behavior & Parable of the Oranges Breakdown
     document.getElementById("drillStageBadge").textContent = (block.pipeline_stage || "compute").toUpperCase();
     document.getElementById("drillClaimedText").textContent =
-      block.summary || `Module ${block.file} implements ${fns.length} functions in the ${(block.pipeline_stage || "compute").toUpperCase()} stage.`;
+      block.summary || `Bucket ${block.title || block.file} implements ${fns.length} functions in the ${(block.pipeline_stage || "compute").toUpperCase()} stage.`;
     const lockInput = document.getElementById("drillLockDescInput");
     lockInput.value = block.validated_description || block.summary || "";
 
@@ -2189,7 +2419,7 @@
     const bPeel = fns.filter(f => !pithNames.has(f.name) && !juiceNames.has(f.name) && f.stage !== "compute").length;
     const bPith = fns.filter(f => pithNames.has(f.name)).length;
     document.getElementById("drillOrangeBreakdown").innerHTML =
-      `<strong>Parable of the Oranges Split inside <code>${esc(block.file)}</code>:</strong> ` +
+      `<strong>Parable of the Oranges Split inside <code>${esc(block.title || block.file)}</code>:</strong> ` +
       `<span class="badge badge-core">${bJuice} Juice (Essential Core)</span> · ` +
       `<span class="badge badge-scaf">${bPeel} Peel (I/O Contracts)</span> · ` +
       `<span class="badge ${bPith > 0 ? 'badge-warn' : 'badge-ok'}">${bPith} Pith &amp; Seeds (Null Space)</span>`;
@@ -2203,7 +2433,7 @@
     } else {
       termEl.textContent =
         "$ anvil probe_block --block " + block.id + " (" + (block.file || "") + ")\n" +
-        "# Ready to run deterministic AST parse, bytecode compile, and Ruff undefined-name/syntax gate.\n" +
+        "# Ready to run deterministic AST parse, bytecode compile, and Ruff undefined-name/syntax gate across all member modules.\n" +
         "# Click '▶ Run Code & Test Claim' above to execute.";
     }
 
@@ -2226,10 +2456,11 @@
       const layerBadge = isPith
         ? `<span class="badge badge-warn">PITH · NULL SPACE</span>`
         : (isCore ? `<span class="badge badge-core">JUICE · CORE</span>` : `<span class="badge badge-scaf">PEEL · ${(fn.stage || "IO").toUpperCase()}</span>`);
+      const locLabel = (fn.file ? (fn.file.split("/").pop() + ":") : "L") + fn.lineno + "–" + (fn.end_lineno || fn.lineno);
       return `
         <tr>
           <td style="font-family:var(--mono);font-weight:700;color:#fff">${esc(fn.name)}(${esc((fn.args || []).join(", "))})</td>
-          <td style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">L${esc(fn.lineno)}–${esc(fn.end_lineno || fn.lineno)}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--text-dim)">${esc(locLabel)}</td>
           <td>${layerBadge}</td>
           <td style="font-family:var(--mono);font-size:11px;color:var(--cyan)">${esc((fn.calls || []).slice(0, 4).join(", ") || "—")}</td>
           <td style="color:var(--text-dim)">${esc(fn.summary || "")}</td>
@@ -2242,11 +2473,9 @@
     fnTbody.querySelectorAll("[data-ask-fn]").forEach(btn => {
       btn.addEventListener("click", () => {
         const fnName = btn.getAttribute("data-ask-fn");
-        currentAgentTarget = block.id;
-        document.getElementById("agentTargetBadge").textContent = fnName;
-        document.getElementById("agentInput").value =
-          "In `" + (block.file || block.title) + "`, explain how `" + fnName + "` works, what it calls, and how we should refactor it into the Best-in-Class architecture.";
-        document.getElementById("agentInput").focus();
+        const promptText =
+          "In `" + (block.title || block.file) + "`, explain how `" + fnName + "` works, what it calls, and how we should refactor it into the Best-in-Class architecture.";
+        prefillCockpitOrAnvilComposer(promptText, fnName, "validate");
       });
     });
 
@@ -2293,7 +2522,7 @@
     const remap = sess.remap || {};
     const nsObj = remap.null_space || {};
     const nsItems = nsObj.items || [];
-    const bic = remap.best_in_class_map || { old_monoliths: [], new_blocks: [], totals: {} };
+    const bic = remap.best_in_class_map || { old_monoliths: [], new_blocks: [], architecture_blocks: [], totals: {} };
     const buckets = (sess.code_map && sess.code_map.conceptual_buckets) || [];
     const pipeVal = remap.pipeline_validation || {};
 
@@ -2305,6 +2534,27 @@
     document.getElementById("remapDrillSub").hidden = (currentRemapSubView !== "drill");
     document.getElementById("btnRemapOverview").classList.toggle("active", currentRemapSubView === "overview");
     document.getElementById("btnRemapDrill").classList.toggle("active", currentRemapSubView === "drill");
+
+    // Top FoundryFlowDiagram for Old-to-New Best-in-Class Architecture Map
+    const remapDiagramWrap = document.getElementById("remapFlowDiagramWrap");
+    if (remapDiagramWrap) {
+      if (bic.flow_diagram) {
+        remapDiagramWrap.hidden = false;
+        renderFoundryFlowInto(
+          remapDiagramWrap,
+          bic.flow_diagram,
+          (stepId) => {
+            if (buckets.some(b => b.id === stepId)) {
+              openBlockDrillDown(stepId);
+            }
+          },
+          "Old-to-New Best-in-Class Architecture Process Map (Source Monoliths → Stage 1 Get-Data → Stage 2 Essential Core → Stage 3 Create-Output + ∅ Null Space Gate)"
+        );
+      } else {
+        remapDiagramWrap.hidden = true;
+        remapDiagramWrap.innerHTML = "";
+      }
+    }
 
     // Column 1: Old Monolithic Code
     const oldList = bic.old_monoliths || [];
@@ -2334,12 +2584,20 @@
           </div>`;
       }).join("");
       oldHost.querySelectorAll("[data-old-monolith]").forEach(el => {
-        el.addEventListener("click", () => openBlockDrillDown(el.getAttribute("data-old-monolith")));
+        el.addEventListener("click", () => {
+          const bid = el.getAttribute("data-old-monolith");
+          if (buckets.some(b => b.id === bid)) {
+            openBlockDrillDown(bid);
+          } else if (buckets.length) {
+            openBlockDrillDown(buckets[0].id);
+          }
+        });
       });
     }
 
-    // Column 2: New Best-in-Class Process Map
+    // Column 2: New Best-in-Class Process Map (3 Pure Stage Modules + Agreed-Upon Architecture Buckets)
     const newBlocks = bic.new_blocks || [];
+    const archBlocks = bic.architecture_blocks || [];
     const newHost = document.getElementById("newBestInClassContainer");
     if (!newBlocks.length) {
       newHost.innerHTML = `<div style="color:var(--text-dim)">No target blocks synthesized.</div>`;
@@ -2371,6 +2629,26 @@
           nbHtml += `<div style="text-align:center;color:var(--amber);font-family:var(--mono);font-weight:700;font-size:13px">↓ Pure Typed Data Handoff ↓</div>`;
         }
       });
+
+      if (archBlocks.length > 1) {
+        nbHtml += `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--amber);margin-bottom:6px">
+              🏛 Agreed-Upon Anchor Target Architectural Buckets (${archBlocks.length})
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              ${archBlocks.map(ab => `
+                <div class="map-item" style="border-left:3px solid var(--cyan);cursor:pointer" data-probe-new-block="${esc(ab.id)}">
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <strong style="font-size:11.5px;color:#fff">${esc(ab.title)}</strong>
+                    <span class="badge badge-core">${esc(ab.function_count)} fn · ${esc((ab.member_files || []).length)} mod</span>
+                  </div>
+                  <div style="font-family:var(--mono);font-size:10px;color:var(--cyan)">${esc((ab.member_files || []).join(", "))}</div>
+                </div>`).join("")}
+            </div>
+          </div>`;
+      }
+
       newHost.innerHTML = nbHtml;
 
       newHost.querySelectorAll("[data-inspect-new-block]").forEach(btn => {
@@ -2620,17 +2898,53 @@
     host.querySelectorAll("[data-ask-claim]").forEach(btn => {
       btn.addEventListener("click", () => {
         const cid = btn.getAttribute("data-ask-claim");
-        currentAgentMode = "paper";
-        document.querySelectorAll("[data-agent-mode]").forEach(b => {
-          b.classList.toggle("active", b.getAttribute("data-agent-mode") === "paper");
-        });
-        currentAgentTarget = cid;
-        document.getElementById("agentTargetBadge").textContent = cid;
-        document.getElementById("agentInput").value =
+        const promptText =
           "Analyze paper alignment item `" + cid + "` and explain how the software implements this equation or what needs to be refactored.";
-        document.getElementById("agentInput").focus();
+        prefillCockpitOrAnvilComposer(promptText, cid, "paper");
       });
     });
+  }
+
+  function buildCockpitTileDialogueUrl() {
+    if (!pid) return "";
+    const q = new URLSearchParams();
+    q.set("pid", pid);
+    if (dir) q.set("dir", dir);
+    q.set("embed", "1");
+    q.set("view", "tile");
+    q.set("inst", "anvil");
+    if (token) q.set("token", token);
+    return "/steward/v1?" + q.toString();
+  }
+
+  function prefillCockpitOrAnvilComposer(promptText, targetLabel, modeName) {
+    if (modeName) {
+      currentAgentMode = modeName;
+      document.querySelectorAll("[data-agent-mode]").forEach(b => {
+        b.classList.toggle("active", b.getAttribute("data-agent-mode") === modeName);
+      });
+    }
+    if (targetLabel) {
+      currentAgentTarget = targetLabel;
+      const badge = document.getElementById("agentTargetBadge");
+      if (badge) badge.textContent = targetLabel;
+    }
+    const qInput = document.getElementById("agentInput");
+    if (qInput) {
+      qInput.value = promptText;
+    }
+    const frame = document.getElementById("cockpitLiveDialogueFrame");
+    const wrap = document.getElementById("cockpitLiveDialogueWrap");
+    if (frame && frame.contentWindow && wrap && !wrap.hidden) {
+      try {
+        frame.contentWindow.postMessage(
+          { proto: "anchor-tile", inst: "anvil", kind: "prefill", text: promptText, focus: true },
+          window.location.origin
+        );
+        return;
+      } catch (_) {}
+    }
+    if (qInput) qInput.focus();
   }
 
   /* ====================================================================== */
@@ -2640,8 +2954,20 @@
     const host = document.getElementById("agentMessages");
     const badge = document.getElementById("agentTargetBadge");
     const hint = document.getElementById("agentStatusHint");
+    const liveWrap = document.getElementById("cockpitLiveDialogueWrap");
+    const liveFrame = document.getElementById("cockpitLiveDialogueFrame");
+    const fallbackComposer = document.getElementById("agentFallbackComposer");
+    const toggleBtn = document.getElementById("btnToggleDialogueSurface");
+    const quickBar = document.getElementById("anvilLiveQuickBar");
+    const modePillsBar = document.getElementById("agentModePillsBar");
 
     if (!sess) {
+      if (liveWrap) liveWrap.hidden = true;
+      if (quickBar) quickBar.hidden = true;
+      if (toggleBtn) toggleBtn.hidden = true;
+      if (host) host.hidden = false;
+      if (fallbackComposer) fallbackComposer.hidden = false;
+      if (modePillsBar) modePillsBar.hidden = false;
       if (badge) badge.textContent = "setup · ready";
       if (hint) hint.textContent = "Type or click a prompt to set up Anvil via Steward";
       const swList = ((cands && cands.software) || []).slice(0, 3);
@@ -2708,20 +3034,71 @@
       badge.textContent = selectedDrillBlockId || sess.selected_block_id || "session";
     }
     if (hint) hint.textContent = "Grounded in this cockpit's .anvil/session.json";
+    if (quickBar) quickBar.hidden = false;
+
+    const useLiveCockpitDialogue = Boolean(pid && dialogueSurfaceMode === "cockpit");
+    if (toggleBtn) {
+      toggleBtn.hidden = !pid;
+      toggleBtn.textContent = useLiveCockpitDialogue ? "📋 Anvil Log" : "💬 Live Cockpit";
+    }
+    if (useLiveCockpitDialogue && liveWrap && liveFrame) {
+      const targetUrl = buildCockpitTileDialogueUrl();
+      if (targetUrl && liveFrame.getAttribute("src") !== targetUrl) {
+        liveFrame.setAttribute("src", targetUrl);
+      }
+      liveWrap.hidden = false;
+      if (host) host.hidden = true;
+      if (fallbackComposer) fallbackComposer.hidden = true;
+      if (modePillsBar) modePillsBar.hidden = true;
+    } else {
+      if (liveWrap) liveWrap.hidden = true;
+      if (host) host.hidden = false;
+      if (fallbackComposer) fallbackComposer.hidden = false;
+      if (modePillsBar) modePillsBar.hidden = false;
+    }
+
+    function formatAgentMsg(raw) {
+      let s = esc(raw || "");
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong style='color:#fff'>$1</strong>");
+      s = s.replace(/`([^`]+)`/g, "<code style='font-family:var(--mono);color:var(--cyan);background:rgba(15,23,42,0.75);padding:1px 4px;border-radius:3px'>$1</code>");
+      s = s.replace(/\n/g, "<br>");
+      return s;
+    }
+
+    const activeQuickActions = [
+      { label: "✓ Verify All & Go Forward", prompt: "Verify all blocks, check the map from old to new, and go forward." },
+      { label: "🤖 Status & Model Seating", prompt: "Please give me updates of what you are doing, and who is doing it (skill and model + adversarial review)." },
+      { label: "✓ Sign Off Null Space", prompt: "Sign off null space drops and lock the Old-to-New remap." }
+    ];
+    const quickBarHtml = `
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px">
+        ${activeQuickActions.map(qa => `
+          <button type="button" class="cand-chip" data-agent-quick="${esc(qa.prompt)}" style="font-size:10.5px;padding:4px 8px;color:#fde68a;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.1)">
+            ${esc(qa.label)}
+          </button>`).join("")}
+      </div>`;
 
     const msgs = sess.chat_history || [];
     if (!msgs.length) {
-      host.innerHTML = `<div style="color:var(--text-dim);font-size:12px">Ask Steward / Anvil Agent any question about this cockpit's Conceptual &amp; Process Map, Single-Block Probes, Old-to-New Best-in-Class Remap, or Paper-to-Code MathML alignment.</div>`;
-      return;
+      host.innerHTML = quickBarHtml + `<div style="color:var(--text-dim);font-size:12px">Ask Steward / Anvil Agent any question about this cockpit's Conceptual &amp; Process Map, Single-Block Probes, Old-to-New Best-in-Class Remap, or Paper-to-Code MathML alignment.</div>`;
+    } else {
+      host.innerHTML = quickBarHtml + msgs.map(m => `
+        <div class="msg-card">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-muted)">
+            <span>${m.role === "user" ? "You" : "Steward · Anvil"} · Mode: ${esc(m.mode || "map")}${m.target ? " · " + esc(m.target) : ""}</span>
+            <span>${esc((m.at || "").slice(11, 19))}</span>
+          </div>
+          <div class="${m.role === 'user' ? 'msg-q' : 'msg-a'}" style="line-height:1.5">${formatAgentMsg(m.text)}</div>
+        </div>`).join("");
     }
-    host.innerHTML = msgs.map(m => `
-      <div class="msg-card">
-        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-muted)">
-          <span>${m.role === "user" ? "You" : "Steward · Anvil"} · Mode: ${esc(m.mode || "map")}${m.target ? " · " + esc(m.target) : ""}</span>
-          <span>${esc((m.at || "").slice(11, 19))}</span>
-        </div>
-        <div class="${m.role === 'user' ? 'msg-q' : 'msg-a'}">${esc(m.text)}</div>
-      </div>`).join("");
+    host.querySelectorAll("[data-agent-quick]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const p = btn.getAttribute("data-agent-quick") || "";
+        const qInput = document.getElementById("agentInput");
+        qInput.value = p;
+        document.getElementById("btnAgentSend").click();
+      });
+    });
     host.scrollTop = host.scrollHeight;
   }
 
@@ -2895,6 +3272,66 @@
     postAnvil({ action: "reset" }, this);
   });
 
+  const toggleSurfBtn = document.getElementById("btnToggleDialogueSurface");
+  if (toggleSurfBtn) {
+    toggleSurfBtn.addEventListener("click", () => {
+      dialogueSurfaceMode = dialogueSurfaceMode === "cockpit" ? "log" : "cockpit";
+      if (currentState) {
+        renderAgentDock(currentState.session || null, currentState.candidates || {}, currentState.cockpit_name || "");
+      }
+    });
+  }
+
+  const quickVerifyBtn = document.getElementById("btnQuickVerifyAll");
+  if (quickVerifyBtn) {
+    quickVerifyBtn.addEventListener("click", function() {
+      postAnvil({ action: "chat", question: "Verify all blocks, check the map from old to new, and go forward.", mode: currentAgentMode, target: currentAgentTarget || selectedDrillBlockId }, this);
+    });
+  }
+
+  const quickSignOffBtn = document.getElementById("btnQuickSignOffNull");
+  if (quickSignOffBtn) {
+    quickSignOffBtn.addEventListener("click", function() {
+      postAnvil({ action: "chat", question: "Sign off null space drops and lock the Old-to-New remap.", mode: "remap", target: "null-space" }, this);
+    });
+  }
+
+  const quickAegisBtn = document.getElementById("btnQuickAegisAudit");
+  if (quickAegisBtn) {
+    quickAegisBtn.addEventListener("click", async function() {
+      const orig = this.textContent;
+      this.disabled = true;
+      this.textContent = "Scanning…";
+      try {
+        const swSpec = (currentState && currentState.session && currentState.session.software && currentState.session.software.path) || ".";
+        const bodyObj = { action: "scan", target: swSpec };
+        if (dir) bodyObj.dir = dir;
+        if (pid) bodyObj.pid = pid;
+        const r = await fetch(apiUrl("aegis"), { method: "POST", headers: headers(), body: JSON.stringify(bodyObj) });
+        const j = await r.json();
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: "anvil-open-aegis", payload: j }, window.location.origin);
+        }
+      } catch (err) {
+        showError("Aegis security audit failed: " + err.message);
+      } finally {
+        this.disabled = false;
+        this.textContent = orig;
+      }
+    });
+  }
+
+  const openAegisWbBtn = document.getElementById("btnOpenAegisWorkbench");
+  if (openAegisWbBtn) {
+    openAegisWbBtn.addEventListener("click", () => {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "anvil-open-aegis" }, window.location.origin);
+      } else {
+        window.location.href = "/steward-static/aegis.html?" + params.toString();
+      }
+    });
+  }
+
   document.getElementById("btnReturnCockpit").addEventListener("click", () => {
     if (window.parent && window.parent !== window) {
       window.parent.postMessage({ type: "anvil-return-cockpit" }, window.location.origin);
@@ -2902,6 +3339,40 @@
   });
 
   loadSession();
+
+  let _lastKnownUpdatedAt = null;
+  setInterval(async () => {
+    try {
+      const resp = await fetch(apiUrl("anvil"), { headers: headers() });
+      const data = await resp.json();
+      if (data && data.ok && data.session) {
+        const up = data.session.updated_at || "";
+        if (_lastKnownUpdatedAt === null) {
+          _lastKnownUpdatedAt = up;
+        } else if (up && up !== _lastKnownUpdatedAt) {
+          _lastKnownUpdatedAt = up;
+          currentState = data;
+          renderAll();
+        }
+      }
+    } catch (_) {}
+  }, 4000);
+
+  let _initialBuildVer = null;
+  setInterval(async () => {
+    try {
+      const r = await fetch("/api/version", { cache: "no-store" });
+      const j = await r.json();
+      const v = j && j.version;
+      if (!v) return;
+      if (_initialBuildVer === null) {
+        _initialBuildVer = v;
+      } else if (v !== _initialBuildVer) {
+        _initialBuildVer = v;
+        location.reload();
+      }
+    } catch (_) {}
+  }, 15000);
 })();
 </script>
 </body>
