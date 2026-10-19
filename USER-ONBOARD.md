@@ -120,6 +120,7 @@ python launch_anchor_dashboard.py
   dashboard in your **default browser** (the Anchor **favicon** marks the
   tab). The token is handed to the page once and immediately stripped from
   the URL.
+- **Native Windows app (`Anchor\Anchor.exe`):** You can also launch `Anchor\Anchor.exe` directly. On startup it automatically removes Windows Mark-of-the-Web (`:Zone.Identifier`) from extracted WebView2 DLLs, registers a Start-menu shortcut, and — when **"This computer is my mother ship"** is selected — automatically starts the local Anchor service on port `8777` (or pulls & installs the Mother Ship repository into `C:\dev\Anchor` and Foundry skills into `C:\dev\skills` if not yet present) before opening `/setup`.
 - **After a reboot, run the launcher (or click the icon) again** — nothing
   auto-starts on login in this release.
 
