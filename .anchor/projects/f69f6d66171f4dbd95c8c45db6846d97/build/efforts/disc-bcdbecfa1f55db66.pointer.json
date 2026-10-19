@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-bcdbecfa1f55db66",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1786498093.5533867,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Execution log — steward chamber rebuild (Foreman)",
+  "artifact_path": "planning/steward-chamber-2026-08-09/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

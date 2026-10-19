@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-eee22ba48bc14edb",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924586.328645,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Contract Surface",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/A-skills-only/skills/researchPrime/CONTRACT-SURFACE.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

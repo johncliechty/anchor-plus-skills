@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-2446abcd58048f74",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1785277980.924999,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "W4 ops advance 2026-07-24",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

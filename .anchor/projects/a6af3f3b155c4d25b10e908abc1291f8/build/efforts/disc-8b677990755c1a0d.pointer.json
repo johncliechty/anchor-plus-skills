@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-8b677990755c1a0d",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1784924341.589447,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Anchor R&D Surface v13 — Dashboard Polish, File Uploads & Gemini Integration — Execution Log",
+  "artifact_path": "planning/rnd-v13/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

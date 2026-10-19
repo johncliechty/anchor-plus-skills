@@ -1,0 +1,23 @@
+{
+  "job_id": "run-cost-6d9e0e0e511a4ae9a10478ea2ebd3285",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788458844.98617,
+  "source": "run",
+  "kind": "run-cost",
+  "provenance": "run",
+  "session_id": "6d9e0e0e511a4ae9a10478ea2ebd3285",
+  "engine_session_uuid": "cfabb33f-23d6-4afc-9316-c5ad0591f4e3",
+  "usage_state": "measured",
+  "cost": {
+    "input_tokens": 4431,
+    "cache_creation_input_tokens": 137353,
+    "cache_read_input_tokens": 2708367,
+    "output_tokens": 51282,
+    "total_all_classes": 2901433,
+    "total_tokens": 2901433,
+    "input_plus_output": 55713,
+    "duration_ms": 677855,
+    "total_cost_usd": 0.0
+  }
+}

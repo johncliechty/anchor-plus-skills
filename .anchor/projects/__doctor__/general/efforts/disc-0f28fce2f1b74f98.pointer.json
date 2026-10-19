@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-0f28fce2f1b74f98",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784411059.1192942,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Ca1Aa0F33Acf Transcript",
+  "artifact_path": "general/ca1aa0f33acf-transcript.md",
+  "status": "imported",
+  "session_id": "7fccd0105bb84c5bb24f37a836f7bd69"
+}

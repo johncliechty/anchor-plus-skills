@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e280d6c79a793f73",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788888602.8423643,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Deliverables",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-products-4/test_bom_and_crlf_survive0/DELIVERABLES.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

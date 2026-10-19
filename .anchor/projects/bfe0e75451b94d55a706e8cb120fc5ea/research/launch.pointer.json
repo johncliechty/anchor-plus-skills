@@ -1,0 +1,10 @@
+{
+  "job_id": "50383b872bc348a8850ca25f9e7a433f",
+  "project_id": "bfe0e75451b94d55a706e8cb120fc5ea",
+  "lane": "research",
+  "skill": "researchPrime",
+  "backend": "claude",
+  "prompt_seed": "Run the researchPrime skill for project 'Anchor' (folder C:\\dev\\Anchor). Write all research artifacts under the project-scoped output directory C:\\dev\\Anchor\\.anchor\\projects\\bfe0e75451b94d55a706e8cb120fc5ea\\research. This lane runs to completion with no interactive gate; do not mutate the working tree. If the folder C:\\dev\\Anchor already contains a project or codebase, treat this as a brownfield investigation: first inventory what already exists (source layout, dependencies, build/test setup, docs) and what has already been done (prior research, plans, partial builds, TODOs), then produce a research report that orients a brand-new owner — what the project is, its current state, what's done vs. outstanding, and the key risks/unknowns to resolve before further work.",
+  "output_dir": "C:\\dev\\Anchor\\.anchor\\projects\\bfe0e75451b94d55a706e8cb120fc5ea\\research",
+  "launched_at": 1781102535.7873468
+}

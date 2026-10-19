@@ -1,0 +1,33 @@
+{
+  "session_id": "fallback::fallback::::0",
+  "lane": "deliverables",
+  "title": "anchor_gui.py",
+  "claims": [
+    "`anchor_gui.py` is the deliverable: a self-contained Python (stdlib-only) HTTP server that renders the Anchor productivity dashboard and writes changes directly to the project's markdown files.",
+    "It parses the markdown sources (DASHBOARD.md, `domains/*.md`, INBOX.md, archives) into task/project data and regenerates the full dashboard HTML on each request.",
+    "The session's deliverable is `anchor_gui.py`."
+  ],
+  "member_links": [
+    {
+      "label": "anchor_gui.py",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=anchor_gui.py"
+    }
+  ],
+  "when_run": "2026-06-12",
+  "what_was_asked": "anchor_gui.py",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "anchor_gui.py",
+      "rel": "anchor_gui.py",
+      "job_id": "disc-9e51875c3bbd64f2"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154146.1606405,
+  "runs": 2,
+  "markdown": "# anchor_gui.py\n\n*Lane: deliverables · validated, cached summary*\n\n**When run:** 2026-06-12\n\n**What was asked:** anchor_gui.py\n\n## Actions & files produced\n\n- anchor_gui.py\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n- `anchor_gui.py` is the deliverable: a self-contained Python (stdlib-only) HTTP server that renders the Anchor productivity dashboard and writes changes directly to the project's markdown files.\n- It parses the markdown sources (DASHBOARD.md, `domains/*.md`, INBOX.md, archives) into task/project data and regenerates the full dashboard HTML on each request.\n- The session's deliverable is `anchor_gui.py`.\n\n## Files\n\n- [anchor_gui.py](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=anchor_gui.py)\n",
+  "schema_version": 3
+}

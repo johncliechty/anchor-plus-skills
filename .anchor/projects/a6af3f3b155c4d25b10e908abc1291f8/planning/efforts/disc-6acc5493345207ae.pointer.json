@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-6acc5493345207ae",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1785703199.1545753,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "IMPLEMENTATION PLAN v3 — Ecgberht, the host-independent steward SKILL: campaign orchestration by conversation, Anchor as reference host (Foreman-ready)",
+  "artifact_path": "planning/steward-lifecycle-2026-07-31/stage2-artifacts/IMPLEMENTATION-PLAN-v3.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

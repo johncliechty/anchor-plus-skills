@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-529ff359a75fe8db",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788646800.813769,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Synthesis",
+  "artifact_path": "planning/reports-links-2026-09-05/stage2/artifacts/round-1/SYNTHESIS.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

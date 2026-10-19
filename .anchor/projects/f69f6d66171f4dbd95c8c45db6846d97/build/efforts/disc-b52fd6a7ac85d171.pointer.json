@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-b52fd6a7ac85d171",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924341.4770732,
+  "source": "discovered",
+  "kind": "foreman-config",
+  "title": "foreman.config",
+  "artifact_path": "planning/crucible-improve-followup-2026-07-01/foreman.config.json",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

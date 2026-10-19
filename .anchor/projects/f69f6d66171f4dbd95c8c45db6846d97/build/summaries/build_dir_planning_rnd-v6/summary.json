@@ -1,0 +1,32 @@
+{
+  "session_id": "build::dir::planning/rnd-v6",
+  "lane": "build",
+  "title": "rnd-v6",
+  "claims": [
+    "This is the **Execution Log** for **Anchor R&D Surface v6 â€” \"Linked Pipeline,\"** a build-stage trio session.",
+    "The work centers on the **v6 \"Linked Pipeline\"** surface of the Anchor R&D control system."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-15",
+  "what_was_asked": "rnd-v6",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log",
+      "rel": "planning/rnd-v6/EXECUTION-LOG.md",
+      "job_id": "disc-00845942a0368cd9"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154155.0861998,
+  "runs": 2,
+  "markdown": "# rnd-v6\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-15\n\n**What was asked:** rnd-v6\n\n## Actions & files produced\n\n- Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- This is the **Execution Log** for **Anchor R&D Surface v6 â€” \"Linked Pipeline,\"** a build-stage trio session.\n- The work centers on the **v6 \"Linked Pipeline\"** surface of the Anchor R&D control system.\n\n## Files\n\n- [Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

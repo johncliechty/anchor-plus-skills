@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-98af0da1de5ed357",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784895309.8681898,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "North Star",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/NORTH-STAR.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

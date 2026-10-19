@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-2891055b289a82b2",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924341.5977287,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Anchor R&D Surface v5 — \"Durable Work\" — Execution Log",
+  "artifact_path": "planning/rnd-v5/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

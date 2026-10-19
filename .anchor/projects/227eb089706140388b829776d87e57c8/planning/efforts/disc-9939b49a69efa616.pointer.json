@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-9939b49a69efa616",
+  "project_id": "227eb089706140388b829776d87e57c8",
+  "lane": "planning",
+  "created_at": 1781144993.0464048,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Brownfield Discovery — Execution Log",
+  "artifact_path": "planning/brownfield-discovery/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e3387666d7e255cd",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1784924341.470302,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Execution Log — Anchor Improvement Effort (Foreman)",
+  "artifact_path": "planning/crucible-improve-2026-06-30/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

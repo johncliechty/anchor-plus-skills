@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-8b47a11545831362",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1786147797.188488,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Ca408Fc0359E Transcript",
+  "artifact_path": "general/ca408fc0359e-transcript.md",
+  "status": "imported",
+  "session_id": "ca408fc0359e4b3c86e3d5341a38af39"
+}

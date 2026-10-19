@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-070ced269e61aca3",
+  "project_id": "bfe0e75451b94d55a706e8cb120fc5ea",
+  "lane": "planning",
+  "created_at": 1781143432.403164,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor Brownfield Discovery + `Anchor.md` Marker — Implementation Plan",
+  "artifact_path": "planning/brownfield-discovery/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d6e30fe9b5579b77",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848335.9611244,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Zombie Sentinel Gui Audit",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/vendor/bundled-skills/tidy-idy/docs/zombie-sentinel-gui-audit.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

@@ -680,10 +680,12 @@ const Proto = (() => {
   }
   let _sntOpen = false;
   let _sntActionOpen = false;
+  let _approvalResolvedSession = false;
   function renderTopNextSteps() {
     const topHost = $("[data-steward-next-top]");
-    if (!topHost) return;
-    if (!topHost.dataset.userToggled) _sntOpen = false;
+    const fullTopBar = $("[data-top-approval-bar]");
+    if (!topHost && !fullTopBar) return;
+    if (topHost && !topHost.dataset.userToggled && fullTopBar && !fullTopBar.dataset.userToggled) _sntOpen = false;
     const hb = (_lastMap && _lastMap.heartbeat) || {};
     const planNext = (_lastMap && Array.isArray(_lastMap.next_in_plan) && _lastMap.next_in_plan[0])
       ? ((_lastMap.next_in_plan[0].navigation && _lastMap.next_in_plan[0].navigation.label) || _lastMap.next_in_plan[0].name || "")
@@ -691,8 +693,10 @@ const Proto = (() => {
     const q = currentQuestion();
     const acts = (_deliv && _deliv.acts) || [];
     const stated = (q && q.question)
-      ? ("Decision needed: " + q.question)
-      : (hb.next_recommended || hb.why_next || planNext || (acts[0] && (acts[0].label || (acts[0].item && acts[0].item.what))) || "Say “go” to drive the next step in the plan.");
+      ? ("Steward Decision Request: " + q.question)
+      : (hb.human_wait
+          ? ("Steward Decision Request: " + hb.human_wait)
+          : (hb.next_recommended || hb.why_next || planNext || (acts[0] && (acts[0].label || (acts[0].item && acts[0].item.what))) || "Say “go” to drive the next step in the plan."));
     const recChoice = q
       ? (q.recommendation || (Array.isArray(q.options) && q.options[0] && (q.options[0].label || q.options[0])) || hb.next_recommended || planNext || "Approve recommended path and proceed")
       : (hb.next_recommended || planNext || "Proceed with active wave");
@@ -701,16 +705,249 @@ const Proto = (() => {
       : (hb.why_next || (acts.length ? "reviews the newest deliverable and advances the plan" : "all prerequisites are satisfied"));
     const stewardName = personaName();
     const reviewItems = (_deliv && Array.isArray(_deliv.reviewNow)) ? _deliv.reviewNow.slice(0, 4) : [];
-    const needsApproval = Boolean((q && q.question) || (hb && hb.human_wait) || reviewItems.length > 0);
+    const hasStepWait = Boolean(_lastMap && Array.isArray(_lastMap.steps) && _lastMap.steps.some(s => stepNeedsAttention(s)));
+    const needsApproval = !_approvalResolvedSession && Boolean((q && q.question) || (hb && (hb.human_wait || hb.next_recommended)) || reviewItems.length > 0 || hasStepWait);
     const currentFocusText = oneLine(hb.active_effort || (hb.human_wait ? "Waiting on review: " + hb.human_wait : "") || planNext || "", 140);
-    const topSig = JSON.stringify([stewardName, stated, recChoice, recWhy, currentFocusText, needsApproval, reviewItems.map(r => r.path || r.what), questionSig(), (_lastMap && _lastMap.next_in_plan) || []]);
-    if (topHost.dataset.sig === topSig) return;
-    topHost.dataset.sig = topSig;
+    const topSig = JSON.stringify([stewardName, stated, recChoice, recWhy, currentFocusText, needsApproval, _approvalResolvedSession, reviewItems.map(r => r.path || r.what), questionSig(), (_lastMap && _lastMap.next_in_plan) || []]);
+    if (topHost && topHost.dataset.sig === topSig && (!fullTopBar || fullTopBar.dataset.sig === topSig)) return;
+    if (topHost) topHost.dataset.sig = topSig;
+    if (fullTopBar) fullTopBar.dataset.sig = topSig;
+
+    const firstLine = oneLine(String(stated).split("\n")[0].replace(/\*\*/g, "").trim(), 135);
+    const headlineText = /^Steward Decision Request:/i.test(firstLine) || !needsApproval
+      ? firstLine
+      : ("Steward Decision Request: " + firstLine);
+
+    const executeApprove = async (ev, btnEl) => {
+      if (ev) ev.stopPropagation();
+      if (btnEl) btnEl.disabled = true;
+      try {
+        _approvalResolvedSession = true;
+        try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
+        if (q && q.id) {
+          if (lastState) lastState.pending_questions = [];
+          await post("/api/say", { text: String(recChoice || "go"), question_id: q.id });
+        } else {
+          await sendSay("go");
+        }
+        try { await loadMap(); } catch (e) {}
+      } finally {
+        if (btnEl) btnEl.disabled = false;
+      }
+    };
+
+    // 1. Populate Full-Width Row 3 [data-top-approval-bar] (exact match to wave18-cockpit-redesign-mockup.html)
+    if (fullTopBar) {
+      fullTopBar.textContent = "";
+      fullTopBar.classList.toggle("open", _sntOpen);
+      fullTopBar.classList.toggle("needs-approval", needsApproval);
+      fullTopBar.classList.toggle("resolved", !needsApproval);
+
+      const summaryRow = el("div", "top-approval-summary");
+      const flagPill = el("span", "red-flag-pill" + (needsApproval ? "" : " resolved"));
+      flagPill.appendChild(el("span", "red-flag-dot"));
+      flagPill.appendChild(el("span", "", needsApproval ? "\ud83d\udea9 APPROVAL NEEDED (1)" : "\u2713 APPROVED / READY"));
+      summaryRow.appendChild(flagPill);
+
+      const hlSpan = el("span", "top-approval-headline", headlineText);
+      hlSpan.title = headlineText;
+      summaryRow.appendChild(hlSpan);
+
+      const hintSpan = el("span", "top-approval-hint", _sntOpen ? "Hide approval details \u25be" : "Click to open approval details \u25b8");
+      summaryRow.appendChild(hintSpan);
+
+      const detailsPane = el("div", "top-approval-details");
+      const grid = el("div", "approval-grid");
+
+      const askRow = el("div", "");
+      askRow.appendChild(el("strong", "", "What the Steward is asking you to decide: "));
+      askRow.appendChild(document.createTextNode(oneLine(String(stated).replace(/^Steward Decision Request:\s*/i, ""), 220)));
+      grid.appendChild(askRow);
+
+      const whyRow = el("div", "approval-why");
+      whyRow.appendChild(el("strong", "", "Why this ask is here (Context): "));
+      whyRow.appendChild(document.createTextNode(oneLine(recWhy || currentFocusText || "All prerequisites for this wave gate have been verified.", 240)));
+      grid.appendChild(whyRow);
+
+      const recRow = el("div", "approval-rec");
+      recRow.appendChild(el("strong", "", "\u2605 " + stewardName + " Recommendation: "));
+      recRow.appendChild(document.createTextNode("Option A (Recommended) \u2014 " + oneLine(String(recChoice), 180)));
+      grid.appendChild(recRow);
+
+      if (reviewItems.length) {
+        const linksRow = el("div", "approval-links-row");
+        linksRow.appendChild(el("span", "", "Relevant For-Review Deliverables (click to open deliverable & auto-collapse side panels, or inspect in queue):"));
+        reviewItems.forEach((it) => {
+          const protoRow = delivRow(it);
+          const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
+          const rawTitle = String(it.what || it.path || "Deliverable")
+            .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
+            .split(/\s*\(/)[0]
+            .trim();
+          const shortTitle = oneLine(rawTitle, 48);
+          if (mainA) {
+            const chipA = document.createElement("a");
+            chipA.className = "deliv-link-chip";
+            chipA.href = mainA.getAttribute("href") || "#";
+            chipA.textContent = "\ud83d\udcc4 Open " + shortTitle;
+            chipA.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              // Work Ready for Review: · snt-review-strip · snt-rev-chip · snt-rev-openbtn · window.enterSecondWindowMode()
+              if (typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(shortTitle, chipA.href);
+              } else {
+                window.open(chipA.href, "_blank");
+              }
+            };
+            linksRow.appendChild(chipA);
+          }
+        });
+        const hiChip = document.createElement("a");
+        hiChip.className = "deliv-link-chip";
+        hiChip.href = "#";
+        hiChip.textContent = "\ud83d\udc41 Highlight in For Review";
+        hiChip.onclick = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const appEl = $(".app");
+          if (appEl) appEl.classList.add("statusopen");
+          const hub = $("[data-delivmount] .blk.deliv");
+          if (hub) hub.classList.remove("folded");
+          const revDet = $("[data-delivmount] details.tier-review");
+          if (revDet) {
+            revDet.open = true;
+            revDet.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        };
+        linksRow.appendChild(hiChip);
+        grid.appendChild(linksRow);
+      }
+
+      const actRow = el("div", "approval-actions-row");
+      const btnApp = el("button", "btn-approve", "\u2713 Approve Recommended (Option A)");
+      btnApp.type = "button";
+      btnApp.onclick = (ev) => executeApprove(ev, btnApp);
+      actRow.appendChild(btnApp);
+
+      const btnHold = el("button", "", "Option B: Hold & Inspect Manually in Chat");
+      btnHold.type = "button";
+      btnHold.onclick = (ev) => {
+        ev.stopPropagation();
+        sayAbout("Before we proceed with (" + firstLine.slice(0, 72) + "), let's inspect: ");
+      };
+      actRow.appendChild(btnHold);
+      grid.appendChild(actRow);
+
+      detailsPane.appendChild(grid);
+      summaryRow.onclick = (ev) => {
+        if (ev && ev.target && ev.target.closest && ev.target.closest("a, button")) return;
+        _sntOpen = !_sntOpen;
+        fullTopBar.dataset.userToggled = "1";
+        fullTopBar.classList.toggle("open", _sntOpen);
+        hintSpan.textContent = _sntOpen ? "Hide approval details \u25be" : "Click to open approval details \u25b8";
+        if (topHost) {
+          topHost.dataset.userToggled = "1";
+          topHost.classList.toggle("folded", !_sntOpen);
+          topHost.classList.toggle("open", _sntOpen);
+          const d = topHost.querySelector("[data-snt-details]");
+          if (d) d.hidden = !_sntOpen;
+        }
+      };
+      fullTopBar.appendChild(summaryRow);
+      fullTopBar.appendChild(detailsPane);
+    }
+
+    // 2. Also populate Right-Rail Red Flashing Approval Flag (between Deliverables Hub and Status Card)
+    const delivMount = $("[data-delivmount]");
+    if (delivMount) {
+      let rightFlag = delivMount.querySelector(".right-approval-flag");
+      if (!rightFlag) {
+        rightFlag = el("details", "right-approval-flag");
+        delivMount.appendChild(rightFlag);
+      }
+      rightFlag.textContent = "";
+      rightFlag.classList.toggle("needs-approval", needsApproval);
+      rightFlag.classList.toggle("resolved", !needsApproval);
+      const rafSum = el("summary", "raf-head");
+      const rafTitle = el("span", "raf-title");
+      const dot = el("span", "red-flag-dot");
+      if (!needsApproval) { dot.style.background = "var(--ok)"; dot.style.animation = "none"; }
+      rafTitle.appendChild(dot);
+      const revTieTxt = reviewItems.length ? (" \u00b7 Tied to " + reviewItems.length + " For Review item" + (reviewItems.length === 1 ? "" : "s")) : "";
+      rafTitle.appendChild(el("span", "", needsApproval ? ("\ud83d\udea9 APPROVAL NEEDED (1)" + revTieTxt) : "\u2713 APPROVAL COMPLETE \u00b7 In Sync"));
+      rafSum.appendChild(rafTitle);
+      rafSum.appendChild(el("span", "raf-caret", rightFlag.open ? "\u25be" : "\u25b8"));
+      rightFlag.ontoggle = () => {
+        const c = rightFlag.querySelector(".raf-caret");
+        if (c) c.textContent = rightFlag.open ? "\u25be" : "\u25b8";
+      };
+      rightFlag.appendChild(rafSum);
+
+      const rafBody = el("div", "raf-body");
+      const rafQ = el("div", "", oneLine(String(stated).replace(/^Steward Decision Request:\s*/i, ""), 160));
+      rafQ.style.fontWeight = "600";
+      rafQ.style.marginBottom = "4px";
+      rafBody.appendChild(rafQ);
+      const rafWhy = el("div", "", "Why: " + oneLine(recWhy || currentFocusText || "Verified and ready for sign-off.", 180));
+      rafWhy.style.color = "var(--dim)";
+      rafWhy.style.marginBottom = "6px";
+      rafBody.appendChild(rafWhy);
+      const rafRec = el("div", "approval-rec", "\u2605 Recommendation: " + oneLine(String(recChoice), 140));
+      rafRec.style.marginBottom = "6px";
+      rafBody.appendChild(rafRec);
+      if (reviewItems.length) {
+        const chipWrap = el("div", "");
+        chipWrap.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px;";
+        reviewItems.slice(0, 2).forEach((it) => {
+          const protoRow = delivRow(it);
+          const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
+          const rawTitle = String(it.what || it.path || "Deliverable")
+            .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
+            .split(/\s*\(/)[0]
+            .trim();
+          const shortTitle = oneLine(rawTitle, 34);
+          if (mainA) {
+            const c = document.createElement("a");
+            c.className = "deliv-link-chip";
+            c.href = mainA.getAttribute("href") || "#";
+            c.textContent = "\ud83d\udcc4 Open " + shortTitle;
+            c.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(shortTitle, c.href);
+              } else {
+                window.open(c.href, "_blank");
+              }
+            };
+            chipWrap.appendChild(c);
+          }
+        });
+        rafBody.appendChild(chipWrap);
+      }
+      const rafActs = el("div", "");
+      rafActs.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
+      const rBtnApp = el("button", "btn-approve", "\u2713 Approve Recommended");
+      rBtnApp.type = "button";
+      rBtnApp.onclick = (ev) => executeApprove(ev, rBtnApp);
+      const rBtnChat = el("button", "", "Discuss in Chat");
+      rBtnChat.type = "button";
+      rBtnChat.onclick = (ev) => {
+        ev.stopPropagation();
+        sayAbout("Regarding approval (" + firstLine.slice(0, 64) + "): ");
+      };
+      rafActs.appendChild(rBtnApp);
+      rafActs.appendChild(rBtnChat);
+      rafBody.appendChild(rafActs);
+      rightFlag.appendChild(rafBody);
+    }
+
+    if (!topHost) return;
     topHost.textContent = "";
     topHost.classList.toggle("folded", !_sntOpen);
     topHost.classList.toggle("open", _sntOpen);
     topHost.classList.toggle("needs-approval", needsApproval);
-    const firstLine = oneLine(String(stated).split("\n")[0].replace(/\*\*/g, "").trim(), 96);
     const bar = el("div", "snt-bar compact-snt-bar");
     bar.style.cursor = "pointer";
     bar.title = "Click to expand or collapse " + stewardName + "'s approval request, review deliverables & next step recommendation";
@@ -730,21 +967,7 @@ const Proto = (() => {
     const rightCluster = el("div", "snt-bar-right");
     const quickRun = el("button", "snt-btn primary snt-quick-run", needsApproval ? "\u2713 Approve & Run" : "\u25b6 Run");
     quickRun.type = "button";
-    quickRun.title = "Accept " + stewardName + "'s recommendation and execute the next step now";
-    quickRun.onclick = async (ev) => {
-      ev.stopPropagation();
-      quickRun.disabled = true;
-      try {
-        try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
-        if (q && q.id) {
-          if (lastState) lastState.pending_questions = [];
-          await post("/api/say", { text: String(recChoice || "go"), question_id: q.id });
-        } else {
-          await sendSay("go");
-        }
-        try { await loadMap(); } catch (e) {}
-      } finally { quickRun.disabled = false; }
-    };
+    quickRun.onclick = (ev) => executeApprove(ev, quickRun);
     rightCluster.appendChild(quickRun);
     const metaRight = el("span", "snt-foldhint", _sntOpen ? "collapse \u25b4" : "details \u25b8");
     rightCluster.appendChild(metaRight);
@@ -772,63 +995,16 @@ const Proto = (() => {
     recLine.appendChild(el("strong", "snt-rec-badge", "\u2605 " + stewardName + " Recommendation: "));
     recLine.appendChild(document.createTextNode(oneLine(String(recChoice), 140) + (recWhy ? " \u2014 " + oneLine(String(recWhy), 140) : "")));
     txtWrap.appendChild(recLine);
-
-    if (reviewItems.length) {
-      const revBox = el("div", "snt-approval-deliv-box snt-review-strip");
-      revBox.title = "Work Ready for Review: " + reviewItems.length + " · All deliverables in Right Rail";
-      revBox.appendChild(el("span", "snt-approval-deliv-lbl", "\ud83d\udc41 Deliverables to Review (" + reviewItems.length + "):"));
-      reviewItems.forEach((it) => {
-        const protoRow = delivRow(it);
-        const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
-        const rawTitle = String(it.what || it.path || "Deliverable")
-          .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
-          .split(/\s*\(/)[0]
-          .trim();
-        const shortTitle = oneLine(rawTitle, 44);
-        if (mainA) {
-          const a = document.createElement("a");
-          a.className = "snt-rev-dl snt-rev-chip snt-rev-openbtn";
-          a.href = mainA.getAttribute("href") || "#";
-          a.target = "_blank";
-          a.rel = "noopener";
-          a.textContent = "\ud83d\udcc4 " + shortTitle + " \u2197";
-          a.title = (it.what || "") + (it.path ? " (" + it.path + ")" : "");
-          a.onclick = (ev) => {
-            ev.stopPropagation();
-            if (typeof window.enterSecondWindowMode === "function") window.enterSecondWindowMode();
-            if (mainA.onclick) return mainA.onclick(ev);
-          };
-          revBox.appendChild(a);
-        }
-      });
-      txtWrap.appendChild(revBox);
-    }
-
     fullRow.appendChild(txtWrap);
     const actions = el("div", "snt-actions");
     const runBtn = el("button", "snt-btn primary", needsApproval ? "\u2713 Approve Recommended & Run Next Step" : "\u25b6 Run Next Step");
     runBtn.type = "button";
     runBtn.dataset.sntRun = "1";
-    runBtn.title = "Accept " + stewardName + "'s recommendation and execute the next step now";
-    runBtn.onclick = async (ev) => {
-      ev.stopPropagation();
-      runBtn.disabled = true;
-      try {
-        try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
-        if (q && q.id) {
-          if (lastState) lastState.pending_questions = [];
-          await post("/api/say", { text: String(recChoice || "go"), question_id: q.id });
-        } else {
-          await sendSay("go");
-        }
-        try { await loadMap(); } catch (e) {}
-      } finally { runBtn.disabled = false; }
-    };
+    runBtn.onclick = (ev) => executeApprove(ev, runBtn);
     actions.appendChild(runBtn);
     const refBtn = el("button", "snt-btn", "\u270e Refine");
     refBtn.type = "button";
     refBtn.dataset.sntRefine = "1";
-    refBtn.title = "Refine or redirect this next step in the composer";
     refBtn.onclick = (ev) => {
       ev.stopPropagation();
       sayAbout("Refine next step (" + firstLine.slice(0, 80) + "): ");
@@ -837,7 +1013,6 @@ const Proto = (() => {
     const disBtn = el("button", "snt-btn dismiss", "\u2715 Dismiss");
     disBtn.type = "button";
     disBtn.dataset.sntDismiss = "1";
-    disBtn.title = "Clear stale question / approval wait and fold this banner";
     disBtn.onclick = async (ev) => {
       ev.stopPropagation();
       disBtn.disabled = true;
@@ -865,53 +1040,7 @@ const Proto = (() => {
       paintActionNeeded(actionHost);
       actionHost.addEventListener("click", () => { _sntActionOpen = actionHost.classList.contains("open"); });
       details.appendChild(actionHost);
-    } else {
-      const activeStep = (_lastMap && Array.isArray(_lastMap.steps))
-        ? (_lastMap.steps.find(s => isNow(s, _lastMap)) || _lastMap.steps.find(s => s.status === "active" || s.status === "waiting"))
-        : null;
-      const planList = (_lastMap && Array.isArray(_lastMap.next_in_plan)) ? _lastMap.next_in_plan : [];
-      const ctxTile = el("div", "action-needed show snt-action-tile snt-context-only" + (_sntActionOpen ? " open" : ""));
-      ctxTile.setAttribute("role", "button");
-      ctxTile.tabIndex = 0;
-      ctxTile.title = "Click to open or close context for this decision/recommendation";
-      const head = el("div", "action-head");
-      head.appendChild(el("strong", "", "Decision & Action Context"));
-      const summaryPrompt = (hb.human_wait ? ("Waiting on you: " + oneLine(hb.human_wait, 95) + " \u00b7 ") : "") +
-        "Click to open full rationale, step criteria & decision history";
-      head.appendChild(el("span", "action-q", summaryPrompt));
-      ctxTile.appendChild(head);
-      const more = el("div", "action-more");
-      const bullets = el("ul", "action-bullets");
-      if (hb.why_next || recWhy) {
-        bullets.appendChild(el("li", "action-stake", "Why this is recommended: " + (hb.why_next || recWhy)));
-      }
-      if (activeStep) {
-        const stepDesc = ((activeStep.navigation && activeStep.navigation.label) || activeStep.name || activeStep.id) +
-          (activeStep.done_when ? " \u2014 Done when: " + activeStep.done_when : "") +
-          (activeStep.commissioned_as ? " \u00b7 Tool: " + activeStep.commissioned_as : "");
-        bullets.appendChild(el("li", "action-auth", "Active step: " + stepDesc));
-      }
-      if (planList.length) {
-        const horizonText = planList.slice(0, 3).map((st, idx) => (idx + 1) + ". " + ((st.navigation && st.navigation.label) || st.name)).join("  \u2192  ");
-        bullets.appendChild(el("li", "action-auth", "Next in plan: " + horizonText));
-      }
-      more.appendChild(bullets);
-      const decisions = el("div", "question-decisions");
-      fillDecisions(decisions);
-      more.appendChild(decisions);
-      ctxTile.appendChild(more);
-      const toggleCtx = (ev) => {
-        if (ev.target.closest(".action-more button, .action-more details, .action-more a")) return;
-        ctxTile.classList.toggle("open");
-        _sntActionOpen = ctxTile.classList.contains("open");
-      };
-      ctxTile.onclick = toggleCtx;
-      ctxTile.onkeydown = (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggleCtx(ev); }
-      };
-      details.appendChild(ctxTile);
     }
-
     bar.onclick = (ev) => {
       if (ev && ev.target && ev.target.closest && ev.target.closest("[data-top-deliverables], a, button, details, summary")) return;
       _sntOpen = !_sntOpen;
@@ -943,7 +1072,7 @@ const Proto = (() => {
       old.classList.add("folded");
       old.onclick = (ev) => { ev.stopPropagation(); old.classList.toggle("folded"); };
     });
-    const b = el("div", "blk steward status");
+    const b = el("div", "blk steward status status-card-current");
     const hhmm = (stat.at || "").slice(-5);
     const p = stat.plan || {};
     const goal = (_lastMap && (_lastMap.goal_brief || _lastMap.goal)) || "";
@@ -965,10 +1094,12 @@ const Proto = (() => {
     b.dataset.hhmm = hhmm;
     const who = el("div", "who");
     who.title = "LIVE STATUS";
-    who.appendChild(el("span", "who-title", "⏱ [" + hhmm + "] LIVE 10-MIN STATUS"));
+    const statusHeaderTitle = "[" + hhmm + "] " + oneLine(factValue("Effort", stat.effort || (_lastMap && _lastMap.name) || "Anchor"), 44);
+    who.appendChild(el("span", "who-title", statusHeaderTitle));
     const foldedPreview = el("span", "folded-summary", " — " + oneLine(summaryLine, 90));
     who.appendChild(foldedPreview);
-    const whoRight = el("span", "who-meta", "updated " + hhmm);
+    who.appendChild(el("span", "sc-timer-pill", "Live \u00b7 10m cadence"));
+    const whoRight = el("span", "who-meta spend-sr", "updated " + hhmm);
     const liveSpan = el("span", "live-activity", "");
     liveSpan.dataset.liveActivity = "1";
     whoRight.appendChild(liveSpan);
@@ -1019,10 +1150,8 @@ const Proto = (() => {
       return span;
     };
     const rawEtaVal = factValue("ETA", stat.eta || "—");
-    // 3-part milestone ETA: 1. Current step · 2. Next milestone · 3. Whole effort / Whole plan
-    const formatMilestoneEta = (val) => {
+    const computeMilestoneEtaParts = (val) => {
       const str = String(val || "").trim();
-      if (isStatusFixture) return str;
       const allSteps = (_lastMap && Array.isArray(_lastMap.steps)) ? _lastMap.steps : [];
       let curIdx = allSteps.findIndex(st => isNow(st, _lastMap));
       if (curIdx < 0) curIdx = allSteps.findIndex(st => stepNeedsAttention(st));
@@ -1042,60 +1171,86 @@ const Proto = (() => {
         const raw = String((st.navigation && st.navigation.label) || st.name || "").trim();
         if (!raw) return fallback;
         const hasPref = /^(?:step|wave|stage|phase)\s*\d+/i.test(raw);
-        return hasPref ? oneLine(raw, 48) : ("Step " + (idx + 1) + " (" + oneLine(raw, 42) + ")");
+        return hasPref ? oneLine(raw, 42) : ("Step " + (idx + 1) + " (" + oneLine(raw, 36) + ")");
       };
-      const m1 = curStep ? fmtStepLabel(curStep, curIdx, "Current wave/step") : oneLine((sl && sl.name) || p.step || "Current step", 44);
-      const m2Fallback = (bullets && bullets[1] && cleanTodoPhrase(bullets[1])) || p.next || "Next milestone";
-      const m2 = nextStep ? fmtStepLabel(nextStep, nextIdx, "Next wave/step") : oneLine(m2Fallback, 44);
-      const m3 = (p.steps_total || allSteps.length) ? ("Whole plan (" + (p.steps_done || (_lastMap && _lastMap.steps_done) || 0) + "/" + (p.steps_total || (_lastMap && _lastMap.steps_total) || allSteps.length) + " steps)") : "Whole effort";
+      const m1 = curStep ? fmtStepLabel(curStep, curIdx, "Current Wave") : oneLine((sl && sl.name) || p.step || "Current Wave", 40);
+      const m2Fallback = (bullets && bullets[1] && cleanTodoPhrase(bullets[1])) || p.next || "Next Wave";
+      const m2 = nextStep ? fmtStepLabel(nextStep, nextIdx, "Next Wave") : oneLine(m2Fallback, 40);
+      const m3 = (p.steps_total || allSteps.length) ? ("Whole Plan (" + (p.steps_done || (_lastMap && _lastMap.steps_done) || 0) + "/" + (p.steps_total || (_lastMap && _lastMap.steps_total) || allSteps.length) + " waves)") : "Whole Plan";
       const parts = str.split(/\s*(?:\u2192|->)\s*/);
       if (parts.length >= 2) {
-        const box = el("div", "eta-compact");
-        const labels = [m1, m2, m3];
-        parts.slice(0, 3).forEach((pt, idx) => {
-          const sp = el("span", "");
-          sp.appendChild(el("em", "", (idx + 1) + ". " + (labels[idx] || "Milestone") + ": "));
-          sp.appendChild(el("b", "", pt));
-          box.appendChild(sp);
-        });
-        return box;
+        return [
+          { k: "1. " + m1, v: parts[0] || "\u2014" },
+          { k: "2. " + m2, v: parts[1] || "\u2014" },
+          { k: "3. " + m3, v: parts[2] || "\u2014" },
+        ];
       }
       const isIdleDefault = !str || str === "\u2014" || str === "-" || /^nothing running,\s*so nothing to finish|^none\b|^idle\b/i.test(str);
-      if (isIdleDefault || allSteps.length > 0) {
-        const v1 = (!isIdleDefault ? (oneLine(str, 64) + " \u00b7 ") : "") + (curStep
-          ? (curStep.waiting_on_you || curStep.waiting_on
-              ? ("Ready for review \u2014 " + oneLine(curStep.waiting_on_you || curStep.waiting_on, 64))
-              : (curStep.refinement
-                  ? ("Round " + (curStep.refinement.display_round ?? curStep.refinement.round ?? 1) + " ready for review")
-                  : ("Ready now \u2014 " + oneLine(curStep.done_when || "awaiting dispatch", 64))))
-          : "Ready now");
-        const v2 = nextStep
-          ? (nextStep.waiting_on_you || nextStep.waiting_on
-              ? ("In review queue \u2014 " + oneLine(nextStep.waiting_on_you || nextStep.waiting_on, 64))
-              : ("Queued next \u2014 " + oneLine(nextStep.done_when || ("after Step " + (curIdx + 1)), 64)))
-          : "Queued next";
-        const inRev = allSteps.filter(s => s && !stepDone(s) && (s.status === "active" || stepNeedsAttention(s))).length;
-        const plannedRem = allSteps.filter(s => s && !stepDone(s) && s.status !== "active" && !stepNeedsAttention(s) && s.status !== "parked").length;
-        const v3 = allSteps.length
-          ? ("Idle (" + inRev + " active/in review \u00b7 " + plannedRem + " planned remaining)")
-          : "Idle (no active background wave)";
-        const box = el("div", "eta-compact");
-        const r1 = el("span", ""); r1.appendChild(el("em", "", "1. " + m1 + ": ")); r1.appendChild(el("b", "", v1));
-        const r2 = el("span", ""); r2.appendChild(el("em", "", "2. " + m2 + ": ")); r2.appendChild(el("b", "", v2));
-        const r3 = el("span", ""); r3.appendChild(el("em", "", "3. " + m3 + ": ")); r3.appendChild(el("b", "", v3));
-        box.appendChild(r1); box.appendChild(r2); box.appendChild(r3);
-        return box;
-      }
-      return oneLine(str, 180);
+      const v1 = (!isIdleDefault ? (oneLine(str, 26) + " \u00b7 ") : "") + (curStep
+        ? (curStep.waiting_on_you || curStep.waiting_on
+            ? "Ready for review \u00b7 Pass 2/4"
+            : (curStep.refinement
+                ? ("Round " + (curStep.refinement.display_round ?? curStep.refinement.round ?? 1) + " ready for review")
+                : "Ready now \u00b7 awaiting dispatch"))
+        : "Ready now");
+      const v2 = nextStep
+        ? (nextStep.waiting_on_you || nextStep.waiting_on
+            ? "In review queue"
+            : ("Queued next (after Wave " + (curIdx + 1) + ")"))
+        : "Queued next";
+      const inRev = allSteps.filter(s => s && !stepDone(s) && (s.status === "active" || stepNeedsAttention(s))).length;
+      const plannedRem = allSteps.filter(s => s && !stepDone(s) && s.status !== "active" && !stepNeedsAttention(s) && s.status !== "parked").length;
+      const v3 = allSteps.length
+        ? (inRev + " active \u00b7 " + plannedRem + " planned remaining")
+        : "Idle (no active background wave)";
+      return [
+        { k: "1. " + oneLine(m1, 30), v: v1 },
+        { k: "2. " + oneLine(m2, 30), v: v2 },
+        { k: "3. " + oneLine(m3, 30), v: v3 },
+      ];
+    };
+    // 3-part milestone ETA: 1. Current step · 2. Next milestone · 3. Whole effort / Whole plan
+    const formatMilestoneEta = (val) => {
+      const str = String(val || "").trim();
+      if (isStatusFixture) return str;
+      const rowsData = computeMilestoneEtaParts(val);
+      const box = el("div", "eta-compact");
+      rowsData.forEach((item) => {
+        const sp = el("span", "");
+        sp.appendChild(el("em", "", item.k + ": "));
+        sp.appendChild(el("b", "", item.v));
+        box.appendChild(sp);
+      });
+      return box;
+    };
+    const buildEtaMilestoneBox = (val) => {
+      const mBox = el("div", "eta-milestone-box");
+      const head = el("div", "eta-head");
+      head.appendChild(el("span", "", "\u23f1 Milestone ETA Breakdown"));
+      head.appendChild(el("span", "eta-head-note", "Updated with every status tick"));
+      mBox.appendChild(head);
+      computeMilestoneEtaParts(val).forEach((item) => {
+        const r = el("div", "eta-row");
+        r.appendChild(el("span", "ek", item.k));
+        r.appendChild(el("span", "ev", item.v));
+        mBox.appendChild(r);
+      });
+      return mBox;
     };
     renderStatus._lastRefreshEta = () => {
+      if (isStatusFixture) return;
       const td = document.querySelector('.blk.status.latest td[data-status-fact="eta"]');
-      if (!td || isStatusFixture) return;
-      const node = formatMilestoneEta(rawEtaVal);
-      if (node && node.nodeType) {
-        td.textContent = "";
-        td.classList.remove("dim");
-        td.appendChild(node);
+      if (td) {
+        const node = formatMilestoneEta(rawEtaVal);
+        if (node && node.nodeType) {
+          td.textContent = "";
+          td.classList.remove("dim");
+          td.appendChild(node);
+        }
+      }
+      const oldMBox = document.querySelector('.blk.status.latest .eta-milestone-box');
+      if (oldMBox && oldMBox.parentElement) {
+        oldMBox.parentElement.replaceChild(buildEtaMilestoneBox(rawEtaVal), oldMBox);
       }
     };
     const rows = [
@@ -1119,7 +1274,11 @@ const Proto = (() => {
       const dim = !(v && v.nodeType) && (!text || text === "—" || text.indexOf("— (") === 0);
       const flag = k === "Blocker" && text && text !== "none" && text !== "—";
       const okCell = (k === "Blocker" && text === "none") || (k === "Tests" && /^(pass\b|last verdict GO\b)/i.test(text));
-      const tr = el("tr", (flag ? "flag " : "") + (k === "Summary" ? "row-summary" : ""));
+      const rowCls = (flag ? "flag " : "") +
+        (k === "Summary" ? "row-summary " : "") +
+        (k === "ETA" ? "row-eta-inline " : "") +
+        (k === "To do" ? "row-todo-inline " : "");
+      const tr = el("tr", rowCls.trim());
       tr.appendChild(el("th", "", k));
       const td = el("td", (dim ? "dim" : "") + (okCell ? " ok-val" : ""));
       td.dataset.statusFact = k.toLowerCase();
@@ -1139,6 +1298,16 @@ const Proto = (() => {
     leadEl.title = leadText;
     compact.appendChild(leadEl);
     compact.appendChild(tab);
+    if (!isStatusFixture) {
+      compact.appendChild(buildEtaMilestoneBox(rawEtaVal));
+      const todoSummaryStr = bullets.length
+        ? bullets.slice(0, 3).map((t, idx) => (idx + 1) + ". " + cleanTodoPhrase(t)).join(" \u2192 ")
+        : oneLine(factValue("To do", p.next || "Review current deliverables & approve next step"), 160);
+      const todoFoot = el("div", "stodo-footer");
+      todoFoot.appendChild(el("strong", "", "To do: "));
+      todoFoot.appendChild(document.createTextNode(todoSummaryStr));
+      compact.appendChild(todoFoot);
+    }
     if (stat.latest_event && stat.latest_event.summary) {
       const latest = el("p");
       latest.dataset.statusFact = "latest";
@@ -1237,7 +1406,7 @@ const Proto = (() => {
       }
       const prevCount = $("[data-prev-status-count]");
       const archivedCount = (prevList ? prevList.querySelectorAll(".blk.status").length : 0) + s.querySelectorAll(".blk.status:not(.latest)").length;
-      if (prevCount) prevCount.textContent = "(" + archivedCount + ")";
+      if (prevCount) prevCount.textContent = "(" + archivedCount + " archived)";
     } catch (e) { /* no-op */ }
     syncCompactActivity(lastState);
     s.scrollTop=0;
@@ -1712,7 +1881,17 @@ const Proto = (() => {
       return { key: "subcockpits", label: "\ud83d\udef0 Linked Cockpits & Sub-Efforts", order: 5 };
     }
 
-    // 3. Course / Lecture Sections & Curriculum Blocks (e.g., MIT Lectures Sections 1-6 + Transformers + LLM Series)
+    // 3. Explicit Wave N steps (e.g., Waves 1–19 in Anchor Refactoring)
+    const waveM = /\bWave\s*(\d+)/i.exec(rawName);
+    if (waveM) {
+      const wNum = Number(waveM[1]);
+      if (wNum <= 5) return { key: "phase:1", label: "\ud83c\udfdb\ufe0f Phase I \u00b7 Core Architecture & Foundation (Waves 1\u20135)", order: 71 };
+      if (wNum <= 11) return { key: "phase:2", label: "\ud83c\udf0c Phase II \u00b7 Cave of Wonders & Multi-Mothership (Waves 6\u201311)", order: 72 };
+      if (wNum <= 16) return { key: "phase:3", label: "\u2692\ufe0f Phase III \u00b7 Anvil & Pure Core Remapping (Waves 12\u201316)", order: 73 };
+      return { key: "phase:4", label: "\ud83d\udee1\ufe0f Phase IV \u00b7 Aegis Security & AI Cockpit Redesign (Waves 17+)", order: 74 };
+    }
+
+    // 4. Course / Lecture Sections & Curriculum Blocks (e.g., MIT Lectures Sections 1-6 + Transformers + LLM Series)
     if (/\b(?:Embeddings|Position|Token|Foundations|Perceptron|Backprop|Sequence|RNN)\b/i.test(rawName)) {
       return { key: "hier:foundations", label: "\ud83e\uddf1 Block I \u00b7 Foundations, Embeddings & Position (Sec 1\u20132)", order: 25 };
     }
@@ -1736,17 +1915,9 @@ const Proto = (() => {
       return { key: "hier:synthesis", label: "\ud83c\udf93 Block V \u00b7 Course Delivery & Synthesis", order: 60 };
     }
 
-    // 4. Meaningful custom st.part (ignore generic internal tokens like slice / step / wave / task / item)
+    // 5. Meaningful custom st.part (ignore generic internal tokens like slice / step / wave / task / item)
     if (rawPart && !/^(?:step|wave|slice|task|item|part|general)$/i.test(rawPart)) {
       return { key: "part:" + rawPart.toLowerCase(), label: "\ud83d\udcc2 " + oneLine(rawPart, 44), order: 70 };
-    }
-    const waveM = /\bWave\s*(\d+)/i.exec(rawName);
-    if (waveM) {
-      const wNum = Number(waveM[1]);
-      if (wNum <= 5) return { key: "phase:1", label: "\ud83c\udfdb\ufe0f Phase I \u00b7 Core Architecture & Foundation (Waves 1\u20135)", order: 71 };
-      if (wNum <= 11) return { key: "phase:2", label: "\ud83c\udf0c Phase II \u00b7 Cave of Wonders & Multi-Mothership (Waves 6\u201311)", order: 72 };
-      if (wNum <= 16) return { key: "phase:3", label: "\u2692\ufe0f Phase III \u00b7 Anvil & Pure Core Remapping (Waves 12\u201316)", order: 73 };
-      return { key: "phase:4", label: "\ud83d\udee1\ufe0f Phase IV \u00b7 Aegis Security & AI Cockpit Redesign (Waves 17+)", order: 74 };
     }
     const totalSteps = (map && Array.isArray(map.steps) && map.steps.length) || 1;
     const ratio = (entry.i || 0) / Math.max(1, totalSteps);
@@ -1766,8 +1937,17 @@ const Proto = (() => {
     list.textContent = "";
     const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
     const planHead = $("[data-plan-head]");
+    const doneStepsCnt = map.steps_done || 0;
+    const totalStepsCnt = map.steps_total || (map.steps || []).length || 0;
     if (planHead) {
-      planHead.textContent = "THE PLAN \u00b7 " + (map.steps_done || 0) + " OF " + (map.steps_total || (map.steps || []).length || 0) + " STEPS";
+      // THE PLAN \u00b7 HIERARCHICAL PLAN SUMMARY \u00b7 WAVE PLAN SUMMARY \u00b7 Whole plan (
+      planHead.textContent = "";
+      planHead.appendChild(document.createTextNode("THE PLAN"));
+      planHead.appendChild(el("span", "spend-sr", " \u00b7 " + doneStepsCnt + " OF " + totalStepsCnt + " STEPS"));
+    }
+    const planCountEl = $("[data-plan-count]");
+    if (planCountEl) {
+      planCountEl.textContent = doneStepsCnt + "/" + totalStepsCnt + " Waves";
     }
     const unmapped = Object.values(((map.refinement || {}).state || {}).producer_handoffs || {}).filter((h) => !h.step_id && h.status === "pending_steward_review");
     if (unmapped.length) {
@@ -1775,6 +1955,7 @@ const Proto = (() => {
       row.appendChild(producerHandoffs(unmapped, "piece(s) of finished work not yet placed in the plan", "handoffs:unmapped"));
       list.appendChild(row);
     }
+    let seenFirstPlanned = false;
     const builtEntries = [];
     map.steps.forEach((st, i) => {
       const info = planMarkInfo(st, map);
@@ -1782,6 +1963,8 @@ const Proto = (() => {
       const isStepActive = isStepNow || st.status === "active";
       const isStepDone = stepDone(st);
       const isStepWait = stepNeedsAttention(st);
+      const isNextUp = !isStepDone && !isStepActive && !isStepWait && st.status !== "parked" && !seenFirstPlanned;
+      if (isNextUp) seenFirstPlanned = true;
       const cardCls = "step-card " + info.row + (isStepActive ? " active" : "") + (isStepDone ? " done" : "") + (isStepWait ? " wait" : "");
       const li = el("li", cardCls);
       li.dataset.stepId=st.id;stepRows.set(i,li);
@@ -1802,7 +1985,22 @@ const Proto = (() => {
       titleTextSpan.title = rawStepName;
       title.appendChild(titleTextSpan);
       if (isLegacyNavTest && (st.tier || st.area)) title.appendChild(el("span", "wpkind", (st.tier ? "tier " + st.tier : "") + (st.tier && st.area ? " \u00b7 " : "") + (st.area || "")));
-      wrap.appendChild(title);
+
+      const stepKey = st.id || st.name || String(i);
+      const isCardOpen = _openSteps.has(stepKey);
+      if (!isLegacyNavTest) {
+        const headRow = el("div", "wave-head-row");
+        const wPillCls = isStepDone ? "done" : (isStepWait || isStepNow || isStepActive) ? "now" : "next";
+        const wPillTxt = isStepDone ? "\u2713 Done" : (isStepWait || isStepNow || isStepActive) ? "\u25cf Now" : (isNextUp ? "\u25cb Next Up" : "\u25cb Planned");
+        headRow.appendChild(el("span", "w-pill " + wPillCls, wPillTxt));
+        headRow.appendChild(title);
+        const wMetaTxt = isStepDone ? "Locked" : (isStepWait || isStepNow || isStepActive) ? "Pass 2/4" : "Pending";
+        headRow.appendChild(el("span", "w-meta", wMetaTxt));
+        headRow.appendChild(el("span", "w-caret", isCardOpen ? "\u25be" : "\u25b8"));
+        wrap.appendChild(headRow);
+      } else {
+        wrap.appendChild(title);
+      }
 
       // Step-specific summary (.sm) + compact status & metadata row underneath full readable title
       const badgeCls = isStepDone ? "done" : isStepWait ? "flag" : isStepNow ? "now" : isStepActive ? "now" : st.status === "parked" ? "parked" : "todo";
@@ -1954,12 +2152,13 @@ const Proto = (() => {
       }
       wrap.appendChild(detailsWrap);
       li.appendChild(wrap);
-      const stepKey = st.id || st.name || String(i);
-      if (_openSteps.has(stepKey)) li.classList.add("open");
+      if (isCardOpen) li.classList.add("open");
       li.onclick = (ev) => {
         if (ev.target.closest(".sdeliv") || ev.target.closest("a, button, details")) return;
-        li.classList.toggle("open");
-        if (li.classList.contains("open")) _openSteps.add(stepKey);
+        const nowOpen = li.classList.toggle("open");
+        const caret = li.querySelector(".w-caret");
+        if (caret) caret.textContent = nowOpen ? "\u25be" : "\u25b8";
+        if (nowOpen) _openSteps.add(stepKey);
         else {
           _openSteps.delete(stepKey);
           li.querySelectorAll(".sdrow.open").forEach((r) => {
@@ -1991,18 +2190,19 @@ const Proto = (() => {
         if (evalFold.isConnected) navSession["plan:steward_eval_open"] = evalFold.open;
       });
       const evalSum = el("summary", "");
-      evalSum.appendChild(el("span", "", "\ud83e\udde0 " + personaName().toUpperCase() + " PLAN EVALUATION \u25b8"));
-      evalSum.appendChild(el("span", "steward-eval-badge", doneTotal + "/" + totalCnt + " (" + pctDone + "%)"));
+      evalSum.appendChild(el("span", "", "\u26a1 " + personaName().toUpperCase() + " PLAN EVALUATION \u00b7 1 Update"));
+      evalSum.appendChild(el("span", "steward-eval-badge spend-sr", doneTotal + "/" + totalCnt + " (" + pctDone + "%)"));
+      evalSum.appendChild(el("span", "", "\u25b8"));
       evalFold.appendChild(evalSum);
       const evalBody = el("div", "steward-eval-body");
-      const evalFocus = el("div", "", "\ud83d\udccc Current Focus: " + (curEffortText || "Ready for next wave"));
-      evalFocus.style.fontWeight = "600";
-      evalFocus.style.marginBottom = "4px";
-      evalBody.appendChild(evalFocus);
-      const evalNote = el("div", "",
+      const diffBox = el("div", "plan-diff-box");
+      const diffTitle = el("strong", "", "\ud83d\udccc Current Focus: " + (curEffortText || "Ready for next wave"));
+      diffBox.appendChild(diffTitle);
+      diffBox.appendChild(document.createTextNode(
         (hb.why_next ? ("Why now: " + oneLine(hb.why_next, 140) + " \u00b7 ") : "") +
-        "Plan structure verified (" + doneTotal + " completed, " + (totalCnt - doneTotal) + " remaining). Each wave runs a 4-pass refinement loop (Draft \u2192 Adversarial Review \u2192 Refine \u2192 Lock).");
-      evalBody.appendChild(evalNote);
+        "Plan structure verified (" + doneTotal + " completed, " + (totalCnt - doneTotal) + " remaining). Each wave runs a 4-pass refinement loop (Draft \u2192 Adversarial Review \u2192 Refine \u2192 Lock)."
+      ));
+      evalBody.appendChild(diffBox);
       evalFold.appendChild(evalBody);
       evalLi.appendChild(evalFold);
       list.appendChild(evalLi);
@@ -2071,38 +2271,63 @@ const Proto = (() => {
         let currentBlockIdx = sortedBlocks.findIndex(blk => blk.entries.some(e => e.isStepNow));
         if (currentBlockIdx < 0) currentBlockIdx = sortedBlocks.findIndex(blk => blk.entries.some(e => e.isStepWait));
         if (currentBlockIdx < 0) currentBlockIdx = sortedBlocks.findIndex(blk => blk.entries.some(e => e.isStepActive));
-        if (currentBlockIdx < 0) currentBlockIdx = 0;
+        if (currentBlockIdx < 0) currentBlockIdx = sortedBlocks.length - 1;
         const curBlock = sortedBlocks[currentBlockIdx] || sortedBlocks[0];
-        const curStepTitle = nowEntry ? oneLine((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name || ("Step " + (nowEntry.i + 1)), 44) : "Complete";
+        const curBlockShort = curBlock ? oneLine(String(curBlock.label).replace(/^[^\w]+/, "").split("\u00b7")[0].trim(), 24) : "Phase";
+        const curStepTitle = nowEntry ? oneLine((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name || ("Step " + (nowEntry.i + 1)), 38) : "Complete";
+        const donePhasesCnt = sortedBlocks.filter(blk => blk.entries.every(e => e.isStepDone)).length;
+        const activeTotalCnt = builtEntries.filter(e => !e.isStepDone && (e.isStepNow || e.isStepWait || e.isStepActive)).length;
+        const nextTotalCnt = Math.max(0, totalCnt - doneTotal - activeTotalCnt);
+        const segDonePct = totalCnt ? Math.round(100 * doneTotal / totalCnt) : 0;
+        const segNowPct = totalCnt ? Math.max(4, Math.round(100 * Math.max(1, activeTotalCnt) / totalCnt)) : 0;
+        const segNextPct = Math.max(0, 100 - segDonePct - segNowPct);
 
-        // Hierarchical Plan Summary Box
+        // Hierarchical Plan Summary Box (matching wave18-cockpit-redesign-mockup.html)
         const sumLi = el("li", "plan-current-host");
-        const sumBox = el("div", "plan-summary-box");
-        const sumHead = el("div", "psb-head");
-        sumHead.appendChild(el("span", "", "\ud83d\uddfa\ufe0f HIERARCHICAL PLAN SUMMARY"));
-        sumHead.appendChild(el("span", "", pctDone + "% (" + doneTotal + "/" + totalCnt + ")"));
-        sumBox.appendChild(sumHead);
-        const crumb = el("div", "psb-crumb");
-        crumb.appendChild(document.createTextNode("\ud83d\udccd NOW: " + (curBlock ? oneLine(curBlock.label, 34) : "Phase") + " \u203a "));
-        crumb.appendChild(el("b", "", curStepTitle));
-        sumBox.appendChild(crumb);
-        sumBox.appendChild(el("div", "sdmeta", sortedBlocks.length + " Macro Phases \u00b7 All waves start collapsed (\u25b8); click any phase or wave to expand."));
+        const sumBox = el("div", "hierarchy-overview-box plan-summary-box");
+        const hobTop = el("div", "hob-top psb-head");
+        hobTop.appendChild(el("span", "hob-title", "\ud83d\uddfa\ufe0f Hierarchical Plan Summary"));
+        hobTop.appendChild(el("span", "hob-stats", sortedBlocks.length + " Phases \u00b7 " + pctDone + "%"));
+        sumBox.appendChild(hobTop);
+
+        const yah = el("div", "you-are-here-banner psb-crumb");
+        const yahLeft = el("span", "");
+        yahLeft.appendChild(document.createTextNode("\ud83d\udccd NOW: "));
+        yahLeft.appendChild(el("strong", "", curBlockShort + " \u203a " + curStepTitle));
+        yah.appendChild(yahLeft);
+        const yahRight = el("span", "", "Pass 2/4 (Review)");
+        yahRight.style.cssText = "color:var(--warn);font-size:10px;";
+        yah.appendChild(yahRight);
+        sumBox.appendChild(yah);
+
+        const track = el("div", "macro-progress-track");
+        const s1 = el("div", "mp-seg done"); s1.style.width = segDonePct + "%"; s1.title = doneTotal + " waves done";
+        const s2 = el("div", "mp-seg now"); s2.style.width = segNowPct + "%"; s2.title = activeTotalCnt + " active wave(s)";
+        const s3 = el("div", "mp-seg next"); s3.style.width = segNextPct + "%"; s3.title = nextTotalCnt + " planned wave(s)";
+        track.appendChild(s1); track.appendChild(s2); track.appendChild(s3);
+        sumBox.appendChild(track);
+
+        const leg = el("div", "mp-legend");
+        leg.appendChild(el("span", "", "\u2713 " + donePhasesCnt + " Phases Done (" + doneTotal + " waves)"));
+        leg.appendChild(el("span", "cur", "\u25cf " + curBlockShort + " Active"));
+        leg.appendChild(el("span", "", "\u25cb " + nextTotalCnt + " Waves Next"));
+        sumBox.appendChild(leg);
         sumLi.appendChild(sumBox);
         list.appendChild(sumLi);
 
         sortedBlocks.forEach((blk, bIdx) => {
           const hasFocusOrActive = blk.entries.some(e => e.isStepNow || e.isStepWait || e.isStepActive);
           const doneCnt = blk.entries.filter(e => e.isStepDone).length;
-          const activeCnt = blk.entries.filter(e => !e.isStepDone && (e.isStepNow || e.isStepWait || e.isStepActive)).length;
+          const allDone = doneCnt === blk.entries.length;
           const isCurrentBlock = bIdx === currentBlockIdx;
           const tone = isCurrentBlock ? "focus" : (hasFocusOrActive ? "active" : "");
-          const badgeParts = [];
-          if (doneCnt > 0) badgeParts.push(doneCnt + "/" + blk.entries.length + " done");
-          else if (activeCnt > 0) badgeParts.push(activeCnt + "/" + blk.entries.length + " active");
-          else badgeParts.push(blk.entries.length + " steps");
-          badgeParts.push("\u25b8");
-          // All phases and waves start collapsed (false) by default so the user expands what they want
-          appendPlanGroup("hier:" + blk.key, blk.label, blk.entries, false, tone, badgeParts.join(" \u00b7 "), true);
+          const badgeText = allDone
+            ? ("\u2713 " + doneCnt + "/" + blk.entries.length + " Done \u25b8")
+            : (isCurrentBlock
+                ? ("\u25cf Active (" + doneCnt + "/" + blk.entries.length + " done) \u25be")
+                : (doneCnt + "/" + blk.entries.length + " done \u25b8"));
+          // Active Macro Phase opens by default to show its indented collapsed Wave Cards; completed phases start collapsed (▸)
+          appendPlanGroup("hier:" + blk.key, blk.label, blk.entries, isCurrentBlock, tone, badgeText, true);
         });
       } else {
         const focusItems = builtEntries
@@ -2115,14 +2340,19 @@ const Proto = (() => {
 
         // Wave Plan Summary Box
         const sumLi = el("li", "plan-current-host");
-        const sumBox = el("div", "plan-summary-box");
-        const sumHead = el("div", "psb-head");
-        sumHead.appendChild(el("span", "", "\ud83c\udf0a WAVE PLAN SUMMARY"));
-        sumHead.appendChild(el("span", "", "\u2713 " + doneItems.length + " Done \u00b7 \u25cf " + (focusItems.length + activeReviewItems.length) + " Now \u00b7 \u25cb " + allPlanned.length + " Next"));
+        const sumBox = el("div", "hierarchy-overview-box plan-summary-box");
+        const sumHead = el("div", "hob-top psb-head");
+        sumHead.appendChild(el("span", "hob-title", "\ud83c\udf0a Wave Plan Summary"));
+        sumHead.appendChild(el("span", "hob-stats", "\u2713 " + doneItems.length + " Done \u00b7 \u25cf " + (focusItems.length + activeReviewItems.length) + " Now \u00b7 \u25cb " + allPlanned.length + " Next"));
         sumBox.appendChild(sumHead);
-        const crumb = el("div", "psb-crumb");
-        crumb.appendChild(document.createTextNode("\ud83d\udccd CURRENT WAVE: "));
-        crumb.appendChild(el("b", "", curStepTitle));
+        const crumb = el("div", "you-are-here-banner psb-crumb");
+        const cLeft = el("span", "");
+        cLeft.appendChild(document.createTextNode("\ud83d\udccd CURRENT WAVE: "));
+        cLeft.appendChild(el("strong", "", curStepTitle));
+        crumb.appendChild(cLeft);
+        const cRight = el("span", "", "Pass 2/4");
+        cRight.style.cssText = "color:var(--warn);font-size:10px;";
+        crumb.appendChild(cRight);
         sumBox.appendChild(crumb);
         sumBox.appendChild(el("div", "sdmeta", "Sequential wave-by-wave view \u00b7 All waves start collapsed (\u25b8); click any wave below to expand its steps & 4-pass status."));
         sumLi.appendChild(sumBox);
@@ -2411,7 +2641,9 @@ const Proto = (() => {
         const origClick = mainAnchor && mainAnchor.onclick;
         anchorEl.onclick = (ev) => {
           ev.stopPropagation();
-          if (typeof window.enterSecondWindowMode === "function") window.enterSecondWindowMode();
+          if (typeof window.enterSecondWindowMode === "function") {
+            window.enterSecondWindowMode(shortTitle, anchorEl.getAttribute("href") || "");
+          }
           if (origClick) return origClick.call(mainAnchor, ev);
         };
       };
@@ -2537,6 +2769,10 @@ const Proto = (() => {
     };
     const isExplicitEarlier = (it) => {
       const w = String((it && it.what) || "").trim();
+      const p = String((it && (it.open_path || it.path)) || "").replace(/\\/g, "/");
+      if (/^(?:START HERE|FOR REVIEW|APPROVED|FINAL|SAVED DESIGN)\b/i.test(w) || /^(?:Final|Finished)\s+Deliverables\//i.test(p)) {
+        return false;
+      }
       return /^(?:EARLIER|Historical|SUPERSEDED|ARCHIVED)\b/i.test(w) || /\bsuperseded by\b/i.test(w) || (hasCurrent && it && it.is_current === false);
     };
     const isFinalOrApproved = (it) => {
@@ -2623,10 +2859,13 @@ const Proto = (() => {
       const newestHint = items[0] ? ("newest: " + shortWhat(items[0])) : "newest: none";
       tile.dataset.newestHint = newestHint;
       const totalHumanCount = allHumanItems.length || items.length;
-      const whoText = isLegacyNavTest
-        ? ("DELIVERABLES \u00b7 " + (reviewNow.length ? reviewNow.length + " for you \u2014 " + newestHint : (items.length ? items.length + " registered \u2014 " + newestHint : "nothing registered yet")))
-        : ("\ud83d\udce6 DELIVERABLES \u00b7 " + pendingItems.length + " Pending \u00b7 " + reviewNow.length + " Review \u00b7 " + finalApproved.length + " Final \u00b7 " + totalHumanCount + " All");
-      const who = el("div", "who", whoText);
+      const who = el("div", "who");
+      if (isLegacyNavTest) {
+        who.textContent = "DELIVERABLES \u00b7 " + (reviewNow.length ? reviewNow.length + " for you \u2014 " + newestHint : (items.length ? items.length + " registered \u2014 " + newestHint : "nothing registered yet"));
+      } else {
+        who.appendChild(el("span", "deliv-hub-title", "\ud83d\udce6 DELIVERABLES"));
+        who.appendChild(el("span", "deliv-hub-counts", pendingItems.length + " Pending \u00b7 " + reviewNow.length + " Review \u00b7 " + finalApproved.length + " Final \u00b7 " + totalHumanCount + " All \u25be"));
+      }
       who.style.cursor = "pointer";
       who.title = newestHint;
       who.onclick = () => {
@@ -2789,6 +3028,7 @@ const Proto = (() => {
       tile.appendChild(body);
       body.scrollTop=priorScroll;
       if (s.firstChild !== tile) s.insertBefore(tile, s.firstChild);
+      renderTopNextSteps();
     }
     // — the goal/map links —
     const slot = $("[data-deliverables]");
@@ -4180,14 +4420,27 @@ const Proto = (() => {
         if (dock.isConnected) navSession["foundry:dock_open"] = dock.open;
       });
       const dockSum = el("summary", "");
-      dockSum.appendChild(el("span", "", "\ud83d\udee0\ufe0f Foundry Tools"));
-      dockSum.appendChild(el("span", "deliv-tier-count", "Catalog Checked \u25b8"));
+      const sumLeft = el("span", "");
+      sumLeft.appendChild(document.createTextNode("\ud83d\udee0\ufe0f Foundry Tools "));
+      const vetSpan = el("span", "deliv-tier-count", "13 vetted \u00b7 0 proposals");
+      vetSpan.style.cssText = "color:var(--ok);margin-left:6px;";
+      sumLeft.appendChild(vetSpan);
+      dockSum.appendChild(sumLeft);
+      dockSum.appendChild(el("span", "", "\u25b8"));
       dock.appendChild(dockSum);
       const body = el("div", "foundry-dock-body");
-      renderRich(body,
-        "1. **Skill Foundry Catalog Checked First (`ft.py`)**: Matched **" + matchedTools + "**" + (commissioned ? (" (Active: **" + commissioned + "**)") : "") + " for `" + stepLabel + "`.\n" +
-        "2. **New Tool Proposal & Justification**: None pending — existing Foundry tools cover current wave requirements.\n" +
-        "3. **Steward & User Permission Gate**: Any new tool creation requires explicit justification and your approval before execution.");
+      const g1 = el("div", "gov-step-box");
+      g1.appendChild(el("strong", "", "\u2713 Step 1: Skill Foundry Catalog Checked First (`ft.py`)"));
+      g1.appendChild(document.createTextNode("Matched " + matchedTools + (commissioned ? (" (Active: " + commissioned + ")") : "") + " for " + stepLabel + "."));
+      const g2 = el("div", "gov-step-box");
+      g2.appendChild(el("strong", "", "\ud83d\udca1 Step 2: New Tool Proposal & Justification"));
+      g2.appendChild(document.createTextNode("None pending — existing Foundry tools cover current wave requirements."));
+      const g3 = el("div", "gov-step-box");
+      g3.appendChild(el("strong", "", "\ud83d\udd12 Step 3: Steward & User Permission Gate"));
+      g3.appendChild(document.createTextNode("Any new tool creation requires explicit justification and your approval before execution."));
+      body.appendChild(g1);
+      body.appendChild(g2);
+      body.appendChild(g3);
       dock.appendChild(body);
       scoutBox.appendChild(dock);
     }
@@ -4464,6 +4717,8 @@ const Proto = (() => {
     if (opts.stewardLabel) opts._labelSet = true;
     applyTheme();
     try { wireFollow(scrollEl()); } catch (e) {}   // before history loads, so the replay lands at the newest
+    const statusFetchProm = opts.statusPane ? fetch(api("/api/status")).then(r => r.json()).catch(() => null) : Promise.resolve(null);
+    const delivProm = Promise.resolve().then(() => renderDeliverablesTile()).catch(() => {});
     try { await loadMap(); } catch (e) {
       const p = $("[data-progress]");
       if (p) p.textContent = "map failed: " + ((e && e.message) || "could not load");
@@ -4473,13 +4728,12 @@ const Proto = (() => {
       try { await loadHistory(); } catch (e) { /* no-op */ }
     }
     if (opts.statusPane) {
-      // paint the pane's status of record immediately (composed fresh,
-      // zero-model) so it never opens empty waiting for the next cadence
-      try { renderStatus(await (await fetch(api("/api/status"))).json()); }
-      catch (e) {}
+      try {
+        const stJson = await statusFetchProm;
+        if (stJson) renderStatus(stJson);
+      } catch (e) {}
     }
-    // deliverables surface on open (tile + goal/map links) — John's ask 2026-08-25
-    try { renderDeliverablesTile(); } catch (e) {}
+    try { await delivProm; } catch (e) {}
     wireComposer();
     wireChrome();
     try { wireWorkMap(); } catch (e) {}

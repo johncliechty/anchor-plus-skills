@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-3fcf1cb16e2d7467",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1786736888.9799144,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Execution log — make M1 survive, wire talk, delete v0 (Foreman)",
+  "artifact_path": "planning/chamber-m1-replace-2026-08-13/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

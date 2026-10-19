@@ -1,0 +1,44 @@
+{
+  "session_id": "e2a6fdcc1d5e4f3f84443e5dae22c82e",
+  "lane": "general",
+  "title": "E2A6Fdcc1D5E Transcript",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e",
+      "href": "/report/__doctor__/general/run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e"
+    },
+    {
+      "label": "E2A6Fdcc1D5E Transcript",
+      "href": "/artifact/__doctor__?path=general%2Fe2a6fdcc1d5e-transcript.md"
+    }
+  ],
+  "when_run": "2026-08-05",
+  "what_was_asked": "E2A6Fdcc1D5E Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e",
+      "rel": "",
+      "job_id": "run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e"
+    },
+    {
+      "label": "E2A6Fdcc1D5E Transcript",
+      "rel": "general/e2a6fdcc1d5e-transcript.md",
+      "job_id": "disc-6563e4755887fa0f"
+    }
+  ],
+  "effort": {
+    "tokens": 0,
+    "wall_clock_ms": 85614713,
+    "cost_usd": 0.0,
+    "runs": 1
+  },
+  "generated_at": 1785927649.039329,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# E2A6Fdcc1D5E Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-08-05\n\n**What was asked:** E2A6Fdcc1D5E Transcript\n\n## Actions & files produced\n\n- run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e\n- E2A6Fdcc1D5E Transcript\n\n**Effort:** 0 tokens · 85614.7s wall-clock · 1 run(s)\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e](/report/__doctor__/general/run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e)\n- [E2A6Fdcc1D5E Transcript](/artifact/__doctor__?path=general%2Fe2a6fdcc1d5e-transcript.md)\n",
+  "schema_version": 3
+}

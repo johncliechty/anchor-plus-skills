@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-7ec85a9c6a621025",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784835849.1773162,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Claude",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/share_governance_pack/CLAUDE.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

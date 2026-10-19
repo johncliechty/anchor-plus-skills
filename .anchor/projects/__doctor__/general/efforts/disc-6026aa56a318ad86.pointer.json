@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-6026aa56a318ad86",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788892149.9224656,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Active Scope",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/ACTIVE-SCOPE.md",
+  "status": "imported",
+  "session_id": "bdcce852de934352bb73c79b0f58249f"
+}

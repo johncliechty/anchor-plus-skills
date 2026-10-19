@@ -1,0 +1,22 @@
+researchPrime run COMPLETE — Anchor brownfield orientation
+plan_id: anchor-bf-7f3a
+run-dir: C:\dev\Anchor\.anchor\projects\227eb089706140388b829776d87e57c8\research
+completed: 2026-06-10
+
+ISOLATION: approximated (single-context orchestrator wrote the report; four fresh read-only sub-agents gathered evidence; no nonce planted)
+r2_mode: MIXED — local grep/find OBSERVED (E9,E10); full test-suite GREEN is CORROBORATION-ONLY (pytest harness-gated this session, E12); no external best-in-class axis (N/A)
+
+Deliverables:
+- plan-anchor-brownfield-orientation.md   (frozen plan)
+- evidence-ledger.jsonl                    (15 entries, E1-E15)
+- 01-report.md                             (full report)
+- 02-executive.md                          (executive summary)
+- 03-agent-impl.json                       (machine-actionable; JSON parse-checked OK)
+- 03-agent-impl.md                         (human mirror of the JSON)
+- 00-DONE                                  (this marker)
+
+TRUTH AUDIT: PASS — all cited E# exist with non-empty raw; experiments E9/E10 carry controls; test-GREEN downgraded to single-build-origin (pytest gated). No hope-bias survives on thin evidence; no requester-praise in prose.
+
+Working tree NOT mutated by this run (artifacts written only under .anchor/, which is gitignored).
+
+Headline for a new owner: Anchor = mature stdlib-only markdown productivity app + a week-old, Crucible-planned/Foreman-built "R&D control surface" that launches the trio as durable claude jobs. The feature is unit-complete and the claude spine runs for real, BUT effort-history is not production-wired (OBSERVED), the keystone gate is proven only against a synthetic fixture, Gemini plan/build is deferred, and the tree is dirty. Treat "done" as unit-complete, integration-unverified.

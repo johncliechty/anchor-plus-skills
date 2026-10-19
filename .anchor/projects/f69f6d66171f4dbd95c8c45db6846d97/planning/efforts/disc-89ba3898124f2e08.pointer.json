@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-89ba3898124f2e08",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.2869222,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Skill Foundry - Implementation Plan (Crucible Stage 2)",
+  "artifact_path": "foundry-gui/planning/crucible/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

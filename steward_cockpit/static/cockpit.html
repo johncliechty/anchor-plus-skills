@@ -1020,6 +1020,14 @@ setInterval(loadShelves, 20000);
         try { const im = window.SkillIcons && window.SkillIcons.img(name, 18); if (im) b.appendChild(im); } catch (e) {}
         b.appendChild(document.createTextNode(name));
         b.onclick = () => {
+          if (String(name).toLowerCase() === "anvil" && !ACTIVE) {
+            const p = new URLSearchParams(location.search || "");
+            p.set("v", "12");
+            if (!p.get("pid") && window.STEWARD_PID) p.set("pid", window.STEWARD_PID);
+            if (!p.get("token") && window.STEWARD_TOKEN) p.set("token", window.STEWARD_TOKEN);
+            window.location.href = "/steward-static/anvil.html?" + p.toString();
+            return;
+          }
           if (!ACTIVE) { alert("open a terminal first (＋ Terminal)"); return; }
           fetch("/api/say", { method: "POST",
             headers: { "Content-Type": "application/json" },

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d3370a8f023e171d",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924603.7910151,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Agents",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/A-skills-only/governance/AGENTS.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

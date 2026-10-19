@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-ef64521bc41fa6c0",
+  "project_id": "bfe0e75451b94d55a706e8cb120fc5ea",
+  "lane": "planning",
+  "created_at": 1780927088.8891344,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Control Surface — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v1/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

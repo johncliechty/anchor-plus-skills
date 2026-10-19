@@ -1,0 +1,33 @@
+{
+  "session_id": "b11be25fa8a44439acfd40bac5e40473",
+  "lane": "general",
+  "title": "B11Be25Fa8A4 Transcript",
+  "claims": [
+    "The session is a **general-lane trio session** titled \"B11Be25Fa8A4 Transcript.\"",
+    "It has **one member document**, the transcript itself (`B11Be25Fa8A4 Transcript`).",
+    "The session **\"B11Be25Fa8A4 Transcript\"** is a `general`-lane trio session; it has a single member document (the transcript of the same name)."
+  ],
+  "member_links": [
+    {
+      "label": "B11Be25Fa8A4 Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2Fb11be25fa8a4-transcript.md"
+    }
+  ],
+  "when_run": "2026-07-10",
+  "what_was_asked": "B11Be25Fa8A4 Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "B11Be25Fa8A4 Transcript",
+      "rel": "general/b11be25fa8a4-transcript.md",
+      "job_id": "disc-72d4a276b7bada82"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783732183.8953738,
+  "runs": 2,
+  "markdown": "# B11Be25Fa8A4 Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-07-10\n\n**What was asked:** B11Be25Fa8A4 Transcript\n\n## Actions & files produced\n\n- B11Be25Fa8A4 Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n- The session is a **general-lane trio session** titled \"B11Be25Fa8A4 Transcript.\"\n- It has **one member document**, the transcript itself (`B11Be25Fa8A4 Transcript`).\n- The session **\"B11Be25Fa8A4 Transcript\"** is a `general`-lane trio session; it has a single member document (the transcript of the same name).\n\n## Files\n\n- [B11Be25Fa8A4 Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2Fb11be25fa8a4-transcript.md)\n",
+  "schema_version": 3
+}

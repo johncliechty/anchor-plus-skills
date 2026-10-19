@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-262ef4d1ce66d74e",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6080236,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v8 — \"Durable Artifacts\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v8/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

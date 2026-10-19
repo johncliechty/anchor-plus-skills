@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-26fcc415bec43d1d",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1786846633.2618153,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Handoff",
+  "artifact_path": "planning/chamber-page-2026-08-15/HANDOFF.md",
+  "status": "imported",
+  "session_id": "7b92df7a43c144dfa1308be5d650aa93"
+}

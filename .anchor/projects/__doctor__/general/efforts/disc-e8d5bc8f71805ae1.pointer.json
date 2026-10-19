@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e8d5bc8f71805ae1",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1789047999.2165291,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Setup 2026 09 09",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/SETUP-2026-09-09.md",
+  "status": "imported",
+  "session_id": "2f72e7675da74ea88560c21d61c3d253"
+}

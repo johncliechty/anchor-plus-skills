@@ -1,0 +1,14 @@
+{
+  "job_id": "disc-b54b76579ebd1dc4",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "deliverables",
+  "created_at": 1783007620.7565775,
+  "source": "discovered",
+  "kind": "deliverable-doc",
+  "deliverable_type": "doc",
+  "title": "Execution log — Anchor durability waves (2026-07)",
+  "artifact_path": "FOREMAN-EXECUTION-LOG-2026-07.md",
+  "description": "auto-pinned from build session build::fallback::fallback::::3",
+  "status": "pinned",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

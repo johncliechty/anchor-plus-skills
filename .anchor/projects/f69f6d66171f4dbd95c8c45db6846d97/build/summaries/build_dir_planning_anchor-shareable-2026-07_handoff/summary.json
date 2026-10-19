@@ -1,0 +1,39 @@
+{
+  "session_id": "build::dir::planning/anchor-shareable-2026-07/handoff",
+  "lane": "build",
+  "title": "handoff",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fanchor-shareable-2026-07%2Fhandoff%2Fforeman.config.json"
+    },
+    {
+      "label": "Crucible-planned project — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fanchor-shareable-2026-07%2Fhandoff%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-07-18",
+  "what_was_asked": "handoff",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/anchor-shareable-2026-07/handoff/foreman.config.json",
+      "job_id": "disc-10e03c8a6479b463"
+    },
+    {
+      "label": "Crucible-planned project — Execution Log",
+      "rel": "planning/anchor-shareable-2026-07/handoff/EXECUTION-LOG.md",
+      "job_id": "disc-ce107ed2c6846847"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1784410691.7593102,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# handoff\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-18\n\n**What was asked:** handoff\n\n## Actions & files produced\n\n- foreman.config\n- Crucible-planned project — Execution Log\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fanchor-shareable-2026-07%2Fhandoff%2Fforeman.config.json)\n- [Crucible-planned project — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fanchor-shareable-2026-07%2Fhandoff%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

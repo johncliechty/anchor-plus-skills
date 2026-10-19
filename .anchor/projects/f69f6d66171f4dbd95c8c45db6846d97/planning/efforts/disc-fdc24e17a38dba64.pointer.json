@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-fdc24e17a38dba64",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.4780734,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor Re-architecture — the Butler substrate — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/crucible-rearchitecture-2026-07/IMPLEMENTATION-PLAN-DRAFT.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

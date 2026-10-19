@@ -1,0 +1,31 @@
+{
+  "session_id": "build::dir::planning/rnd-v12",
+  "lane": "build",
+  "title": "rnd-v12",
+  "claims": [
+    "I'll ground this summary in the actual member document. Let me read the execution log."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v12 — \"Efforts\" — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v12%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-22",
+  "what_was_asked": "rnd-v12",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v12 — \"Efforts\" — Execution Log",
+      "rel": "planning/rnd-v12/EXECUTION-LOG.md",
+      "job_id": "disc-609a82b5f06884ca"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154180.5869107,
+  "runs": 2,
+  "markdown": "# rnd-v12\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-22\n\n**What was asked:** rnd-v12\n\n## Actions & files produced\n\n- Anchor R&D Surface v12 — \"Efforts\" — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- I'll ground this summary in the actual member document. Let me read the execution log.\n\n## Files\n\n- [Anchor R&D Surface v12 — \"Efforts\" — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v12%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

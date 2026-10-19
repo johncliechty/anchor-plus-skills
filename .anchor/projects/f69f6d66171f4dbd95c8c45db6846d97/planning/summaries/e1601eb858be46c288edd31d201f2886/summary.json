@@ -1,0 +1,30 @@
+{
+  "session_id": "e1601eb858be46c288edd31d201f2886",
+  "lane": "planning",
+  "title": "E1601Eb858Be Transcript",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "E1601Eb858Be Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fe1601eb858be-transcript.md"
+    }
+  ],
+  "when_run": "2026-06-30",
+  "what_was_asked": "E1601Eb858Be Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "E1601Eb858Be Transcript",
+      "rel": "planning/e1601eb858be-transcript.md",
+      "job_id": "disc-40dc9483def8b851"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782805245.5377152,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# E1601Eb858Be Transcript\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-30\n\n**What was asked:** E1601Eb858Be Transcript\n\n## Actions & files produced\n\n- E1601Eb858Be Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [E1601Eb858Be Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fe1601eb858be-transcript.md)\n",
+  "schema_version": 3
+}

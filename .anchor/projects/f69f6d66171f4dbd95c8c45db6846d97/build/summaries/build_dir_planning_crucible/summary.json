@@ -1,0 +1,30 @@
+{
+  "session_id": "build::dir::planning/crucible",
+  "lane": "build",
+  "title": "crucible",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "EXECUTION LOG",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcrucible%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-28",
+  "what_was_asked": "crucible",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "EXECUTION LOG",
+      "rel": "planning/crucible/EXECUTION-LOG.md",
+      "job_id": "disc-9dcde03e4475429d"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782763043.0230546,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# crucible\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-28\n\n**What was asked:** crucible\n\n## Actions & files produced\n\n- EXECUTION LOG\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [EXECUTION LOG](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcrucible%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

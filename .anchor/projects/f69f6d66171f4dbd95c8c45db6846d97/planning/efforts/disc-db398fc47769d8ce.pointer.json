@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-db398fc47769d8ce",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6420128,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "MASTER PLAN — Honest Telemetry + Warm Resume (APPROVED 2026-07-11)",
+  "artifact_path": "planning/telemetry-resume-2026-07/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

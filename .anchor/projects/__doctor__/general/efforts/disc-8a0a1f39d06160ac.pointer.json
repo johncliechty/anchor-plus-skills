@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-8a0a1f39d06160ac",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788892571.4171784,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "2026 09 08",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-history-01/test_lane_launch_uses_seeded_t0/logs/2026-09-08.md",
+  "status": "imported",
+  "session_id": "bdcce852de934352bb73c79b0f58249f"
+}

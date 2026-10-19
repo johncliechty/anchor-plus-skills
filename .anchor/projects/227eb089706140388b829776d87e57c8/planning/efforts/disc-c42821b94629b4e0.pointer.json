@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-c42821b94629b4e0",
+  "project_id": "227eb089706140388b829776d87e57c8",
+  "lane": "planning",
+  "created_at": 1781354881.0338502,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v4 — \"Project Cockpit\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v4/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

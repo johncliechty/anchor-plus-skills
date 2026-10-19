@@ -1,0 +1,102 @@
+{
+  "schema": "share-capability-matrix/v1",
+  "schema_version": 1,
+  "skills": [
+    {
+      "skill_id": "researchprime",
+      "display_name": "researchPrime",
+      "suite": "trio",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "crucible",
+      "display_name": "Crucible",
+      "suite": "trio",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "foreman",
+      "display_name": "Foreman",
+      "suite": "trio",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "gandalf",
+      "display_name": "Gandalf",
+      "suite": "foundry",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "jumper",
+      "display_name": "Jumper",
+      "suite": "foundry",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "ramanujan",
+      "display_name": "Ramanujan",
+      "suite": "foundry",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "legal-beagle",
+      "display_name": "Legal-Beagle",
+      "suite": "foundry",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "literature-review",
+      "display_name": "Literature-Review",
+      "suite": "foundry",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "financial-analyst",
+      "display_name": "Financial-Analyst",
+      "suite": "foundry",
+      "capability": "works-without-Anchor",
+      "package_a_policy": "include",
+      "degraded_label": "Runs as a standalone skill with subscription CLI seats; Anchor dashboard not required."
+    },
+    {
+      "skill_id": "tidy-idy",
+      "display_name": "Tidy-Idy",
+      "suite": "foundry",
+      "capability": "degraded-without-Anchor",
+      "package_a_policy": "stub",
+      "degraded_label": "CLI triage works without Anchor; the Anchor dashboard button is unavailable in Skills-only — use the terminal CLI path."
+    },
+    {
+      "skill_id": "zombie-hunter",
+      "display_name": "Zombie Hunter",
+      "suite": "foundry",
+      "capability": "Anchor-required",
+      "package_a_policy": "exclude",
+      "degraded_label": "Armed reaper for the Anchor service only. Excluded from Skills-only; install Anchor+Skills (package B) to use."
+    },
+    {
+      "skill_id": "anchor-doctor",
+      "display_name": "Anchor Doctor",
+      "suite": "anchor-feature",
+      "capability": "Anchor-required",
+      "package_a_policy": "exclude",
+      "degraded_label": "In-app Anchor diagnostics feature. Excluded from Skills-only; ships with Anchor+Skills (package B)."
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-ccf2c3472c293d1d",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1785563800.5907638,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "MASTER PLAN v2 — Anchor steward: campaign orchestration by conversation",
+  "artifact_path": "planning/steward-lifecycle-2026-07-31/MASTER-PLAN-v2.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

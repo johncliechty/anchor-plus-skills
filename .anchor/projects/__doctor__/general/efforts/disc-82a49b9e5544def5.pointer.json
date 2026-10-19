@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-82a49b9e5544def5",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1782533628.7739978,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Skill",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/.claude/skills/onboard/SKILL.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

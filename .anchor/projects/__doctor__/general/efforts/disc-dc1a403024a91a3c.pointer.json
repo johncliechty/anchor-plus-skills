@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-dc1a403024a91a3c",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784913802.1181493,
+  "source": "discovered",
+  "kind": "exec-log",
+  "title": "Execution Log",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/EXECUTION-LOG.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

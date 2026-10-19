@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-f231087d3bd4eb32",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1784924341.57761,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v11 — \"Reliable Trio Handoff\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v11/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

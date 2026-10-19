@@ -1,0 +1,31 @@
+{
+  "session_id": "build::dir::planning/steward-e1-2026-08-12",
+  "lane": "build",
+  "title": "steward-e1-2026-08-12",
+  "claims": [
+    "## Session summary — steward E1 enforcement (Foreman build, 2026-08-12)"
+  ],
+  "member_links": [
+    {
+      "label": "Execution log — steward E1 enforcement (Foreman)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fsteward-e1-2026-08-12%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-08-13",
+  "what_was_asked": "steward-e1-2026-08-12",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Execution log — steward E1 enforcement (Foreman)",
+      "rel": "planning/steward-e1-2026-08-12/EXECUTION-LOG.md",
+      "job_id": "disc-a9648d0a8f0f2fb2"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786800270.5012915,
+  "runs": 2,
+  "markdown": "# steward-e1-2026-08-12\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-08-13\n\n**What was asked:** steward-e1-2026-08-12\n\n## Actions & files produced\n\n- Execution log — steward E1 enforcement (Foreman)\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- ## Session summary — steward E1 enforcement (Foreman build, 2026-08-12)\n\n## Files\n\n- [Execution log — steward E1 enforcement (Foreman)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fsteward-e1-2026-08-12%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

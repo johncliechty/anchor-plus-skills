@@ -1,0 +1,41 @@
+{
+  "session_id": "build::dir::planning/calendar-v1",
+  "lane": "build",
+  "title": "calendar-v1",
+  "claims": [
+    "The session produced an **\"Anchor Calendar v1 â€” Execution Log\"**, the Foreman per-wave EXECUTE â†’ REVIEW â†’ FIX â†’ GATE build record.",
+    "**Test gate is `python -m pytest -q`** per the Foreman config."
+  ],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcalendar-v1%2Fforeman.config.json"
+    },
+    {
+      "label": "Anchor Calendar v1 — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcalendar-v1%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-20",
+  "what_was_asked": "calendar-v1",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/calendar-v1/foreman.config.json",
+      "job_id": "disc-081712dc96bbb6d4"
+    },
+    {
+      "label": "Anchor Calendar v1 — Execution Log",
+      "rel": "planning/calendar-v1/EXECUTION-LOG.md",
+      "job_id": "disc-a0782042def69be5"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154150.2105489,
+  "runs": 2,
+  "markdown": "# calendar-v1\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-20\n\n**What was asked:** calendar-v1\n\n## Actions & files produced\n\n- foreman.config\n- Anchor Calendar v1 — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- The session produced an **\"Anchor Calendar v1 â€” Execution Log\"**, the Foreman per-wave EXECUTE â†’ REVIEW â†’ FIX â†’ GATE build record.\n- **Test gate is `python -m pytest -q`** per the Foreman config.\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcalendar-v1%2Fforeman.config.json)\n- [Anchor Calendar v1 — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcalendar-v1%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

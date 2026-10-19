@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-566d847321e81c2a",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784905183.770123,
+  "source": "discovered",
+  "kind": "impl-plan",
+  "title": "Implementation Plan",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/IMPLEMENTATION-PLAN-APPROVAL.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

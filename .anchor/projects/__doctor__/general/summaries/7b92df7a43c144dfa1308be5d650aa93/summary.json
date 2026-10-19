@@ -1,0 +1,39 @@
+{
+  "session_id": "7b92df7a43c144dfa1308be5d650aa93",
+  "lane": "general",
+  "title": "Handoff",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Handoff",
+      "href": "/artifact/__doctor__?path=planning%2Fchamber-page-2026-08-15%2FHANDOFF.md"
+    },
+    {
+      "label": "7B92Df7A43C1 Transcript",
+      "href": "/artifact/__doctor__?path=general%2F7b92df7a43c1-transcript.md"
+    }
+  ],
+  "when_run": "2026-08-16",
+  "what_was_asked": "Handoff",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Handoff",
+      "rel": "planning/chamber-page-2026-08-15/HANDOFF.md",
+      "job_id": "disc-26fcc415bec43d1d"
+    },
+    {
+      "label": "7B92Df7A43C1 Transcript",
+      "rel": "general/7b92df7a43c1-transcript.md",
+      "job_id": "disc-c633fc1281f95ef9"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786964513.3091269,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Handoff\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-08-16\n\n**What was asked:** Handoff\n\n## Actions & files produced\n\n- Handoff\n- 7B92Df7A43C1 Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Handoff](/artifact/__doctor__?path=planning%2Fchamber-page-2026-08-15%2FHANDOFF.md)\n- [7B92Df7A43C1 Transcript](/artifact/__doctor__?path=general%2F7b92df7a43c1-transcript.md)\n",
+  "schema_version": 3
+}

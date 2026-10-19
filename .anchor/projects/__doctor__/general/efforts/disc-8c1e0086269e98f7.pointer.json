@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-8c1e0086269e98f7",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848338.1822717,
+  "source": "discovered",
+  "kind": "master-plan",
+  "title": "Master Plan",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/skills-only/skills/zombie-hunter/MASTER-PLAN.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

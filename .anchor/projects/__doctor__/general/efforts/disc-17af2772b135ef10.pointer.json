@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-17af2772b135ef10",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788883727.0534916,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "2026 09 08",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/test-tmp-notebook-ui-01/test_kill_control_is_confirm_g0/logs/2026-09-08.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

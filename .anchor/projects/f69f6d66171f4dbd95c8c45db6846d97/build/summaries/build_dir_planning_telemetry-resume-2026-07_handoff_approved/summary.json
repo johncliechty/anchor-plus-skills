@@ -1,0 +1,51 @@
+{
+  "session_id": "build::dir::planning/telemetry-resume-2026-07/handoff/approved",
+  "lane": "build",
+  "title": "approved",
+  "claims": [
+    "Summary of the build session \"approved\" (member docs: `foreman.config`, \"Anchor — Honest Telemetry + Warm Resume — Execution Log\"):",
+    "**This is the approved Foreman handoff for the \"Honest Telemetry + Warm Resume\" effort, staged but not yet built** — the execution log plans 7 waves and records \"no waves built yet\"; Foreman will append a GREEN/HALT entry per wave.",
+    "**Both planning gates passed on 2026-07-11**: the Master Plan was approved at the Stage-1 gate and the Implementation Plan was approved for build (\"run foreman\") at the Stage-2 gate, signed off by John.",
+    "**Tier is STANDARD, not Heavy** — Opus 4.8 on the Claude seats (John: \"not heavy, let opus 4.8 do the claude work\"), with Gemini on the review seats at the 5:1 ratio.",
+    "**Gemini-segment scope was ruled as Option C**: ship the badge now plus a dated fast-follow spike, to be recorded in this log at deploy.",
+    "**A pre-handoff fix was applied**: the test command was changed from `pytest -q` to `pytest -v` because Foreman's anti-forgery gate requires per-test events; the well-formedness gate was re-run and passed.",
+    "**Honest caveats carried from planning**: Stage-2 shark rounds 2–5 were false-dry (a >32KB prompt argv defect) and the Stage-2 judge ran as a same-model persona; Foreman's own per-wave adversarial Gemini reviewers are named as the compensating rigor.",
+    "Both Crucible gates are passed: the Master Plan (Stage-1) and the Implementation Plan (Stage-2, \"run foreman\") were **APPROVED by John on 2026-07-11**.",
+    "Build tier is locked as **STANDARD**: Opus 4.8 on the Claude seats (John: \"not heavy, let opus 4.8 do the claude work\"), with Gemini on review seats at 5:1.",
+    "Gemini-segment scope was ruled **Option C** — badge now, plus a dated fast-follow spike to be recorded at deploy.",
+    "A pre-handoff fix changed the test command from `pytest -q` to `pytest -v` (Foreman's anti-forgery gate needs per-test events); the well-formedness gate was re-run and **PASSED**.",
+    "Honest caveats carried from planning: Stage-2 shark rounds 2–5 were false-dry (a >32KB prompt argv defect) and the Stage-2 judge ran a same-model persona — Foreman's per-wave adversarial Gemini reviewers are named as the compensating rigor."
+  ],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ftelemetry-resume-2026-07%2Fhandoff%2Fapproved%2Fforeman.config.json"
+    },
+    {
+      "label": "Anchor — Honest Telemetry + Warm Resume — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ftelemetry-resume-2026-07%2Fhandoff%2Fapproved%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-07-11",
+  "what_was_asked": "approved",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/telemetry-resume-2026-07/handoff/approved/foreman.config.json",
+      "job_id": "disc-d26dd0da19e97e15"
+    },
+    {
+      "label": "Anchor — Honest Telemetry + Warm Resume — Execution Log",
+      "rel": "planning/telemetry-resume-2026-07/handoff/approved/EXECUTION-LOG.md",
+      "job_id": "disc-efa4ee210706ae46"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783962074.989753,
+  "runs": 2,
+  "markdown": "# approved\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-11\n\n**What was asked:** approved\n\n## Actions & files produced\n\n- foreman.config\n- Anchor — Honest Telemetry + Warm Resume — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- Summary of the build session \"approved\" (member docs: `foreman.config`, \"Anchor — Honest Telemetry + Warm Resume — Execution Log\"):\n- **This is the approved Foreman handoff for the \"Honest Telemetry + Warm Resume\" effort, staged but not yet built** — the execution log plans 7 waves and records \"no waves built yet\"; Foreman will append a GREEN/HALT entry per wave.\n- **Both planning gates passed on 2026-07-11**: the Master Plan was approved at the Stage-1 gate and the Implementation Plan was approved for build (\"run foreman\") at the Stage-2 gate, signed off by John.\n- **Tier is STANDARD, not Heavy** — Opus 4.8 on the Claude seats (John: \"not heavy, let opus 4.8 do the claude work\"), with Gemini on the review seats at the 5:1 ratio.\n- **Gemini-segment scope was ruled as Option C**: ship the badge now plus a dated fast-follow spike, to be recorded in this log at deploy.\n- **A pre-handoff fix was applied**: the test command was changed from `pytest -q` to `pytest -v` because Foreman's anti-forgery gate requires per-test events; the well-formedness gate was re-run and passed.\n- **Honest caveats carried from planning**: Stage-2 shark rounds 2–5 were false-dry (a >32KB prompt argv defect) and the Stage-2 judge ran as a same-model persona; Foreman's own per-wave adversarial Gemini reviewers are named as the compensating rigor.\n- Both Crucible gates are passed: the Master Plan (Stage-1) and the Implementation Plan (Stage-2, \"run foreman\") were **APPROVED by John on 2026-07-11**.\n- Build tier is locked as **STANDARD**: Opus 4.8 on the Claude seats (John: \"not heavy, let opus 4.8 do the claude work\"), with Gemini on review seats at 5:1.\n- Gemini-segment scope was ruled **Option C** — badge now, plus a dated fast-follow spike to be recorded at deploy.\n- A pre-handoff fix changed the test command from `pytest -q` to `pytest -v` (Foreman's anti-forgery gate needs per-test events); the well-formedness gate was re-run and **PASSED**.\n- Honest caveats carried from planning: Stage-2 shark rounds 2–5 were false-dry (a >32KB prompt argv defect) and the Stage-2 judge ran a same-model persona — Foreman's per-wave adversarial Gemini reviewers are named as the compensating rigor.\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ftelemetry-resume-2026-07%2Fhandoff%2Fapproved%2Fforeman.config.json)\n- [Anchor — Honest Telemetry + Warm Resume — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ftelemetry-resume-2026-07%2Fhandoff%2Fapproved%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

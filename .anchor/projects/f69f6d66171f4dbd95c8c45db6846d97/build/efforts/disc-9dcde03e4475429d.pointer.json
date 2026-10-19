@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-9dcde03e4475429d",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924341.524738,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "EXECUTION LOG",
+  "artifact_path": "planning/crucible/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

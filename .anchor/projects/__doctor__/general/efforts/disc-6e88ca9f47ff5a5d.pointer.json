@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-6e88ca9f47ff5a5d",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788887016.2027001,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Grok Code Review Notebooks 1 Input",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/grok-code-review-notebooks-1-input.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

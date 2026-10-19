@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-25253f6ca19a8d43",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1781143367.4400628,
+  "source": "discovered",
+  "kind": "foreman-config",
+  "title": "foreman.config",
+  "artifact_path": "planning/brownfield-discovery/foreman.config.json",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

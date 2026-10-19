@@ -1,0 +1,34 @@
+{
+  "session_id": "build::dir::planning/ship-anchor-v1",
+  "lane": "build",
+  "title": "ship-anchor-v1",
+  "claims": [
+    "The build has **not started**: the log's status line reads \"NOT STARTED — awaiting the concurrent Foreman run (v1 fixes) to finish before this build begins (John's instruction, 2026-07-01)\".",
+    "The planned wave sequence is: W1 vendor_skills roster + multi-source vendoring; W2 jumper↔gandalf sibling resolution; W3 manifest + distro clean-scan over the expanded tree; W4 onboard installs the expanded roster + node/pywinpty; W5 onboard preference prompts (auto-run + low-verbosity); W6 ship AGENTS.md operating discipline; W7 onboard2 cross-platform Tailscale (token-guarded); W8 build → scrub → zip + clean-room verify.",
+    "The log records John's 2026-07-01 instruction: this build waits for the concurrent Foreman run (v1 fixes) to finish before it begins.",
+    "The plan comprises **8 waves, all PENDING with no gate results**: W1 vendor_skills roster + multi-source vendoring; W2 jumper ↔ gandalf sibling resolution; W3 manifest + distro clean-scan over the expanded tree; W4 onboard installs the expanded roster + node/pywinpty; W5 onboard preference prompts (auto-run + low-verbosity); W6 ship AGENTS.md operating discipline; W7 onboard2 cross-platform Tailscale (token-guarded); W8 build → scrub → zip + clean-room verify."
+  ],
+  "member_links": [
+    {
+      "label": "Ship Anchor v1 — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fship-anchor-v1%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-07-01",
+  "what_was_asked": "ship-anchor-v1",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Ship Anchor v1 — Execution Log",
+      "rel": "planning/ship-anchor-v1/EXECUTION-LOG.md",
+      "job_id": "disc-f3314c5698f3b331"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782992427.4830065,
+  "runs": 2,
+  "markdown": "# ship-anchor-v1\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-01\n\n**What was asked:** ship-anchor-v1\n\n## Actions & files produced\n\n- Ship Anchor v1 — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- The build has **not started**: the log's status line reads \"NOT STARTED — awaiting the concurrent Foreman run (v1 fixes) to finish before this build begins (John's instruction, 2026-07-01)\".\n- The planned wave sequence is: W1 vendor_skills roster + multi-source vendoring; W2 jumper↔gandalf sibling resolution; W3 manifest + distro clean-scan over the expanded tree; W4 onboard installs the expanded roster + node/pywinpty; W5 onboard preference prompts (auto-run + low-verbosity); W6 ship AGENTS.md operating discipline; W7 onboard2 cross-platform Tailscale (token-guarded); W8 build → scrub → zip + clean-room verify.\n- The log records John's 2026-07-01 instruction: this build waits for the concurrent Foreman run (v1 fixes) to finish before it begins.\n- The plan comprises **8 waves, all PENDING with no gate results**: W1 vendor_skills roster + multi-source vendoring; W2 jumper ↔ gandalf sibling resolution; W3 manifest + distro clean-scan over the expanded tree; W4 onboard installs the expanded roster + node/pywinpty; W5 onboard preference prompts (auto-run + low-verbosity); W6 ship AGENTS.md operating discipline; W7 onboard2 cross-platform Tailscale (token-guarded); W8 build → scrub → zip + clean-room verify.\n\n## Files\n\n- [Ship Anchor v1 — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fship-anchor-v1%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

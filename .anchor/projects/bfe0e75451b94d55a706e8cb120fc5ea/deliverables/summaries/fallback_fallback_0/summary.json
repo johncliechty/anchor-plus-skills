@@ -1,0 +1,20 @@
+{
+  "session_id": "fallback::fallback::::0",
+  "lane": "deliverables",
+  "title": "anchor_gui.py",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "anchor_gui.py",
+      "href": "/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=anchor_gui.py"
+    }
+  ],
+  "when_run": "2026-06-12",
+  "what_was_asked": "anchor_gui.py",
+  "north_star": "",
+  "effort": null,
+  "generated_at": 1781355648.5633934,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# anchor_gui.py\n\n*Lane: deliverables · validated, cached summary*\n\n**When run:** 2026-06-12\n\n**What was asked:** anchor_gui.py\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [anchor_gui.py](/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=anchor_gui.py)\n"
+}

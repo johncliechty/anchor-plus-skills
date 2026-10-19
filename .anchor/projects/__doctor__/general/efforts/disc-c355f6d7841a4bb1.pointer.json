@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-c355f6d7841a4bb1",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788891165.2160935,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "2026 09 08",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-recovery-02/test_folder_with_existing_offe0/logs/2026-09-08.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

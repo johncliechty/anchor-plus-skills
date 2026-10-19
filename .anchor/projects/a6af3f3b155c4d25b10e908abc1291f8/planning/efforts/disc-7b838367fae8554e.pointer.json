@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-7b838367fae8554e",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1784924341.480584,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Master Plan (draft)",
+  "artifact_path": "planning/crucible-rearchitecture-2026-07/MASTER-PLAN-DRAFT.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

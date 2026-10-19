@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-6c60f4f073f4fd3a",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1784924341.6044486,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Anchor R&D Surface v7 — \"Integrated Board\" — Execution Log",
+  "artifact_path": "planning/rnd-v7/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

@@ -1,0 +1,40 @@
+{
+  "session_id": "fc43d4a6fad04724b576263872fa1838",
+  "lane": "general",
+  "title": "Fc43D4A6Fad0 Transcript",
+  "claims": [
+    "This was a **general-lane session** (no trio skill seeded — a bare terminal), identified as `Fc43D4A6Fad0`."
+  ],
+  "member_links": [
+    {
+      "label": "Fc43D4A6Fad0 Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2Ffc43d4a6fad0-transcript.md"
+    },
+    {
+      "label": "Restart",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2FRESTART.md"
+    }
+  ],
+  "when_run": "2026-07-07",
+  "what_was_asked": "Fc43D4A6Fad0 Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Fc43D4A6Fad0 Transcript",
+      "rel": "general/fc43d4a6fad0-transcript.md",
+      "job_id": "disc-14d84f245fc1f1c7"
+    },
+    {
+      "label": "Restart",
+      "rel": "general/RESTART.md",
+      "job_id": "disc-0abcb483ee7c2a64"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783442545.5380602,
+  "runs": 2,
+  "markdown": "# Fc43D4A6Fad0 Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-07-07\n\n**What was asked:** Fc43D4A6Fad0 Transcript\n\n## Actions & files produced\n\n- Fc43D4A6Fad0 Transcript\n- Restart\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n- This was a **general-lane session** (no trio skill seeded — a bare terminal), identified as `Fc43D4A6Fad0`.\n\n## Files\n\n- [Fc43D4A6Fad0 Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2Ffc43d4a6fad0-transcript.md)\n- [Restart](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2FRESTART.md)\n",
+  "schema_version": 3
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-ba66c7161ba436d9",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1785263930.5919855,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "7B98E52486Df Transcript",
+  "artifact_path": "general/7b98e52486df-transcript.md",
+  "status": "imported",
+  "session_id": "7b98e52486df4518a2386dab0bdd2845"
+}

@@ -1,0 +1,30 @@
+{
+  "session_id": "dir::planning/anchor-doctor-ui/handoff",
+  "lane": "planning",
+  "title": "handoff",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Implementation Plan: Anchor Doctor UI V2",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fanchor-doctor-ui%2Fhandoff%2FIMPLEMENTATION-PLAN.md"
+    }
+  ],
+  "when_run": "2026-07-18",
+  "what_was_asked": "handoff",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Implementation Plan: Anchor Doctor UI V2",
+      "rel": "planning/anchor-doctor-ui/handoff/IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-274ba87a956ea1f0"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1784410692.8382778,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# handoff\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-07-18\n\n**What was asked:** handoff\n\n## Actions & files produced\n\n- Implementation Plan: Anchor Doctor UI V2\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Implementation Plan: Anchor Doctor UI V2](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fanchor-doctor-ui%2Fhandoff%2FIMPLEMENTATION-PLAN.md)\n",
+  "schema_version": 3
+}

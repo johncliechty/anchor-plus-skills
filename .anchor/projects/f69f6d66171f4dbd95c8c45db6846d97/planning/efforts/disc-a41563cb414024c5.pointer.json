@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-a41563cb414024c5",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.5738025,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v11.1 — \"Handoff Always Primes\" — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/rnd-v11.1/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

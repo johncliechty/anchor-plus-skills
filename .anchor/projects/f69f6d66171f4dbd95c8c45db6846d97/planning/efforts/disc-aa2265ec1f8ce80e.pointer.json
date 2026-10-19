@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-aa2265ec1f8ce80e",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6095273,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v9 — \"Tidy\" — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/rnd-v9/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

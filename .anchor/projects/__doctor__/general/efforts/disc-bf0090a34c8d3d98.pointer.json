@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-bf0090a34c8d3d98",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924588.1489098,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Description",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/A-skills-only/skills/foreman/fixtures/py-canonical/DESCRIPTION.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

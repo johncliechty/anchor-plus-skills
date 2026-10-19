@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-952666facd8e80de",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848331.0173607,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "North Star Candidate V2",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/vendor/bundled-skills/ramanujan/NORTH-STAR-CANDIDATE-v2.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

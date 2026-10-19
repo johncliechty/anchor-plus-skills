@@ -1,0 +1,39 @@
+{
+  "session_id": "build::dir::planning/share-canonical-onboard-2026-07",
+  "lane": "build",
+  "title": "share-canonical-onboard-2026-07",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fshare-canonical-onboard-2026-07%2Fforeman.config.json"
+    },
+    {
+      "label": "W4 ops advance 2026-07-24",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fshare-canonical-onboard-2026-07%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-07-28",
+  "what_was_asked": "share-canonical-onboard-2026-07",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/share-canonical-onboard-2026-07/foreman.config.json",
+      "job_id": "disc-e05937a4cfbe3f9e"
+    },
+    {
+      "label": "W4 ops advance 2026-07-24",
+      "rel": "planning/share-canonical-onboard-2026-07/EXECUTION-LOG.md",
+      "job_id": "disc-2446abcd58048f74"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786037974.5588183,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# share-canonical-onboard-2026-07\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-28\n\n**What was asked:** share-canonical-onboard-2026-07\n\n## Actions & files produced\n\n- foreman.config\n- W4 ops advance 2026-07-24\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fshare-canonical-onboard-2026-07%2Fforeman.config.json)\n- [W4 ops advance 2026-07-24](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fshare-canonical-onboard-2026-07%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

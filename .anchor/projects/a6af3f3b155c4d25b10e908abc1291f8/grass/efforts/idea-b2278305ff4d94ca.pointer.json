@@ -1,0 +1,16 @@
+{
+  "job_id": "idea-b2278305ff4d94ca",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "grass",
+  "created_at": 1781726899.6006324,
+  "source": "discovered",
+  "kind": "idea",
+  "title": "Add a calendar function",
+  "notes": "",
+  "status": "refined",
+  "dev_sessions": {
+    "research": "c724466a477d49eda2485de736a03364",
+    "plan": "7573a9a90dd44c9194f7d7b5be7f891d"
+  },
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

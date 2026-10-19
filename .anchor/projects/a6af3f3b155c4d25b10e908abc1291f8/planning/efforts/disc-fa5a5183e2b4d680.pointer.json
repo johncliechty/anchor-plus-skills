@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-fa5a5183e2b4d680",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1781143312.1371827,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)",
+  "artifact_path": "planning/brownfield-discovery/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

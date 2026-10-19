@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-dd2a301dc8efeb23",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1786558806.1363065,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Steward E1 — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/steward-e1-2026-08-12/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

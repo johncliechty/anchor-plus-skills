@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-6908c7a56ea2de8a",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848335.3014965,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Human",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/vendor/bundled-skills/financial-analyst/HUMAN.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

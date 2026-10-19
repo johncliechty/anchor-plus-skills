@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-1443fdea770d11d6",
+  "project_id": "2fe37f39157f4c7aa3e2523baa41f40f",
+  "lane": "planning",
+  "created_at": 1781525681.4605944,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log",
+  "artifact_path": "planning/rnd-v6/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

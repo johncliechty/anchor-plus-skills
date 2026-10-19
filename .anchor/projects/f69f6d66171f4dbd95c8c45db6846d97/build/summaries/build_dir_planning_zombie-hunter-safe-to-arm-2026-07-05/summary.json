@@ -1,0 +1,45 @@
+{
+  "session_id": "build::dir::planning/zombie-hunter-safe-to-arm-2026-07-05",
+  "lane": "build",
+  "title": "zombie-hunter-safe-to-arm-2026-07-05",
+  "claims": [
+    "## zombie-hunter → safe-to-arm reaper (pause-first) — build summary",
+    "Foreman build on branch `foreman/zombie-hunter-safe-to-arm`, git enabled; docs = DESCRIPTION.md / IMPLEMENTATION-PLAN.md / EXECUTION-LOG.md.",
+    "5:1 seat split held: `execute` + `fix` on `claude:claude-opus-4-8`; `review` on `gemini-cli:gemini-3.1-pro`.",
+    "## zombie-hunter-safe-to-arm-2026-07-05 — Build Summary",
+    "**Build config (foreman.config.json)**",
+    "Branch `foreman/zombie-hunter-safe-to-arm`; 10 waves planned; budget 3 waves/run, 4 fix-iters/wave."
+  ],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fzombie-hunter-safe-to-arm-2026-07-05%2Fforeman.config.json"
+    },
+    {
+      "label": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fzombie-hunter-safe-to-arm-2026-07-05%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-07-05",
+  "what_was_asked": "zombie-hunter-safe-to-arm-2026-07-05",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/zombie-hunter-safe-to-arm-2026-07-05/foreman.config.json",
+      "job_id": "disc-05c8739397aacfa6"
+    },
+    {
+      "label": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log",
+      "rel": "planning/zombie-hunter-safe-to-arm-2026-07-05/EXECUTION-LOG.md",
+      "job_id": "disc-4a6491548e29d248"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783411374.717629,
+  "runs": 2,
+  "markdown": "# zombie-hunter-safe-to-arm-2026-07-05\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-05\n\n**What was asked:** zombie-hunter-safe-to-arm-2026-07-05\n\n## Actions & files produced\n\n- foreman.config\n- Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- ## zombie-hunter → safe-to-arm reaper (pause-first) — build summary\n- Foreman build on branch `foreman/zombie-hunter-safe-to-arm`, git enabled; docs = DESCRIPTION.md / IMPLEMENTATION-PLAN.md / EXECUTION-LOG.md.\n- 5:1 seat split held: `execute` + `fix` on `claude:claude-opus-4-8`; `review` on `gemini-cli:gemini-3.1-pro`.\n- ## zombie-hunter-safe-to-arm-2026-07-05 — Build Summary\n- **Build config (foreman.config.json)**\n- Branch `foreman/zombie-hunter-safe-to-arm`; 10 waves planned; budget 3 waves/run, 4 fix-iters/wave.\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fzombie-hunter-safe-to-arm-2026-07-05%2Fforeman.config.json)\n- [Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fzombie-hunter-safe-to-arm-2026-07-05%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

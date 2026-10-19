@@ -1,0 +1,14 @@
+{
+  "job_id": "disc-9a3a8403961e5459",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "deliverables",
+  "created_at": 1783732167.7336822,
+  "source": "discovered",
+  "kind": "deliverable-doc",
+  "deliverable_type": "doc",
+  "title": "Skill Foundry v2 — Execution Log",
+  "artifact_path": "FOUNDRY-V2-EXECUTION-LOG.md",
+  "description": "auto-pinned from build session build::fallback::fallback::::4",
+  "status": "pinned",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

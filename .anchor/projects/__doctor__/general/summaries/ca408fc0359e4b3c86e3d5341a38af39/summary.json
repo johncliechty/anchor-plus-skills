@@ -1,0 +1,30 @@
+{
+  "session_id": "ca408fc0359e4b3c86e3d5341a38af39",
+  "lane": "general",
+  "title": "Ca408Fc0359E Transcript",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Ca408Fc0359E Transcript",
+      "href": "/artifact/__doctor__?path=general%2Fca408fc0359e-transcript.md"
+    }
+  ],
+  "when_run": "2026-08-07",
+  "what_was_asked": "Ca408Fc0359E Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Ca408Fc0359E Transcript",
+      "rel": "general/ca408fc0359e-transcript.md",
+      "job_id": "disc-8b47a11545831362"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786148962.6124609,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Ca408Fc0359E Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-08-07\n\n**What was asked:** Ca408Fc0359E Transcript\n\n## Actions & files produced\n\n- Ca408Fc0359E Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Ca408Fc0359E Transcript](/artifact/__doctor__?path=general%2Fca408fc0359e-transcript.md)\n",
+  "schema_version": 3
+}

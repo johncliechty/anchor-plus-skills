@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-10cb792c9c8c6239",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848330.892065,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Skill",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/vendor/bundled-skills/jumper/SKILL.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

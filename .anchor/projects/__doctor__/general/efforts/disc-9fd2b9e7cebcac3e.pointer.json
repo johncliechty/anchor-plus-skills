@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-9fd2b9e7cebcac3e",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788888620.9392607,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Receipt Artifact",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-job-2/test_invalid_chatgpt_envelope_0/forged-finalize/receipt-artifact.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

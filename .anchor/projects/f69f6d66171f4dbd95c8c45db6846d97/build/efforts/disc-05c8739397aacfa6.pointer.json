@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-05c8739397aacfa6",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924341.6929767,
+  "source": "discovered",
+  "kind": "foreman-config",
+  "title": "foreman.config",
+  "artifact_path": "planning/zombie-hunter-safe-to-arm-2026-07-05/foreman.config.json",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

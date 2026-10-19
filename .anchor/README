@@ -1,0 +1,21 @@
+# .anchor/ — Anchor R&D per-project store
+
+This directory is created and managed by Anchor's R&D control surface. Each
+registered project gets an isolated namespace at:
+
+    .anchor/projects/<project-id>/
+        research/      planning/      build/      deliverables/      jobs/
+
+Multiple projects may share one folder; each has its own `<project-id>` subtree,
+so their stores never collide.
+
+## Tracking policy (C9 git-trackable vs C10 no-leak)
+
+- **Tracked (C9):** small JSON *pointer-records* that index efforts/versions —
+  these are committed so effort history is durable across restarts.
+- **Ignored (C10):** raw job logs, large generated artifacts (PDF), and any
+  `raw/` payloads that could carry absolute paths, tokens, or personal data.
+  The distribution build (Wave 8) additionally scans for and refuses to ship
+  anything under `.anchor/`.
+
+See the sibling `.gitignore` for the exact rules.

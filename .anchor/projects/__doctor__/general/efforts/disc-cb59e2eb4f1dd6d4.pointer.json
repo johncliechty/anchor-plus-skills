@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-cb59e2eb4f1dd6d4",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788888498.57474,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Receipt Artifact",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-job-2/test_chatgpt_success_receipt_r18/tamper-expected-contract/receipt-artifact.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

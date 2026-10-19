@@ -1,0 +1,60 @@
+# Anchor R&D Control Surface — Master Plan (frozen design)
+
+*Lane: planning · validated, cached summary*
+
+**When run:** 2026-06-08
+
+**What was asked:** Anchor R&D Control Surface — Master Plan (frozen design)
+
+**North Star:** Turn Anchor from a task/project tracker into a **per-project R&D control surface**: each code project is a folder (e.g. `C:\dev\Agentic-Home`, `C:\dev\Anchor`); a single-instance dashboard window drives the **researchPrime → Crucible → Foreman** trio as durable, server-owned Claude Code jobs on gwl-server, with versioned effort history, task↔project integration, project lifecycle states, deliverable execution, and a data-free public distribution.
+
+## Actions & files produced
+
+- Anchor R&D Control Surface — Master Plan (frozen design)
+- Anchor R&D Control Surface — Implementation Plan (Foreman-ready)
+- Anchor R&D Control Surface — Execution Log
+- Anchor R&D Control Surface — Decision Log
+
+**Effort:** imported — no run metrics
+
+## Goal & key decisions
+
+- ## Anchor R&D Control Surface â€” Master Plan (frozen design)
+- **Grounded summary â€” planning trio session (Crucible, 2026-06-07/08):**
+- **North Star (locked):** Convert Anchor from a task/project tracker into a **per-project R&D control surface** â€” each code project is a folder (e.g. `C:\dev\Agentic-Home`, `C:\dev\Anchor`), and a single-instance dashboard window drives the **researchPrime â†’ Crucible â†’ Foreman** trio as durable, server-owned Claude Code jobs on gwl-server.
+- **Scope of the North Star** includes versioned effort history, taskâ†”project integration, project lifecycle states, deliverable execution, and a data-free public distribution.
+- **D1 â€” One uniform job primitive:** a job is `claude -p --input-format stream-json --output-format stream-json` running the relevant **skill** (researchPrime / crucible / foreman) in the project cwd, **owned by the Anchor server**. The lane is just which skill + prompt template â€” no per-lane orchestration code, no PTY, stdlib only.
+- **D2 â€” Gate handling is in-session:** a skill's `AskUserQuestion` gate **surfaces in the stream** (it auto-dismisses headless, but the structured question stays visible); Anchor renders it in a prompt box and **sends the user's choice as a plain-text turn** to drive continuation.
+- **Locked user decisions (Decision Log):**
+- 1. **Brownfield** extension of Anchor (`C:\dev\Anchor`); objective = new capability.
+- 2. Session model â†’ **streaming console, stdlib-only** (not a full TUI; no PTY/deps).
+- 3. Registry â†’ **a new parallel R&D registry**, distinct from life-domain projects.
+- 4. Artifacts â†’ stored **inside each project's `.anchor/`** as pointer-records (engine outputs stay native).
+- 5. v1 scope â†’ **all three trio lanes, Claude Code CLI only** (Gemini deferred).
+- 6. Auth â†’ **run the Anchor service as `john`** to resolve the LocalSystem credential wall.
+- 7. Remote â†’ **bind the Tailscale interface + a shared-secret token** on mutating `/api/*`.
+- **Member documents in this trio set:** Master Plan (frozen design), Implementation Plan (Foreman-ready), Execution Log, and Decision Log.
+- *(Each decision is paired in the Decision Log with the adversarial Crucible findings that drove it.)*
+- **North Star (locked)**
+- The objective is to evolve Anchor from a task/project tracker into a **per-project R&D control surface**, where each code project is a folder (e.g. `C:\dev\Agentic-Home`, `C:\dev\Anchor`).
+- A **single-instance dashboard window** drives the **researchPrime â†’ Crucible â†’ Foreman** trio as durable, **server-owned Claude Code jobs** on gwl-server.
+- Scope spans versioned **effort history**, **taskâ†”project integration**, **project lifecycle states**, **deliverable execution**, and a **data-free public distribution**.
+- **D1 â€” One uniform job primitive.** A job is `claude -p --input-format stream-json --output-format stream-json` running the relevant skill (researchPrime / crucible / foreman) in the project cwd, **owned by the Anchor server**. A lane is simply which skill + prompt template; there is **no per-lane orchestration code, no PTY, stdlib only**.
+- **D2 â€” Gate handling is in-session.** A skill's `AskUserQuestion` gate **surfaces in the stream** (it auto-dismisses headless, but the structured question stays visible); Anchor renders it in a prompt box and **sends the user's choice as a plain-text turn** to drive continuation.
+- **Decision Log â€” locked user decisions (Crucible, 2026-06-07/08)**
+- **Brownfield extend** of Anchor (`C:\dev\Anchor`); objective is new capability (not a rewrite).
+- Session model is a **streaming console, stdlib-only** â€” not a full TUI, no PTY/dependencies.
+- Registry is a **new parallel R&D registry**, distinct from life-domain projects.
+- Artifacts live **inside each project's `.anchor/`** as pointer-records; engine outputs stay native.
+- v1 scope covers **all three trio lanes, Claude Code CLI only** (Gemini deferred).
+- Auth: run the **Anchor service as `john`** to resolve the LocalSystem credential wall.
+- Remote access: **bind the Tailscale interface + a shared-secret token** on mutating `/api/*` endpoints.
+- Member documents: Master Plan (frozen design), Implementation Plan (Foreman-ready), Execution Log, Decision Log.
+- Decisions and their adversarial findings were driven through the Crucible planning loop (2026-06-07/08).
+
+## Files
+
+- [Anchor R&D Control Surface — Master Plan (frozen design)](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Frnd-v1%2FMASTER-PLAN.md)
+- [Anchor R&D Control Surface — Implementation Plan (Foreman-ready)](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Frnd-v1%2FIMPLEMENTATION-PLAN.md)
+- [Anchor R&D Control Surface — Execution Log](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Frnd-v1%2FEXECUTION-LOG.md)
+- [Anchor R&D Control Surface — Decision Log](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Frnd-v1%2FDECISION-LOG.md)

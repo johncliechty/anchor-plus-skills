@@ -1,0 +1,60 @@
+{
+  "session_id": "dir::planning/brownfield-discovery",
+  "lane": "planning",
+  "title": "Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)",
+  "claims": [
+    "**North Star (locked):** When an R&D project is registered or opened on an existing folder, Anchor instantly â€” locally, with no tokens and no agent â€” discovers genuine pre-existing trio artifacts and adopts them so the dashboard populates (home R&D panel + tile rollup + project Kanban).",
+    "**Honest adoption:** Discovered items are excluded from the real `effort_count` and shown separately as \"M imported,\" get no `vN` label, are clickable to their real on-disk file, and carry a subtle `imported` marker (a small dot) â€” as understated as possible while staying honest (the user's Stage-1 ruling). They are never given fake provenance.",
+    "**Markers written:** Anchor writes/maintains `Anchor.md` (human-readable, structure-only, no-churn / regenerated) plus a machine JSON sidecar describing the folder's R&D structure.",
+    "**Scan triggers:** Discovery runs on project register, on `/project/<id>` open, and on a manual Rescan button.",
+    "**Constraints (approved):** Python stdlib only; integrate with `rnd_registry` / `lanes` / `effort_history` / `anchor_gui` and the Kanban window; keep the 236-test suite green; commit-safe.",
+    "**Member documents covered:** the Master Plan (Crucible Stage 1, approved), the Implementation Plan for Brownfield Discovery + the `Anchor.md` marker, and the Brownfield Discovery Execution Log.",
+    "**North Star (locked):** When an R&D project is registered or opened on an existing folder, Anchor INSTANTLY discovers genuine pre-existing trio artifacts locally â€” no tokens, no agent â€” and adopts them so the dashboard populates (home R&D panel + tile rollup + project Kanban).",
+    "**Honest adoption:** Discovered items are excluded from the real `effort_count` (shown separately as \"M imported\"), get NO `vN` label, are clickable to their REAL on-disk file, and carry a SUBTLE `imported` marker (a small dot) â€” never fake provenance.",
+    "**Scan triggers (approved):** Discovery runs on project register, on `/project/<id>` open, and via a manual Rescan button.",
+    "**Adoption model (approved decision):** Discovered artifacts are ADOPTED as efforts so the existing tile/Kanban readers fill in, but visibly/subtly labeled \"imported\" (Stage-1 ruling: as understated as possible while honest) and separately counted.",
+    "**Implementation constraints (approved):** Python stdlib only; integrate with `rnd_registry` / `lanes` / `effort_history` / `anchor_gui` + the Kanban window; keep the 236-test suite green; remain commit-safe.",
+    "**Member documents:** Master Plan (Crucible Stage 1, approved), the Brownfield Discovery + `Anchor.md` Marker Implementation Plan, and the Execution Log."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)",
+      "href": "/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Fbrownfield-discovery%2FMASTER-PLAN.md"
+    },
+    {
+      "label": "Anchor Brownfield Discovery + `Anchor.md` Marker — Implementation Plan",
+      "href": "/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Fbrownfield-discovery%2FIMPLEMENTATION-PLAN.md"
+    },
+    {
+      "label": "Brownfield Discovery — Execution Log",
+      "href": "/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Fbrownfield-discovery%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-10",
+  "what_was_asked": "Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)",
+  "north_star": "When an R&D project is registered or opened on an existing folder, Anchor instantly (local, no tokens) discovers genuine pre-existing trio artifacts and adopts them so the dashboard populates (home R&D panel + tile rollup + project Kanban) — honestly: discovered items are excluded from the real effort count (shown as \"M imported\"), get no `vN` label, are clickable to their real on-disk file, and carry a subtle `imported` marker. Anchor also writes `Anchor.md` (human, structure-only, no-churn) + a machine sidecar describing the folder's R&D structure.",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)",
+      "rel": "planning/brownfield-discovery/MASTER-PLAN.md",
+      "job_id": "disc-fa5a5183e2b4d680"
+    },
+    {
+      "label": "Anchor Brownfield Discovery + `Anchor.md` Marker — Implementation Plan",
+      "rel": "planning/brownfield-discovery/IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-070ced269e61aca3"
+    },
+    {
+      "label": "Brownfield Discovery — Execution Log",
+      "rel": "planning/brownfield-discovery/EXECUTION-LOG.md",
+      "job_id": "disc-9939b49a69efa616"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1781542945.656874,
+  "runs": 2,
+  "markdown": "# Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-10\n\n**What was asked:** Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)\n\n**North Star:** When an R&D project is registered or opened on an existing folder, Anchor instantly (local, no tokens) discovers genuine pre-existing trio artifacts and adopts them so the dashboard populates (home R&D panel + tile rollup + project Kanban) — honestly: discovered items are excluded from the real effort count (shown as \"M imported\"), get no `vN` label, are clickable to their real on-disk file, and carry a subtle `imported` marker. Anchor also writes `Anchor.md` (human, structure-only, no-churn) + a machine sidecar describing the folder's R&D structure.\n\n## Actions & files produced\n\n- Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)\n- Anchor Brownfield Discovery + `Anchor.md` Marker — Implementation Plan\n- Brownfield Discovery — Execution Log\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- **North Star (locked):** When an R&D project is registered or opened on an existing folder, Anchor instantly â€” locally, with no tokens and no agent â€” discovers genuine pre-existing trio artifacts and adopts them so the dashboard populates (home R&D panel + tile rollup + project Kanban).\n- **Honest adoption:** Discovered items are excluded from the real `effort_count` and shown separately as \"M imported,\" get no `vN` label, are clickable to their real on-disk file, and carry a subtle `imported` marker (a small dot) â€” as understated as possible while staying honest (the user's Stage-1 ruling). They are never given fake provenance.\n- **Markers written:** Anchor writes/maintains `Anchor.md` (human-readable, structure-only, no-churn / regenerated) plus a machine JSON sidecar describing the folder's R&D structure.\n- **Scan triggers:** Discovery runs on project register, on `/project/<id>` open, and on a manual Rescan button.\n- **Constraints (approved):** Python stdlib only; integrate with `rnd_registry` / `lanes` / `effort_history` / `anchor_gui` and the Kanban window; keep the 236-test suite green; commit-safe.\n- **Member documents covered:** the Master Plan (Crucible Stage 1, approved), the Implementation Plan for Brownfield Discovery + the `Anchor.md` marker, and the Brownfield Discovery Execution Log.\n- **North Star (locked):** When an R&D project is registered or opened on an existing folder, Anchor INSTANTLY discovers genuine pre-existing trio artifacts locally â€” no tokens, no agent â€” and adopts them so the dashboard populates (home R&D panel + tile rollup + project Kanban).\n- **Honest adoption:** Discovered items are excluded from the real `effort_count` (shown separately as \"M imported\"), get NO `vN` label, are clickable to their REAL on-disk file, and carry a SUBTLE `imported` marker (a small dot) â€” never fake provenance.\n- **Scan triggers (approved):** Discovery runs on project register, on `/project/<id>` open, and via a manual Rescan button.\n- **Adoption model (approved decision):** Discovered artifacts are ADOPTED as efforts so the existing tile/Kanban readers fill in, but visibly/subtly labeled \"imported\" (Stage-1 ruling: as understated as possible while honest) and separately counted.\n- **Implementation constraints (approved):** Python stdlib only; integrate with `rnd_registry` / `lanes` / `effort_history` / `anchor_gui` + the Kanban window; keep the 236-test suite green; remain commit-safe.\n- **Member documents:** Master Plan (Crucible Stage 1, approved), the Brownfield Discovery + `Anchor.md` Marker Implementation Plan, and the Execution Log.\n\n## Files\n\n- [Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Fbrownfield-discovery%2FMASTER-PLAN.md)\n- [Anchor Brownfield Discovery + `Anchor.md` Marker — Implementation Plan](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Fbrownfield-discovery%2FIMPLEMENTATION-PLAN.md)\n- [Brownfield Discovery — Execution Log](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=planning%2Fbrownfield-discovery%2FEXECUTION-LOG.md)\n",
+  "schema_version": 2
+}

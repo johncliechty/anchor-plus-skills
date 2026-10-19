@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-95eec0d391e0c8ca",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784905203.988319,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Description",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/DESCRIPTION.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

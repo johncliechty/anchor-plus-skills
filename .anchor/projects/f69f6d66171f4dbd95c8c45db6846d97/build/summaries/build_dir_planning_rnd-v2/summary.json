@@ -1,0 +1,46 @@
+{
+  "session_id": "build::dir::planning/rnd-v2",
+  "lane": "build",
+  "title": "rnd-v2",
+  "claims": [
+    "Wave 2 of the rnd-v2 build covered Folder-history unification + reconcile + deliverable pinning, marked GO on 2026-06-11.",
+    "The EXECUTE step added sibling-store adoption via `effort_history.sibling_store_ids` / `adopt_sibling_sessions`.",
+    "It added `rnd_registry.reconcile_folder(active_id, apply=False|True)` implementing preview-then-fold-then-hard-delete, run under WRITE_LOCK, and never touching the active id or different-folder ids.",
+    "It introduced a new `deliverables.py` module with Anchor.md marker parsing and pinning, exposed through `POST /api/rnd/pin_deliverable`.",
+    "Project ids are read from the registry by folder at runtime rather than hard-coded.",
+    "New and extended tests were added: `tests/test_reconcile.py`, plus extensions to `tests/test_deliverables.py` and `tests/test_brownfield_adopt.py`.",
+    "The orchestrator-run GATE passed with 312 passed, 1 skipped, and the live registry was left untouched (hermetic tests).",
+    "Here is a grounded summary of this build session, drawn only from the provided anchors and member document (the *Anchor R&D Surface v2 â€” Execution Log*):",
+    "**rnd-v2 â€” Wave 2: Folder-history unification + reconcile + deliverable pinning**",
+    "**Wave 2 was approved (GO) on 2026-06-11** covering three areas: folder-history unification, folder reconcile, and deliverable pinning.",
+    "**Sibling-store adoption was implemented** in `effort_history.py` via `sibling_store_ids` / `adopt_sibling_sessions`.",
+    "**A reviewable folder-reconcile was added** as `rnd_registry.reconcile_folder(active_id, apply=False|True)` â€” a preview-then-fold-then-hard-delete flow, run entirely under `WRITE_LOCK`, that **never touches the active id or ids belonging to a different folder**.",
+    "**A new `deliverables.py` module was added**, providing `Anchor.md` marker parsing and deliverable pinning, exposed over the new `POST /api/rnd/pin_deliverable` endpoint.",
+    "**Ids are read from the registry by folder at runtime** rather than hard-coded.",
+    "**Test coverage was added/extended**: a new `tests/test_reconcile.py`, plus extensions to `tests/test_deliverables.py` and `tests/test_brownfield_adopt.py`.",
+    "**The orchestrator-run GATE passed: 312 passed, 1 skipped**, with the **live registry left untouched** (the tests are hermetic)."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v2 — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v2%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-11",
+  "what_was_asked": "rnd-v2",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v2 — Execution Log",
+      "rel": "planning/rnd-v2/EXECUTION-LOG.md",
+      "job_id": "disc-20e39d533a45814b"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154138.613928,
+  "runs": 2,
+  "markdown": "# rnd-v2\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-11\n\n**What was asked:** rnd-v2\n\n## Actions & files produced\n\n- Anchor R&D Surface v2 — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- Wave 2 of the rnd-v2 build covered Folder-history unification + reconcile + deliverable pinning, marked GO on 2026-06-11.\n- The EXECUTE step added sibling-store adoption via `effort_history.sibling_store_ids` / `adopt_sibling_sessions`.\n- It added `rnd_registry.reconcile_folder(active_id, apply=False|True)` implementing preview-then-fold-then-hard-delete, run under WRITE_LOCK, and never touching the active id or different-folder ids.\n- It introduced a new `deliverables.py` module with Anchor.md marker parsing and pinning, exposed through `POST /api/rnd/pin_deliverable`.\n- Project ids are read from the registry by folder at runtime rather than hard-coded.\n- New and extended tests were added: `tests/test_reconcile.py`, plus extensions to `tests/test_deliverables.py` and `tests/test_brownfield_adopt.py`.\n- The orchestrator-run GATE passed with 312 passed, 1 skipped, and the live registry was left untouched (hermetic tests).\n- Here is a grounded summary of this build session, drawn only from the provided anchors and member document (the *Anchor R&D Surface v2 â€” Execution Log*):\n- **rnd-v2 â€” Wave 2: Folder-history unification + reconcile + deliverable pinning**\n- **Wave 2 was approved (GO) on 2026-06-11** covering three areas: folder-history unification, folder reconcile, and deliverable pinning.\n- **Sibling-store adoption was implemented** in `effort_history.py` via `sibling_store_ids` / `adopt_sibling_sessions`.\n- **A reviewable folder-reconcile was added** as `rnd_registry.reconcile_folder(active_id, apply=False|True)` â€” a preview-then-fold-then-hard-delete flow, run entirely under `WRITE_LOCK`, that **never touches the active id or ids belonging to a different folder**.\n- **A new `deliverables.py` module was added**, providing `Anchor.md` marker parsing and deliverable pinning, exposed over the new `POST /api/rnd/pin_deliverable` endpoint.\n- **Ids are read from the registry by folder at runtime** rather than hard-coded.\n- **Test coverage was added/extended**: a new `tests/test_reconcile.py`, plus extensions to `tests/test_deliverables.py` and `tests/test_brownfield_adopt.py`.\n- **The orchestrator-run GATE passed: 312 passed, 1 skipped**, with the **live registry left untouched** (the tests are hermetic).\n\n## Files\n\n- [Anchor R&D Surface v2 — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v2%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

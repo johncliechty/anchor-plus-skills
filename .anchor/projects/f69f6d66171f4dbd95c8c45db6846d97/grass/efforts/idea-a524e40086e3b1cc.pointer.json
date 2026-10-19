@@ -1,0 +1,12 @@
+{
+  "job_id": "idea-a524e40086e3b1cc",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "grass",
+  "created_at": 1781625103.2909434,
+  "source": "discovered",
+  "kind": "idea",
+  "title": "Make Anchor an 'app' — Windows 11 desktop + iPhone/iPad (researchPrime, 2026-06-15)",
+  "notes": "Recommendation: Windows = installable PWA (manifest + 192/512 PNG icons) + msedge --app shortcut — ZERO new deps, breaks no invariant; only prereq is a one-time offline icon build (stdlib can't rasterize SVG -> commit PNG bytes). iPhone/iPad = same manifest + Apple meta tags (apple-mobile-web-app-*, 180x180 apple-touch-icon already shipped) reached over Tailscale Serve HTTPS (needed: http://<tailscale-ip> is NOT a secure context on iOS), then Safari Add-to-Home-Screen (no install prompt on iOS). NOT recommended: Electron/Tauri/PyInstaller/Capacitor (disproportionate). pywebview+tray only as an optional declared extra (pywinpty pattern). *** SECURITY GATE (verified): Anchor keys auth solely on ANCHOR_TOKEN presence with no peer check, and the bind guard misses the same-box reverse-proxy path -> set ANCHOR_TOKEN before ANY Tailscale exposure or the whole tailnet can hit mutating endpoints incl. the build lane; ideally make auth fail-closed. *** Caveats: tailscale serve WS-drop bug #18827 -> use Anchor's SSE+POST fallback for the iPad terminal/board; the project/cockpit window has no responsive CSS (needs reflow + safe-area for iPhone; iPad landscape usable sooner). Full deliverables + evidence ledgers in planning/anchor-as-app/ (00/01/02/03 Windows; 00b/04/05 iOS).",
+  "status": "raw",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

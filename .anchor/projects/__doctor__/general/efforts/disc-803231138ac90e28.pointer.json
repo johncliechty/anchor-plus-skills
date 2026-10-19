@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-803231138ac90e28",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848330.7630417,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Journal Schema",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/vendor/bundled-skills/jumper/references/journal-schema.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

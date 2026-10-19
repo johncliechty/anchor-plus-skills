@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-2beef61b75173c4a",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784411058.989808,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Restart",
+  "artifact_path": "research/RESTART.md",
+  "status": "imported",
+  "session_id": "7fccd0105bb84c5bb24f37a836f7bd69"
+}

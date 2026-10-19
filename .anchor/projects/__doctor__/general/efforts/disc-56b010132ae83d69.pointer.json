@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-56b010132ae83d69",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788888610.3802357,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Receipt Artifact",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-job-2/test_copied_success_omits_abse0/copy-success-receipt/receipt-artifact.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

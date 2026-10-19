@@ -1,0 +1,31 @@
+{
+  "session_id": "076fc69ff247450380e52d7b3f5d07be",
+  "lane": "general",
+  "title": "076Fc69Ff247 Transcript",
+  "claims": [
+    "fake-line 0"
+  ],
+  "member_links": [
+    {
+      "label": "076Fc69Ff247 Transcript",
+      "href": "/artifact/__doctor__?path=general%2F076fc69ff247-transcript.md"
+    }
+  ],
+  "when_run": "2026-08-07",
+  "what_was_asked": "076Fc69Ff247 Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "076Fc69Ff247 Transcript",
+      "rel": "general/076fc69ff247-transcript.md",
+      "job_id": "disc-96aa02c8c3ee9e39"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786130419.6788979,
+  "runs": 2,
+  "markdown": "# 076Fc69Ff247 Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-08-07\n\n**What was asked:** 076Fc69Ff247 Transcript\n\n## Actions & files produced\n\n- 076Fc69Ff247 Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n- fake-line 0\n\n## Files\n\n- [076Fc69Ff247 Transcript](/artifact/__doctor__?path=general%2F076fc69ff247-transcript.md)\n",
+  "schema_version": 3
+}

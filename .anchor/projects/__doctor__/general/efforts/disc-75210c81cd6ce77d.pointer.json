@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-75210c81cd6ce77d",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788833289.7433872,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Elegance Pass",
+  "artifact_path": "planning/code-windows-2026-09-07/stage1/artifacts/ELEGANCE-PASS.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

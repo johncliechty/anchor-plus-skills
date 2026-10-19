@@ -1,0 +1,43 @@
+# Anchor R&D per-project store — tracking policy (reconciles C9 + C10).
+#
+# C9 (durable/git-trackable): the lightweight JSON *pointer-records* that index
+#   each project's efforts ARE meant to be committed so history survives.
+# C10 (no personal-data leak / shareable distro): raw run logs, large engine
+#   outputs, and anything that may carry absolute paths / tokens / personal
+#   data are git-IGNORED here and excluded by the distribution scan (Wave 8).
+#
+# Default: ignore the heavy/volatile artifacts; allow-list the pointer records.
+
+projects/*/jobs/
+projects/*/**/*.log
+projects/*/**/*.pdf
+projects/*/**/raw/
+
+# Re-include the small pointer-record JSON index files (git-trackable).
+!projects/*/**/index.json
+!projects/*/**/*.pointer.json
+!projects/*/**/*-overrides.json
+
+# Re-include the validated, cached session summaries (Wave 6, C9). These small
+# JSON + rendered-markdown files are the durable, shareable summary cache and
+# must be tracked even though raw run logs above stay ignored.
+!projects/*/**/summary.json
+!projects/*/**/summary.md
+
+# Re-include the validated, cached PROJECT-level summary (v3 Wave 5, C9). The
+# project-summary.{json,md} live directly under projects/<id>/ and — like the
+# session summaries above — are the durable, shareable cache and must be tracked.
+# (No ignore rule above matches them today; this allow-list keeps the documented
+# policy in sync with reality.)
+!projects/*/project-summary.json
+!projects/*/project-summary.md
+
+# Managed git worktrees for live sessions (v3 Mission Control). Each session
+# runs in its own worktree under .anchor/worktrees/<session_id>/; these are
+# transient working trees and must NEVER be tracked by the host repo.
+worktrees/
+
+# The LIVE mutable session registry — a runtime store, not history. Tracking it
+# meant every test/healthcheck run and git checkout ROLLED BACK real sessions
+# (the 2026-06-28 wipe: 23 rows -> 1). Never track it again.
+sessions.json

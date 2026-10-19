@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-427f4b4916091748",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1781233295.0757804,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v3/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

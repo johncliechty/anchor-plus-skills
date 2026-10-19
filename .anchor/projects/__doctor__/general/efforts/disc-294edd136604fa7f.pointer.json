@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-294edd136604fa7f",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924594.977604,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Human",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/A-skills-only/skills/zombie-hunter/HUMAN.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

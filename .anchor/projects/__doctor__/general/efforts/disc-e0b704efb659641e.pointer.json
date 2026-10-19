@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e0b704efb659641e",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784896316.4004934,
+  "source": "discovered",
+  "kind": "master-plan",
+  "title": "Master Plan",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/MASTER-PLAN.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

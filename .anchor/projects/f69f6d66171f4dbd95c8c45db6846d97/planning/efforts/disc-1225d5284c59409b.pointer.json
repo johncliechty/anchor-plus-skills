@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-1225d5284c59409b",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6919372,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Master Plan (draft — rev. Stage-1/R3)",
+  "artifact_path": "planning/zombie-hunter-safe-to-arm-2026-07-05/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

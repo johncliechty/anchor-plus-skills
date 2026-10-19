@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-3f9cbb6311f9085d",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924587.143454,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Planted Memo",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/B-anchor-plus-skills/vendor/bundled-skills/crucible/test/fixtures/investment-memo/planted-memo.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

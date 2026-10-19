@@ -1,0 +1,30 @@
+{
+  "session_id": "dir::planning/anchor-shareable-2026-07/handoff",
+  "lane": "planning",
+  "title": "handoff",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+      "href": "/artifact/a6af3f3b155c4d25b10e908abc1291f8?path=planning%2Fanchor-shareable-2026-07%2Fhandoff%2FIMPLEMENTATION-PLAN.md"
+    }
+  ],
+  "when_run": "2026-07-24",
+  "what_was_asked": "handoff",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+      "rel": "planning/anchor-shareable-2026-07/handoff/IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-1cc3489fb4f96d13"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1788306673.2566943,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# handoff\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-07-24\n\n**What was asked:** handoff\n\n## Actions & files produced\n\n- Crucible-planned project — Implementation Plan (Foreman-ready)\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Crucible-planned project — Implementation Plan (Foreman-ready)](/artifact/a6af3f3b155c4d25b10e908abc1291f8?path=planning%2Fanchor-shareable-2026-07%2Fhandoff%2FIMPLEMENTATION-PLAN.md)\n",
+  "schema_version": 3
+}

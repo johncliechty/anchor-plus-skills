@@ -433,16 +433,23 @@ def test_verified_cli_frontier_models_and_organized_deliverables_and_plan():
     pc_js = (ROOT / "static" / "provider-controls.js").read_text(encoding="utf-8")
     js = (STATIC / "shared.js").read_text(encoding="utf-8")
     css = (STATIC / "shared.css").read_text(encoding="utf-8")
+    anvil_py = (ROOT / "steward_cockpit" / "anvil_session.py").read_text(encoding="utf-8")
+    anvil_html = (STATIC / "anvil.html").read_text(encoding="utf-8")
 
     # 1. Verified CLI frontier models everywhere — zero guessed stale model names
     for m in ("claude-fable-5-1", "gpt-6.1-sol", "gemini-4-argon", "grok-4.7"):
         assert m in uam_src
         assert m in ps_js
         assert m in js
-    for stale in ("Claude Opus 4.7", "Claude Sonnet 4.6", "GPT-5.4", "Gemini 3.1 Pro"):
+        assert m in anvil_py
+    for stale in ("Claude Opus 4.7", "Claude Opus 4.6", "Claude Sonnet 4.6", "GPT-5.4", "Gemini 3.1 Pro"):
         assert stale not in uam_src
         assert stale not in ps_js
         assert stale not in js
+        assert stale not in anvil_py
+        assert stale not in anvil_html
+    assert 'id="cockpitLiveDialogueFrame"' in anvil_html
+    assert "gemini-4-argon" in anvil_html and "claude-fable-5-1" in anvil_html
 
     snap = uam.compute_allowance_monitor()
     assert snap["families"]["claude"]["frontier_model"] == "claude-fable-5-1 · max"

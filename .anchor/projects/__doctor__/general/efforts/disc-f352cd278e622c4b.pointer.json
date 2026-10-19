@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-f352cd278e622c4b",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848326.7311535,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Claude",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/vendor/bundled-skills/crucible/CLAUDE.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

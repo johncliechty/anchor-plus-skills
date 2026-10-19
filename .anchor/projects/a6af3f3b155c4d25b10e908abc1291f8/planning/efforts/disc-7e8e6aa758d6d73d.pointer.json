@@ -1,0 +1,13 @@
+{
+  "job_id": "disc-7e8e6aa758d6d73d",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1784924341.6166103,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Ship Anchor v1 — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/ship-anchor-v1/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "session_id": "f8031610d2ae41e6b671d7bae29b0ee7",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

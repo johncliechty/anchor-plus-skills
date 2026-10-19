@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-b275c6a7b67686ab",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924340.9294603,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Skill Foundry v2 — Execution Log",
+  "artifact_path": "FOUNDRY-V2-EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

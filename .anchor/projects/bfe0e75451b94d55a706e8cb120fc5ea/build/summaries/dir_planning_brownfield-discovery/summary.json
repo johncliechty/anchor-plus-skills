@@ -1,0 +1,20 @@
+{
+  "session_id": "dir::planning/brownfield-discovery",
+  "lane": "build",
+  "title": "brownfield-discovery",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Fbrownfield-discovery%2Fforeman.config.json"
+    }
+  ],
+  "when_run": "2026-06-10",
+  "what_was_asked": "brownfield-discovery",
+  "north_star": "",
+  "effort": null,
+  "generated_at": 1781355605.6199422,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# brownfield-discovery\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-10\n\n**What was asked:** brownfield-discovery\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [foreman.config](/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Fbrownfield-discovery%2Fforeman.config.json)\n"
+}

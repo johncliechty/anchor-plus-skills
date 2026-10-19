@@ -1,0 +1,47 @@
+Anchor R&D interactive terminal — REPL chrome over REAL xterm.js (Wave 7+)
+=========================================================================
+
+WHAT THIS IS
+  anchor-term.js + anchor-term.css are an ADAPTER + REPL chrome that drive a
+  genuine xterm.js terminal. The real terminal emulator is vendored separately
+  at /vendor/xterm/ (see vendor/xterm/PROVENANCE.txt — @xterm/xterm 6.0.0,
+  copied offline). anchor-term.js instantiates an xterm.js `Terminal`
+  (window.Terminal), feeds the Anchor server-sent-events (SSE) output stream into
+  term.write() (\n -> \r\n), and layers on the Anchor-specific affordances that
+  xterm.js does NOT provide:
+    - a command input line that POSTs user turns (/api/rnd/term_input),
+    - in-session gates (AskUserQuestion) surfaced inline as clickable chrome,
+    - the exit -> discover -> confirm-adopt flow
+      (/api/rnd/term_discover, /api/rnd/term_adopt),
+    - a best-effort reap of the abandoned persistent process on tab close /
+      dispose (/api/rnd/cancel_job).
+  anchor-term.css now styles only that CHROME (title bar, input line, gate
+  prompts, adopt panel); the terminal canvas is styled by /vendor/xterm/xterm.css.
+
+HISTORY
+  This component was previously a lightweight, dependency-free terminal-style
+  console (no xterm.js) authored to keep the client asset small. It has now been
+  upgraded to drive REAL xterm.js, vendored offline as a plain static asset
+  (xterm.js is pure browser JS with no native/compiled component, allowed the
+  same way KaTeX is). The public factory API (window.AnchorTerm.mount) is
+  UNCHANGED, so the project-window openTerminal() caller and the asset/wiring
+  tests needed no integration rewrite. A degraded plain-<pre> fallback remains in
+  anchor-term.js for the (unexpected) case where window.Terminal is unavailable.
+
+PUBLIC API (unchanged)
+  window.AnchorTerm.mount({ host, session, lane, title, postJson, onAdopted })
+    -> returns a terminal instance exposing dispose(); a beforeunload handler is
+       registered to best-effort reap a still-live, unadopted session.
+
+BACKEND (unchanged)
+  GET  /api/rnd/term_stream?session=...   (SSE: output/status/gate/done/heartbeat)
+  POST /api/rnd/term_input                (send one turn to the live REPL)
+  POST /api/rnd/term_discover             (what did the session produce?)
+  POST /api/rnd/term_adopt                (adopt produced files as a session)
+  POST /api/rnd/cancel_job                (unload reap of the persistent process)
+
+SERVED AT
+  /vendor/anchor-term/anchor-term.js
+  /vendor/anchor-term/anchor-term.css
+  (read-only static route in anchor_gui.py, traversal-safe, mirroring the
+   vendored-KaTeX pattern. The xterm.js bundle is served from /vendor/xterm/.)

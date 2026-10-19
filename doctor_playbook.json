@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "rnd-v10-boneyard-deleted-false",
+      "component": "R&D v10 surface",
+      "detail_contains": ["deleted=False"],
+      "detail_excludes": ["killed=False", "live_del=False"],
+      "title": "5 AM boneyard delete-capture missed; isolated check is the verdict",
+      "meaning": "The overnight walk recorded a v9-delete without its docs (D10). Kill, live-delete, grass-delete and search were fine. The throwaway v10 test covers this exact path and does not touch live projects.",
+      "do_not": [
+        "edit boneyard.py or delete_session unless the isolated test fails",
+        "delete live sessions or project files",
+        "change skill scripts"
+      ],
+      "verify": "tests/test_healthcheck_v10.py::test_check_rnd_v10_surface_is_green",
+      "suggested": "rerun",
+      "session_advice": "If the isolated v10 test fails, inspect capture-before-efforts-drop in delete_session (D10). Ask John before any delete-path change that could drop documents.",
+      "history": "2026-09-11 05:00 report: deleted=False with killed/live_del/grass/search True. Isolated test green the same day under load-free pytest."
+    }
+  ]
+}

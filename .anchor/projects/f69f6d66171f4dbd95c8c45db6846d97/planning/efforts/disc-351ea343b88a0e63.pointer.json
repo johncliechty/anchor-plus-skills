@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-351ea343b88a0e63",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1786498093.5188804,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Decision Log: Scaled Gandalf Architecture",
+  "artifact_path": "DECISION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

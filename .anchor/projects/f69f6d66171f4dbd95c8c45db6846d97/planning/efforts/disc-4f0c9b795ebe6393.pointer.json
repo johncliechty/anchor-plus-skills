@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-4f0c9b795ebe6393",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.695055,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Implementation Plan — Implementation Plan (Foreman-ready)",
+  "artifact_path": "plans/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

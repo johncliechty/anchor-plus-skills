@@ -1,0 +1,10 @@
+{
+  "refinement_id": "grass-c569/dev-2",
+  "idea_id": "idea-b2278305ff4d94ca",
+  "version": 2,
+  "label": "Refinement from research workbench session",
+  "text": "falsifier c.)\n  Second round was dry → Stage 1 converged.\n  Three spikes positioned as gates (none block planning): the 1-day Graph-recurrence enumeration (gates\n  Phase-5 estimate, runnable now), the 8-day durable-refresh (gates Phase-4 write-back only), and the\n  MSA-vs-work/school account check (before Phase-2 locks the authority).\n  Out of scope + tripwire explicitly recorded: symmetric merge, primary-calendar editing, all SaaS.\n  ---\n  Approve this Master Plan to proceed to Stage 2 (decompose the six phases into Foreman waves with\n  per-wave done-when + Given/When/Then acceptance criteria, Shark-Tank to convergence, then the\n  well-formedness gate + Foreman handoff)? Or tell me what to adjust first.\n✻ Worked for 3m 15s\n───────────────────────────────────────────────────────────────────────────────────────────────────────\n>  \n───────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents",
+  "artifacts": [],
+  "session_id": "c724466a477d49eda2485de736a03364",
+  "created_at": 1782004688.9614503
+}

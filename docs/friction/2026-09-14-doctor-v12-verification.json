@@ -1,0 +1,11 @@
+{
+  "checks": [
+    [
+      "R&D v12 surface",
+      true,
+      "13 steps"
+    ]
+  ],
+  "outer_data_scope_restored": true,
+  "temporary_dirs_removed": true
+}

@@ -19,6 +19,7 @@
     <span class="busy" data-busy></span>
     <span class="barlead" data-barlead title="the companion's stated next step"></span>
     <div class="top-deliv-strip" data-top-deliverables hidden></div>
+    <div class="top-spacer" style="flex:1"></div>
     <button type="button" class="anvil-tile-btn" data-anvil-toggle title="Launch Anvil for this effort — Anvil takes over and collapses this AI Cockpit into a small clickable tile at the top"><img src="/vendor/brand/anvil-option-2-sword-crystal-v1.jpg" alt="Anvil" width="20" height="20"><span>Anvil</span></button>
     <button type="button" class="aegis-tile-btn" data-aegis-toggle title="Launch Aegis Security Audit & Auto-Remediation for this effort"><img src="/vendor/brand/aegis-icon.svg" alt="Aegis" width="20" height="20"><span>Aegis</span></button>
     <span class="chip" data-spend></span>
@@ -44,7 +45,7 @@
     <div class="gline">
       <span class="glabel" data-goallabel>GOAL</span>
       <span class="gbrief" data-goalbrief>…</span>
-      <span class="gcaret">▸ click to expand</span>
+      <span class="gcaret">Expand Goal ▸</span>
     </div>
     <div class="gfull">
       <div class="gkick" data-kickoff></div>
@@ -53,6 +54,9 @@
       <div class="gdeliv" data-deliverables></div>
     </div>
   </div>
+
+  <!-- Row 3: Full-Width Top Approval / Next-Step Line (Matches wave18-cockpit-redesign-mockup.html) -->
+  <section class="top-approval-bar" data-top-approval-bar></section>
 
   <div class="leftcol">
     <div class="plan-grip" data-plangrip role="separator" aria-label="Resize plan" aria-orientation="vertical" tabindex="0"></div>
@@ -63,6 +67,7 @@
       </button>
       <div class="railhead">
         <h2 data-plan-head>THE PLAN</h2>
+        <span class="rail-wave-count" data-plan-count></span>
         <button data-railtoggle title="collapse the plan">« Close</button>
       </div>
       <div class="progress" data-progress hidden></div>
@@ -77,15 +82,29 @@
 
   <div class="main">
     <div class="openq" data-openq title="Show the saved decision context"></div>
-    <div class="steward-next-top" data-steward-next-top></div>
-    <div class="scroll"></div>
-    <div class="composer">
-      <textarea data-say rows="1"
-        placeholder="Talk — dictate with Win+H as long as you like. “go” drives; “pause” stops; “later: …” parks an idea."></textarea>
-      <div class="row">
-        <span class="hint">Enter or Send · Shift+Enter makes a new line · dictate with Win+H · never locked, never lost</span>
-        <button data-interrupt hidden style="display:none" title="end the running turn - partial work is kept, your queued words stay">Stop turn</button>
-        <button class="send" data-send disabled>Send</button>
+    <div class="steward-next-top" data-steward-next-top hidden></div>
+    <div class="center-split-wrap">
+      <div class="dialogue-col">
+        <div class="scroll"></div>
+        <div class="composer">
+          <textarea data-say rows="2"
+            placeholder="Talk — dictate with Win+H as long as you like. “go” drives; “pause” stops; “later: …” parks an idea."></textarea>
+          <div class="row">
+            <span class="hint">Enter to send · Shift+Enter for newline · Steward checks unreviewed items &amp; plan impact automatically</span>
+            <button data-interrupt hidden style="display:none" title="end the running turn - partial work is kept, your queued words stay">Stop turn</button>
+            <button class="send" data-send disabled>Send</button>
+          </div>
+        </div>
+      </div>
+      <div class="deliverable-viewer-pane" data-deliverable-viewer>
+        <div class="dv-head">
+          <span class="dv-title" data-dv-title>📄 Deliverable Viewer</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <a class="file-dl" data-dv-newtab href="#" target="_blank" rel="noopener" style="font-size:11px;padding:3px 8px;">↗ New Tab</a>
+            <button type="button" class="btn-approve" style="font-size:11px;padding:3px 9px;" onclick="exitSecondWindowMode()">🗖 Close Deliverable &amp; Return to 1-Window (Auto-Reopen Panels)</button>
+          </div>
+        </div>
+        <iframe class="dv-frame" data-dv-frame src="about:blank" style="flex:1;width:100%;border:none;background:#0f1117;"></iframe>
       </div>
     </div>
   </div>
@@ -100,34 +119,42 @@
     <div class="popen">
       <div class="phead2">
         <span class="status-state-pill">
-          <span class="light quiet" data-light></span>
-          <span data-statetext>…</span>
+          <span class="light green" data-light></span>
+          <span class="rail-title-label">STATUS &amp; DELIVERABLES</span>
+          <span data-statetext hidden>…</span>
         </span>
-        <button data-statustoggle2 title="collapse">Close »</button>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="sc-timer-pill" data-statusstamp>Live · 10m cadence</span>
+          <button data-statustoggle2 title="collapse">Close »</button>
+        </div>
       </div>
-      <!-- Pane order + sizing (2026-08-27, John): deliverables on top with a
-           one-line summary, drop file bar directly under deliverables
-           (2026-10-14, John), THE STATUS DOMINANT in the middle with a
-           click-to-open scrollable log of previous status updates, files at
-           the bottom. -->
-      <div class="pdeliv" data-delivmount></div>
-      <div class="pstatus" data-pstatus>
-        <h2 class="pstatushead">Status <span class="pcount" data-statusstamp></span></h2>
-        <div class="platest" data-latest></div>
-        <div class="pmsgs" data-msgs></div>
-        <div class="pscroll"></div>
-        <details class="prev-status-log" data-prev-status-log>
-          <summary class="psl-head">
-            <span><span class="psl-caret">▸</span> 📋 Previous Status Updates <span class="pcount" data-prev-status-count>(0)</span></span>
-            <span class="psl-hint">click to open · scroll</span>
-          </summary>
-          <div class="psl-scroll" data-prev-status-list></div>
-        </details>
+      <!-- Pane order + sizing (2026-10-18, John): Deliverables Hub on top,
+           Red Flashing Approval Flag below Deliverables, Live 10-Min Status Card
+           in the middle, Earlier 10-Min Updates below Status, Drop files bar at bottom. -->
+      <div class="right-scroll-area">
+        <div class="pdeliv" data-delivmount></div>
+        <div class="pstatus" data-pstatus>
+          <h2 class="pstatushead" hidden>Status</h2>
+          <div class="platest" data-latest></div>
+          <div class="pmsgs" data-msgs></div>
+          <div class="pscroll"></div>
+          <details class="prev-status-log earlier-updates-box" data-prev-status-log>
+            <summary class="psl-head eu-head">
+              <span>🕒 Earlier 10-Min Status Updates <span class="pcount" data-prev-status-count>(0 archived)</span></span>
+              <span class="psl-caret" id="euCaret">▸</span>
+            </summary>
+            <div class="psl-scroll eu-body" data-prev-status-list></div>
+          </details>
+        </div>
       </div>
       <div class="pfiles psect folded" data-filesect>
-        <h2 data-filestoggle>Files produced <span class="pcount" data-filecount></span></h2>
-        <div class="fupload cockpit-dropbar" data-fupload data-cockpit-drop>📥 Drop files here &rarr; <code data-drop-dir>cockpit folder</code> &middot; <label class="cockpit-droppick" style="text-decoration:underline;cursor:pointer">browse<input type="file" data-fupfile data-cockpit-dropfile multiple style="display:none"></label> <span class="cockpit-dropmsg" data-fupmsg data-cockpit-dropmsg></span></div>
-        <div class="ftools"><input type="text" data-fsearch placeholder="search files…">
+        <h2 data-filestoggle hidden>Files produced <span class="pcount" data-filecount></span></h2>
+        <div class="fupload cockpit-dropbar right-drop-zone" data-fupload data-cockpit-drop>
+          <span>📥 Drop files here to attach to campaign <code data-drop-dir hidden>cockpit folder</code></span>
+          <label class="cockpit-droppick" style="color:var(--steward);cursor:pointer;font-weight:600;">Browse files…<input type="file" data-fupfile data-cockpit-dropfile multiple style="display:none"></label>
+          <span class="cockpit-dropmsg" data-fupmsg data-cockpit-dropmsg></span>
+        </div>
+        <div class="ftools" hidden><input type="text" data-fsearch placeholder="search files…">
           <button data-fsort="name">name</button><button data-fsort="type">type</button><button data-fsort="date" class="on">date</button></div>
         <div class="flist" data-flist></div>
       </div>
@@ -207,10 +234,21 @@ if (grip) grip.addEventListener("pointerdown", (e) => {
 // the dialogue with Aladdin/Jarvis/Ecgberht can be seen easily. When the second window closes,
 // both panels automatically reopen to their prior state.
 function enterSecondWindowMode() {
+  const title = arguments[0];
+  const href = arguments[1];
   if (!app.dataset.secondwin) {
     app.dataset.secondwin = "1";
     app.dataset.preSecondRail = app.classList.contains("railhide") ? "hide" : "show";
     app.dataset.preSecondStatus = app.classList.contains("statusopen") ? "open" : "shut";
+  }
+  if (href) {
+    const dvTitle = document.querySelector("[data-dv-title]");
+    const dvFrame = document.querySelector("[data-dv-frame]");
+    const dvNewTab = document.querySelector("[data-dv-newtab]");
+    if (dvTitle && title) dvTitle.textContent = "📄 Deliverable Viewer · " + title;
+    if (dvNewTab) dvNewTab.href = href;
+    if (dvFrame && dvFrame.getAttribute("src") !== href) dvFrame.setAttribute("src", href);
+    app.classList.add("secondwin");
   }
   app.classList.add("railhide");
   app.classList.remove("statusopen");
@@ -222,6 +260,9 @@ function exitSecondWindowMode() {
   delete app.dataset.secondwin;
   delete app.dataset.preSecondRail;
   delete app.dataset.preSecondStatus;
+  app.classList.remove("secondwin");
+  const dvFrame = document.querySelector("[data-dv-frame]");
+  if (dvFrame) dvFrame.setAttribute("src", "about:blank");
   if (!app.dataset.narrow) {
     app.classList.toggle("railhide", wantHide);
     app.classList.toggle("statusopen", wantOpen);

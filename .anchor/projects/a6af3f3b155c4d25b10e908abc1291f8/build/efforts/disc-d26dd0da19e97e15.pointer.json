@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d26dd0da19e97e15",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1784924341.6472857,
+  "source": "discovered",
+  "kind": "foreman-config",
+  "title": "foreman.config",
+  "artifact_path": "planning/telemetry-resume-2026-07/handoff/approved/foreman.config.json",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

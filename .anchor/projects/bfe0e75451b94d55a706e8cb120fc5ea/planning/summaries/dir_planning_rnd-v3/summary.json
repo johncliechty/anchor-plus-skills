@@ -1,0 +1,28 @@
+{
+  "session_id": "dir::planning/rnd-v3",
+  "lane": "planning",
+  "title": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+      "href": "/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Frnd-v3%2FMASTER-PLAN.md"
+    },
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)",
+      "href": "/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Frnd-v3%2FIMPLEMENTATION-PLAN.md"
+    },
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Execution Log",
+      "href": "/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Frnd-v3%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-12",
+  "what_was_asked": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+  "north_star": "> Crucible Stage 1 output, approved 2026-06-11. Supersedes nothing in v2 (which > shipped to master) — it BUILDS ON v2 (sessions.py, summarizer.py, > rnd_terminal.py, deliverables.py, job_runner.py, vendor/xterm). v3 reshapes the > UX (thin rows, in-place expandable accurate summaries), turns the terminal into > a persistent, isolated, real (ConPTY) multi-session window manager, adds clean > stage handoffs + concurrency isolation, and makes the Anchor deliverable > runnable.",
+  "effort": null,
+  "generated_at": 1781355649.8246279,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-12\n\n**What was asked:** Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)\n\n**North Star:** > Crucible Stage 1 output, approved 2026-06-11. Supersedes nothing in v2 (which > shipped to master) — it BUILDS ON v2 (sessions.py, summarizer.py, > rnd_terminal.py, deliverables.py, job_runner.py, vendor/xterm). v3 reshapes the > UX (thin rows, in-place expandable accurate summaries), turns the terminal into > a persistent, isolated, real (ConPTY) multi-session window manager, adds clean > stage handoffs + concurrency isolation, and makes the Anchor deliverable > runnable.\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)](/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Frnd-v3%2FMASTER-PLAN.md)\n- [Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)](/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Frnd-v3%2FIMPLEMENTATION-PLAN.md)\n- [Anchor R&D Surface v3 — \"Mission Control\" — Execution Log](/artifact/bfe0e75451b94d55a706e8cb120fc5ea?path=planning%2Frnd-v3%2FEXECUTION-LOG.md)\n"
+}

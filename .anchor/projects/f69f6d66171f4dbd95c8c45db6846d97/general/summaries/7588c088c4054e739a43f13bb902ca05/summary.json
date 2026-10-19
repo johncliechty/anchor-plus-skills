@@ -1,0 +1,30 @@
+{
+  "session_id": "7588c088c4054e739a43f13bb902ca05",
+  "lane": "general",
+  "title": "7588C088C405 Transcript",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "7588C088C405 Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2F7588c088c405-transcript.md"
+    }
+  ],
+  "when_run": "2026-07-08",
+  "what_was_asked": "7588C088C405 Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "7588C088C405 Transcript",
+      "rel": "general/7588c088c405-transcript.md",
+      "job_id": "disc-314f60c63e1d51cb"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783528277.8123584,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# 7588C088C405 Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-07-08\n\n**What was asked:** 7588C088C405 Transcript\n\n## Actions & files produced\n\n- 7588C088C405 Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [7588C088C405 Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2F7588c088c405-transcript.md)\n",
+  "schema_version": 3
+}

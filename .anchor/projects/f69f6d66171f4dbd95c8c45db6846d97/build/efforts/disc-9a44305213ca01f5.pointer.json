@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-9a44305213ca01f5",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1785277978.3589659,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Shareable Anchor + Skills — Execution Log",
+  "artifact_path": "planning/share-anchor-skills-2026-07/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

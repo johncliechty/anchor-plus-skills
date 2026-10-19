@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-ce107ed2c6846847",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1784924341.4279797,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Crucible-planned project — Execution Log",
+  "artifact_path": "planning/anchor-shareable-2026-07/handoff/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

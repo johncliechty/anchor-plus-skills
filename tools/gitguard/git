@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "$GITGUARD_PYTHON" "$(dirname "$0")/gitguard.py" "$@"

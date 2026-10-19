@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-1acdcd06ae3b2ae3",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1785201327.6060202,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "C1 Amendment Required",
+  "artifact_path": "planning/rearch-2026-07/C1-AMENDMENT-REQUIRED.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

@@ -1,0 +1,39 @@
+{
+  "session_id": "dbc27481dbd04abb8dd6b95a58557f6e",
+  "lane": "general",
+  "title": "Status Feed",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Status Feed",
+      "href": "/artifact/__doctor__?path=planning%2Fsteward-chamber-2026-08-09%2FSTATUS-FEED.md"
+    },
+    {
+      "label": "Dbc27481Dbd0 Transcript",
+      "href": "/artifact/__doctor__?path=general%2Fdbc27481dbd0-transcript.md"
+    }
+  ],
+  "when_run": "2026-08-10",
+  "what_was_asked": "Status Feed",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Status Feed",
+      "rel": "planning/steward-chamber-2026-08-09/STATUS-FEED.md",
+      "job_id": "disc-9d8bfa98ab28e82a"
+    },
+    {
+      "label": "Dbc27481Dbd0 Transcript",
+      "rel": "general/dbc27481dbd0-transcript.md",
+      "job_id": "disc-77f26a6a3bde83e5"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786446060.730893,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Status Feed\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-08-10\n\n**What was asked:** Status Feed\n\n## Actions & files produced\n\n- Status Feed\n- Dbc27481Dbd0 Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Status Feed](/artifact/__doctor__?path=planning%2Fsteward-chamber-2026-08-09%2FSTATUS-FEED.md)\n- [Dbc27481Dbd0 Transcript](/artifact/__doctor__?path=general%2Fdbc27481dbd0-transcript.md)\n",
+  "schema_version": 3
+}

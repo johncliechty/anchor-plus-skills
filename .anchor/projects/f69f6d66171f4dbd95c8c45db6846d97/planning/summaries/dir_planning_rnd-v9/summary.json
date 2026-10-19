@@ -1,0 +1,58 @@
+{
+  "session_id": "dir::planning/rnd-v9",
+  "lane": "planning",
+  "title": "Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)",
+  "claims": [
+    "## Anchor R&D Surface v9 â€” \"Tidy\" â€” Planning Session Summary",
+    "**Goal (North Star, locked from John's Stage-0 answers)**",
+    "Make the R&D surface **tidy and organizable**: the user can permanently remove what they don't want and arrange what they keep.",
+    "**Locked decisions (Stage-0 user gates)**",
+    "**Session delete = Option A (remove-from-Anchor, KEEP documents).** A delete clears the registry record (`remove_session`), the lane effort pointer-records + index entries, and the cached summary â€” so the tile is gone permanently and survives a refresh â€” but **produced/committed documents are never deleted**.",
+    "**Session delete UX:** a red **âœ•** at the top-right of a session tile â†’ \"are you sure?\" â†’ the session is completely gone and stays gone across a refresh. Ghost/empty sessions (empty DONE records with no efforts) delete cleanly.",
+    "**Grass delete = full.** Removes the idea's pointer + index entry + refinements + dev-session map â€” all Anchor scratch, nothing committed.",
+    "**Folders = Option C (drag-groups-instantly + ask-to-move-on-disk).** A drag always groups in the dashboard (safe, reversible); a dialog then offers \"Move on disk + group\" (the guarded atomic move) vs. \"Just group\".",
+    "**Scope of the two member documents**",
+    "The session produced a frozen-design **Master Plan** and a Foreman-ready **Implementation Plan** for v9.",
+    "Delete is distinguished from kill: kill ends a *running* session; delete *removes the Anchor record entirely* (keeping the on-disk documents).",
+    "Grouping (dashboard-only) is distinguished from the on-disk move (guarded, atomic, reversible) â€” grouping never touches disk by itself.",
+    "The locked objective is to make the R&D surface **tidy and organizable** â€” the user can permanently remove what they don't want and arrange what they keep.",
+    "**Key decisions (locked at Stage 0 by John's gates)**",
+    "**Session delete = Option A (remove-from-Anchor, KEEP documents).** A red **âœ•** on a session tile â†’ \"are you sure?\" â†’ the session is permanently gone and stays gone across a refresh: the registry record (`remove_session`), the lane effort pointer-records + index entries, and the cached summary are all removed â€” but **produced/committed documents are never deleted**.",
+    "**Ghost/empty sessions** (empty DONE records with no efforts) delete cleanly under the same path.",
+    "**Grass delete = full.** Removing a grass idea clears the idea's pointer + index entry + refinements + dev-session map â€” all Anchor scratch, nothing committed.",
+    "**Scope / structure of the plan**",
+    "Frozen design captured across two member documents: the **Master Plan** (frozen design) and the **Implementation Plan** (Foreman-ready)."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v9%2FMASTER-PLAN.md"
+    },
+    {
+      "label": "Anchor R&D Surface v9 — \"Tidy\" — Implementation Plan (Foreman-ready)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v9%2FIMPLEMENTATION-PLAN.md"
+    }
+  ],
+  "when_run": "2026-06-17",
+  "what_was_asked": "Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)",
+  "north_star": "Make the R&D surface **tidy and organizable** — the user can permanently remove what they don't want and arrange what they keep: 1. **True session delete.** A red **✕** (top-right of a session tile) → \"are you sure?\" → the session is **completely gone and stays gone across a refresh**: the registry record (`remove_session`), the lane effort pointer-records + index entries, and the cached summary are removed. **Produced documents are KEPT** (Option A — a delete removes the Anchor session, never the real committed work). Ghost/empty sessions (empty DONE records with no efforts) delete cleanly; a",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)",
+      "rel": "planning/rnd-v9/MASTER-PLAN.md",
+      "job_id": "disc-d5aa47c18c5dca1b"
+    },
+    {
+      "label": "Anchor R&D Surface v9 — \"Tidy\" — Implementation Plan (Foreman-ready)",
+      "rel": "planning/rnd-v9/IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-aa2265ec1f8ce80e"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154135.8992224,
+  "runs": 2,
+  "markdown": "# Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-17\n\n**What was asked:** Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)\n\n**North Star:** Make the R&D surface **tidy and organizable** — the user can permanently remove what they don't want and arrange what they keep: 1. **True session delete.** A red **✕** (top-right of a session tile) → \"are you sure?\" → the session is **completely gone and stays gone across a refresh**: the registry record (`remove_session`), the lane effort pointer-records + index entries, and the cached summary are removed. **Produced documents are KEPT** (Option A — a delete removes the Anchor session, never the real committed work). Ghost/empty sessions (empty DONE records with no efforts) delete cleanly; a\n\n## Actions & files produced\n\n- Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)\n- Anchor R&D Surface v9 — \"Tidy\" — Implementation Plan (Foreman-ready)\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- ## Anchor R&D Surface v9 â€” \"Tidy\" â€” Planning Session Summary\n- **Goal (North Star, locked from John's Stage-0 answers)**\n- Make the R&D surface **tidy and organizable**: the user can permanently remove what they don't want and arrange what they keep.\n- **Locked decisions (Stage-0 user gates)**\n- **Session delete = Option A (remove-from-Anchor, KEEP documents).** A delete clears the registry record (`remove_session`), the lane effort pointer-records + index entries, and the cached summary â€” so the tile is gone permanently and survives a refresh â€” but **produced/committed documents are never deleted**.\n- **Session delete UX:** a red **âœ•** at the top-right of a session tile â†’ \"are you sure?\" â†’ the session is completely gone and stays gone across a refresh. Ghost/empty sessions (empty DONE records with no efforts) delete cleanly.\n- **Grass delete = full.** Removes the idea's pointer + index entry + refinements + dev-session map â€” all Anchor scratch, nothing committed.\n- **Folders = Option C (drag-groups-instantly + ask-to-move-on-disk).** A drag always groups in the dashboard (safe, reversible); a dialog then offers \"Move on disk + group\" (the guarded atomic move) vs. \"Just group\".\n- **Scope of the two member documents**\n- The session produced a frozen-design **Master Plan** and a Foreman-ready **Implementation Plan** for v9.\n- Delete is distinguished from kill: kill ends a *running* session; delete *removes the Anchor record entirely* (keeping the on-disk documents).\n- Grouping (dashboard-only) is distinguished from the on-disk move (guarded, atomic, reversible) â€” grouping never touches disk by itself.\n- The locked objective is to make the R&D surface **tidy and organizable** â€” the user can permanently remove what they don't want and arrange what they keep.\n- **Key decisions (locked at Stage 0 by John's gates)**\n- **Session delete = Option A (remove-from-Anchor, KEEP documents).** A red **âœ•** on a session tile â†’ \"are you sure?\" â†’ the session is permanently gone and stays gone across a refresh: the registry record (`remove_session`), the lane effort pointer-records + index entries, and the cached summary are all removed â€” but **produced/committed documents are never deleted**.\n- **Ghost/empty sessions** (empty DONE records with no efforts) delete cleanly under the same path.\n- **Grass delete = full.** Removing a grass idea clears the idea's pointer + index entry + refinements + dev-session map â€” all Anchor scratch, nothing committed.\n- **Scope / structure of the plan**\n- Frozen design captured across two member documents: the **Master Plan** (frozen design) and the **Implementation Plan** (Foreman-ready).\n\n## Files\n\n- [Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v9%2FMASTER-PLAN.md)\n- [Anchor R&D Surface v9 — \"Tidy\" — Implementation Plan (Foreman-ready)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v9%2FIMPLEMENTATION-PLAN.md)\n",
+  "schema_version": 3
+}

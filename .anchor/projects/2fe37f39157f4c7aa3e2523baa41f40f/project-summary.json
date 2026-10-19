@@ -1,0 +1,23 @@
+{
+  "project_id": "2fe37f39157f4c7aa3e2523baa41f40f",
+  "kind": "project",
+  "title": "Anchor — Productivity System for J.C. Liechty",
+  "claims": [
+    "Anchor is a single-folder, markdown-backed productivity and R&D control system for J.C. Liechty that tracks tasks, projects, and deadlines while turning the researchPrimeâ†’Crucibleâ†’Foreman trio into a durable, summarized project board.",
+    "It solves the problem of losing track of agentic trio work by giving each project an honest, integrated cockpit where live and finished sessions appear as tiles in their lane columns, backed by short, grounded, auto-generated summaries.",
+    "Anchor is a personal productivity system that tracks J.C. Liechty's tasks and projects and drives R&D work through the researchPrimeâ†’Crucibleâ†’Foreman trio as durable, resumable sessions.",
+    "Its project board exists to give an honest, integrated, well-summarized view of that work â€” short clean summaries, live sessions shown in their lane columns as first-class windows, and a dashboard that truthfully reflects each project's activity."
+  ],
+  "sources": [
+    "CLAUDE.md",
+    "planning\\rnd-v7\\MASTER-PLAN.md",
+    "planning\\rnd-v7\\IMPLEMENTATION-PLAN.md",
+    "planning\\rnd-v6\\MASTER-PLAN.md",
+    "planning\\rnd-v6\\IMPLEMENTATION-PLAN.md"
+  ],
+  "generated_at": 1781551241.1314783,
+  "runs": 2,
+  "markdown": "# Anchor — Productivity System for J.C. Liechty\n\n*Project summary · validated, cached*\n\n## Objective\n\nAnchor is a single-folder, markdown-backed productivity and R&D control system for J.C. Liechty that tracks tasks, projects, and deadlines while turning the researchPrimeâ†’Crucibleâ†’Foreman trio into a durable, summarized project board. It solves the problem of losing track of agentic trio work by giving each project an honest, integrated cockpit where live and finished sessions appear as tiles in their lane columns, backed by short, grounded, auto-generated summaries. Anchor is a personal productivity system that tracks J.C. Liechty's tasks and projects and drives R&D work through the researchPrimeâ†’Crucibleâ†’Foreman trio as durable, resumable sessions. Its project board exists to give an honest, integrated, well-summarized view of that work â€” short clean summaries, live sessions shown in their lane columns as first-class windows, and a dashboard that truthfully reflects each project's activity.\n",
+  "summary_text": "Anchor is a single-folder, markdown-backed productivity and R&D control system for J.C. Liechty that tracks tasks, projects, and deadlines while turning the researchPrimeâ†’Crucibleâ†’Foreman trio into a durable, summarized project board. It solves the problem of losing track of agentic trio work by giving each project an honest, integrated cockpit where live and finished sessions appear as tiles in their lane columns, backed by short, grounded, auto-generated summaries. Anchor is a personal productivity system that tracks J.C. Liechty's tasks and projects and drives R&D work through the researchPrimeâ†’Crucibleâ†’Foreman trio as durable, resumable sessions. Its project board exists to give an honest, integrated, well-summarized view of that work â€” short clean summaries, live sessions shown in their lane columns as first-class windows, and a dashboard that truthfully reflects each project's activity.",
+  "schema_version": 2
+}

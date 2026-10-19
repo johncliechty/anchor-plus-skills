@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-ab58b3cef1be58b3",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788883725.9823546,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "2026 09 08",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/test-tmp-notebook-ui-01/test_discovered_session_tile_i0/logs/2026-09-08.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-5e83dc0a5286d108",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924587.2760181,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Skill",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/B-anchor-plus-skills/vendor/bundled-skills/crucible/SKILL.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

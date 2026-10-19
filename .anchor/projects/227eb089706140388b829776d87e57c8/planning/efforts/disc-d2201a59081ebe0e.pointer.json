@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d2201a59081ebe0e",
+  "project_id": "227eb089706140388b829776d87e57c8",
+  "lane": "planning",
+  "created_at": 1780961741.35123,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Control Surface — Execution Log",
+  "artifact_path": "planning/rnd-v1/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

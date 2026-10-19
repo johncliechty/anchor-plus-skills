@@ -1,0 +1,13 @@
+{
+  "job_id": "disc-9e51875c3bbd64f2",
+  "project_id": "4659bea4fee64fd1b69e167a35e712dd",
+  "lane": "deliverables",
+  "created_at": 1782193370.0629573,
+  "source": "pinned",
+  "kind": "deliverable-program",
+  "deliverable_type": "program",
+  "title": "anchor_gui.py",
+  "artifact_path": "anchor_gui.py",
+  "description": "Anchor dashboard web app (run as an ephemeral preview)",
+  "status": "pinned"
+}

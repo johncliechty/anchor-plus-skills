@@ -55,6 +55,7 @@ SKILL_SOURCES = [
     ("tidy-idy", "ANCHOR_FOUNDRY_DIR", "skills/tidy-idy"),
     ("zombie-hunter", "ANCHOR_FOUNDRY_DIR", "skills/zombie-hunter"),
     ("anvil", "ANCHOR_FOUNDRY_DIR", "skills/anvil"),
+    ("aegis", "ANCHOR_FOUNDRY_DIR", "skills/aegis"),
     ("superjump", "ANCHOR_FOUNDRY_DIR", "skills/superjump"),
     ("chekhov", "ANCHOR_FOUNDRY_DIR", "skills/chekhov"),
     ("einstein", "ANCHOR_FOUNDRY_DIR", "skills/einstein"),

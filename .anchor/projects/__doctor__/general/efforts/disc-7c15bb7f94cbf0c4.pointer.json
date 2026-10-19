@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-7c15bb7f94cbf0c4",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848335.6732707,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Readme",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/skills-only/skills/tidy-idy/test/fixtures/corpus/README.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

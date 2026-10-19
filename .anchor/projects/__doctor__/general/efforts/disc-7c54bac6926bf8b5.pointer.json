@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-7c54bac6926bf8b5",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788888602.814384,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Receipt Artifact",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-job-2/test_success_receipt_rejects_b0/scalar-alias-subscription_auth/receipt-artifact.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

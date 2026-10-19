@@ -1,0 +1,10 @@
+{
+  "job_id": "1a9f9806758d49a6a2b0709d4f9416d8",
+  "project_id": "2fe37f39157f4c7aa3e2523baa41f40f",
+  "lane": "plan",
+  "skill": "crucible",
+  "backend": "claude",
+  "prompt_seed": "Run the crucible planning skill for project 'Anchor' (folder C:\\dev\\Anchor). Write the plan documents under the project-scoped output directory C:\\dev\\Anchor\\.anchor\\projects\\2fe37f39157f4c7aa3e2523baa41f40f\\planning. When you reach an AskUserQuestion gate, surface it; an answer will arrive in-session. Do not mutate the working tree. Treat this as a brownfield existing project: before planning, assess the current state of the folder C:\\dev\\Anchor and what has already been done across any prior research, planning, and build efforts (including artifacts already in C:\\dev\\Anchor\\.anchor\\projects\\2fe37f39157f4c7aa3e2523baa41f40f\\planning and sibling lane directories). Then forge a vetted, gold-standard, Foreman-ready plan that takes the project from its current state to completion, so the user can hand it off and take over.",
+  "output_dir": "C:\\dev\\Anchor\\.anchor\\projects\\2fe37f39157f4c7aa3e2523baa41f40f\\planning",
+  "launched_at": 1781202899.153933
+}

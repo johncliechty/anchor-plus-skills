@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-a1fe6bd84ab9b213",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848328.3030152,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Plan",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/vendor/bundled-skills/foreman/test/neg-no-waves/plan.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

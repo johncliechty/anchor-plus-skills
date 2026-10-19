@@ -1,0 +1,14 @@
+# Anchor — Executive Summary
+
+**ISOLATION:** approximated (single-context orchestrator + fresh read-only sub-agents). **r2_mode:** mixed — local greps OBSERVED; full test-suite GREEN is corroboration-only (pytest was harness-gated this session).
+
+**Bottom line.** Anchor is a single-user, plain-markdown productivity system for J.C. Liechty that has, over the past week, grown a much larger second feature: a per-project "R&D control surface" that launches AI coding skills (the researchPrime → Crucible → Foreman trio) as durable background `claude` jobs and serves their reports — the very mechanism that produced this report. The core product is mature and stdlib-only; the R&D feature is the dominant recent work (~26 of 39 commits since 2026-06-01) and is **code-complete and well-tested at the unit level, but integration-unverified in several load-bearing places.** Treat "done" as "unit-complete," not "proven in production."
+
+**Key findings.**
+- The R&D feature was Crucible-planned and Foreman-built across 9 waves; its own gate reports all-green (158→168 tests). The `claude` launch→stream→report spine is live-proven on disk. (High confidence; tests not independently re-run here.)
+- **A marquee subsystem is dead in production:** effort-history (the versioned effort cards, cost rollup, and per-effort git auto-commit) is fully built and unit-tested but has **no production caller** and writes no on-disk index — so the Kanban shows nothing and costs never roll up. This is the highest-value fix. (High confidence — confirmed by grep + filesystem check this session.)
+- **The keystone gate is unproven on a real engine.** Plan/build lanes depend on answering an `AskUserQuestion` prompt the code itself calls "inherently fragile"; it was only ever tested against a synthetic fixture. The plan flags this as "the one residual risk." The human SETUP gate (run service as `john`, real-Crucible go/no-go, Tailscale) is still pending. (High confidence.)
+- **Gemini support is deferred** to the research lane only; the adapter for plan/build is unbuilt.
+- **Hygiene debt:** a stale `requirements.txt` (flask/Pillow — neither ships; product is genuinely stdlib-only), a dead legacy Flask server (`anchor_server.py`), `deliverables.py` missing from the ship manifest, a dirty uncommitted working tree, and a 205 KB single-file app with three drifting copies of the markdown parser.
+
+**Top caveats / unknowns.** (1) Re-run `python -m pytest -v` first — the green figure is the build's own self-report and pytest was gated in this run. (2) The gate/liveness behavior under a *real* `claude`/`crucible` process has never been exercised — the biggest unknown before trusting plan/build lanes. (3) This project's history shows tests-GREEN has shipped a non-working UI before, so verify any "done" claim against live behavior.

@@ -1,0 +1,24 @@
+{
+  "session_id": "5e2fc495f5774a11bb645ae48a7a7f47",
+  "lane": "general",
+  "title": "",
+  "claims": [],
+  "member_links": [],
+  "when_run": "",
+  "what_was_asked": "",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [],
+  "effort": {
+    "tokens": 0,
+    "wall_clock_ms": 0,
+    "cost_usd": 0.0,
+    "runs": 0
+  },
+  "generated_at": 1781565329.7167292,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# general session summary\n\n*Lane: general · validated, cached summary*\n\n**Effort:** 0 tokens · 0.0s wall-clock · 0 run(s)\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n",
+  "schema_version": 2
+}

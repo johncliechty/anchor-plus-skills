@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-77fe9edd2e557a9a",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924340.927392,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Execution log — Anchor durability waves (2026-07)",
+  "artifact_path": "FOREMAN-EXECUTION-LOG-2026-07.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

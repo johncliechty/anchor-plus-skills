@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "anchor://foundry/foundry_map_v2.schema.json",
+  "title": "Skill Foundry map.json v2",
+  "description": "The machine-readable skill-graph contract (foundry-v2 Wave 5). v1's free-prose relationship notes become TYPED edges (compose | import | augment) keyed by a STABLE ref; status is the closed PyPI Development-Status ladder; every skill carries the runner tier + an exact semver version; edges declare semver RANGES that the SEPARATE resolved-graph lockfile (foundry_map_v2.lock.json, the Cargo.lock analogue) pins to exact versions plus each skill's full transitive closure. This document is the SINGLE SOURCE for the closed enums and key sets: foundry_map.py reads them from here at import, so schema and validator cannot drift.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "map_version", "skills"],
+  "properties": {
+    "schema": { "const": "foundry-map/v2" },
+    "map_version": { "const": 2 },
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/skill" }
+    }
+  },
+  "definitions": {
+    "ref": {
+      "type": "string",
+      "pattern": "^skill:[a-z0-9][a-z0-9-]*$",
+      "description": "The STABLE identity every edge is keyed by. It survives a display-name or folder rename; 'name' and 'source' may change, 'ref' never does."
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Exact semantic version (MAJOR.MINOR.PATCH), no prerelease/build tags in v2."
+    },
+    "range": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A semver RANGE (the manifest-range side of the range/lock split): '*', exact ('1.2.3' / '=1.2.3' / '==1.2.3'), comparators ('>=1.0.0 <2.0.0', '!=1.1.0'), caret ('^1.2.0'), or tilde ('~1.2.3'); space/comma-separated clauses are ANDed. The lockfile pins each range to the exact resolved version."
+    },
+    "status": {
+      "description": "Closed enum: the PyPI Development-Status trove-classifier ladder. Anything else fails validation.",
+      "enum": [
+        "1 - Planning",
+        "2 - Pre-Alpha",
+        "3 - Alpha",
+        "4 - Beta",
+        "5 - Production/Stable",
+        "6 - Mature",
+        "7 - Inactive"
+      ]
+    },
+    "tier": {
+      "description": "The runner's model-tier vocabulary (skill_runner.TIERS): HEAVY = frontier Claude seats, STANDARD = one notch below.",
+      "enum": ["heavy", "standard"]
+    },
+    "edge_type": {
+      "description": "Closed enum of relationship types. compose = runs the target as a composed dependency (jumper -> gandalf); import = consumes the target's code/libs (crucible -> foreman); augment = extends/specializes the target's behavior (literature-review -> researchPrime).",
+      "enum": ["compose", "import", "augment"]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "to", "range"],
+      "description": "ONE typed relationship to ONE stable ref. Exactly one 'type' string — an untyped edge (missing 'type') or an overloaded edge (a list of types, or a 'types' key) fails validation.",
+      "properties": {
+        "type": { "$ref": "#/definitions/edge_type" },
+        "to": { "$ref": "#/definitions/ref" },
+        "range": { "$ref": "#/definitions/range" },
+        "note": { "type": "string" }
+      }
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "name", "source", "status", "tier", "version", "edges"],
+      "properties": {
+        "ref": { "$ref": "#/definitions/ref" },
+        "name": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/definitions/status" },
+        "tier": { "$ref": "#/definitions/tier" },
+        "version": { "$ref": "#/definitions/semver" },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/edge" }
+        },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

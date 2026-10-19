@@ -1,0 +1,91 @@
+{
+  "schema": "researchPrime/agent-implementation/v1",
+  "project": "Anchor",
+  "folder": "C:\\dev\\Anchor",
+  "self_project_id": "2fe37f39157f4c7aa3e2523baa41f40f",
+  "date": "2026-06-11",
+  "run_mode": "degraded-prose",
+  "honesty_stamp": "schema conforms; adversarial verification did NOT run (Node engine approval-gated)",
+  "cross_model": false,
+  "isolation": {"main": "approximated", "subagents": "real"},
+  "what_it_is": "Single-folder personal productivity system (stdlib-only markdown task manager served by anchor_gui.py as a persistent NSSM Windows service on localhost:8777) PLUS a newer R&D control surface that runs the researchPrime->Crucible->Foreman trio as durable claude subprocess jobs with sessions, cached summaries, an xterm.js terminal, and a Kanban project window.",
+  "entry_points": {
+    "application": "anchor_gui.py (~5407 lines, stdlib HTTP server, the running service)",
+    "cli": "anchor.py (~1009 lines; markdown ops + static dashboard.html + `rnd` subcommands)",
+    "healthcheck": "anchor_healthcheck.py (~965 lines; daily 5AM self-test, R&D-v2 surface walk, all model calls stubbed)",
+    "launcher": "launch_anchor.pyw (opens browser only; never spawns a server)",
+    "legacy_dead": "anchor_server.py (Flask; superseded, not shipped)"
+  },
+  "runtime": {
+    "service": "NSSM service 'anchor', Automatic, runs `python anchor_gui.py --no-browser`",
+    "url": "http://localhost:8777",
+    "bind": "127.0.0.1, SO_EXCLUSIVEADDRUSE single-instance guard (paths.py)",
+    "restart": "nssm restart anchor (elevated)",
+    "unrelated_service": "ledger NSSM service on 8778 (leave alone)"
+  },
+  "build_state": {
+    "rnd_v2": "DONE",
+    "waves_green": 8,
+    "verdict": "PROJECT DONE 2026-06-11 (planning/rnd-v2/EXECUTION-LOG.md)",
+    "tests_reported": "391 passed/1 skipped (394 after xterm follow-up) — CLAIMED via build log, not re-run",
+    "merged_to_master": true,
+    "git_ahead_of_origin": 20,
+    "stale_artifacts_that_look_unfinished": [
+      "foreman-checkpoint.json (reads current_wave:1/running — STALE/abandoned, gitignored)",
+      "planning/rnd-v2/EXECUTION-LOG.md:111 ('not merged to master' — STALE doc; it IS merged)"
+    ]
+  },
+  "done": [
+    "Core markdown productivity app + dashboard + daily healthcheck (OK ~8 days)",
+    "R&D surface v1 (Crucible+Foreman, 9 waves, 2026-06-08)",
+    "Brownfield discovery (7 waves, 2026-06-09; writes Anchor.md marker)",
+    "R&D surface v2 (8 waves, 2026-06-11, merged to master)",
+    "Real @xterm/xterm 6.0.0 swap (anchor-term.js now an adapter)",
+    "effort_history WIRED into live GUI (anchor_gui.py:376 + /api/rnd/add_idea, /api/rnd/promote_inbox) — closes prior research's #1 gap",
+    "Shipped product genuinely stdlib-only via deny-by-default dist_manifest.txt + distro.py PII scanner"
+  ],
+  "outstanding": [
+    {"priority": 1, "item": "Confirm the live NSSM 'anchor' process was restarted onto the merged code, then `git push` (20 unpushed commits)", "evidence": "E12", "status": "UNVERIFIED runtime"},
+    {"priority": 2, "item": "Run reconcile_folder on C:\\dev\\Anchor — 3 Anchor ids (1 active 2fe37f39, 2 retired 227eb089/bfe0e754); real sessions stranded on retired ids", "evidence": "E14,E15"},
+    {"priority": 3, "item": "Decide durability of untracked-and-unignored R&D state: rnd_registry.json, .anchor/ pointer-records (README says track, policy C9), Anchor.md", "evidence": "E18"},
+    {"priority": 4, "item": "Clean 16 retired %TEMP% test projects + 1 failed job + >=1 orphaned 'running' job record", "evidence": "E14,E16"},
+    {"priority": 5, "item": "Build the Gemini plan/build adapter (lanes.GEMINI_LANES={'research'} today; scoping doc planning/gemini-adapter/PLAN.md ready; no build started)", "evidence": "E20,E21"},
+    {"priority": 6, "item": "Phase-F deferrals: stall/heartbeat, interrupted->resume relaunch, weekly live-smoke test, richer status contract, Foreman run-live adapter, multi-user", "evidence": "E21"},
+    {"priority": 7, "item": "Hygiene: delete domains/test.md (cp1252 byte breaks live healthcheck); drop stale requirements.txt + dead anchor_server.py; consider gitignoring regenerated dashboard*.html", "evidence": "E22,E6,E19"}
+  ],
+  "risks": [
+    {"id": "R1", "risk": "Live process may run stale code (disk merged, restart unproven)", "severity": "high", "status": "UNVERIFIED", "evidence": "E12,E13"},
+    {"id": "R2", "risk": "No live trio gate ever proven end-to-end; all gate/liveness tested only via tests/fake_claude.py stub", "severity": "high", "status": "CORROBORATED", "evidence": "E24"},
+    {"id": "R3", "risk": "R&D durability gap: registry + .anchor/ pointer-records untracked & unignored; 20 unpushed commits", "severity": "high", "status": "OBSERVED", "evidence": "E18"},
+    {"id": "R4", "risk": "Reconcile never run; multi-id-per-folder; fragmented session history", "severity": "medium", "status": "CORROBORATED", "evidence": "E15"},
+    {"id": "R5", "risk": "Stale state artifacts (foreman-checkpoint, orphaned 'running' jobs) mislead the UI", "severity": "medium", "status": "OBSERVED", "evidence": "E10,E16"},
+    {"id": "R6", "risk": "Doc drift: CLAUDE.md + EXECUTION-LOG describe pre-merge/pre-xterm reality", "severity": "medium", "status": "OBSERVED", "evidence": "E3,E9"},
+    {"id": "R7", "risk": "Three third-party imports in tree (flask/Pillow/pywin32) vs stdlib-only identity; but all excluded from ship manifest", "severity": "low", "status": "OBSERVED", "evidence": "E6"},
+    {"id": "R8", "risk": "anchor_gui.py ~5400-line monolith (HTML/CSS/JS in f-strings; drifted markdown parsers) = high change-risk", "severity": "low-med", "status": "OBSERVED", "evidence": "E1"},
+    {"id": "R9", "risk": "No live runtime fact verifiable this run (service status, single-listener, pid liveness) — PowerShell approval-gated", "severity": "n/a", "status": "UNVERIFIED", "evidence": "E13"}
+  ],
+  "do_not_break": [
+    "Persistent NSSM service writes markdown source-of-truth with no DB/undo",
+    "Never blanket-kill pythonw; restart only via `nssm restart anchor` (elevated)",
+    "Cross-check docs against the tree — several doc statements are stale vs merged code",
+    "Constraint for this lane: do not mutate the working tree; outputs live only under .anchor/projects/2fe37f39.../research/"
+  ],
+  "key_paths": {
+    "claude_md": "CLAUDE.md",
+    "rnd_v2_design": "planning/rnd-v2/MASTER-PLAN.md",
+    "rnd_v2_plan": "planning/rnd-v2/IMPLEMENTATION-PLAN.md",
+    "rnd_v2_log": "planning/rnd-v2/EXECUTION-LOG.md",
+    "gemini_scoping": "planning/gemini-adapter/PLAN.md",
+    "migration_plan": "MIGRATION-PLAN-New-Desktop-2026-05-11.md",
+    "prior_research": ".anchor/projects/227eb089706140388b829776d87e57c8/research/01-report.md",
+    "ship_manifest": "dist_manifest.txt",
+    "registry": "rnd_registry.json"
+  },
+  "method_limits": [
+    "Node adversarial engine NOT run (approval-gated); degraded prose mode",
+    "pytest NOT re-run (test counts CLAIMED via build log)",
+    "Server NOT started; no live PowerShell runtime check possible",
+    "No full per-module code audit (out of scope for orientation)",
+    "Prior 2026-06-10 research corroborated where valid, corrected where overtaken (effort_history wiring)"
+  ]
+}

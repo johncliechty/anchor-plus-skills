@@ -101,22 +101,465 @@ def _summarize_function(node: ast.AST, source_lines: List[str]) -> Dict[str, Any
 
 def _scan_python_files(repo: Path) -> List[Path]:
     out: List[Path] = []
-    skip = {".git", "__pycache__", "node_modules", ".venv", "venv", "dist", "build", ".tox", ".mypy_cache"}
+    skip = {
+        ".git", "__pycache__", "node_modules", ".venv", "venv",
+        "dist", "build", ".tox", ".mypy_cache", ".anvil", ".ecgberht", ".steward",
+        "planning", "bundle_staging", "vendor", "docs", "presentations",
+        "_archive", "_devtest", "_prototypes", "_mockups", "_gandalf-zombie-scope",
+    }
     if repo.is_file() and repo.suffix == ".py":
         return [repo]
+
+    manifest_allowed_rel: Optional[set[str]] = None
+    manifest_path = repo / "dist_manifest.txt"
+    if manifest_path.is_file():
+        allowed: set[str] = set()
+        try:
+            for raw_line in manifest_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or line.startswith("!"):
+                    continue
+                if line.endswith(".py"):
+                    allowed.add(line.replace("\\", "/"))
+        except Exception:
+            allowed = set()
+        if allowed:
+            manifest_allowed_rel = allowed
+
+    all_py: List[Path] = []
+    non_test_py: List[Path] = []
     for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if d not in skip and not d.startswith(".")]
+        dirs[:] = [
+            d for d in dirs
+            if d not in skip and not d.startswith(".") and not d.startswith("_")
+        ]
         for f in sorted(files):
             if f.endswith(".py"):
-                out.append(Path(root) / f)
+                fp = Path(root) / f
+                rel_posix = fp.relative_to(repo).as_posix()
+                rel_parts = fp.relative_to(repo).parts
+                is_test = (
+                    "tests" in rel_parts
+                    or "test" in rel_parts
+                    or f.startswith("test_")
+                    or f.endswith("_test.py")
+                )
+                if manifest_allowed_rel is not None and not is_test:
+                    if (
+                        rel_posix not in manifest_allowed_rel
+                        and not rel_posix.startswith("steward_cockpit/")
+                        and not rel_posix.startswith("shell/")
+                    ):
+                        continue
+                all_py.append(fp)
+                if not is_test:
+                    non_test_py.append(fp)
+    out = non_test_py if non_test_py else all_py
     return out
+
+
+ANCHOR_ARCHITECTURAL_BUCKET_SPECS: List[Dict[str, Any]] = [
+    {
+        "id": "bucket-1-cockpit-ingress",
+        "title": "Cockpit HTTP, Auth & File-Drop Ingress",
+        "stage": "ingest",
+        "band": "1. INGEST · HTTP & FILE DROP",
+        "shape": "program",
+        "col": 0,
+        "row": 0,
+        "summary": (
+            "Authenticates loopback/bearer HTTP requests, routes /steward/v1, /cave, /foundry, and "
+            "/api/steward/* endpoints, and validates drag-and-drop file uploads into the cockpit."
+        ),
+        "ai_agent_summary": (
+            "Routes user prompts, file drops, and skill invocations (/api/steward/say, /api/steward/anvil, "
+            "/api/engine) into the active Steward or Anvil session."
+        ),
+        "exact_files": {
+            "steward_routes.py", "anchor_gui.py", "anchor_app.py", "anchor_server.py",
+            "git_safety.py", "paths.py", "provider_secrets.py", "Desk.py", "desk.py", "desk_page.py",
+        },
+        "keywords": ("route", "http", "upload", "auth", "gui", "server", "ingress", "desk", "secret", "path"),
+    },
+    {
+        "id": "bucket-2-steward-engine",
+        "title": "Steward Session & Model Driver Engine",
+        "stage": "compute",
+        "band": "2. ESSENTIAL CORE · STEWARD & MODEL ENGINE",
+        "shape": "model-call",
+        "col": 1,
+        "row": 0,
+        "summary": (
+            "Drives the Cockpit Steward turn loop (Aladdin / Jarvis / Ecgberht), resolves model_prefs.json "
+            "seating (claude-fable-5-1, gemini-4-argon, gpt-6.1-sol, grok-4.7), and streams live transcripts."
+        ),
+        "ai_agent_summary": (
+            "Primary AI Agent execution seam: dispatches coding and review turns via subscription CLIs "
+            "(claude.exe, agy-dispatch, grok-cli) with 6s fast receipts and usage-limit failover."
+        ),
+        "exact_files": {
+            "steward_engine.py", "steward_core.py", "campaign_say.py", "terminal_session.py",
+            "usage_allowance_monitor.py", "usage_index.py", "provider_registry.py",
+        },
+        "keywords": ("steward_engine", "steward_core", "campaign_say", "terminal", "model", "provider", "allowance", "turn", "prompt", "llm"),
+    },
+    {
+        "id": "bucket-3-campaign-ledger",
+        "title": "Campaign Ledger, Star Chart & Deliverables Register",
+        "stage": "compute",
+        "band": "2. ESSENTIAL CORE · STEWARD & MODEL ENGINE",
+        "shape": "program",
+        "col": 1,
+        "row": 1,
+        "summary": (
+            "Parses ECGBERHT.md, roadmap.json, strip.json, and DELIVERABLES.md into the Star Chart "
+            "Acts/Goals/Parts hierarchy, open-question gates, and work-product plates."
+        ),
+        "ai_agent_summary": (
+            "Synchronizes Steward turn outputs with strip.json, roadmap.json, and DELIVERABLES.md so "
+            "human review gates, 3-tier deliverables, and progress bars stay accurate."
+        ),
+        "exact_files": {
+            "steward_campaign.py", "campaign_acts.py", "campaign_parts.py", "campaign_page.py",
+            "deliverables_register.py", "anchor_next.py",
+        },
+        "keywords": ("campaign", "roadmap", "deliverable", "plate", "star", "act", "part", "strip", "ledger"),
+    },
+    {
+        "id": "bucket-4-cave-high-seat",
+        "title": "Cave of Wonders & High-Seat Portfolio Orchestration",
+        "stage": "compute",
+        "band": "3. PORTFOLIO & WORKBENCH ORCHESTRATION",
+        "shape": "human-gate",
+        "col": 2,
+        "row": 0,
+        "summary": (
+            "Orchestrates the Cave of Wonders portfolio dashboard, 6-week compact horizon, "
+            "Active/Sleeping/R&D project tiles, and pure High-Seat relevance scoring (high_seat_core.py)."
+        ),
+        "ai_agent_summary": (
+            "Coordinates High-Seat portfolio triage, pure relevance scoring (high_seat_core.py), "
+            "and cross-project Steward focus recommendations."
+        ),
+        "exact_files": {
+            "high_seat_page.py", "high_seat_core.py", "high_seat_card.py", "home_rows.py",
+            "rnd_projects.py", "project_registry.py",
+        },
+        "keywords": ("high_seat", "cave", "home_rows", "portfolio", "rnd", "horizon", "initiative", "seat"),
+    },
+    {
+        "id": "bucket-5-foundry-anvil",
+        "title": "Skill Foundry, Anvil Workbench & Code-Job Worktrees",
+        "stage": "compute",
+        "band": "3. PORTFOLIO & WORKBENCH ORCHESTRATION",
+        "shape": "adversarial-review",
+        "col": 2,
+        "row": 1,
+        "summary": (
+            "Manages per-cockpit Anvil sessions (.anvil/session.json), the 4-Mode Anvil Workbench & "
+            "FoundryFlowDiagram visualizations, and isolated git worktrees for Trio/Foundry code jobs."
+        ),
+        "ai_agent_summary": (
+            "Governs persistent Anvil Agent dialogue, Crucible/Foreman/researchPrime skill dispatch, "
+            "and isolated worktree code jobs with adversarial diff review (code_jobs.py)."
+        ),
+        "exact_files": {
+            "anvil_session.py", "foundry_page.py", "foundry_tools.py", "code_jobs.py",
+            "code_job_handoff.py", "steward_code_job.py", "reading_copy.py", "vendor_skills.py",
+        },
+        "keywords": ("anvil", "foundry", "skill", "code_job", "worktree", "handoff", "reading_copy", "crucible", "foreman"),
+    },
+    {
+        "id": "bucket-6-comms-sharing",
+        "title": "Comms Pulse, OAuth2 Vault & Multi-Mothership Sharing",
+        "stage": "emit",
+        "band": "4. EMIT · COMMS, SHARING & GUARDIAN",
+        "shape": "program",
+        "col": 3,
+        "row": 0,
+        "summary": (
+            "Handles OAuth2 PKCE token vaulting, Gmail/Calendar/Slack Comms Pulse digest cards, "
+            "Tailscale peer mothership discovery, and ghostworldlabs-anchor distro/repo sync."
+        ),
+        "ai_agent_summary": (
+            "Synthesizes Chief-of-Staff Executive Briefs from Comms Pulse and synchronizes shared "
+            "cockpit step leases across peer Motherships."
+        ),
+        "exact_files": {
+            "comms_connector.py", "mothership_collab.py", "distro.py", "share_onboard.py",
+            "connect.py", "anchor_shell.py",
+        },
+        "keywords": ("comms", "oauth", "mothership", "collab", "share", "distro", "connect", "tailscale", "shell"),
+    },
+    {
+        "id": "bucket-7-doctor-guardian",
+        "title": "Anchor Doctor, Healthcheck & Zombie-Hunter Guardian",
+        "stage": "emit",
+        "band": "4. EMIT · COMMS, SHARING & GUARDIAN",
+        "shape": "adversarial-review",
+        "col": 3,
+        "row": 1,
+        "summary": (
+            "Monitors process tree health (py, claude, node), runs Zombie-Hunter orphan detection "
+            "with abstain-by-default safety, and serves /api/version & /api/doctor self-healing."
+        ),
+        "ai_agent_summary": (
+            "Dispatches Gemini (agy-dispatch) non-plan auto-repair (tools/doctor_fix.py) and guards "
+            "against orphaned sub-agent swarms."
+        ),
+        "exact_files": {
+            "doctor_plain.py", "doctor_fix.py", "health_state.py", "zombie_hunter.py",
+        },
+        "keywords": ("doctor", "health", "zombie", "watchdog", "guardian", "repair", "check", "status"),
+    },
+]
+
+
+def _build_foundry_flow_diagram(buckets: List[Dict[str, Any]], edges: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Build a canonical FoundryFlowDiagram object (bands, nodes, steps, edges) for Anchor's SVG renderer."""
+    stage_order = {"ingest": 0, "compute": 1, "emit": 2}
+    bands_meta = [
+        {"index": 0, "label": "1. INGEST · GET-DATA", "tone": "ingest"},
+        {"index": 1, "label": "2. ESSENTIAL CORE · DO-ANALYSIS & AI SEAMS", "tone": "compute"},
+        {"index": 2, "label": "3. EMIT · CREATE-OUTPUT & GUARDIAN", "tone": "emit"},
+    ]
+    col_buckets: Dict[int, List[Dict[str, Any]]] = {0: [], 1: [], 2: []}
+    for b in buckets:
+        c = stage_order.get(b.get("pipeline_stage") or "compute", 1)
+        col_buckets[c].append(b)
+
+    # Split large middle column into two sub-columns if >3 nodes so the SVG diagram stays compact and readable
+    use_four_cols = len(col_buckets[1]) > 3
+    if use_four_cols:
+        bands_meta = [
+            {"index": 0, "label": "1. INGEST · GET-DATA", "tone": "ingest"},
+            {"index": 1, "label": "2A. CORE ENGINE & LEDGER", "tone": "compute"},
+            {"index": 2, "label": "2B. PORTFOLIO & WORKBENCH", "tone": "compute"},
+            {"index": 3, "label": "3. EMIT · COMMS & GUARDIAN", "tone": "emit"},
+        ]
+
+    steps_out: List[Dict[str, Any]] = []
+    nodes_out: List[Dict[str, Any]] = []
+    band_rows: Dict[int, List[int]] = {}
+
+    for idx, b in enumerate(buckets):
+        stg = b.get("pipeline_stage") or "compute"
+        has_ai = bool(b.get("ai_agent_touchpoints"))
+        shape = b.get("diagram_shape") or ("model-call" if has_ai else ("human-gate" if stg == "ingest" else "program"))
+        if use_four_cols:
+            if stg == "ingest":
+                col = 0
+            elif stg == "emit":
+                col = 3
+            else:
+                comp_idx = col_buckets[1].index(b) if b in col_buckets[1] else 0
+                col = 1 if comp_idx < (len(col_buckets[1]) + 1) // 2 else 2
+        else:
+            col = stage_order.get(stg, 1)
+
+        row = len(band_rows.get(col, []))
+        band_rows.setdefault(col, []).append(row)
+
+        short_title = b.get("title") or b["id"]
+        if len(short_title) > 28:
+            short_title = short_title[:26].rstrip() + "…"
+        fn_cnt = len(b.get("functions") or [])
+        mod_cnt = len(b.get("member_files") or [b.get("file")])
+        caption = f"{mod_cnt} mod · {fn_cnt} fn" if mod_cnt > 1 else f"{fn_cnt} fn · {stg.upper()}"
+
+        steps_out.append({
+            "id": b["id"],
+            "num": str(idx + 1),
+            "title": b.get("title") or b["id"],
+            "shape": shape,
+            "Summary": b.get("summary") or "",
+            "reads": [b.get("primary_file") or b.get("file") or ""],
+            "writes": [f"{fn_cnt} functions ({stg.upper()})"],
+        })
+        nodes_out.append({
+            "id": b["id"],
+            "num": str(idx + 1),
+            "label": short_title,
+            "caption": caption,
+            "shape": shape,
+            "col": col,
+            "row": row,
+            "stage": stg,
+        })
+
+    bands_out = []
+    for bm in bands_meta:
+        c = bm["index"]
+        rows = band_rows.get(c, [0])
+        bands_out.append({
+            "index": c,
+            "label": bm["label"],
+            "tone": bm["tone"],
+            "first_col": c,
+            "last_col": c,
+            "first_row": min(rows),
+            "last_row": max(rows),
+        })
+
+    flow_edges: List[Dict[str, Any]] = []
+    if edges:
+        for e in edges[:18]:
+            flow_edges.append({
+                "from": e["from"],
+                "to": e["to"],
+                "kind": "forward",
+                "label": (e.get("via") or "").split("->")[-1].strip()[:18],
+            })
+    else:
+        for i in range(len(buckets) - 1):
+            flow_edges.append({
+                "from": buckets[i]["id"],
+                "to": buckets[i + 1]["id"],
+                "kind": "forward",
+                "label": "",
+            })
+
+    return {
+        "summary": "End-to-End Architectural Process Map (Ingest → Essential Core & AI Agent Seams → Emit)",
+        "steps": steps_out,
+        "edges": flow_edges,
+        "diagram": {
+            "col_width": 210,
+            "row_height": 106,
+            "node_width": 172,
+            "node_height": 64,
+            "bands": bands_out,
+            "nodes": nodes_out,
+        },
+    }
+
+
+def _cluster_into_architectural_buckets(repo: Path, raw_buckets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Cluster >6 per-file buckets into 4-7 human-digestible Conceptual Architectural Buckets (ANV-01)."""
+    file_names = {Path(b.get("file") or "").name for b in raw_buckets}
+    anchor_markers = {"steward_routes.py", "high_seat_page.py", "anvil_session.py", "steward_campaign.py", "anchor_gui.py", "high_seat_core.py"}
+    is_anchor = bool(file_names & anchor_markers) or "anchor" in repo.name.lower()
+
+    if is_anchor:
+        grouped: Dict[str, List[Dict[str, Any]]] = {spec["id"]: [] for spec in ANCHOR_ARCHITECTURAL_BUCKET_SPECS}
+        for rb in raw_buckets:
+            rel = rb.get("file") or ""
+            fname = Path(rel).name
+            assigned_id = None
+            for spec in ANCHOR_ARCHITECTURAL_BUCKET_SPECS:
+                if fname in spec["exact_files"] or fname.lower() in {x.lower() for x in spec["exact_files"]}:
+                    assigned_id = spec["id"]
+                    break
+            if not assigned_id:
+                low_rel = f"{rel} {rb.get('summary', '')}".lower()
+                best_spec = ANCHOR_ARCHITECTURAL_BUCKET_SPECS[1]
+                best_hits = -1
+                for spec in ANCHOR_ARCHITECTURAL_BUCKET_SPECS:
+                    hits = sum(1 for kw in spec["keywords"] if kw in low_rel)
+                    if hits > best_hits:
+                        best_hits = hits
+                        best_spec = spec
+                assigned_id = best_spec["id"]
+            grouped[assigned_id].append(rb)
+
+        arch_buckets: List[Dict[str, Any]] = []
+        for spec in ANCHOR_ARCHITECTURAL_BUCKET_SPECS:
+            members = grouped.get(spec["id"]) or []
+            if not members:
+                continue
+            member_files = [m["file"] for m in members]
+            primary_file = member_files[0]
+            file_label = (
+                primary_file
+                if len(member_files) == 1
+                else f"{', '.join(Path(f).name for f in member_files[:2])} (+{len(member_files) - 2} modules)"
+                if len(member_files) > 2
+                else ", ".join(Path(f).name for f in member_files)
+            )
+            all_funcs: List[Dict[str, Any]] = []
+            ai_seams: List[Dict[str, Any]] = []
+            total_lines = 0
+            for m in members:
+                all_funcs.extend(m.get("functions") or [])
+                ai_seams.extend(m.get("ai_agent_touchpoints") or [])
+                total_lines += int(m.get("total_lines") or 0)
+
+            arch_buckets.append({
+                "id": spec["id"],
+                "title": spec["title"],
+                "file": file_label,
+                "primary_file": primary_file,
+                "member_files": member_files,
+                "summary": spec["summary"],
+                "ai_agent_summary": spec["ai_agent_summary"],
+                "pipeline_stage": spec["stage"],
+                "diagram_shape": spec["shape"],
+                "ai_agent_touchpoints": ai_seams,
+                "functions": all_funcs,
+                "total_lines": total_lines,
+                "validated": False,
+            })
+        return arch_buckets
+
+    # Generic multi-file repository (>6 files): organize into 5 clean architectural buckets
+    generic_specs = [
+        ("bucket-1-ingest-io", "Data Ingress, Config & Parsers", "ingest"),
+        ("bucket-2-essential-core", "Essential Domain Core & Algorithms", "compute"),
+        ("bucket-3-orchestration", "Session State & Workflow Orchestration", "compute"),
+        ("bucket-4-ai-seams", "AI Agent Dispatch & Verification Seams", "compute"),
+        ("bucket-5-emit-output", "Output Serialization, UI & Reporting", "emit"),
+    ]
+    gen_groups: Dict[str, List[Dict[str, Any]]] = {gid: [] for gid, _, _ in generic_specs}
+    for rb in raw_buckets:
+        if rb.get("ai_agent_touchpoints"):
+            gen_groups["bucket-4-ai-seams"].append(rb)
+        elif rb.get("pipeline_stage") == "ingest":
+            gen_groups["bucket-1-ingest-io"].append(rb)
+        elif rb.get("pipeline_stage") == "emit":
+            gen_groups["bucket-5-emit-output"].append(rb)
+        elif any(k in (rb.get("file") or "").lower() for k in ("session", "state", "orchestr", "manage", "route", "cli")):
+            gen_groups["bucket-3-orchestration"].append(rb)
+        else:
+            gen_groups["bucket-2-essential-core"].append(rb)
+
+    out_generic: List[Dict[str, Any]] = []
+    for gid, gtitle, gstage in generic_specs:
+        members = gen_groups[gid]
+        if not members:
+            continue
+        member_files = [m["file"] for m in members]
+        primary_file = member_files[0]
+        file_label = (
+            primary_file
+            if len(member_files) == 1
+            else f"{', '.join(Path(f).name for f in member_files[:2])} (+{len(member_files) - 2} modules)"
+            if len(member_files) > 2
+            else ", ".join(Path(f).name for f in member_files)
+        )
+        all_funcs = [fn for m in members for fn in (m.get("functions") or [])]
+        ai_seams = [s for m in members for s in (m.get("ai_agent_touchpoints") or [])]
+        total_lines = sum(int(m.get("total_lines") or 0) for m in members)
+        out_generic.append({
+            "id": gid,
+            "title": gtitle,
+            "file": file_label,
+            "primary_file": primary_file,
+            "member_files": member_files,
+            "summary": f"Groups {len(member_files)} modules ({len(all_funcs)} functions) in the {gstage.upper()} architectural layer.",
+            "pipeline_stage": gstage,
+            "ai_agent_touchpoints": ai_seams,
+            "functions": all_funcs,
+            "total_lines": total_lines,
+            "validated": False,
+        })
+    return out_generic
 
 
 def build_map(repo_path: str | Path) -> Dict[str, Any]:
     """Mode 1 (ANV-01, ANV-02): Conceptual Groupings + Block-to-Block Process Map + AI Agent Seams."""
     repo = Path(repo_path).resolve()
     py_files = _scan_python_files(repo)
-    buckets: List[Dict[str, Any]] = []
+    raw_buckets: List[Dict[str, Any]] = []
     func_to_bucket: Dict[str, str] = {}
 
     for idx, fpath in enumerate(py_files):
@@ -148,20 +591,31 @@ def build_map(repo_path: str | Path) -> Dict[str, Any]:
         stages = [fn["stage"] for fn in funcs]
         dominant_stage = max(("ingest", "compute", "emit"), key=lambda s: stages.count(s)) if stages else "compute"
         ai_seams = [fn["ai_interaction"] for fn in funcs if fn.get("ai_interaction")]
-        for fn in funcs:
-            short_name = fn["name"].split(".")[-1]
-            func_to_bucket[short_name] = bid
-            func_to_bucket[fn["name"]] = bid
-        buckets.append({
+        raw_buckets.append({
             "id": bid,
             "title": Path(rel).stem.replace("_", " ").title(),
             "file": rel,
+            "primary_file": rel,
+            "member_files": [rel],
             "summary": mod_summary,
             "pipeline_stage": dominant_stage,
             "ai_agent_touchpoints": ai_seams,
             "functions": funcs,
+            "total_lines": len(lines),
             "validated": False,
         })
+
+    # ANV-01: Always synthesize 4-8 Conceptual Architectural Buckets when repo has >6 modules
+    if len(raw_buckets) > 6:
+        buckets = _cluster_into_architectural_buckets(repo, raw_buckets)
+    else:
+        buckets = raw_buckets
+
+    for b in buckets:
+        for fn in b["functions"]:
+            short_name = fn["name"].split(".")[-1]
+            func_to_bucket[short_name] = b["id"]
+            func_to_bucket[fn["name"]] = b["id"]
 
     edges: List[Dict[str, str]] = []
     seen_edges = set()
@@ -179,24 +633,30 @@ def build_map(repo_path: str | Path) -> Dict[str, Any]:
                             "via": f"{fn['name']} -> {callee}",
                         })
 
+    flow_diagram = _build_foundry_flow_diagram(buckets, edges)
+
     return {
         "schema": "anvil-map/v1",
         "repo": str(repo),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "conceptual_buckets": buckets,
+        "module_buckets": raw_buckets,
         "process_map": {
             "nodes": [
                 {
                     "id": b["id"],
                     "title": b["title"],
                     "file": b["file"],
+                    "member_files": b.get("member_files") or [b["file"]],
                     "stage": b["pipeline_stage"],
                     "ai_agent_badge": b["ai_agent_touchpoints"][0]["badge"] if b["ai_agent_touchpoints"] else None,
+                    "ai_agent_summary": b.get("ai_agent_summary") or "",
                     "function_count": len(b["functions"]),
                 }
                 for b in buckets
             ],
             "edges": edges,
+            "flow_diagram": flow_diagram,
         },
     }
 
@@ -210,7 +670,19 @@ def inspect_block(
     """Mode 2 (ANV-03, ANV-04, ANV-05): Single-Block Drill-Down + Inner Process Map + Empirical Claim Test."""
     amap = build_map(repo_path)
     buckets = amap["conceptual_buckets"]
-    block = next((b for b in buckets if b["id"] == block_id or b["file"] == block_id or b["title"].lower() == block_id.lower()), None)
+    module_buckets = amap.get("module_buckets") or []
+    all_searchable = list(buckets) + [mb for mb in module_buckets if mb["id"] not in {b["id"] for b in buckets}]
+    block = next(
+        (
+            b for b in all_searchable
+            if b["id"] == block_id
+            or b["file"] == block_id
+            or b.get("primary_file") == block_id
+            or block_id in (b.get("member_files") or [])
+            or b["title"].lower() == block_id.lower()
+        ),
+        None,
+    )
     if block is None and buckets:
         block = buckets[0]
     if block is None:
@@ -557,6 +1029,12 @@ def extract_orange_split(repo_path: str | Path) -> Dict[str, Any]:
             entry["boundary_role"] = "SURFACE_IO_CONTRACT"
             peel.append(entry)
 
+    pith_sample = [p["name"] for p in pith_and_seeds[:4]]
+    pith_preview = (
+        ", ".join(pith_sample) + (f" and {len(pith_and_seeds) - 4} more" if len(pith_and_seeds) > 4 else "")
+        if pith_sample
+        else "none"
+    )
     return {
         "schema": "anvil-orange-split/v1",
         "parable": (
@@ -574,7 +1052,7 @@ def extract_orange_split(repo_path: str | Path) -> Dict[str, Any]:
             ],
             "one_trip_recommendation": (
                 f"Proceed with lossless LibCST remap of {len(juice) + len(peel)} essential functions and sign off "
-                f"{len(pith_and_seeds)} obsolete function(s) ({', '.join(p['name'] for p in pith_and_seeds) or 'none'}) in the Null Space Ledger."
+                f"{len(pith_and_seeds)} obsolete function(s) ({pith_preview}) in the Null Space Ledger."
             ),
         },
         "repo": str(Path(repo_path).resolve()),

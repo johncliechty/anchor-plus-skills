@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-841ac61c926efe76",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1784924341.6188436,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Master Plan — Honest Spend Telemetry v2 (Round-3 re-emission, reconstructed)",
+  "artifact_path": "planning/spend-telemetry-2026-07/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

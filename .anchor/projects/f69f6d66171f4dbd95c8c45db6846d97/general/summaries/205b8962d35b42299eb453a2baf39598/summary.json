@@ -1,0 +1,31 @@
+{
+  "session_id": "205b8962d35b42299eb453a2baf39598",
+  "lane": "general",
+  "title": "205B8962D35B Transcript",
+  "claims": [
+    "**Members:** one document — \"205B8962D35B Transcript\""
+  ],
+  "member_links": [
+    {
+      "label": "205B8962D35B Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2F205b8962d35b-transcript.md"
+    }
+  ],
+  "when_run": "2026-07-10",
+  "what_was_asked": "205B8962D35B Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "205B8962D35B Transcript",
+      "rel": "general/205b8962d35b-transcript.md",
+      "job_id": "disc-e645a00b1d72ebfd"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783702502.8246481,
+  "runs": 2,
+  "markdown": "# 205B8962D35B Transcript\n\n*Lane: general · validated, cached summary*\n\n**When run:** 2026-07-10\n\n**What was asked:** 205B8962D35B Transcript\n\n## Actions & files produced\n\n- 205B8962D35B Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n- **Members:** one document — \"205B8962D35B Transcript\"\n\n## Files\n\n- [205B8962D35B Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=general%2F205b8962d35b-transcript.md)\n",
+  "schema_version": 3
+}

@@ -1,0 +1,25 @@
+{
+  "session_id": "e1601eb858be46c288edd31d201f2886",
+  "lane": "planning",
+  "title": "",
+  "claims": [],
+  "member_links": [],
+  "when_run": "",
+  "what_was_asked": "",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [],
+  "effort": {
+    "tokens": 0,
+    "wall_clock_ms": 0,
+    "cost_usd": 0.0,
+    "runs": 0
+  },
+  "generated_at": 1782893817.3907776,
+  "runs": 2,
+  "stage": "plan",
+  "no_grounded_claims": true,
+  "markdown": "# planning session summary\n\n*Lane: planning · validated, cached summary*\n\n**Effort:** 0 tokens · 0.0s wall-clock · 0 run(s)\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n",
+  "schema_version": 3
+}

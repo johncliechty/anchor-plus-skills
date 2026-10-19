@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-a9648d0a8f0f2fb2",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1786639808.765001,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Execution log — steward E1 enforcement (Foreman)",
+  "artifact_path": "planning/steward-e1-2026-08-12/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-f3314c5698f3b331",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924341.6160893,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Ship Anchor v1 — Execution Log",
+  "artifact_path": "planning/ship-anchor-v1/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

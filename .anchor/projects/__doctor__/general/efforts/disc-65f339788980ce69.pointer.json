@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-65f339788980ce69",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1789010531.3984852,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Agents",
+  "artifact_path": "planning/share-v1.2/AGENTS.md",
+  "status": "imported",
+  "session_id": "2f72e7675da74ea88560c21d61c3d253"
+}

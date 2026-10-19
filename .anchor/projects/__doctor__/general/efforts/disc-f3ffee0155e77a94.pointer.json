@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-f3ffee0155e77a94",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788889022.081966,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Deliverables",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-model-5/test_real_runtime_config_loade0/project/DELIVERABLES.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

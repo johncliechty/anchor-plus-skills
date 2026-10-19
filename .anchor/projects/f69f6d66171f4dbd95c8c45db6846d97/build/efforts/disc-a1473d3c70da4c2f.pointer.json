@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-a1473d3c70da4c2f",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924340.9268708,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log",
+  "artifact_path": "EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

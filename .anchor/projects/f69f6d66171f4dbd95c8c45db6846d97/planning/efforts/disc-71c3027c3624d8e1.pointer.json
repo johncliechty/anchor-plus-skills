@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-71c3027c3624d8e1",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1785389143.7308514,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Master Plan (draft)",
+  "artifact_path": "planning/sleep-2026-07-28/stage1/MASTER-PLAN-DRAFT.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

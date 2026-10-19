@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-a354efca756d3138",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788834880.0320275,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Best Draft",
+  "artifact_path": "planning/code-windows-2026-09-07/stage2/artifacts/BEST-DRAFT.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

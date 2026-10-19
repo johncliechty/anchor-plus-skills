@@ -1,0 +1,34 @@
+# MASTER PLAN — Honest Telemetry + Warm Resume (APPROVED 2026-07-11)
+
+*Lane: planning · validated, cached summary*
+
+**When run:** 2026-07-11
+
+**What was asked:** MASTER PLAN — Honest Telemetry + Warm Resume (APPROVED 2026-07-11)
+
+## Actions & files produced
+
+- MASTER PLAN — Honest Telemetry + Warm Resume (APPROVED 2026-07-11)
+
+**Effort:** imported — no run metrics
+
+## Goal & key decisions
+
+- **Session summary — Planning: "Honest Telemetry + Warm Resume" (MASTER-PLAN.md, `planning/telemetry-resume-2026-07/`)**
+- This was a Crucible planning session that produced an **APPROVED Stage-1 Master Plan** (John's gate approval "Okay, you can approve", 2026-07-11), reaching its best draft after 5 challenge rounds (rounds 1–4 judge-held) with zero open findings; Claude seats ran claude-fable-5 at TRIO_TIER=heavy with a cross-model gemini-cli judge every round.
+- **North Star:** every Anchor session — interactive ConPTY or one-shot job — leaves an honest, machine-verified cost/accomplishment trail so rollup numbers mean "measured truth, not zero-by-omission," and clicking any session tile reliably opens a warm terminal that narrates what was done, produced, and comes next.
+- **The click contract was locked as a two-layer design:** Layer 1 = a deterministic warm narrated view in terminal chrome on first click (<200ms, structurally never blank, no PTY/model call/network); Layer 2 = an explicit "▶ Resume live" in-place escalation gated on a WS attach-ack + replay-complete signal (5s timeout → styled error state, never a blank pane). The strict reading ("first click = live PTY") was formally considered and rejected with recorded rationale.
+- **Eviction was ruled binary and KEPT:** eviction reclaims only the worktree; the registry record, chain lineage, cached summary, and finalized cost all survive, and an evicted tile resumes via a NEW W3-seeded session joining the same chain — the UI never claims a reattach it cannot perform.
+- **Narration floor locked as lazy enrichment:** a deterministic template over registry facts + doc roles is the floor (total over every tile class); first tile-open triggers the existing background summary path with an honest "summary generating…" badge; eager batch backfill was CUT (with recorded cost arithmetic), and seed-only was rejected as a permanent ceiling.
+- **The Gemini-segment scope was ruled Option C** — ship with an honest "unmeasured (gemini-segment)" badge now plus a committed, dated fast-follow spike recorded in the execution log at deploy (resolving the plan's formal LOCKED-DECISION STUB per John's approval).
+- **This planning session produced an APPROVED Master Plan** ("Honest Telemetry + Warm Resume"), gate-approved by John on 2026-07-11 ("Okay, you can approve"), after a cap-HALT best draft survived 5 challenge rounds with zero open findings; Claude seats ran claude-fable-5 (TRIO_TIER=heavy) with a cross-model gemini-cli judge every round.
+- **North Star:** every Anchor session — interactive ConPTY or one-shot job — leaves an honest, machine-verified trail of cost and accomplishment, so rollup numbers mean "measured truth, not zero-by-omission," and clicking ANY session tile reliably opens a warm terminal that narrates what was done, produced, and comes next.
+- **The click contract is LOCKED as a two-layer design:** Layer 1 is a deterministic warm narrated view (terminal chrome, <200ms, structurally never blank, no PTY/model/network) satisfying the North-Star sentence at one click; Layer 2 is an explicit "▶ Resume live" in-place PTY escalation gated on a WS attach-ack + replay-complete signal (5s timeout → styled error state, never a blank pane). The strict "first click = live PTY" reading was formally considered and rejected with recorded rationale.
+- **Eviction is KEPT (binary ruling)** with a complete evicted-tile sub-contract: eviction reclaims only the worktree; the registry record, chain lineage, cached summary, and finalized cost all survive, and Layer-2 escalation is a new seeded session joining the same chain — the UI never claims a reattach it can't perform.
+- **The narration floor is LOCKED as lazy enrichment:** a deterministic template over registry facts + doc roles is the always-total floor; first tile-open triggers the existing background summary generation with an honest "summary generating…" badge over content; eager batch backfill was CUT (arithmetic recorded in Phase 0); cost is bounded at one summarize run per session lifetime.
+- **Gemini-segment capture was RULED Option C** (badge now + a committed, dated fast-follow spike recorded in the execution log at deploy), resolving the plan's formal LOCKED-DECISION STUB per John's approval of the recommendation.
+- **Historical attribution is defer-and-badge (LOCKED):** pre-feature sessions are never retroactively attributed from ~/.claude sidecars — they render "unmeasured (pre-feature)" and only counts (plus prospective capture rate) are reported.
+
+## Files
+
+- [MASTER PLAN — Honest Telemetry + Warm Resume (APPROVED 2026-07-11)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ftelemetry-resume-2026-07%2FMASTER-PLAN.md)

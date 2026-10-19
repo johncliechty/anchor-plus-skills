@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-c5ca86f0963936e5",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788883447.5890827,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Deliverables",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/test-tmp-integration-05/test_malformed_register_is_unc5/DELIVERABLES.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

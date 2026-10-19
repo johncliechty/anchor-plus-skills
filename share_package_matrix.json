@@ -1,0 +1,45 @@
+{
+  "schema": "share-package-matrix/v1",
+  "schema_version": 1,
+  "packages": [
+    {
+      "id": "A",
+      "name": "skills",
+      "artifact_names": [
+        "skills",
+        "skills-only",
+        "anchor-skills-a",
+        "share-skills"
+      ],
+      "includes_anchor": false,
+      "includes_skills": true,
+      "requires_skills_pin": false,
+      "requires_skills_subtree": true,
+      "version": "0.0.0-placeholder"
+    },
+    {
+      "id": "B",
+      "name": "anchor-skills",
+      "artifact_names": [
+        "anchor-skills",
+        "anchor+skills",
+        "anchor-plus-skills",
+        "share-anchor-skills",
+        "anchor-skills-b"
+      ],
+      "includes_anchor": true,
+      "includes_skills": true,
+      "requires_skills_pin": true,
+      "requires_skills_subtree": true,
+      "version": "0.0.0-placeholder"
+    }
+  ],
+  "forbidden_artifact_patterns": [
+    "anchor-only",
+    "anchor_only",
+    "anchoronly",
+    "anchor",
+    "share-anchor",
+    "share-anchor-only"
+  ]
+}

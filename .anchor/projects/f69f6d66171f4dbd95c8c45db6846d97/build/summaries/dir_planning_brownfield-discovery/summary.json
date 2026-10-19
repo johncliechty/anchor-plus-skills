@@ -1,0 +1,37 @@
+{
+  "session_id": "dir::planning/brownfield-discovery",
+  "lane": "build",
+  "title": "brownfield-discovery",
+  "claims": [
+    "**Wave structure** â€” Scoped to **7 waves**, with Wave 3 split into **3a** (render-honesty) and **3b** (file-route / status-line / home-panel).",
+    "**Stdlib-only constraint** â€” Product code must stay Python-stdlib-only; `pytest` is a dev-only dependency.",
+    "**Regression guard** â€” The pre-existing **236-test suite** must stay green, specifically `test_cost_rollup.py`'s 3/2/1 `effort_count` asserts and `test_rnd_project_window_kanban.py`'s `>v2<`/`>v1<` asserts.",
+    "**Discovered-effort honesty** â€” Discovered efforts carry `source='discovered'`, are excluded from `effort_count`/cost, never fabricate cost/tokens/`session_id`, and are pruned on rescan when their artifact is gone.",
+    "**Traversal-safe artifact route** â€” The new `GET /artifact/<pid>?path=` route must use the `report_viewer.katex_asset` `resolve()` + `relative_to()` containment pattern, with required negative tests (`../`, absolute, `.git`/`.anchor`, symlink-escape).",
+    "**Write discipline** â€” All file writes (`Anchor.md`, sidecar, adopt records) go under `paths.WRITE_LOCK`.",
+    "**Service isolation** â€” The build must never touch the live Anchor service / port 8777; tests use throwaway servers plus `ANCHOR_RUNNER_CMD` â†’ `tests/fake_claude.py`."
+  ],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fbrownfield-discovery%2Fforeman.config.json"
+    }
+  ],
+  "when_run": "2026-06-10",
+  "what_was_asked": "brownfield-discovery",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/brownfield-discovery/foreman.config.json",
+      "job_id": "disc-25253f6ca19a8d43"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1781525970.1822872,
+  "runs": 2,
+  "markdown": "# brownfield-discovery\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-10\n\n**What was asked:** brownfield-discovery\n\n## Actions & files produced\n\n- foreman.config\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- **Wave structure** â€” Scoped to **7 waves**, with Wave 3 split into **3a** (render-honesty) and **3b** (file-route / status-line / home-panel).\n- **Stdlib-only constraint** â€” Product code must stay Python-stdlib-only; `pytest` is a dev-only dependency.\n- **Regression guard** â€” The pre-existing **236-test suite** must stay green, specifically `test_cost_rollup.py`'s 3/2/1 `effort_count` asserts and `test_rnd_project_window_kanban.py`'s `>v2<`/`>v1<` asserts.\n- **Discovered-effort honesty** â€” Discovered efforts carry `source='discovered'`, are excluded from `effort_count`/cost, never fabricate cost/tokens/`session_id`, and are pruned on rescan when their artifact is gone.\n- **Traversal-safe artifact route** â€” The new `GET /artifact/<pid>?path=` route must use the `report_viewer.katex_asset` `resolve()` + `relative_to()` containment pattern, with required negative tests (`../`, absolute, `.git`/`.anchor`, symlink-escape).\n- **Write discipline** â€” All file writes (`Anchor.md`, sidecar, adopt records) go under `paths.WRITE_LOCK`.\n- **Service isolation** â€” The build must never touch the live Anchor service / port 8777; tests use throwaway servers plus `ANCHOR_RUNNER_CMD` â†’ `tests/fake_claude.py`.\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fbrownfield-discovery%2Fforeman.config.json)\n",
+  "schema_version": 2
+}

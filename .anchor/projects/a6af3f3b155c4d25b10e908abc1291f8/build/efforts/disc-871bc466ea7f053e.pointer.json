@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-871bc466ea7f053e",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "build",
+  "created_at": 1785795277.9743066,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "EXECUTION LOG — Ecgberht steward campaign orchestration",
+  "artifact_path": "planning/steward-lifecycle-2026-07-31/handoff/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

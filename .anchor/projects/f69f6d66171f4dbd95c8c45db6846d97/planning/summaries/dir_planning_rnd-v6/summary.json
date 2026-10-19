@@ -1,0 +1,68 @@
+{
+  "session_id": "dir::planning/rnd-v6",
+  "lane": "planning",
+  "title": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)",
+  "claims": [
+    "## Anchor R&D Surface v6 â€” \"Linked Pipeline\" â€” Planning Session Summary",
+    "**Goal / North Star (locked)**",
+    "The session's locked objective is to make the researchPrime â†’ Crucible â†’ Foreman trio a **single linked pipeline of first-class session windows**, backed by summaries that are actually true and a main dashboard that reflects live project work.",
+    "Every research, planning, or build session is to open as a **first-class window** the user can minimize, freely resize, and maximize â€” on top of the v5 close-to-tile and hard-kill behaviors.",
+    "Session windows **stack in a column** (not floating), and **every new session mints a new tile** â€” a session start never silently reuses an existing tile.",
+    "**Key decisions (Stage 0/1 user gates, from John's answers on the mockup)**",
+    "**Window controls = minimize Â· resize Â· maximize Â· close Â· kill, STACKED.** Each session window gains **maximize** (fill the cockpit viewport, toggle to restore) and **free resize** (drag any edge/corner) on top of the existing minimize, close-to-tile (keeps the session running), and hard-kill.",
+    "Layout stays the **v5 stacked panel column** â€” explicitly NOT floating/draggable windows (John: \"Stacked is fine for tiles.\").",
+    "**New session â‡’ new tile, always** â€” every session-start path (`term_start`, continue, advance, promote-grass, grass-develop) mints a distinct tile.",
+    "**Artifacts produced (frozen design set)**",
+    "**Master Plan** (frozen design) â€” this document.",
+    "**Implementation Plan** (Foreman-ready) â€” the buildable wave breakdown.",
+    "**Execution Log** â€” per-wave EXECUTE/REVIEW/FIX/JUDGE history.",
+    "This is a discovered/imported planning trio session; the summary is grounded in the three member documents (Master Plan, Implementation Plan, Execution Log) and the cited Stage 0/1 gate anchors.",
+    "**North Star (locked):** Make the researchPrime â†’ Crucible â†’ Foreman trio a **single linked pipeline of first-class session windows**, backed by summaries that are actually true and a main dashboard that reflects live project work.",
+    "**Every session is a first-class window:** A research, planning, or build session opens as a window the user can **minimize, freely resize, and maximize** â€” on top of the existing v5 close-to-tile and hard-kill controls.",
+    "**Windows stack in a column** (not floating/draggable) â€” John's gate: \"Stacked is fine for tiles.\"",
+    "**Every new session mints a new tile:** Every session-start path (`term_start`, continue, advance, promote-grass, grass-develop) always adds a **distinct new tile** to the tiles row â€” it never silently reuses an existing one.",
+    "**Window controls = minimize Â· resize Â· maximize Â· close Â· kill, stacked** (locked Stage 0/1 user gate): maximize fills the cockpit viewport and toggles to restore; free resize drags any edge/corner; layout remains the v5 stacked panel column.",
+    "**Member documents** for this planning trio session: the v6 **Master Plan** (frozen design), the **Implementation Plan** (Foreman-ready), and the **Execution Log**."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FEXECUTION-LOG.md"
+    },
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FMASTER-PLAN.md"
+    },
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Implementation Plan (Foreman-ready)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FIMPLEMENTATION-PLAN.md"
+    }
+  ],
+  "when_run": "2026-06-15",
+  "what_was_asked": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)",
+  "north_star": "Make the researchPrime → Crucible → Foreman trio a **single linked pipeline of first-class session windows, backed by summaries that are actually true and a main dashboard that reflects live project work.** Concretely: 1. **Every session is a first-class window.** A research, planning, or build session opens as a window the user can **minimize, freely resize, and maximize** (plus the v5 close-to-tile and hard-kill). Windows **stack in a column** (not floating). 2. **Every new session mints a new tile.** Starting a session ALWAYS adds a new tile to the tiles row — it never silently reuses or re",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log",
+      "rel": "planning/rnd-v6/EXECUTION-LOG.md",
+      "job_id": "disc-1443fdea770d11d6"
+    },
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)",
+      "rel": "planning/rnd-v6/MASTER-PLAN.md",
+      "job_id": "disc-7239fc3ce823b330"
+    },
+    {
+      "label": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Implementation Plan (Foreman-ready)",
+      "rel": "planning/rnd-v6/IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-2fcc0176a984637c"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154141.4634295,
+  "runs": 2,
+  "markdown": "# Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-15\n\n**What was asked:** Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)\n\n**North Star:** Make the researchPrime → Crucible → Foreman trio a **single linked pipeline of first-class session windows, backed by summaries that are actually true and a main dashboard that reflects live project work.** Concretely: 1. **Every session is a first-class window.** A research, planning, or build session opens as a window the user can **minimize, freely resize, and maximize** (plus the v5 close-to-tile and hard-kill). Windows **stack in a column** (not floating). 2. **Every new session mints a new tile.** Starting a session ALWAYS adds a new tile to the tiles row — it never silently reuses or re\n\n## Actions & files produced\n\n- Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log\n- Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)\n- Anchor R&D Surface v6 — \"Linked Pipeline\" — Implementation Plan (Foreman-ready)\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- ## Anchor R&D Surface v6 â€” \"Linked Pipeline\" â€” Planning Session Summary\n- **Goal / North Star (locked)**\n- The session's locked objective is to make the researchPrime â†’ Crucible â†’ Foreman trio a **single linked pipeline of first-class session windows**, backed by summaries that are actually true and a main dashboard that reflects live project work.\n- Every research, planning, or build session is to open as a **first-class window** the user can minimize, freely resize, and maximize â€” on top of the v5 close-to-tile and hard-kill behaviors.\n- Session windows **stack in a column** (not floating), and **every new session mints a new tile** â€” a session start never silently reuses an existing tile.\n- **Key decisions (Stage 0/1 user gates, from John's answers on the mockup)**\n- **Window controls = minimize Â· resize Â· maximize Â· close Â· kill, STACKED.** Each session window gains **maximize** (fill the cockpit viewport, toggle to restore) and **free resize** (drag any edge/corner) on top of the existing minimize, close-to-tile (keeps the session running), and hard-kill.\n- Layout stays the **v5 stacked panel column** â€” explicitly NOT floating/draggable windows (John: \"Stacked is fine for tiles.\").\n- **New session â‡’ new tile, always** â€” every session-start path (`term_start`, continue, advance, promote-grass, grass-develop) mints a distinct tile.\n- **Artifacts produced (frozen design set)**\n- **Master Plan** (frozen design) â€” this document.\n- **Implementation Plan** (Foreman-ready) â€” the buildable wave breakdown.\n- **Execution Log** â€” per-wave EXECUTE/REVIEW/FIX/JUDGE history.\n- This is a discovered/imported planning trio session; the summary is grounded in the three member documents (Master Plan, Implementation Plan, Execution Log) and the cited Stage 0/1 gate anchors.\n- **North Star (locked):** Make the researchPrime â†’ Crucible â†’ Foreman trio a **single linked pipeline of first-class session windows**, backed by summaries that are actually true and a main dashboard that reflects live project work.\n- **Every session is a first-class window:** A research, planning, or build session opens as a window the user can **minimize, freely resize, and maximize** â€” on top of the existing v5 close-to-tile and hard-kill controls.\n- **Windows stack in a column** (not floating/draggable) â€” John's gate: \"Stacked is fine for tiles.\"\n- **Every new session mints a new tile:** Every session-start path (`term_start`, continue, advance, promote-grass, grass-develop) always adds a **distinct new tile** to the tiles row â€” it never silently reuses an existing one.\n- **Window controls = minimize Â· resize Â· maximize Â· close Â· kill, stacked** (locked Stage 0/1 user gate): maximize fills the cockpit viewport and toggles to restore; free resize drags any edge/corner; layout remains the v5 stacked panel column.\n- **Member documents** for this planning trio session: the v6 **Master Plan** (frozen design), the **Implementation Plan** (Foreman-ready), and the **Execution Log**.\n\n## Files\n\n- [Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FEXECUTION-LOG.md)\n- [Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FMASTER-PLAN.md)\n- [Anchor R&D Surface v6 — \"Linked Pipeline\" — Implementation Plan (Foreman-ready)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v6%2FIMPLEMENTATION-PLAN.md)\n",
+  "schema_version": 3
+}

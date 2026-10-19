@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-502f04f0235fc622",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788890306.2557547,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Deliverables",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/pytest-persistence-5/test_pending_runtime_receipt_b0/worktree/DELIVERABLES.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

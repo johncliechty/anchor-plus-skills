@@ -1,0 +1,52 @@
+{
+  "session_id": "build::dir::planning/crucible-improve-2026-06-30",
+  "lane": "build",
+  "title": "crucible-improve-2026-06-30",
+  "claims": [
+    "**No build work has run yet.** The execution log is a starter file marked *\"Status: NOT STARTED — awaiting Foreman invocation after user approval,\"* with no per-wave EXECUTE → REVIEW → FIX → GATE records appended.",
+    "1. Honest warnings: context budget + zombie page",
+    "2. Swarm-warning correctness (safety-critical)",
+    "3. Resume backend keystone",
+    "4. Resume UI + efforts list",
+    "5. UI quick-fixes: deliverables collapse + terminal width",
+    "6. Terminal controls unification",
+    "7. Model-switch handoff",
+    "8. Model-flexible execution at the skill layer",
+    "9. Gandalf map-reduce",
+    "**Theme of the effort:** making Anchor more durable / resumable / model-flexible, plus honest warnings and safety-critical swarm correctness — the wave titles span context-budget honesty, resume backend+UI, terminal/model-switch unification, and a Gandalf map-reduce.",
+    "**Status: NOT STARTED — no build work has run.** The `EXECUTION-LOG.md` is an explicit starter file: \"Status: NOT STARTED — awaiting Foreman invocation after user approval,\" with zero waves built.",
+    "**9 build waves are planned, all in `pending` state:** (1) Honest warnings — context budget + zombie page; (2) Swarm-warning correctness (flagged safety-critical); (3) Resume backend keystone; (4) Resume UI + efforts list; (5) UI quick-fixes — deliverables collapse + terminal width; (6) Terminal controls unification; (7) Model-switch handoff; (8) Model-flexible execution at the skill layer; (9) Gandalf map-reduce."
+  ],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcrucible-improve-2026-06-30%2Fforeman.config.json"
+    },
+    {
+      "label": "Execution Log — Anchor Improvement Effort (Foreman)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcrucible-improve-2026-06-30%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-30",
+  "what_was_asked": "crucible-improve-2026-06-30",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "planning/crucible-improve-2026-06-30/foreman.config.json",
+      "job_id": "disc-aaa021e6603dac5e"
+    },
+    {
+      "label": "Execution Log — Anchor Improvement Effort (Foreman)",
+      "rel": "planning/crucible-improve-2026-06-30/EXECUTION-LOG.md",
+      "job_id": "disc-e3387666d7e255cd"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782834688.693288,
+  "runs": 2,
+  "markdown": "# crucible-improve-2026-06-30\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-30\n\n**What was asked:** crucible-improve-2026-06-30\n\n## Actions & files produced\n\n- foreman.config\n- Execution Log — Anchor Improvement Effort (Foreman)\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- **No build work has run yet.** The execution log is a starter file marked *\"Status: NOT STARTED — awaiting Foreman invocation after user approval,\"* with no per-wave EXECUTE → REVIEW → FIX → GATE records appended.\n- 1. Honest warnings: context budget + zombie page\n- 2. Swarm-warning correctness (safety-critical)\n- 3. Resume backend keystone\n- 4. Resume UI + efforts list\n- 5. UI quick-fixes: deliverables collapse + terminal width\n- 6. Terminal controls unification\n- 7. Model-switch handoff\n- 8. Model-flexible execution at the skill layer\n- 9. Gandalf map-reduce\n- **Theme of the effort:** making Anchor more durable / resumable / model-flexible, plus honest warnings and safety-critical swarm correctness — the wave titles span context-budget honesty, resume backend+UI, terminal/model-switch unification, and a Gandalf map-reduce.\n- **Status: NOT STARTED — no build work has run.** The `EXECUTION-LOG.md` is an explicit starter file: \"Status: NOT STARTED — awaiting Foreman invocation after user approval,\" with zero waves built.\n- **9 build waves are planned, all in `pending` state:** (1) Honest warnings — context budget + zombie page; (2) Swarm-warning correctness (flagged safety-critical); (3) Resume backend keystone; (4) Resume UI + efforts list; (5) UI quick-fixes — deliverables collapse + terminal width; (6) Terminal controls unification; (7) Model-switch handoff; (8) Model-flexible execution at the skill layer; (9) Gandalf map-reduce.\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcrucible-improve-2026-06-30%2Fforeman.config.json)\n- [Execution Log — Anchor Improvement Effort (Foreman)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fcrucible-improve-2026-06-30%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e61178d527310cc4",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1781354881.0323448,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v4 — \"Project Cockpit\" — Execution Log",
+  "artifact_path": "planning/rnd-v4/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

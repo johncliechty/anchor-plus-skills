@@ -1,0 +1,5 @@
+researchPrime — Anchor brownfield orientation — COMPLETE 2026-06-11
+mode: degraded-prose (Node adversarial engine approval-gated; 5 context-isolated sub-agents used instead)
+artifacts: 00-PLAN.md, evidence-ledger.jsonl (E1-E25), 01-report.md, 02-executive.md, 03-agent-impl.md, 03-agent-impl.json
+headline: rnd-v2 build DONE + merged to master (stale checkpoint/log are traps); effort_history now wired; top unknown = is the live service running the merged code (UNVERIFIED).
+working tree: NOT mutated.

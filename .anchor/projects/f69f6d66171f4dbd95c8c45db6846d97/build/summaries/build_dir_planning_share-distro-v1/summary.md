@@ -1,0 +1,58 @@
+# share-distro-v1
+
+*Lane: build · validated, cached summary*
+
+**When run:** 2026-06-26
+
+**What was asked:** share-distro-v1
+
+## Actions & files produced
+
+- foreman.config
+- Shareable Anchor Distro + /onboard — Execution Log
+
+**Effort:** imported — no run metrics
+
+## What was built & errors overcome
+
+- # share-distro-v1 — Build Session Summary
+- **Project & gate.** Foreman build of "Shareable Anchor Distro + /onboard" (config project `anchor-share-distro`), planned by Crucible Stage 2 (2026-06-23). Gate command `python -m pytest -q`; baseline GREEN 1483 passed / 1 skipped.
+- **W1–2 cross-platform core.** Added `PosixPtyBackend` (stdlib `pty`, behind the backend seam) and a POSIX single-instance guard (`SO_REUSEADDR=0` + `classify_bind_error` → clean exit). Both proven on the Windows gate via injected fakes + platform monkeypatch (no `pytest.skip`). Gate: 1502 passed / 1 skipped.
+- **W1–2 orchestrator fix.** A 56-min "hang" was a test-side bug: a fake `select()` ignored its timeout, leaking an un-reaped daemon reader that busy-spun at 100% CPU. Fixed test-side (honor timeout + reap reader); product code unchanged. Run dropped 56min → 1.16s.
+- **W3 clean vendoring.** `vendor_skills.py`: `git archive <HEAD>` + stdlib `tarfile` extract → `vendor/bundled-skills/<name>/`, plus a DENYLIST removing tracked personal logs (EXECUTION-LOG/DECISION-LOG/journal/.env, etc.) that `git archive` keeps, residual host-path/email scrub, and `SOURCES.md` recording the archived commit. Unset source = honest skip. Gate: 1504 passed + 1 known flake (passes in isolation; caused by two concurrent pytest suites).
+- **W4 host-path leak fix.** `distro.py` gained a build-host-path detector (`_WIN_DEVPATH_RE`, `_POSIX_HOMEPATH_RE`, leaf-allowlist) closing a **157-host-path leak** the Users-only `_USERPATH_RE` missed. `build_distro` now generates vendored skills into the export and scans them under the same clean gate (+13 tests).
+- **W5 starter templates.** `starter/` headers-only skeletons (DASHBOARD/INBOX/PROJECTS/etc. + domains) that parse to zero entries via the real parsers and scan clean (+11 tests).
+- **W6 onboard core.** `onboard.py` (stdlib): `detect_prereqs`, `install_skills` (copy default, refuse-don't-clobber, rollback, resumable), `scaffold_anchor` (only-if-absent), `generate_token` (`secrets.token_urlsafe`, out-of-tree `~/.anchor/onboard-token`, chmod 600, never printed). **John PAUSED the build here** after Wave 6 (+8 tests).
+- **W7 service seam.** `pick_free_port()` + `register_service(token)` reading `ANCHOR_SERVICE_CMD`/`ANCHOR_FOREGROUND_CMD`, with mid-registration rollback and foreground fallback. Tested via mock scripts (no real binds/service mutations).
+- **W8 per-OS registrars.** `anchor/registrar.py` with `build_registrar_unit()` branching on `platform.system()` → `generate_nssm_unit` / `generate_systemd_unit` / `generate_launchd_unit`, tested across Windows/Linux/Darwin including restrictive file-mode (`st_mode & 0o077 == 0`).
+- **W9 publish pipeline.** `publish_distro(dest, remote_cmd=ANCHOR_GH_CMD)` in `distro.py` runs `build_distro` as a clean-scan GATE first, aborting before any git command if PII is detected; otherwise `git init/add/commit` + `gh repo create --private` + push (via seam or direct; documents manual path if `gh` absent).
+- **W10 /onboard skill.** `.claude/skills/onboard/SKILL.md` (runs `python onboard.py`), allow-listed in `dist_manifest.txt` and asserted to export correctly.
+- **W11 finalize.** `register_service` delegates to `anchor.registrar` when `ANCHOR_SERVICE_CMD` is unset, writing the unit to `~/.anchor/service-unit` or falling back to foreground.
+- **W12 healthcheck + DONE.** `check_onboard_surface()` added to `anchor_healthcheck.py` — a hermetic, env-namespaced (try/finally restore) regression walk over `build_distro` → `generate_token` → `register_service`. Verified side-effect-free; project complete.
+- **Reserved / deferred (not done in-session).** Real GitHub push and real per-OS service registration were stubbed in tests and deferred to John's deploy. Stdlib-only invariant held (POSIX pty uses stdlib `pty`); no new deps.
+- **Recurring lesson.** Never run two heavy pytest suites concurrently (CPU contention flakes timing-sensitive tests); any test spawning a reader thread must reap it and honor fake-`select` timeouts.
+- Note: the session config sets `"git": false`, and faked-platform tests prove logic only — real-POSIX behavior remains a deploy-time smoke test, not verified here.
+- ## share-distro-v1 — Build Session Summary
+- Foreman build of "Shareable Anchor Distro + /onboard": make Anchor cleanly shareable (cross-platform, PII-free export) plus a repo-local `/onboard` installer skill. Crucible-planned (Stage 2, 2026-06-23); 8-wave plan that expanded to 12 waves; terminal milestone = PROJECT DONE.
+- Config: project `anchor-share-distro`, gate `python -m pytest -q`, `git: false`, baseline GREEN 1483 passed / 1 skipped.
+- **What was built (all waves GREEN, 2026-06-23)**
+- **W1/W2 — cross-platform core:** `PosixPtyBackend` (stdlib `pty`, behind the backend seam) + POSIX single-instance guard (`SO_REUSEADDR=0` + `classify_bind_error` → clean exit). Proven on the Windows gate via injected fakes + platform monkeypatch — no `pytest.skip`.
+- **W3 — `vendor_skills.py`:** `git archive HEAD` + stdlib `tarfile` extract into `vendor/bundled-skills/<name>/`; DENYLIST strips tracked personal logs git-archive keeps; residual host-path + email scrub; `SOURCES.md` records the archived commit; unset source = honest skip.
+- **W4 — distro host-path detector:** added build-host-path regexes (`_WIN_DEVPATH_RE`, `_POSIX_HOMEPATH_RE`) closing a 157-host-path leak the Users-only `_USERPATH_RE` missed; `build_distro` now vendors skills into the export and scans them under the same clean gate.
+- **W5 — starter templates:** headers-only `starter/` skeletons that parse to zero entries and scan PII-clean.
+- **W6 — `onboard.py` core (stdlib):** `detect_prereqs` · `install_skills` (copy default, symlink opt-in, refuse-don't-clobber, rollback, resumable) · `scaffold_anchor` · `generate_token` (`secrets.token_urlsafe`, out-of-tree `~/.anchor/onboard-token`, chmod 600, idempotent, never printed). **John paused after W6.**
+- **W7 — service seam:** `pick_free_port()` + `register_service(token)` reading `ANCHOR_SERVICE_CMD`/`ANCHOR_FOREGROUND_CMD`, with mid-registration rollback and foreground fallback.
+- **W8 — per-OS registrars:** `anchor/registrar.py` `build_registrar_unit()` branching on `platform.system()` → NSSM / systemd / launchd unit generators (token env + 0o077-restricted file checks).
+- **W9 — `publish_distro`:** build→gate→push pipeline; `build_distro` runs first as the clean-scan gate, aborting before any git command on PII; then `git init/add/commit` + `gh repo create --private` + push via the `ANCHOR_GH_CMD` seam; documents the manual path when `gh` is absent.
+- **W10 — `/onboard` skill:** `.claude/skills/onboard/SKILL.md` running `python onboard.py`, allow-listed in `dist_manifest.txt`.
+- **W11 — cross-platform finalize:** `register_service` delegates to `anchor.registrar` when `ANCHOR_SERVICE_CMD` is unset, writing the unit to `~/.anchor/service-unit` or falling back to foreground.
+- **W12 — healthcheck + CLI mirror + docs (PROJECT DONE):** `check_onboard_surface()` in `anchor_healthcheck.py` — hermetic regression walk across `build_distro` export → `generate_token` → `register_service`, env-namespaced in try/finally for state restore.
+- **W1/W2 orchestrator hang:** a fake `select()` ignored its timeout → leaked un-reaped daemon reader busy-spun at 100% CPU, starving the run (the "56-min hang"). Fixed test-side; product code unchanged; run dropped 56min→1.16s. Lesson: a test spawning a reader thread must reap it; a fake `select` must honor its timeout.
+- **W3 flake:** suite hit 1504 passed + 1 flake (`test_project_window` summary panel) caused by two pytest suites running concurrently (CPU contention) — passes in isolation. Lesson: never run two heavy pytest suites at once.
+- Real GitHub push and real per-OS service registration are **stubbed in tests** (mock scripts, no actual binds/service mutations/network) and deferred to John's deploy.
+- Stdlib-only invariant held (POSIX pty uses stdlib `pty`); no new deps.
+
+## Files
+
+- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fshare-distro-v1%2Fforeman.config.json)
+- [Shareable Anchor Distro + /onboard — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fshare-distro-v1%2FEXECUTION-LOG.md)

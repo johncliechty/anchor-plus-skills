@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-b8e6ff0d1f25b580",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6150472,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Shareable Anchor Distro + `/onboard` — MASTER PLAN (FROZEN, Shark-converged)",
+  "artifact_path": "planning/share-distro-v1/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

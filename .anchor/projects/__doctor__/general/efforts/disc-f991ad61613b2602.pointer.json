@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-f991ad61613b2602",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788835260.8765392,
+  "source": "discovered",
+  "kind": "exec-log",
+  "title": "Execution Log",
+  "artifact_path": "planning/code-windows-2026-09-07/handoff/_human-lockable-draft/EXECUTION-LOG.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

@@ -1,0 +1,30 @@
+{
+  "session_id": "fallback::fallback::::0",
+  "lane": "build",
+  "title": "foreman-checkpoint",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "foreman-checkpoint",
+      "href": "/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=foreman-checkpoint.json"
+    }
+  ],
+  "when_run": "2026-06-11",
+  "what_was_asked": "foreman-checkpoint",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman-checkpoint",
+      "rel": "foreman-checkpoint.json",
+      "job_id": "disc-d1e4247db24ad8f0"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1781542943.7452564,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# foreman-checkpoint\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-11\n\n**What was asked:** foreman-checkpoint\n\n## Actions & files produced\n\n- foreman-checkpoint\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [foreman-checkpoint](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=foreman-checkpoint.json)\n",
+  "schema_version": 2
+}

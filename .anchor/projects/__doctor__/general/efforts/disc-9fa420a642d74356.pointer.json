@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-9fa420a642d74356",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788835260.8755448,
+  "source": "discovered",
+  "kind": "impl-plan",
+  "title": "Implementation Plan",
+  "artifact_path": "planning/code-windows-2026-09-07/handoff/_human-lockable-draft/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

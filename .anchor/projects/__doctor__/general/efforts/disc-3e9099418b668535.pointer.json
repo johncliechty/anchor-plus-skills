@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-3e9099418b668535",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848333.7339878,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Meeting Notes",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/vendor/bundled-skills/literature-review/test/fixtures/adversarial-intake/mixed-dump/meeting-notes.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

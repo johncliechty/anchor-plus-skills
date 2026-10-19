@@ -2489,12 +2489,20 @@ class Engine:
             pass
 
     def _plan_drift_suffix(self):
-        """The PLAN DRIFT line for this campaign dir, or ''. Never raises."""
+        """The PLAN DRIFT line (plus active Anvil workbench context if present) for this campaign dir, or ''. Never raises."""
+        out = ""
         try:
             from steward_cockpit import steward_campaign as campaign
-            return campaign.plan_drift_suffix(self.dir)
+            out = campaign.plan_drift_suffix(self.dir) or ""
         except Exception:
-            return ""
+            out = ""
+        try:
+            if self.dir and (Path(self.dir) / ".anvil" / "session.json").is_file():
+                from steward_cockpit import anvil_session as _as_ctx
+                out += _as_ctx.apply_conversational_anvil_side_effects(self.dir, "")
+        except Exception:
+            pass
+        return out
 
     def _current_roadmap_events_len(self):
         """Length of roadmap_events in roadmap.json (plus mtime fallback) to detect plan mutations."""

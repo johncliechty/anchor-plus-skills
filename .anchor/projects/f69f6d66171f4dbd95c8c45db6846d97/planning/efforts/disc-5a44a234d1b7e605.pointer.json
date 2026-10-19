@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-5a44a234d1b7e605",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.5316367,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor Gandalf Integration v1 — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/gandalf-v1/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

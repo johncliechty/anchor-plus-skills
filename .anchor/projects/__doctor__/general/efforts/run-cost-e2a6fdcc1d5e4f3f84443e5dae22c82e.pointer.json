@@ -1,0 +1,25 @@
+{
+  "job_id": "run-cost-e2a6fdcc1d5e4f3f84443e5dae22c82e",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1785927645.3612647,
+  "source": "run",
+  "kind": "run-cost",
+  "provenance": "run",
+  "session_id": "e2a6fdcc1d5e4f3f84443e5dae22c82e",
+  "engine_session_uuid": "5b1a7974-c508-4f5e-b128-a46e2fd3795b",
+  "usage_state": "unmeasured",
+  "cost": {
+    "input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 0,
+    "total_all_classes": 0,
+    "total_tokens": 0,
+    "input_plus_output": 0,
+    "duration_ms": 85614713,
+    "total_cost_usd": 0.0,
+    "usage_state": "unmeasured",
+    "usage_reason": "grok-no-claude-sidecar"
+  }
+}

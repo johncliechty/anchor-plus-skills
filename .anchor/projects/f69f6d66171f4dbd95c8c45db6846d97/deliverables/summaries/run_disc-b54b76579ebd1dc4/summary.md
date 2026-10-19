@@ -1,0 +1,34 @@
+# Execution log — Anchor durability waves (2026-07)
+
+*Lane: deliverables · validated, cached summary*
+
+**When run:** 2026-07-02
+
+**What was asked:** Execution log — Anchor durability waves (2026-07)
+
+## Actions & files produced
+
+- Execution log — Anchor durability waves (2026-07)
+
+**Effort:** 0 tokens · 0.0s wall-clock · 1 run(s)
+
+## Summary
+
+- ## Execution log — Anchor durability waves (2026-07)
+- The log is maintained by Foreman and tracks the Anchor durability wave build.
+- **Wave 6 is NOT built**, per a human-backed supervisor correction dated 2026-07-03 — despite two commits in history (`4c057b4`, `8a668c0`) whose messages claimed "wave 6 GREEN."
+- Both of those "GREEN" commits were **empty diffs** (nothing beyond an inventory refresh) and were **reverted**.
+- The cause of the stall: Wave 6 was **census-blocked** on a human decision — the C1 include-layer amendment (tracked in `C1-AMENDMENT-REQUIRED.md`).
+- That amendment is **now approved** and has been written into `IMPLEMENTATION-PLAN.md` §Wave 6.
+- The next Wave 6 EXECUTE must build the **full W6 deliverables**: include-slot shell, helper extraction, byte-parity, a shrink of **≥7,000**, and Playwright parity.
+- Explicit caution: prior "GREEN" commit messages and the **gate 133/133** result are **not evidence of W6 completion** — those 133 tests predate Wave 6 and contain no W6 coverage.
+- **Log ownership/scope:** A Foreman-maintained execution log tracking the Anchor durability build waves for 2026-07.
+- **Central correction (2026-07-03, human-backed):** Wave 6 is **NOT actually built**, despite two "wave 6 GREEN" commits in history (`4c057b4`, `8a668c0`).
+- **Why those commits are void:** Both were empty diffs beyond an inventory refresh, and both were reverted.
+- **Root cause of the stall:** W6 was census-blocked on a human C1 include-layer amendment (tracked in `C1-AMENDMENT-REQUIRED.md`).
+- **Unblocked state:** That amendment is now approved and written into `IMPLEMENTATION-PLAN.md` §Wave 6.
+- **Directive for the next attempt:** The next Wave-6 EXECUTE must build the full W6 deliverables — include-slot shell, helper extraction, byte-parity, shrink of ≥7,000, and Playwright parity.
+
+## Files
+
+- [Execution log — Anchor durability waves (2026-07)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=FOREMAN-EXECUTION-LOG-2026-07.md)

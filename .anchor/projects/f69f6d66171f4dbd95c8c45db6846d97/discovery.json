@@ -1,0 +1,1298 @@
+{
+  "by_lane": {
+    "research": [],
+    "planning": [
+      {
+        "rel": "DECISION-LOG.md",
+        "kind": "plan-doc",
+        "title": "Decision Log: Scaled Gandalf Architecture",
+        "mtime": 1786498093.5188804,
+        "lane": "planning"
+      },
+      {
+        "rel": "FOUNDRY-V2-IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)",
+        "mtime": 1784924340.9304965,
+        "lane": "planning"
+      },
+      {
+        "rel": "IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor Re-architecture — the Butler substrate — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924340.9320655,
+        "lane": "planning"
+      },
+      {
+        "rel": "foundry-gui/planning/crucible/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Skill Foundry - Implementation Plan (Crucible Stage 2)",
+        "mtime": 1784924341.2869222,
+        "lane": "planning"
+      },
+      {
+        "rel": "foundry-gui/planning/crucible/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Skill Foundry - Master Plan (Crucible Stage 1)",
+        "mtime": 1784924341.287444,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/anchor-doctor-ui/handoff/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Implementation Plan: Anchor Doctor UI V3 — Honest Agentic Diagnostics",
+        "mtime": 1784924341.42398,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/anchor-shareable-2026-07/handoff/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.4279797,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/anchor-v1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor v1 — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.4492495,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/brownfield-discovery/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor Brownfield Discovery + `Anchor.md` Marker — Implementation Plan",
+        "mtime": 1784924341.4512541,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/brownfield-discovery/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor Brownfield Discovery — Master Plan (Crucible Stage 1, approved)",
+        "mtime": 1784924341.4523017,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/calendar-v1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor Calendar v1 — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.4677713,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/calendar-v1/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor Calendar v1 — MASTER PLAN",
+        "mtime": 1784924341.4677713,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/chamber-m1-replace-2026-08-13/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Make M1 survive, wire talk, delete v0 — Implementation Plan (Foreman-ready)",
+        "mtime": 1786736888.9809144,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible-improve-2026-06-30/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Implementation Plan — Anchor Improvement Effort (Crucible Stage 2)",
+        "mtime": 1784924341.471539,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible-improve-2026-06-30/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan — Anchor Improvement Effort (Crucible Stage 1)",
+        "mtime": 1784924341.471539,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible-improve-followup-2026-07-01/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Implementation Plan — Crucible-Improve Follow-up (2026-07-01)",
+        "mtime": 1784924341.4760683,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible-improve-followup-2026-07-01/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan — Crucible-Improve Follow-up (live-use fixes, 2026-07-01)",
+        "mtime": 1784924341.4770732,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible-rearchitecture-2026-07/IMPLEMENTATION-PLAN-DRAFT.md",
+        "kind": "plan-doc",
+        "title": "Anchor Re-architecture — the Butler substrate — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.4780734,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible-rearchitecture-2026-07/MASTER-PLAN-DRAFT.md",
+        "kind": "plan-doc",
+        "title": "Master Plan (draft)",
+        "mtime": 1784924341.480584,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "STAGE 2: IMPLEMENTATION PLAN",
+        "mtime": 1784924341.525257,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/crucible/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "NORTH STAR (LOCKED)",
+        "mtime": 1784924341.5257747,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/gandalf-v1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor Gandalf Integration v1 — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.5316367,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/gandalf-v1/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface — Gandalf Integration v1 — MASTER PLAN (FROZEN)",
+        "mtime": 1784924341.5321553,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v1/DECISION-LOG.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Control Surface — Decision Log",
+        "mtime": 1784924341.5619042,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Control Surface — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.564969,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v1/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Control Surface — Master Plan (frozen design)",
+        "mtime": 1784924341.56549,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v10/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.5675566,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v10/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Master Plan (frozen design)",
+        "mtime": 1784924341.5680707,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v11.1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v11.1 — \"Handoff Always Primes\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.5738025,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v11.1/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v11.1 — \"Handoff Always Primes\" — Master Plan (frozen design)",
+        "mtime": 1784924341.5743241,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v11/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v11 — \"Reliable Trio Handoff\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.576558,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v11/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v11 — \"Reliable Trio Handoff\" — Master Plan (frozen design)",
+        "mtime": 1784924341.57761,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v12/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v12 — \"Efforts\" (continuity-first single-session trio) — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.5796733,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v12/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v12 — \"Efforts\" (continuity-first single-session trio) · MASTER PLAN",
+        "mtime": 1784924341.5807128,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v13/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D v13 — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.589447,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v13/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D v13: Dashboard Polish, File Uploads & Gemini Integration",
+        "mtime": 1784924341.589447,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v2/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v2 — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.592015,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v2/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v2 — Master Plan (frozen design)",
+        "mtime": 1784924341.5925379,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v3/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.5946133,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v3/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+        "mtime": 1784924341.5951374,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v4/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v4 — \"Project Cockpit\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.5966861,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v4/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v4 — \"Project Cockpit\" — Master Plan (frozen design)",
+        "mtime": 1784924341.5972073,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v5/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v5 — \"Durable Work\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.599277,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v5/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v5 — \"Durable Work\" — Master Plan (frozen design)",
+        "mtime": 1784924341.5997999,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v6/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.6013603,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v6/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)",
+        "mtime": 1784924341.6018705,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v7 — \"Integrated Board\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.6049733,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v7/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v7 — \"Integrated Board\" — Master Plan (frozen design)",
+        "mtime": 1784924341.605494,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v8/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v8 — \"Durable Artifacts\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.6080236,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v8/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v8 — \"Durable Artifacts\" — Master Plan (frozen design)",
+        "mtime": 1784924341.6080236,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v9/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v9 — \"Tidy\" — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.6095273,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/rnd-v9/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)",
+        "mtime": 1784924341.6105318,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-anchor-skills-2026-07/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Success criteria",
+        "mtime": 1785277978.3610053,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-anchor-skills-2026-07/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan (APPROVED) — Shareable Anchor + Skills",
+        "mtime": 1785277978.362005,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-canonical-onboard-2026-07/IMPLEMENTATION-PLAN-APPROVAL.md",
+        "kind": "plan-doc",
+        "title": "IMPLEMENTATION-PLAN-APPROVAL",
+        "mtime": 1785277980.924999,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-canonical-onboard-2026-07/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Implementation Plan â€” Canonical SKILLS_ROOT + full A/B onboard",
+        "mtime": 1785277980.9259994,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-canonical-onboard-2026-07/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan (draft)",
+        "mtime": 1785277980.9259994,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-distro-v1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Shareable Anchor Distro + `/onboard` — Implementation Plan (Foreman-ready, Stage-2 Shark-converged)",
+        "mtime": 1784924341.6139524,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/share-distro-v1/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Shareable Anchor Distro + `/onboard` — MASTER PLAN (FROZEN, Shark-converged)",
+        "mtime": 1784924341.6150472,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/ship-anchor-v1/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Ship Anchor v1 — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.6166103,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/ship-anchor-v1/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Ship Anchor v1 (full foundry suite + cross-platform onboard + Tailscale) — MASTER PLAN (FROZEN)",
+        "mtime": 1784924341.6172931,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/sleep-2026-07-28/stage1/MASTER-PLAN-DRAFT.md",
+        "kind": "plan-doc",
+        "title": "Master Plan (draft)",
+        "mtime": 1785389143.7308514,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/sleep-2026-07-28/stage2/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+        "mtime": 1785389143.746125,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/sleep-2026-07-28/stage2/artifacts/stage2-input-master-plan.md",
+        "kind": "plan-doc",
+        "title": "STAGE-2 MANDATES (John 2026-07-29 — \"Optimize not lying\")",
+        "mtime": 1785389143.8037045,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/spend-telemetry-2026-07/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan — Honest Spend Telemetry v2 (Round-3 re-emission, reconstructed)",
+        "mtime": 1784924341.6188436,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-chamber-2026-08-09/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+        "mtime": 1786306428.7229753,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-chamber-2026-08-09/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan — LOCKED 2026-08-09 by John (\"lock plus hardening fold\")",
+        "mtime": 1786306428.7431014,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-e1-2026-08-12/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Steward E1 — Implementation Plan (Foreman-ready)",
+        "mtime": 1786558806.1363065,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-lifecycle-2026-07-31/MASTER-PLAN-v2.md",
+        "kind": "plan-doc",
+        "title": "MASTER PLAN v2 — Anchor steward: campaign orchestration by conversation",
+        "mtime": 1785563800.5907638,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-lifecycle-2026-07-31/handoff/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "IMPLEMENTATION PLAN v3 — Ecgberht, the host-independent steward SKILL: campaign orchestration by conversation, Anchor as reference host (Foreman-ready)",
+        "mtime": 1785730118.938477,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-lifecycle-2026-07-31/stage2-artifacts/IMPLEMENTATION-PLAN-v2.SUPERSEDED.md",
+        "kind": "plan-doc",
+        "title": "IMPLEMENTATION PLAN v2 — Anchor steward: campaign orchestration by conversation (Foreman-ready)",
+        "mtime": 1785572062.3598258,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/steward-lifecycle-2026-07-31/stage2-artifacts/IMPLEMENTATION-PLAN-v3.md",
+        "kind": "plan-doc",
+        "title": "IMPLEMENTATION PLAN v3 — Ecgberht, the host-independent steward SKILL: campaign orchestration by conversation, Anchor as reference host (Foreman-ready)",
+        "mtime": 1785703199.1545753,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/telemetry-resume-2026-07/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "MASTER PLAN — Honest Telemetry + Warm Resume (APPROVED 2026-07-11)",
+        "mtime": 1784924341.6420128,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/telemetry-resume-2026-07/handoff/approved/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Anchor — Honest Telemetry + Warm Resume — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.646775,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/zombie-hunter-safe-to-arm-2026-07-05/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.6914175,
+        "lane": "planning"
+      },
+      {
+        "rel": "planning/zombie-hunter-safe-to-arm-2026-07-05/MASTER-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Master Plan (draft — rev. Stage-1/R3)",
+        "mtime": 1784924341.6919372,
+        "lane": "planning"
+      },
+      {
+        "rel": "plans/IMPLEMENTATION-PLAN.md",
+        "kind": "plan-doc",
+        "title": "Implementation Plan — Implementation Plan (Foreman-ready)",
+        "mtime": 1784924341.695055,
+        "lane": "planning"
+      }
+    ],
+    "build": [
+      {
+        "rel": "EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log",
+        "mtime": 1784924340.9268708,
+        "lane": "build"
+      },
+      {
+        "rel": "FOREMAN-EXECUTION-LOG-2026-07.md",
+        "kind": "execlog",
+        "title": "Execution log — Anchor durability waves (2026-07)",
+        "mtime": 1784924340.927392,
+        "lane": "build"
+      },
+      {
+        "rel": "FOREMAN-EXECUTION-LOG-REARCH.md",
+        "kind": "execlog",
+        "title": "Execution log — Anchor re-architecture (2026-07)",
+        "mtime": 1784924340.9279125,
+        "lane": "build"
+      },
+      {
+        "rel": "FOUNDRY-V2-EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Skill Foundry v2 — Execution Log",
+        "mtime": 1784924340.9294603,
+        "lane": "build"
+      },
+      {
+        "rel": "foreman-checkpoint.json",
+        "kind": "foreman-checkpoint",
+        "title": "foreman-checkpoint",
+        "mtime": 1786681385.7016428,
+        "lane": "build"
+      },
+      {
+        "rel": "foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1786665700.325433,
+        "lane": "build"
+      },
+      {
+        "rel": "foundry-gui/planning/crucible/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Sleep Engine Execution Log",
+        "mtime": 1784924341.2864034,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/anchor-doctor-ui/handoff/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Execution Log — Anchor Doctor UI V3",
+        "mtime": 1784924341.42398,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/anchor-shareable-2026-07/handoff/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Crucible-planned project — Execution Log",
+        "mtime": 1784924341.4279797,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/anchor-shareable-2026-07/handoff/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.4279797,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/anchor-v1/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor v1 — Execution Log",
+        "mtime": 1784924341.447746,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/anchor-v1/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.4502535,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/brownfield-discovery/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Brownfield Discovery — Execution Log",
+        "mtime": 1784924341.4502535,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/brownfield-discovery/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.4528272,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/calendar-v1/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor Calendar v1 — Execution Log",
+        "mtime": 1784924341.466773,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/calendar-v1/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.4692965,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/chamber-m1-replace-2026-08-13/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Execution log — make M1 survive, wire talk, delete v0 (Foreman)",
+        "mtime": 1786736888.9799144,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/crucible-improve-2026-06-30/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Execution Log — Anchor Improvement Effort (Foreman)",
+        "mtime": 1784924341.470302,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/crucible-improve-2026-06-30/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.475052,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/crucible-improve-followup-2026-07-01/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Execution Log — Crucible-Improve Follow-up (Foreman)",
+        "mtime": 1784924341.475556,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/crucible-improve-followup-2026-07-01/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.4770732,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/crucible/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "EXECUTION LOG",
+        "mtime": 1784924341.524738,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v1/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Control Surface — Execution Log",
+        "mtime": 1784924341.5644102,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v10/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Execution Log",
+        "mtime": 1784924341.5670474,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v11.1/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v11.1 — \"Handoff Always Primes\" — Execution Log",
+        "mtime": 1784924341.573282,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v11/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v11 — \"Reliable Trio Handoff\" — Execution Log",
+        "mtime": 1784924341.575885,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v12/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v12 — \"Efforts\" — Execution Log",
+        "mtime": 1784924341.5791543,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v13/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v13 — Dashboard Polish, File Uploads & Gemini Integration — Execution Log",
+        "mtime": 1784924341.589447,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v2/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v2 — Execution Log",
+        "mtime": 1784924341.5906045,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v3/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v3 — \"Mission Control\" — Execution Log",
+        "mtime": 1784924341.593059,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v4/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v4 — \"Project Cockpit\" — Execution Log",
+        "mtime": 1784924341.5956585,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v5/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v5 — \"Durable Work\" — Execution Log",
+        "mtime": 1784924341.5977287,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v6/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Execution Log",
+        "mtime": 1784924341.6008413,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v7/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v7 — \"Integrated Board\" — Execution Log",
+        "mtime": 1784924341.6044486,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v8/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v8 — \"Durable Artifacts\" — Execution Log",
+        "mtime": 1784924341.6070237,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/rnd-v9/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor R&D Surface v9 — \"Tidy\" — Execution Log",
+        "mtime": 1784924341.6080236,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/share-anchor-skills-2026-07/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Shareable Anchor + Skills — Execution Log",
+        "mtime": 1785277978.3589659,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/share-anchor-skills-2026-07/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1785277978.3645115,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/share-canonical-onboard-2026-07/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "W4 ops advance 2026-07-24",
+        "mtime": 1785277980.924999,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/share-canonical-onboard-2026-07/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1785277980.9279988,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/share-distro-v1/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Shareable Anchor Distro + /onboard — Execution Log",
+        "mtime": 1784924341.6134372,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/share-distro-v1/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.61557,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/ship-anchor-v1/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Ship Anchor v1 — Execution Log",
+        "mtime": 1784924341.6160893,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/sleep-2026-07-28/stage2/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor sleep cycle 2026-07-28 (v1.2) — Execution Log",
+        "mtime": 1785389143.746125,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/sleep-2026-07-28/stage2/foreman-checkpoint.json",
+        "kind": "foreman-checkpoint",
+        "title": "foreman-checkpoint",
+        "mtime": 1785360642.7650404,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/sleep-2026-07-28/stage2/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1785389143.825192,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/steward-chamber-2026-08-09/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Execution log — steward chamber rebuild (Foreman)",
+        "mtime": 1786498093.5533867,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/steward-e1-2026-08-12/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Execution log — steward E1 enforcement (Foreman)",
+        "mtime": 1786639808.765001,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/steward-lifecycle-2026-07-31/handoff/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "EXECUTION LOG — Ecgberht steward campaign orchestration",
+        "mtime": 1785795277.9743066,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/steward-lifecycle-2026-07-31/handoff/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1785730143.2345333,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/telemetry-resume-2026-07/handoff/approved/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Anchor — Honest Telemetry + Warm Resume — Execution Log",
+        "mtime": 1784924341.6462553,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/telemetry-resume-2026-07/handoff/approved/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.6472857,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/zombie-hunter-safe-to-arm-2026-07-05/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Execution Log",
+        "mtime": 1784924341.6903765,
+        "lane": "build"
+      },
+      {
+        "rel": "planning/zombie-hunter-safe-to-arm-2026-07-05/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.6929767,
+        "lane": "build"
+      },
+      {
+        "rel": "plans/EXECUTION-LOG.md",
+        "kind": "execlog",
+        "title": "Implementation Plan — Execution Log",
+        "mtime": 1784924341.6945372,
+        "lane": "build"
+      },
+      {
+        "rel": "plans/foreman.config.json",
+        "kind": "foreman-config",
+        "title": "foreman.config",
+        "mtime": 1784924341.6955738,
+        "lane": "build"
+      }
+    ],
+    "deliverables": [],
+    "grass": [
+      {
+        "rel": "SAVED_FOR_LATER.md",
+        "kind": "idea-doc",
+        "title": "Saved for Later",
+        "mtime": 1788519696.880975,
+        "lane": "grass"
+      },
+      {
+        "rel": "planning/anchor-hardening-2026-07-26/PLAN.md",
+        "kind": "idea-doc",
+        "title": "Anchor world-class hardening — 2026-07-26 (pre-collaborator-share gate)",
+        "mtime": 1785114001.2059746,
+        "lane": "grass"
+      },
+      {
+        "rel": "planning/gemini-adapter/PLAN.md",
+        "kind": "idea-doc",
+        "title": "Crucible/Foreman → Gemini adapter — scoping notes (for a future trio run)",
+        "mtime": 1784924341.541456,
+        "lane": "grass"
+      }
+    ],
+    "gandalf": []
+  },
+  "docs": [
+    {
+      "rel": "MIGRATION-PLAN-New-Desktop-2026-05-11.md",
+      "kind": "plan-md",
+      "title": "Anchor Migration Plan — New Windows 11 Desktop",
+      "mtime": 1784924340.9325874
+    },
+    {
+      "rel": "dev/cv JCL March 2025.pdf",
+      "kind": "pdf",
+      "title": "cv JCL March 2025",
+      "mtime": 1782587659.3095112
+    },
+    {
+      "rel": "docs/friction/2026-09-04-cockpit-plan-visibility.md",
+      "kind": "plan-md",
+      "title": "Friction — a plan the steward asks John to approve is not visible in the cockpit",
+      "mtime": 1788564733.4753268
+    },
+    {
+      "rel": "gandalf/run-1782239589528/report.md",
+      "kind": "report-doc",
+      "title": "Gandalf read",
+      "mtime": 1782239897.9019163
+    },
+    {
+      "rel": "gandalf/run-1782279397583/report.md",
+      "kind": "report-doc",
+      "title": "Gandalf read",
+      "mtime": 1782279397.584229
+    },
+    {
+      "rel": "gandalf/run-1782618527332/report.md",
+      "kind": "report-doc",
+      "title": "Gandalf read",
+      "mtime": 1782618835.6905277
+    },
+    {
+      "rel": "gandalf/run-1784232817192/report.md",
+      "kind": "report-doc",
+      "title": "Gandalf Deep-Think Read — Anchor (`C:\\dev\\Anchor`)",
+      "mtime": 1784233167.051725
+    },
+    {
+      "rel": "planning/STEWARD-CODEX-ANCHOR-MORNING-PLAN-2026-08-30.md",
+      "kind": "plan-md",
+      "title": "Steward–Codex–Anchor implementation plan",
+      "mtime": 1788215855.605596
+    },
+    {
+      "rel": "planning/anchor-as-app/00-PLAN.md",
+      "kind": "plan-md",
+      "title": "researchPrime — Phase 1 PLAN (frozen)",
+      "mtime": 1784924341.41732
+    },
+    {
+      "rel": "planning/anchor-as-app/00b-PLAN-mobile.md",
+      "kind": "plan-md",
+      "title": "researchPrime — Phase 1 PLAN addendum: iPhone / iPad (frozen)",
+      "mtime": 1784924341.4178305
+    },
+    {
+      "rel": "planning/calendar-research/run-2026-06-15/00-PLAN.md",
+      "kind": "plan-md",
+      "title": "researchPrime — PLAN (frozen) · Anchor two-way calendar integration",
+      "mtime": 1784924341.4533477
+    },
+    {
+      "rel": "planning/calendar-research/run-2026-06-17/00-PLAN.md",
+      "kind": "plan-md",
+      "title": "researchPrime PLAN — Anchor Calendar: best-in-class OPTIONS survey",
+      "mtime": 1784924341.460685
+    },
+    {
+      "rel": "planning/crucible-rearchitecture-2026-07/stage2-artifacts/impl-plan-prevet.md",
+      "kind": "plan-md",
+      "title": "Anchor Re-architecture — the Butler substrate — Implementation Plan (Foreman-ready)",
+      "mtime": 1784924341.512014
+    },
+    {
+      "rel": "planning/steward-lifecycle-2026-07-31/PLAN-V3-CHANGES.md",
+      "kind": "plan-md",
+      "title": "PLAN v3 CHANGES — what moved from IMPLEMENTATION-PLAN-v2 and why",
+      "mtime": 1785703268.3167982
+    }
+  ],
+  "counts": {
+    "research": 0,
+    "planning": 77,
+    "build": 56,
+    "deliverables": 0,
+    "grass": 3,
+    "gandalf": 0,
+    "docs": 14,
+    "total": 150
+  },
+  "generated_at": 1788566781.6618526,
+  "root": "C:\\dev\\Anchor",
+  "truncated": true,
+  "stage_links": [
+    {
+      "from_session_id": "e898220abd104131bfa97a38149de0df",
+      "to_session_id": "6a929a4547224f01b63d92cf60056d79",
+      "kind": "plan->build",
+      "when": 1781531947.2977262
+    },
+    {
+      "from_session_id": "7300987b32d944989855b97865cb0cf1",
+      "to_session_id": "9354a92095dd404e986525c4aaf49993",
+      "kind": "plan->build",
+      "when": 1781551499.8354864
+    },
+    {
+      "from_session_id": "517667440f5b49eca9d84697b8403297",
+      "to_session_id": "8ed7c5349ec744e69bdb017df2da4ff6",
+      "kind": "plan->build",
+      "when": 1781551538.8200574
+    },
+    {
+      "from_session_id": "93f209d40088496483a385bb6b791747",
+      "to_session_id": "703bb249981641f699395a50539c4efd",
+      "kind": "plan->build",
+      "when": 1781551550.0479755
+    },
+    {
+      "from_session_id": "951f529d091d4ac68072faa2f083f691",
+      "to_session_id": "cc15f5d76b4342fe99cae0e7e9f5fa5a",
+      "kind": "plan->build",
+      "when": 1781573872.0318058
+    },
+    {
+      "from_session_id": "c754fdd7a6414ef6abe32561adae3626",
+      "to_session_id": "e5e2d04a960343b7bd181900a2854db2",
+      "kind": "plan->build",
+      "when": 1781573889.599264
+    },
+    {
+      "from_session_id": "6bd142fede57439299550784ee1d5173",
+      "to_session_id": "e08ee094dca64d648f6f5a9a465a7d58",
+      "kind": "plan->build",
+      "when": 1781573927.567764
+    },
+    {
+      "from_session_id": "19d617e7e12b4bdf8616fee130f70fc0",
+      "to_session_id": "448028faa3b44e178fbd0a3de8e38020",
+      "kind": "plan->build",
+      "when": 1781624903.2156703
+    },
+    {
+      "from_session_id": "434626f188274edb92856308ef905447",
+      "to_session_id": "2b14a04177b3415087b9f9c8c1122014",
+      "kind": "plan->build",
+      "when": 1781661762.3708856
+    },
+    {
+      "from_session_id": "c88c93bc8949407e9371b670b59f36b7",
+      "to_session_id": "68f5ff5f5a3b448f9417fb7c604a5a81",
+      "kind": "plan->build",
+      "when": 1781661762.724196
+    },
+    {
+      "from_session_id": "94d0f9902ea6490c8b0a639b87d3b87c",
+      "to_session_id": "e8e76822c1824fea9d588b6de626611f",
+      "kind": "plan->build",
+      "when": 1781662070.9280555
+    },
+    {
+      "from_session_id": "a5756f2d207f41939f1ec28d355e8d69",
+      "to_session_id": "2d9a19e868f24261b0777c9d7a1aeede",
+      "kind": "plan->build",
+      "when": 1783732156.5123112
+    },
+    {
+      "from_session_id": "eff3cde99a8f4da2b4ac154590ac64a2",
+      "to_session_id": "41147f274ede42db889cdd602f0ed918",
+      "kind": "plan->build",
+      "when": 1783732158.02178
+    }
+  ],
+  "handoffs": [
+    {
+      "build_session_id": "6a929a4547224f01b63d92cf60056d79",
+      "plan_session_id": "dir::planning/rnd-v6",
+      "plan_dir": "planning/rnd-v6",
+      "doc_rels": [
+        "planning/rnd-v6/MASTER-PLAN.md",
+        "planning/rnd-v6/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v6/EXECUTION-LOG.md"
+      ],
+      "when": 1781531947.2987378
+    },
+    {
+      "build_session_id": "9354a92095dd404e986525c4aaf49993",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781551499.8372674
+    },
+    {
+      "build_session_id": "8ed7c5349ec744e69bdb017df2da4ff6",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781551538.8297129
+    },
+    {
+      "build_session_id": "703bb249981641f699395a50539c4efd",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781551550.054342
+    },
+    {
+      "build_session_id": "cc15f5d76b4342fe99cae0e7e9f5fa5a",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781573872.0331855
+    },
+    {
+      "build_session_id": "e5e2d04a960343b7bd181900a2854db2",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781573889.6062272
+    },
+    {
+      "build_session_id": "e08ee094dca64d648f6f5a9a465a7d58",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781573927.5739422
+    },
+    {
+      "build_session_id": "448028faa3b44e178fbd0a3de8e38020",
+      "plan_session_id": "dir::planning/rnd-v7",
+      "plan_dir": "planning/rnd-v7",
+      "doc_rels": [
+        "planning/rnd-v7/MASTER-PLAN.md",
+        "planning/rnd-v7/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v7/EXECUTION-LOG.md"
+      ],
+      "when": 1781624903.2391446
+    },
+    {
+      "build_session_id": "2b14a04177b3415087b9f9c8c1122014",
+      "plan_session_id": "dir::planning/rnd-v8",
+      "plan_dir": "planning/rnd-v8",
+      "doc_rels": [
+        "planning/rnd-v8/MASTER-PLAN.md",
+        "planning/rnd-v8/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v8/EXECUTION-LOG.md"
+      ],
+      "when": 1781661762.3786812
+    },
+    {
+      "build_session_id": "68f5ff5f5a3b448f9417fb7c604a5a81",
+      "plan_session_id": "dir::planning/rnd-v8",
+      "plan_dir": "planning/rnd-v8",
+      "doc_rels": [
+        "planning/rnd-v8/MASTER-PLAN.md",
+        "planning/rnd-v8/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v8/EXECUTION-LOG.md"
+      ],
+      "when": 1781661762.7318566
+    },
+    {
+      "build_session_id": "e8e76822c1824fea9d588b6de626611f",
+      "plan_session_id": "dir::planning/rnd-v8",
+      "plan_dir": "planning/rnd-v8",
+      "doc_rels": [
+        "planning/rnd-v8/MASTER-PLAN.md",
+        "planning/rnd-v8/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v8/EXECUTION-LOG.md"
+      ],
+      "when": 1781662070.9300084
+    },
+    {
+      "build_session_id": "4f1cc3bf3fee4da78810fef4943a45a5",
+      "plan_session_id": "dir::planning/rnd-v9",
+      "plan_dir": "planning/rnd-v9",
+      "doc_rels": [
+        "planning/rnd-v9/MASTER-PLAN.md",
+        "planning/rnd-v9/IMPLEMENTATION-PLAN.md",
+        "planning/rnd-v9/EXECUTION-LOG.md"
+      ],
+      "when": 1781719116.0394008
+    },
+    {
+      "build_session_id": "2d9a19e868f24261b0777c9d7a1aeede",
+      "plan_session_id": "dir::planning/zombie-hunter-safe-to-arm-2026-07-05",
+      "plan_dir": "planning/zombie-hunter-safe-to-arm-2026-07-05",
+      "doc_rels": [
+        "planning/zombie-hunter-safe-to-arm-2026-07-05/MASTER-PLAN.md",
+        "planning/zombie-hunter-safe-to-arm-2026-07-05/IMPLEMENTATION-PLAN.md"
+      ],
+      "when": 1783732156.5147982
+    },
+    {
+      "build_session_id": "41147f274ede42db889cdd602f0ed918",
+      "plan_session_id": "dir::planning/zombie-hunter-safe-to-arm-2026-07-05",
+      "plan_dir": "planning/zombie-hunter-safe-to-arm-2026-07-05",
+      "doc_rels": [
+        "planning/zombie-hunter-safe-to-arm-2026-07-05/MASTER-PLAN.md",
+        "planning/zombie-hunter-safe-to-arm-2026-07-05/IMPLEMENTATION-PLAN.md"
+      ],
+      "when": 1783732158.0348365
+    }
+  ]
+}

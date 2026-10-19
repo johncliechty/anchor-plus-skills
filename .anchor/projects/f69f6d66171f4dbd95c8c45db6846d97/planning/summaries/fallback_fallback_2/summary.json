@@ -1,0 +1,51 @@
+{
+  "session_id": "fallback::fallback::::2",
+  "lane": "planning",
+  "title": "Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)",
+  "claims": [
+    "## Skill Foundry v2 — Anchor-Side Build (Planning Session Summary)",
+    "This is the **Anchor-side** slice of a split \"Skill Foundry v2\" implementation plan, made **Foreman-ready** (i.e. structured into waves for the Foreman build orchestrator).",
+    "The build is deliberately **split**: this plan covers the Anchor-side work; a **separate `FOUNDRY-KERNEL-PLAN.md`** owns the foundry-kernel build, with a **final integration pass** joining the two.",
+    "**Wave 1 — Phase 0: de-risking spikes → decisions (as code)**",
+    "Enforces a Foreman constraint (§5): **a wave must change real CODE exercised by a test; a docs-only wave HALTs.** So Phase-0 decisions are encoded as an importable module, not prose.",
+    "Deliverable (A): a new source module **`foundry_decisions.py`** in the Anchor build root, encoding the **four resolved decisions** as machine-readable constants/enums that **later waves import** — putting the decisions on the consumption path.",
+    "Named decisions surfaced in the anchor: (1) **`ANCHOR_API_CONTRACT`** — the native READ/EXECUTE surface vs. the MUTATIVE verbs the control plane must supply (feeds the control-plane wave's op inventory); (2) an isolation decision (`ISOL…`, truncated in the source excerpt).",
+    "**Wave 12 — Anchor-side North-Star acceptance proof (end-to-end)**",
+    "Deliverable: an **end-to-end acceptance test** proving the Anchor-side North-Star journey **from the GUI on genuine data** — create a skill, run/monitor it and see changes, browse the **library + graph**, and edit its **North Star**.",
+    "Also proves every **foundry skill is auto-available/clickable in Anchor**, all **mutations are journaled**, and the **safety envelope is armed**.",
+    "**Split note:** the North Star's central **sleep-loop clause** (\"run+review a test-gated sleep improvement that has turned over ≥1× on genuine data\") is **deferred to integration** — delivered by the separate foundry-kernel build plus the final integration pass, not by this Anchor-side plan.",
+    "## Skill Foundry v2 — Implementation Plan (Foreman-ready) — Anchor-Side Build (split)",
+    "This is a **split plan**: it covers the *Anchor-side* build only. A separate `FOUNDRY-KERNEL-PLAN.md` build handles the foundry-kernel, with a final integration pass tying them together.",
+    "The plan is structured as Foreman-ready waves (at least Wave 1 through Wave 12).",
+    "**Wave 1 — Phase 0: de-risking spikes → decisions (encoded as code)**",
+    "Enforces a hard Foreman constraint (§5): **a wave must change real CODE exercised by a test — a docs-only wave HALTs.** The four Phase-0 decisions are therefore encoded as an *importable Python module*, not prose.",
+    "**Deliverable (A):** a new source module **`foundry_decisions.py`** in the Anchor build root, encoding the four resolved decisions as machine-readable constants/enums that later waves import — putting the decisions on the actual consumption path.",
+    "**`ANCHOR_API_CONTRACT`** — the native READ/EXECUTE surface vs. the MUTATIVE verbs the control plane must supply (feeds the control-plane wave's op inventory).",
+    "**Deliverable:** an end-to-end acceptance test proving the Anchor-side North-Star journey from the GUI on genuine data — create a skill, run/monitor it and see changes, browse library + graph, edit its North Star.",
+    "Also proves every foundry skill is auto-available/clickable in Anchor, all mutations are journaled, and the safety envelope is armed.",
+    "**Split note (deferred to integration):** the North Star's central *sleep-loop* clause (\"run+review a test-gated sleep improvement that has turned over ≥1× on genuine data\") is **not** delivered here — it's delivered by the separate `FOUNDRY-KERNEL-PLAN.md` build plus a final integration pass."
+  ],
+  "member_links": [
+    {
+      "label": "Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=FOUNDRY-V2-IMPLEMENTATION-PLAN.md"
+    }
+  ],
+  "when_run": "2026-07-10",
+  "what_was_asked": "Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)",
+  "north_star": "**Deliverables:** an end-to-end acceptance test proving the ANCHOR-SIDE North-Star journey from the GUI on genuine data — create a skill, run/monitor it + see changes, browse library + graph, edit its North Star — plus every foundry skill auto-available/clickable in Anchor, all mutations journaled, safety envelope armed. **SPLIT NOTE — deferred to integration:** the North Star's central sleep-loop clause (\"run+review a test-gated sleep improvement that has turned over ≥1× on genuine data\") is delivered by the SEPARATE foundry-kernel build (`FOUNDRY-KERNEL-PLAN.md`) + a FINAL integration pass t",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)",
+      "rel": "FOUNDRY-V2-IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-7ce9e80b3283defe"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783732200.9553475,
+  "runs": 2,
+  "markdown": "# Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-07-10\n\n**What was asked:** Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)\n\n**North Star:** **Deliverables:** an end-to-end acceptance test proving the ANCHOR-SIDE North-Star journey from the GUI on genuine data — create a skill, run/monitor it + see changes, browse library + graph, edit its North Star — plus every foundry skill auto-available/clickable in Anchor, all mutations journaled, safety envelope armed. **SPLIT NOTE — deferred to integration:** the North Star's central sleep-loop clause (\"run+review a test-gated sleep improvement that has turned over ≥1× on genuine data\") is delivered by the SEPARATE foundry-kernel build (`FOUNDRY-KERNEL-PLAN.md`) + a FINAL integration pass t\n\n## Actions & files produced\n\n- Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- ## Skill Foundry v2 — Anchor-Side Build (Planning Session Summary)\n- This is the **Anchor-side** slice of a split \"Skill Foundry v2\" implementation plan, made **Foreman-ready** (i.e. structured into waves for the Foreman build orchestrator).\n- The build is deliberately **split**: this plan covers the Anchor-side work; a **separate `FOUNDRY-KERNEL-PLAN.md`** owns the foundry-kernel build, with a **final integration pass** joining the two.\n- **Wave 1 — Phase 0: de-risking spikes → decisions (as code)**\n- Enforces a Foreman constraint (§5): **a wave must change real CODE exercised by a test; a docs-only wave HALTs.** So Phase-0 decisions are encoded as an importable module, not prose.\n- Deliverable (A): a new source module **`foundry_decisions.py`** in the Anchor build root, encoding the **four resolved decisions** as machine-readable constants/enums that **later waves import** — putting the decisions on the consumption path.\n- Named decisions surfaced in the anchor: (1) **`ANCHOR_API_CONTRACT`** — the native READ/EXECUTE surface vs. the MUTATIVE verbs the control plane must supply (feeds the control-plane wave's op inventory); (2) an isolation decision (`ISOL…`, truncated in the source excerpt).\n- **Wave 12 — Anchor-side North-Star acceptance proof (end-to-end)**\n- Deliverable: an **end-to-end acceptance test** proving the Anchor-side North-Star journey **from the GUI on genuine data** — create a skill, run/monitor it and see changes, browse the **library + graph**, and edit its **North Star**.\n- Also proves every **foundry skill is auto-available/clickable in Anchor**, all **mutations are journaled**, and the **safety envelope is armed**.\n- **Split note:** the North Star's central **sleep-loop clause** (\"run+review a test-gated sleep improvement that has turned over ≥1× on genuine data\") is **deferred to integration** — delivered by the separate foundry-kernel build plus the final integration pass, not by this Anchor-side plan.\n- ## Skill Foundry v2 — Implementation Plan (Foreman-ready) — Anchor-Side Build (split)\n- This is a **split plan**: it covers the *Anchor-side* build only. A separate `FOUNDRY-KERNEL-PLAN.md` build handles the foundry-kernel, with a final integration pass tying them together.\n- The plan is structured as Foreman-ready waves (at least Wave 1 through Wave 12).\n- **Wave 1 — Phase 0: de-risking spikes → decisions (encoded as code)**\n- Enforces a hard Foreman constraint (§5): **a wave must change real CODE exercised by a test — a docs-only wave HALTs.** The four Phase-0 decisions are therefore encoded as an *importable Python module*, not prose.\n- **Deliverable (A):** a new source module **`foundry_decisions.py`** in the Anchor build root, encoding the four resolved decisions as machine-readable constants/enums that later waves import — putting the decisions on the actual consumption path.\n- **`ANCHOR_API_CONTRACT`** — the native READ/EXECUTE surface vs. the MUTATIVE verbs the control plane must supply (feeds the control-plane wave's op inventory).\n- **Deliverable:** an end-to-end acceptance test proving the Anchor-side North-Star journey from the GUI on genuine data — create a skill, run/monitor it and see changes, browse library + graph, edit its North Star.\n- Also proves every foundry skill is auto-available/clickable in Anchor, all mutations are journaled, and the safety envelope is armed.\n- **Split note (deferred to integration):** the North Star's central *sleep-loop* clause (\"run+review a test-gated sleep improvement that has turned over ≥1× on genuine data\") is **not** delivered here — it's delivered by the separate `FOUNDRY-KERNEL-PLAN.md` build plus a final integration pass.\n\n## Files\n\n- [Skill Foundry v2 — Implementation Plan (Foreman-ready) — ANCHOR-SIDE BUILD (split)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=FOUNDRY-V2-IMPLEMENTATION-PLAN.md)\n",
+  "schema_version": 3
+}

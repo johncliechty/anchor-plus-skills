@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-20d827c1468857f6",
+  "project_id": "2fe37f39157f4c7aa3e2523baa41f40f",
+  "lane": "planning",
+  "created_at": 1780927114.7215905,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Control Surface — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/rnd-v1/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

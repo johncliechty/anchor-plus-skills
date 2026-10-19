@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-1fa2199b1e9cfb7e",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1786306428.7229753,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/steward-chamber-2026-08-09/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-175baadc45da7b26",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1785201378.1052296,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Extraction Map",
+  "artifact_path": "planning/rearch-2026-07/EXTRACTION-MAP.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

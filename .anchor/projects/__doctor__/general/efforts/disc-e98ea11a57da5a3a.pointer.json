@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e98ea11a57da5a3a",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788916529.671587,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Share Readiness 2026 09 08",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/SHARE-READINESS-2026-09-08.md",
+  "status": "imported",
+  "session_id": "2f72e7675da74ea88560c21d61c3d253"
+}

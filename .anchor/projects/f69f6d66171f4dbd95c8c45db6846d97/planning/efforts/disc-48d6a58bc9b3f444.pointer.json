@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-48d6a58bc9b3f444",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1781461623.5039573,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v5 — \"Durable Work\" — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/rnd-v5/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

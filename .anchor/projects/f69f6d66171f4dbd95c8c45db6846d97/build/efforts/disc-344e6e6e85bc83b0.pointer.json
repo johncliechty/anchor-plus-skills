@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-344e6e6e85bc83b0",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1784924341.6080236,
+  "source": "discovered",
+  "kind": "execlog",
+  "title": "Anchor R&D Surface v9 — \"Tidy\" — Execution Log",
+  "artifact_path": "planning/rnd-v9/EXECUTION-LOG.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

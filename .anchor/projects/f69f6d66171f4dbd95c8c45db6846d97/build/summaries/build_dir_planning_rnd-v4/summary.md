@@ -1,0 +1,42 @@
+# rnd-v4
+
+*Lane: build · validated, cached summary*
+
+**When run:** 2026-06-13
+
+**What was asked:** rnd-v4
+
+## Actions & files produced
+
+- Anchor R&D Surface v4 — "Project Cockpit" — Execution Log
+
+**Effort:** imported — no run metrics
+
+## What was built & errors overcome
+
+- # rnd-v4 â€” "Project Cockpit" Build Session Summary
+- **Goal:** Build the v4 "Project Cockpit" R&D surface from the Crucible-locked design (Paradigm 2 project window + Option B branding), across 9 waves with `python -m pytest -v` as the gate.
+- **Handoff was design-locked before build:** the canonical spec was `_mockups/project_window_proposals.html` (Paradigm 2) + `_mockups/branding_proposals.html` (Option B), locked across three user review rounds; the terminal substrate was pre-proven by `_prototypes/term_harness/` (real ConPTY Ã— WebSocket Ã— xterm.js).
+- **Wave 1 â€” one seeded terminal substrate:** added a per-lane skill-seed map (researchâ†’researchPrime Â· planâ†’Crucible Â· buildâ†’Foreman) + `seed_for_lane()`; `start_session` writes the seed as exactly ONE stdin turn. Required 1 fix iteration (the cockpit lane-launch still wired the unseeded v2 REPL; repointed to `newTermSession`â†’`/api/rnd/term_start`). GATE: 542 passed.
+- **Wave 2 â€” engine persistence + toggle:** `last_engine_for_project` (atomic `.anchor/projects/<id>/engine.json`) + `switch_engine` (reaps PTY, rebinds under same session_id+worktree, policy-checked + rollback) + `POST /api/rnd/term_set_engine`. GATE: 554 passed, 0 fix iters.
+- **Wave 3 â€” data layer (doc roles + rollup):** `summarizer.session_doc_roles` (per-lane roleâ†’doc map, absent roles omitted) + `effort_history.project_effort_rollup` (sums `attach_cost` for RUN-provenance only; imported/discovered â†’ 0; 30d via injected clock). GATE: 569 passed, 0 fix iters.
+- **Wave 4 â€” Paradigm-2 window:** removed the v3 floating window manager; added inline accordion lane tiles with status lights + `openPanel`/`minimizePanel`/`killPanel`/`repopulate`. GATE: 578 passed, 0 fix iters.
+- **Wave 5 â€” panel internals:** stacked equal-height split summary (materials left / role links right) over a resizable terminal; new read-only `/api/rnd/session_doc_roles` + `/api/rnd/project_rollup`; header rollup + lifetime/30d toggle. GATE: 590 passed.
+- **Wave 6 â€” Grass idea board + promote-to-lane:** `seed_for_lane(..., seed_context)` folds the idea onto the lane seed as ONE turn; `promote_grass_to_lane` copies (never destroys); â†’Research/â†’Plan actions (lane allow-list {research,plan}). GATE: 600 passed.
+- **Wave 7 â€” deliverable launch-by-type:** skill/toolâ†’verify (no spawn) Â· serviceâ†’preview on a free port **asserted â‰  8777** Â· programâ†’run Â· docâ†’rendered href. GATE: 611 passed; the never-8777 guard was the safety-critical refute focus.
+- **Wave 8 â€” dashboard rows + masthead:** flattened to one-line rows (no directory path header) + per-row `Î£ tokensÂ·$Â·time` rollup + Option B masthead lockup (GWL mark + "Powered by NextGen Nuclear â˜¢"). GATE: 621 passed.
+- **Wave 9 â€” CLI mirror + healthcheck + distro + docs (PROJECT DONE):** 4 read-only `rnd` subcommands (rollup/doc-roles/deliverable-type/engine) + `check_rnd_v4_surface` (fully stubbed) + CLAUDE.md. GATE: 637 passed, 1 skipped Â· distro scan clean (110 files).
+- All 9 waves landed GREEN; tests grew 529 â†’ **637 passed, 1 skipped** (+108); 6 of 9 waves converged in 0 fix iterations. Branch `foreman/rnd-surface-v4`.
+- **The v4 gate shipped a real defect to production:** post-merge, every project window still rendered the OLD v3 effort-card kanban. Root cause â€” Wave 4 only *wrapped* the old kanban in a `lane-tile` div; `laneTileClick` swallowed clicks and `openPanel` early-returned for non-live sessions. **The gate missed it because the UI "tests" were string-greps**, never asserting the rendered body or a clickâ†’panel.
+- **Fix = revision rnd-v4.1** (branch `foreman/rnd-v4.1-cockpit`): rewrote `_render_kanban_html`/lane tiles, fixed `laneTileClick`+`openPanel`, added an un-gameable DOM-parsed gate + a real Playwright/Chromium clickâ†’panel test. GATE: 643 passed. **Lesson recorded:** UI "done" = rendered-structure assertions + a real click test + human visual sign-off â€” never a string grep.
+- The v4 "Project Cockpit" build was handed off from Crucible to Foreman on 2026-06-12, with the design locked by the user across three review rounds â€” the canonical spec being `_mockups/project_window_proposals.html` (Paradigm 2) plus `_mockups/branding_proposals.html` (Option B).
+- The terminal substrate was proven before the build by `_prototypes/term_harness/` (real ConPTY Ã— WebSocket Ã— xterm.js), with `pty_smoke.py`, `ws_client_test.py`, and `claude_interactive_capture.py` all passing.
+- The build was structured as 9 waves with the terminal wave scheduled as Wave 9; the test command was `python -m pytest -v`.
+- Wave 7 (Deliverable launch-by-type) reached GREEN: `deliverables.py` gained `TYPE_TOOL`/`TYPE_SERVICE`, `verify_skill_or_tool` (pure filesystem existence check â†’ available/loaded/missing, with NO spawn), `get_pinned_deliverable`, and `launch_deliverable(...)`.
+- `launch_deliverable` dispatches by type: skill/tool â†’ verify; service â†’ `preview_server.start_preview` (free port â‰  8777, isolated temp data dir, loopback bind, health-check, with pull-up-if-running via `list_previews` + reap); program â†’ `run_deliverable`; doc â†’ `/artifact` rendered href.
+- Wave 7 added the `POST /api/rnd/launch_deliverable` endpoint plus per-type `launchDeliverable` JS, and a new `tests/test_deliverable_launch.py` (11 tests).
+- Wave 7's adversarial REVIEW returned GO (refute-mode review citing safety of the no-spawn verify path).
+
+## Files
+
+- [Anchor R&D Surface v4 — "Project Cockpit" — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v4%2FEXECUTION-LOG.md)

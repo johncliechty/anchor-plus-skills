@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-391a96d5c53b2e68",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924591.9180484,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Skill",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/B-anchor-plus-skills/vendor/bundled-skills/legal-beagle/SKILL.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

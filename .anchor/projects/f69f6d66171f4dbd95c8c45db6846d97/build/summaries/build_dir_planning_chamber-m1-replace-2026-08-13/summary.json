@@ -1,0 +1,31 @@
+{
+  "session_id": "build::dir::planning/chamber-m1-replace-2026-08-13",
+  "lane": "build",
+  "title": "chamber-m1-replace-2026-08-13",
+  "claims": [
+    "**chamber-m1-replace-2026-08-13 — Foreman build session summary**"
+  ],
+  "member_links": [
+    {
+      "label": "Execution log — make M1 survive, wire talk, delete v0 (Foreman)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fchamber-m1-replace-2026-08-13%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-08-14",
+  "what_was_asked": "chamber-m1-replace-2026-08-13",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Execution log — make M1 survive, wire talk, delete v0 (Foreman)",
+      "rel": "planning/chamber-m1-replace-2026-08-13/EXECUTION-LOG.md",
+      "job_id": "disc-3fcf1cb16e2d7467"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786797340.626549,
+  "runs": 2,
+  "markdown": "# chamber-m1-replace-2026-08-13\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-08-14\n\n**What was asked:** chamber-m1-replace-2026-08-13\n\n## Actions & files produced\n\n- Execution log — make M1 survive, wire talk, delete v0 (Foreman)\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- **chamber-m1-replace-2026-08-13 — Foreman build session summary**\n\n## Files\n\n- [Execution log — make M1 survive, wire talk, delete v0 (Foreman)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fchamber-m1-replace-2026-08-13%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

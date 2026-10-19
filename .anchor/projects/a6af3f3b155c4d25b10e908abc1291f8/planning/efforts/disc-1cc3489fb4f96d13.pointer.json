@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-1cc3489fb4f96d13",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1784924341.4279797,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Crucible-planned project — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/anchor-shareable-2026-07/handoff/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

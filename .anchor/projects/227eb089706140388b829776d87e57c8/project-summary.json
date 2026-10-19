@@ -1,0 +1,18 @@
+{
+  "project_id": "227eb089706140388b829776d87e57c8",
+  "kind": "project",
+  "title": "Anchor — Productivity System for J.C. Liechty",
+  "claims": [],
+  "sources": [
+    "CLAUDE.md",
+    "planning\\rnd-v4\\MASTER-PLAN.md",
+    "planning\\rnd-v4\\IMPLEMENTATION-PLAN.md",
+    "planning\\rnd-v3\\IMPLEMENTATION-PLAN.md",
+    "planning\\rnd-v3\\MASTER-PLAN.md"
+  ],
+  "generated_at": 1781355661.590397,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Anchor — Productivity System for J.C. Liechty\n\n*Project summary · validated, cached*\n\n## What this project is\n\n_No grounded description could be extracted from the project documents. You may rescan/regenerate to try again._\n",
+  "summary_text": ""
+}

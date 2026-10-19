@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-e05937a4cfbe3f9e",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1785277980.9279988,
+  "source": "discovered",
+  "kind": "foreman-config",
+  "title": "foreman.config",
+  "artifact_path": "planning/share-canonical-onboard-2026-07/foreman.config.json",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

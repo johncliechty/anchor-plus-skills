@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-33ae981324b36bd6",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1786479412.5420322,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Test Debt Register",
+  "artifact_path": "planning/steward-chamber-2026-08-09/TEST-DEBT-REGISTER.md",
+  "status": "imported",
+  "session_id": "efd9839d519245a6b3d26cfa9141f53c"
+}

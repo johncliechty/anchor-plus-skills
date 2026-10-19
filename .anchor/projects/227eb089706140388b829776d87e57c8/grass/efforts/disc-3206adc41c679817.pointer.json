@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-3206adc41c679817",
+  "project_id": "227eb089706140388b829776d87e57c8",
+  "lane": "grass",
+  "created_at": 1781026219.579206,
+  "source": "discovered",
+  "kind": "idea-doc",
+  "title": "Crucible/Foreman → Gemini adapter — scoping notes (for a future trio run)",
+  "artifact_path": "planning/gemini-adapter/PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

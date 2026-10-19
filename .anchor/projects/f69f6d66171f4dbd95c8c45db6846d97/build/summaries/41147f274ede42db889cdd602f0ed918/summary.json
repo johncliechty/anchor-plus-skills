@@ -1,0 +1,48 @@
+{
+  "session_id": "41147f274ede42db889cdd602f0ed918",
+  "lane": "build",
+  "title": "Restart",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Restart",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=build%2FRESTART.md"
+    },
+    {
+      "label": "41147F274Ede Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=build%2F41147f274ede-transcript.md"
+    },
+    {
+      "label": "Handoff",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=HANDOFF.md"
+    }
+  ],
+  "when_run": "2026-07-10",
+  "what_was_asked": "Restart",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Restart",
+      "rel": "build/RESTART.md",
+      "job_id": "disc-8004a82ab44947cc"
+    },
+    {
+      "label": "41147F274Ede Transcript",
+      "rel": "build/41147f274ede-transcript.md",
+      "job_id": "disc-5faa774322c715f8"
+    },
+    {
+      "label": "Handoff",
+      "rel": "HANDOFF.md",
+      "job_id": "disc-63dc2ed4a26ad369"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1783767617.748956,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Restart\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-10\n\n**What was asked:** Restart\n\n## Actions & files produced\n\n- Restart\n- 41147F274Ede Transcript\n- Handoff\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Restart](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=build%2FRESTART.md)\n- [41147F274Ede Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=build%2F41147f274ede-transcript.md)\n- [Handoff](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=HANDOFF.md)\n",
+  "schema_version": 3
+}

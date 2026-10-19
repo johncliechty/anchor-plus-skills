@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-4cb8b9ae982f30bb",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788888736.4379723,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Grok Code Review Kernel Contract 1 Input",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/grok-code-review-kernel-contract-1-input.md",
+  "status": "imported",
+  "session_id": "2f61a0f90f1f46fbab696d211da79ceb"
+}

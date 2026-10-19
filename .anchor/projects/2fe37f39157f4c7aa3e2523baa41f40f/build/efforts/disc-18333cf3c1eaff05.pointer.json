@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-18333cf3c1eaff05",
+  "project_id": "2fe37f39157f4c7aa3e2523baa41f40f",
+  "lane": "build",
+  "created_at": 1781354881.0313454,
+  "source": "discovered",
+  "kind": "foreman-config",
+  "title": "foreman.config",
+  "artifact_path": "foreman.config.json",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

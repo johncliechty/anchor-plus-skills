@@ -1,0 +1,35 @@
+{
+  "session_id": "f8031610d2ae41e6b671d7bae29b0ee7",
+  "lane": "planning",
+  "title": "F8031610D2Ae Transcript",
+  "claims": [
+    "## Summary — F8031610D2Ae Transcript (planning session)",
+    "**Workspace:** ran in the isolated worktree `C:\\dev\\Anchor\\.anchor\\worktrees\\f8031610d2ae41e6b671d7bae29b0ee7` (this session's own git worktree).",
+    "## Session Summary — F8031610D2Ae Transcript",
+    "**Engine/environment:** The session ran on the **Antigravity CLI (v1.0.14)** using **Gemini 3.1 Pro (High)**, signed in as john.liechty@gmail.com (Google AI Ultra).",
+    "**Workspace:** It opened in the isolated worktree `C:\\dev\\Anchor\\.anchor\\worktrees\\f8031610d2ae41e6b671d7bae29b0ee7` (session branch `anchor/session/f8031610d2ae…`)."
+  ],
+  "member_links": [
+    {
+      "label": "F8031610D2Ae Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ff8031610d2ae-transcript.md"
+    }
+  ],
+  "when_run": "2026-07-01",
+  "what_was_asked": "F8031610D2Ae Transcript",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "F8031610D2Ae Transcript",
+      "rel": "planning/f8031610d2ae-transcript.md",
+      "job_id": "disc-8819df2f14a32e41"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782901365.6216488,
+  "runs": 2,
+  "markdown": "# F8031610D2Ae Transcript\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-07-01\n\n**What was asked:** F8031610D2Ae Transcript\n\n## Actions & files produced\n\n- F8031610D2Ae Transcript\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- ## Summary — F8031610D2Ae Transcript (planning session)\n- **Workspace:** ran in the isolated worktree `C:\\dev\\Anchor\\.anchor\\worktrees\\f8031610d2ae41e6b671d7bae29b0ee7` (this session's own git worktree).\n- ## Session Summary — F8031610D2Ae Transcript\n- **Engine/environment:** The session ran on the **Antigravity CLI (v1.0.14)** using **Gemini 3.1 Pro (High)**, signed in as john.liechty@gmail.com (Google AI Ultra).\n- **Workspace:** It opened in the isolated worktree `C:\\dev\\Anchor\\.anchor\\worktrees\\f8031610d2ae41e6b671d7bae29b0ee7` (session branch `anchor/session/f8031610d2ae…`).\n\n## Files\n\n- [F8031610D2Ae Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Ff8031610d2ae-transcript.md)\n",
+  "schema_version": 3
+}

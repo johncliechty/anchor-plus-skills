@@ -1,0 +1,49 @@
+{
+  "session_id": "build::dir::planning/rnd-v10",
+  "lane": "build",
+  "title": "rnd-v10",
+  "claims": [
+    "This is a **build (Foreman) session** for the Anchor R&D Surface **v10** work stream.",
+    "v10 is titled **\"Live Handoff & Boneyard.\"**",
+    "The session's member document is an **Execution Log** (\"Anchor R&D Surface v10 â€” Live Handoff & Boneyard â€” Execution Log\"), i.e. a record of build execution rather than a plan or report.",
+    "## rnd-v10 â€” Build session summary (grounded in EXECUTION-LOG.md)",
+    "Built Anchor R&D Surface v10 \"Live Handoff & Boneyard\" across 8 waves on branch `foreman/rnd-surface-v10` (off master `b33c74a`); **all 8 waves GREEN, PROJECT DONE**, final gate **1189 passed, 1 skipped**.",
+    "**What was built (per wave)**",
+    "**W1 â€” paste-NOT-submit substrate:** `start_session(paste_prompt=)` records `pending_paste`; `_flush_pending_paste` writes it to the PTY *unsent*, once, after the greet. New registry fields `pending_paste`/`paste_flushed` (commit verified `terminal_session.py:547-575`).",
+    "**W2 â€” both-artifact advance:** `handoff.build_next_stage_prompt` + `write_next_prompt`â†’`NEXT-PROMPT.md`; advance paths deliver the prompt as a pending paste instead of an auto-submitted seed. John signed off the screenshot 2026-06-17 (commit `453f687`).",
+    "**W3 â€” grass two toggleable terminals:** split the shared grass host into per-lane research+plan `.gterm` hosts, each independently collapsible (collapse keeps the session live). Per-lane Save (commit `9594d89`).",
+    "**W4 â€” grass archive + lineage:** `archive_grass_session` + `session_registry.grass_origin` stamped/inherited to the chain root; board-tile \"from grass\" chip; idempotent archive (commit `bcbd3ca`).",
+    "**W5 â€” grass researchâ†’plan live handoff:** `advance_grass_research_to_plan` (contained `(idea,'plan')` session, linked, paste-pending; honest-negative without a real research doc) + `queue_paste` deliver-on-focus (commit `e506859`).",
+    "**W6 â€” NEW `boneyard.py`:** per-project index (`record_entry`/`list_entries`/`search`/`get_entry`), capture wired on kill/delete/grass-delete (index-not-copy, references v8-persisted rels); added to `dist_manifest.txt` (commit `bc0397e`).",
+    "**W7 â€” Boneyard UI:** `GET /api/rnd/boneyard`, \"â˜  Boneyard\" tab with search; all doc links route through traversal-safe `/artifact` (commit `6c1c2ab`).",
+    "**W1 BLOCKER:** premature paste flush â€” greet marker was a substring of the echoed seed; fixed by counting marker occurrences *beyond* the seed (`base = seed_text.count(marker)`). Also closed a double-paste TOCTOU via compare-and-set under `WRITE_LOCK` and newline-strip.",
+    "**W2 North-Star hole:** `finish_to_build` marked planning DONE without `kill` â†’ docs unpersisted â†’ build checkout could lack the paths `NEXT-PROMPT.md` cited; fixed with `capture_session_docs` (persist+commit, no reap) before advancing.",
+    "**W3 BLOCKER:** `saveGrassRefinement` referenced an undeclared `panel` â†’ ReferenceError on every Save (no test clicked Save); restored container lookup + made Save per-lane.",
+    "**W6 MAJOR:** deleting a *live* session recorded two boneyard entries (killed + deleted); fixed via `kill(_record_boneyard=False)` from `delete_session` â†’ exactly one `deleted` entry. **W6 HIGH:** `build_grass_entry` omitted W4 archive-bundle docs â†’ unioned `list_grass_archives`.",
+    "**W7 HIGH/security (stored-XSS):** client live-search `_esc` escaped `& < >` but not `\"` â†’ attribute breakout; hardened shared `_esc` to full HTML-escape, regression-tested on both render paths.",
+    "Recurring **WS/SSE teardown flakiness** (`WinError 10053/10054`, \"closed file\" ValueError) was hardened systemically: production `_is_benign_disconnect` returns cleanly on client disconnect; `tests/conftest.py` autouse harness swallows only benign daemon-thread teardown exceptions. Verified deterministic across repeated stress runs."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v10%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-18",
+  "what_was_asked": "rnd-v10",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Execution Log",
+      "rel": "planning/rnd-v10/EXECUTION-LOG.md",
+      "job_id": "disc-f9af79bb88d6040f"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154179.604043,
+  "runs": 2,
+  "markdown": "# rnd-v10\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-18\n\n**What was asked:** rnd-v10\n\n## Actions & files produced\n\n- Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- This is a **build (Foreman) session** for the Anchor R&D Surface **v10** work stream.\n- v10 is titled **\"Live Handoff & Boneyard.\"**\n- The session's member document is an **Execution Log** (\"Anchor R&D Surface v10 â€” Live Handoff & Boneyard â€” Execution Log\"), i.e. a record of build execution rather than a plan or report.\n- ## rnd-v10 â€” Build session summary (grounded in EXECUTION-LOG.md)\n- Built Anchor R&D Surface v10 \"Live Handoff & Boneyard\" across 8 waves on branch `foreman/rnd-surface-v10` (off master `b33c74a`); **all 8 waves GREEN, PROJECT DONE**, final gate **1189 passed, 1 skipped**.\n- **What was built (per wave)**\n- **W1 â€” paste-NOT-submit substrate:** `start_session(paste_prompt=)` records `pending_paste`; `_flush_pending_paste` writes it to the PTY *unsent*, once, after the greet. New registry fields `pending_paste`/`paste_flushed` (commit verified `terminal_session.py:547-575`).\n- **W2 â€” both-artifact advance:** `handoff.build_next_stage_prompt` + `write_next_prompt`â†’`NEXT-PROMPT.md`; advance paths deliver the prompt as a pending paste instead of an auto-submitted seed. John signed off the screenshot 2026-06-17 (commit `453f687`).\n- **W3 â€” grass two toggleable terminals:** split the shared grass host into per-lane research+plan `.gterm` hosts, each independently collapsible (collapse keeps the session live). Per-lane Save (commit `9594d89`).\n- **W4 â€” grass archive + lineage:** `archive_grass_session` + `session_registry.grass_origin` stamped/inherited to the chain root; board-tile \"from grass\" chip; idempotent archive (commit `bcbd3ca`).\n- **W5 â€” grass researchâ†’plan live handoff:** `advance_grass_research_to_plan` (contained `(idea,'plan')` session, linked, paste-pending; honest-negative without a real research doc) + `queue_paste` deliver-on-focus (commit `e506859`).\n- **W6 â€” NEW `boneyard.py`:** per-project index (`record_entry`/`list_entries`/`search`/`get_entry`), capture wired on kill/delete/grass-delete (index-not-copy, references v8-persisted rels); added to `dist_manifest.txt` (commit `bc0397e`).\n- **W7 â€” Boneyard UI:** `GET /api/rnd/boneyard`, \"â˜  Boneyard\" tab with search; all doc links route through traversal-safe `/artifact` (commit `6c1c2ab`).\n- **W1 BLOCKER:** premature paste flush â€” greet marker was a substring of the echoed seed; fixed by counting marker occurrences *beyond* the seed (`base = seed_text.count(marker)`). Also closed a double-paste TOCTOU via compare-and-set under `WRITE_LOCK` and newline-strip.\n- **W2 North-Star hole:** `finish_to_build` marked planning DONE without `kill` â†’ docs unpersisted â†’ build checkout could lack the paths `NEXT-PROMPT.md` cited; fixed with `capture_session_docs` (persist+commit, no reap) before advancing.\n- **W3 BLOCKER:** `saveGrassRefinement` referenced an undeclared `panel` â†’ ReferenceError on every Save (no test clicked Save); restored container lookup + made Save per-lane.\n- **W6 MAJOR:** deleting a *live* session recorded two boneyard entries (killed + deleted); fixed via `kill(_record_boneyard=False)` from `delete_session` â†’ exactly one `deleted` entry. **W6 HIGH:** `build_grass_entry` omitted W4 archive-bundle docs â†’ unioned `list_grass_archives`.\n- **W7 HIGH/security (stored-XSS):** client live-search `_esc` escaped `& < >` but not `\"` â†’ attribute breakout; hardened shared `_esc` to full HTML-escape, regression-tested on both render paths.\n- Recurring **WS/SSE teardown flakiness** (`WinError 10053/10054`, \"closed file\" ValueError) was hardened systemically: production `_is_benign_disconnect` returns cleanly on client disconnect; `tests/conftest.py` autouse harness swallows only benign daemon-thread teardown exceptions. Verified deterministic across repeated stress runs.\n\n## Files\n\n- [Anchor R&D Surface v10 — \"Live Handoff & Boneyard\" — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v10%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

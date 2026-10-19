@@ -1,0 +1,30 @@
+{
+  "session_id": "dir::planning/sleep-2026-07-28/stage1",
+  "lane": "planning",
+  "title": "Master Plan (draft)",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Master Plan (draft)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fsleep-2026-07-28%2Fstage1%2FMASTER-PLAN-DRAFT.md"
+    }
+  ],
+  "when_run": "2026-07-29",
+  "what_was_asked": "Master Plan (draft)",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Master Plan (draft)",
+      "rel": "planning/sleep-2026-07-28/stage1/MASTER-PLAN-DRAFT.md",
+      "job_id": "disc-71c3027c3624d8e1"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1786037933.0727751,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Master Plan (draft)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-07-29\n\n**What was asked:** Master Plan (draft)\n\n## Actions & files produced\n\n- Master Plan (draft)\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Master Plan (draft)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Fsleep-2026-07-28%2Fstage1%2FMASTER-PLAN-DRAFT.md)\n",
+  "schema_version": 3
+}

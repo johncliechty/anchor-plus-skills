@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-dd56de28e50d2178",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848328.2826073,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Description",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/anchor-plus-skills/vendor/bundled-skills/foreman/test/fixture/DESCRIPTION.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

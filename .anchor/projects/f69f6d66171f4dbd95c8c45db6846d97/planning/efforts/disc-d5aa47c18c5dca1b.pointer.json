@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d5aa47c18c5dca1b",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6105318,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v9 — \"Tidy\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v9/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

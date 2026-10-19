@@ -1,0 +1,41 @@
+{
+  "session_id": "build::dir::plans",
+  "lane": "build",
+  "title": "plans",
+  "claims": [
+    "**The build is planned at 4 waves.** The execution log states \"4 wave(s) planned.\"",
+    "**Foreman is configured on the LIGHT triage track** (`\"triage_track\": \"LIGHT\"` in `foreman.config`)."
+  ],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=plans%2Fforeman.config.json"
+    },
+    {
+      "label": "Implementation Plan — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=plans%2FEXECUTION-LOG.md"
+    }
+  ],
+  "when_run": "2026-07-14",
+  "what_was_asked": "plans",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "plans/foreman.config.json",
+      "job_id": "disc-b106883e6ab283af"
+    },
+    {
+      "label": "Implementation Plan — Execution Log",
+      "rel": "plans/EXECUTION-LOG.md",
+      "job_id": "disc-9cfcd8936aa192d9"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1784135583.8749533,
+  "runs": 2,
+  "markdown": "# plans\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-07-14\n\n**What was asked:** plans\n\n## Actions & files produced\n\n- foreman.config\n- Implementation Plan — Execution Log\n\n**Effort:** imported — no run metrics\n\n## What was built & errors overcome\n\n- **The build is planned at 4 waves.** The execution log states \"4 wave(s) planned.\"\n- **Foreman is configured on the LIGHT triage track** (`\"triage_track\": \"LIGHT\"` in `foreman.config`).\n\n## Files\n\n- [foreman.config](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=plans%2Fforeman.config.json)\n- [Implementation Plan — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=plans%2FEXECUTION-LOG.md)\n",
+  "schema_version": 3
+}

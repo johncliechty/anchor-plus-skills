@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-7239fc3ce823b330",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1781525681.4615946,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v6 — \"Linked Pipeline\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v6/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

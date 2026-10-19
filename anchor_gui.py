@@ -34,6 +34,9 @@ import route_table as _routes
 # open (today) → serve; warn → log a would-401 but still serve; enforce (W9) → 401.
 import pillar_flags as _pillar_flags
 import auth_warn as _auth_warn
+from steward_cockpit import gui_ingress_routes as _gui_ingress
+from steward_cockpit import gui_domain_core as _gui_domain
+from steward_cockpit import gui_surface_emit as _gui_emit
 
 # Process-wide write lock: held around every markdown/JSON mutation so two
 # concurrent mutating requests (ThreadingHTTPServer) cannot lose an update.
@@ -289,7 +292,7 @@ def cache_bust_script():
     safe to drop into an f-string page as ``{cache_bust_script()}`` only after
     the result is a plain string — callers embed the returned string verbatim.
     """
-    return _CACHE_BUST_JS_TEMPLATE.replace("__ANCHOR_BUILD_ID__", BUILD_ID)
+    return _gui_emit.render_cache_bust_script(_CACHE_BUST_JS_TEMPLATE, BUILD_ID)
 
 
 # ── Contract-versioning shim (re-architecture 2026-07 · W2) ─────────────────
@@ -3321,86 +3324,6 @@ def _gather_project_efforts(folder_path, project_id):
     return out
 
 
-def _render_effort_card(ev, store_lane, project_id):
-    """Render ONE effort card. Done efforts link to the report viewer; live ones
-    carry the data hooks the console uses to attach. Every dynamic field is
-    HTML-escaped (XSS-safe)."""
-    jid = ev["job_id"]
-    jid_esc = html_lib.escape(jid, quote=True)
-    ver = html_lib.escape(ev["ver"])
-    age = html_lib.escape(ev["age"])
-    sub = html_lib.escape(ev["sub"]) if ev["sub"] else ""
-
-    # ── Discovered (brownfield-imported) card: subtle, honest, no vN ──────────
-    # It carries data-discovered="1" + a small dot + an "imported" marker, and
-    # links to the REAL on-disk file via /artifact/<pid>?path=<rel>. It is NEVER
-    # masqueraded as an Anchor-run session (no vN, no cost, no live hooks).
-    if ev.get("discovered"):
-        rel = ev.get("artifact_path", "")
-        title = ev.get("title", "") or rel
-        kind = ev.get("kind", "")
-        title_esc = html_lib.escape(title)
-        kind_esc = html_lib.escape(kind)
-        data = (
-            f" data-job-id=\"{jid_esc}\""
-            f" data-lane=\"{html_lib.escape(store_lane, quote=True)}\""
-            f" data-trio-lane=\"{html_lib.escape(ev['trio_lane'], quote=True)}\""
-            f" data-discovered=\"1\" data-live=\"0\""
-            f" data-artifact-path=\"{html_lib.escape(rel, quote=True)}\""
-        )
-        marker = ("<span class='imported'><span class='dotdisc'></span>"
-                  "imported</span>")
-        inner = (
-            f"<div class='er'>{marker}"
-            f"<span class='age'>{age}</span></div>"
-            f"<div class='sub'>{title_esc}"
-            + (f" <span class='dkind'>{kind_esc}</span>" if kind_esc else "")
-            + "</div>"
-        )
-        if rel:
-            href = (f"/artifact/{html_lib.escape(project_id, quote=True)}"
-                    f"?path={url_quote(rel, safe='')}")
-            return (f"<div class='effort discovered'{data} "
-                    f"onclick=\"openReport('{html_lib.escape(href, quote=True)}')\">"
-                    f"{inner}</div>")
-        return f"<div class='effort discovered'{data}>{inner}</div>"
-
-    pill = ""
-    if ev["pill_cls"]:
-        dot = ""
-        if ev["pill_cls"] == "run":
-            dot = "<span class='dotpulse'></span>"
-        elif ev["pill_cls"] == "input":
-            dot = "<span class='dotwarn'></span>"
-        pill = (f"<span class='statepill {ev['pill_cls']}'>{dot}"
-                f"{html_lib.escape(ev['pill_lbl'])}</span>")
-    cost_bit = ""
-    if ev.get("cost_label"):
-        cost_bit = (f"<span class='ecost'>"
-                    f"{html_lib.escape(ev['cost_label'])}</span>")
-    # Classes + data hooks. A live/needs-input card is clickable to attach the
-    # console; a done card links to its report.
-    cls = "effort"
-    data = (f" data-job-id=\"{jid_esc}\" data-lane=\"{html_lib.escape(store_lane, quote=True)}\""
-            f" data-trio-lane=\"{html_lib.escape(ev['trio_lane'], quote=True)}\""
-            f" data-ver=\"{ver}\" data-live=\"{'1' if ev['is_live'] else '0'}\"")
-    inner = (
-        f"<div class='er'><span class='ver'>{ver}</span>{pill}"
-        f"<span class='age'>{age}</span></div>"
-        + (f"<div class='sub'>{sub}{cost_bit}</div>" if (sub or cost_bit) else "")
-    )
-    if ev["is_done"] and jid:
-        # Link a done effort to the report viewer route.
-        href = (f"/report/{html_lib.escape(project_id, quote=True)}/"
-                f"{html_lib.escape(ev['trio_lane'], quote=True)}/{jid_esc}")
-        return (f"<div class='{cls}'{data} onclick=\"openReport('{href}')\">"
-                f"{inner}</div>")
-    if ev["is_live"] and jid:
-        return (f"<div class='{cls}' id='effort_{jid_esc}'{data} "
-                f"onclick=\"attachSession('{jid_esc}')\">{inner}</div>")
-    return f"<div class='{cls}'{data}>{inner}</div>"
-
-
 # v7 Wave 3 — bridge LIVE managed sessions (session_registry) into the board.
 #
 # The board's trio columns are keyed by the trio-lane values in _KANBAN_COLUMNS
@@ -3444,17 +3367,7 @@ def _effort_zone(record):
 
     ``record`` is a normalized session record (dict). Pure / read-only.
     """
-    if not isinstance(record, dict):
-        return None
-    kind = (record.get("kind") or "").strip()
-    if kind in ("general", "grass-dev"):
-        return None
-    stage = (record.get("current_stage") or "").strip()
-    if stage == "research":
-        return _EFFORT_ZONE_RESEARCH
-    if stage in ("plan", "build"):
-        return _EFFORT_ZONE_PLAN_BUILD
-    return None
+    return _gui_domain.effort_zone(record, _EFFORT_ZONE_RESEARCH, _EFFORT_ZONE_PLAN_BUILD)
 
 
 #: session_registry status → the locked light-color bucket (mirrors
@@ -3787,19 +3700,6 @@ def _attach_build_planning_tie(out) -> None:
             continue   # no match, or ambiguous (>1 planning session in that dir)
         label = d.rsplit("/", 1)[-1] or d
         sv["linked_planning"] = {"session_id": sid, "label": label}
-
-
-def _idea_source_label(eff) -> str:
-    """Human source chip for a grass idea: 'from inbox' | 'discovered' | 'manual'.
-
-    Reads the effort record (NOT the trimmed view) so it can see the honest
-    provenance markers ``promoted_from`` / discovered / manual-add.
-    """
-    if _eh.is_discovered(eff):
-        return "discovered"
-    if (eff.get("promoted_from") or "") == "inbox":
-        return "from inbox"
-    return "manual"
 
 
 #: Human label for a grass idea's lifecycle status (used by the workbench chips).
@@ -4621,10 +4521,7 @@ def _sv_zone_lane(sv, zone_key):
 
 def _gandalf_ts_label(ts) -> str:
     """Format a Gandalf run's unix ts as ``YYYY-MM-DD HH:MM`` (honest empty)."""
-    try:
-        return datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M")
-    except (TypeError, ValueError, OSError):
-        return ""
+    return _gui_domain.gandalf_ts_label(ts)
 
 
 def _render_layoutd_gandalf_panel(folder_path, project_id) -> str:
@@ -5007,13 +4904,7 @@ def _render_deliv_section(title, items, project_id, empty=""):
 
 
 def _render_deliv_approved(items, project_id):
-    rows = "".join(_render_deliv_item(it, project_id) for it in items) or (
-        "<div class='navempty'>No explicitly approved deliverables yet.</div>")
-    return (
-        "<details class='deliv-stream'>"
-        f"<summary>Approved deliverables · {len(items)}</summary>"
-        f"<div class='deliv-stream-body'>{rows}</div></details>"
-    )
+    return _gui_emit.render_deliv_approved_html(items, project_id, _render_deliv_item)
 
 
 def _render_deliv_stream(node, project_id):
@@ -5296,23 +5187,11 @@ def _render_layoutd_dock_html() -> str:
     )
 
 
-def _safe_dom_id(seg: str) -> str:
-    """A DOM-id-safe slug of a session id (which contains ``::`` etc.)."""
-    return re.sub(r"[^A-Za-z0-9_-]+", "_", str(seg or "")) or "x"
-
-
 def _session_tile_title(rep) -> str:
     """The visible title for a Paradigm-2 lane tile, derived from a session's
     representative effort view. Discovered → its ``title``; a run → its prompt
     hint / skill ``sub``; falls back to a lane-agnostic placeholder."""
-    if not rep:
-        return "session"
-    if rep.get("discovered"):
-        return (rep.get("title") or rep.get("artifact_path") or "imported").strip()
-    sub = (rep.get("sub") or "").strip()
-    if sub:
-        return sub
-    return (rep.get("skill") or "session").strip() or "session"
+    return _gui_domain.session_tile_title(rep)
 
 
 def _session_state_text(rep):
@@ -5822,21 +5701,7 @@ def _fmt_project_usage_line(roll, rate=None, live_count=0, steward=None,
 
 def _fmt_capture_rate_short(rate: dict) -> str:
     """Compact capture-rate note for project-row rollup (never raises)."""
-    try:
-        total = int(rate.get("total", 0) or 0)
-        measured = int(rate.get("measured", 0) or 0)
-        unm = int(rate.get("unmeasured", 0) or 0)
-        failed = int(rate.get("capture-failed", 0) or rate.get("capture_failed", 0) or 0)
-        if total <= 0:
-            return ""
-        parts = [f"measured {measured}/{total}"]
-        if unm:
-            parts.append(f"{unm} unmeasured")
-        if failed:
-            parts.append(f"{failed} capture-failed")
-        return " · ".join(parts)
-    except Exception:
-        return ""
+    return _gui_domain.fmt_capture_rate_short(rate)
 
 
 def render_header_rollup_html(project_id: str) -> str:
@@ -17893,11 +17758,17 @@ def _doctor_sync_live_code():
         import importlib
         for mod_name in ("doctor_plain", "deliverables_register", "home_rows", "high_seat_page",
                          "campaign_page", "foundry_page", "foundry_api", "usage_allowance_monitor",
+                         "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
+                         "steward_cockpit.gui_surface_emit",
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",
-                         "steward_cockpit.anvil_session", "steward_cockpit.steward_routes",
+                         "steward_cockpit.anvil_session", "steward_cockpit.aegis_session",
+                         "steward_cockpit.steward_routes",
                          "terminal_session"):
             if mod_name in sys.modules:
-                importlib.reload(sys.modules[mod_name])
+                try:
+                    importlib.reload(sys.modules[mod_name])
+                except Exception:
+                    pass
     except Exception:
         pass
     return BUILD_ID

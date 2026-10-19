@@ -1,0 +1,34 @@
+{
+  "session_id": "fallback::fallback::::0",
+  "lane": "planning",
+  "title": "Decision Log: Scaled Gandalf Architecture",
+  "claims": [
+    "## Decision Log: Scaled Gandalf Architecture — Summary",
+    "**Include-list, not ignore-list scouting** — The Agentic Scout emits an \"Include List\" of files to keep rather than an \"Ignore List\" of files to drop. Rationale (Skeptic block): asking a fast model what to *ignore* risks hallucinated deletion of critical config files; asking what to *include* fails safe — a miss just triggers the fallback rather than destroying data.",
+    "**Concurrency capped at 3** — Phase-3 Map-Reduce batches run under a strict concurrency semaphore of 3. Rationale (Contrarian block): unbounded async execution of large payload chunks would overwhelm the Anchor `job_runner`, hit API rate limits, and crash the local UI polling.",
+    "**Graceful Scout fallback to unpruned payload** — If the Scout pass fails JSON parsing or hits an API timeout, the engine automatically reverts to sending the full unpruned payload. Rationale (Analyst block): the pipeline must not fail because an *optimization* step errored — rigor must survive optimization failures."
+  ],
+  "member_links": [
+    {
+      "label": "Decision Log: Scaled Gandalf Architecture",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=DECISION-LOG.md"
+    }
+  ],
+  "when_run": "2026-06-27",
+  "what_was_asked": "Decision Log: Scaled Gandalf Architecture",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Decision Log: Scaled Gandalf Architecture",
+      "rel": "DECISION-LOG.md",
+      "job_id": "disc-351ea343b88a0e63"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782763054.878045,
+  "runs": 2,
+  "markdown": "# Decision Log: Scaled Gandalf Architecture\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-27\n\n**What was asked:** Decision Log: Scaled Gandalf Architecture\n\n## Actions & files produced\n\n- Decision Log: Scaled Gandalf Architecture\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- ## Decision Log: Scaled Gandalf Architecture — Summary\n- **Include-list, not ignore-list scouting** — The Agentic Scout emits an \"Include List\" of files to keep rather than an \"Ignore List\" of files to drop. Rationale (Skeptic block): asking a fast model what to *ignore* risks hallucinated deletion of critical config files; asking what to *include* fails safe — a miss just triggers the fallback rather than destroying data.\n- **Concurrency capped at 3** — Phase-3 Map-Reduce batches run under a strict concurrency semaphore of 3. Rationale (Contrarian block): unbounded async execution of large payload chunks would overwhelm the Anchor `job_runner`, hit API rate limits, and crash the local UI polling.\n- **Graceful Scout fallback to unpruned payload** — If the Scout pass fails JSON parsing or hits an API timeout, the engine automatically reverts to sending the full unpruned payload. Rationale (Analyst block): the pipeline must not fail because an *optimization* step errored — rigor must survive optimization failures.\n\n## Files\n\n- [Decision Log: Scaled Gandalf Architecture](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=DECISION-LOG.md)\n",
+  "schema_version": 3
+}

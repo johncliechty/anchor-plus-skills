@@ -1,0 +1,59 @@
+{
+  "schema": "researchPrime/agent-impl/v1",
+  "subject": "Anchor brownfield orientation (C:\\dev\\Anchor)",
+  "date": "2026-06-10",
+  "plan_id": "anchor-bf-7f3a",
+  "isolation": "approximated (single-context orchestrator; fresh read-only sub-agents gathered evidence; no nonce planted)",
+  "r2_mode": "MIXED: local grep/find OBSERVED (E9,E10); full test-suite GREEN is CORROBORATION-ONLY (pytest harness-gated, E12); no external best-in-class axis (N/A for single-project inventory)",
+  "best_in_class": {
+    "applicable": false,
+    "reason": "Brownfield single-project inventory, not a candidate comparison.",
+    "experiment_run": "none - claim-only"
+  },
+  "bandwagon_check": "No popularity-based claims used. The only doc-consensus risk ('all tests pass / project done') is downgraded to single-build-origin because foreman-checkpoint.json and EXECUTION-LOG.md are the same build's self-report and pytest could not be re-run (E11,E12).",
+  "what_anchor_is": "Single-user plain-markdown productivity system for J.C. Liechty (anchor_gui.py live server on :8777 + anchor.py CLI), plus a newer per-project 'R&D control surface' that launches the researchPrime/Crucible/Foreman trio as durable server-owned `claude -p` jobs and serves their reports.",
+  "findings": [
+    {"claim": "Core product is a stdlib-only markdown task system; anchor_gui.py (~205KB) is the live NSSM-service app on port 8777, anchor.py is the mirrored CLI.", "confidence": "high", "verification_level": "CORROBORATED", "evidence_refs": ["E2", "E13", "E15"], "dissent": null},
+    {"claim": "The product's 'Python stdlib only' contract is TRUE: flask/Pillow are imported only by the dead anchor_server.py and the optional create_shortcut.py icon helper, neither of which ships. requirements.txt is stale/misleading.", "confidence": "high", "verification_level": "OBSERVED", "evidence_refs": ["E9", "E3"], "dissent": null},
+    {"claim": "The R&D control surface (rnd_registry/job_runner/lanes/gate_adapter/effort_history/report_viewer/deliverables/distro) was Crucible-planned and Foreman-built across 9 waves; its gate reports 158->168 tests GREEN, status done/GO.", "confidence": "high", "verification_level": "CORROBORATED", "evidence_refs": ["E11"], "dissent": "Single build-origin (checkpoint + EXECUTION-LOG are the same run's self-report); pytest not re-run this session (E12)."},
+    {"claim": "The claude launch->stream->tail->report spine is live-proven: a real job in rnd_jobs/ invoked the researchPrime skill and wrote plan + ledger artifacts into the project namespace.", "confidence": "high", "verification_level": "OBSERVED", "evidence_refs": ["E5", "E10"], "dissent": null},
+    {"claim": "effort_history (versioned effort cards, cost rollup, C9 per-effort git auto-commit) is built + unit-tested but NOT wired into production: no production caller of record_effort/finalize_effort/attach_cost, and no index.json/efforts dirs on disk. Kanban cards + cost rollup are inert in prod.", "confidence": "high", "verification_level": "OBSERVED", "evidence_refs": ["E10"], "dissent": null},
+    {"claim": "The keystone gate mechanism (answer an AskUserQuestion stream-json frame via a stdin text turn) is self-described 'inherently FRAGILE/best-effort' and was tested only against a SYNTHETIC crucible_gate.jsonl; the real-Crucible live go/no-go was never run. Human SETUP gate is PENDING.", "confidence": "high", "verification_level": "CORROBORATED", "evidence_refs": ["E14"], "dissent": null},
+    {"claim": "Gemini engine support is deferred to the research lane only (GEMINI_LANES={research}); the plan/build adapter is unbuilt; definition-of-done (green Crucible+Foreman dogfood on Gemini) not achieved.", "confidence": "high", "verification_level": "CORROBORATED", "evidence_refs": ["E14"], "dissent": null},
+    {"claim": "Single-instance/exclusive-bind guard (SO_EXCLUSIVEADDRUSE + clean exit on EADDRINUSE) shipped, resolving the duplicate-supervisor/stale-server saga (commits bb660a5, 31a3832).", "confidence": "moderate-high", "verification_level": "CORROBORATED", "evidence_refs": ["E15", "E6"], "dissent": "Resolution is recent (06-08/09); not soak-tested; overlaps the un-exercised real-host liveness risk."},
+    {"claim": "anchor_server.py is dead legacy (Flask, port 5000, old 'Anchor PSU' layout, ignores paths.py, not shipped/referenced) - superseded by anchor_gui.py.", "confidence": "high", "verification_level": "OBSERVED", "evidence_refs": ["E9", "E13"], "dissent": null},
+    {"claim": "Working tree is dirty: 7 modified + 4 untracked paths uncommitted (incl. live rnd_registry.json, .anchor/, rnd_jobs/).", "confidence": "high", "verification_level": "OBSERVED", "evidence_refs": ["E4"], "dissent": null},
+    {"claim": "deliverables.py is a real product module with tests but is MISSING from dist_manifest.txt, so under the deny-by-default rule it would not ship.", "confidence": "moderate", "verification_level": "CLAIMED", "evidence_refs": ["E8"], "dissent": "Reported by one sub-agent from manifest read; not independently re-grepped here."},
+    {"claim": "Test suite (~29 test_*.py) covers job_runner durability/cancel, registry, token-auth, gate adapter, project window/Kanban, lanes concurrency, report viewer, deliverables, distro PII scan (10 planted-secret fixtures), engine selector, migration; isolates state via ANCHOR_DATA_DIR + a stdlib fake_claude mock (no live billing).", "confidence": "high", "verification_level": "CORROBORATED", "evidence_refs": ["E7"], "dissent": null}
+  ],
+  "action_items": [
+    {"action": "Re-run `python -m pytest -v` on this exact tree to independently confirm GREEN.", "rationale": "The 158/168 figure is the build's own self-report; pytest was harness-gated in this research lane.", "assumptions": ["pytest installed via `pip install -e .[dev]`"], "verification_level": "CORROBORATED", "confidence": "high", "evidence_refs": ["E11", "E12"], "blockers_or_unknowns": ["current exact pass count unknown this session"]},
+    {"action": "Wire effort_history into the live path: call record_effort at launch (in lanes.launch_lane / the launch endpoint) and finalize_effort on terminal job status (add a completion hook in job_runner).", "rationale": "Marquee subsystem (effort cards, cost rollup, C9 auto-commit) is dead in production despite being fully built+tested.", "assumptions": ["no hidden dynamic binding already calls it - confirmed absent by grep"], "verification_level": "OBSERVED", "confidence": "high", "evidence_refs": ["E10"], "blockers_or_unknowns": ["where the canonical job-completion hook should live"]},
+    {"action": "Run the human SETUP gate, especially the real-Crucible live go/no-go: capture a real crucible_gate.jsonl and confirm a plan/build gate is answerable headless.", "rationale": "The keystone gate is proven only against a synthetic fixture; the plan calls this 'the one residual risk'.", "assumptions": ["service runs as john with claude.exe on PATH"], "verification_level": "CORROBORATED", "confidence": "high", "evidence_refs": ["E14"], "blockers_or_unknowns": ["whether headless AskUserQuestion auto-dismisses instead of surfacing an answerable gate"]},
+    {"action": "Exercise real-host job liveness: launch a real claude job and confirm the recorded PID stays valid (no false 'interrupted' if claude re-execs a worker child).", "rationale": "All gates used the mock runner; a false interrupted could drop the folder build-lock.", "assumptions": [], "verification_level": "CORROBORATED", "confidence": "moderate-high", "evidence_refs": ["E14"], "blockers_or_unknowns": ["claude's process-tree behavior on Windows"]},
+    {"action": "Hygiene pass: delete or annotate stale requirements.txt; quarantine/remove dead anchor_server.py + dashboard_api/live.html stack; add deliverables.py to dist_manifest.txt; commit the dirty working tree; update EXECUTION-LOG past 06-08.", "rationale": "Reduces confusion and ship-manifest gaps for a new owner.", "assumptions": [], "verification_level": "OBSERVED", "confidence": "high", "evidence_refs": ["E4", "E9"], "blockers_or_unknowns": []}
+  ],
+  "verify_before_use": [
+    {"item": "Exact current pytest pass count", "level": "harness-gated this session", "evidence_refs": ["E12"]},
+    {"item": "deliverables.py missing-from-manifest", "level": "CLAIMED (single sub-agent)", "evidence_refs": ["E8"]},
+    {"item": "Production service invocation (--no-browser/8777) rests on docs, not a committed installer", "level": "CLAIMED", "evidence_refs": ["E2"]},
+    {"item": "report_viewer/gate_adapter/dir_browser specific line behaviors", "level": "CLAIMED (single sub-agent primary read)", "evidence_refs": ["E8"]}
+  ],
+  "sources": [
+    {"id": "E1", "locator": "git ls-files type counts + commit count", "independent": "primary-repo"},
+    {"id": "E2", "locator": "top-level ls -la + module sizes", "independent": "primary-repo"},
+    {"id": "E3", "locator": "pyproject.toml + requirements.txt", "independent": "primary-repo"},
+    {"id": "E4", "locator": "git status --short", "independent": "primary-repo"},
+    {"id": "E5", "locator": "rnd_registry.json + launch.pointer.json", "independent": "primary-repo"},
+    {"id": "E6", "locator": "git log --oneline", "independent": "primary-repo"},
+    {"id": "E7", "locator": "tests/ listing", "independent": "primary-repo"},
+    {"id": "E8", "locator": "planning/ _mockups/ vendor/ listings + sub-agent source reads", "independent": "primary-repo"},
+    {"id": "E9", "locator": "control-cased grep: flask/PIL import sites", "independent": "OBSERVED-this-session"},
+    {"id": "E10", "locator": "control-cased grep + find: effort-history wiring", "independent": "OBSERVED-this-session"},
+    {"id": "E11", "locator": "foreman-checkpoint.json + EXECUTION-LOG.md", "independent": "primary-single-build-origin"},
+    {"id": "E12", "locator": "pytest attempt (harness-gated)", "independent": "negative-result"},
+    {"id": "E13", "locator": "anchor_server.py head/binds", "independent": "primary-repo"},
+    {"id": "E14", "locator": "SETUP.md + DECISION-LOG.md + gemini-adapter/PLAN.md", "independent": "primary-repo"},
+    {"id": "E15", "locator": "paths.py + anchor_gui.py bind-guard", "independent": "primary-repo"}
+  ]
+}

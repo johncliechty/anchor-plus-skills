@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-c4b67e0973f04494",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848325.6458757,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Human",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/vendor/bundled-skills/researchPrime/HUMAN.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

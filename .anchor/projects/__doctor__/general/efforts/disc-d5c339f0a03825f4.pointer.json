@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d5c339f0a03825f4",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784839210.0145676,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Project Done Receipt",
+  "artifact_path": "planning/share-anchor-skills-2026-07/PROJECT-DONE-RECEIPT.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

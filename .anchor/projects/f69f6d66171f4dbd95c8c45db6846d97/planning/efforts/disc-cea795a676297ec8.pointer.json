@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-cea795a676297ec8",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1781538500.452326,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v7 — \"Integrated Board\" — Master Plan (frozen design)",
+  "artifact_path": "planning/rnd-v7/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

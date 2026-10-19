@@ -3,23 +3,6 @@
   "map_version": 2,
   "skills": [
     {
-      "ref": "skill:anvil",
-      "name": "anvil",
-      "source": "skills/anvil",
-      "status": "4 - Beta",
-      "tier": "standard",
-      "version": "1.0.0",
-      "edges": [
-        {
-          "type": "compose",
-          "to": "skill:gandalf",
-          "range": "^1.0.0",
-          "note": "uses cross-family adversarial review for code remapping (Null Space + Get-Data/Do-Analysis/Create-Output) and paper-to-code validation"
-        }
-      ],
-      "note": "human-centered codebase comprehension, single-block empirical validation, best-in-class code remapping with explicit Null Space, and paper-to-code verification"
-    },
-    {
       "ref": "skill:chekhov",
       "name": "chekhov",
       "source": "skills/chekhov",

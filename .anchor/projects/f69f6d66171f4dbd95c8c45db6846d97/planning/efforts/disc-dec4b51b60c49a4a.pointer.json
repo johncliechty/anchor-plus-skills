@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-dec4b51b60c49a4a",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1785277978.362005,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Master Plan (APPROVED) — Shareable Anchor + Skills",
+  "artifact_path": "planning/share-anchor-skills-2026-07/MASTER-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

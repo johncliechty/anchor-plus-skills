@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-39605164b68ab2a4",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784848333.6627557,
+  "source": "discovered",
+  "kind": "impl-plan",
+  "title": "Implementation Plan",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/skills-only/skills/literature-review/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

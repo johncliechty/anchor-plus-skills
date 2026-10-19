@@ -1,0 +1,206 @@
+{
+  "schema": "share-brownfield-inventory/v1",
+  "schema_version": 1,
+  "product": "Shareable Anchor + Skills",
+  "reuse_rule": "Extend GREEN modules; forbid a second distro/publish stack without gap-proof ticket.",
+  "green_modules": [
+    {
+      "module": "distro.py",
+      "path": "distro.py",
+      "claims": [
+        "deny-by-default shippable manifest (dist_manifest.txt)",
+        "build_distro staging + PersonalDataError clean-scan gate",
+        "host-path / PII / secret detectors",
+        "publish_distro build-then-push (scan before any remote)"
+      ],
+      "reuse_marker": "reuse:distro",
+      "ns_criteria": [1, 3, 7, 8]
+    },
+    {
+      "module": "vendor_skills.py",
+      "path": "vendor_skills.py",
+      "claims": [
+        "git archive vendoring",
+        "denylist filter for tracked-but-personal files",
+        "residual host-path/PII scrub",
+        "SOURCES.md commit stamp",
+        "full declared-suite roster config (W2 expansion from 4-skill baseline; archive/scrub APIs frozen)"
+      ],
+      "reuse_marker": "reuse:vendor_skills",
+      "ns_criteria": [1, 3, 8]
+    },
+    {
+      "module": "onboard.py",
+      "path": "onboard.py",
+      "claims": [
+        "skills install refuse-dont-clobber",
+        "starter scaffold",
+        "token mint out-of-tree",
+        "service registration seam",
+        "prereq detect"
+      ],
+      "reuse_marker": "reuse:onboard",
+      "ns_criteria": [2, 4, 5, 6]
+    },
+    {
+      "module": "anchor.registrar",
+      "path": "anchor/registrar.py",
+      "claims": [
+        "NSSM / systemd / launchd unit generators",
+        "cross-platform service registration unit build"
+      ],
+      "reuse_marker": "reuse:registrar",
+      "ns_criteria": [6]
+    },
+    {
+      "module": "publish_distro",
+      "path": "distro.py",
+      "claims": [
+        "publish_distro function: clean-scan then git/gh publish path"
+      ],
+      "reuse_marker": "reuse:publish_distro",
+      "ns_criteria": [1, 3, 8]
+    },
+    {
+      "module": "scrub/clean-scan",
+      "path": "distro.py",
+      "claims": [
+        "PersonalDataError on leak",
+        "scan_personal_data + third-party import scan",
+        "build_distro aborts on scan fail"
+      ],
+      "reuse_marker": "reuse:clean_scan",
+      "ns_criteria": [3, 7]
+    },
+    {
+      "module": "default-deny auth",
+      "path": "paths.py",
+      "claims": [
+        "ANCHOR_TOKEN auth_ok",
+        "token-authed POSTs; GET token query",
+        "cookie auth for browser pages (rearch W9)"
+      ],
+      "reuse_marker": "reuse:default_deny_auth",
+      "ns_criteria": [7]
+    },
+    {
+      "module": "doctor",
+      "path": "doctor.py",
+      "claims": [
+        "run_doctor system check",
+        "capability probe for claude/agy CLI presence"
+      ],
+      "reuse_marker": "reuse:doctor",
+      "ns_criteria": [1, 6]
+    }
+  ],
+  "extension_points": [
+    {
+      "id": "ext:roster_config",
+      "module": "vendor_skills.py",
+      "claim": "SKILL_SOURCES config-only roster expansion (W2); freeze archive/scrub APIs",
+      "ns_criteria": [1, 8]
+    },
+    {
+      "id": "ext:package_matrix",
+      "module": "share_package_matrix.py",
+      "claim": "A|B emit contract; hard-fail Anchor-only; B requires skills_pin + skills subtree",
+      "ns_criteria": [1, 8]
+    },
+    {
+      "id": "ext:capability_matrix",
+      "module": "share_capability_matrix.py",
+      "claim": "Per-skill works/degraded/Anchor-required + Skills-only roster resolve",
+      "ns_criteria": [1]
+    },
+    {
+      "id": "ext:readiness_stamp",
+      "module": "share_readiness.py",
+      "claim": "ready|degraded + reason codes schema (W1) + compute/write stamp (W4); onboard probes complete in W5",
+      "ns_criteria": [1, 4, 6]
+    },
+    {
+      "id": "ext:sources_freeze",
+      "module": "share_sources.py",
+      "claim": "SOURCES.md multi-repo writer + verify_freeze_manifest + share_publish gates (dirty-tree, matrix, B_contains_A); freeze placeholders until go-ahead (W3)",
+      "ns_criteria": [3, 8]
+    },
+    {
+      "id": "ext:governance_pack",
+      "module": "share_governance.py",
+      "claim": "AGENTS.md export pack + host-personal denylist + golden (W4); journal/seal/home companions",
+      "ns_criteria": [4, 5]
+    },
+    {
+      "id": "ext:feedback_sanitizer",
+      "module": "share_feedback.py",
+      "claim": "Opt-in friction schema, sanitizer, install key, local queue (W6); intake transport + partition + dogfood (W7 share_feedback_intake.py)",
+      "ns_criteria": [9]
+    },
+    {
+      "id": "ext:onboard_dialog",
+      "module": "share_onboard.py",
+      "claim": "Extend GREEN onboard.py scripted dialog: home, seats, consent, desktop, readiness (W5); reuses install_skills/scaffold/token",
+      "ns_criteria": [2, 4, 6, 9]
+    },
+    {
+      "id": "ext:topology",
+      "module": "share_topology.py",
+      "claim": "Dual-audience topology: private *-dev SoT, one-way bot-only public mirror, CONTRIBUTING/README three-path, collaborator invite checklist, mirror lag, release captain fail-closed gate (W8)",
+      "ns_criteria": [2, 3, 9]
+    },
+    {
+      "id": "ext:ci_ship_gate",
+      "module": "share_ci_ship_gate.py",
+      "claim": "CI matrices (Skills-only + Anchor+Skills), money-safe defaults, stranger E2E, non-admin Windows path, execute/ship gate fail-closed, Foreman reuse-proof templates, ship-gate checklist artifact (W9)",
+      "ns_criteria": [1, 3, 6, 7, 8]
+    }
+  ],
+  "ns_gap_map": {
+    "1": {
+      "title": "Dual packages, correct coupling",
+      "green": ["distro.py", "vendor_skills.py"],
+      "extensions": ["ext:package_matrix", "ext:capability_matrix", "ext:roster_config", "ext:ci_ship_gate"]
+    },
+    "2": {
+      "title": "Dual audience, git-honest",
+      "green": ["onboard.py"],
+      "extensions": ["ext:onboard_dialog", "ext:topology"]
+    },
+    "3": {
+      "title": "No-leak distribution",
+      "green": ["distro.py", "vendor_skills.py", "scrub/clean-scan"],
+      "extensions": ["ext:sources_freeze", "ext:roster_config", "ext:ci_ship_gate"]
+    },
+    "4": {
+      "title": "Plain-English terminal onboard",
+      "green": ["onboard.py", "doctor"],
+      "extensions": ["ext:onboard_dialog", "ext:readiness_stamp"]
+    },
+    "5": {
+      "title": "Governance travels with the code",
+      "green": [],
+      "extensions": ["ext:governance_pack"]
+    },
+    "6": {
+      "title": "Works-on-arrival (local-first v1)",
+      "green": ["onboard.py", "anchor.registrar", "doctor"],
+      "extensions": ["ext:onboard_dialog", "ext:readiness_stamp", "ext:ci_ship_gate"]
+    },
+    "7": {
+      "title": "No regression of safety/durability",
+      "green": ["default-deny auth", "distro.py", "scrub/clean-scan"],
+      "extensions": ["ext:ci_ship_gate"]
+    },
+    "8": {
+      "title": "Plan now, ship after concurrent skill run",
+      "green": ["vendor_skills.py", "publish_distro"],
+      "extensions": ["ext:sources_freeze", "ext:package_matrix", "ext:ci_ship_gate"]
+    },
+    "9": {
+      "title": "Opt-in sanitized skill-friction feedback",
+      "green": [],
+      "extensions": ["ext:feedback_sanitizer"]
+    }
+  }
+}

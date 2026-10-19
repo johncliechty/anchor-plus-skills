@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d1e4247db24ad8f0",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "build",
+  "created_at": 1781205907.1505444,
+  "source": "discovered",
+  "kind": "foreman-checkpoint",
+  "title": "foreman-checkpoint",
+  "artifact_path": "foreman-checkpoint.json",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

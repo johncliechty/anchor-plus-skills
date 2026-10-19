@@ -1,0 +1,68 @@
+{
+  "session_id": "dir::planning/rnd-v3",
+  "lane": "planning",
+  "title": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+  "claims": [
+    "## Anchor R&D Surface v3 â€” \"Mission Control\" â€” Planning Trio Summary",
+    "**North Star (locked)**",
+    "The objective is to turn the Anchor dashboard into a **durable mission-control for trio-driven R&D**, where every project is a thin, full-width row carrying an accurate, auto-generated summary.",
+    "Clicking any session expands a **cached, in-place** summary covering *when Â· what-was-asked Â· North-Star Â· clickable doc links Â· effort (tokens + time)* â€” explicitly never a separate \"no summary\" page.",
+    "Trio work runs as **persistent, isolated, server-side terminal sessions** managed like stacking windows: open / attach / minimize / kill-with-confirm, status-colored, and surviving disconnect â€” so launching a session feels like a real terminal.",
+    "**Locked decisions (Stage 0/1 user gates)**",
+    "**Terminal substrate = real ConPTY** (via `pywinpty`), a conscious waiver of Anchor's \"stdlib-only / no native assets\" rule **for the terminal subsystem only**; everything else stays stdlib, and the subsystem (and dashboard) **degrades gracefully if `pywinpty` is absent**.",
+    "**Summaries = proactive background generation, cached** â€” generated once at discovery/rescan and right after a run completes, shown ready and in-place on click; lazy \"generatingâ€¦\" exists only as a fallback.",
+    "**Concurrency isolation = git worktrees per session** â€” each plan/research/build session gets its own worktree so concurrent sessions can't dirty one another's trees.",
+    "The session comprises three planning artifacts: the **Master Plan (frozen design)** (the subject doc), the **Implementation Plan (Foreman-ready)**, and the **Execution Log** â€” i.e., design + build-plan + execution history for the v3 surface.",
+    "Here is a grounded summary of the v3 \"Mission Control\" planning trio session, with each claim tied to the member documents (Master Plan, Implementation Plan, Execution Log):",
+    "## North Star (locked objective)",
+    "Turn the Anchor dashboard into a **durable mission-control for trio-driven R&D**, where every project is a thin, full-width row carrying an accurate, auto-generated summary.",
+    "Clicking any session expands a concise, **cached, in-place** summary â€” *when Â· what-was-asked Â· North-Star Â· clickable doc links Â· effort (tokens + time)* â€” never a separate \"no summary\" page.",
+    "Trio work runs as **persistent, isolated, server-side terminal sessions** managed like stacking windows (open / attach / minimize / kill-with-confirm), status-colored, and surviving disconnect â€” so launching a session feels like a real terminal.",
+    "## Locked decisions (Stage 0/1 user gates)",
+    "**Terminal substrate = real ConPTY** (via `pywinpty`). This *consciously waives* Anchor's \"stdlib-only / no-native-assets\" rule **for the terminal subsystem only** â€” everything else stays stdlib, and the subsystem (and the dashboard) **degrades gracefully if `pywinpty` is absent**.",
+    "**Summaries = proactive background generation, cached.** Generated once (at discovery/rescan and right after a run completes); clicking shows a ready, cached summary in-place, with lazy \"generatingâ€¦\" only as a fallback.",
+    "**Concurrency isolation = git worktrees per session.** Each plan/research/build session gets its own isolated worktree so concurrent sessions can't dirty each other's trees.",
+    "The frozen design is the **Master Plan**; the **Implementation Plan** is the Foreman-ready, wave-by-wave build plan; the **Execution Log** records the per-wave build/review history."
+  ],
+  "member_links": [
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Execution Log",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v3%2FEXECUTION-LOG.md"
+    },
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v3%2FMASTER-PLAN.md"
+    },
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v3%2FIMPLEMENTATION-PLAN.md"
+    }
+  ],
+  "when_run": "2026-06-12",
+  "what_was_asked": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+  "north_star": "> Foreman appends per-wave EXECUTE / GATE / REVIEW / FIX / JUDGE entries here. > Seeded by the Crucible→Foreman handoff on 2026-06-11. Frozen design: > `MASTER-PLAN.md`. Plan: `IMPLEMENTATION-PLAN.md`. Gate: `python -m pytest -v`.",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Execution Log",
+      "rel": "planning/rnd-v3/EXECUTION-LOG.md",
+      "job_id": "disc-cd091f433e775d4e"
+    },
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)",
+      "rel": "planning/rnd-v3/MASTER-PLAN.md",
+      "job_id": "disc-427f4b4916091748"
+    },
+    {
+      "label": "Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)",
+      "rel": "planning/rnd-v3/IMPLEMENTATION-PLAN.md",
+      "job_id": "disc-a61d3f19777bf4fc"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1782154144.5217643,
+  "runs": 2,
+  "markdown": "# Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)\n\n*Lane: planning · validated, cached summary*\n\n**When run:** 2026-06-12\n\n**What was asked:** Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)\n\n**North Star:** > Foreman appends per-wave EXECUTE / GATE / REVIEW / FIX / JUDGE entries here. > Seeded by the Crucible→Foreman handoff on 2026-06-11. Frozen design: > `MASTER-PLAN.md`. Plan: `IMPLEMENTATION-PLAN.md`. Gate: `python -m pytest -v`.\n\n## Actions & files produced\n\n- Anchor R&D Surface v3 — \"Mission Control\" — Execution Log\n- Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)\n- Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)\n\n**Effort:** imported — no run metrics\n\n## Goal & key decisions\n\n- ## Anchor R&D Surface v3 â€” \"Mission Control\" â€” Planning Trio Summary\n- **North Star (locked)**\n- The objective is to turn the Anchor dashboard into a **durable mission-control for trio-driven R&D**, where every project is a thin, full-width row carrying an accurate, auto-generated summary.\n- Clicking any session expands a **cached, in-place** summary covering *when Â· what-was-asked Â· North-Star Â· clickable doc links Â· effort (tokens + time)* â€” explicitly never a separate \"no summary\" page.\n- Trio work runs as **persistent, isolated, server-side terminal sessions** managed like stacking windows: open / attach / minimize / kill-with-confirm, status-colored, and surviving disconnect â€” so launching a session feels like a real terminal.\n- **Locked decisions (Stage 0/1 user gates)**\n- **Terminal substrate = real ConPTY** (via `pywinpty`), a conscious waiver of Anchor's \"stdlib-only / no native assets\" rule **for the terminal subsystem only**; everything else stays stdlib, and the subsystem (and dashboard) **degrades gracefully if `pywinpty` is absent**.\n- **Summaries = proactive background generation, cached** â€” generated once at discovery/rescan and right after a run completes, shown ready and in-place on click; lazy \"generatingâ€¦\" exists only as a fallback.\n- **Concurrency isolation = git worktrees per session** â€” each plan/research/build session gets its own worktree so concurrent sessions can't dirty one another's trees.\n- The session comprises three planning artifacts: the **Master Plan (frozen design)** (the subject doc), the **Implementation Plan (Foreman-ready)**, and the **Execution Log** â€” i.e., design + build-plan + execution history for the v3 surface.\n- Here is a grounded summary of the v3 \"Mission Control\" planning trio session, with each claim tied to the member documents (Master Plan, Implementation Plan, Execution Log):\n- ## North Star (locked objective)\n- Turn the Anchor dashboard into a **durable mission-control for trio-driven R&D**, where every project is a thin, full-width row carrying an accurate, auto-generated summary.\n- Clicking any session expands a concise, **cached, in-place** summary â€” *when Â· what-was-asked Â· North-Star Â· clickable doc links Â· effort (tokens + time)* â€” never a separate \"no summary\" page.\n- Trio work runs as **persistent, isolated, server-side terminal sessions** managed like stacking windows (open / attach / minimize / kill-with-confirm), status-colored, and surviving disconnect â€” so launching a session feels like a real terminal.\n- ## Locked decisions (Stage 0/1 user gates)\n- **Terminal substrate = real ConPTY** (via `pywinpty`). This *consciously waives* Anchor's \"stdlib-only / no-native-assets\" rule **for the terminal subsystem only** â€” everything else stays stdlib, and the subsystem (and the dashboard) **degrades gracefully if `pywinpty` is absent**.\n- **Summaries = proactive background generation, cached.** Generated once (at discovery/rescan and right after a run completes); clicking shows a ready, cached summary in-place, with lazy \"generatingâ€¦\" only as a fallback.\n- **Concurrency isolation = git worktrees per session.** Each plan/research/build session gets its own isolated worktree so concurrent sessions can't dirty each other's trees.\n- The frozen design is the **Master Plan**; the **Implementation Plan** is the Foreman-ready, wave-by-wave build plan; the **Execution Log** records the per-wave build/review history.\n\n## Files\n\n- [Anchor R&D Surface v3 — \"Mission Control\" — Execution Log](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v3%2FEXECUTION-LOG.md)\n- [Anchor R&D Surface v3 — \"Mission Control\" — Master Plan (frozen design)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v3%2FMASTER-PLAN.md)\n- [Anchor R&D Surface v3 — \"Mission Control\" — Implementation Plan (Foreman-ready)](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=planning%2Frnd-v3%2FIMPLEMENTATION-PLAN.md)\n",
+  "schema_version": 3
+}

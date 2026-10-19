@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-d7c653be7cc18e6c",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1784924593.4043179,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Plan V1",
+  "artifact_path": "planning/share-anchor-skills-2026-07/package-v1/clean-ship/A-skills-only/skills/tidy-idy/PLAN-v1.md",
+  "status": "imported",
+  "session_id": "50460c414fa94bc68691dd3f1e90087f"
+}

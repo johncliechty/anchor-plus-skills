@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-a3129bcb5de9bad4",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788882193.4250202,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Fake Codex Artifact",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/test-tmp-jobs-01/test_chatgpt_real_child_round_0/unicode-output/fake-codex-artifact.md",
+  "status": "imported",
+  "session_id": "24e114c3265d41f5bae3f4830aef90b9"
+}

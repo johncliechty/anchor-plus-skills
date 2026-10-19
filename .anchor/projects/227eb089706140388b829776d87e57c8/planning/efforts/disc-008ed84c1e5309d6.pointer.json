@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-008ed84c1e5309d6",
+  "project_id": "227eb089706140388b829776d87e57c8",
+  "lane": "planning",
+  "created_at": 1781354881.0323448,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Anchor R&D Surface v4 — \"Project Cockpit\" — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/rnd-v4/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "2fe37f39157f4c7aa3e2523baa41f40f"
+}

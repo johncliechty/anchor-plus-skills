@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-59bbc7f532d36bc2",
+  "project_id": "a6af3f3b155c4d25b10e908abc1291f8",
+  "lane": "planning",
+  "created_at": 1784924341.525257,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "STAGE 2: IMPLEMENTATION PLAN",
+  "artifact_path": "planning/crucible/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

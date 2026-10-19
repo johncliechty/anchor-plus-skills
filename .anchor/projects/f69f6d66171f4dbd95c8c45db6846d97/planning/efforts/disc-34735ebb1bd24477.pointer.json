@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-34735ebb1bd24477",
+  "project_id": "f69f6d66171f4dbd95c8c45db6846d97",
+  "lane": "planning",
+  "created_at": 1784924341.6914175,
+  "source": "discovered",
+  "kind": "plan-doc",
+  "title": "Zombie-Hunter → safe-to-arm reaper (pause-first) — Implementation Plan (Foreman-ready)",
+  "artifact_path": "planning/zombie-hunter-safe-to-arm-2026-07-05/IMPLEMENTATION-PLAN.md",
+  "status": "imported",
+  "imported_from": "f69f6d66171f4dbd95c8c45db6846d97"
+}

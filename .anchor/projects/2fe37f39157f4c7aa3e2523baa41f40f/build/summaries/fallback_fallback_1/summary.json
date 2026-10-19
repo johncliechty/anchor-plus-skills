@@ -1,0 +1,30 @@
+{
+  "session_id": "fallback::fallback::::1",
+  "lane": "build",
+  "title": "foreman.config",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "foreman.config",
+      "href": "/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=foreman.config.json"
+    }
+  ],
+  "when_run": "2026-06-13",
+  "what_was_asked": "foreman.config",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "foreman.config",
+      "rel": "foreman.config.json",
+      "job_id": "disc-18333cf3c1eaff05"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1781542941.3041275,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# foreman.config\n\n*Lane: build · validated, cached summary*\n\n**When run:** 2026-06-13\n\n**What was asked:** foreman.config\n\n## Actions & files produced\n\n- foreman.config\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [foreman.config](/artifact/2fe37f39157f4c7aa3e2523baa41f40f?path=foreman.config.json)\n",
+  "schema_version": 2
+}

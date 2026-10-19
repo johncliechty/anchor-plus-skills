@@ -1,0 +1,39 @@
+{
+  "session_id": "84ba87a4d29a4a0eb36e1fcf0445eb23",
+  "lane": "research",
+  "title": "Restart",
+  "claims": [],
+  "member_links": [
+    {
+      "label": "Restart",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=research%2FRESTART.md"
+    },
+    {
+      "label": "84Ba87A4D29A Transcript",
+      "href": "/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=research%2F84ba87a4d29a-transcript.md"
+    }
+  ],
+  "when_run": "2026-07-18",
+  "what_was_asked": "Restart",
+  "north_star": "",
+  "skill": "",
+  "prompts": [],
+  "actions": [
+    {
+      "label": "Restart",
+      "rel": "research/RESTART.md",
+      "job_id": "disc-ebbfc65e21d22732"
+    },
+    {
+      "label": "84Ba87A4D29A Transcript",
+      "rel": "research/84ba87a4d29a-transcript.md",
+      "job_id": "disc-30688b412d3c07fc"
+    }
+  ],
+  "effort": null,
+  "generated_at": 1784411373.0293558,
+  "runs": 2,
+  "no_grounded_claims": true,
+  "markdown": "# Restart\n\n*Lane: research · validated, cached summary*\n\n**When run:** 2026-07-18\n\n**What was asked:** Restart\n\n## Actions & files produced\n\n- Restart\n- 84Ba87A4D29A Transcript\n\n**Effort:** imported — no run metrics\n\n## Summary\n\n_No grounded claims could be extracted from the member documents for this session. You may **Regenerate** to try again._\n\n## Files\n\n- [Restart](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=research%2FRESTART.md)\n- [84Ba87A4D29A Transcript](/artifact/f69f6d66171f4dbd95c8c45db6846d97?path=research%2F84ba87a4d29a-transcript.md)\n",
+  "schema_version": 3
+}

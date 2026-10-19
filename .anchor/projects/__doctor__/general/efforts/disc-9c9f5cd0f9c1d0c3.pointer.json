@@ -1,0 +1,12 @@
+{
+  "job_id": "disc-9c9f5cd0f9c1d0c3",
+  "project_id": "__doctor__",
+  "lane": "general",
+  "created_at": 1788920186.7335052,
+  "source": "discovered",
+  "kind": "doc",
+  "title": "Notebook Autostart",
+  "artifact_path": "planning/notebooks-model-routing-2026-09-08/NOTEBOOK-AUTOSTART.md",
+  "status": "imported",
+  "session_id": "2f72e7675da74ea88560c21d61c3d253"
+}
