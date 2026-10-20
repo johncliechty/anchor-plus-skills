@@ -9,11 +9,12 @@ $py = Join-Path $env:LOCALAPPDATA "anchor-shell\.venv\Scripts\python.exe"
 $out = Join-Path $env:LOCALAPPDATA "anchor-shell\dist"
 $work = Join-Path $env:LOCALAPPDATA "anchor-shell\build"
 $icon = Join-Path $root "vendor\brand\anchor-icon.ico"
+$versionFile = Join-Path $root "VERSION"
 
 & $py -m pip install -q pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
 & $py -m PyInstaller --noconfirm --clean --onedir --windowed --name Anchor `
-    --icon $icon --add-data "$icon;." `
+    --icon $icon --add-data "$icon;." --add-data "$versionFile;." `
     --paths $root --paths (Join-Path $root "shell") `
     --collect-all webview --hidden-import clr --hidden-import connect --hidden-import onboard_bootstrap `
     --distpath $out --workpath $work --specpath $work `

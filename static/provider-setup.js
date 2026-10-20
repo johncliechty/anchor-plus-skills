@@ -154,7 +154,7 @@
     if(name==='chart' && !w3Synced){syncWave3FromServer();}
     if(name==='comms'){syncWave9CommsFromServer();}
   }
-  function leave(){if(window.parent!==window)window.parent.postMessage({type:'anchor-setup-close'},location.origin);else location.href='/high-seat';}
+  function leave(){if(window.parent!==window)window.parent.postMessage({type:'anchor-setup-close'},location.origin);else location.href=(window.pywebview?'/static/app.html':'/high-seat');}
   function active(){return data.connections.find(c=>c.id===connectionId) || data.connections.find(c=>c.family===family);}
   function reportFacts(parent,account){
     const monAll=(data && data.usage_summary && data.usage_summary.allowance_monitor && data.usage_summary.allowance_monitor.families) || {};

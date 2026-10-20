@@ -421,9 +421,13 @@ def main(argv=None):
 
     host = HostApi()
     address = "" if args.setup else connect.choose(DATA, args.url)
+    if FROZEN and not args.url and address == connect.LOCAL:
+        vcheck = connect.inspect_local_anchor_version(ROOT, check_system_dirs=True)
+        if vcheck.get("needs_upgrade") or vcheck.get("needs_install"):
+            address = ""
     host._address = address or connect.load_address(DATA)
     if not address:
-        host._html = connect.setup_page(host._address) if host._address else connect.first_launch_page()
+        host._html = connect.setup_page(host._address) if (host._address and host._address != connect.LOCAL) else connect.first_launch_page()
         page = dict(html=host._html)
     elif address == connect.LOCAL and FROZEN and not connect.reachable(address):
         connect.ensure_local_service_running(ROOT, check_system_dirs=True)
