@@ -11,10 +11,12 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +30,7 @@ EXAMPLE = "https://mother-ship.example"
 APP_PATH = "/static/app.html"
 DEFAULT_GITHUB_REPO = "https://github.com/johncliechty/ghostworldlabs-anchor.git"
 FALLBACK_GITHUB_REPO = "https://github.com/johncliechty/anchor-plus-skills.git"
+_INSTALL_LOCK = threading.Lock()
 
 
 def _read_bundled_version():
@@ -43,14 +46,14 @@ def _read_bundled_version():
                     return v
         except OSError:
             pass
-    return "1.4.1"
+    return "1.4.2"
 
 
 BUNDLED_VERSION = _read_bundled_version()
 
 
 def parse_version(text):
-    """Parse '1.4.0' -> (1, 4, 0); returns (0, 0, 0) when missing or unparseable."""
+    """Parse '1.4.2' -> (1, 4, 2); returns (0, 0, 0) when missing or unparseable."""
     parts = re.findall(r"\d+", str(text or ""))
     if not parts:
         return (0, 0, 0)
@@ -62,6 +65,26 @@ def parse_version(text):
 
 def settings_file(data_dir):
     return Path(data_dir) / "settings.json"
+
+
+def upgrade_state_file(data_dir):
+    return Path(data_dir) / "upgrade_state.json"
+
+
+def load_attempted_upgrade_version(data_dir):
+    try:
+        return str(json.loads(upgrade_state_file(data_dir).read_text(encoding="utf-8")).get("attempted_version") or "")
+    except (OSError, ValueError):
+        return ""
+
+
+def save_attempted_upgrade_version(data_dir, version):
+    f = upgrade_state_file(data_dir)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"attempted_version": str(version or "")}, indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def load_address(data_dir):
@@ -88,7 +111,11 @@ def normalize(text):
     if not t:
         return None, "Type your mother ship's address."
     if "://" not in t:
-        t = "https://" + t
+        low = t.lower()
+        if low.startswith("127.0.0.1") or low.startswith("localhost") or low.startswith("[::1]"):
+            t = "http://" + t
+        else:
+            t = "https://" + t
     try:
         parts = urlsplit(t)
         port = parts.port
@@ -113,6 +140,26 @@ def reachable(address, timeout=5.0):
         with urllib.request.urlopen(address + APP_PATH, timeout=timeout, context=ctx) as r:
             return r.status == 200 and b"ANCHOR" in r.read(4096).upper()
     except (urllib.error.URLError, OSError, ValueError, ssl.SSLError):
+        return False
+
+
+def any_service_on_port(address=LOCAL, port=8777, timeout=1.0):
+    """Return True if any server (including pre-1.3.2 Anchor without /static/app.html) is listening on port."""
+    for path in ("/api/version", "/api/status", "/"):
+        try:
+            ctx = ssl.create_default_context()
+            with urllib.request.urlopen(address.rstrip("/") + path, timeout=timeout, context=ctx) as r:
+                if r.status in (200, 401, 403):
+                    return True
+        except urllib.error.HTTPError as he:
+            if he.code in (200, 401, 403, 404):
+                return True
+        except Exception:
+            pass
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.6):
+            return True
+    except OSError:
         return False
 
 
@@ -143,6 +190,7 @@ input{width:100%;font:15px "Segoe UI",system-ui;padding:9px 11px;border-radius:8
 input:focus{outline:2px solid #e0a836;outline-offset:1px}
 .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
 .btn{font:600 14px "Segoe UI",system-ui;padding:8px 16px;border-radius:8px;border:1px solid #3a4658;background:#1e2634;color:#e6ebf2;cursor:pointer}
+.btn:disabled{opacity:0.55;cursor:wait}
 .btn.go{background:#e0a836;border-color:#e0a836;color:#1a1a1a}.msg{min-height:22px;margin-top:12px;color:#e0a836;font-size:14px}
 code{font:13px Consolas,monospace;color:#e9d9a8;overflow-wrap:anywhere}
 .msg{overflow-wrap:anywhere}
@@ -154,9 +202,51 @@ _BAR = """<div id="bar"><b>Anchor</b><span class="sp"></span>
 <button class="c" onclick="pywebview.api.window_control('close')" title="Close">&#10005;</button></div>"""
 
 _SCRIPT = """<script>
-function show(t){document.getElementById('msg').textContent=t||'';}
-function act(name,arg){var m=(name==='select_mother_ship'||name==='install_from_github')?'Checking local Anchor version, pulling latest code & Foundry skills, and starting the Mother Ship service (15\\u201330s)\\u2026':'Connecting\\u2026';show(m);try{(arg===undefined?pywebview.api[name]():pywebview.api[name](arg)).then(function(r){if(r)show(r);}).catch(function(e){show('Error: '+((e&&e.message)||String(e)));});}catch(e){show('Error: '+((e&&e.message)||String(e)));}}
+var _busy=false;
+function show(t){var el=document.getElementById('msg');if(el)el.textContent=t||'';}
+function setBtns(d){var bs=document.querySelectorAll('button.btn');for(var i=0;i<bs.length;i++)bs[i].disabled=d;}
+function act(name,arg){if(_busy)return;_busy=true;setBtns(true);var m=(name==='select_mother_ship'||name==='install_from_github')?'Checking local Anchor version, pulling latest code & Foundry skills, and starting the Mother Ship service\\u2026':'Connecting\\u2026';show(m);try{(arg===undefined?pywebview.api[name]():pywebview.api[name](arg)).then(function(r){_busy=false;setBtns(false);if(r)show(r);}).catch(function(e){_busy=false;setBtns(false);show('Error: '+((e&&e.message)||String(e)));});}catch(e){_busy=false;setBtns(false);show('Error: '+((e&&e.message)||String(e)));}}
 </script>"""
+
+
+def _probe_real_python_argv(argv_prefix):
+    if not argv_prefix:
+        return False
+    if "windowsapps" in str(argv_prefix[0]).lower():
+        return False
+    kwargs = {"capture_output": True, "text": True, "timeout": 8}
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x08000000
+    try:
+        res = subprocess.run(
+            list(argv_prefix) + ["-c", "import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)"],
+            **kwargs,
+        )
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
+def _discover_windows_python_installs():
+    if os.name != "nt":
+        return []
+    found = []
+    roots = [
+        Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Programs" / "Python",
+        Path(r"C:\Program Files"),
+        Path(r"C:\\"),
+    ]
+    for r in roots:
+        try:
+            if not r.is_dir():
+                continue
+            for sub in sorted(r.glob("Python3*"), reverse=True):
+                exe = sub / "python.exe"
+                if exe.is_file() and "windowsapps" not in str(exe).lower():
+                    found.append(str(exe))
+        except OSError:
+            pass
+    return found
 
 
 def _load_onboard_bootstrap():
@@ -174,13 +264,18 @@ def _load_onboard_bootstrap():
             pass
 
     def _resolve_python_command(*, which_fn=None, **_kw):
+        live = which_fn is None
         which = which_fn or shutil.which
-        if which("py"):
+        if which("py") and (not live or _probe_real_python_argv(["py", "-3"])):
             return {"ok": True, "command": "py -3", "argv_prefix": ["py", "-3"], "note": "py_launcher"}
         for name in ("python", "python3"):
             p = which(name)
-            if p:
+            if p and (not live or ("windowsapps" not in str(p).lower() and _probe_real_python_argv([p]))):
                 return {"ok": True, "command": p, "argv_prefix": [p], "note": "path_" + name}
+        if live:
+            for cand_exe in _discover_windows_python_installs():
+                if _probe_real_python_argv([cand_exe]):
+                    return {"ok": True, "command": cand_exe, "argv_prefix": [cand_exe], "note": "discovered_install"}
         return {"ok": False, "command": None, "argv_prefix": [], "note": "python_missing"}
 
     def _bootstrap_plan(*, which_fn=None, **_kw):
@@ -219,12 +314,16 @@ def setup_page(prefill="", message=""):
 
 
 def offline_page(address):
+    if address == LOCAL:
+        body_txt = "This computer's local Anchor service at <code>%s</code> isn't responding right now. Click Retry to start the local service, or Change address." % html.escape(address)
+    else:
+        body_txt = "This computer can't reach your selected mother ship at <code>%s</code>. Check that Tailscale is on here, and that your mother ship is awake and Anchor is running there." % html.escape(address)
     return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Anchor</title>%s</head><body>%s<main><div class="card">
 <h1>Anchor isn't reachable right now</h1>
-<p>This computer can't reach your selected mother ship at <code>%s</code>. Check that Tailscale is on here, and that your mother ship is awake and Anchor is running there.</p>
+<p>%s</p>
 <div class="row"><button class="btn go" onclick="act('retry')">Retry</button>
 <button class="btn" onclick="act('change_address')">Change address</button></div>
-<div class="msg" id="msg"></div></div></main>%s</body></html>""" % (_STYLE, _BAR, html.escape(address), _SCRIPT)
+<div class="msg" id="msg"></div></div></main>%s</body></html>""" % (_STYLE, _BAR, body_txt, _SCRIPT)
 
 
 def first_launch_page():
@@ -269,6 +368,14 @@ def find_local_anchor_root(package_root=None, check_system_dirs=False):
             Path(DEFAULT_INSTALL_ROOT) / "anchor-plus-skills",
             Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Programs" / "anchor-plus-skills",
         ])
+        for scan_dir in (Path(DEFAULT_INSTALL_ROOT), Path(r"C:\\")):
+            try:
+                if scan_dir.is_dir():
+                    for sub in sorted(scan_dir.glob("*[Aa]nchor*")):
+                        if sub.is_dir():
+                            candidates.append(sub)
+            except OSError:
+                pass
     seen = set()
     best_root = None
     best_ver = (-1, -1, -1)
@@ -310,13 +417,17 @@ def inspect_local_anchor_version(package_root=None, check_system_dirs=True, prob
     needs_install = root is None
     disk_is_older = (root is None) or (parse_version(disk_version) < target_tup)
 
-    is_running = bool(probe(LOCAL))
+    app_ok = bool(probe(LOCAL))
+    if probe_fn is None and not app_ok:
+        is_running = bool(any_service_on_port(LOCAL, 8777))
+    else:
+        is_running = app_ok
     raw_running = read_ver(LOCAL) if is_running else ""
     if isinstance(raw_running, dict):
         running_version = str(raw_running.get("version") or "").strip()
     else:
         running_version = str(raw_running or "").strip()
-    running_is_older = is_running and (parse_version(running_version) < target_tup)
+    running_is_older = is_running and ((not app_ok) or (parse_version(running_version) < target_tup))
     needs_upgrade = (not needs_install and disk_is_older) or running_is_older
 
     return {
@@ -336,41 +447,98 @@ def inspect_local_anchor_version(package_root=None, check_system_dirs=True, prob
 
 
 def stop_local_service_on_port(port=8777):
-    """Stop any older local Anchor server process listening on ``port`` before upgrading/restarting."""
+    """Stop any older local Anchor server process listening on ``port`` before upgrading/restarting (locale-independent)."""
     if os.name != "nt":
         return False
     kwargs = {"capture_output": True, "text": True, "timeout": 10, "creationflags": 0x08000000}
     stopped = False
+    pids = set()
+    my_pid = os.getpid()
+    port_suffix = ":%d" % int(port)
     try:
         res = subprocess.run(["netstat", "-ano", "-p", "TCP"], **kwargs)
-        pids = set()
-        my_pid = os.getpid()
         for line in (res.stdout or "").splitlines():
             parts = line.split()
-            if len(parts) >= 5 and parts[0].upper() == "TCP" and parts[3].upper() == "LISTENING":
-                if parts[1].endswith(":%d" % int(port)):
+            if len(parts) >= 5 and parts[0].upper() == "TCP":
+                local_ep, foreign_ep = parts[1], parts[2]
+                if local_ep.endswith(port_suffix) and (
+                    foreign_ep.endswith(":0") or parts[3].upper() == "LISTENING"
+                ):
                     try:
-                        pid = int(parts[4])
+                        pid = int(parts[-1])
                         if pid > 0 and pid != my_pid:
                             pids.add(pid)
                     except ValueError:
                         pass
-        for pid in pids:
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], **kwargs)
-            stopped = True
-        if stopped:
-            for _ in range(10):
-                if not reachable(LOCAL, timeout=0.5):
-                    break
-                time.sleep(0.3)
     except Exception:
         pass
+    if not pids:
+        try:
+            ps_res = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Get-NetTCPConnection -LocalPort %d -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess" % int(port),
+                ],
+                **kwargs,
+            )
+            for line in (ps_res.stdout or "").splitlines():
+                try:
+                    pid = int(line.strip())
+                    if pid > 0 and pid != my_pid:
+                        pids.add(pid)
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+    for pid in pids:
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], **kwargs)
+            stopped = True
+        except Exception:
+            pass
+    if stopped:
+        for _ in range(12):
+            try:
+                with socket.create_connection(("127.0.0.1", int(port)), timeout=0.3):
+                    time.sleep(0.3)
+            except OSError:
+                break
     return stopped
 
 
-def _ensure_local_token_and_claude_skills(dest: Path, ws_home: Path):
+def _migrate_user_data_if_needed(old_root, new_root):
+    """Preserve user data files (projects.json, settings.json, DASHBOARD.md, INBOX.md) when upgrading from an older folder."""
+    if not old_root or not new_root:
+        return
+    try:
+        src_dir = Path(old_root).resolve()
+        dst_dir = Path(new_root).resolve()
+        if src_dir == dst_dir or not src_dir.is_dir() or not dst_dir.is_dir():
+            return
+        for fname in ("projects.json", "settings.json", "DASHBOARD.md", "INBOX.md"):
+            sfile = src_dir / fname
+            dfile = dst_dir / fname
+            if sfile.is_file() and not dfile.is_file():
+                shutil.copy2(sfile, dfile)
+    except OSError:
+        pass
+
+
+def _is_link_or_junction(p: Path) -> bool:
+    try:
+        if p.is_symlink():
+            return True
+    except OSError:
+        pass
+    islink = getattr(os.path, "islink", None)
+    isjunction = getattr(os.path, "isjunction", None)
+    return bool((callable(islink) and islink(str(p))) or (callable(isjunction) and isjunction(str(p))))
+
+
+def _ensure_local_token_and_claude_skills(dest: Path, ws_home: Path, overwrite: bool = True):
     """Ensure local ~/.anchor/.anchor/onboard-token is minted and all Foundry skills are registered in ~/.claude/skills."""
-    # 1. Ensure local onboard-token exists
     token_path = Path.home() / ".anchor" / ".anchor" / "onboard-token"
     try:
         if not token_path.is_file() or not token_path.read_text(encoding="utf-8").strip():
@@ -379,7 +547,6 @@ def _ensure_local_token_and_claude_skills(dest: Path, ws_home: Path):
     except OSError:
         pass
 
-    # 2. Register skills into %USERPROFILE%\.claude\skills\<skill>
     skills_src = ws_home / "skills"
     if not skills_src.is_dir():
         for cand in (dest / "vendor" / "bundled-skills", dest / "bundled-skills", dest / "skills"):
@@ -394,10 +561,12 @@ def _ensure_local_token_and_claude_skills(dest: Path, ws_home: Path):
                 if child.name.startswith(".") or not child.is_dir() or not (child / "SKILL.md").is_file():
                     continue
                 target = claude_skills / child.name
-                if not (target / "SKILL.md").is_file():
-                    if target.exists():
-                        shutil.rmtree(target, ignore_errors=True)
+                if _is_link_or_junction(target):
+                    continue
+                if not target.exists():
                     shutil.copytree(child, target)
+                elif overwrite or not (target / "SKILL.md").is_file():
+                    shutil.copytree(child, target, dirs_exist_ok=True)
         except OSError:
             pass
 
@@ -414,7 +583,7 @@ def ensure_local_service_running(package_root=None, check_system_dirs=False, pro
     ws_home = Path(DEFAULT_INSTALL_ROOT) if Path(DEFAULT_INSTALL_ROOT).is_dir() else root.parent
     try:
         _sync_workspace_skills_and_governance(root, ws_home)
-        _ensure_local_token_and_claude_skills(root, ws_home)
+        _ensure_local_token_and_claude_skills(root, ws_home, overwrite=False)
     except Exception:
         pass
 
@@ -481,37 +650,54 @@ def ensure_local_service_running(package_root=None, check_system_dirs=False, pro
                 return {"ok": True, "started": True, "root": str(root)}
             time.sleep(0.5)
 
-    return {"ok": bool(probe(LOCAL)), "started": True, "root": str(root)}
+    return {"ok": bool(probe(LOCAL)), "started": True, "root": str(root), "message": "Local Anchor service did not respond on port 8777."}
 
 
 def ensure_mothership_up_to_date_and_running(package_root=None, probe_fn=None, running_version_fn=None):
     """Ensure local Mother Ship is installed, at >= BUNDLED_VERSION, and running on port 8777."""
-    probe = probe_fn or reachable
-    info = inspect_local_anchor_version(
-        package_root=package_root,
-        check_system_dirs=True,
-        probe_fn=probe,
-        running_version_fn=running_version_fn,
-    )
-    upgraded = False
-    target_root = info["root"] or package_root
-    if info["needs_install_or_upgrade"]:
-        if info["running"]:
-            stop_local_service_on_port(8777)
-        pulled = pull_and_install_mothership(workspace_dir=DEFAULT_INSTALL_ROOT, run_onboard=False)
-        upgraded = bool(pulled.get("ok") or pulled.get("onboard_ready"))
-        if pulled.get("target_dir"):
-            target_root = pulled["target_dir"]
+    with _INSTALL_LOCK:
+        probe = probe_fn or reachable
+        read_ver = running_version_fn or read_running_version
+        info = inspect_local_anchor_version(
+            package_root=package_root,
+            check_system_dirs=True,
+            probe_fn=probe,
+            running_version_fn=running_version_fn,
+        )
+        upgraded = False
+        old_root = info["root"]
+        target_root = old_root or package_root
+        last_msg = ""
+        if info["needs_install_or_upgrade"]:
+            if info["running"]:
+                stop_local_service_on_port(8777)
+            pulled = pull_and_install_mothership(workspace_dir=DEFAULT_INSTALL_ROOT, run_onboard=False)
+            last_msg = str(pulled.get("message") or "")
+            upgraded = bool(pulled.get("ok") or pulled.get("onboard_ready"))
+            if pulled.get("target_dir"):
+                target_root = pulled["target_dir"]
+                _migrate_user_data_if_needed(old_root, target_root)
 
-    if not probe(LOCAL):
-        ensure_local_service_running(target_root, check_system_dirs=True, probe_fn=probe)
+        if not probe(LOCAL):
+            started = ensure_local_service_running(target_root, check_system_dirs=True, probe_fn=probe)
+            if not started.get("ok") and started.get("message"):
+                last_msg = started["message"]
 
-    return {
-        "ok": bool(probe(LOCAL)),
-        "upgraded": upgraded,
-        "root": str(target_root or ""),
-        "bundled_version": BUNDLED_VERSION,
-    }
+        # Post-upgrade verification: if an old process survived on 8777, stop it and start from target_root
+        if probe_fn is None and probe(LOCAL):
+            rv = read_ver(LOCAL)
+            rv_str = str(rv.get("version") if isinstance(rv, dict) else (rv or "")).strip()
+            if rv_str and parse_version(rv_str) < parse_version(BUNDLED_VERSION):
+                stop_local_service_on_port(8777)
+                ensure_local_service_running(target_root, check_system_dirs=True, probe_fn=probe)
+
+        return {
+            "ok": bool(probe(LOCAL)),
+            "upgraded": upgraded,
+            "root": str(target_root or ""),
+            "bundled_version": BUNDLED_VERSION,
+            "message": last_msg,
+        }
 
 
 def installation_state(package_root, which_fn=None):
@@ -527,12 +713,15 @@ def installation_state(package_root, which_fn=None):
 
 def select_mother_ship(data_dir, package_root, probe_fn=None, auto_bootstrap=False):
     probe = probe_fn or reachable
+    last_error = ""
     if auto_bootstrap and probe_fn is None:
         sync = ensure_mothership_up_to_date_and_running(package_root=package_root, probe_fn=probe)
+        save_attempted_upgrade_version(data_dir, BUNDLED_VERSION)
         if sync.get("ok") and probe(LOCAL):
             save_address(data_dir, LOCAL)
             upg = bool(sync.get("upgraded"))
             return {"ok": True, "address": LOCAL, "path": "/setup", "installed": upg, "upgraded": upg}
+        last_error = str(sync.get("message") or "")
     if probe(LOCAL):
         save_address(data_dir, LOCAL)
         return {"ok": True, "address": LOCAL, "path": "/setup", "installed": False, "upgraded": False}
@@ -541,15 +730,21 @@ def select_mother_ship(data_dir, package_root, probe_fn=None, auto_bootstrap=Fal
         if started.get("ok") and probe(LOCAL):
             save_address(data_dir, LOCAL)
             return {"ok": True, "address": LOCAL, "path": "/setup", "installed": False, "upgraded": False}
-    return {"ok": False, "installation": installation_state(package_root)}
+        if not last_error and started.get("message"):
+            last_error = str(started["message"])
+    state = installation_state(package_root)
+    if last_error:
+        state["error_message"] = last_error
+    return {"ok": False, "installation": state, "message": last_error}
 
 
 DEFAULT_INSTALL_ROOT = r"C:\dev"
 
 
-def installation_page(package_root, default_dir=DEFAULT_INSTALL_ROOT):
+def installation_page(package_root, default_dir=DEFAULT_INSTALL_ROOT, error_message=""):
     state = installation_state(package_root)
     missing = ", ".join(state["package"]["missing"]) or "Trusted source and completed service installation"
+    err_txt = error_message or state.get("error_message") or ""
     return """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anchor host installation</title>%s</head><body>%s<main><div class="card">
 <h1>Install your mother ship</h1><p>%s</p><p>Required package files: <code>%s</code>.</p>
 <p>%s</p>
@@ -560,20 +755,14 @@ def installation_page(package_root, default_dir=DEFAULT_INSTALL_ROOT):
 <input id="github-repo" value="%s" spellcheck="false">
 <div class="row"><button id="retry-host-setup" class="btn go" onclick="act('select_mother_ship')">Check installed mother ship</button>
 <button id="install-from-github" class="btn" onclick="act('install_from_github',{repo_url:document.getElementById('github-repo').value,target_dir:document.getElementById('install-target-dir').value})">Pull &amp; install from GitHub</button>
-<button class="btn" onclick="act('change_address')">Connect to an existing host instead</button></div><div class="msg" id="msg"></div></div></main>%s</body></html>""" % (
+<button class="btn" onclick="act('change_address')">Connect to an existing host instead</button></div><div class="msg" id="msg">%s</div></div></main>%s</body></html>""" % (
         _STYLE, _BAR, html.escape(state["prerequisite"]), html.escape(missing), html.escape(state["resume"]),
-        html.escape(default_dir or DEFAULT_INSTALL_ROOT, quote=True), html.escape(DEFAULT_GITHUB_REPO, quote=True), _SCRIPT)
+        html.escape(default_dir or DEFAULT_INSTALL_ROOT, quote=True), html.escape(DEFAULT_GITHUB_REPO, quote=True),
+        html.escape(err_txt), _SCRIPT)
 
 
 def _resolve_mothership_paths(target_dir=None, workspace_dir=None):
-    """Return (dest_repo_dir, workspace_home_dir).
-
-    When ``target_dir`` is explicitly supplied (e.g. direct path or unit tests),
-    ``dest_repo_dir`` is ``Path(target_dir)``. When ``workspace_dir`` is supplied
-    from the installer UI (default ``C:\\dev``), core Anchor code installs into
-    ``<workspace_dir>\\Anchor`` while Foundry skills and governance install under
-    ``<workspace_dir>\\skills`` and ``<workspace_dir>\\governance``.
-    """
+    """Return (dest_repo_dir, workspace_home_dir)."""
     if target_dir is not None:
         dest = Path(target_dir).expanduser()
         if workspace_dir:
@@ -593,13 +782,15 @@ def _resolve_mothership_paths(target_dir=None, workspace_dir=None):
 
 def _download_github_zip_fallback(repo_url: str, dest: Path) -> dict:
     """Download and extract the GitHub branch zip into ``dest`` when git is unavailable or blocked."""
-    import tempfile
-    import zipfile
+    # Never overwrite an existing developer git repository with a zip archive
+    if (dest / ".git").is_dir():
+        return {"ok": False, "error": "Refusing to overwrite existing git repository with zip archive"}
 
     clean_url = repo_url.rstrip("/")
     if clean_url.endswith(".git"):
         clean_url = clean_url[:-4]
     zip_url = clean_url + "/archive/refs/heads/main.zip"
+    user_data_files = {"projects.json", "settings.json", "DASHBOARD.md", "INBOX.md"}
     try:
         req = urllib.request.Request(zip_url, headers={"User-Agent": "Anchor-Installer/1.0"})
         with urllib.request.urlopen(req, timeout=120) as resp:
@@ -616,6 +807,8 @@ def _download_github_zip_fallback(repo_url: str, dest: Path) -> dict:
             src_root = extracted_dirs[0]
             for item in src_root.iterdir():
                 target = dest / item.name
+                if item.name in user_data_files and target.exists():
+                    continue
                 if item.is_dir():
                     shutil.copytree(item, target, dirs_exist_ok=True)
                 else:
@@ -623,6 +816,13 @@ def _download_github_zip_fallback(repo_url: str, dest: Path) -> dict:
         return {"ok": True, "zip_url": zip_url}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def _default_subprocess_run(cmd, cwd=None, timeout=240):
+    kwargs = {"cwd": cwd, "capture_output": True, "text": True, "timeout": timeout}
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+    return subprocess.run(cmd, **kwargs)
 
 
 def pull_and_install_mothership(target_dir=None, repo_url=DEFAULT_GITHUB_REPO, run_onboard=True, runner_fn=None, workspace_dir=None):
@@ -638,19 +838,26 @@ def pull_and_install_mothership(target_dir=None, repo_url=DEFAULT_GITHUB_REPO, r
             "message": "Only https://github.com/ repositories are supported for mother-ship installation.",
         }
     dest, ws_home = _resolve_mothership_paths(target_dir=target_dir, workspace_dir=workspace_dir)
-    run = runner_fn or (lambda cmd, cwd=None: subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=240))
+    run = runner_fn or _default_subprocess_run
     used_url = url
     try:
         if (dest / ".git").is_dir():
-            res = run(["git", "-C", str(dest), "pull", "--ff-only"], cwd=str(dest))
-            if getattr(res, "returncode", 1) != 0 and runner_fn is None:
-                fetch_res = run(["git", "-C", str(dest), "fetch", "origin", "main"], cwd=str(dest))
-                if getattr(fetch_res, "returncode", 1) == 0:
-                    res = run(["git", "-C", str(dest), "reset", "--hard", "FETCH_HEAD"], cwd=str(dest))
+            if runner_fn is None:
+                rem = run(["git", "-C", str(dest), "remote", "get-url", "origin"], cwd=str(dest))
+                origin_url = (getattr(rem, "stdout", "") or "").strip()
+                if origin_url and "github.com" not in origin_url.lower() and (dest / "anchor_gui.py").is_file():
+                    # Developer repository with non-GitHub origin (e.g. local bare repo): never overwrite
+                    res = type("R", (), {"returncode": 0, "stderr": "", "stdout": ""})()
+                else:
+                    res = run(["git", "-C", str(dest), "pull", "--ff-only"], cwd=str(dest))
+                    if getattr(res, "returncode", 1) != 0:
+                        run(["git", "-C", str(dest), "stash", "push", "-m", "anchor-auto-upgrade"], cwd=str(dest))
+                        res = run(["git", "-C", str(dest), "pull", "--ff-only"], cwd=str(dest))
+            else:
+                res = run(["git", "-C", str(dest), "pull", "--ff-only"], cwd=str(dest))
         else:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists() and any(dest.iterdir()) and runner_fn is None:
-                # Non-git existing directory: update via zip fallback or init+fetch
                 zres = _download_github_zip_fallback(used_url, dest)
                 if not zres.get("ok") and used_url == DEFAULT_GITHUB_REPO:
                     used_url = FALLBACK_GITHUB_REPO
@@ -661,7 +868,7 @@ def pull_and_install_mothership(target_dir=None, repo_url=DEFAULT_GITHUB_REPO, r
                 if getattr(res, "returncode", 1) != 0 and used_url == DEFAULT_GITHUB_REPO:
                     used_url = FALLBACK_GITHUB_REPO
                     res = run(["git", "clone", used_url, str(dest)], cwd=str(dest.parent))
-        if getattr(res, "returncode", 1) != 0 and runner_fn is None:
+        if getattr(res, "returncode", 1) != 0 and runner_fn is None and not (dest / ".git").is_dir():
             zres = _download_github_zip_fallback(used_url, dest)
             if not zres.get("ok") and used_url == DEFAULT_GITHUB_REPO:
                 used_url = FALLBACK_GITHUB_REPO
@@ -679,7 +886,7 @@ def pull_and_install_mothership(target_dir=None, repo_url=DEFAULT_GITHUB_REPO, r
                 "message": "GitHub pull failed: %s" % err[:240],
             }
     except Exception as exc:
-        if runner_fn is None:
+        if runner_fn is None and not (dest / ".git").is_dir():
             zres = _download_github_zip_fallback(used_url, dest)
             if not zres.get("ok") and used_url == DEFAULT_GITHUB_REPO:
                 used_url = FALLBACK_GITHUB_REPO
@@ -716,49 +923,35 @@ def pull_and_install_mothership(target_dir=None, repo_url=DEFAULT_GITHUB_REPO, r
 
     installed_skills = _sync_workspace_skills_and_governance(dest, ws_home, overwrite=(runner_fn is None))
     if runner_fn is None:
-        _ensure_local_token_and_claude_skills(dest, ws_home)
+        _ensure_local_token_and_claude_skills(dest, ws_home, overwrite=True)
 
     if run_onboard:
         onboard_cmd = dest / "onboard.cmd"
         try:
             if runner_fn is not None:
                 ob_res = run(["cmd.exe", "/c", str(onboard_cmd)], cwd=str(dest))
+                if getattr(ob_res, "returncode", 1) != 0:
+                    return {
+                        "ok": False,
+                        "target_dir": str(dest),
+                        "workspace_dir": str(ws_home),
+                        "installed_skills": installed_skills,
+                        "repo_url": used_url,
+                        "onboard_ready": True,
+                        "message": "Pulled mother ship to %s (skills home %s). Complete setup by running %s." % (dest, ws_home, onboard_cmd),
+                    }
             else:
-                env = dict(os.environ)
-                env.setdefault("ANCHOR_SHARE_LIVE_PROBES", "1")
-                env.setdefault("ANCHOR_WORKSPACE_ROOT", str(ws_home))
-                ob_res = subprocess.run(
-                    ["cmd.exe", "/c", str(onboard_cmd), "--home", str(ws_home), "--package", "B", "--yes"],
-                    cwd=str(dest),
-                    env=env,
-                    capture_output=True,
-                    text=True,
-                    timeout=240,
-                )
-                # Ensure the local Mother Ship service on :8777 is started even when
-                # CLI provider subscriptions have not been signed in yet (Stage 2 of /setup).
-                launcher = dest / "launch_anchor_dashboard.py"
-                if launcher.is_file() and not reachable(LOCAL, timeout=1.5):
-                    py_cmd = onboard_bootstrap.resolve_python_command()
-                    if py_cmd.get("ok"):
-                        subprocess.run(
-                            list(py_cmd["argv_prefix"]) + [str(launcher), "--no-browser", "--home", str(ws_home)],
-                            cwd=str(dest),
-                            env=env,
-                            capture_output=True,
-                            text=True,
-                            timeout=45,
-                        )
-            if getattr(ob_res, "returncode", 1) != 0 and (runner_fn is not None or not reachable(LOCAL, timeout=2.0)):
-                return {
-                    "ok": False,
-                    "target_dir": str(dest),
-                    "workspace_dir": str(ws_home),
-                    "installed_skills": installed_skills,
-                    "repo_url": used_url,
-                    "onboard_ready": True,
-                    "message": "Pulled mother ship to %s (skills home %s). Complete setup by running %s." % (dest, ws_home, onboard_cmd),
-                }
+                started = ensure_local_service_running(dest, check_system_dirs=True)
+                if not started.get("ok") and not reachable(LOCAL, timeout=2.0):
+                    return {
+                        "ok": False,
+                        "target_dir": str(dest),
+                        "workspace_dir": str(ws_home),
+                        "installed_skills": installed_skills,
+                        "repo_url": used_url,
+                        "onboard_ready": True,
+                        "message": started.get("message") or ("Pulled mother ship to %s (skills home %s)." % (dest, ws_home)),
+                    }
         except Exception as exc:
             return {
                 "ok": False,
@@ -826,7 +1019,7 @@ def _sync_workspace_skills_and_governance(dest: Path, ws_home: Path, overwrite: 
 
 def discover_tailscale_motherships(runner_fn=None):
     """Query local Tailscale status for online peer machines that may host an Anchor mother ship over HTTPS."""
-    run = runner_fn or (lambda cmd: subprocess.run(cmd, capture_output=True, text=True, timeout=10))
+    run = runner_fn or (lambda cmd: _default_subprocess_run(cmd, timeout=10))
     try:
         res = run(["tailscale", "status", "--json"])
         if getattr(res, "returncode", 1) != 0:

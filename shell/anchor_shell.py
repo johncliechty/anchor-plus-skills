@@ -108,6 +108,7 @@ ZOOM_STEPS = (0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.CreateMutexW.restype = wintypes.HANDLE
 user32.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
 user32.SendMessageW.restype = wintypes.LPARAM
 user32.LoadImageW.restype = wintypes.HANDLE
@@ -294,7 +295,8 @@ class HostApi:
         auto_boot = bool(FROZEN or getattr(connect.reachable, "__name__", "") == "reachable")
         result = connect.select_mother_ship(DATA, ROOT, auto_bootstrap=auto_boot)
         if not result["ok"]:
-            self._show(connect.installation_page(ROOT))
+            err = str(result.get("message") or "")
+            self._show(connect.installation_page(ROOT, error_message=err) if err else connect.installation_page(ROOT))
             return ""
         self._address = result["address"]
         self._html = ""
@@ -324,7 +326,10 @@ class HostApi:
         result = connect.pull_and_install_mothership(
             repo_url=repo_url or connect.DEFAULT_GITHUB_REPO,
             workspace_dir=target_dir or connect.DEFAULT_INSTALL_ROOT,
+            run_onboard=False,
         )
+        if result.get("target_dir") and not connect.reachable(connect.LOCAL):
+            connect.ensure_local_service_running(result["target_dir"], check_system_dirs=True)
         for _ in range(10 if result.get("onboard_ready") else 1):
             if connect.reachable(connect.LOCAL):
                 connect.save_address(DATA, connect.LOCAL)
@@ -423,9 +428,10 @@ def main(argv=None):
     host = HostApi()
     address = "" if args.setup else connect.choose(DATA, args.url)
     if FROZEN and not args.url and address == connect.LOCAL:
-        vcheck = connect.inspect_local_anchor_version(ROOT, check_system_dirs=True)
-        if vcheck.get("needs_upgrade") or vcheck.get("needs_install"):
-            address = ""
+        if connect.load_attempted_upgrade_version(DATA) != connect.BUNDLED_VERSION:
+            vcheck = connect.inspect_local_anchor_version(ROOT, check_system_dirs=True)
+            if vcheck.get("needs_upgrade") or vcheck.get("needs_install"):
+                address = ""
     host._address = address or connect.load_address(DATA)
     if not address:
         host._html = connect.setup_page(host._address) if (host._address and host._address != connect.LOCAL) else connect.first_launch_page()

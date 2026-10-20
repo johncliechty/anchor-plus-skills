@@ -11945,10 +11945,7 @@ def handle_version(handler, path, body):
         health = _hs.signature()
     except Exception:
         health = ""
-    try:
-        rel_ver = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip()
-    except OSError:
-        rel_ver = "1.4.1"
+    rel_ver = globals().setdefault("_BOOT_RELEASE_VERSION", ((Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip() if (Path(__file__).resolve().parent / "VERSION").is_file() else "1.4.2"))
     payload = json.dumps({"version": BUILD_ID, "release_version": rel_ver, "health": health, "boot": os.environ.get("ANCHOR_STARTED_AT", "")}).encode()
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json")

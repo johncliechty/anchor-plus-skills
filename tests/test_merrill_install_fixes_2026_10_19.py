@@ -100,7 +100,7 @@ def test_select_mother_ship_auto_starts_local_package_when_present(tmp_path, mon
     assert res["address"] == connect.LOCAL
     assert res["path"] == "/setup"
     assert state["spawned"], "Expected launch_anchor_dashboard.py to be invoked automatically"
-    assert any("launch_anchor_dashboard.py" in str(part) for part in state["spawned"][0])
+    assert any("launch_anchor_dashboard.py" in str(part) for cmd in state["spawned"] for part in cmd)
     assert connect.load_address(data_dir) == connect.LOCAL
 
 
@@ -201,3 +201,50 @@ def test_build_exe_ps1_includes_root_path_and_unblock():
     assert "--hidden-import onboard_bootstrap" in ps1
     assert "$versionFile" in ps1
     assert "Unblock-File" in ps1
+
+
+def test_pre_132_server_on_8777_without_app_html_is_detected_and_stopped(tmp_path, monkeypatch):
+    old_pkg = tmp_path / "old-120"
+    old_pkg.mkdir(parents=True)
+    (old_pkg / "anchor_gui.py").write_text("# 1.2.0\n", encoding="utf-8")
+    (old_pkg / "launch_anchor_dashboard.py").write_text("# 1.2.0\n", encoding="utf-8")
+    (old_pkg / "VERSION").write_text("1.2.0\n", encoding="utf-8")
+
+    # Simulate 1.2.0 server: /static/app.html returns False (404), but port 8777 is listening
+    monkeypatch.setattr(connect, "reachable", lambda addr, timeout=5.0: False)
+    monkeypatch.setattr(connect, "any_service_on_port", lambda addr=connect.LOCAL, port=8777, timeout=1.0: True)
+    monkeypatch.setattr(connect, "read_running_version", lambda addr=connect.LOCAL, timeout=1.5: "")
+
+    vinfo = connect.inspect_local_anchor_version(old_pkg, check_system_dirs=False, target_version="1.4.2")
+    assert vinfo["running"] is True
+    assert vinfo["running_is_older"] is True
+    assert vinfo["needs_upgrade"] is True
+
+
+def test_user_data_migrated_when_upgrading_from_older_folder(tmp_path):
+    old_dir = tmp_path / "Anchor-Merrill-Share"
+    new_dir = tmp_path / "Anchor"
+    old_dir.mkdir(parents=True)
+    new_dir.mkdir(parents=True)
+    (old_dir / "projects.json").write_text('{"projects":["merrill-1"]}', encoding="utf-8")
+    (old_dir / "DASHBOARD.md").write_text("# Merrill Dashboard\n", encoding="utf-8")
+
+    connect._migrate_user_data_if_needed(old_dir, new_dir)
+    assert (new_dir / "projects.json").read_text(encoding="utf-8") == '{"projects":["merrill-1"]}'
+    assert (new_dir / "DASHBOARD.md").read_text(encoding="utf-8") == "# Merrill Dashboard\n"
+
+
+def test_windows_store_python_stub_rejected():
+    import onboard_bootstrap as ob
+    assert ob._probe_real_python_argv([r"C:\Users\merrill\AppData\Local\Microsoft\WindowsApps\python.exe"]) is False
+    assert connect._probe_real_python_argv([r"C:\Users\merrill\AppData\Local\Microsoft\WindowsApps\python3.exe"]) is False
+
+
+def test_normalize_accepts_bare_localhost_as_http():
+    addr, err = connect.normalize("127.0.0.1:8777")
+    assert err is None
+    assert addr == "http://127.0.0.1:8777"
+    addr2, err2 = connect.normalize("localhost:8777")
+    assert err2 is None
+    assert addr2 == "http://localhost:8777"
+

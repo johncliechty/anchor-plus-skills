@@ -10,6 +10,12 @@ $out = Join-Path $env:LOCALAPPDATA "anchor-shell\dist"
 $work = Join-Path $env:LOCALAPPDATA "anchor-shell\build"
 $icon = Join-Path $root "vendor\brand\anchor-icon.ico"
 $versionFile = Join-Path $root "VERSION"
+$pyprojectFile = Join-Path $root "pyproject.toml"
+$verText = (Get-Content $versionFile -Raw).Trim()
+$pyprojText = Get-Content $pyprojectFile -Raw
+if ($pyprojText -notmatch ('version\s*=\s*"' + [regex]::Escape($verText) + '"')) {
+    throw "VERSION ($verText) does not match pyproject.toml version!"
+}
 
 & $py -m pip install -q pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed" }
