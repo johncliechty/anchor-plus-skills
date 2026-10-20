@@ -11948,7 +11948,7 @@ def handle_version(handler, path, body):
     try:
         rel_ver = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip()
     except OSError:
-        rel_ver = "1.4.0"
+        rel_ver = "1.4.1"
     payload = json.dumps({"version": BUILD_ID, "release_version": rel_ver, "health": health, "boot": os.environ.get("ANCHOR_STARTED_AT", "")}).encode()
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json")

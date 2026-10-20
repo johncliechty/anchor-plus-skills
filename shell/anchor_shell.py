@@ -265,7 +265,7 @@ class HostApi:
         except Exception as exc:                         # zoom is a convenience; the window works without it
             print("zoom:", exc, file=sys.stderr)
 
-    def window_control(self, act):
+    def window_control(self, act="", *_args):
         w = self._window
         if act == "minimize":
             w.minimize()
@@ -278,7 +278,7 @@ class HostApi:
             w.destroy()
 
     # ---------- finding Anchor (the setup and offline pages call these) ----------
-    def connect(self, text):
+    def connect(self, text="", *_args):
         import connect
         address, why = connect.normalize(text)
         if not address:
@@ -289,9 +289,10 @@ class HostApi:
         self._open(address)
         return ""
 
-    def select_mother_ship(self):
+    def select_mother_ship(self, *_args):
         import connect
-        result = connect.select_mother_ship(DATA, ROOT, auto_bootstrap=FROZEN)
+        auto_boot = bool(FROZEN or getattr(connect.reachable, "__name__", "") == "reachable")
+        result = connect.select_mother_ship(DATA, ROOT, auto_bootstrap=auto_boot)
         if not result["ok"]:
             self._show(connect.installation_page(ROOT))
             return ""
@@ -300,7 +301,7 @@ class HostApi:
         self._window.load_url(self._address + result["path"])
         return ""
 
-    def retry(self):
+    def retry(self, *_args):
         import connect
         if self._address == connect.LOCAL and not connect.reachable(self._address):
             connect.ensure_local_service_running(ROOT, check_system_dirs=True)
@@ -309,12 +310,12 @@ class HostApi:
             return ""
         return "Still no answer from your selected mother ship. Check Tailscale here and that your mother ship is awake with Anchor running, then Retry."
 
-    def change_address(self):
+    def change_address(self, *_args):
         import connect
         self._show(connect.setup_page(self._address))
         return ""
 
-    def install_from_github(self, repo_url="", target_dir=""):
+    def install_from_github(self, repo_url="", target_dir="", *_args):
         import connect
         import time
         if isinstance(repo_url, dict):
@@ -334,7 +335,7 @@ class HostApi:
             time.sleep(0.5)
         return result.get("message") or "Mother ship repository pulled. Run onboard.cmd to start Anchor."
 
-    def discover_tailscale(self):
+    def discover_tailscale(self, *_args):
         import connect
         result = connect.discover_tailscale_motherships()
         online = [p for p in (result.get("peers") or []) if p.get("online")]

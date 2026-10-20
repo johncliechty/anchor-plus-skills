@@ -43,7 +43,7 @@ def _read_bundled_version():
                     return v
         except OSError:
             pass
-    return "1.4.0"
+    return "1.4.1"
 
 
 BUNDLED_VERSION = _read_bundled_version()
@@ -155,7 +155,7 @@ _BAR = """<div id="bar"><b>Anchor</b><span class="sp"></span>
 
 _SCRIPT = """<script>
 function show(t){document.getElementById('msg').textContent=t||'';}
-function act(name,arg){var m=(name==='select_mother_ship'||name==='install_from_github')?'Checking local Anchor version, pulling latest code & Foundry skills, and starting the Mother Ship service (15\\u201330s)\\u2026':'Connecting\\u2026';show(m);try{pywebview.api[name](arg).then(function(r){if(r)show(r);}).catch(function(e){show('Error: '+((e&&e.message)||String(e)));});}catch(e){show('Error: '+((e&&e.message)||String(e)));}}
+function act(name,arg){var m=(name==='select_mother_ship'||name==='install_from_github')?'Checking local Anchor version, pulling latest code & Foundry skills, and starting the Mother Ship service (15\\u201330s)\\u2026':'Connecting\\u2026';show(m);try{(arg===undefined?pywebview.api[name]():pywebview.api[name](arg)).then(function(r){if(r)show(r);}).catch(function(e){show('Error: '+((e&&e.message)||String(e)));});}catch(e){show('Error: '+((e&&e.message)||String(e)));}}
 </script>"""
 
 
@@ -498,7 +498,7 @@ def ensure_mothership_up_to_date_and_running(package_root=None, probe_fn=None, r
     if info["needs_install_or_upgrade"]:
         if info["running"]:
             stop_local_service_on_port(8777)
-        pulled = pull_and_install_mothership(workspace_dir=DEFAULT_INSTALL_ROOT)
+        pulled = pull_and_install_mothership(workspace_dir=DEFAULT_INSTALL_ROOT, run_onboard=False)
         upgraded = bool(pulled.get("ok") or pulled.get("onboard_ready"))
         if pulled.get("target_dir"):
             target_root = pulled["target_dir"]

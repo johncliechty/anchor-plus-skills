@@ -52,6 +52,27 @@ def test_connect_script_catches_promise_rejections():
     page = connect.first_launch_page()
     assert ".catch(" in page
     assert "Connecting" in page
+    assert "arg===undefined?pywebview.api[name]():pywebview.api[name](arg)" in page
+
+
+def test_host_api_accepts_zero_or_undefined_arg_from_pywebview(tmp_path, monkeypatch):
+    data_dir = tmp_path / "shell-data"
+    pkg_dir = tmp_path / "pkg"
+    pkg_dir.mkdir(parents=True)
+    monkeypatch.setattr(anchor_shell, "DATA", data_dir)
+    monkeypatch.setattr(anchor_shell, "ROOT", pkg_dir)
+    monkeypatch.setattr(connect, "reachable", lambda addr, timeout=5.0: True)
+
+    host = anchor_shell.HostApi()
+    urls, pages = [], []
+    host.bind(SimpleNamespace(load_url=urls.append, load_html=pages.append))
+
+    # Must succeed both with 0 args and when pywebview passes (None,) for undefined arg
+    assert host.select_mother_ship() == ""
+    assert host.select_mother_ship(None) == ""
+    assert urls[-1] == connect.LOCAL + "/setup"
+    assert host.change_address(None) == ""
+    assert host.retry(None) == ""
 
 
 def test_select_mother_ship_auto_starts_local_package_when_present(tmp_path, monkeypatch):
