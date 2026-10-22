@@ -2034,28 +2034,41 @@ def handle_get(cdir, verb, qs):
         except Exception:
             m["resolved"] = {}
         # Slim multi-megabyte refinement history blobs for HTTP wire transfer while preserving all UI fields
+        def _slim_handoff(h):
+            if not isinstance(h, dict):
+                return h
+            return {hk: h[hk] for hk in ("id", "step_id", "status", "terminal", "at", "summary", "title") if hk in h}
+
         ref = m.get("refinement")
         if isinstance(ref, dict):
-            ref_slim = dict(ref)
+            ref_slim = {k: v for k, v in ref.items() if k != "approved_products"}
             st_state = ref_slim.get("state")
             if isinstance(st_state, dict):
                 handoffs = st_state.get("producer_handoffs")
                 slim_handoffs = (
-                    {k: v for k, v in handoffs.items() if isinstance(v, dict) and v.get("status") == "pending_steward_review"}
+                    {k: _slim_handoff(v) for k, v in handoffs.items() if isinstance(v, dict) and v.get("status") == "pending_steward_review"}
                     if isinstance(handoffs, dict)
                     else {}
                 )
                 ref_slim["state"] = {
-                    k: v for k, v in st_state.items() if k not in ("slices", "producer_handoffs")
+                    k: v for k, v in st_state.items() if k not in ("slices", "producer_handoffs", "events", "history")
                 }
                 ref_slim["state"]["producer_handoffs"] = slim_handoffs
             m["refinement"] = ref_slim
         if isinstance(m.get("steps"), list):
             slim_steps = []
             for st_item in m["steps"]:
-                if isinstance(st_item, dict) and isinstance(st_item.get("refinement"), dict) and "revisions" in st_item["refinement"]:
+                if isinstance(st_item, dict) and isinstance(st_item.get("refinement"), dict):
                     st_copy = dict(st_item)
-                    st_copy["refinement"] = {k: v for k, v in st_item["refinement"].items() if k != "revisions"}
+                    r_orig = st_item["refinement"]
+                    r_slim = {
+                        k: r_orig[k]
+                        for k in ("phase", "round", "display_round", "candidate", "title", "step_id", "status")
+                        if k in r_orig
+                    }
+                    if isinstance(r_orig.get("producer_handoffs"), list):
+                        r_slim["producer_handoffs"] = [_slim_handoff(ph) for ph in r_orig["producer_handoffs"]]
+                    st_copy["refinement"] = r_slim
                     slim_steps.append(st_copy)
                 else:
                     slim_steps.append(st_item)

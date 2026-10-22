@@ -4106,7 +4106,7 @@ def _compact_history_step(s: dict) -> dict:
         out["commissioned_as"] = s.get("commissioned_as")
     if isinstance(s.get("navigation"), dict):
         nav = {}
-        for k in ("label", "path", "pin", "current", "role", "groups", "featured_paths"):
+        for k in ("label", "path", "pin", "current", "role"):
             if k in s["navigation"]:
                 nav[k] = s["navigation"][k]
         if nav:
