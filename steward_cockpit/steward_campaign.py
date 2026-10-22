@@ -327,10 +327,10 @@ def read_map(campaign_dir: str):
         strip = {}
     heartbeat = {
         "phase": strip.get("phase", ""),
-        "active_effort": strip.get("active_effort", ""),
-        "human_wait": strip.get("human_wait", ""),
-        "next_recommended": strip.get("next_recommended", ""),
-        "why_next": strip.get("why_next", ""),
+        "active_effort": strip.get("active_effort") or strip.get("doing") or strip.get("Update") or "",
+        "human_wait": strip.get("human_wait") or strip.get("Wait") or "",
+        "next_recommended": strip.get("next_recommended") or strip.get("Next") or "",
+        "why_next": strip.get("why_next") or strip.get("Update") or "",
         "uncertainty_flags": strip.get("uncertainty_flags", []),
         "current_step_id": strip.get("current_step_id"),
         "current_session_id": strip.get("current_session_id"),
@@ -548,6 +548,7 @@ def read_map(campaign_dir: str):
         m["repair_proposals"] = []
     m["plan_drift"] = plan_drift(campaign_dir)
     m["plan_proposal"] = read_plan_proposal(campaign_dir, m, roadmap)
+    m["plan_history"] = read_plan_history(campaign_dir, m, roadmap)
     return m
 
 
@@ -3780,6 +3781,7 @@ def map_stamp(campaign_dir: str):
     stamp = []
     for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md",
                 ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json",
+                ".ecgberht/plan-proposal.json", ".ecgberht/plan-history.json",
                 ".ecgberht/code-jobs.json", ".ecgberht/skill-jobs.json"):
         try:
             stamp.append((root / rel).stat().st_mtime_ns)
@@ -4053,6 +4055,634 @@ def plan_drift_suffix(campaign_dir: str) -> str:
             "events plus the projection - then say in one line what changed in the plan.")
 
 
+_PLAN_HISTORY_CACHE_LOCK = threading.Lock()
+_PLAN_HISTORY_CACHE: dict[str, tuple[tuple, list[dict]]] = {}
+
+_FINAL_DELIV_RE = re.compile(
+    r"^(?:Approved\s*[\u2014\u2013\-:]\s*Finalized|Approved\b|FINAL\b|Final\s+Deliverable)",
+    re.I,
+)
+_ACTIVE_REVIEW_DELIV_RE = re.compile(
+    r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW)\s*(?:[:\u2014\u2013\-]|$)",
+    re.I,
+)
+
+
+def _steps_digest(steps: list) -> str:
+    if not isinstance(steps, list) or not steps:
+        return "empty"
+    norm = [
+        (
+            str(s.get("id") or s.get("step_id") or ""),
+            str(s.get("name") or ""),
+            str(s.get("status") or "proposed"),
+            str(s.get("done_when") or ""),
+        )
+        for s in steps
+        if isinstance(s, dict)
+    ]
+    return hashlib.sha256(json.dumps(norm, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+
+
+def _compact_history_step(s: dict) -> dict:
+    if not isinstance(s, dict):
+        return {}
+    out = {
+        "id": str(s.get("id") or s.get("step_id") or ""),
+        "name": str(s.get("name") or s.get("title") or "(unnamed)"),
+        "status": str(s.get("status") or "proposed"),
+        "done_when": str(s.get("done_when") or ""),
+        "waiting_on": s.get("waiting_on"),
+        "due": s.get("due"),
+        "part": str(s.get("part") or ""),
+    }
+    if s.get("ref"):
+        out["ref"] = s.get("ref")
+    if s.get("commissioned_as"):
+        out["commissioned_as"] = s.get("commissioned_as")
+    if isinstance(s.get("navigation"), dict):
+        nav = {}
+        for k in ("label", "path", "pin", "current", "role", "groups", "featured_paths"):
+            if k in s["navigation"]:
+                nav[k] = s["navigation"][k]
+        if nav:
+            out["navigation"] = nav
+    return out
+
+
+def _plan_history_file(campaign_dir: str) -> Path:
+    return Path(campaign_dir) / ".ecgberht" / "plan-history.json"
+
+
+def _record_plan_history_snapshot(
+    campaign_dir: str,
+    steps: list,
+    label: str = "",
+    summary: str = "",
+    trigger: str = "update",
+    at: str = "",
+    force: bool = False,
+) -> dict | None:
+    if not campaign_dir or not isinstance(steps, list) or not steps:
+        return None
+    compact_steps = [_compact_history_step(s) for s in steps if isinstance(s, dict)]
+    if not compact_steps:
+        return None
+    digest = _steps_digest(compact_steps)
+    hist_path = _plan_history_file(campaign_dir)
+    entries = []
+    if hist_path.is_file():
+        try:
+            raw = json.loads(hist_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and isinstance(raw.get("snapshots"), list):
+                entries = raw["snapshots"]
+            elif isinstance(raw, list):
+                entries = raw
+        except Exception:
+            entries = []
+    if not force and entries and isinstance(entries[0], dict) and entries[0].get("digest") == digest:
+        return entries[0]
+    now_iso = at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    date_str = now_iso[:10] if len(now_iso) >= 10 and now_iso[:4].isdigit() else time.strftime("%Y-%m-%d")
+    done_cnt = sum(1 for s in compact_steps if s.get("status") == "done")
+    total_cnt = len(compact_steps)
+    snap_id = f"snap-{date_str}-{digest[:8]}-{int(time.time()) % 100000}"
+    snap = {
+        "id": snap_id,
+        "date": date_str,
+        "at": now_iso,
+        "label": label or f"{date_str} · Plan Snapshot ({done_cnt}/{total_cnt} done)",
+        "summary": summary or f"{done_cnt} of {total_cnt} steps completed.",
+        "trigger": trigger,
+        "digest": digest,
+        "steps_done": done_cnt,
+        "steps_total": total_cnt,
+        "steps": compact_steps,
+    }
+    entries.insert(0, snap)
+    # Keep up to 60 snapshots, deduplicating identical consecutive digests
+    deduped = []
+    for ent in entries:
+        if not isinstance(ent, dict):
+            continue
+        if deduped and deduped[-1].get("digest") == ent.get("digest") and deduped[-1].get("date") == ent.get("date"):
+            continue
+        deduped.append(ent)
+        if len(deduped) >= 60:
+            break
+    try:
+        hist_path.parent.mkdir(parents=True, exist_ok=True)
+        hist_path.write_text(
+            json.dumps({"schema": "anchor-plan-history-v1", "snapshots": deduped}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    with _PLAN_HISTORY_CACHE_LOCK:
+        _PLAN_HISTORY_CACHE.clear()
+    return snap
+
+
+def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: str = "") -> list[dict]:
+    """Reconstruct dated historical plan snapshots by folding roadmap_events chronologically."""
+    if not isinstance(roadmap, dict):
+        return []
+    evs = roadmap.get("roadmap_events")
+    if not isinstance(evs, list) or not evs:
+        return []
+    steps_map: dict[str, dict] = {}
+    order: list[str] = []
+    date_snapshots: dict[str, dict] = {}
+    scaffold_snapshots: list[dict] = []
+
+    for idx, ev in enumerate(evs):
+        if not isinstance(ev, dict):
+            continue
+        raw_kind = str(ev.get("kind") or ev.get("action") or "").strip()
+        kind = "step_create" if raw_kind in ("add", "step_add", "create") else ("step_set" if raw_kind in ("update", "patch", "set") else raw_kind)
+        at_raw = str(
+            ev.get("at")
+            or ev.get("ts")
+            or ev.get("when")
+            or (ev.get("debit_shown") or {}).get("at")
+            or (ev.get("receipt") or {}).get("when")
+            or ""
+        ).strip()
+        date_str = at_raw[:10] if len(at_raw) >= 10 and at_raw[:4].isdigit() else ""
+        ev_step = ev.get("step") if isinstance(ev.get("step"), dict) else {}
+        sid = str(ev.get("step_id") or ev.get("id") or ev_step.get("id") or "").strip()
+
+        if kind == "scaffold_proposal" and isinstance(ev.get("steps"), list) and len(ev["steps"]) >= 2:
+            sc_steps = []
+            for s in ev["steps"]:
+                if isinstance(s, dict):
+                    sc_steps.append(_compact_history_step(s))
+            if sc_steps:
+                d_str = date_str or str(roadmap.get("as_of") or "")[:10] or "initial"
+                done_c = sum(1 for s in sc_steps if s.get("status") == "done")
+                tot_c = len(sc_steps)
+                goal_txt = one_line(str(ev.get("goal") or ""), 130)
+                scaffold_snapshots.append({
+                    "id": f"hist-scaffold-{d_str}-{ev.get('seq') or (idx + 1)}",
+                    "date": d_str,
+                    "at": at_raw or d_str,
+                    "label": f"{d_str} · Initial Plan Scaffold ({tot_c} steps)",
+                    "summary": goal_txt or f"Scaffolded {tot_c} initial plan steps.",
+                    "trigger": "scaffold",
+                    "digest": _steps_digest(sc_steps),
+                    "steps_done": done_c,
+                    "steps_total": tot_c,
+                    "steps": sc_steps,
+                })
+            continue
+
+        note = ""
+        changed = False
+        if kind == "step_create" and sid:
+            if sid not in steps_map:
+                order.append(sid)
+            sname = str(ev.get("name") or ev_step.get("name") or sid)
+            steps_map[sid] = _compact_history_step({
+                "id": sid,
+                "name": sname,
+                "status": ev.get("status") or ev_step.get("status") or "proposed",
+                "done_when": ev.get("done_when") or ev_step.get("done_when") or "",
+                "waiting_on": ev.get("waiting_on") or ev_step.get("waiting_on"),
+                "due": ev.get("due") or ev_step.get("due"),
+                "part": ev.get("part") or ev_step.get("part") or "",
+                "ref": ev.get("ref") or ev_step.get("ref"),
+            })
+            note = f"Added '{one_line(sname, 42)}'"
+            changed = True
+        elif kind == "step_set" and sid and sid in steps_map:
+            fields = ev.get("fields") if isinstance(ev.get("fields"), dict) else (ev.get("patch") if isinstance(ev.get("patch"), dict) else {})
+            prev_status = steps_map[sid].get("status")
+            prev_name = steps_map[sid].get("name")
+            for fk in ("name", "status", "done_when", "waiting_on", "due", "part", "commissioned_as", "navigation", "ref"):
+                if fk in fields and fields[fk] is not None:
+                    steps_map[sid][fk] = fields[fk]
+                    changed = True
+            new_status = steps_map[sid].get("status")
+            sname = one_line(str(steps_map[sid].get("name") or sid), 40)
+            if new_status != prev_status:
+                note = f"'{sname}' → {new_status}"
+            elif steps_map[sid].get("name") != prev_name:
+                note = f"Updated '{sname}'"
+        elif kind == "status_flip" and sid and sid in steps_map:
+            to_st = str(ev.get("to") or ev.get("status") or steps_map[sid].get("status") or "active")
+            steps_map[sid]["status"] = to_st
+            if to_st == "done":
+                steps_map[sid]["waiting_on"] = None
+            sname = one_line(str(steps_map[sid].get("name") or sid), 40)
+            note = f"Marked '{sname}' {to_st}"
+            changed = True
+        elif kind == "refinement_update":
+            op = ev.get("operation") if isinstance(ev.get("operation"), dict) else {}
+            op_act = str(op.get("action") or "").strip().lower()
+            op_sid = str(op.get("step_id") or sid or "").strip()
+            if op_sid and op_sid in steps_map and op_act in ("close", "accept", "present", "feedback"):
+                sname = one_line(str(steps_map[op_sid].get("name") or op_sid), 40)
+                if op_act == "close" or (op_act == "accept" and op.get("complete_current")):
+                    steps_map[op_sid]["status"] = "done"
+                    steps_map[op_sid]["waiting_on"] = None
+                    note = f"Completed '{sname}'"
+                    changed = True
+                elif op_act == "present" and steps_map[op_sid].get("status") in ("planned", "proposed"):
+                    steps_map[op_sid]["status"] = "waiting"
+                    note = f"Presented '{sname}' for review"
+                    changed = True
+        elif kind == "commission_bind" and sid and sid in steps_map:
+            steps_map[sid]["commissioned_as"] = ev.get("commissioned_as")
+            changed = True
+        elif kind == "reorder" and sid and sid in order:
+            after_id = str(ev.get("after") or "").strip()
+            order.remove(sid)
+            if after_id and after_id in order:
+                order.insert(order.index(after_id) + 1, sid)
+            else:
+                order.insert(0, sid)
+            changed = True
+        elif kind in ("plan_accept", "plan_revert", "plan_restore", "plan_refresh"):
+            if isinstance(ev.get("steps"), list) and ev["steps"]:
+                steps_map.clear()
+                order.clear()
+                for s in ev["steps"]:
+                    if isinstance(s, dict):
+                        s_id = str(s.get("id") or s.get("step_id") or "")
+                        if s_id:
+                            order.append(s_id)
+                            steps_map[s_id] = _compact_history_step(s)
+            note = f"Plan {kind.replace('plan_', '')}"
+            changed = True
+
+        if changed and date_str and steps_map:
+            snap_steps = [deepcopy(steps_map[k]) for k in order if k in steps_map]
+            done_c = sum(1 for s in snap_steps if s.get("status") == "done")
+            tot_c = len(snap_steps)
+            bucket = date_snapshots.setdefault(date_str, {
+                "date": date_str,
+                "at": at_raw or date_str,
+                "notes": [],
+                "trigger": kind,
+                "steps": snap_steps,
+                "steps_done": done_c,
+                "steps_total": tot_c,
+            })
+            bucket["at"] = at_raw or date_str
+            bucket["steps"] = snap_steps
+            bucket["steps_done"] = done_c
+            bucket["steps_total"] = tot_c
+            if kind in ("plan_accept", "plan_revert", "plan_restore"):
+                bucket["trigger"] = kind
+            if note and note not in bucket["notes"]:
+                bucket["notes"].append(note)
+
+    out: list[dict] = []
+    # Keep the latest scaffold snapshot for its date if any
+    if scaffold_snapshots:
+        out.append(scaffold_snapshots[-1])
+
+    last_digest = out[-1]["digest"] if out else ""
+    for d_str in sorted(date_snapshots.keys()):
+        b = date_snapshots[d_str]
+        dig = _steps_digest(b["steps"])
+        if dig == last_digest and not b["notes"]:
+            continue
+        last_digest = dig
+        notes = b["notes"]
+        if notes:
+            summary = " · ".join(notes[:3])
+            if len(notes) > 3:
+                summary += f" (+{len(notes) - 3} more)"
+        else:
+            summary = f"{b['steps_done']} of {b['steps_total']} steps completed."
+        out.append({
+            "id": f"hist-{d_str}-{dig[:8]}",
+            "date": d_str,
+            "at": b["at"],
+            "label": f"{d_str} · Plan ({b['steps_done']}/{b['steps_total']} done)",
+            "summary": summary,
+            "trigger": b["trigger"],
+            "digest": dig,
+            "steps_done": b["steps_done"],
+            "steps_total": b["steps_total"],
+            "steps": b["steps"],
+        })
+    out.reverse()
+    return out
+
+
+def read_plan_history(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> list[dict]:
+    """Return the chronological history of plans (newest first, with Current Live Plan at index 0)."""
+    root = Path(campaign_dir)
+    rm_path = root / "roadmap.json"
+    hist_path = _plan_history_file(campaign_dir)
+    backup_path = root / ".ecgberht" / "roadmap-backup.json"
+    try:
+        rm_m = rm_path.stat().st_mtime_ns if rm_path.is_file() else 0
+        hi_m = hist_path.stat().st_mtime_ns if hist_path.is_file() else 0
+        bk_m = backup_path.stat().st_mtime_ns if backup_path.is_file() else 0
+    except OSError:
+        rm_m = hi_m = bk_m = 0
+
+    cache_key = os.path.normcase(str(root))
+    cache_sig = (rm_m, hi_m, bk_m)
+    with _PLAN_HISTORY_CACHE_LOCK:
+        cached = _PLAN_HISTORY_CACHE.get(cache_key)
+        if cached is not None and cached[0] == cache_sig:
+            return deepcopy(cached[1])
+
+    if roadmap is None:
+        roadmap, _ = _read_json(rm_path)
+    live_steps_raw = (m or {}).get("steps") if isinstance(m, dict) and isinstance(m.get("steps"), list) else (
+        (roadmap or {}).get("roadmap_projection") if isinstance(roadmap, dict) else []
+    )
+    live_steps = [_compact_history_step(s) for s in (live_steps_raw or []) if isinstance(s, dict)]
+    live_digest = _steps_digest(live_steps)
+    live_done = sum(1 for s in live_steps if s.get("status") == "done")
+    live_total = len(live_steps)
+    as_of_str = str((roadmap or {}).get("as_of") or "")[:10] if isinstance(roadmap, dict) else ""
+    today_str = time.strftime("%Y-%m-%d")
+
+    docs = _plan_docs(root)
+    primary_plan_doc = docs[0].name if docs else ""
+
+    # Seed .ecgberht/plan-history.json automatically if absent and live_steps exist
+    if live_steps and not hist_path.is_file():
+        _record_plan_history_snapshot(
+            campaign_dir,
+            live_steps,
+            label=f"{today_str} · Live Plan ({live_done}/{live_total} done)",
+            summary=f"Active campaign plan ({live_done} of {live_total} steps done).",
+            trigger="live",
+        )
+
+    saved_entries = []
+    if hist_path.is_file():
+        try:
+            raw_h = json.loads(hist_path.read_text(encoding="utf-8"))
+            if isinstance(raw_h, dict) and isinstance(raw_h.get("snapshots"), list):
+                saved_entries = raw_h["snapshots"]
+            elif isinstance(raw_h, list):
+                saved_entries = raw_h
+        except Exception:
+            saved_entries = []
+
+    if backup_path.is_file():
+        try:
+            bk = json.loads(backup_path.read_text(encoding="utf-8"))
+            if isinstance(bk, dict) and isinstance(bk.get("roadmap_projection"), list) and bk["roadmap_projection"]:
+                bk_steps = [_compact_history_step(s) for s in bk["roadmap_projection"] if isinstance(s, dict)]
+                bk_dig = _steps_digest(bk_steps)
+                bk_at = str(bk.get("saved_at") or today_str)
+                bk_date = bk_at[:10] if len(bk_at) >= 10 and bk_at[:4].isdigit() else today_str
+                bk_done = sum(1 for s in bk_steps if s.get("status") == "done")
+                saved_entries.append({
+                    "id": f"backup-{bk_date}-{bk_dig[:8]}",
+                    "date": bk_date,
+                    "at": bk_at,
+                    "label": f"{bk_date} · Previous Plan Backup ({bk_done}/{len(bk_steps)} done)",
+                    "summary": "Saved backup snapshot before the most recent plan update.",
+                    "trigger": "backup",
+                    "digest": bk_dig,
+                    "steps_done": bk_done,
+                    "steps_total": len(bk_steps),
+                    "steps": bk_steps,
+                })
+        except Exception:
+            pass
+
+    reconstructed = _reconstruct_plan_history_from_events(roadmap, campaign_dir)
+
+    out: list[dict] = []
+    if live_steps:
+        out.append({
+            "id": "current-live",
+            "is_current": True,
+            "date": today_str,
+            "at": today_str,
+            "label": f"{today_str} · Current Live Plan ({live_done}/{live_total} done)",
+            "summary": f"Current active roadmap ({live_done} completed, {live_total - live_done} open).",
+            "trigger": "current",
+            "digest": live_digest,
+            "steps_done": live_done,
+            "steps_total": live_total,
+            "plan_doc": primary_plan_doc,
+            "steps": live_steps,
+        })
+
+    seen_keys = {(today_str, live_digest)}
+    if as_of_str:
+        seen_keys.add((as_of_str, live_digest))
+    combined_past = []
+    for ent in saved_entries + reconstructed:
+        if not isinstance(ent, dict) or not isinstance(ent.get("steps"), list) or not ent["steps"]:
+            continue
+        d_str = str(ent.get("date") or str(ent.get("at") or "")[:10] or today_str)
+        dig = str(ent.get("digest") or _steps_digest(ent["steps"]))
+        is_explicit = ent.get("trigger") in ("backup", "before_accept", "before_restore", "before_revert", "plan_revert", "plan_restore")
+        if not is_explicit and d_str == today_str and dig == live_digest:
+            continue
+        key = (d_str, dig)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        ent_copy = dict(ent)
+        ent_copy["is_current"] = False
+        ent_copy["date"] = d_str
+        ent_copy["digest"] = dig
+        if primary_plan_doc and not ent_copy.get("plan_doc"):
+            ent_copy["plan_doc"] = primary_plan_doc
+        combined_past.append(ent_copy)
+
+    combined_past.sort(key=lambda x: (str(x.get("date") or ""), str(x.get("at") or "")), reverse=True)
+    out.extend(combined_past)
+
+    with _PLAN_HISTORY_CACHE_LOCK:
+        if len(_PLAN_HISTORY_CACHE) > 64:
+            _PLAN_HISTORY_CACHE.clear()
+        _PLAN_HISTORY_CACHE[cache_key] = (cache_sig, deepcopy(out))
+    return out
+
+
+def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict:
+    """Analyze DELIVERABLES.md and plan documents against roadmap.json to propose concrete step updates."""
+    from .navigation_compat import resolve_step
+    root = Path(campaign_dir)
+    if roadmap is None:
+        roadmap, _ = _read_json(root / "roadmap.json")
+    cur_proj = deepcopy((roadmap or {}).get("roadmap_projection") or (m or {}).get("steps") or [])
+    if not isinstance(cur_proj, list):
+        cur_proj = []
+
+    if not cur_proj:
+        doc_steps, doc_name = _steps_from_plan_doc(root)
+        if doc_steps:
+            changes = [
+                {
+                    "step_id": str(s.get("id") or ""),
+                    "name": str(s.get("name") or ""),
+                    "from": "none",
+                    "to": str(s.get("status") or "proposed"),
+                    "reason": f"Scaffolded from {doc_name}",
+                }
+                for s in doc_steps
+            ]
+            return {
+                "has_changes": True,
+                "changes": changes,
+                "proposed_steps": doc_steps,
+                "proposed_steps_count": len(doc_steps),
+                "proposed_done_count": sum(1 for s in doc_steps if s.get("status") == "done"),
+                "title": f"Proposed Plan from {doc_name}",
+                "reason": f"Extracted {len(doc_steps)} plan steps from {doc_name}.",
+                "digest": "empty->" + _steps_digest(doc_steps),
+            }
+        return {"has_changes": False, "changes": [], "proposed_steps": [], "digest": "empty->empty"}
+
+    deliv = _read_deliverables(campaign_dir)
+    raw_items = (deliv or {}).get("items") or []
+    approved_items = (deliv or {}).get("approved") or []
+    dismissed = read_dismissed_deliverables(campaign_dir)
+
+    final_by_step: dict[str, list[str]] = {}
+    open_review_by_step: dict[str, list[str]] = {}
+
+    for it in list(raw_items) + list(approved_items):
+        if not isinstance(it, dict):
+            continue
+        owner = resolve_step(cur_proj, it.get("step"))
+        sid = str((owner or {}).get("id") or (owner or {}).get("step_id") or it.get("step") or "").strip()
+        if not sid:
+            continue
+        what = str(it.get("what") or "").strip()
+        p_norm = str(it.get("path") or "").replace("\\", "/").lower()
+        clean_label = _strip_format_tag(
+            re.sub(
+                r"^(?:START\s+HERE\s*[\u2014\u2013\-:]\s*)?(?:FOR\s+REVIEW\s*[\u2014\u2013\-:]\s*)?"
+                r"(?:Approved\s*[\u2014\u2013\-:]\s*Finalized\s*[\u2014\u2013\-:]\s*)?(?:[A-Za-z0-9_-]+\s*[\u2014\u2013\-]\s*)?",
+                "",
+                what,
+                flags=re.I,
+            )
+        ) or Path(str(it.get("path") or sid)).name
+
+        is_final = bool(
+            it.get("accepted")
+            or it.get("accepted_current")
+            or _FINAL_DELIV_RE.match(what)
+            or "/final deliverables/" in ("/" + p_norm)
+        )
+        if is_final:
+            if clean_label not in final_by_step.setdefault(sid, []):
+                final_by_step[sid].append(clean_label)
+            continue
+
+        is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
+        if is_dis or _HISTORICAL_LABEL.match(what):
+            continue
+        is_for_review = bool(
+            _FOR_REVIEW_LABEL.match(what)
+            or _ACTIVE_REVIEW_DELIV_RE.match(what)
+            or (it.get("managed") and it.get("phase") in ("awaiting_review", "blocked"))
+        )
+        if is_for_review:
+            if clean_label not in open_review_by_step.setdefault(sid, []):
+                open_review_by_step[sid].append(clean_label)
+
+    proposed_steps = deepcopy(cur_proj)
+    changes = []
+    done_added = 0
+    active_added = 0
+
+    for s in proposed_steps:
+        if not isinstance(s, dict):
+            continue
+        sid = str(s.get("id") or s.get("step_id") or "").strip()
+        if not sid:
+            continue
+        cur_st = str(s.get("status") or "proposed").strip().lower()
+        sname = str(((s.get("navigation") or {}).get("label") if isinstance(s.get("navigation"), dict) else "") or s.get("name") or sid)
+
+        if sid in final_by_step and sid not in open_review_by_step and cur_st not in ("done", "parked", "cancelled", "dropped"):
+            s["status"] = "done"
+            s["waiting_on"] = None
+            done_added += 1
+            changes.append({
+                "step_id": sid,
+                "name": one_line(sname, 60),
+                "from": cur_st,
+                "to": "done",
+                "reason": f"Final deliverable locked ({one_line(final_by_step[sid][0], 48)})",
+            })
+        elif sid in open_review_by_step and cur_st in ("planned", "proposed"):
+            s["status"] = "active"
+            if not s.get("waiting_on"):
+                s["waiting_on"] = f"Review {one_line(open_review_by_step[sid][0], 56)}"
+            active_added += 1
+            changes.append({
+                "step_id": sid,
+                "name": one_line(sname, 60),
+                "from": cur_st,
+                "to": "active",
+                "reason": f"Deliverable ready for review ({one_line(open_review_by_step[sid][0], 48)})",
+            })
+
+    # If the currently pinned step is now done, move the pin to the first step with open review items or first active step
+    pinned_steps = [
+        s for s in proposed_steps
+        if isinstance(s, dict) and isinstance(s.get("navigation"), dict) and (s["navigation"].get("pin") or s["navigation"].get("current"))
+    ]
+    if pinned_steps and all(s.get("status") == "done" for s in pinned_steps):
+        next_focus = next(
+            (s for s in proposed_steps if isinstance(s, dict) and s.get("status") != "done" and str(s.get("id") or s.get("step_id") or "") in open_review_by_step),
+            None,
+        ) or next(
+            (s for s in proposed_steps if isinstance(s, dict) and s.get("status") in ("active", "in_progress", "waiting")),
+            None,
+        )
+        if next_focus is not None:
+            for s in pinned_steps:
+                s["navigation"]["pin"] = False
+            nav = next_focus.setdefault("navigation", {})
+            nav["pin"] = True
+            nav["current"] = True
+
+    before_dig = _steps_digest(cur_proj)
+    after_dig = _steps_digest(proposed_steps)
+    refresh_digest = f"{before_dig}->{after_dig}"
+
+    if not changes:
+        return {
+            "has_changes": False,
+            "changes": [],
+            "proposed_steps": proposed_steps,
+            "proposed_steps_count": len(proposed_steps),
+            "proposed_done_count": sum(1 for s in proposed_steps if isinstance(s, dict) and s.get("status") == "done"),
+            "digest": refresh_digest,
+        }
+
+    parts = []
+    if done_added:
+        done_names = ", ".join(c["name"] for c in changes if c["to"] == "done")
+        parts.append(f"{done_added} step(s) completed in Final Deliverables ({one_line(done_names, 90)})")
+    if active_added:
+        act_names = ", ".join(c["name"] for c in changes if c["to"] == "active")
+        parts.append(f"{active_added} step(s) active in For Review ({one_line(act_names, 70)})")
+    reason_str = " · ".join(parts) or f"{len(changes)} step update(s) detected from recent deliverables."
+
+    return {
+        "has_changes": True,
+        "changes": changes,
+        "proposed_steps": proposed_steps,
+        "proposed_steps_count": len(proposed_steps),
+        "proposed_done_count": sum(1 for s in proposed_steps if isinstance(s, dict) and s.get("status") == "done"),
+        "title": f"Proposed Plan Refresh ({len(changes)} Deliverable Update{'s' if len(changes) != 1 else ''})",
+        "reason": reason_str,
+        "digest": refresh_digest,
+    }
+
+
 def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:
     """Return a plan refresh proposal when major deliverables or plan documents update the campaign plan,
     or when a previous plan backup exists so John can Accept New Plan or Revert to Old Plan."""
@@ -4060,38 +4690,71 @@ def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict |
     prop_file = root / ".ecgberht" / "plan-proposal.json"
     backup_file = root / ".ecgberht" / "roadmap-backup.json"
     has_backup = backup_file.is_file()
+    prop_disk = {}
     if prop_file.is_file():
         try:
-            prop = json.loads(prop_file.read_text(encoding="utf-8"))
-            if isinstance(prop, dict) and prop.get("status") in ("pending", None, ""):
-                prop["can_revert"] = bool(has_backup or prop.get("previous_steps"))
-                return prop
-            if isinstance(prop, dict) and prop.get("status") == "accepted" and has_backup:
-                return {
-                    "id": str(prop.get("id") or "accepted-plan"),
-                    "status": "accepted",
-                    "title": str(prop.get("title") or "Updated Plan Active"),
-                    "reason": str(prop.get("reason") or "Plan refreshed after recent deliverables."),
-                    "can_revert": True,
-                }
+            prop_disk = json.loads(prop_file.read_text(encoding="utf-8")) or {}
         except Exception:
-            pass
+            prop_disk = {}
+
+    # 1. Check deliverable-driven plan updates
+    try:
+        refresh = compute_deliverables_plan_refresh(campaign_dir, m, roadmap)
+    except Exception:
+        refresh = {"has_changes": False, "changes": [], "proposed_steps": []}
+
+    if refresh.get("has_changes"):
+        dig = str(refresh.get("digest") or "")
+        if not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == dig):
+            return {
+                "id": "deliv-refresh-" + dig[:12],
+                "status": "pending",
+                "title": refresh.get("title") or "Proposed Plan Refresh",
+                "reason": refresh.get("reason") or "Recent deliverables updated the campaign plan.",
+                "changes": refresh.get("changes") or [],
+                "proposed_steps_count": refresh.get("proposed_steps_count", 0),
+                "proposed_done_count": refresh.get("proposed_done_count", 0),
+                "can_revert": True,
+            }
+
+    # 2. Check explicit pending or accepted proposal file on disk
+    if isinstance(prop_disk, dict):
+        if prop_disk.get("status") in ("pending", None, "") and (prop_disk.get("title") or prop_disk.get("reason") or prop_disk.get("proposed_steps")):
+            out_prop = dict(prop_disk)
+            out_prop["status"] = "pending"
+            out_prop["can_revert"] = bool(has_backup or prop_disk.get("previous_steps") or True)
+            out_prop.pop("proposed_steps", None)
+            out_prop.pop("previous_steps", None)
+            return out_prop
+        if prop_disk.get("status") == "accepted" and has_backup:
+            return {
+                "id": str(prop_disk.get("id") or "accepted-plan"),
+                "status": "accepted",
+                "title": str(prop_disk.get("title") or "Updated Plan Active"),
+                "reason": str(prop_disk.get("reason") or "Plan refreshed after recent deliverables."),
+                "changes": prop_disk.get("changes") if isinstance(prop_disk.get("changes"), list) else [],
+                "can_revert": True,
+            }
+
+    # 3. Check plan document / conversational drift
     drift = (m or {}).get("plan_drift") if isinstance(m, dict) and isinstance(m.get("plan_drift"), dict) else plan_drift(campaign_dir)
     if isinstance(drift, dict) and drift.get("drift"):
         proposed_steps, doc_name = _steps_from_plan_doc(root)
+        cur_steps = (m or {}).get("steps") or ((roadmap or {}).get("roadmap_projection") if isinstance(roadmap, dict) else []) or []
         return {
             "id": "drift-" + (doc_name or "roadmap"),
             "status": "pending",
-            "title": "Proposed Plan Refresh" + (" from " + doc_name if doc_name else ""),
+            "title": "Proposed Plan Refresh" + (" from " + doc_name if doc_name and not cur_steps else ""),
             "reason": str(drift.get("reason") or "Deliverables or instructions updated the plan structure."),
-            "proposed_steps_count": len(proposed_steps),
+            "changes": refresh.get("changes") or [],
+            "proposed_steps_count": len(cur_steps) or len(proposed_steps),
             "can_revert": True,
         }
     return None
 
 
 def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id: str = "") -> dict:
-    """Accept a proposed plan refresh or revert to the previous roadmap snapshot."""
+    """Accept a proposed plan refresh, revert to the previous roadmap snapshot, restore any historical date snapshot, or refresh."""
     root = Path(campaign_dir)
     ec_dir = root / ".ecgberht"
     ec_dir.mkdir(parents=True, exist_ok=True)
@@ -4103,13 +4766,140 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
     rm_data, _ = _read_json(rm_path)
     if not isinstance(rm_data, dict):
         rm_data = {"roadmap_projection": [], "roadmap_events": []}
-    cur_proj = list(rm_data.get("roadmap_projection") or [])
+    cur_proj = deepcopy(list(rm_data.get("roadmap_projection") or []))
     prop_data = {}
     if prop_file.is_file():
         try:
             prop_data = json.loads(prop_file.read_text(encoding="utf-8")) or {}
         except Exception:
             prop_data = {}
+
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    today_str = now_iso[:10]
+
+    if act in ("refresh", "re-evaluate", "propose"):
+        refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=rm_data)
+        if refresh.get("has_changes"):
+            prop_payload = {
+                "id": "deliv-refresh-" + str(refresh.get("digest") or "")[:12],
+                "status": "pending",
+                "title": refresh.get("title") or "Proposed Plan Refresh",
+                "reason": refresh.get("reason") or "Deliverables analyzed against plan.",
+                "changes": refresh.get("changes") or [],
+                "proposed_steps": refresh.get("proposed_steps") or [],
+                "proposed_steps_count": refresh.get("proposed_steps_count", 0),
+                "proposed_done_count": refresh.get("proposed_done_count", 0),
+                "digest": refresh.get("digest") or "",
+                "refreshed_at": now_iso,
+                "can_revert": True,
+            }
+            prop_file.write_text(json.dumps(prop_payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            return {
+                "ok": True,
+                "action": "refreshed",
+                "has_changes": True,
+                "changes_count": len(refresh.get("changes") or []),
+                "proposal": {k: v for k, v in prop_payload.items() if k != "proposed_steps"},
+            }
+        # Even if no pending step flips, record a verified snapshot in history and clear stale conversational drift
+        if conv_file.is_file():
+            try:
+                conv_file.unlink()
+            except OSError:
+                pass
+        if cur_proj:
+            done_c = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
+            _record_plan_history_snapshot(
+                campaign_dir,
+                cur_proj,
+                label=f"{today_str} · Verified Plan ({done_c}/{len(cur_proj)} done)",
+                summary="Plan reviewed against Deliverables — all steps up to date.",
+                trigger="plan_refresh",
+                at=now_iso,
+            )
+        return {
+            "ok": True,
+            "action": "refreshed",
+            "has_changes": False,
+            "changes_count": 0,
+            "steps_count": len(cur_proj),
+        }
+
+    if act == "dismiss":
+        refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=rm_data)
+        prop_data["status"] = "dismissed"
+        prop_data["digest"] = refresh.get("digest") or prop_data.get("digest") or ""
+        prop_data["dismissed_at"] = now_iso
+        prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {"ok": True, "action": "dismissed"}
+
+    if act == "restore":
+        hist = read_plan_history(campaign_dir, roadmap=rm_data)
+        target_snap = next(
+            (
+                h for h in hist
+                if isinstance(h, dict)
+                and (str(h.get("id") or "") == proposal_id or str(h.get("date") or "") == proposal_id)
+                and isinstance(h.get("steps"), list)
+                and h["steps"]
+            ),
+            None,
+        )
+        if target_snap is None:
+            return {"ok": False, "error": f"Historical plan snapshot '{proposal_id}' not found"}
+        if cur_proj:
+            done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
+            backup_file.write_text(
+                json.dumps({"saved_at": now_iso, "roadmap_projection": cur_proj}, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            _record_plan_history_snapshot(
+                campaign_dir,
+                cur_proj,
+                label=f"{today_str} · Snapshot before Restore ({done_cur}/{len(cur_proj)} done)",
+                summary=f"Saved automatically before restoring plan from {target_snap.get('date')}.",
+                trigger="before_restore",
+                at=now_iso,
+                force=True,
+            )
+        restored_steps = deepcopy(target_snap["steps"])
+        rm_data["roadmap_projection"] = restored_steps
+        evs = list(rm_data.get("roadmap_events") or [])
+        evs.append({
+            "kind": "plan_restore",
+            "at": now_iso,
+            "by": "John",
+            "proposal_id": str(target_snap.get("id") or proposal_id),
+            "restored_date": str(target_snap.get("date") or ""),
+            "steps": restored_steps,
+        })
+        rm_data["roadmap_events"] = evs
+        rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        with _JSON_FILE_CACHE_LOCK:
+            _JSON_FILE_CACHE.clear()
+        done_rest = sum(1 for s in restored_steps if isinstance(s, dict) and s.get("status") == "done")
+        _record_plan_history_snapshot(
+            campaign_dir,
+            restored_steps,
+            label=f"{today_str} · Restored Plan from {target_snap.get('date')} ({done_rest}/{len(restored_steps)} done)",
+            summary=f"Restored historical plan from {target_snap.get('date')} ({target_snap.get('summary') or ''}).",
+            trigger="plan_restore",
+            at=now_iso,
+            force=True,
+        )
+        prop_data["status"] = "accepted"
+        prop_data["title"] = f"Restored Plan from {target_snap.get('date')}"
+        prop_data["reason"] = f"Showing restored plan from {target_snap.get('date')} ({done_rest}/{len(restored_steps)} done). You can revert to your previous plan at any time."
+        prop_data["can_revert"] = True
+        prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {
+            "ok": True,
+            "action": "restored",
+            "restored_id": target_snap.get("id"),
+            "restored_date": target_snap.get("date"),
+            "steps_count": len(restored_steps),
+        }
+
     if act in ("revert", "rollback", "old"):
         prev_steps = None
         if backup_file.is_file():
@@ -4121,42 +4911,93 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
                 prev_steps = None
         if prev_steps is None and isinstance(prop_data.get("previous_steps"), list):
             prev_steps = prop_data["previous_steps"]
+        if prev_steps is None:
+            hist = read_plan_history(campaign_dir, roadmap=rm_data)
+            if len(hist) >= 2 and isinstance(hist[1].get("steps"), list):
+                prev_steps = hist[1]["steps"]
         if prev_steps is not None:
+            if cur_proj:
+                done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
+                _record_plan_history_snapshot(
+                    campaign_dir,
+                    cur_proj,
+                    label=f"{today_str} · Snapshot before Revert ({done_cur}/{len(cur_proj)} done)",
+                    summary="Saved before reverting to previous plan.",
+                    trigger="before_revert",
+                    at=now_iso,
+                    force=True,
+                )
+                backup_file.write_text(
+                    json.dumps({"saved_at": now_iso, "roadmap_projection": cur_proj}, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
             rm_data["roadmap_projection"] = prev_steps
             evs = list(rm_data.get("roadmap_events") or [])
             evs.append({
                 "kind": "plan_revert",
-                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "at": now_iso,
                 "by": "John",
                 "proposal_id": proposal_id or str(prop_data.get("id") or ""),
+                "steps": prev_steps,
             })
             rm_data["roadmap_events"] = evs
             rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
             with _JSON_FILE_CACHE_LOCK:
                 _JSON_FILE_CACHE.clear()
+            done_prev = sum(1 for s in prev_steps if isinstance(s, dict) and s.get("status") == "done")
+            _record_plan_history_snapshot(
+                campaign_dir,
+                prev_steps,
+                label=f"{today_str} · Reverted to Previous Plan ({done_prev}/{len(prev_steps)} done)",
+                summary="Reverted to previous plan snapshot.",
+                trigger="plan_revert",
+                at=now_iso,
+                force=True,
+            )
         prop_data["status"] = "reverted"
-        prop_data["reverted_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        prop_data["reverted_at"] = now_iso
         prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
         return {"ok": True, "action": "reverted", "steps_count": len(rm_data.get("roadmap_projection") or [])}
-    # Accept new plan: save backup of current projection first so John can revert anytime
+
+    # Accept new plan: save backup and history snapshot of current projection first so John can revert anytime
     if cur_proj:
+        done_cur = sum(1 for s in cur_proj if isinstance(s, dict) and s.get("status") == "done")
         backup_file.write_text(json.dumps({
-            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "saved_at": now_iso,
             "roadmap_projection": cur_proj,
         }, indent=2, ensure_ascii=False), encoding="utf-8")
-    new_steps = prop_data.get("proposed_steps") if isinstance(prop_data.get("proposed_steps"), list) else None
+        _record_plan_history_snapshot(
+            campaign_dir,
+            cur_proj,
+            label=f"{today_str} · Plan before Refresh ({done_cur}/{len(cur_proj)} done)",
+            summary="Saved automatically before accepting plan refresh.",
+            trigger="before_accept",
+            at=now_iso,
+            force=True,
+        )
+
+    refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=rm_data)
+    new_steps = prop_data.get("proposed_steps") if isinstance(prop_data.get("proposed_steps"), list) and prop_data.get("proposed_steps") else None
+    changes_applied = prop_data.get("changes") if isinstance(prop_data.get("changes"), list) else []
+    reason_applied = str(prop_data.get("reason") or "")
+    if not new_steps and refresh.get("has_changes") and isinstance(refresh.get("proposed_steps"), list):
+        new_steps = refresh["proposed_steps"]
+        changes_applied = refresh.get("changes") or []
+        reason_applied = str(refresh.get("reason") or "")
     if not new_steps:
         doc_steps, _ = _steps_from_plan_doc(root)
         if doc_steps and not cur_proj:
             new_steps = doc_steps
     if new_steps:
         rm_data["roadmap_projection"] = new_steps
+    final_proj = list(rm_data.get("roadmap_projection") or [])
     evs = list(rm_data.get("roadmap_events") or [])
     evs.append({
         "kind": "plan_accept",
-        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "at": now_iso,
         "by": "John",
         "proposal_id": proposal_id or str(prop_data.get("id") or "accepted-plan"),
+        "steps": [_compact_history_step(s) for s in final_proj if isinstance(s, dict)],
     })
     rm_data["roadmap_events"] = evs
     rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -4167,11 +5008,32 @@ def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id
             conv_file.unlink()
         except OSError:
             pass
+    done_new = sum(1 for s in final_proj if isinstance(s, dict) and s.get("status") == "done")
+    _record_plan_history_snapshot(
+        campaign_dir,
+        final_proj,
+        label=f"{today_str} · Accepted Refreshed Plan ({done_new}/{len(final_proj)} done)",
+        summary=reason_applied or f"Accepted plan refresh ({done_new} of {len(final_proj)} steps completed).",
+        trigger="plan_accept",
+        at=now_iso,
+        force=True,
+    )
     prop_data["id"] = proposal_id or str(prop_data.get("id") or "accepted-plan")
     prop_data["status"] = "accepted"
-    prop_data["accepted_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    prop_data["title"] = "Updated Plan Active"
+    prop_data["reason"] = reason_applied or f"Plan refreshed ({done_new}/{len(final_proj)} steps done)."
+    prop_data["changes"] = changes_applied
+    prop_data["accepted_at"] = now_iso
+    prop_data.pop("proposed_steps", None)
     prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
-    return {"ok": True, "action": "accepted", "can_revert": True, "steps_count": len(rm_data.get("roadmap_projection") or [])}
+    return {
+        "ok": True,
+        "action": "accepted",
+        "can_revert": True,
+        "changes_count": len(changes_applied),
+        "steps_count": len(final_proj),
+        "steps_done": done_new,
+    }
 
 
 _APPROVE_FEEDBACK_RE = re.compile(

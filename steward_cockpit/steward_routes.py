@@ -2179,6 +2179,12 @@ def handle_get(cdir, verb, qs):
         except (TypeError, ValueError):
             since = 0
         return _de.poll_session(since), 200
+    if verb in ("plan-history", "plan/history", "plan-proposal", "plan/proposal"):
+        return {
+            "ok": True,
+            "history": campaign.read_plan_history(cdir),
+            "proposal": campaign.read_plan_proposal(cdir),
+        }, 200
     if verb == "fleet-brief":
         from steward_cockpit.campaign_say import build_fleet_brief, is_cave_folder
         camp_dir = str(Path(cdir).parent) if is_cave_folder(cdir) and (Path(cdir).parent / "roadmap.json").is_file() else cdir
@@ -2904,11 +2910,11 @@ def handle_post(cdir, verb, body):
         )
         _DELIV_CACHE.clear()
         return result, 200 if result.get("ok") else 400
-    if verb in ("plan-proposal", "plan/proposal"):
+    if verb in ("plan-proposal", "plan/proposal", "plan-history", "plan/history"):
         res = campaign.resolve_plan_proposal(
             cdir,
             action=str(body.get("action") or "accept"),
-            proposal_id=str(body.get("proposal_id") or ""),
+            proposal_id=str(body.get("proposal_id") or body.get("version_id") or ""),
         )
         _DELIV_CACHE.clear()
         return res, 200 if res.get("ok") else 400
@@ -2947,6 +2953,13 @@ def handle_post(cdir, verb, body):
                         next_id = str(nxt.get("id") or "")
                         next_name = str(nxt.get("name") or nxt.get("title") or next_id)
                     rm_path.write_text(json.dumps(rm, indent=2), encoding="utf-8")
+                    campaign._record_plan_history_snapshot(
+                        cdir,
+                        steps,
+                        label=f"{time.strftime('%Y-%m-%d')} · Completed '{done_name[:40]}'",
+                        summary=f"Marked step '{done_name}' done" + (f" → active '{next_name}'" if next_name else ""),
+                        trigger="step_done",
+                    )
             except Exception as exc:
                 return {"ok": False, "error": str(exc)}, 400
         if st_path.is_file() and isinstance(st_data, dict):

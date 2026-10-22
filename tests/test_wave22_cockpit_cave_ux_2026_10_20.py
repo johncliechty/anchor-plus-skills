@@ -525,3 +525,77 @@ def test_wave26_orchestrator_reviewer_roles_deliverables_plan_refresh_and_usage_
     assert rec["ok"] is True and rec["reconciled"] == 1
     st_after = json.loads((tmp_path / "strip.json").read_text(encoding="utf-8"))
     assert st_after["human_wait"] == "none"
+
+
+def test_wave27_plan_refresh_and_historical_plans_timeline(tmp_path):
+    """14. Deliverable-driven plan refresh auto-detects completed/active steps from DELIVERABLES.md,
+    reconstructs dated historical plans from roadmap_events + .ecgberht/plan-history.json,
+    allows browsing/restoring any historical plan by date, and fixes isStepNow on done steps."""
+    from steward_cockpit import steward_routes as sr
+
+    shared_js = (ROOT / "steward_cockpit" / "static" / "shared.js").read_text(encoding="utf-8")
+    shared_css = (ROOT / "steward_cockpit" / "static" / "shared.css").read_text(encoding="utf-8")
+
+    # 1. Frontend Plan History Timeline & Fix for Done Steps with Stale Pin
+    assert "let _planHistoryOpen = false;" in shared_js
+    assert 'let _selectedPlanHistoryId = "";' in shared_js
+    assert "const isStepNow = !isStepDone && !activeHistorySnap && isNow(st, map);" in shared_js
+    assert 'btnHist.dataset.planHistoryToggle = "1";' in shared_js
+    assert 'btnRefresh.dataset.planRefresh = "1";' in shared_js
+    assert 'histPanel.dataset.planHistoryPanel = "1";' in shared_js
+    assert "course:lec-1-4" in shared_js and "course:ai-supplements" in shared_js
+    assert ".plan-history-panel" in shared_css
+    assert ".plan-history-row" in shared_css
+    assert ".plan-history-banner" in shared_css
+
+    # 2. Backend chronological plan history reconstruction & deliverable-driven refresh
+    (tmp_path / "ECGBERHT.md").write_text("# MBA Course\n", encoding="utf-8")
+    (tmp_path / "LECTURE-1-FINAL.md").write_text("# Lecture 1 Final\n", encoding="utf-8")
+    (tmp_path / "LECTURE-2-REVIEW.md").write_text("# Lecture 2 For Review\n", encoding="utf-8")
+    (tmp_path / "DELIVERABLES.md").write_text(
+        "# Deliverables\n\n| What | Where | Date | Step |\n| --- | --- | --- | --- |\n"
+        "| FINAL: Lecture 1 Final Deck | `LECTURE-1-FINAL.md` | 2026-10-10 | lec-1 |\n"
+        "| FOR REVIEW: Lecture 2 Deck | `LECTURE-2-REVIEW.md` | 2026-10-22 | lec-2 |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "roadmap.json").write_text(
+        json.dumps({
+            "roadmap_projection": [
+                {"id": "lec-1", "name": "Lecture 1", "status": "waiting"},
+                {"id": "lec-2", "name": "Lecture 2", "status": "planned"},
+                {"id": "lec-3", "name": "Lecture 3", "status": "planned"},
+            ],
+            "roadmap_events": [
+                {"ts": "2026-10-01T10:00:00Z", "action": "add", "step": {"id": "lec-1", "name": "Lecture 1", "status": "planned"}},
+                {"ts": "2026-10-01T10:01:00Z", "action": "add", "step": {"id": "lec-2", "name": "Lecture 2", "status": "planned"}},
+                {"ts": "2026-10-10T15:00:00Z", "action": "update", "id": "lec-1", "patch": {"status": "waiting"}},
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    m = sc.read_map(str(tmp_path))
+    prop = m.get("plan_proposal")
+    assert prop is not None and prop["status"] == "pending"
+    assert len(prop.get("changes") or []) == 2
+
+    hist = m.get("plan_history") or []
+    dates = [h["date"] for h in hist]
+    assert "2026-10-01" in dates and "2026-10-10" in dates
+
+    # Accept deliverable refresh -> lec-1 becomes done, lec-2 becomes active, snapshot saved
+    res_acc, code_acc = sr.handle_post(str(tmp_path), "plan-proposal", {"action": "accept"})
+    assert code_acc == 200 and res_acc["ok"] is True
+    m_after = sc.read_map(str(tmp_path))
+    by_id = {s["id"]: s for s in m_after["steps"]}
+    assert by_id["lec-1"]["status"] == "done"
+    assert by_id["lec-2"]["status"] == "active"
+
+    # Restore historical plan from 2026-10-01 -> restores the earlier snapshot
+    snap_oct1 = next(h for h in m_after["plan_history"] if h["date"] == "2026-10-01")
+    res_rest, code_rest = sr.handle_post(str(tmp_path), "plan-proposal", {"action": "restore", "version_id": snap_oct1["id"]})
+    assert code_rest == 200 and res_rest["ok"] is True
+    m_restored = sc.read_map(str(tmp_path))
+    by_id_rest = {s["id"]: s for s in m_restored["steps"]}
+    assert by_id_rest["lec-1"]["status"] == "planned"
+

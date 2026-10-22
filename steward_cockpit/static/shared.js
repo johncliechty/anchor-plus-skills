@@ -2532,6 +2532,10 @@ const Proto = (() => {
     _planViewMode = navChoice("plan:view_mode", "hierarchy") === "waves" ? "waves" : "hierarchy";
     return _planViewMode;
   }
+  let _planHistoryOpen = false;
+  let _selectedPlanHistoryId = "";
+  let _planHistoryFilter = "";
+
   function classifyStepHierarchyBlock(entry, map) {
     const st = entry.st || {};
     const rawName = String((st.navigation && st.navigation.label) || st.name || "");
@@ -2561,7 +2565,28 @@ const Proto = (() => {
       return { key: "phase:4", label: "\ud83d\udee1\ufe0f Phase IV \u00b7 Aegis Security & AI Cockpit Redesign (Waves 17+)", order: 74 };
     }
 
-    // 4. Course / Lecture Sections & Curriculum Blocks (e.g., MIT Lectures Sections 1-6 + Transformers + LLM Series)
+    // 4. Course / Curriculum / BA 815 / MIT Lectures grouping
+    if (/\b(?:AI\s*Supplement|Tool\s*Supplement|Prompt\s*Supplement)/i.test(rawName)) {
+      return { key: "course:ai-supplements", label: "\ud83e\udd16 AI Supplements & Tool Workflows", order: 44 };
+    }
+    if (/\b(?:Homework|HW\s*\d+|Quiz|Exam|Midterm|Problem\s*Set|Grading\s*Rubric|Answer\s*Key)/i.test(rawName)) {
+      return { key: "course:assessments", label: "\ud83d\udcdd Homeworks, Quizzes & Assessments", order: 52 };
+    }
+    if (/\b(?:Wiggling\s*Car|Sampling\s*Distribution|Interactive\s*Demo|Simulation|Shiny|Bootstrap\s*Demo)/i.test(rawName)) {
+      return { key: "course:simulations", label: "\ud83e\uddea Interactive Simulations & Teaching Demos", order: 42 };
+    }
+    if (/\b(?:Syllabus|RStudio|Cheatsheet|Orientation|Course\s*Setup|Glossary|Reference\s*Guide)/i.test(rawName)) {
+      return { key: "course:setup", label: "\ud83c\udf93 Course Setup, Syllabus & Reference Guides", order: 22 };
+    }
+    const lecM = /\b(?:Lecture|Session|Class)\s*(\d+)\b/i.exec(rawName);
+    if (lecM) {
+      const lNum = Number(lecM[1]);
+      if (lNum <= 4) return { key: "course:lec-1-4", label: "\ud83e\uddf1 Block I \u00b7 Lectures 1\u20134 (Foundations & Sampling)", order: 26 };
+      if (lNum <= 8) return { key: "course:lec-5-8", label: "\ud83e\uddf1 Block II \u00b7 Lectures 5\u20138 (Inference & Regression)", order: 31 };
+      return { key: "course:lec-9-12", label: "\ud83e\uddf1 Block III \u00b7 Lectures 9\u201312 (Advanced Models & Causal)", order: 36 };
+    }
+
+    // 5. MIT Deep Learning Sections 1-6 + Transformers + LLM Series
     if (/\b(?:Embeddings|Position|Token|Foundations|Perceptron|Backprop|Sequence|RNN)\b/i.test(rawName)) {
       return { key: "hier:foundations", label: "\ud83e\uddf1 Block I \u00b7 Foundations, Embeddings & Position (Sec 1\u20132)", order: 25 };
     }
@@ -2585,7 +2610,18 @@ const Proto = (() => {
       return { key: "hier:synthesis", label: "\ud83c\udf93 Block V \u00b7 Course Delivery & Synthesis", order: 60 };
     }
 
-    // 5. Meaningful custom st.part (ignore generic internal tokens like slice / step / wave / task / item)
+    // 6. Explicit navigation path group if present and non-generic
+    if (st.navigation && Array.isArray(st.navigation.path) && st.navigation.path.length > 0) {
+      const rootSeg = String(st.navigation.path[0] || "").trim();
+      if (rootSeg && !/^(?:step|steps|wave|waves|slice|task|item|part|general|main|root|default|plan)$/i.test(rootSeg)) {
+        const navGroups = Array.isArray(st.navigation.groups) ? st.navigation.groups : [];
+        const matchedGrp = navGroups.find(g => g && String(g.id || "") === rootSeg);
+        const grpLabel = (matchedGrp && matchedGrp.label) || rootSeg.replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        return { key: "nav:" + rootSeg.toLowerCase(), label: "\ud83d\udcc2 " + oneLine(grpLabel, 44), order: 65 + (matchedGrp && typeof matchedGrp.order === "number" ? matchedGrp.order : 0) };
+      }
+    }
+
+    // 7. Meaningful custom st.part (ignore generic internal tokens like slice / step / wave / task / item)
     if (rawPart && !/^(?:step|wave|slice|task|item|part|general)$/i.test(rawPart)) {
       return { key: "part:" + rawPart.toLowerCase(), label: "\ud83d\udcc2 " + oneLine(rawPart, 44), order: 70 };
     }
@@ -2606,13 +2642,27 @@ const Proto = (() => {
     const stepRows=new Map();
     list.textContent = "";
     const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
+    const planHistoryList = Array.isArray(map && map.plan_history) ? map.plan_history : [];
+    const activeHistorySnap = _selectedPlanHistoryId
+      ? (planHistoryList.find(h => String(h.id || "") === String(_selectedPlanHistoryId)) || null)
+      : null;
+    if (_selectedPlanHistoryId && !activeHistorySnap) {
+      _selectedPlanHistoryId = "";
+    }
+    const displaySteps = (activeHistorySnap && Array.isArray(activeHistorySnap.steps) && activeHistorySnap.steps.length)
+      ? activeHistorySnap.steps
+      : (Array.isArray(map && map.steps) ? map.steps : []);
     const planHead = $("[data-plan-head]");
-    const doneStepsCnt = map.steps_done || 0;
-    const totalStepsCnt = map.steps_total || (map.steps || []).length || 0;
+    const doneStepsCnt = activeHistorySnap
+      ? (typeof activeHistorySnap.steps_done === "number" ? activeHistorySnap.steps_done : displaySteps.filter(s => stepDone(s)).length)
+      : (map.steps_done || 0);
+    const totalStepsCnt = activeHistorySnap
+      ? (typeof activeHistorySnap.steps_total === "number" ? activeHistorySnap.steps_total : displaySteps.length)
+      : (map.steps_total || (map.steps || []).length || 0);
     if (planHead) {
       // THE PLAN \u00b7 HIERARCHICAL PLAN SUMMARY \u00b7 WAVE PLAN SUMMARY \u00b7 Whole plan (
       planHead.textContent = "";
-      planHead.appendChild(document.createTextNode("THE PLAN"));
+      planHead.appendChild(document.createTextNode(activeHistorySnap ? ("THE PLAN (" + activeHistorySnap.date + ")") : "THE PLAN"));
       planHead.appendChild(el("span", "spend-sr", " \u00b7 " + doneStepsCnt + " OF " + totalStepsCnt + " STEPS"));
     }
     const planCountEl = $("[data-plan-count]");
@@ -2620,19 +2670,19 @@ const Proto = (() => {
       planCountEl.textContent = doneStepsCnt + "/" + totalStepsCnt + " Waves";
     }
     const unmapped = Object.values(((map.refinement || {}).state || {}).producer_handoffs || {}).filter((h) => !h.step_id && h.status === "pending_steward_review");
-    if (unmapped.length) {
+    if (unmapped.length && !activeHistorySnap) {
       const row = el("li", "waiting");
       row.appendChild(producerHandoffs(unmapped, "piece(s) of finished work not yet placed in the plan", "handoffs:unmapped"));
       list.appendChild(row);
     }
     let seenFirstPlanned = false;
     const builtEntries = [];
-    map.steps.forEach((st, i) => {
+    displaySteps.forEach((st, i) => {
       const info = planMarkInfo(st, map);
-      const isStepNow = isNow(st, map);
-      const isStepActive = isStepNow || st.status === "active";
       const isStepDone = stepDone(st);
-      const isStepWait = stepNeedsAttention(st);
+      const isStepNow = !isStepDone && !activeHistorySnap && isNow(st, map);
+      const isStepActive = !isStepDone && (isStepNow || st.status === "active");
+      const isStepWait = !isStepDone && stepNeedsAttention(st);
       const isNextUp = !isStepDone && !isStepActive && !isStepWait && st.status !== "parked" && !seenFirstPlanned;
       if (isNextUp) seenFirstPlanned = true;
       const cardCls = "step-card " + info.row + (isStepActive ? " active" : "") + (isStepDone ? " done" : "") + (isStepWait ? " wait" : "");
@@ -2862,11 +2912,99 @@ const Proto = (() => {
 
     if (!isLegacyNavTest && builtEntries.length >= 2) {
       const hb = (map && map.heartbeat) || {};
-      const nowEntry = builtEntries.find(e => e.isStepNow) || builtEntries.find(e => e.isStepWait || e.isStepActive) || builtEntries[0];
+      const nowEntry = builtEntries.find(e => !e.isStepDone && e.isStepNow)
+        || builtEntries.find(e => !e.isStepDone && (e.isStepWait || e.isStepActive))
+        || builtEntries.find(e => !e.isStepDone && e.st.status !== "parked")
+        || builtEntries[builtEntries.length - 1]
+        || builtEntries[0];
       const doneTotal = builtEntries.filter(e => e.isStepDone).length;
       const totalCnt = builtEntries.length;
       const pctDone = totalCnt ? Math.round(100 * doneTotal / totalCnt) : 0;
-      const curEffortText = oneLine(hb.active_effort || (nowEntry && ((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name)) || "", 120);
+      const hbEffortRaw = String(hb.active_effort || "").trim();
+      const hbMatchesDoneStep = Boolean(hbEffortRaw) && builtEntries.some(e => e.isStepDone && String((e.st.navigation && e.st.navigation.label) || e.st.name || e.st.id || "").toLowerCase() === hbEffortRaw.toLowerCase());
+      const curEffortText = oneLine(
+        (!activeHistorySnap && !hbMatchesDoneStep && hbEffortRaw)
+        || (nowEntry && ((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name))
+        || "",
+        120
+      );
+
+      const planProp = (map && map.plan_proposal) || ((map && map.plan_drift && map.plan_drift.drift) ? {
+        id: "drift-proposal",
+        status: "pending",
+        title: "Proposed Plan Refresh",
+        reason: map.plan_drift.reason || "Recent deliverables updated the campaign plan.",
+        can_revert: true,
+      } : null);
+
+      const buildProposalCard = (prop) => {
+        const propBox = el("div", "plan-proposal-card");
+        propBox.dataset.planProposal = "1";
+        const topRow = el("div", "plan-proposal-top");
+        const propTitle = el("strong", "", "\ud83d\udd04 " + (prop.title || "Plan Refresh Review") + ": ");
+        topRow.appendChild(propTitle);
+        topRow.appendChild(document.createTextNode(oneLine(prop.reason || "Deliverables reviewed against plan.", 200)));
+        propBox.appendChild(topRow);
+        if (Array.isArray(prop.changes) && prop.changes.length) {
+          const chgDetails = el("details", "plan-prop-changes");
+          const chgSum = el("summary", "", "View " + prop.changes.length + " step update(s) \u25b8");
+          chgDetails.appendChild(chgSum);
+          const chgUl = el("ul", "plan-prop-changes-list");
+          prop.changes.slice(0, 14).forEach((ch) => {
+            const cText = (ch.name || ch.step_id || ch.id || "Step") + ": " + (ch.from || ch.from_status || "planned") + " \u2192 " + (ch.to || ch.to_status || "done") + ((ch.reason || ch.evidence) ? (" (" + oneLine(ch.reason || ch.evidence, 60) + ")") : "");
+            chgUl.appendChild(el("li", "", cText));
+          });
+          chgDetails.appendChild(chgUl);
+          propBox.appendChild(chgDetails);
+        }
+        const btnRow = el("div", "plan-proposal-actions");
+        if (prop.status !== "accepted") {
+          const acceptBtn = el("button", "plan-mode-btn on", "\u2713 Accept New Plan");
+          acceptBtn.type = "button";
+          acceptBtn.dataset.planAction = "accept";
+          acceptBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            acceptBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "accept", proposal_id: prop.id || "" });
+              _selectedPlanHistoryId = "";
+              await loadMap();
+            } catch (e) { acceptBtn.disabled = false; }
+          };
+          btnRow.appendChild(acceptBtn);
+        }
+        if (prop.can_revert !== false) {
+          const revertBtn = el("button", "plan-mode-btn", "\u21a9 Revert to Old Plan");
+          revertBtn.type = "button";
+          revertBtn.dataset.planAction = "revert";
+          revertBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            revertBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "revert", proposal_id: prop.id || "" });
+              _selectedPlanHistoryId = "";
+              await loadMap();
+            } catch (e) { revertBtn.disabled = false; }
+          };
+          btnRow.appendChild(revertBtn);
+        }
+        if (prop.status !== "accepted") {
+          const dismissBtn = el("button", "plan-mode-btn", "\u2715 Dismiss");
+          dismissBtn.type = "button";
+          dismissBtn.dataset.planAction = "dismiss";
+          dismissBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            dismissBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "dismiss", proposal_id: prop.id || "" });
+              await loadMap();
+            } catch (e) { dismissBtn.disabled = false; }
+          };
+          btnRow.appendChild(dismissBtn);
+        }
+        propBox.appendChild(btnRow);
+        return propBox;
+      };
 
       // 1. Collapsible Steward Plan Evaluation Tile (starts collapsed ▸ by default)
       // Legacy wavegroup labels: Focus & Needs Your Input · Active & In Open Review · Next Up in Plan · Later & Parked Steps
@@ -2880,7 +3018,8 @@ const Proto = (() => {
         if (evalFold.isConnected) navSession["plan:steward_eval_open"] = evalFold.open;
       });
       const evalSum = el("summary", "");
-      evalSum.appendChild(el("span", "", "\u26a1 " + personaName().toUpperCase() + " PLAN EVALUATION \u00b7 1 Update"));
+      const updateCntTxt = (planProp && planProp.status !== "accepted") ? "1 Pending Refresh" : (planHistoryList.length + " Snapshots");
+      evalSum.appendChild(el("span", "", "\u26a1 " + personaName().toUpperCase() + " PLAN EVALUATION \u00b7 " + updateCntTxt));
       evalSum.appendChild(el("span", "steward-eval-badge spend-sr", doneTotal + "/" + totalCnt + " (" + pctDone + "%)"));
       evalSum.appendChild(el("span", "", "\u25b8"));
       evalFold.appendChild(evalSum);
@@ -2893,56 +3032,62 @@ const Proto = (() => {
         "Plan structure verified (" + doneTotal + " completed, " + (totalCnt - doneTotal) + " remaining). Each wave runs a 4-pass refinement loop (Draft \u2192 Adversarial Review \u2192 Refine \u2192 Lock)."
       ));
       evalBody.appendChild(diffBox);
-      const planProp = (map && map.plan_proposal) || ((map && map.plan_drift && map.plan_drift.drift) ? {
-        id: "drift-proposal",
-        status: "pending",
-        title: "Proposed Plan Refresh",
-        reason: map.plan_drift.reason || "Recent deliverables updated the campaign plan.",
-        can_revert: true,
-      } : null);
       if (planProp) {
-        const propBox = el("div", "plan-proposal-card");
-        propBox.dataset.planProposal = "1";
-        const propTitle = el("strong", "", "\ud83d\udd04 " + (planProp.title || "Plan Refresh Review") + ": ");
-        propBox.appendChild(propTitle);
-        propBox.appendChild(document.createTextNode(oneLine(planProp.reason || "Deliverables reviewed against plan.", 180) + " "));
-        const btnRow = el("span", "plan-proposal-actions");
-        if (planProp.status !== "accepted") {
-          const acceptBtn = el("button", "plan-mode-btn on", "\u2713 Accept New Plan");
-          acceptBtn.type = "button";
-          acceptBtn.dataset.planAction = "accept";
-          acceptBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            acceptBtn.disabled = true;
-            try {
-              await post("/api/plan-proposal", { action: "accept", proposal_id: planProp.id || "" });
-              await loadMap();
-            } catch (e) { acceptBtn.disabled = false; }
-          };
-          btnRow.appendChild(acceptBtn);
-        }
-        if (planProp.can_revert !== false) {
-          const revertBtn = el("button", "plan-mode-btn", "\u21a9 Revert to Old Plan");
-          revertBtn.type = "button";
-          revertBtn.dataset.planAction = "revert";
-          revertBtn.onclick = async (ev) => {
-            ev.stopPropagation();
-            revertBtn.disabled = true;
-            try {
-              await post("/api/plan-proposal", { action: "revert", proposal_id: planProp.id || "" });
-              await loadMap();
-            } catch (e) { revertBtn.disabled = false; }
-          };
-          btnRow.appendChild(revertBtn);
-        }
-        propBox.appendChild(btnRow);
-        evalBody.appendChild(propBox);
+        evalBody.appendChild(buildProposalCard(planProp));
       }
       evalFold.appendChild(evalBody);
       evalLi.appendChild(evalFold);
       list.appendChild(evalLi);
 
-      // 2. 2-Button Plan View Switcher: [ 🗺️ Hierarchical Plan | 🌊 Wave Plan ] (\ud83d\uddc2 Hierarchy / \ud83c\udf0a Waves)
+      // 1b. Prominent Top-Level Pending Plan Refresh Card (visible outside collapsed Steward Evaluation fold)
+      if (planProp && planProp.status !== "accepted" && !activeHistorySnap) {
+        const propHostLi = el("li", "plan-current-host");
+        propHostLi.appendChild(buildProposalCard(planProp));
+        list.appendChild(propHostLi);
+      }
+
+      // 1c. Prominent Historical Plan Preview Banner when browsing a past plan snapshot
+      if (activeHistorySnap) {
+        const histBannerLi = el("li", "plan-current-host");
+        const histBanner = el("div", "plan-history-banner");
+        histBanner.dataset.planHistoryActive = activeHistorySnap.id || "";
+        const hbHead = el("div", "phb-head");
+        hbHead.appendChild(el("strong", "", "\ud83d\udd70\ufe0f Viewing Historical Plan \u00b7 " + (activeHistorySnap.date || "Past") + " (" + doneTotal + "/" + totalCnt + " done)"));
+        histBanner.appendChild(hbHead);
+        const hbSub = el("div", "phb-sub", (activeHistorySnap.label || "") + (activeHistorySnap.summary ? (" \u2014 " + activeHistorySnap.summary) : ""));
+        histBanner.appendChild(hbSub);
+        const hbActions = el("div", "phb-actions");
+        if (!activeHistorySnap.is_current) {
+          const restoreBtn = el("button", "plan-mode-btn on", "\u21a9 Restore This Plan (" + (activeHistorySnap.date || "") + ")");
+          restoreBtn.type = "button";
+          restoreBtn.dataset.planHistoryRestore = activeHistorySnap.id || "";
+          restoreBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            restoreBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "restore", version_id: activeHistorySnap.id || "" });
+              _selectedPlanHistoryId = "";
+              await loadMap();
+            } catch (e) { restoreBtn.disabled = false; }
+          };
+          hbActions.appendChild(restoreBtn);
+        }
+        const backNowBtn = el("button", "plan-mode-btn", "\u2715 Back to Current Live Plan");
+        backNowBtn.type = "button";
+        backNowBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          _selectedPlanHistoryId = "";
+          paintStepsList(map);
+        };
+        hbActions.appendChild(backNowBtn);
+        histBanner.appendChild(hbActions);
+        histBannerLi.appendChild(histBanner);
+        list.appendChild(histBannerLi);
+      }
+
+      // 2. Plan View Switcher + Plan History & Refresh Controls:
+      // Row 1: [ 🗺️ Hierarchical Plan | 🌊 Wave Plan ]
+      // Row 2: [ 📜 Plan History (N dates ▸) | 🔄 Refresh Plan ]
       const mode = getPlanViewMode();
       const modeLi = el("li", "plan-mode-host");
       const modeBar = el("div", "plan-mode-bar");
@@ -2966,8 +3111,160 @@ const Proto = (() => {
       btnWaves.onclick = (ev) => { ev.stopPropagation(); setMode("waves"); };
       modeBar.appendChild(btnHier);
       modeBar.appendChild(btnWaves);
+
+      const histBtnLabel = "\ud83d\udcdc Plan History (" + planHistoryList.length + (planHistoryList.length === 1 ? " date " : " dates ") + (_planHistoryOpen ? "\u25be)" : "\u25b8)");
+      const btnHist = el("button", "plan-mode-btn" + ((_planHistoryOpen || activeHistorySnap) ? " on" : ""), histBtnLabel);
+      btnHist.type = "button";
+      btnHist.dataset.planHistoryToggle = "1";
+      btnHist.title = "Browse historical plans by date, preview past steps, or restore an earlier plan";
+      btnHist.onclick = (ev) => {
+        ev.stopPropagation();
+        _planHistoryOpen = !_planHistoryOpen;
+        paintStepsList(map);
+      };
+      modeBar.appendChild(btnHist);
+
+      const btnRefresh = el("button", "plan-mode-btn", "\ud83d\udd04 Refresh Plan");
+      btnRefresh.type = "button";
+      btnRefresh.dataset.planRefresh = "1";
+      btnRefresh.title = "Scan deliverables & PLAN.md to sync step statuses and record a dated plan snapshot";
+      btnRefresh.onclick = async (ev) => {
+        ev.stopPropagation();
+        btnRefresh.disabled = true;
+        btnRefresh.textContent = "\ud83d\udd04 Refreshing...";
+        try {
+          await post("/api/plan-proposal", { action: "refresh" });
+          _selectedPlanHistoryId = "";
+          await loadMap();
+        } catch (e) {
+          btnRefresh.disabled = false;
+          btnRefresh.textContent = "\ud83d\udd04 Refresh Plan";
+        }
+      };
+      modeBar.appendChild(btnRefresh);
+
       modeLi.appendChild(modeBar);
       list.appendChild(modeLi);
+
+      // 2b. Collapsible Plan History Timeline Drawer (scrollable by date)
+      if (_planHistoryOpen) {
+        const histHostLi = el("li", "plan-current-host");
+        const histPanel = el("div", "plan-history-panel");
+        histPanel.dataset.planHistoryPanel = "1";
+        const hpTop = el("div", "php-head");
+        hpTop.appendChild(el("span", "php-title", "\ud83d\udcdc Plan History by Date \u00b7 " + planHistoryList.length + " Snapshots"));
+        const hpHeadActions = el("div", "php-head-actions");
+        if (planProp && planProp.can_revert !== false) {
+          const revQuickBtn = el("button", "php-btn", "\u21a9 Revert Last Update");
+          revQuickBtn.type = "button";
+          revQuickBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            revQuickBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "revert", proposal_id: planProp.id || "" });
+              _selectedPlanHistoryId = "";
+              await loadMap();
+            } catch (e) { revQuickBtn.disabled = false; }
+          };
+          hpHeadActions.appendChild(revQuickBtn);
+        }
+        const closeHistBtn = el("button", "php-btn", "\u2715 Close");
+        closeHistBtn.type = "button";
+        closeHistBtn.onclick = (ev) => {
+          ev.stopPropagation();
+          _planHistoryOpen = false;
+          paintStepsList(map);
+        };
+        hpHeadActions.appendChild(closeHistBtn);
+        hpTop.appendChild(hpHeadActions);
+        histPanel.appendChild(hpTop);
+
+        const searchWrap = el("div", "php-search-row");
+        const searchInput = el("input", "php-search-input");
+        searchInput.type = "search";
+        searchInput.placeholder = "Filter plans by date (e.g. 2026-10, 2026-09) or milestone...";
+        searchInput.value = _planHistoryFilter || "";
+        searchInput.dataset.planHistorySearch = "1";
+        searchWrap.appendChild(searchInput);
+        histPanel.appendChild(searchWrap);
+
+        const timelineUl = el("ul", "plan-history-list");
+        const renderHistoryRows = () => {
+          timelineUl.textContent = "";
+          const q = String(_planHistoryFilter || "").trim().toLowerCase();
+          const filtered = planHistoryList.filter((snap) => {
+            if (!q) return true;
+            const hay = (String(snap.date || "") + " " + String(snap.label || "") + " " + String(snap.summary || "") + " " + String(snap.trigger || "")).toLowerCase();
+            return hay.includes(q);
+          });
+          if (!filtered.length) {
+            timelineUl.appendChild(el("li", "php-empty", "No historical plans match "" + _planHistoryFilter + ""."));
+            return;
+          }
+          filtered.forEach((snap) => {
+            const isViewing = activeHistorySnap ? (String(activeHistorySnap.id) === String(snap.id)) : Boolean(snap.is_current);
+            const rowLi = el("li", "plan-history-row" + (isViewing ? " viewing" : "") + (snap.is_current ? " current" : ""));
+            rowLi.dataset.historyId = snap.id || "";
+            const rowMain = el("div", "phr-main");
+            const rowBadges = el("div", "phr-badges");
+            rowBadges.appendChild(el("span", "phr-date", snap.date || "Unknown date"));
+            rowBadges.appendChild(el("span", "phr-count", (snap.steps_done ?? 0) + "/" + (snap.steps_total ?? 0) + " done"));
+            if (snap.is_current) {
+              rowBadges.appendChild(el("span", "phr-tag live", "LIVE"));
+            } else if (snap.trigger === "before_accept" || snap.trigger === "before_restore") {
+              rowBadges.appendChild(el("span", "phr-tag backup", "BACKUP"));
+            }
+            rowMain.appendChild(rowBadges);
+            const rowLabel = el("div", "phr-label", snap.label || ("Plan Snapshot (" + (snap.date || "") + ")"));
+            rowMain.appendChild(rowLabel);
+            if (snap.summary) {
+              rowMain.appendChild(el("div", "phr-summary", oneLine(snap.summary, 130)));
+            }
+            rowLi.appendChild(rowMain);
+
+            const rowBtns = el("div", "phr-actions");
+            const viewBtn = el("button", "php-btn" + (isViewing ? " on" : ""), isViewing ? "\u2713 Viewing" : "\ud83d\udc41 View");
+            viewBtn.type = "button";
+            viewBtn.title = "View the plan as it looked on " + (snap.date || "this date");
+            viewBtn.onclick = (ev) => {
+              ev.stopPropagation();
+              _selectedPlanHistoryId = snap.is_current ? "" : String(snap.id || "");
+              paintStepsList(map);
+            };
+            rowBtns.appendChild(viewBtn);
+
+            if (!snap.is_current) {
+              const restBtn = el("button", "php-btn restore", "\u21a9 Restore");
+              restBtn.type = "button";
+              restBtn.title = "Restore this historical plan (" + (snap.date || "") + ") as the active roadmap";
+              restBtn.onclick = async (ev) => {
+                ev.stopPropagation();
+                restBtn.disabled = true;
+                try {
+                  await post("/api/plan-proposal", { action: "restore", version_id: snap.id || "" });
+                  _selectedPlanHistoryId = "";
+                  await loadMap();
+                } catch (e) { restBtn.disabled = false; }
+              };
+              rowBtns.appendChild(restBtn);
+            }
+            rowLi.onclick = () => {
+              _selectedPlanHistoryId = snap.is_current ? "" : String(snap.id || "");
+              paintStepsList(map);
+            };
+            rowLi.appendChild(rowBtns);
+            timelineUl.appendChild(rowLi);
+          });
+        };
+        searchInput.addEventListener("input", () => {
+          _planHistoryFilter = searchInput.value;
+          renderHistoryRows();
+        });
+        renderHistoryRows();
+        histPanel.appendChild(timelineUl);
+        histHostLi.appendChild(histPanel);
+        list.appendChild(histHostLi);
+      }
 
       const appendPlanGroup = (key, label, entries, defaultOpen, toneCls = "", countBadgeText = null, isHier = false) => {
         if (!entries.length) return;
