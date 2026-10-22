@@ -30,7 +30,7 @@ import time
 import importlib
 from pathlib import Path
 
-for _hot_mod in ("deliverables_register", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer"):
+for _hot_mod in ("anchor_settings", "usage_allowance_monitor", "deliverables_register", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer"):
     if _hot_mod in sys.modules:
         try:
             importlib.reload(sys.modules[_hot_mod])
@@ -87,6 +87,11 @@ for _main_mod_name in ("__main__", "anchor_gui"):
                 res = _resolve_named_cockpit_dir(pid)
             return res
         _ah._steward_pid_dir = _patched_steward_pid_dir
+    if _m is not None:
+        try:
+            _m._BOOT_RELEASE_VERSION = "1.4.3"
+        except Exception:
+            pass
 
 from steward_cockpit import steward_campaign as campaign
 from steward_cockpit.steward_engine import Engine
