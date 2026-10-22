@@ -2025,7 +2025,7 @@ def handle_get(cdir, verb, qs):
     if verb == "efforts":
         return _efforts(cdir), 200
     if verb == "map":
-        m = dict(campaign.read_map(cdir))
+        m = dict(campaign.read_map(cdir, include_plan_history=True))
         # W0b (High Seat, 2026-09-26): a part that points at another record is resolved at read,
         # once per distinct target per request; a broken reference is named on the page, never blank.
         try:

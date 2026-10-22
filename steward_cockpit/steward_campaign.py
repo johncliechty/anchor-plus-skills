@@ -247,7 +247,7 @@ def _closed_today(roadmap, step_id):
         return False
 
 
-def read_map(campaign_dir: str, include_plan_history: bool = True):
+def read_map(campaign_dir: str, include_plan_history: bool = False):
     root = Path(campaign_dir)
     gaps = []
 
@@ -4184,6 +4184,8 @@ def _record_plan_history_snapshot(
         pass
     with _PLAN_HISTORY_CACHE_LOCK:
         _PLAN_HISTORY_CACHE.clear()
+    with _PLAN_PROPOSAL_CACHE_LOCK:
+        _PLAN_PROPOSAL_CACHE.clear()
     return snap
 
 
@@ -4394,7 +4396,7 @@ def read_plan_history(campaign_dir: str, m: dict | None = None, roadmap: dict | 
     with _PLAN_HISTORY_CACHE_LOCK:
         cached = _PLAN_HISTORY_CACHE.get(cache_key)
         if cached is not None and cached[0] == cache_sig:
-            return deepcopy(cached[1])
+            return [dict(x) for x in cached[1]]
 
     if roadmap is None:
         roadmap, _ = _read_json(rm_path)
@@ -4687,9 +4689,47 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
     }
 
 
+_PLAN_PROPOSAL_CACHE_LOCK = threading.Lock()
+_PLAN_PROPOSAL_CACHE: dict[str, tuple[tuple, dict | None]] = {}
+
+
 def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:
     """Return a plan refresh proposal when major deliverables or plan documents update the campaign plan,
     or when a previous plan backup exists so John can Accept New Plan or Revert to Old Plan."""
+    root = Path(campaign_dir)
+    prop_file = root / ".ecgberht" / "plan-proposal.json"
+    backup_file = root / ".ecgberht" / "roadmap-backup.json"
+    rm_file = root / "roadmap.json"
+    deliv_file = root / "DELIVERABLES.md"
+    dis_file = root / ".ecgberht" / "dismissed-deliverables.json"
+    conv_file = root / ".ecgberht" / "conversational-plan-drift.json"
+    try:
+        prop_sig = (
+            rm_file.stat().st_mtime_ns if rm_file.is_file() else 0,
+            deliv_file.stat().st_mtime_ns if deliv_file.is_file() else 0,
+            prop_file.stat().st_mtime_ns if prop_file.is_file() else 0,
+            backup_file.stat().st_mtime_ns if backup_file.is_file() else 0,
+            dis_file.stat().st_mtime_ns if dis_file.is_file() else 0,
+            conv_file.stat().st_mtime_ns if conv_file.is_file() else 0,
+        )
+    except OSError:
+        prop_sig = None
+    cache_key = os.path.normcase(str(root))
+    if prop_sig is not None:
+        with _PLAN_PROPOSAL_CACHE_LOCK:
+            cached_p = _PLAN_PROPOSAL_CACHE.get(cache_key)
+            if cached_p is not None and cached_p[0] == prop_sig:
+                return dict(cached_p[1]) if isinstance(cached_p[1], dict) else None
+    res = _read_plan_proposal_uncached(campaign_dir, m, roadmap)
+    if prop_sig is not None:
+        with _PLAN_PROPOSAL_CACHE_LOCK:
+            if len(_PLAN_PROPOSAL_CACHE) > 64:
+                _PLAN_PROPOSAL_CACHE.clear()
+            _PLAN_PROPOSAL_CACHE[cache_key] = (prop_sig, dict(res) if isinstance(res, dict) else None)
+    return res
+
+
+def _read_plan_proposal_uncached(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:
     root = Path(campaign_dir)
     prop_file = root / ".ecgberht" / "plan-proposal.json"
     backup_file = root / ".ecgberht" / "roadmap-backup.json"
