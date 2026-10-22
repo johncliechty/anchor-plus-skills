@@ -1053,6 +1053,8 @@ def launch(lane: str, cwd=None, extra_args=None, env=None,
         coding, review = settings_snapshot["coding_family"], settings_snapshot["review_family"]
         full_env.update(ANCHOR_DEFAULT_CLI=settings_snapshot["default_cli"],
                         ANCHOR_CODING_FAMILY=coding, ANCHOR_REVIEW_FAMILY=review,
+                        ANCHOR_ORCHESTRATOR_FAMILY=coding, ANCHOR_REVIEWER_FAMILY=review,
+                        ORCHESTRATOR_FAMILY=coding, REVIEWER_FAMILY=review,
                         CODING_FAMILY=coding, REVIEW_FAMILY=review,
                         CROSS_MODEL="true" if coding != review else "false")
     if backend == BACKEND_GEMINI:

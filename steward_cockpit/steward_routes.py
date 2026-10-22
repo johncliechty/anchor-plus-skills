@@ -27,7 +27,66 @@ import sys
 import tempfile
 import threading
 import time
+import importlib
 from pathlib import Path
+
+for _hot_mod in ("deliverables_register", "steward_cockpit.spellcheck_engine", "steward_cockpit.dictation_engine", "steward_cockpit.steward_campaign", "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say", "high_seat_page", "report_viewer"):
+    if _hot_mod in sys.modules:
+        try:
+            importlib.reload(sys.modules[_hot_mod])
+        except Exception:
+            pass
+
+# Ensure live AnchorHandler._steward_pid_dir falls back to C:\dev\Campaign when pid is omitted (e.g., global spellcheck / fleet-brief)
+def _resolve_named_cockpit_dir(raw_pid):
+    import urllib.parse
+    clean = urllib.parse.unquote(str(raw_pid or "")).strip()
+    if not clean:
+        return r"C:\dev\Campaign" if os.path.isdir(r"C:\dev\Campaign") else None
+    if ":" in clean or clean.startswith(("/", "\\")) or ".." in Path(clean).parts or Path(clean).is_absolute():
+        return None
+    low = clean.lower()
+    known = {
+        "book 1": r"C:\dev\Writing\Artificial Magi\Book 1",
+        "paper 1": r"C:\dev\Hierarchical Normalizing Flows\Paper 1",
+        "basic infastructure": r"C:\dev\Open Source Token Source\Basic Infastructure",
+        "basic infrastructure": r"C:\dev\Open Source Token Source\Basic Infastructure",
+        "campaign": r"C:\dev\Campaign",
+        "anchor": r"C:\dev\Anchor",
+    }
+    if low in known and os.path.isdir(known[low]):
+        return known[low]
+    try:
+        import rnd_registry as _rnd
+        for proj in _rnd.list_projects(include_archived=True, include_future=True, include_retired=True):
+            fp = str(proj.get("folder_path") or "").strip()
+            pname = str(proj.get("name") or "").strip()
+            if not fp or not os.path.isdir(fp):
+                continue
+            if pname.lower() == low or Path(fp).name.lower() == low:
+                return fp
+            sub = Path(fp) / clean
+            if sub.is_dir():
+                return str(sub)
+    except Exception:
+        pass
+    cand = Path(r"C:\dev") / clean
+    if cand.is_dir():
+        return str(cand)
+    return None
+
+for _main_mod_name in ("__main__", "anchor_gui"):
+    _m = sys.modules.get(_main_mod_name)
+    _ah = getattr(_m, "AnchorHandler", None) if _m else None
+    if _ah is not None and hasattr(_ah, "_steward_pid_dir"):
+        _orig_spd = getattr(_ah, "_orig_steward_pid_dir", _ah._steward_pid_dir)
+        _ah._orig_steward_pid_dir = _orig_spd
+        def _patched_steward_pid_dir(self, pid, _orig=_orig_spd):
+            res = _orig(self, pid)
+            if res is None:
+                res = _resolve_named_cockpit_dir(pid)
+            return res
+        _ah._steward_pid_dir = _patched_steward_pid_dir
 
 from steward_cockpit import steward_campaign as campaign
 from steward_cockpit.steward_engine import Engine
@@ -45,8 +104,8 @@ DENY_UPLOAD_EXT = {".exe", ".bat", ".cmd", ".com", ".scr", ".hta", ".js",
                    ".scf", ".sct", ".inf", ".msc", ".jnlp", ".vb", ".ws"}
 MAX_LIVE_ENGINES = 24
 
-ENGINES = {}
-ENGINES_LOCK = threading.Lock()
+ENGINES = globals().get("ENGINES") if isinstance(globals().get("ENGINES"), dict) else {}
+ENGINES_LOCK = globals().get("ENGINES_LOCK") or threading.Lock()
 TERMS_LOCK = threading.Lock()
 UPLOAD_LOCK = threading.Lock()
 
@@ -58,10 +117,10 @@ UPLOAD_LOCK = threading.Lock()
 # answer whose files changed WHILE its links were being checked is returned but never kept (review r2). Misses on one
 # key build once (the others wait); the cache is bounded and drops expired entries. The per-key locks are never
 # dropped: the keys are the real efforts (the route resolved them), so they are few.
-_DELIV_CACHE = {}           # key -> (stamp, built_at, data, offered)
-_DELIV_LOCK = threading.Lock()
-_DELIV_KEY_LOCKS = {}
-_DELIV_TTL = 20.0
+_DELIV_CACHE = globals().get("_DELIV_CACHE") if isinstance(globals().get("_DELIV_CACHE"), dict) else {}           # key -> (stamp, built_at, data, offered)
+_DELIV_LOCK = globals().get("_DELIV_LOCK") or threading.Lock()
+_DELIV_KEY_LOCKS = globals().get("_DELIV_KEY_LOCKS") if isinstance(globals().get("_DELIV_KEY_LOCKS"), dict) else {}
+_DELIV_TTL = 180.0
 _DELIV_MAX = 128
 
 
@@ -98,7 +157,13 @@ def _deliverables_cached(cdir, qs, read, annotate):
     key = (os.path.normcase(os.path.abspath(cdir)), str(qs.get("pid", "")).strip(), str(qs.get("dir", "")).strip())
     with _DELIV_LOCK:
         klock = _DELIV_KEY_LOCKS.setdefault(key, threading.Lock())
-    with klock:
+    acquired = klock.acquire(timeout=12.0)
+    if not acquired:
+        with _DELIV_LOCK:
+            klock = threading.Lock()
+            _DELIV_KEY_LOCKS[key] = klock
+        acquired = klock.acquire(timeout=5.0)
+    try:
         stamp = (_deliv_stamp(cdir), _private_stamp())
         hit = _DELIV_CACHE.get(key)
         if (hit and stamp[1] is not None and hit[0] == stamp and time.monotonic() - hit[1] < _DELIV_TTL
@@ -117,8 +182,14 @@ def _deliverables_cached(cdir, qs, read, annotate):
                 _DELIV_CACHE.pop(k, None)
             while len(_DELIV_CACHE) >= _DELIV_MAX:
                 _DELIV_CACHE.pop(min(_DELIV_CACHE, key=lambda k: _DELIV_CACHE[k][1]), None)
-            _DELIV_CACHE[key] = (stamp, began, copy.deepcopy(data), after)
+            _DELIV_CACHE[key] = (stamp, now, copy.deepcopy(data), after)
         return data
+    finally:
+        if acquired:
+            try:
+                klock.release()
+            except RuntimeError:
+                pass
 
 
 def _deliv_stamp(cdir):
@@ -134,7 +205,7 @@ _UPLOAD_MODES = frozenset(("new", "replace", "keepboth"))
 _UPLOAD_TEMP_PREFIX = ".anchor-upload-"
 
 # persona + fake flag injected by anchor_gui at mount time
-CONFIG = {"steward": "Ecgberht", "fake": False, "permission_mode": "bypassPermissions"}
+CONFIG = {**{"steward": "Ecgberht", "fake": False, "permission_mode": "bypassPermissions"}, **(globals().get("CONFIG") if isinstance(globals().get("CONFIG"), dict) else {})}
 BONEYARD = campaign.BONEYARD_DIRNAME
 SKILLS = ["researchPrime", "Crucible", "Foreman", "Gandalf", "Jumper",
           "Superjump", "Anvil", "Aegis",
@@ -285,6 +356,12 @@ window.STEWARD_MODE = %s;
   var _f=window.fetch;window.fetch=function(u,o){
     if(typeof u==='string'){
       if(u.indexOf('/api/rnd/')===0 || u.indexOf('/api/version')===0){o=auth(o);}
+      else if(u.indexOf('/api/steward/')===0){
+        if(u.indexOf('pid=')<0 && window.STEWARD_PID){
+          u+=(u.indexOf('?')<0?'?':'&')+'pid='+encodeURIComponent(window.STEWARD_PID);
+        }
+        o=auth(o);
+      }
       else if(u.indexOf('/api/')===0){u='/api/steward/'+u.slice(5);
         u+=(u.indexOf('?')<0?'?':'&')+'pid='+encodeURIComponent(window.STEWARD_PID);
         o=auth(o);}
@@ -310,6 +387,7 @@ window.STEWARD_MODE = %s;
   function _busy(){var ae=document.activeElement;
     try{var w=window;for(var k=0;k<6;k++){if(w.__anchorHidden)return true;if(w===w.parent)break;w=w.parent;}}catch(_){}   // a tile the app keeps hidden (this frame or one around it) reloads when he can see it, never under him
     if(Date.now()-_lastIn<10000)return true;
+    if(document.querySelector('[data-send][disabled]'))return false;
     var tas=document.querySelectorAll('textarea');for(var i=0;i<tas.length;i++){if(tas[i].value&&tas[i].value.trim())return true;}
     var frs=document.querySelectorAll('iframe');for(var j=0;j<frs.length;j++){try{var fb=frs[j].contentWindow.__stewardBusy;if(fb&&fb())return true;}catch(_){}}
     if(!ae)return false;
@@ -379,7 +457,7 @@ def serve_page_doc(page, pid=""):
     fname = _PAGES.get(page)
     if not fname:
         return None
-    build = str(CONFIG.get("build") or "")
+    build = str(CONFIG.get("build") or getattr(sys.modules.get("anchor_gui") or sys.modules.get("__main__"), "BUILD_ID", "") or "")
     html = (STATIC / fname).read_text(encoding="utf-8")
     html = (html.replace('href="/static/', 'href="/steward-static/')
                 .replace('src="/static/', 'src="/steward-static/')
@@ -427,7 +505,8 @@ _PROJECT_VERBS = {"efforts", "grass", "boneyard", "skills", "gandalf",
 # root has no Face, the files tile was an honest empty while the folder
 # was full (2026-08-28).
 _PROJECT_FILE_VERBS = {"files", "filetext", "upload", "open", "notebook-open",
-                       "notebook-register", "notebook-status", "deliverable-file", "anvil"}
+                       "notebook-register", "notebook-status", "deliverable-file", "anvil",
+                       "anvil/walkthrough", "spellcheck", "dictate", "fleet-brief", "fleet-relay"}
 
 
 _PROJECT_TERMINAL_VERBS = {"term_new", "term_archive", "term_restore"}
@@ -458,6 +537,10 @@ def api_get(proot, verb, qs):
         if cdir is None:
             return {"error": "unknown effort"}, 404
         return events(cdir, qs)
+    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
+        rel = (qs.get("dir") or "").strip()
+        cdir = _effort_dir(proot, rel) or _resolve_named_cockpit_dir(rel) or proot
+        return handle_get(cdir, verb, qs)
     if verb in _PROJECT_VERBS or verb in ("terms",) or verb in _PROJECT_FILE_VERBS:
         rel = (qs.get("dir") or "").strip()
         if verb in _PROJECT_FILE_VERBS and rel:
@@ -558,6 +641,9 @@ def api_post(proot, verb, body):
         if body.get("refinement_context"):
             return {"ok": False, "error": "refinement belongs to its campaign"}, 400
         return handle_post(proot, verb, body)
+    if verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
+        cdir = _effort_dir(proot, rel) or _resolve_named_cockpit_dir(rel) or proot
+        return handle_post(cdir, verb, body)
     if verb in _PROJECT_FILE_VERBS and not rel:
         return handle_post(proot, verb, body)
     cdir = _effort_dir(proot, body.get("dir", ""))
@@ -1223,7 +1309,7 @@ def _compute_global_usage_summary():
     if _ul is not None:
         ledger_dir = _paths.data_dir() / ".anchor" / "usage_ledger"
         extra_sids = []
-        if not sid_map and ledger_dir.is_dir():
+        if ledger_dir.is_dir():
             try:
                 for p in ledger_dir.iterdir():
                     if p.suffix.lower() == ".json" and p.stem not in sid_map:
@@ -1265,14 +1351,15 @@ def _compute_global_usage_summary():
                         in_p = int(prev_u.get("input_tokens") or 0)
                         out_p = int(prev_u.get("output_tokens") or 0)
                         ca_p = int(prev_u.get("cached_input_tokens") or prev_u.get("cache_read_input_tokens") or 0)
-                        if in_c >= in_p and out_c >= out_p and ca_c >= ca_p and tok >= prev_tok:
+                        if in_c >= in_p and out_c >= out_p and ca_c >= ca_p:
                             e_copy["tokens"] = tok - prev_tok
                             e_copy["usage"] = {
                                 "input_tokens": in_c - in_p,
                                 "output_tokens": out_c - out_p,
                                 "cached_input_tokens": ca_c - ca_p,
                             }
-                    prev_by_sess[sess_key] = (u if isinstance(u, dict) else prev_u, tok if tok > 0 else prev_tok)
+                    has_u = isinstance(u, dict) and (int(u.get("input_tokens") or 0) > 0 or int(u.get("output_tokens") or 0) > 0)
+                    prev_by_sess[sess_key] = (u if has_u else prev_u, tok if tok > 0 else prev_tok)
                 epid = e.get("project_id") or pid
                 epname = (proj_by_id.get(epid) or {}).get("name") or pname
                 records.append((efam, emod, epid, epname, e_copy))
@@ -1725,19 +1812,25 @@ def handle_get(cdir, verb, qs):
                        if isinstance(i, dict)}
                 reg |= {(_dr._canonical_route(i["route"]) or "").lower() for i in (data.get("items") or [])
                         if isinstance(i, dict) and i.get("route")}
+                _root_real = Path(cdir).resolve() if cdir else None
+                try:
+                    from provider_native import private_homes as _ph
+                    _priv_homes = _ph()
+                except Exception:
+                    _priv_homes = None
                 for coll in (data.get("items") or [], data.get("approved") or []):
                     for it in coll:
                         if isinstance(it, dict):
-                            it["reading"] = _dr.reading_target(it, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg)
+                            it["reading"] = _dr.reading_target(it, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
                             for old in it.get("history") or []:          # earlier versions read the same way
                                 if isinstance(old, dict):
-                                    old["reading"] = _dr.reading_target(old, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg)
+                                    old["reading"] = _dr.reading_target(old, pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
                 for a in data.get("acts") or []:
                     if isinstance(a.get("item"), dict):
-                        a["item"]["reading"] = _dr.reading_target(a["item"], pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg)
+                        a["item"]["reading"] = _dr.reading_target(a["item"], pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
                     for c in a.get("companions") or []:
                         if isinstance(c.get("item"), dict):
-                            c["item"]["reading"] = _dr.reading_target(c["item"], pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg)
+                            c["item"]["reading"] = _dr.reading_target(c["item"], pid=pid_q, effort_rel=dir_q, effort_dir=cdir, registered=reg, _root_real=_root_real, _priv_homes=_priv_homes)
             except Exception:
                 pass   # the tile still builds its own link from the path
         return _deliverables_cached(cdir, qs, lambda: campaign.read_deliverables(cdir), _build), 200
@@ -1829,7 +1922,26 @@ def handle_get(cdir, verb, qs):
             return {"error": "file too large to serve inline (50MB cap)"}, 413
         expected_hash = qs.get("hash")
         if expected_hash and hashlib.sha256(Path(real).read_bytes()).hexdigest() != expected_hash:
-            return {"error": "artifact-hash-mismatch"}, 409
+            matched_rev_path = None
+            if expected_hash != "0" * 64:
+                try:
+                    ref_state = (campaign.read_refinement(cdir) or {}).get("state") or {}
+                    for sl in (ref_state.get("slices") or {}).values():
+                        for rev in (sl.get("revisions") or {}).values():
+                            if isinstance(rev, dict) and rev.get("hash") == expected_hash and rev.get("path"):
+                                cand_rev = (Path(cdir) / str(rev["path"])).resolve()
+                                if cand_rev.is_relative_to(Path(cdir).resolve()) and cand_rev.is_file():
+                                    if hashlib.sha256(cand_rev.read_bytes()).hexdigest() == expected_hash:
+                                        matched_rev_path = str(cand_rev)
+                                        break
+                        if matched_rev_path:
+                            break
+                except Exception:
+                    matched_rev_path = None
+            if matched_rev_path:
+                real = matched_rev_path
+            else:
+                return {"error": "artifact-hash-mismatch"}, 409
         ext = Path(real).suffix.lower()
         # (2026-09-04, John) "PDFs, MD, Word, PPT, Excel docs should all show
         # up well." Every type gets its honest content-type; a browser renders
@@ -1840,7 +1952,20 @@ def handle_get(cdir, verb, qs):
         # md/txt/csv/log still go through the Reader route from the cockpit.
         want_view = str(qs.get("view", "")).strip() in ("1", "true")
         want_download = str(qs.get("download", "")).strip() in ("1", "true")
+        want_scrollview = str(qs.get("scrollview", "")).strip() in ("1", "true")
+        raw_pdf_page = qs.get("pdf_page")
+        want_pdf_page = None
+        if raw_pdf_page is not None and str(raw_pdf_page).strip() != "":
+            try:
+                want_pdf_page = int(str(raw_pdf_page).strip())
+            except (TypeError, ValueError):
+                want_pdf_page = None
         ctype, disposition = deliverable_content_type(ext)
+        if ext == ".pdf" and not want_download:
+            if want_pdf_page is not None:
+                return _serve_pdf_page_png(real, want_pdf_page)
+            if want_scrollview:
+                return _serve_pdf_scrollview(real, qs, rel, cdir)
         if want_view and not want_download and ext == ".pptx":
             # Only a ledger-bound PDF of these exact deck bytes is a slide preview.
             digest = hashlib.sha256(Path(real).read_bytes()).hexdigest()
@@ -1855,6 +1980,10 @@ def handle_get(cdir, verb, qs):
                 if (preview.get("source_hash") != digest or not target.is_relative_to(Path(cdir).resolve())
                         or not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != preview["hash"]):
                     return {"error": "visual-companion-mismatch"}, 409
+                if want_pdf_page is not None:
+                    return _serve_pdf_page_png(str(target), want_pdf_page)
+                if want_scrollview:
+                    return _serve_pdf_scrollview(str(target), qs, rel, cdir)
                 return {"__file__": str(target), "__ctype__": "application/pdf", "__disposition__": "inline",
                         "__csp__": sandbox_csp_for("application/pdf")}, 200
             import html
@@ -1862,9 +1991,10 @@ def handle_get(cdir, verb, qs):
                 _q(str(qs.get("pid", ""))), _q(str(qs.get("dir", ""))), _q(rel), digest)
             if qs.get("token"):
                 dl += "&token=" + _q(str(qs["token"]))
-            return {"__html__": "<!doctype html><meta charset='utf-8'><title>Slide preview unavailable</title>"
-                    "<h1>Slide preview not yet registered</h1><p>This PowerPoint version needs a verified PDF companion.</p>"
-                    '<p><a href="' + html.escape(dl, quote=True) + '">Download the PowerPoint</a></p>'}, 200
+            import office_preview as _op_pptx
+            return {"__html__": _op_pptx.render_preview(Path(real).read_bytes(), os.path.basename(real), dl)}, 200
+
+
         if str(qs.get("render", "")).strip() in ("1", "true") and not want_download and (
                 ext in (".md", ".markdown", ".txt") or ext in _SOURCE_TEXT):
             # 2026-10-07 (execution minimum item 2): the canonical reading URL of a markdown product - formatted
@@ -1890,7 +2020,7 @@ def handle_get(cdir, verb, qs):
     if verb == "efforts":
         return _efforts(cdir), 200
     if verb == "map":
-        m = campaign.read_map(cdir)
+        m = dict(campaign.read_map(cdir))
         # W0b (High Seat, 2026-09-26): a part that points at another record is resolved at read,
         # once per distinct target per request; a broken reference is named on the page, never blank.
         try:
@@ -1898,6 +2028,33 @@ def handle_get(cdir, verb, qs):
             m["resolved"] = resolve_parts(m.get("steps") or [], cache={}, with_lead=True)
         except Exception:
             m["resolved"] = {}
+        # Slim multi-megabyte refinement history blobs for HTTP wire transfer while preserving all UI fields
+        ref = m.get("refinement")
+        if isinstance(ref, dict):
+            ref_slim = dict(ref)
+            st_state = ref_slim.get("state")
+            if isinstance(st_state, dict):
+                handoffs = st_state.get("producer_handoffs")
+                slim_handoffs = (
+                    {k: v for k, v in handoffs.items() if isinstance(v, dict) and v.get("status") == "pending_steward_review"}
+                    if isinstance(handoffs, dict)
+                    else {}
+                )
+                ref_slim["state"] = {
+                    k: v for k, v in st_state.items() if k not in ("slices", "producer_handoffs")
+                }
+                ref_slim["state"]["producer_handoffs"] = slim_handoffs
+            m["refinement"] = ref_slim
+        if isinstance(m.get("steps"), list):
+            slim_steps = []
+            for st_item in m["steps"]:
+                if isinstance(st_item, dict) and isinstance(st_item.get("refinement"), dict) and "revisions" in st_item["refinement"]:
+                    st_copy = dict(st_item)
+                    st_copy["refinement"] = {k: v for k, v in st_item["refinement"].items() if k != "revisions"}
+                    slim_steps.append(st_copy)
+                else:
+                    slim_steps.append(st_item)
+            m["steps"] = slim_steps
         m["stamp"] = campaign.map_stamp(cdir)
         m["steward"] = CONFIG["steward"]
         return m, 200
@@ -1955,7 +2112,7 @@ def handle_get(cdir, verb, qs):
         return {"terms": _terms_view(cdir)}, 200
     if verb == "gandalf":
         return {"runs": _gandalf_runs(cdir)}, 200
-    if verb == "anvil":
+    if verb in ("anvil", "anvil/walkthrough"):
         import importlib
         from steward_cockpit import anvil_session as _as
         try:
@@ -1965,6 +2122,8 @@ def handle_get(cdir, verb, qs):
                 _as._LOADED_MTIME_NS = _as_mtime
         except Exception:
             pass
+        if verb == "anvil/walkthrough" or str(qs.get("action") or "").strip().lower() == "walkthrough":
+            return _as.walkthrough_in_session(cdir, str(qs.get("block_id") or qs.get("block") or "")), 200
         return _as.get_session_status(cdir), 200
     if verb == "aegis":
         import importlib
@@ -1998,8 +2157,29 @@ def handle_get(cdir, verb, qs):
         return {"items": out}, 200
     if verb == "files":
         return _files(cdir, qs.get("sub", ""), qs.get("q", "").strip().lower())
+    if verb == "mothership-files":
+        return _mothership_files_get(cdir, qs)
     if verb == "filetext":
         return _filetext(cdir, qs.get("path", ""))
+    if verb == "spellcheck":
+        from steward_cockpit import spellcheck_engine as _se
+        w = str(qs.get("word") or "").strip()
+        if w:
+            return _se.check_word(w), 200
+        return _se.check_text(str(qs.get("text") or "")), 200
+    if verb == "dictate":
+        from steward_cockpit import dictation_engine as _de
+        try:
+            since = int(qs.get("since") or "0")
+        except (TypeError, ValueError):
+            since = 0
+        return _de.poll_session(since), 200
+    if verb == "fleet-brief":
+        from steward_cockpit.campaign_say import build_fleet_brief, is_cave_folder
+        camp_dir = str(Path(cdir).parent) if is_cave_folder(cdir) and (Path(cdir).parent / "roadmap.json").is_file() else cdir
+        if not (Path(camp_dir) / "roadmap.json").is_file():
+            camp_dir = r"C:\dev\Campaign"
+        return build_fleet_brief(camp_dir), 200
     return {"error": "unknown"}, 404
 
 
@@ -2158,6 +2338,138 @@ def sandbox_csp_for(ctype):
     return None
 
 
+def _serve_pdf_page_png(real_path: str, page_idx: int):
+    """Render a single PDF page to PNG via PyMuPDF (fitz) for scrollable split-view."""
+    try:
+        import fitz
+        st = os.stat(real_path)
+        cache_dir = Path(tempfile.gettempdir()) / "anchor-pdf-pages"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        hkey = hashlib.sha256(f"{real_path}:{st.st_mtime_ns}:{st.st_size}:{page_idx}".encode("utf-8")).hexdigest()[:24]
+        cache_png = cache_dir / f"{hkey}-p{page_idx}.png"
+        if not cache_png.is_file():
+            doc = fitz.open(real_path)
+            if page_idx < 0 or page_idx >= len(doc):
+                doc.close()
+                return {"error": "pdf page out of range"}, 404
+            page = doc[page_idx]
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), alpha=False)
+            png_bytes = pix.tobytes("png")
+            doc.close()
+            tmp_png = cache_png.with_suffix(".tmp")
+            tmp_png.write_bytes(png_bytes)
+            os.replace(tmp_png, cache_png)
+        return {"__file__": str(cache_png), "__ctype__": "image/png", "__disposition__": "inline"}, 200
+    except Exception as exc:
+        return {"error": f"pdf page render failed: {exc}"}, 500
+
+
+def _serve_pdf_scrollview(real_path: str, qs: dict, rel: str, cdir: str):
+    """Serve a PDF deliverable as a scrollable same-origin HTML page of high-DPI page images
+    so wheel scrolling, PageUp/PageDown, and non-focus-stealing scroll buttons work seamlessly
+    while dictating with Win+H or 🎤 Dictate."""
+    try:
+        import fitz
+        import html as _html
+        doc = fitz.open(real_path)
+        page_count = len(doc)
+        doc.close()
+        if page_count <= 0:
+            raise ValueError("empty pdf")
+    except Exception:
+        return {"__file__": real_path, "__ctype__": "application/pdf", "__disposition__": "inline",
+                "__csp__": sandbox_csp_for("application/pdf")}, 200
+
+    import html as _html
+    pid_q = _q(str(qs.get("pid", "")))
+    dir_q = _q(str(qs.get("dir", "")))
+    rel_q = _q(str(rel or ""))
+    tok_q = ("&token=" + _q(str(qs.get("token")))) if qs.get("token") else ""
+    hash_q = ("&hash=" + _q(str(qs.get("hash")))) if qs.get("hash") else ""
+    view_q = ("&view=1") if str(qs.get("view", "")).strip() in ("1", "true") else ""
+    base_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}{view_q}{tok_q}"
+    dl_url = f"/api/steward/deliverable-file?pid={pid_q}&dir={dir_q}&path={rel_q}{hash_q}&download=1{tok_q}"
+    native_url = base_url
+    fname = _html.escape(os.path.basename(real_path))
+    ext_badge = "PPTX → PDF SLIDES" if str(rel or "").lower().endswith(".pptx") else "PDF DOCUMENT"
+
+    pages_html = []
+    for i in range(page_count):
+        load_attr = "eager" if i < 3 else "lazy"
+        img_src = _html.escape(f"{base_url}&pdf_page={i}", quote=True)
+        pages_html.append(
+            f'<section class="pdf-page-card" id="pdf-page-{i+1}" data-page="{i+1}">'
+            f'<div class="pdf-page-hdr"><span>Page {i+1} of {page_count}</span></div>'
+            f'<img class="pdf-page-img" loading="{load_attr}" src="{img_src}" alt="Page {i+1} of {fname}" />'
+            f'</section>'
+        )
+
+    html_doc = (
+        "<!doctype html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        f"<title>{fname}</title>"
+        "<style>"
+        "html,body{margin:0;padding:0;background:#0d1117;color:#e6edf3;font:14px/1.5 -apple-system,'Segoe UI',system-ui,sans-serif;scroll-behavior:smooth}"
+        ".pdf-bar{position:sticky;top:0;z-index:20;background:rgba(22,27,34,0.96);backdrop-filter:blur(8px);"
+        "border-bottom:1px solid #30363d;padding:8px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}"
+        ".pdf-badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;background:rgba(248,81,73,0.18);color:#ff7b72;border:1px solid rgba(248,81,73,0.4);letter-spacing:.04em}"
+        ".pdf-title{font-weight:600;font-size:13px;color:#f0f6fc;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".pdf-meta{font-size:12px;color:#8b949e}"
+        ".pdf-spacer{flex:1 1 auto}"
+        ".pdf-btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:4px;user-select:none}"
+        ".pdf-btn:hover{background:#30363d;color:#fff;border-color:#58a6ff}"
+        ".pdf-main{max-width:980px;margin:0 auto;padding:16px 14px 64px;display:flex;flex-direction:column;gap:18px}"
+        ".pdf-page-card{background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,0.35)}"
+        ".pdf-page-hdr{padding:6px 12px;background:#0d1117;border-bottom:1px solid #21262d;font-size:11px;font-weight:600;color:#8b949e;display:flex;justify-content:space-between}"
+        ".pdf-page-img{display:block;width:100%;height:auto;background:#fff;user-select:none;-webkit-user-drag:none}"
+        "</style></head><body>"
+        "<div class='pdf-bar' onmousedown='event.preventDefault()'>"
+        f"<span class='pdf-badge'>{ext_badge}</span>"
+        f"<span class='pdf-title' title='{fname}'>{fname}</span>"
+        f"<span class='pdf-meta'>{page_count} page{'s' if page_count != 1 else ''} · Win+H scroll-ready</span>"
+        "<span class='pdf-spacer'></span>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='scrollStep(-1);restoreParentSayFocus();' title='Scroll Up (keeps Win+H dictation active)'>⬆ Page Up</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='scrollStep(1);restoreParentSayFocus();' title='Scroll Down (keeps Win+H dictation active)'>⬇ Page Down</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='adjustZoom(-15);restoreParentSayFocus();' title='Zoom Out'>🔍−</button>"
+        "<button type='button' class='pdf-btn' onmousedown='event.preventDefault()' onclick='adjustZoom(15);restoreParentSayFocus();' title='Zoom In'>🔍+</button>"
+        f"<a class='pdf-btn' href='{_html.escape(native_url, quote=True)}' target='_blank' rel='noopener' title='Open raw PDF in new tab'>📄 Native PDF</a>"
+        f"<a class='pdf-btn' href='{_html.escape(dl_url, quote=True)}' title='Download file'>⬇ Download</a>"
+        "</div>"
+        f"<main class='pdf-main' id='pdfMain'>{''.join(pages_html)}</main>"
+        "<script>"
+        "var curZoom = 100; function scrollStep(dir){window.scrollBy({top:dir*Math.max(360,window.innerHeight*0.78),behavior:'smooth'});}"
+        "function adjustZoom(delta){"
+        "  curZoom = Math.max(60, Math.min(180, curZoom + delta));"
+        "  var m = document.getElementById('pdfMain');"
+        "  if(m) m.style.maxWidth = Math.round(980 * (curZoom / 100)) + 'px';"
+        "}"
+        "function restoreParentSayFocus(){"
+        "  try {"
+        "    if(window.parent && window.parent !== window && typeof window.parent.__restoreSayFocusIfActive === 'function'){"
+        "      window.parent.__restoreSayFocusIfActive();"
+        "    }"
+        "  } catch(_e){}"
+        "}"
+        "window.addEventListener('message', function(ev){"
+        "  if(!ev || !ev.data) return;"
+        "  if(ev.data.type === 'anchor-scroll-deliverable'){"
+        "    window.scrollBy({top: Number(ev.data.deltaY) || 420, behavior: 'smooth'});"
+        "  }"
+        "});"
+        "document.addEventListener('mouseup', function(){"
+        "  try {"
+        "    var sel = window.getSelection ? String(window.getSelection()) : '';"
+        "    if(!sel) restoreParentSayFocus();"
+        "  } catch(_e){}"
+        "});"
+        "window.addEventListener('wheel', function(){"
+        "  restoreParentSayFocus();"
+        "}, {passive: true});"
+        "</script></body></html>"
+    )
+    return {"__html__": html_doc}, 200
+
+
 def deliverable_content_type(ext):
     """(content_type, disposition) for a deliverable's extension — total."""
     return _DELIVERABLE_TYPES.get(str(ext or "").lower(), ("application/octet-stream", "attachment"))
@@ -2256,6 +2568,227 @@ def _files(cdir, sub, q):
             if info:
                 entry["notebook_product"] = info
     return {"sub": sub, "q": q, "entries": entries}, 200
+
+
+def _mothership_allowed_roots(cdir: str) -> list[dict]:
+    """Return allowed Mothership browse roots starting with the active AI Cockpit folder."""
+    cockpit_real = os.path.realpath(str(cdir))
+    cockpit_name = Path(cockpit_real).name or "Cockpit"
+    roots = [
+        {"id": "cockpit", "label": f"📍 Cockpit ({cockpit_name})", "path": cockpit_real},
+    ]
+    dev_root = os.path.realpath(r"C:\dev")
+    if os.path.isdir(dev_root):
+        roots.append({"id": "workspace", "label": r"💻 C:\dev (Mothership)", "path": dev_root})
+    home = Path.home()
+    for rid, icon, sub in (
+        ("downloads", "📥 Downloads", "Downloads"),
+        ("documents", "📄 Documents", "Documents"),
+        ("desktop", "🖥 Desktop", "Desktop"),
+    ):
+        cand = home / sub
+        if cand.is_dir():
+            roots.append({"id": rid, "label": icon, "path": os.path.realpath(str(cand))})
+    return roots
+
+
+def _is_allowed_mothership_path(real_path: str, roots: list[dict]) -> bool:
+    try:
+        from provider_native import private_account_path
+        if private_account_path(real_path):
+            return False
+    except Exception:
+        pass
+    norm = os.path.normcase(os.path.realpath(real_path))
+    for part in Path(norm).parts:
+        low = part.lower()
+        if low in (".ssh", ".aws", ".gnupg", ".claude", ".anchor", ".gemini", ".git", "node_modules", "__pycache__", ".venv"):
+            return False
+    for r in roots:
+        rp = os.path.normcase(os.path.realpath(r["path"]))
+        if norm == rp or norm.startswith(rp + os.sep):
+            return True
+    return False
+
+
+def _mothership_files_get(cdir: str, qs: dict):
+    """Browse directories and files on the Mothership where the AI Cockpit lives."""
+    import socket
+    cockpit_real = os.path.realpath(str(cdir))
+    roots = _mothership_allowed_roots(cdir)
+    raw_dir = str(qs.get("browse_dir") or qs.get("path") or "").strip()
+    q = str(qs.get("q") or "").strip().lower()
+    if raw_dir:
+        cand = os.path.realpath(raw_dir if os.path.isabs(raw_dir) else os.path.join(cockpit_real, raw_dir))
+    else:
+        cand = cockpit_real
+    if not os.path.isdir(cand) or not _is_allowed_mothership_path(cand, roots):
+        cand = cockpit_real
+
+    parent_dir = ""
+    par_cand = os.path.realpath(os.path.dirname(cand))
+    if par_cand != cand and _is_allowed_mothership_path(par_cand, roots):
+        parent_dir = par_cand
+
+    entries = []
+    skip_dirs = {"node_modules", "__pycache__", "vendor", ".git", ".venv", ".ecgberht", ".anvil", ".aegis"}
+    try:
+        if q:
+            hits = 0
+            for root_, dirs, files_ in os.walk(cand):
+                dirs[:] = [
+                    d for d in dirs
+                    if not d.startswith(".") and d not in skip_dirs
+                    and _is_allowed_mothership_path(os.path.join(root_, d), roots)
+                ]
+                if root_[len(cand):].count(os.sep) > 3:
+                    dirs[:] = []
+                    continue
+                for dname in dirs:
+                    if q in dname.lower():
+                        dfull = os.path.realpath(os.path.join(root_, dname))
+                        try:
+                            st_ = os.stat(dfull)
+                            mt = int(st_.st_mtime)
+                        except OSError:
+                            mt = 0
+                        in_cockpit = dfull == cockpit_real or dfull.startswith(cockpit_real + os.sep)
+                        rel_c = os.path.relpath(dfull, cockpit_real).replace(os.sep, "/") if in_cockpit else ""
+                        entries.append({
+                            "name": os.path.relpath(dfull, cand).replace(os.sep, "/"),
+                            "path": dfull,
+                            "dir": True,
+                            "size": 0,
+                            "mtime": mt,
+                            "ext": "",
+                            "in_cockpit": in_cockpit,
+                            "rel_to_cockpit": rel_c,
+                        })
+                        hits += 1
+                for fname in files_:
+                    if fname.startswith("."):
+                        continue
+                    if q in fname.lower():
+                        ffull = os.path.realpath(os.path.join(root_, fname))
+                        if not _is_allowed_mothership_path(ffull, roots):
+                            continue
+                        try:
+                            st_ = os.stat(ffull)
+                            size, mt = int(st_.st_size), int(st_.st_mtime)
+                        except OSError:
+                            size, mt = 0, 0
+                        in_cockpit = ffull == cockpit_real or ffull.startswith(cockpit_real + os.sep)
+                        rel_c = os.path.relpath(ffull, cockpit_real).replace(os.sep, "/") if in_cockpit else ""
+                        entries.append({
+                            "name": os.path.relpath(ffull, cand).replace(os.sep, "/"),
+                            "path": ffull,
+                            "dir": False,
+                            "size": size,
+                            "mtime": mt,
+                            "ext": Path(fname).suffix.lower(),
+                            "in_cockpit": in_cockpit,
+                            "rel_to_cockpit": rel_c,
+                        })
+                        hits += 1
+                        if hits >= 200:
+                            break
+                if hits >= 200:
+                    break
+        else:
+            for name in sorted(os.listdir(cand), key=lambda s: s.lower())[:250]:
+                if name.startswith(".") or name in skip_dirs:
+                    continue
+                full = os.path.realpath(os.path.join(cand, name))
+                if not _is_allowed_mothership_path(full, roots):
+                    continue
+                isdir = os.path.isdir(full)
+                try:
+                    st_ = os.stat(full)
+                    size, mt = (0 if isdir else int(st_.st_size)), int(st_.st_mtime)
+                except OSError:
+                    size, mt = 0, 0
+                in_cockpit = full == cockpit_real or full.startswith(cockpit_real + os.sep)
+                rel_c = os.path.relpath(full, cockpit_real).replace(os.sep, "/") if in_cockpit else ""
+                entries.append({
+                    "name": name,
+                    "path": full,
+                    "dir": isdir,
+                    "size": size,
+                    "mtime": mt,
+                    "ext": "" if isdir else Path(name).suffix.lower(),
+                    "in_cockpit": in_cockpit,
+                    "rel_to_cockpit": rel_c,
+                })
+            entries.sort(key=lambda x: (0 if x["dir"] else 1, -x["mtime"], x["name"].lower()))
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}, 500
+
+    return {
+        "ok": True,
+        "mothership_host": socket.gethostname(),
+        "cockpit_dir": cockpit_real,
+        "current_dir": cand,
+        "parent_dir": parent_dir,
+        "roots": roots,
+        "q": q,
+        "entries": entries,
+    }, 200
+
+
+def _mothership_files_post(cdir: str, body: dict):
+    """Attach/stage a file from anywhere on the Mothership into this AI Cockpit folder."""
+    cockpit_real = os.path.realpath(str(cdir))
+    roots = _mothership_allowed_roots(cdir)
+    raw_src = str(body.get("source_path") or body.get("path") or "").strip()
+    if not raw_src:
+        return {"ok": False, "error": "source_path is required"}, 400
+    src_real = os.path.realpath(raw_src if os.path.isabs(raw_src) else os.path.join(cockpit_real, raw_src))
+    if not _is_allowed_mothership_path(src_real, roots):
+        return {"ok": False, "error": "path is outside allowed Mothership roots"}, 403
+    if not os.path.isfile(src_real):
+        return {"ok": False, "error": "file not found on Mothership"}, 404
+
+    if src_real == cockpit_real or src_real.startswith(cockpit_real + os.sep):
+        rel_path = os.path.relpath(src_real, cockpit_real).replace(os.sep, "/")
+        return {
+            "ok": True,
+            "already_in_cockpit": True,
+            "attached": False,
+            "name": Path(src_real).name,
+            "path": rel_path,
+            "source_path": src_real,
+            "cockpit_dir": cockpit_real,
+        }, 200
+
+    name = Path(src_real).name
+    if _bad_component(name) or Path(name).suffix.lower() in DENY_UPLOAD_EXT:
+        return {"ok": False, "error": "that file type cannot be attached"}, 400
+    try:
+        sz = os.path.getsize(src_real)
+    except OSError as exc:
+        return {"ok": False, "error": str(exc)}, 400
+    if sz > MAX_UPLOAD_BYTES:
+        return {"ok": False, "error": "file over 250 MB"}, 413
+
+    try:
+        data = Path(src_real).read_bytes()
+    except OSError as exc:
+        return {"ok": False, "error": f"could not read Mothership file: {exc}"}, 500
+
+    b64 = base64.b64encode(data).decode("ascii")
+    up_res, status = _upload(cdir, {"name": name, "data_b64": b64, "mode": "keepboth", "sub": ""})
+    if status == 200 and up_res.get("ok"):
+        saved_name = up_res.get("name") or name
+        return {
+            "ok": True,
+            "already_in_cockpit": False,
+            "attached": True,
+            "name": saved_name,
+            "path": saved_name,
+            "source_path": src_real,
+            "cockpit_dir": cockpit_real,
+        }, 200
+    return up_res, status
 
 
 def _filetext(cdir, fpath):
@@ -2366,6 +2899,14 @@ def handle_post(cdir, verb, body):
         )
         _DELIV_CACHE.clear()
         return result, 200 if result.get("ok") else 400
+    if verb in ("plan-proposal", "plan/proposal"):
+        res = campaign.resolve_plan_proposal(
+            cdir,
+            action=str(body.get("action") or "accept"),
+            proposal_id=str(body.get("proposal_id") or ""),
+        )
+        _DELIV_CACHE.clear()
+        return res, 200 if res.get("ok") else 400
     if verb in ("step-done", "mark-step-done"):
         req_id = str(body.get("step_id") or body.get("step") or "").strip()
         rm_path = Path(cdir) / "roadmap.json"
@@ -2415,7 +2956,7 @@ def handle_post(cdir, verb, body):
                 pass
         _DELIV_CACHE.clear()
         return {"ok": True, "step_id": done_id or req_id, "step_name": done_name or req_id, "next_step_id": next_id, "next_step_name": next_name}, 200
-    if verb == "anvil":
+    if verb in ("anvil", "anvil/walkthrough"):
         import importlib
         from steward_cockpit import anvil_session as _as
         try:
@@ -2425,8 +2966,13 @@ def handle_post(cdir, verb, body):
                 _as._LOADED_MTIME_NS = _as_mtime
         except Exception:
             pass
-        act = str(body.get("action") or "start_code").strip()
+        act = "walkthrough" if verb == "anvil/walkthrough" else str(body.get("action") or "start_code").strip()
         try:
+            if act == "walkthrough":
+                return _as.walkthrough_in_session(
+                    cdir,
+                    str(body.get("block_id") or body.get("block") or ""),
+                ), 200
             if act in ("start_code", "start_paper"):
                 res = _as.start_cockpit_session(
                     cdir,
@@ -2649,9 +3195,50 @@ def handle_post(cdir, verb, body):
             return {"ok": False, "error": str(exc)}, 409
     if verb == "drain-all":
         return drain_all()
+    if verb == "spellcheck":
+        from steward_cockpit import spellcheck_engine as _se
+        act = str(body.get("action") or "").strip().lower()
+        if act == "add":
+            return _se.add_word(str(body.get("word") or "")), 200
+        w = str(body.get("word") or "").strip()
+        if w:
+            return _se.check_word(w), 200
+        return _se.check_text(str(body.get("text") or "")), 200
+    if verb == "dictate":
+        from steward_cockpit import dictation_engine as _de
+        act = str(body.get("action") or "poll").strip().lower()
+        if act == "transcribe":
+            return _de.transcribe_audio(str(body.get("audio_b64") or "")), 200
+        if act == "start":
+            return _de.start_session(), 200
+        if act == "stop":
+            return _de.stop_session(), 200
+        try:
+            since = int(body.get("since") or 0)
+        except (TypeError, ValueError):
+            since = 0
+        return _de.poll_session(since), 200
+    if verb == "fleet-relay":
+        from steward_cockpit.campaign_say import relay_to_cockpit_steward, is_cave_folder
+        camp_dir = str(Path(cdir).parent) if is_cave_folder(cdir) and (Path(cdir).parent / "roadmap.json").is_file() else cdir
+        if not (Path(camp_dir) / "roadmap.json").is_file():
+            camp_dir = r"C:\dev\Campaign"
+        res = relay_to_cockpit_steward(
+            camp_dir,
+            str(body.get("target") or ""),
+            str(body.get("action") or "open_deliverable"),
+            str(body.get("text") or ""),
+        )
+        return res, (200 if res.get("ok") else 400)
     if verb == "status-ack":
         # 2026-08-25 (elegance S-batch): render receipt from the pane — never
         # spawns an engine (create=False); a dead engine just means no receipt.
+        if not body.get("general") and str(body.get("text") or "").strip():
+            try:
+                campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
+                _DELIV_CACHE.clear()
+            except Exception:
+                pass
         eng = get_engine(cdir, bool(body.get("general")),
                          str(body.get("term") or "") or None, create=False)
         if eng is None:
@@ -2679,9 +3266,18 @@ def handle_post(cdir, verb, body):
                             spoken = spoken_goal
                 if spoken is not None:
                     if spoken.get("ok"):
-                        note_goal_receipt(cdir, _goal, _txt, str(spoken.get("receipt") or spoken.get("say") or ""))
+                        _reply_txt = str(spoken.get("say") or spoken.get("receipt") or "")
+                        note_goal_receipt(cdir, _goal, _txt, _reply_txt)
                         if _camp_dir != cdir:
-                            note_goal_receipt(_camp_dir, _goal, _txt, str(spoken.get("receipt") or spoken.get("say") or ""))
+                            note_goal_receipt(_camp_dir, _goal, _txt, _reply_txt)
+                        try:
+                            _live_eng = get_engine(cdir, create=False)
+                            if _live_eng is not None:
+                                _live_eng._emit({"t": "john", "text": _txt})
+                                _live_eng._emit({"t": "delta", "text": _reply_txt})
+                                _live_eng._emit({"t": "turn_end", "tokens": 0})
+                        except Exception:
+                            pass
                     return spoken, (200 if spoken.get("ok") else 400)
         context = body.get("refinement_context")
         _refined_turn = False
@@ -2706,6 +3302,12 @@ def handle_post(cdir, verb, body):
             try:
                 from steward_cockpit import anvil_session as _as_say
                 _as_say.apply_conversational_anvil_side_effects(cdir, str(body.get("text", "")))
+            except Exception:
+                pass
+        if not body.get("general") and str(body.get("text") or "").strip():
+            try:
+                campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
+                _DELIV_CACHE.clear()
             except Exception:
                 pass
         eng = get_engine(cdir, bool(body.get("general")),
@@ -2785,6 +3387,12 @@ def handle_post(cdir, verb, body):
             return out, 200 if out.get("ok") else 409
         return {"ok": True, "jobs": list(_sj.read_jobs(cdir).values())[-20:]}, 200
     if verb == "engine":
+        if not body.get("general") and str(body.get("text") or "").strip():
+            try:
+                campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
+                _DELIV_CACHE.clear()
+            except Exception:
+                pass
         eng = get_engine(cdir, bool(body.get("general")),
                          str(body.get("term") or "") or None)
         if eng is None:
@@ -2848,6 +3456,8 @@ def handle_post(cdir, verb, body):
         return {"ok": True}, 200
     if verb == "upload":
         return _upload(cdir, body)
+    if verb == "mothership-files":
+        return _mothership_files_post(cdir, body)
     if verb == "new_effort":
         return _new_effort(cdir, body)
     return {"ok": False, "error": "unknown"}, 404
@@ -2935,8 +3545,8 @@ def _upload(cdir, body):
         data = base64.b64decode(body.get("data_b64", ""), validate=True)
     except Exception:
         return {"ok": False, "error": "bad file data"}, 400
-    if len(data) > 30_000_000:
-        return {"ok": False, "error": "over 30 MB"}, 413
+    if len(data) > 250_000_000:
+        return {"ok": False, "error": "over 250 MB"}, 413
     dst = Path(folder) / name
     final = os.path.realpath(dst)
     if final != base and not final.startswith(base + os.sep):

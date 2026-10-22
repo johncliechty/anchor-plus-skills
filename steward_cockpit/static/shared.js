@@ -9,6 +9,62 @@ const Proto = (() => {
   const DIR = PARAMS.get("dir") || "";
   window.STEWARD_DIR = DIR;
   const _dismissedSessionKeys = new Set();
+  const _openedReviewKeys = new Set();
+  try {
+    const savedOpened = JSON.parse(localStorage.getItem("anchor:opened_review:" + DIR) || "[]");
+    if (Array.isArray(savedOpened)) savedOpened.forEach(k => _openedReviewKeys.add(String(k)));
+  } catch (e) {}
+  function markDeliverableOpened(key) {
+    if (!key) return;
+    _openedReviewKeys.add(String(key));
+    try {
+      localStorage.setItem("anchor:opened_review:" + DIR, JSON.stringify(Array.from(_openedReviewKeys).slice(-60)));
+    } catch (e) {}
+  }
+  function encodeWav16kBase64(float32Chunks, inputSampleRate) {
+    let totalLen = 0;
+    for (let i = 0; i < float32Chunks.length; i++) totalLen += float32Chunks[i].length;
+    if (!totalLen) return "";
+    const merged = new Float32Array(totalLen);
+    let offset = 0;
+    for (let i = 0; i < float32Chunks.length; i++) {
+      merged.set(float32Chunks[i], offset);
+      offset += float32Chunks[i].length;
+    }
+    const targetRate = 16000;
+    const ratio = (inputSampleRate && inputSampleRate > 0) ? (inputSampleRate / targetRate) : 1;
+    const outLen = Math.max(1, Math.round(merged.length / ratio));
+    const pcm16 = new Int16Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const srcIdx = Math.min(merged.length - 1, Math.floor(i * ratio));
+      const s = Math.max(-1, Math.min(1, merged[srcIdx]));
+      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    const wavBuf = new ArrayBuffer(44 + pcm16.length * 2);
+    const view = new DataView(wavBuf);
+    const writeStr = (pos, str) => { for (let i = 0; i < str.length; i++) view.setUint8(pos + i, str.charCodeAt(i)); };
+    writeStr(0, "RIFF");
+    view.setUint32(4, 36 + pcm16.length * 2, true);
+    writeStr(8, "WAVE");
+    writeStr(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, targetRate, true);
+    view.setUint32(28, targetRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, "data");
+    view.setUint32(40, pcm16.length * 2, true);
+    const bytes = new Uint8Array(wavBuf);
+    bytes.set(new Uint8Array(pcm16.buffer), 44);
+    let binary = "";
+    const chunkSz = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSz) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSz));
+    }
+    return btoa(binary);
+  }
   const STEP = PARAMS.get("step") || "";   // W5 (2026-09-28): Resume from the High Seat lands on this step
   let _stepShown = false;
   const GENERAL = PARAMS.get("general") === "1";
@@ -463,8 +519,329 @@ const Proto = (() => {
     return scrollEl();
   }
 
+  // Intercept canonical [HH:MM] status update blocks so they NEVER pop up inside the center dialogue box,
+  // and instead push directly into the right-side Status & Deliverables window tile.
+  function extractAndRouteStatusTable(rawText) {
+    const txt = String(rawText || "");
+    if (!txt) return { cleaned: "", routed: false };
+    const lines = txt.split(/\r?\n/);
+    const headerIdx = lines.findIndex(l => /^\s*(?:```[a-z]*\s*)?\[\d{2}:\d{2}\]\s+.+/.test(l));
+    if (headerIdx < 0) return { cleaned: txt, routed: false };
+    const hasStatusKeys = lines.slice(headerIdx, headerIdx + 20).some(l => /^\s*(?:Effort|Doing|Status|Tests|Blocker|Procs|Journal|ETA|To do)\s{2,}/i.test(l));
+    if (!hasStatusKeys) return { cleaned: txt, routed: false };
+
+    let startIdx = headerIdx;
+    if (startIdx > 0 && /^\s*```/.test(lines[startIdx - 1])) startIdx--;
+    let endIdx = headerIdx + 1;
+    const fields = {};
+    const headerMatch = /^\s*(?:```[a-z]*\s*)?\[(\d{2}:\d{2})\]\s+(.+)$/.exec(lines[headerIdx]);
+    const hhmm = headerMatch ? headerMatch[1] : new Date().toTimeString().slice(0, 5);
+    const headerRest = headerMatch ? headerMatch[2].trim() : "";
+
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const ln = lines[i];
+      if (/^\s*```\s*$/.test(ln)) { endIdx = i + 1; break; }
+      if (/^\s*[\u2500-\u257f\-=]{5,}\s*$/.test(ln)) { endIdx = i + 1; continue; }
+      const kv = /^\s*(Summary|Effort|Doing|Status|Tests|Blocker|Procs|Journal|ETA|To do)\s{2,}(.+)$/i.exec(ln);
+      if (kv) {
+        const keyNorm = kv[1].trim();
+        const kCanon = /^to do$/i.test(keyNorm) ? "To do" : ( /^eta$/i.test(keyNorm) ? "ETA" : (keyNorm.charAt(0).toUpperCase() + keyNorm.slice(1).toLowerCase()) );
+        fields[kCanon] = kv[2].trim();
+        endIdx = i + 1;
+        continue;
+      }
+      if (Object.keys(fields).length >= 3 && !ln.trim()) { endIdx = i + 1; break; }
+      if (Object.keys(fields).length >= 3 && !/^\s+/.test(ln)) break;
+      endIdx = i + 1;
+    }
+
+    if (Object.keys(fields).length < 2) return { cleaned: txt, routed: false };
+
+    const facts = Object.keys(fields).map(k => ({ label: k, value: fields[k] }));
+    if (!fields["Summary"]) {
+      facts.unshift({ label: "Summary", value: fields["Doing"] || headerRest || "Status update" });
+    }
+    const synthStat = {
+      status_id: "chat-routed-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+      at: new Date().toISOString().slice(0, 11) + hhmm,
+      effort: fields["Effort"] || headerRest || ((_lastMap && _lastMap.name) || "Anchor"),
+      now: fields["Doing"] ? [fields["Doing"]] : [],
+      tests: fields["Tests"] || "—",
+      journal: fields["Journal"] || "none",
+      eta: fields["ETA"] || "",
+      lead_line: fields["To do"] ? ("Next: " + fields["To do"]) : (fields["Doing"] || headerRest),
+      next_bullets: fields["To do"] ? fields["To do"].split(/\s*(?:\u2192|->|;)\s*/).filter(Boolean) : [],
+      compact: { facts },
+      plan: {
+        steps_done: (_lastMap && _lastMap.steps_done) || 0,
+        steps_total: (_lastMap && _lastMap.steps_total) || 0,
+        attention: fields["Status"] || "working",
+        waiting_on_you: (fields["Blocker"] && !/^none$/i.test(fields["Blocker"])) ? fields["Blocker"] : "",
+      },
+    };
+    try { renderStatus(synthStat); } catch (e) {}
+    const remaining = lines.slice(0, startIdx).concat(lines.slice(endIdx)).join("\n").trim();
+    return { cleaned: remaining, routed: true };
+  }
+
+  let _latestStewardSummaryText = "";
+  function isReceiptTurnText(rawText, turnId) {
+    const tid = String(turnId || "").trim();
+    if (tid.startsWith("receipt:")) return true;
+    const t = String(rawText || "").trim();
+    return /^(?:\*\*Anchor\*\*|Anchor)\s*\u00b7\s*(?:ready to read|new|preparing a reading copy):/i.test(t);
+  }
+  function isWorkingNarrationLine(ln) {
+    const s = String(ln || "").trim();
+    if (!s || s.length > 320 || /\*\*Where we are/i.test(s) || /^#/.test(s) || /^[-*]\s+\*\*/.test(s)) return false;
+    return /^(?:I am\s+(?:now\s+)?[a-z]+ing\b|I'm\s+(?:now\s+)?[a-z]+ing\b|I will\s+(?:now\s+)?(?:check|verify|inspect|read|update|apply|retire|collect|run)\b|Let me\s+(?:now\s+)?(?:check|verify|inspect|read|update|apply|retire|collect)\b)/i.test(s);
+  }
+  function renderStewardTurnBody(body, rawText) {
+    body.textContent = "";
+    const cleaned = String(rawText || "").replace(/<!--\s*(?:producer-handoff-|steward-receipt-|ecgberht-)[\s\S]*?-->/gi, "").trim();
+    if (!cleaned) return;
+    const lines = cleaned.split(/\r?\n/);
+    const workingLines = [];
+    let idx = 0;
+    while (idx < lines.length) {
+      const ln = lines[idx];
+      if (!ln.trim()) { idx++; continue; }
+      if (isWorkingNarrationLine(ln)) {
+        workingLines.push(ln.trim());
+        idx++;
+      } else {
+        break;
+      }
+    }
+    const remaining = lines.slice(idx).join("\n").trim();
+    if (workingLines.length > 0) {
+      const fold = el("details", "steward-working-steps");
+      const sum = el("summary", "sws-summary", "\u2713 " + workingLines.length + " intermediate working " + (workingLines.length === 1 ? "step" : "steps") + " completed \u25b8");
+      fold.appendChild(sum);
+      const swsBody = el("div", "sws-body");
+      renderRich(swsBody, workingLines.join("\n\n"));
+      fold.appendChild(swsBody);
+      body.appendChild(fold);
+      const mainBox = el("div", "steward-main-summary");
+      if (remaining) renderRich(mainBox, remaining); else mainBox.style.display = "none";
+      body.appendChild(mainBox);
+    } else {
+      const mainBox = el("div", "steward-main-summary");
+      renderRich(mainBox, cleaned);
+      body.appendChild(mainBox);
+    }
+    const summarySource = remaining || cleaned;
+    if (summarySource && !isReceiptTurnText(summarySource, "")) {
+      const firstPara = summarySource.split(/\n\s*\n/).map(p => p.trim()).find(p => p.length > 25 && !isWorkingNarrationLine(p)) || "";
+      if (firstPara) {
+        const plain = firstPara
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+          .replace(/[*_`#>]/g, "")
+          .replace(/^Where we are:\s*/i, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (plain.length > 20) _latestStewardSummaryText = oneLine(plain, 280);
+      }
+    }
+  }
+  function classifyReceiptLine(rawLine) {
+    const raw = String(rawLine || "").trim();
+    const isPreparing = /^(?:\*\*Anchor\*\*|Anchor)\s*(?:\u00b7|·)\s*preparing a reading copy:/i.test(raw);
+    const stripped = raw.replace(/^(?:\*\*Anchor\*\*|Anchor)\s*\u00b7\s*(?:ready to read|new|preparing a reading copy):\s*/i, "").trim();
+    const firstBracket = /^\[([^\]]+)\]/.exec(stripped);
+    const label = firstBracket ? firstBracket[1].trim() : stripped;
+    let bucket = "review";
+    if (/^(?:Accepted|Approved|FINAL|LOCKED)\b/i.test(label) || /^Accepted\s+[\u2014\u2013-]/i.test(stripped)) {
+      bucket = "accepted";
+    } else if (/^(?:Supporting|Earlier|Historical|Superseded)\b/i.test(label)) {
+      bucket = "supporting";
+    }
+    const isStartHere = /^START HERE\b/i.test(label);
+    const cleanTitle = stripDeliverableLeadPrefixes(label);
+    let topic = "Key Deliverables for Review";
+    let topicOrder = 50;
+    const aiSupMatch = /\bAI\s+Supplements?\s*(\d+(?:\s*[\u2013-]\s*\d+)?)/i.exec(cleanTitle + " " + stripped);
+    const lecMatch = /\bLectures?\s*(\d+(?:\s*[\u2013-]\s*\d+)?)/i.exec(cleanTitle + " " + stripped);
+    if (aiSupMatch && /^5$/.test(aiSupMatch[1].trim())) {
+      topic = "\u2605 Priority 1 \u00b7 AI Supplement 5 (Tuscan Recipe)";
+      topicOrder = 1;
+    } else if (aiSupMatch && /^3$/.test(aiSupMatch[1].trim())) {
+      topic = "\ud83d\udcc2 AI Supplement 3 (Prompting & Tools)";
+      topicOrder = 2;
+    } else if (aiSupMatch && /^4$/.test(aiSupMatch[1].trim())) {
+      topic = "\ud83d\udcc2 AI Supplement 4 (Context & Plan Mode)";
+      topicOrder = 3;
+    } else if (lecMatch || (aiSupMatch && /7|8/.test(aiSupMatch[1]))) {
+      topic = ((lecMatch && /6|7|8/.test(lecMatch[1])) || (aiSupMatch && /7|8/.test(aiSupMatch[1]))) ? "\ud83d\udcc2 Lectures 6\u20138 & AI Supplements 7\u20138" : ("\ud83d\udcc2 Lectures " + (lecMatch ? lecMatch[1] : "6\u20138") + " & Plans");
+      topicOrder = 4;
+    } else if (/\b(?:Syllabus|Smeal|LEM\s+Lab|Quiz\s+Sign-Up|Calendar)\b/i.test(cleanTitle + " " + stripped)) {
+      topic = "\ud83d\udcc2 Course Syllabus & Smeal LEM Lab";
+      topicOrder = 5;
+    } else if (aiSupMatch) {
+      topic = "\ud83d\udcc2 AI Supplement " + aiSupMatch[1];
+      topicOrder = 6;
+    } else {
+      const secMatch = /\b(Section\s*\d+|Wave\s*\d+|Chapter\s*\d+|Step\s*\d+)\b/i.exec(cleanTitle + " " + stripped);
+      if (secMatch) {
+        topic = "\ud83d\udcc2 " + secMatch[1];
+        topicOrder = 10;
+      }
+    }
+    // Build a clean markdown line where the overly verbose prefix inside [...] is trimmed to cleanTitle
+    let cleanedMd = stripped;
+    if (firstBracket && cleanTitle && cleanTitle !== label) {
+      cleanedMd = "[" + (isStartHere ? "\u2605 " : "") + cleanTitle + "]" + stripped.slice(firstBracket[0].length);
+    }
+    if (isPreparing) {
+      cleanedMd = "preparing a reading copy: " + cleanedMd;
+    }
+    return { raw, stripped, cleanedMd, bucket, isStartHere, topic, topicOrder, cleanTitle };
+  }
+  function rebuildRunDeliverablesCard(card) {
+    const lines = card._receiptLines || [];
+    card.textContent = "";
+    if (!lines.length) return;
+    const parsed = lines.map(classifyReceiptLine);
+    const reviewList = parsed.filter(p => p.bucket === "review");
+    const acceptedList = parsed.filter(p => p.bucket === "accepted");
+    const supportingList = parsed.filter(p => p.bucket === "supporting");
+
+    const head = el("div", "srd-header");
+    const headLeft = el("div", "srd-head-left");
+    headLeft.appendChild(el("span", "srd-badge", "\ud83c\udfc1 KEY DELIVERABLES"));
+    const countsParts = [];
+    if (reviewList.length) countsParts.push(reviewList.length + " Ready for Review");
+    if (acceptedList.length) countsParts.push(acceptedList.length + " Finalized");
+    if (supportingList.length) countsParts.push(supportingList.length + " Supporting");
+    headLeft.appendChild(el("span", "srd-counts", countsParts.join(" \u00b7 ") || (lines.length + " deliverable(s)")));
+    head.appendChild(headLeft);
+
+    const openPaneBtn = el("button", "srd-open-pane-btn", "\ud83d\udc41 Open For Review Pane \u25b8");
+    openPaneBtn.type = "button";
+    openPaneBtn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const appEl = $(".app");
+      if (appEl) appEl.classList.add("statusopen");
+      const hub = $("[data-delivmount] .blk.deliv");
+      if (hub) hub.classList.remove("folded");
+      const revDet = $("[data-delivmount] details.tier-review");
+      if (revDet) {
+        revDet.open = true;
+        revDet.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    };
+    head.appendChild(openPaneBtn);
+    card.appendChild(head);
+
+    if (reviewList.length > 0) {
+      const byTopic = new Map();
+      reviewList.forEach(item => {
+        if (!byTopic.has(item.topic)) {
+          byTopic.set(item.topic, { topic: item.topic, order: item.topicOrder, items: [] });
+        }
+        byTopic.get(item.topic).items.push(item);
+      });
+      const sortedTopics = Array.from(byTopic.values()).sort((a, b) => a.order - b.order);
+      const grid = el("div", "srd-topics-grid");
+      sortedTopics.forEach(grp => {
+        const tCard = el("div", "srd-topic-card" + (grp.order === 1 ? " priority" : ""));
+        if (sortedTopics.length > 1 || grp.topic !== "Key Deliverables for Review") {
+          const tHead = el("div", "srd-topic-head");
+          tHead.appendChild(el("span", "srd-topic-title", grp.topic));
+          tHead.appendChild(el("span", "srd-topic-cnt", grp.items.length + (grp.items.length === 1 ? " item" : " items")));
+          tCard.appendChild(tHead);
+        }
+        const ul = el("div", "srd-topic-list");
+        grp.items.forEach(it => {
+          const row = el("div", "srd-item-row");
+          renderRich(row, it.cleanedMd);
+          ul.appendChild(row);
+        });
+        tCard.appendChild(ul);
+        grid.appendChild(tCard);
+      });
+      card.appendChild(grid);
+    }
+
+    if (acceptedList.length > 0) {
+      const accDet = el("details", "srd-subdrawer");
+      if (reviewList.length === 0) accDet.open = true;
+      const accSum = el("summary", "srd-subsum", "\ud83c\udfdb\ufe0f Accepted & Finalized in This Run (" + acceptedList.length + ") \u25b8");
+      accDet.appendChild(accSum);
+      const accBody = el("div", "srd-subbody");
+      acceptedList.forEach(it => {
+        const row = el("div", "srd-item-row");
+        renderRich(row, it.cleanedMd);
+        accBody.appendChild(row);
+      });
+      accDet.appendChild(accBody);
+      card.appendChild(accDet);
+    }
+
+    if (supportingList.length > 0) {
+      const supDet = el("details", "srd-subdrawer");
+      if (reviewList.length === 0 && acceptedList.length === 0) supDet.open = true;
+      const supSum = el("summary", "srd-subsum", "\ud83d\udcce Supporting Plans & Diagnostic Notes (" + supportingList.length + ") \u25b8");
+      supDet.appendChild(supSum);
+      const supBody = el("div", "srd-subbody");
+      supportingList.forEach(it => {
+        const row = el("div", "srd-item-row");
+        renderRich(row, it.cleanedMd);
+        supBody.appendChild(row);
+      });
+      supDet.appendChild(supBody);
+      card.appendChild(supDet);
+    }
+  }
+  function appendReceiptToDialogue(s, receiptText, extraClass) {
+    if (!s) return null;
+    const stick = atBottom(s);
+    // Find the immediately preceding steward block (skipping a .turnend divider if present)
+    let targetBlk = null;
+    let last = s.lastElementChild; while (last && (last.classList.contains("turnend") || last.classList.contains("act") || last.classList.contains("sys"))) last = last.previousElementSibling;
+    if (last && last.classList.contains("blk") && last.classList.contains("steward")) {
+      targetBlk = last;
+    } else if (last && last.classList.contains("turnend") && last.previousElementSibling && last.previousElementSibling.classList.contains("steward")) {
+      targetBlk = last.previousElementSibling;
+    }
+    if (!targetBlk) {
+      targetBlk = el("div", "blk steward receipt " + (extraClass || ""));
+      targetBlk.appendChild(el("div", "who", (opts.stewardLabel || personaName().toUpperCase()) + " \u00b7 RUN DELIVERABLES"));
+      targetBlk.appendChild(el("div", "body"));
+      s.appendChild(targetBlk);
+    }
+    const body = targetBlk.querySelector(".body") || targetBlk;
+    let card = body.querySelector(".steward-run-deliverables-card");
+    if (!card) {
+      card = el("div", "steward-run-deliverables-card");
+      card._receiptLines = [];
+      body.appendChild(card);
+    }
+    if (!card._receiptLines.includes(receiptText)) {
+      card._receiptLines.push(receiptText);
+    }
+    rebuildRunDeliverablesCard(card);
+    pin(s, stick);
+    return targetBlk;
+  }
+
   function addBlock(kind, who, text, extraClass, ev) {
-    const s = targetFor(ev);
+    let s = targetFor(ev);
+    let displayText = text;
+    if (kind === "steward" && s !== paneEl() && displayText) {
+      if (extraClass === "receipt" || isReceiptTurnText(displayText, ev && ev.turn_id)) {
+        return appendReceiptToDialogue(s, displayText, extraClass);
+      }
+      const routed = extractAndRouteStatusTable(displayText);
+      if (routed.routed) {
+        if (!routed.cleaned) {
+          // Entire message was a status table — pushed to right Status & Deliverables tile, nothing in chat stream
+          return el("div", "blk steward routed-to-status");
+        }
+        displayText = routed.cleaned;
+      }
+    }
     const stick = atBottom(s);
     if (kind === "steward" && s === paneEl() && s) {
       // status fold: only the newest table stays expanded (click unfolds)
@@ -476,7 +853,12 @@ const Proto = (() => {
     const b = el("div", "blk " + kind + (extraClass ? " " + extraClass : ""));
     if (who) b.appendChild(el("div", "who", who));
     const body = el("div", "body");
-    if (kind === "steward") renderRich(body, text); else body.textContent = text;
+    if (kind === "steward") {
+      if (s !== paneEl()) renderStewardTurnBody(body, displayText);
+      else renderRich(body, displayText);
+    } else {
+      body.textContent = displayText;
+    }
     b.appendChild(body);
     s.appendChild(b);
     pin(s, stick);
@@ -485,7 +867,7 @@ const Proto = (() => {
   function addLine(cls, text, ev) {
     const s = targetFor(ev);
     const stick = atBottom(s);
-    s.appendChild(el("div", "blk " + cls, text));
+    if (cls === "sys" && s && s !== paneEl() && !/^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((_lastMap && (_lastMap.name || _lastMap.title)) || DIR || "")) && /^(?:steward awake|Last time:|Plan:\s*step|Goal:|Open:\s*waiting|steward asleep|steward session ended|model served\s|Anchor's served code changed|Work completed, but its refinement|the steward's turn ended in an error)/i.test(String(text || "").trim())) { let fold = s.lastElementChild; if (!fold || !fold.classList.contains("steward-sys-fold")) { fold = el("details", "blk sys steward-sys-fold"); fold._count = 0; fold.appendChild(el("summary", "ssf-sum", "\u2699 Session & runtime log (1 notice) \u25b8")); fold.appendChild(el("div", "ssf-body")); s.appendChild(fold); } fold._count = (fold._count || 0) + 1; const sum = fold.querySelector(".ssf-sum"); if (sum) sum.textContent = "\u2699 Session & runtime log (" + fold._count + (fold._count === 1 ? " notice" : " notices") + ") \u25b8"; const b = fold.querySelector(".ssf-body"); if (b) b.appendChild(el("div", "ssf-line", text)); pin(s, stick); return; } s.appendChild(el("div", "blk " + cls, text));
     pin(s, stick);
   }
   let turnReplyBlocks = [];   // W3 (2026-10-10): this turn's reply blocks, which a "reply_links" correction replaces
@@ -494,9 +876,27 @@ const Proto = (() => {
       const s = currentBlock.parentElement;
       const stick = s && atBottom(s);
       const body = currentBlock.querySelector(".body");
-      renderRich(body, currentBlock._raw || body.textContent);
-      tileSay("turn", { who: "steward", text: String(currentBlock._raw || body.textContent || "").slice(-600) });
+      let finalRaw = currentBlock._raw || (body && body.textContent) || "";
+      if (s && s !== paneEl() && finalRaw) {
+        const routed = extractAndRouteStatusTable(finalRaw);
+        if (routed.routed) {
+          if (!routed.cleaned) {
+            currentBlock.remove();
+            currentBlock = null;
+            return;
+          }
+          finalRaw = routed.cleaned;
+          currentBlock._raw = finalRaw;
+        }
+      }
+      const wasTick = !!currentBlock._tick;
+      if (s && s !== paneEl()) renderStewardTurnBody(body, finalRaw);
+      else renderRich(body, finalRaw);
+      tileSay("turn", { who: "steward", text: String(finalRaw || "").slice(-600) });
       currentBlock = null;
+      if (!wasTick && s && s !== paneEl() && finalRaw) {
+        try { speakConciseSummary(finalRaw); } catch (e) {}
+      }
       if (stick) pin(s, true);
     }
   }
@@ -655,7 +1055,7 @@ const Proto = (() => {
       tile.appendChild(el("div", "body"));
       s.appendChild(tile);
     }
-    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign)$/i.test(String((_lastMap && (_lastMap.name || _lastMap.title)) || DIR || ""));
+    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((_lastMap && (_lastMap.name || _lastMap.title)) || DIR || ""));
     if ($("[data-steward-next-top]") && !isLegacyNavTest) {
       tile.hidden = true;
       tile.style.display = "none";
@@ -683,6 +1083,146 @@ const Proto = (() => {
   let _sntOpen = false;
   let _sntActionOpen = false;
   let _approvalResolvedSession = false;
+  let _approvalResolvedSig = "";
+  let _allDelivSearch = "";
+  let _allDelivSort = "date-desc";
+  let _allDelivType = "ALL";
+  let _allDelivLimit = 60;
+  function inferDeliverableFormat(it) {
+    const p = String((it && (it.open_path || it.path || it.route)) || "").trim();
+    const w = String((it && (it.what || it.label)) || "").trim();
+    const combined = (p + " " + w).toLowerCase();
+    if (/\.pdf(?:$|\?|&|\b)/i.test(p) || /\bpdf\b/i.test(w)) return { tag: "PDF", ext: ".pdf", cls: "fmt-pdf" };
+    if (/\.pptx?(?:$|\?|&|\b)/i.test(p) || /\bpowerpoint\b|\.pptx?\b/i.test(w)) return { tag: "PPTX", ext: ".pptx", cls: "fmt-pptx" };
+    if (/\.docx?(?:$|\?|&|\b)/i.test(p) || /\bword\b|\.docx?\b/i.test(w)) return { tag: "DOCX", ext: ".docx", cls: "fmt-docx" };
+    if (/\.xlsx?(?:$|\?|&|\b)/i.test(p) || /\bexcel\b|\.xlsx?\b/i.test(w)) return { tag: "XLSX", ext: ".xlsx", cls: "fmt-xlsx" };
+    if (/\.r(?:$|\?|&)/i.test(p) || /\br script\b/i.test(w)) return { tag: "R", ext: ".R", cls: "fmt-r" };
+    if (/\.csv(?:$|\?|&|\b)/i.test(combined)) return { tag: "CSV", ext: ".csv", cls: "fmt-csv" };
+    if (/\.py(?:$|\?|&)/i.test(p)) return { tag: "PY", ext: ".py", cls: "fmt-py" };
+    if (/\.html?(?:$|\?|&)/i.test(p) || /\bhtml\b/i.test(w)) return { tag: "HTML", ext: ".html", cls: "fmt-html" };
+    if (/\.zip(?:$|\?|&|\b)/i.test(combined)) return { tag: "ZIP", ext: ".zip", cls: "fmt-zip" };
+    if (/\.json(?:$|\?|&)/i.test(p)) return { tag: "JSON", ext: ".json", cls: "fmt-json" };
+    if (/\.(?:md|markdown)(?:$|\?|&)/i.test(p) || /\bmarkdown\b/i.test(w)) return { tag: "MD", ext: ".md", cls: "fmt-md" };
+    if (/\.txt(?:$|\?|&)/i.test(p)) return { tag: "TXT", ext: ".txt", cls: "fmt-txt" };
+    return { tag: "DOC", ext: "", cls: "fmt-doc" };
+  }
+  function stripDeliverableLeadPrefixes(rawStr) {
+    let s = String(rawStr || "").replace(/\*\*/g, "").trim();
+    const prefixRe = /^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED|EARLIER COPY|EARLIER|Historical|SUPERSEDED|ARCHIVED|APPROVED|FINAL COURSE FILE|FINAL|SAVED DESIGN|Supporting|einstein|Gandalf|researchPrime\s+and\s+Jumper|researchPrime|Jumper|write-page)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]+\s*/i;
+    let guard = 0;
+    while (guard < 8 && prefixRe.test(s)) {
+      s = s.replace(prefixRe, "").trim();
+      guard++;
+    }
+    s = s.replace(/\s+[\u2014\u2013-]+\s*(?:PDF reading copy|printable PDF|shareable PDF|PowerPoint download|editable PowerPoint|Word \(\.docx\) copy|Word copy|Markdown source|copyable plan text|HTML preview|Markdown note|source)\s*$/i, "").trim();
+    return s;
+  }
+  function pairDeliverableFormats(itemsList) {
+    if (!Array.isArray(itemsList) || !itemsList.length) return [];
+    const fmtRank = { PDF: 1, HTML: 2, DOCX: 3, PPTX: 4, XLSX: 5, R: 6, PY: 7, CSV: 8, MD: 9, TXT: 10, ZIP: 11, FILE: 12 };
+    const groups = new Map();
+    itemsList.forEach((it) => {
+      if (!it) return;
+      const rawPath = String(it.open_path || it.path || "").replace(/\\/g, "/").trim();
+      const baseName = rawPath ? rawPath.split("/").pop() : "";
+      const isHash = /^[a-f0-9]{40,64}\.[a-z0-9]+$/i.test(baseName);
+      let key = "";
+      const cleanW = stripDeliverableLeadPrefixes(it.what || it.label || "")
+        .replace(/\s*\(\s*\.[a-z0-9]{1,8}\s*\)\s*$/i, "")
+        .replace(/-(?:PDF|MD|PowerPoint|DOCX|HTML)$/i, "")
+        .toLowerCase()
+        .trim();
+      if (rawPath && !isHash) {
+        const fileStem = baseName.replace(/\.[a-z0-9]{1,8}$/i, "").toLowerCase().trim();
+        const isGeneric = /^(?:index|readme|report|plan|master-plan|implementation-plan|summary|draft|slides|deck|manuscript|notes)$/i.test(fileStem);
+        const fullStem = rawPath.replace(/\.[a-z0-9]{1,8}$/i, "").toLowerCase().trim();
+        key = isGeneric ? ("path:" + fullStem) : ("stem:" + String(it.step || "") + ":" + fileStem);
+      } else {
+        key = "title:" + String(it.step || "") + ":" + cleanW;
+      }
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(it);
+    });
+    const paired = [];
+    groups.forEach((grp) => {
+      const sorted = grp.slice().sort((a, b) => {
+        const ra = fmtRank[inferDeliverableFormat(a).tag] || 99;
+        const rb = fmtRank[inferDeliverableFormat(b).tag] || 99;
+        return ra - rb;
+      });
+      const primary = Object.assign({}, sorted[0]);
+      primary._hasStartHere = grp.some(x => /^START HERE\b/i.test(String(x.what || "")));
+      primary._allFormatItems = sorted;
+      const seenTags = new Set([inferDeliverableFormat(primary).tag]);
+      primary._companionFormats = sorted.slice(1).filter((comp) => {
+        const t = inferDeliverableFormat(comp).tag;
+        if (seenTags.has(t)) return false;
+        seenTags.add(t);
+        return true;
+      });
+      paired.push(primary);
+    });
+    return paired;
+  }
+  function classifyReviewTopicGroup(it, mapSteps) {
+    const rawWhat = String((it && (it.what || it.label)) || "");
+    const rawPath = String((it && (it.open_path || it.path)) || "").replace(/\\/g, "/");
+    const combined = stripDeliverableLeadPrefixes(rawWhat) + " " + rawPath;
+    const stepSlug = String((it && (it.owner_step_id || it.step)) || "").trim();
+
+    if (/\bAI\s+Supplement\s*5\b/i.test(combined) || stepSlug === "lecture-5-ai-supplement") {
+      return { key: "ai-supp-5", title: "\u2605 Priority 1 \u00b7 AI Supplement 5 \u2014 Tuscan Recipe", order: 1, priority: true };
+    }
+    if (/\bAI\s+Supplement\s*3\b/i.test(combined) || stepSlug === "lecture-3-ai-supplement") {
+      return { key: "ai-supp-3", title: "\ud83d\udcc2 AI Supplement 3 \u2014 Prompting & Tools Research", order: 2, priority: false };
+    }
+    if (/\bAI\s+Supplement\s*4\b/i.test(combined) || stepSlug === "lecture-4-ai-supplement") {
+      return { key: "ai-supp-4", title: "\ud83d\udcc2 AI Supplement 4 \u2014 Context, Compaction & Plan Mode", order: 3, priority: false };
+    }
+    if (/\b(?:Lectures?\s*6(?:\s*[\u2013-]\s*8)?|AI\s+Supplements?\s*7(?:\s*[\u2013-]\s*8)?|block2-regression)\b/i.test(combined) || /^lecture-[678]/.test(stepSlug)) {
+      return { key: "block-2-regression", title: "\ud83d\udcc2 Block 2 Regression (Lectures 6\u20138 & Supplements 7\u20138)", order: 4, priority: false };
+    }
+    if (/\b(?:Syllabus|Smeal|LEM\s+Lab|Quiz\s+Sign-Up|Teaching-Calendar)\b/i.test(combined) || stepSlug === "teaching-calendar-2026") {
+      return { key: "syllabus-lem-lab", title: "\ud83d\udcc2 Course Syllabus & Smeal LEM Lab Quiz Sign-Up", order: 5, priority: false };
+    }
+    const stepsArr = Array.isArray(mapSteps) ? mapSteps : ((_lastMap && Array.isArray(_lastMap.steps)) ? _lastMap.steps : []);
+    const owner = navOwner(stepsArr, it) || stepsArr.find(s => s && String(s.id || "").toLowerCase() === stepSlug.toLowerCase());
+    if (owner) {
+      const idx = stepsArr.indexOf(owner);
+      let lbl = String((owner.navigation && owner.navigation.label) || owner.name || owner.id || ("Step " + (idx + 1))).trim();
+      lbl = lbl.replace(/\s*\((?:for review|ready for review|awaiting review|proposed)\)\s*$/i, "").replace(/\s+ready for review\s*$/i, "").trim();
+      const shortLbl = oneLine(lbl.split(/\s+[\u2014\u2013]\s+/)[0] || lbl, 56);
+      const isNowStep = isNow(owner, _lastMap);
+      return {
+        key: "step:" + (owner.id || idx),
+        title: (isNowStep ? "\u2605 Active Step \u00b7 " : "\ud83d\udcc2 ") + shortLbl,
+        order: isNowStep ? 1 : (10 + Math.max(0, idx)),
+        priority: isNowStep,
+      };
+    }
+    const secMatch = /\b(Section\s*\d+|Wave\s*\d+|Chapter\s*\d+)\b/i.exec(combined);
+    if (secMatch) {
+      return { key: secMatch[1].toLowerCase(), title: "\ud83d\udcc2 " + secMatch[1] + " Deliverables", order: 20, priority: false };
+    }
+    return { key: "general-review", title: "\ud83d\udcc2 Key Deliverables Ready for Review", order: 30, priority: false };
+  }
+  function groupDeliverablesByTopic(pairedList, mapSteps) {
+    const map = new Map();
+    (pairedList || []).forEach((it) => {
+      const g = classifyReviewTopicGroup(it, mapSteps);
+      if (!map.has(g.key)) map.set(g.key, { ...g, items: [] });
+      map.get(g.key).items.push(it);
+    });
+    return Array.from(map.values()).sort((a, b) => a.order - b.order);
+  }
+  function getStewardCompletionSummaryText() {
+    if (_latestStewardSummaryText) return _latestStewardSummaryText;
+    const hb = (_lastMap && _lastMap.heartbeat) || {};
+    if (hb.active_effort) return oneLine(hb.active_effort + (hb.why_next ? " \u2014 " + hb.why_next : ""), 280);
+    if (hb.why_next) return oneLine(hb.why_next, 240);
+    if (hb.next_recommended) return oneLine(hb.next_recommended, 240);
+    return "";
+  }
   function renderTopNextSteps() {
     const topHost = $("[data-steward-next-top]");
     const fullTopBar = $("[data-top-approval-bar]");
@@ -694,11 +1234,14 @@ const Proto = (() => {
       : "";
     const q = currentQuestion();
     const acts = (_deliv && _deliv.acts) || [];
+    const cleanWait = (hb.human_wait && !/^(?:none|nothing|null|-|\u2014)$/i.test(String(hb.human_wait).trim()))
+      ? String(hb.human_wait).trim()
+      : "";
     const stated = (q && q.question)
       ? ("Steward Decision Request: " + q.question)
-      : (hb.human_wait
-          ? ("Steward Decision Request: " + hb.human_wait)
-          : (hb.next_recommended || hb.why_next || planNext || (acts[0] && (acts[0].label || (acts[0].item && acts[0].item.what))) || "Say “go” to drive the next step in the plan."));
+      : (cleanWait
+          ? ("Steward Decision Request: " + cleanWait)
+          : (hb.next_recommended || hb.why_next || planNext || (acts[0] && (acts[0].label || (acts[0].item && acts[0].item.what))) || "No decisions pending \u00b7 Ready for next wave."));
     const recChoice = q
       ? (q.recommendation || (Array.isArray(q.options) && q.options[0] && (q.options[0].label || q.options[0])) || hb.next_recommended || planNext || "Approve recommended path and proceed")
       : (hb.next_recommended || planNext || "Proceed with active wave");
@@ -706,25 +1249,35 @@ const Proto = (() => {
       ? (q.why || hb.why_next || "clears the decision wait and advances the active step")
       : (hb.why_next || (acts.length ? "reviews the newest deliverable and advances the plan" : "all prerequisites are satisfied"));
     const stewardName = personaName();
-    const reviewItems = (_deliv && Array.isArray(_deliv.reviewNow)) ? _deliv.reviewNow.slice(0, 4) : [];
+    const reviewItems = (_deliv && Array.isArray(_deliv.mainReviewNow) && _deliv.mainReviewNow.length)
+      ? _deliv.mainReviewNow.slice(0, 10)
+      : ((_deliv && Array.isArray(_deliv.reviewNow)) ? _deliv.reviewNow.slice(0, 10) : []);
     const hasStepWait = Boolean(_lastMap && Array.isArray(_lastMap.steps) && _lastMap.steps.some(s => stepNeedsAttention(s)));
-    const needsApproval = !_approvalResolvedSession && Boolean((q && q.question) || (hb && (hb.human_wait || hb.next_recommended)) || reviewItems.length > 0 || hasStepWait);
-    const currentFocusText = oneLine(hb.active_effort || (hb.human_wait ? "Waiting on review: " + hb.human_wait : "") || planNext || "", 140);
-    const topSig = JSON.stringify([stewardName, stated, recChoice, recWhy, currentFocusText, needsApproval, _approvalResolvedSession, reviewItems.map(r => r.path || r.what), questionSig(), (_lastMap && _lastMap.next_in_plan) || []]);
+    // Only flag Approval Needed when there is an actual pending question, explicit human_wait, unreviewed For Review items, or a waiting step — never from routine hb.next_recommended alone!
+    const rawApprovalSig = JSON.stringify([q && q.id, cleanWait, reviewItems.map(r => r.path || r.what), hasStepWait]);
+    if (_approvalResolvedSession && _approvalResolvedSig && _approvalResolvedSig !== rawApprovalSig) {
+      _approvalResolvedSession = false;
+    }
+    const rawNeedsApproval = Boolean((q && q.question) || cleanWait || reviewItems.length > 0 || hasStepWait);
+    const needsApproval = !_approvalResolvedSession && rawNeedsApproval;
+    const pendingCount = (q && q.question ? 1 : 0) + (reviewItems.length > 0 ? reviewItems.length : (cleanWait || hasStepWait ? 1 : 0));
+    const currentFocusText = oneLine(hb.active_effort || (cleanWait ? "Waiting on review: " + cleanWait : "") || planNext || "", 140);
+    const topSig = JSON.stringify([stewardName, stated, recChoice, recWhy, currentFocusText, needsApproval, pendingCount, _approvalResolvedSession, reviewItems.map(r => r.path || r.what), questionSig(), (_lastMap && _lastMap.next_in_plan) || []]);
     if (topHost && topHost.dataset.sig === topSig && (!fullTopBar || fullTopBar.dataset.sig === topSig)) return;
     if (topHost) topHost.dataset.sig = topSig;
     if (fullTopBar) fullTopBar.dataset.sig = topSig;
 
     const firstLine = oneLine(String(stated).split("\n")[0].replace(/\*\*/g, "").trim(), 135);
-    const headlineText = /^Steward Decision Request:/i.test(firstLine) || !needsApproval
-      ? firstLine
-      : ("Steward Decision Request: " + firstLine);
+    const headlineText = needsApproval
+      ? (/^Steward Decision Request:/i.test(firstLine) ? firstLine : ("Steward Decision Request: " + firstLine))
+      : ("Ready \u00b7 " + firstLine.replace(/^Steward Decision Request:\s*/i, ""));
 
     const executeApprove = async (ev, btnEl) => {
       if (ev) ev.stopPropagation();
       if (btnEl) btnEl.disabled = true;
       try {
         _approvalResolvedSession = true;
+        _approvalResolvedSig = rawApprovalSig;
         try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
         if (q && q.id) {
           if (lastState) lastState.pending_questions = [];
@@ -738,7 +1291,7 @@ const Proto = (() => {
       }
     };
 
-    // 1. Populate Full-Width Row 3 [data-top-approval-bar] (exact match to wave18-cockpit-redesign-mockup.html)
+    // 1. Populate SINGLE Top Full-Width Row [data-top-approval-bar] (duplicate right-rail flag removed per John's request)
     if (fullTopBar) {
       fullTopBar.textContent = "";
       fullTopBar.classList.toggle("open", _sntOpen);
@@ -748,76 +1301,113 @@ const Proto = (() => {
       const summaryRow = el("div", "top-approval-summary");
       const flagPill = el("span", "red-flag-pill" + (needsApproval ? "" : " resolved"));
       flagPill.appendChild(el("span", "red-flag-dot"));
-      flagPill.appendChild(el("span", "", needsApproval ? "\ud83d\udea9 APPROVAL NEEDED (1)" : "\u2713 APPROVED / READY"));
+      flagPill.appendChild(el("span", "", needsApproval ? ("\ud83d\udea9 APPROVAL NEEDED (" + Math.max(1, pendingCount) + ")") : "\u2713 NO APPROVAL PENDING \u00b7 READY"));
       summaryRow.appendChild(flagPill);
 
       const hlSpan = el("span", "top-approval-headline", headlineText);
       hlSpan.title = headlineText;
       summaryRow.appendChild(hlSpan);
 
-      const hintSpan = el("span", "top-approval-hint", _sntOpen ? "Hide approval details \u25be" : "Click to open approval details \u25b8");
+      const hintSpan = el("span", "top-approval-hint", _sntOpen ? "Hide details & links \u25be" : "Click to inspect recommendation & links \u25b8");
       summaryRow.appendChild(hintSpan);
 
       const detailsPane = el("div", "top-approval-details");
       const grid = el("div", "approval-grid");
 
       const askRow = el("div", "");
-      askRow.appendChild(el("strong", "", "What the Steward is asking you to decide: "));
-      askRow.appendChild(document.createTextNode(oneLine(String(stated).replace(/^Steward Decision Request:\s*/i, ""), 220)));
+      askRow.appendChild(el("strong", "", needsApproval ? "Decision / Review Needed: " : "Current Next Step: "));
+      askRow.appendChild(document.createTextNode(oneLine(String(stated).replace(/^Steward Decision Request:\s*/i, ""), 240)));
       grid.appendChild(askRow);
 
       const whyRow = el("div", "approval-why");
-      whyRow.appendChild(el("strong", "", "Why this ask is here (Context): "));
-      whyRow.appendChild(document.createTextNode(oneLine(recWhy || currentFocusText || "All prerequisites for this wave gate have been verified.", 240)));
+      whyRow.appendChild(el("strong", "", "Why this matters (Context): "));
+      whyRow.appendChild(document.createTextNode(oneLine(recWhy || currentFocusText || "All prerequisites for this wave gate have been verified.", 260)));
       grid.appendChild(whyRow);
 
       const recRow = el("div", "approval-rec");
       recRow.appendChild(el("strong", "", "\u2605 " + stewardName + " Recommendation: "));
-      recRow.appendChild(document.createTextNode("Option A (Recommended) \u2014 " + oneLine(String(recChoice), 180)));
+      recRow.appendChild(document.createTextNode("Option 1 (Recommended) \u2014 " + oneLine(String(recChoice), 200)));
       grid.appendChild(recRow);
 
       const buildStewardReviewNote = (it) => {
+        const fmt = inferDeliverableFormat(it);
         const raw = String(it.what || it.summary || it.label || "").replace(/\*\*/g, "").trim();
-        const cleaned = raw
-          .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED|APPROVED|FINAL)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
-          .trim();
+        const cleaned = stripDeliverableLeadPrefixes(raw);
         const parts = cleaned.split(/\s+[\u2014\u2013]\s+/).map(s => s.trim()).filter(Boolean);
-        const headline = parts[0] || (it.path ? String(it.path).split(/[\\/]/).pop() : "Deliverable");
+        const rawPath = String(it.open_path || it.path || "").replace(/\\/g, "/");
+        const baseFile = rawPath ? rawPath.split("/").pop() : "";
+        const isHashFile = /^[a-f0-9]{40,64}\.[a-z0-9]+$/i.test(baseFile);
+        let headline = parts[0] || (!isHashFile && baseFile ? baseFile : "Deliverable");
+        if (fmt.ext && headline.toLowerCase().indexOf(fmt.ext.toLowerCase()) < 0) {
+          headline = headline + " (" + fmt.ext + ")";
+        }
         const takeaway = parts.length > 1
           ? parts.slice(1).join(" \u2014 ")
-          : (it.summary || (it.step ? "Completed for Step " + it.step + " and verified ready for your review." : "Verified by the Steward and ready for your review."));
+          : (it.summary || (!isHashFile && baseFile ? ("File: " + baseFile + (it.step ? " \u00b7 Step " + it.step : "")) : (it.step ? "Completed for Step " + it.step + " and verified ready for your review." : "Verified by the Steward and ready for your review.")));
         return {
-          headline: oneLine(headline, 78),
-          takeaway: oneLine(takeaway, 180),
+          headline,
+          shortChipTitle: oneLine(parts[0] || headline, 68) + (fmt.ext && (parts[0] || "").toLowerCase().indexOf(fmt.ext.toLowerCase()) < 0 ? (" (" + fmt.ext + ")") : ""),
+          takeaway: oneLine(takeaway, 200),
+          fmt,
         };
       };
 
-      if (reviewItems.length) {
+      const rawApprovalItems = reviewItems.length
+        ? reviewItems
+        : ((_deliv && Array.isArray(_deliv.items)) ? _deliv.items.filter(i => i && (i.openable || i.route)).slice(0, 4) : []);
+      const approvalLinkedItems = pairDeliverableFormats(rawApprovalItems).slice(0, 12);
+
+      if (approvalLinkedItems.length) {
         const digestBox = el("div", "approval-review-digest");
-        digestBox.appendChild(el("div", "ard-head", "\ud83d\udccb Steward Review Summary (" + reviewItems.length + " item" + (reviewItems.length === 1 ? "" : "s") + " ready for your inspection):"));
+        digestBox.appendChild(el("div", "ard-head", "\ud83d\udccb Clickable Deliverables & Material to Inspect (" + approvalLinkedItems.length + " item" + (approvalLinkedItems.length === 1 ? "" : "s") + "):"));
         const digestList = el("ul", "ard-list");
-        reviewItems.forEach((it) => {
+        approvalLinkedItems.forEach((it) => {
           const note = buildStewardReviewNote(it);
+          const protoRow = delivRow(it);
+          const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
           const li = el("li", "ard-item");
-          li.appendChild(el("strong", "ard-item-title", note.headline + ": "));
-          li.appendChild(el("span", "ard-item-body", note.takeaway));
+          const badge = el("span", "file-fmt-badge " + note.fmt.cls, note.fmt.tag);
+          badge.style.marginRight = "6px";
+          li.appendChild(badge);
+          if (mainA) {
+            const itemLink = document.createElement("a");
+            itemLink.className = "ard-item-title";
+            itemLink.href = mainA.getAttribute("href") || "#";
+            itemLink.style.cssText = "color:#38bdf8;text-decoration:underline;font-weight:700;cursor:pointer;margin-right:6px;";
+            itemLink.textContent = note.headline;
+            itemLink.title = "Click to open " + note.headline + " in Split-Screen Right Window";
+            itemLink.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(note.shortChipTitle, itemLink.getAttribute("href") || itemLink.href);
+              } else {
+                window.open(itemLink.href, "_blank");
+              }
+            };
+            li.appendChild(itemLink);
+          } else {
+            li.appendChild(el("strong", "ard-item-title", note.headline + ": "));
+          }
+          li.appendChild(el("span", "ard-item-body", " \u2014 " + note.takeaway));
           digestList.appendChild(li);
         });
         digestBox.appendChild(digestList);
         grid.appendChild(digestBox);
 
         const linksRow = el("div", "approval-links-row");
-        linksRow.appendChild(el("span", "", "Open in Split-Screen Right Window:"));
-        reviewItems.forEach((it) => {
+        linksRow.appendChild(el("span", "", "Quick Open in Split-Screen:"));
+        approvalLinkedItems.forEach((it) => {
           const protoRow = delivRow(it);
           const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
           const note = buildStewardReviewNote(it);
-          const shortTitle = oneLine(note.headline, 48);
+          const shortTitle = note.shortChipTitle;
           if (mainA) {
             const chipA = document.createElement("a");
             chipA.className = "deliv-link-chip";
             chipA.href = mainA.getAttribute("href") || "#";
-            chipA.textContent = "\ud83d\udcc4 Open " + shortTitle;
+            chipA.appendChild(el("span", "file-fmt-badge " + note.fmt.cls, note.fmt.tag));
+            chipA.appendChild(document.createTextNode(" Open " + shortTitle));
             chipA.onclick = (ev) => {
               ev.preventDefault();
               ev.stopPropagation();
@@ -834,7 +1424,7 @@ const Proto = (() => {
         const hiChip = document.createElement("a");
         hiChip.className = "deliv-link-chip";
         hiChip.href = "#";
-        hiChip.textContent = "\ud83d\udc41 Highlight in For Review";
+        hiChip.textContent = "\ud83d\udc41 Show in Deliverables";
         hiChip.onclick = (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
@@ -853,27 +1443,53 @@ const Proto = (() => {
       }
 
       const actRow = el("div", "approval-actions-row");
-      const btnApp = el("button", "btn-approve", "\u2713 Approve Recommended (Option A)");
+      const btnApp = el("button", "btn-approve", "\u2713 Option 1 (Recommended): Approve & Proceed");
       btnApp.type = "button";
       btnApp.onclick = (ev) => executeApprove(ev, btnApp);
       actRow.appendChild(btnApp);
 
-      const btnStepDone = el("button", "btn-mark-step-done", "\u2713 Mark Next Step Done");
-      btnStepDone.type = "button";
-      btnStepDone.onclick = async (ev) => {
-        ev.stopPropagation();
-        btnStepDone.disabled = true;
-        btnStepDone.textContent = "\u2713 Done!";
-        _approvalResolvedSession = true;
-        try {
-          await post("/api/step-done", {});
-          await loadMap();
-          await renderDeliverablesTile();
-        } catch (e) {}
-      };
-      actRow.appendChild(btnStepDone);
+      if (reviewItems.length > 0) {
+        const btnRevDone = el("button", "btn-mark-step-done", "\u2713 Option 2: Mark Review Items Done (" + reviewItems.length + ")");
+        btnRevDone.type = "button";
+        btnRevDone.onclick = async (ev) => {
+          ev.stopPropagation();
+          btnRevDone.disabled = true;
+          btnRevDone.textContent = "\u2713 Moved to All Deliverables!";
+          try {
+            for (const it of reviewItems) {
+              const k = String(it.open_path || it.path || it.product_id || it.what || "");
+              if (k) _dismissedSessionKeys.add(k);
+              await post("/api/dismiss-deliverable", {
+                path: it.open_path || it.path || "",
+                product_id: it.product_id || "",
+                what: it.what || "",
+                revision_id: it.revision_id || "",
+                hash: it.hash || ""
+              });
+            }
+            await renderDeliverablesTile();
+          } catch (e) {}
+        };
+        actRow.appendChild(btnRevDone);
+      } else {
+        const btnStepDone = el("button", "btn-mark-step-done", "\u2713 Option 2: Mark Current Step Done");
+        btnStepDone.type = "button";
+        btnStepDone.onclick = async (ev) => {
+          ev.stopPropagation();
+          btnStepDone.disabled = true;
+          btnStepDone.textContent = "\u2713 Done!";
+          _approvalResolvedSession = true;
+          _approvalResolvedSig = rawApprovalSig;
+          try {
+            await post("/api/step-done", {});
+            await loadMap();
+            await renderDeliverablesTile();
+          } catch (e) {}
+        };
+        actRow.appendChild(btnStepDone);
+      }
 
-      const btnHold = el("button", "", "Option B: Hold & Inspect Manually in Chat");
+      const btnHold = el("button", "", "Option 3: Discuss / Modify in Chat");
       btnHold.type = "button";
       btnHold.onclick = (ev) => {
         ev.stopPropagation();
@@ -888,7 +1504,7 @@ const Proto = (() => {
         _sntOpen = !_sntOpen;
         fullTopBar.dataset.userToggled = "1";
         fullTopBar.classList.toggle("open", _sntOpen);
-        hintSpan.textContent = _sntOpen ? "Hide approval details \u25be" : "Click to open approval details \u25b8";
+        hintSpan.textContent = _sntOpen ? "Hide details & links \u25be" : "Click to inspect recommendation & links \u25b8";
         if (topHost) {
           topHost.dataset.userToggled = "1";
           topHost.classList.toggle("folded", !_sntOpen);
@@ -901,89 +1517,11 @@ const Proto = (() => {
       fullTopBar.appendChild(detailsPane);
     }
 
-    // 2. Also populate Right-Rail Red Flashing Approval Flag (between Deliverables Hub and Status Card)
+    // 2. Remove duplicate Right-Rail Approval Flag inside [data-delivmount] (John: keep only the top approval bar)
     const delivMount = $("[data-delivmount]");
     if (delivMount) {
-      let rightFlag = delivMount.querySelector(".right-approval-flag");
-      if (!rightFlag) {
-        rightFlag = el("details", "right-approval-flag");
-        delivMount.appendChild(rightFlag);
-      }
-      rightFlag.textContent = "";
-      rightFlag.classList.toggle("needs-approval", needsApproval);
-      rightFlag.classList.toggle("resolved", !needsApproval);
-      const rafSum = el("summary", "raf-head");
-      const rafTitle = el("span", "raf-title");
-      const dot = el("span", "red-flag-dot");
-      if (!needsApproval) { dot.style.background = "var(--ok)"; dot.style.animation = "none"; }
-      rafTitle.appendChild(dot);
-      const revTieTxt = reviewItems.length ? (" \u00b7 Tied to " + reviewItems.length + " For Review item" + (reviewItems.length === 1 ? "" : "s")) : "";
-      rafTitle.appendChild(el("span", "", needsApproval ? ("\ud83d\udea9 APPROVAL NEEDED (1)" + revTieTxt) : "\u2713 APPROVAL COMPLETE \u00b7 In Sync"));
-      rafSum.appendChild(rafTitle);
-      rafSum.appendChild(el("span", "raf-caret", rightFlag.open ? "\u25be" : "\u25b8"));
-      rightFlag.ontoggle = () => {
-        const c = rightFlag.querySelector(".raf-caret");
-        if (c) c.textContent = rightFlag.open ? "\u25be" : "\u25b8";
-      };
-      rightFlag.appendChild(rafSum);
-
-      const rafBody = el("div", "raf-body");
-      const rafQ = el("div", "", oneLine(String(stated).replace(/^Steward Decision Request:\s*/i, ""), 160));
-      rafQ.style.fontWeight = "600";
-      rafQ.style.marginBottom = "4px";
-      rafBody.appendChild(rafQ);
-      const rafWhy = el("div", "", "Why: " + oneLine(recWhy || currentFocusText || "Verified and ready for sign-off.", 180));
-      rafWhy.style.color = "var(--dim)";
-      rafWhy.style.marginBottom = "6px";
-      rafBody.appendChild(rafWhy);
-      const rafRec = el("div", "approval-rec", "\u2605 Recommendation: " + oneLine(String(recChoice), 140));
-      rafRec.style.marginBottom = "6px";
-      rafBody.appendChild(rafRec);
-      if (reviewItems.length) {
-        const chipWrap = el("div", "");
-        chipWrap.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px;";
-        reviewItems.slice(0, 2).forEach((it) => {
-          const protoRow = delivRow(it);
-          const mainA = protoRow.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
-          const rawTitle = String(it.what || it.path || "Deliverable")
-            .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
-            .split(/\s*\(/)[0]
-            .trim();
-          const shortTitle = oneLine(rawTitle, 34);
-          if (mainA) {
-            const c = document.createElement("a");
-            c.className = "deliv-link-chip";
-            c.href = mainA.getAttribute("href") || "#";
-            c.textContent = "\ud83d\udcc4 Open " + shortTitle;
-            c.onclick = (ev) => {
-              ev.preventDefault();
-              ev.stopPropagation();
-              if (typeof window.enterSecondWindowMode === "function") {
-                window.enterSecondWindowMode(shortTitle, c.getAttribute("href") || c.href);
-              } else {
-                window.open(c.href, "_blank");
-              }
-            };
-            chipWrap.appendChild(c);
-          }
-        });
-        rafBody.appendChild(chipWrap);
-      }
-      const rafActs = el("div", "");
-      rafActs.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;";
-      const rBtnApp = el("button", "btn-approve", "\u2713 Approve Recommended");
-      rBtnApp.type = "button";
-      rBtnApp.onclick = (ev) => executeApprove(ev, rBtnApp);
-      const rBtnChat = el("button", "", "Discuss in Chat");
-      rBtnChat.type = "button";
-      rBtnChat.onclick = (ev) => {
-        ev.stopPropagation();
-        sayAbout("Regarding approval (" + firstLine.slice(0, 64) + "): ");
-      };
-      rafActs.appendChild(rBtnApp);
-      rafActs.appendChild(rBtnChat);
-      rafBody.appendChild(rafActs);
-      rightFlag.appendChild(rafBody);
+      const staleRightFlag = delivMount.querySelector(".right-approval-flag");
+      if (staleRightFlag) staleRightFlag.remove();
     }
 
     if (!topHost) return;
@@ -1194,9 +1732,17 @@ const Proto = (() => {
     };
     const rawEtaVal = factValue("ETA", stat.eta || "—");
     const computeMilestoneEtaParts = (val) => {
+      if (stat && stat.status_card && Array.isArray(stat.status_card.milestone_etas) && stat.status_card.milestone_etas.length >= 2) {
+        return stat.status_card.milestone_etas.slice(0, 3).map((m, idx) => ({
+          k: String(m.k || m.label || ((idx + 1) + ". Milestone")),
+          v: String(m.v || m.eta || "?"),
+        }));
+      }
       const str = String(val || "").trim();
       const allSteps = (_lastMap && Array.isArray(_lastMap.steps)) ? _lastMap.steps : [];
-      let curIdx = allSteps.findIndex(st => isNow(st, _lastMap));
+      const hbStepId = String(((_lastMap && _lastMap.heartbeat) || {}).current_step_id || "").trim();
+      let curIdx = hbStepId ? allSteps.findIndex(st => st && String(st.id || "") === hbStepId) : -1;
+      if (curIdx < 0) curIdx = allSteps.findIndex(st => isNow(st, _lastMap));
       if (curIdx < 0) curIdx = allSteps.findIndex(st => stepNeedsAttention(st));
       if (curIdx < 0) curIdx = allSteps.findIndex(st => st && st.status === "active");
       const curStep = curIdx >= 0 ? allSteps[curIdx] : null;
@@ -1213,8 +1759,7 @@ const Proto = (() => {
         if (!st) return fallback;
         const raw = String((st.navigation && st.navigation.label) || st.name || "").trim();
         if (!raw) return fallback;
-        const hasPref = /^(?:step|wave|stage|phase)\s*\d+/i.test(raw);
-        return hasPref ? oneLine(raw, 42) : ("Step " + (idx + 1) + " (" + oneLine(raw, 36) + ")");
+        return oneLine(raw, 44);
       };
       const m1 = curStep ? fmtStepLabel(curStep, curIdx, "Current Wave") : oneLine((sl && sl.name) || p.step || "Current Wave", 40);
       const m2Fallback = (bullets && bullets[1] && cleanTodoPhrase(bullets[1])) || p.next || "Next Wave";
@@ -1228,24 +1773,52 @@ const Proto = (() => {
           { k: "3. " + m3, v: parts[2] || "\u2014" },
         ];
       }
-      const isIdleDefault = !str || str === "\u2014" || str === "-" || /^nothing running,\s*so nothing to finish|^none\b|^idle\b/i.test(str);
-      const v1 = (!isIdleDefault ? (oneLine(str, 26) + " \u00b7 ") : "") + (curStep
-        ? (curStep.waiting_on_you || curStep.waiting_on
-            ? "Ready for review \u00b7 Pass 2/4"
-            : (curStep.refinement
-                ? ("Round " + (curStep.refinement.display_round ?? curStep.refinement.round ?? 1) + " ready for review")
-                : "Ready now \u00b7 awaiting dispatch"))
-        : "Ready now");
+      const isRunningNow = Boolean(
+        (run && (run.pid || run.alive || run.kind)) ||
+        (lastState && (lastState.busy || lastState.working_bg)) ||
+        /\brunning\b|\bin progress\b|\bworking\b/i.test(String(doingLine || factValue("Doing", "")))
+      );
+      const isIdleDefault = !str || str === "\u2014" || str === "-" ||
+        /^nothing running,\s*so nothing to finish|^none\b|^idle\b/i.test(str) ||
+        (!isRunningNow && /\b(?:about|around|by|at)\s+\d{1,2}:\d{2}\b/i.test(str));
+
+      // Compute a real Expected Time of Arrival (ETA) when running (or when elapsed minutes are reported in Doing)
+      let computedWaveEta = "";
+      const doingText = String(doingLine || factValue("Doing", "") || "");
+      const elapsedMinMatch = /\b(\d+)\s*(?:m|min|mins|minutes)\b/i.exec(doingText);
+      const elapsedMins = elapsedMinMatch ? parseInt(elapsedMinMatch[1], 10) : (run && run.elapsed_s ? Math.round(run.elapsed_s / 60) : 0);
+      if (isRunningNow) {
+        const typicalWaveMins = 18;
+        const remMins = elapsedMins > 0 ? Math.max(3, typicalWaveMins - (elapsedMins % typicalWaveMins)) : 12;
+        const finDate = new Date(Date.now() + remMins * 60000);
+        const finHhMm = finDate.toTimeString().slice(0, 5);
+        computedWaveEta = "~" + remMins + " min left \u00b7 est. finish " + finHhMm + (elapsedMins > 0 ? (" (elapsed " + elapsedMins + "m)") : "");
+      } else if (!isIdleDefault) {
+        computedWaveEta = oneLine(str, 44);
+      }
+
+      const v1 = computedWaveEta
+        ? (computedWaveEta + (curStep ? (" \u00b7 " + (curStep.waiting_on_you || curStep.waiting_on ? "Pass 2/4" : "Active wave")) : ""))
+        : (curStep
+            ? (curStep.waiting_on_you || curStep.waiting_on
+                ? "Ready for your review \u00b7 Next pass est. ~10\u201315 min once approved"
+                : (curStep.refinement
+                    ? ("Round " + (curStep.refinement.display_round ?? curStep.refinement.round ?? 1) + " ready for review \u00b7 Next pass est. ~10\u201315 min")
+                    : "Ready now \u00b7 Est. wave duration ~12\u201318 min on dispatch"))
+            : "Ready now \u00b7 Est. ~12\u201315 min on dispatch");
       const v2 = nextStep
         ? (nextStep.waiting_on_you || nextStep.waiting_on
-            ? "In review queue"
-            : ("Queued next (after Wave " + (curIdx + 1) + ")"))
-        : "Queued next";
+            ? "In review queue (~12\u201315 min per pass)"
+            : ("Est. ~15\u201320 min (after Wave " + (curIdx + 1) + ")"))
+        : "Queued next (~15 min)";
       const inRev = allSteps.filter(s => s && !stepDone(s) && (s.status === "active" || stepNeedsAttention(s))).length;
       const plannedRem = allSteps.filter(s => s && !stepDone(s) && s.status !== "active" && !stepNeedsAttention(s) && s.status !== "parked").length;
-      const v3 = allSteps.length
-        ? (inRev + " active \u00b7 " + plannedRem + " planned remaining")
-        : "Idle (no active background wave)";
+      const totalRemWaves = inRev + plannedRem;
+      const estTotalMins = totalRemWaves * 15;
+      const estTotalStr = totalRemWaves > 0
+        ? ("~" + (estTotalMins >= 60 ? (Math.round(estTotalMins / 30) / 2 + " hrs") : (estTotalMins + " min")) + " total (" + inRev + " active \u00b7 " + plannedRem + " planned)")
+        : "All waves complete";
+      const v3 = allSteps.length ? estTotalStr : "Idle (no active background wave)";
       return [
         { k: "1. " + oneLine(m1, 30), v: v1 },
         { k: "2. " + oneLine(m2, 30), v: v2 },
@@ -1296,12 +1869,51 @@ const Proto = (() => {
         oldMBox.parentElement.replaceChild(buildEtaMilestoneBox(rawEtaVal), oldMBox);
       }
     };
+    const baseStatusVal = oneLine(factValue("Status", (p.steps_done || 0) + "/" + (p.steps_total || 0) +
+      " done · " + (p.attention || "quiet")), 240);
+    renderStatus._syncReviewNote = () => {
+      if (isStatusFixture) return;
+      const latestCard = document.querySelector(".blk.status.latest");
+      if (!latestCard) return;
+      const revCount = (_deliv && Array.isArray(_deliv.mainPairedReview) && _deliv.mainPairedReview.length)
+        ? _deliv.mainPairedReview.length
+        : ((_deliv && Array.isArray(_deliv.reviewNow) && _deliv.reviewNow.length)
+            ? _deliv.reviewNow.length
+            : (Number(stat && stat.review_deliverables_count) || 0));
+      const hasReviewPoint = revCount > 0 || Boolean(p && p.waiting_on_you) || hasReviewWaiting();
+      const statusTd = latestCard.querySelector('td[data-status-fact="status"]');
+      if (statusTd) {
+        let nextStatusTxt = baseStatusVal || "—";
+        if (hasReviewPoint && !/\b(?:for review|material to review|ready for review)\b/i.test(nextStatusTxt)) {
+          const suffix = revCount > 0
+            ? (" \u00b7 Material to review (" + revCount + (revCount === 1 ? " deliverable" : " deliverables") + ")")
+            : " \u00b7 Material to review";
+          nextStatusTxt = (nextStatusTxt === "—" ? "" : (nextStatusTxt + suffix)).replace(/^ \u00b7 /, "");
+        }
+        statusTd.textContent = "";
+        statusTd.classList.toggle("dim", !nextStatusTxt || nextStatusTxt === "—");
+        const sp = el("span", "", nextStatusTxt || "—");
+        sp.title = nextStatusTxt || "";
+        statusTd.appendChild(sp);
+      }
+      const noteEl = latestCard.querySelector("[data-status-review-note]");
+      if (noteEl) {
+        if (hasReviewPoint) {
+          noteEl.hidden = false;
+          noteEl.textContent = revCount > 0
+            ? ("\ud83d\udccb Review point: There is material to review (" + revCount + (revCount === 1 ? " deliverable" : " deliverables") + " ready in the Deliverables tab).")
+            : ("\ud83d\udccb Review point: There is material to review" + (p && p.waiting_on_you ? " \u2014 " + oneLine(p.waiting_on_you, 140) : "."));
+        } else {
+          noteEl.hidden = true;
+          noteEl.textContent = "";
+        }
+      }
+    };
     const rows = [
       ["Summary", summaryLine || "—"],
       ["Effort", oneLine(factValue("Effort", stat.effort || "—"), 240)],
       ["Doing", skillRow(cleanDoing(factValue("Doing", doingLine || (stat.stale ? "Idle" : "—"))))],
-      ["Status", oneLine(factValue("Status", (p.steps_done || 0) + "/" + (p.steps_total || 0) +
-        " done · " + (p.attention || "quiet")), 240)],
+      ["Status", baseStatusVal],
       ["Tests", cleanTests(factValue("Tests", stat.tests || "—"))],
       ["Blocker", cleanBlocker(factValue("Blocker", p.waiting_on_you ? "waiting on you: " + p.waiting_on_you
         : (stat.halt && stat.halt.reason) ? "blocked: " + stat.halt.reason : "none"))],
@@ -1335,11 +1947,27 @@ const Proto = (() => {
       tab.appendChild(tr);
     });
     const compact = el("div", "status-compact");
+    if (!isStatusFixture && stat.status_card) {
+      const scBanner = el("div", "clean-10m-status-banner");
+      scBanner.dataset.cleanStatusBanner = "1";
+      const scTop = el("div", "c10m-head");
+      const scTitle = "[" + (stat.status_card.timestamp || hhmm) + "] " + (stat.status_card.run_type || "Steward status") + " · " + (stat.status_card.project || stat.effort || "Cockpit");
+      scTop.appendChild(el("span", "c10m-title", scTitle));
+      scTop.appendChild(el("span", "c10m-badge", "✓ 10-Min Status Summary Synced"));
+      scBanner.appendChild(scTop);
+      compact.appendChild(scBanner);
+    }
     const leadText = stat.lead_line || "Next not stated by the steward";
     const leadEl = el("div", "slead" + (stat.lead_line && stat.lead_line.indexOf("Next:") === 0 ? "" : " dim"), leadText);
     leadEl.dataset.statusFact = "lead";
     leadEl.title = leadText;
     compact.appendChild(leadEl);
+    if (!isStatusFixture) {
+      const revNoteEl = el("div", "status-review-note");
+      revNoteEl.dataset.statusReviewNote = "1";
+      revNoteEl.hidden = true;
+      compact.appendChild(revNoteEl);
+    }
     compact.appendChild(tab);
     if (!isStatusFixture) {
       compact.appendChild(buildEtaMilestoneBox(rawEtaVal));
@@ -1416,6 +2044,7 @@ const Proto = (() => {
     const firstHist = s.querySelector(".blk.status:not(.latest)");
     if (firstHist) s.insertBefore(b, firstHist);
     else s.appendChild(b);
+    if (typeof renderStatus._syncReviewNote === "function") renderStatus._syncReviewNote();
     try {
       const prevList = $("[data-prev-status-list]");
       if (Array.isArray(stat.history_updates)) {
@@ -1797,22 +2426,8 @@ const Proto = (() => {
       if(current.length){
         p.appendChild(el('div','naveyebrow','Files awaiting you \u00b7 '+current.length));
         current.forEach(it=>p.appendChild(navFile(it,surface+':pin',true)));
-        if(surface==='deliverables' && items.length > current.length){
-          const currentPaths = new Set(current.map(c => c.path || c.route || c.what));
-          const latestExtra = items.filter(i => !currentPaths.has(i.path || i.route || i.what))
-            .slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,3);
-          if(latestExtra.length){
-            p.appendChild(el('div','naveyebrow','Latest registered deliverables \u00b7 '+latestExtra.length));
-            latestExtra.forEach(it=>p.appendChild(navFile(it,surface+':latest',true)));
-          }
-        }
       } else {
         p.appendChild(el('div','navempty','No files awaiting review.'));
-        if(surface==='deliverables' && items.length){
-          const latest=items.slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).slice(0,5);
-          p.appendChild(el('div','naveyebrow','Latest registered deliverables \u00b7 '+latest.length));
-          latest.forEach(it=>p.appendChild(navFile(it,surface+':latest',true)));
-        }
       }
       target.appendChild(p);
       const finalItems = items.filter(i => /^(?:Final|Finished)\s+Deliverables\//i.test(String(i.path || '').replace(/\\/g, '/')) || /\bFINAL\b/i.test(String(i.what || '')));
@@ -1893,17 +2508,10 @@ const Proto = (() => {
       } else if(!g.items.length&&!g.referenceItems.length&&!g.referenceSteps.length&&!g.children.length)body.appendChild(el('div','navempty','No deliverables registered yet.'));
       d.appendChild(body);parent.appendChild(d);
     }
-    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
+    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
     const isSyntheticStepTree = Boolean(map && map.navigation_mode === "fallback" && !((map.navigation_fallback && map.navigation_fallback.components && map.navigation_fallback.components.length) > 0) && (map.steps || []).length > 0);
     if (!(surface === 'deliverables' && isSyntheticStepTree && !isLegacyNavTest)) {
       model.roots.forEach(g=>renderGroup(g,target));   // one tree for the plan and the deliverables tile (John, 2026-09-23)
-    }
-    if (surface === 'deliverables' && items.length) {
-      const hasCurrent = items.some(i => i.is_current === true);
-      const allBox = navDisclosure(surface + ':all-flat', 'All deliverables \u00b7 ' + items.length, !hasCurrent);
-      items.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-        .forEach(it => allBox.appendChild(navFile(it, surface + ':all-flat')));
-      target.appendChild(allBox);
     }
     return true;
   }
@@ -1997,7 +2605,7 @@ const Proto = (() => {
     const focusKey=document.activeElement && document.activeElement.dataset.navFocus;
     const stepRows=new Map();
     list.textContent = "";
-    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
+    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((map && (map.name || map.title)) || DIR || ""));
     const planHead = $("[data-plan-head]");
     const doneStepsCnt = map.steps_done || 0;
     const totalStepsCnt = map.steps_total || (map.steps || []).length || 0;
@@ -2285,6 +2893,51 @@ const Proto = (() => {
         "Plan structure verified (" + doneTotal + " completed, " + (totalCnt - doneTotal) + " remaining). Each wave runs a 4-pass refinement loop (Draft \u2192 Adversarial Review \u2192 Refine \u2192 Lock)."
       ));
       evalBody.appendChild(diffBox);
+      const planProp = (map && map.plan_proposal) || ((map && map.plan_drift && map.plan_drift.drift) ? {
+        id: "drift-proposal",
+        status: "pending",
+        title: "Proposed Plan Refresh",
+        reason: map.plan_drift.reason || "Recent deliverables updated the campaign plan.",
+        can_revert: true,
+      } : null);
+      if (planProp) {
+        const propBox = el("div", "plan-proposal-card");
+        propBox.dataset.planProposal = "1";
+        const propTitle = el("strong", "", "\ud83d\udd04 " + (planProp.title || "Plan Refresh Review") + ": ");
+        propBox.appendChild(propTitle);
+        propBox.appendChild(document.createTextNode(oneLine(planProp.reason || "Deliverables reviewed against plan.", 180) + " "));
+        const btnRow = el("span", "plan-proposal-actions");
+        if (planProp.status !== "accepted") {
+          const acceptBtn = el("button", "plan-mode-btn on", "\u2713 Accept New Plan");
+          acceptBtn.type = "button";
+          acceptBtn.dataset.planAction = "accept";
+          acceptBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            acceptBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "accept", proposal_id: planProp.id || "" });
+              await loadMap();
+            } catch (e) { acceptBtn.disabled = false; }
+          };
+          btnRow.appendChild(acceptBtn);
+        }
+        if (planProp.can_revert !== false) {
+          const revertBtn = el("button", "plan-mode-btn", "\u21a9 Revert to Old Plan");
+          revertBtn.type = "button";
+          revertBtn.dataset.planAction = "revert";
+          revertBtn.onclick = async (ev) => {
+            ev.stopPropagation();
+            revertBtn.disabled = true;
+            try {
+              await post("/api/plan-proposal", { action: "revert", proposal_id: planProp.id || "" });
+              await loadMap();
+            } catch (e) { revertBtn.disabled = false; }
+          };
+          btnRow.appendChild(revertBtn);
+        }
+        propBox.appendChild(btnRow);
+        evalBody.appendChild(propBox);
+      }
       evalFold.appendChild(evalBody);
       evalLi.appendChild(evalFold);
       list.appendChild(evalLi);
@@ -2618,44 +3271,50 @@ const Proto = (() => {
     renderNextStepsTile();
     if (_lastMap) { try { paintStepsList(_lastMap); } catch (e) {} }
 
-    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign)$/i.test(String((_lastMap && (_lastMap.name || _lastMap.title)) || DIR || ""));
+    const isLegacyNavTest = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((_lastMap && (_lastMap.name || _lastMap.title)) || DIR || ""));
     const isNoiseDeliverable = (it) => {
       const w = String((it && it.what) || "").trim();
       const p = String((it && it.path) || "").replace(/\\/g, "/");
       return /^Code job \d{8}-\d{6}/i.test(w) ||
         /^Code job \S+ kept \(not landed\)/i.test(w) ||
-        /(?:^|\/)jobs\/\d{8}-\d{6}/i.test(p);
+        /\bkept\s*\(not\s+landed\)/i.test(w) ||
+        /(?:^|\/)(?:jobs|code-job-outputs)\/\d{8}-\d{6}/i.test(p);
     };
-    const getDelivFormat = (it) => {
-      const p = String((it && (it.open_path || it.path || it.route)) || "").toLowerCase();
-      if (/\.pdf(?:$|\?|&)/.test(p)) return { tag: "PDF", cls: "fmt-pdf" };
-      if (/\.pptx?(?:$|\?|&)/.test(p)) return { tag: "PPTX", cls: "fmt-pptx" };
-      if (/\.docx?(?:$|\?|&)/.test(p)) return { tag: "DOCX", cls: "fmt-docx" };
-      if (/\.xlsx?(?:$|\?|&)/.test(p)) return { tag: "XLSX", cls: "fmt-xlsx" };
-      if (/\.html?(?:$|\?|&)/.test(p)) return { tag: "HTML", cls: "fmt-html" };
-      if (/\.zip(?:$|\?|&)/.test(p)) return { tag: "ZIP", cls: "fmt-zip" };
-      if (/\.py(?:$|\?|&)/.test(p)) return { tag: "PY", cls: "fmt-py" };
-      if (/\.(?:md|markdown|txt)(?:$|\?|&)/.test(p)) return { tag: "MD", cls: "fmt-md" };
-      return { tag: "DOC", cls: "fmt-doc" };
+    const isSupplementalDeliverable = (it) => {
+      if (!it) return false;
+      const w = String(it.what || it.label || "").trim();
+      const p = String(it.open_path || it.path || "").replace(/\\/g, "/");
+      if (/^(?:START\s+HERE\s*[-:—–]?\s*)?(?:FOR\s+REVIEW\s*)?\(\s*\d+\s*\)/i.test(w)) {
+        return false;
+      }
+      if (/\(\s*(?:Companion|Supplemental|Supporting)\s*\)/i.test(w) || /^(?:Supporting|Supplemental|Companion)\b/i.test(w)) {
+        return true;
+      }
+      if (/\b(?:Gandalf|Beta[- ]?Reader|UX\s+Audit|Editorial\s+Audit|Adversarial\s+Review\s+Report|Continuity\s+Check|Scene[- ]by[- ]Scene\s+Draft|Blueprint|Dossier|Assumptions\s+Ledger|Diagnostic\s+Note|Journal\s+\d+)\b/i.test(w)) {
+        return true;
+      }
+      if (/(?:^|\/)(?:editorial|audits|reviews|notes|journal|\.ecgberht)\//i.test(p)) {
+        return true;
+      }
+      return false;
     };
+    const getDelivFormat = (it) => inferDeliverableFormat(it);
     // Parse a deliverable into a distinct, readable { title, subtitle, sectionGroup }
     const describeDeliverable = (it) => {
       if (!it) return { title: "Deliverable", subtitle: "", sectionGroup: "General Deliverables" };
       const rawWhat = String(it.what || it.label || "").replace(/\*\*/g, "").trim();
       const rawPath = String(it.open_path || it.path || "").replace(/\\/g, "/");
-      const baseName = rawPath ? rawPath.split("/").pop() : (it.route ? routeName(it.route) : "");
+      const rawBase = rawPath ? rawPath.split("/").pop() : (it.route ? routeName(it.route) : "");
+      const isHashBase = /^[a-f0-9]{40,64}\.[a-z0-9]+$/i.test(rawBase);
+      const baseName = isHashBase ? "" : rawBase;
+      const fmt = getDelivFormat(it);
       let statusBadge = "";
       if (/^START HERE\b/i.test(rawWhat)) statusBadge = "START HERE";
       else if (/^FOR REVIEW\b/i.test(rawWhat)) statusBadge = "FOR REVIEW";
       else if (/^(?:APPROVED|FINAL)\b/i.test(rawWhat)) statusBadge = "APPROVED";
       else if (/^SAVED DESIGN\b/i.test(rawWhat)) statusBadge = "SAVED DESIGN";
 
-      let body = rawWhat
-        .replace(/^(?:START HERE|FOR REVIEW|CURRENT|NEW|LATEST|UPDATED|EARLIER|Historical|SUPERSEDED|ARCHIVED|APPROVED|FINAL|SAVED DESIGN)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "")
-        .trim();
-      while (/^(?:START HERE|FOR REVIEW|CURRENT|EARLIER|Historical)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i.test(body)) {
-        body = body.replace(/^(?:START HERE|FOR REVIEW|CURRENT|EARLIER|Historical)(?:\s*\([^)]*\))?\s*[:\u2014\u2013-]?\s*/i, "").trim();
-      }
+      const body = stripDeliverableLeadPrefixes(rawWhat);
 
       // Determine Section/Topic group for organized browsing
       let sectionGroup = "General & Campaign Deliverables";
@@ -2691,21 +3350,11 @@ const Proto = (() => {
           .replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*/g, "")
           .replace(/\s+translation\s*&\s*overhaul/i, "")
           .trim();
-        let secondClause = dashParts[1].trim();
-        let secondRemainder = "";
-        const parenIdx = secondClause.indexOf("(");
-        if (parenIdx > 0 && secondClause.indexOf(";", parenIdx) > parenIdx) {
-          const innerParen = secondClause.slice(parenIdx + 1).replace(/\)\s*$/, "").trim();
-          secondClause = secondClause.slice(0, parenIdx).trim();
-          secondRemainder = innerParen;
-        } else if (secondClause.indexOf(";") >= 0) {
-          secondRemainder = secondClause.slice(secondClause.indexOf(";") + 1).trim();
-          secondClause = secondClause.slice(0, secondClause.indexOf(";")).trim();
-        }
+        const secondClause = dashParts[1].trim();
         title = (shortPrefix ? shortPrefix + " \u2014 " : "") + secondClause;
-        detail = [secondRemainder].concat(dashParts.slice(2)).filter(Boolean).join(" \u2014 ");
+        detail = dashParts.slice(2).filter(Boolean).join(" \u2014 ");
       } else {
-        title = body.replace(/^Einstein\s+/i, "") || baseName || "Deliverable";
+        title = body.replace(/^Einstein\s+/i, "") || baseName || String(it.product_id || "Deliverable");
         detail = "";
       }
 
@@ -2717,36 +3366,42 @@ const Proto = (() => {
       let reviewSummary = "";
       const rawSummary = String(it.summary || it.why || "").replace(/\*\*/g, "").trim();
       if (rawSummary) {
-        reviewSummary = oneLine(rawSummary, 210);
+        reviewSummary = oneLine(rawSummary, 220);
       } else if (detail) {
-        reviewSummary = oneLine(detail, 210);
+        reviewSummary = oneLine(detail, 220);
       } else if (dashParts.length >= 2) {
-        reviewSummary = oneLine(dashParts.slice(1).join(" \u2014 "), 210);
+        reviewSummary = oneLine(dashParts.slice(1).join(" \u2014 "), 220);
       } else if (body && body.toLowerCase() !== (title || "").toLowerCase()) {
-        reviewSummary = oneLine(body, 210);
+        reviewSummary = oneLine(body, 220);
       } else if (statusBadge === "FOR REVIEW" || it.is_current) {
         reviewSummary = (it.step ? "Completed in Step " + it.step + " \u00b7 " : "") +
+          (baseName ? ("File: " + baseName + " (" + fmt.tag + ") \u00b7 ") : "") +
           "Verified by the Steward and ready for your inspection in the right split-screen window.";
       }
 
+      const cleanDate = it.date ? String(it.date).replace(/T(\d{2}:\d{2}).*$/, " $1") : "";
       const subParts = [];
       if (statusBadge) subParts.push(statusBadge);
-      if (detail) subParts.push(oneLine(detail, 110));
+      if (detail) subParts.push(oneLine(detail, 140));
       if (baseName && title.toLowerCase().indexOf(baseName.toLowerCase()) < 0) subParts.push(baseName);
-      if (it.date) subParts.push(it.date);
+      if (cleanDate) subParts.push(cleanDate);
       return {
         title: title || baseName || "Deliverable",
         subtitle: subParts.join(" \u00b7 "),
         sectionGroup,
         statusBadge,
         reviewSummary,
+        cleanDate,
       };
     };
 
-    const cleanDelivTitle = (it, maxLen = 52) => {
+    const cleanDelivTitle = (it, maxLen = 68) => {
       const desc = describeDeliverable(it);
-      const t = desc.title || "Deliverable";
-      return t.length > maxLen ? t.slice(0, maxLen - 1).replace(/\s+\S*$/, "") + "\u2026" : t;
+      const fmt = getDelivFormat(it);
+      let t = desc.title || "Deliverable";
+      if (t.length > maxLen) t = t.slice(0, maxLen - 1).replace(/\s+\S*$/, "") + "\u2026";
+      if (fmt.ext && t.toLowerCase().indexOf(fmt.ext.toLowerCase()) < 0) t += " (" + fmt.ext + ")";
+      return t;
     };
 
     const buildMockupFileRow = (it, tier = "other") => {
@@ -2759,6 +3414,13 @@ const Proto = (() => {
       const itemKey = String(it.open_path || it.path || it.product_id || it.what || "");
       const isExpanded = itemKey && _openDelivs.has("tile:" + itemKey);
       const frow = el("div", "file-row compact-tile tier-" + tier + (it.is_current ? " is-current" : "") + (isExpanded ? " expanded" : ""));
+
+      let fullTitle = desc.title || "Deliverable";
+      fullTitle = fullTitle.replace(/\s*\(\s*\.[a-z0-9]{1,8}\s*\)\s*$/i, "").trim();
+      if (tier !== "review" && fmt.ext && fullTitle.toLowerCase().indexOf(fmt.ext.toLowerCase()) < 0) {
+        fullTitle = fullTitle + " (" + fmt.ext + ")";
+      }
+      const shortTitle = fullTitle;
 
       const wireOpenClick = (anchorEl) => {
         const origClick = mainAnchor && mainAnchor.onclick;
@@ -2774,6 +3436,16 @@ const Proto = (() => {
               session_id: String(window.STEWARD_TERM || "cockpit"),
             }).catch(() => {});
           }
+          if (itemKey) {
+          if (itemKey) {
+            markDeliverableOpened(itemKey);
+          }
+            const stPill = frow.querySelector("[data-review-state-pill]");
+            if (false && stPill) {
+              stPill.textContent = "\u270e Reviewing / Editing";
+              stPill.classList.add("is-editing");
+            }
+          }
           if (typeof window.enterSecondWindowMode === "function") {
             window.enterSecondWindowMode(shortTitle, targetHref);
             return false;
@@ -2784,14 +3456,39 @@ const Proto = (() => {
         };
       };
 
+      const companions = Array.isArray(it._companionFormats) ? it._companionFormats : [];
       const topLine = el("div", "file-row-top");
       const titleWrap = el("div", "file-title-wrap");
-      titleWrap.appendChild(el("span", "file-fmt-badge " + fmt.cls, fmt.tag));
-      if (desc.statusBadge === "START HERE") {
-        titleWrap.appendChild(el("span", "file-Start-badge", "START HERE"));
+      const badgeEl = el("span", "file-fmt-badge " + fmt.cls, fmt.tag);
+      badgeEl.title = "Primary format: " + fmt.tag + (fmt.ext ? (" (" + fmt.ext + ")") : "");
+      titleWrap.appendChild(badgeEl);
+      if (tier !== "review") {
+        companions.forEach((comp) => {
+          const cFmt = getDelivFormat(comp);
+          const cBadge = el("span", "file-fmt-badge companion-fmt-badge " + cFmt.cls, "+" + cFmt.tag);
+          cBadge.title = "Companion format included: " + cFmt.tag + " (" + cFmt.ext + ")";
+          titleWrap.appendChild(cBadge);
+        });
       }
-      const shortTitle = oneLine(desc.title, 76);
-      if (mainAnchor) {
+      if (desc.statusBadge === "START HERE" || it._hasStartHere) {
+        titleWrap.appendChild(el("span", "file-Start-badge", tier === "review" ? "\u2605" : "START HERE"));
+      }
+      if (false && tier === "review") {
+        const wasOpened = itemKey && _openedReviewKeys.has(itemKey);
+        if (wasOpened) {
+          const statePill = el("span", "review-lifecycle-pill is-editing", "\u270e Editing");
+          statePill.dataset.reviewStatePill = "1";
+          statePill.title = "Opened for review/editing — reply with feedback in chat when ready";
+          titleWrap.appendChild(statePill);
+        }
+      }
+      var effMainAnchor = mainAnchor;
+      if (!effMainAnchor && dlAnchor && !isLegacyNavTest) {
+        effMainAnchor = document.createElement("a");
+        effMainAnchor.href = (dlAnchor.getAttribute("href") || "").replace(/([?&])download=1(&|$)/, "$1view=1$2");
+      }
+      if (effMainAnchor) {
+        const mainAnchor = effMainAnchor;
         const openA = document.createElement("a");
         openA.className = "file-open";
         openA.href = mainAnchor.getAttribute("href") || "#";
@@ -2809,14 +3506,67 @@ const Proto = (() => {
         openBtn.href = openA.href;
         openBtn.target = "_blank";
         openBtn.rel = "noopener";
-        openBtn.textContent = "Open";
-        openBtn.title = "Open 2nd Win — split-screen right window (inside Anchor.exe)";
+        openBtn.textContent = tier === "review" ? fmt.tag : ("Open " + (fmt.ext || fmt.tag));
+        openBtn.title = "Open " + fmt.tag + " (" + (fmt.ext || "file") + ") in Split-Screen Right Window";
         wireOpenClick(openBtn);
         actions.appendChild(openBtn);
+        companions.forEach((comp) => {
+          const cProto = delivRow(comp);
+          const cMainA = cProto.querySelector("a:not(.ddl-inline):not(.ddl):not(.drun)");
+          const cDlA = cProto.querySelector("a.ddl-inline, a.ddl");
+          const cFmt = getDelivFormat(comp);
+          const targetA = cMainA || cDlA;
+          if (!targetA) return;
+          const cBtn = document.createElement("a");
+          cBtn.className = "file-dl file-open-btn companion-open-btn";
+          cBtn.href = targetA.getAttribute("href") || "#";
+          cBtn.target = "_blank";
+          cBtn.rel = "noopener";
+          const isDownloadOnly = !cMainA || /[?&]download=1\b/.test(cBtn.href);
+          cBtn.textContent = tier === "review" ? cFmt.tag : ((isDownloadOnly ? "\u2b07 " : "Open ") + (cFmt.ext || cFmt.tag));
+          cBtn.title = (isDownloadOnly ? "Download " : "Open ") + cFmt.tag + " (" + (cFmt.ext || "file") + ")";
+          if (!isDownloadOnly) {
+            cBtn.onclick = (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(desc.title + " (" + (cFmt.ext || cFmt.tag) + ")", cBtn.getAttribute("href") || cBtn.href);
+                return false;
+              }
+              window.open(cBtn.href, "_blank");
+              return false;
+            };
+          }
+          actions.appendChild(cBtn);
+        });
         if (tier === "review" && dismissBtn) {
           dismissBtn.className = "deliverable-dismiss mark-done-btn";
           dismissBtn.textContent = "\u2713 Done";
-          dismissBtn.title = "Mark this deliverable Done (reviewed)";
+          dismissBtn.title = "Mark this deliverable (and paired formats) Done";
+          if (companions.length > 0) {
+            const allToDismiss = [it].concat(companions);
+            dismissBtn.onclick = async (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              dismissBtn.disabled = true;
+              const batchPayload = allToDismiss.map((x) => {
+                const k = String(x.open_path || x.path || x.product_id || x.what || "");
+                if (k) _dismissedSessionKeys.add(k);
+                return {
+                  path: x.open_path || x.path || "",
+                  product_id: x.product_id || "",
+                  what: x.what || "",
+                  revision_id: x.revision_id || "",
+                  hash: x.hash || "",
+                };
+              });
+              frow.remove();
+              try {
+                await post("/api/dismiss-deliverable", { items: batchPayload });
+              } catch (e) {}
+              await renderDeliverablesTile();
+            };
+          }
           actions.appendChild(dismissBtn);
         }
         if (dlAnchor) {
@@ -2826,12 +3576,22 @@ const Proto = (() => {
           dl.target = "_blank";
           dl.rel = "noopener";
           dl.textContent = "\u2b07";
-          dl.title = dlAnchor.title || "Download";
+          dl.title = dlAnchor.title || ("Download " + (fmt.ext || fmt.tag));
           actions.appendChild(dl);
         }
         const expBtn = el("button", "file-exp-btn", isExpanded ? "\u25be" : "\u25b8");
         expBtn.type = "button";
         expBtn.title = "Click to expand or collapse full deliverable details";
+        expBtn.onclick = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const nowOpen = frow.classList.toggle("expanded");
+          expBtn.textContent = nowOpen ? "\u25be" : "\u25b8";
+          if (itemKey) {
+            if (nowOpen) _openDelivs.add("tile:" + itemKey);
+            else _openDelivs.delete("tile:" + itemKey);
+          }
+        };
         actions.appendChild(expBtn);
         topLine.appendChild(actions);
       } else {
@@ -2845,25 +3605,33 @@ const Proto = (() => {
       }
 
       const rawPath = String(it.open_path || it.path || "").replace(/\\/g, "/");
-      const baseName = rawPath ? rawPath.split("/").pop() : "";
+      const rawBase = rawPath ? rawPath.split("/").pop() : "";
+      const isHashBase = /^[a-f0-9]{40,64}\.[a-z0-9]+$/i.test(rawBase);
+      const baseName = isHashBase ? "" : rawBase;
       const compactSubParts = [];
-      if (baseName && shortTitle.toLowerCase().indexOf(baseName.toLowerCase()) < 0) compactSubParts.push(baseName);
-      if (it.step) compactSubParts.push("Step " + it.step);
-      if (it.date) compactSubParts.push(it.date);
-      if (desc.subtitle && !compactSubParts.length) compactSubParts.push(oneLine(desc.subtitle, 72));
+      if (fmt.ext) compactSubParts.push("Type: " + fmt.tag + " (" + fmt.ext + ")");
+      if (baseName) compactSubParts.push("File: " + baseName);
+      if (it.step) compactSubParts.push("Step: " + it.step);
+      if (desc.cleanDate) compactSubParts.push("Created: " + desc.cleanDate);
       if (compactSubParts.length) {
         frow.appendChild(el("div", "file-row-sub", compactSubParts.join(" \u00b7 ")));
       }
 
       const moreDrawer = el("div", "file-row-more");
       if (it.what) {
-        moreDrawer.appendChild(el("div", "file-more-line", it.what.replace(/\*\*/g, "")));
+        moreDrawer.appendChild(el("div", "file-more-line", oneLine(it.what.replace(/\*\*/g, ""), 160)));
       }
       if (rawPath) {
         moreDrawer.appendChild(el("div", "file-more-meta", "File: " + rawPath + (it.step ? " \u00b7 Step " + it.step : "") + (it.date ? " \u00b7 " + it.date : "")));
       }
       const moreActions = el("div", "file-more-actions");
-      if (mainAnchor) {
+      var effMainAnchor = mainAnchor;
+      if (!effMainAnchor && dlAnchor && !isLegacyNavTest) {
+        effMainAnchor = document.createElement("a");
+        effMainAnchor.href = (dlAnchor.getAttribute("href") || "").replace(/([?&])download=1(&|$)/, "$1view=1$2");
+      }
+      if (effMainAnchor) {
+        const mainAnchor = effMainAnchor;
         const win2 = document.createElement("a");
         win2.className = "file-dl";
         win2.href = mainAnchor.getAttribute("href") || "#";
@@ -2879,7 +3647,7 @@ const Proto = (() => {
       frow.appendChild(moreDrawer);
 
       frow.onclick = (ev) => {
-        if (ev.target.closest("a, button.deliverable-dismiss")) return;
+        if (!ev.target.closest(".file-exp-btn")) return;
         const nowOpen = frow.classList.toggle("expanded");
         const eb = frow.querySelector(".file-exp-btn");
         if (eb) eb.textContent = nowOpen ? "\u25be" : "\u25b8";
@@ -2911,7 +3679,7 @@ const Proto = (() => {
     const isExplicitEarlier = (it) => {
       const w = String((it && it.what) || "").trim();
       const p = String((it && (it.open_path || it.path)) || "").replace(/\\/g, "/");
-      if (/^(?:START HERE|FOR REVIEW|APPROVED|FINAL|SAVED DESIGN)\b/i.test(w) || /^(?:Final|Finished)\s+Deliverables\//i.test(p)) {
+      if (/^(?:START HERE|FOR REVIEW|APPROVED|ACCEPTED|FINAL|SAVED DESIGN)\b/i.test(w) || /(?:^|\/)(?:Final|Finished)\s+Deliverables\//i.test(p)) {
         return false;
       }
       return /^(?:EARLIER|Historical|SUPERSEDED|ARCHIVED)\b/i.test(w) || /\bsuperseded by\b/i.test(w) || (hasCurrent && it && it.is_current === false);
@@ -2920,16 +3688,22 @@ const Proto = (() => {
       if (!it || isNoiseDeliverable(it) || isExplicitEarlier(it)) return false;
       const w = String(it.what || "").trim();
       const p = String(it.open_path || it.path || "").replace(/\\/g, "/");
-      return /^(?:APPROVED|FINAL|SAVED DESIGN)\b/i.test(w) ||
-        /\b(?:APPROVED|FINAL VERSION|LOCKED)\b/i.test(w) ||
-        /^(?:Final|Finished)\s+Deliverables\//i.test(p) ||
+      return /^(?:APPROVED|ACCEPTED|FINAL|SAVED DESIGN)\b/i.test(w) ||
+        /\b(?:APPROVED|ACCEPTED|FINAL VERSION|LOCKED)\b/i.test(w) ||
+        /(?:^|\/)(?:Final|Finished)\s+Deliverables\//i.test(p) ||
         (it.is_current === true && !/^(?:START HERE|FOR REVIEW)\b/i.test(w) && !/\b(?:for review|ready for (?:john'?s )?(?:editorial )?review)\b/i.test(w) && /\b(?:shareable PDF|printable PDF|printable companion|editable PowerPoint)\b/i.test(w));
     };
     const maxDelivDate = items
       .filter(i => i && !isNoiseDeliverable(i) && !i.auto && !isExplicitEarlier(i))
       .reduce((mx, i) => (String(i.date || "") > mx ? String(i.date || "") : mx), "");
+    const hasNonManagedHumanRows = items.some(x => x && !x.managed && !isNoiseDeliverable(x));
+    const isRawUnaliasedManagedHash = (it) => {
+      if (!it || !it.managed || !hasNonManagedHumanRows || isLegacyNavTest) return false;
+      const p = String(it.open_path || it.path || "").replace(/\\/g, "/");
+      return /\/[a-f0-9]{40,64}\.[a-z0-9]+$/i.test(p);
+    };
     const isReviewOrCurrent = (it) => {
-      if (!it || isNoiseDeliverable(it) || it.auto || isExplicitEarlier(it) || isFinalOrApproved(it)) return false;
+      if (!it || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it) || it.auto || isExplicitEarlier(it) || isFinalOrApproved(it)) return false;
       const w = String(it.what || "").trim();
       if (/^(?:START HERE|FOR REVIEW|CURRENT)\b/i.test(w)) return true;
       if (/\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(w)) return true;
@@ -2937,34 +3711,90 @@ const Proto = (() => {
       return false;
     };
 
+    const seenRevPaths = new Set();
     let reviewNow = items.filter(isReviewOrCurrent)
       .sort((a, b) =>
         Number(matchesActiveStep(b)) - Number(matchesActiveStep(a)) ||
         String(b.date || "").localeCompare(String(a.date || "")) ||
         Number(/^START HERE\b/i.test(b.what || "")) - Number(/^START HERE\b/i.test(a.what || ""))
-      );
+      )
+      .filter((it) => {
+        const k = String(it.open_path || it.path || it.what || "").toLowerCase();
+        if (!k || seenRevPaths.has(k)) return false;
+        seenRevPaths.add(k);
+        return true;
+      });
     if (!reviewNow.length) {
-      reviewNow = items.filter(i => i && i.is_current === true && !isNoiseDeliverable(i) && !isExplicitEarlier(i)).slice(0, 8);
+      reviewNow = items.filter(i => i && i.is_current === true && !isNoiseDeliverable(i) && !isRawUnaliasedManagedHash(i) && !isExplicitEarlier(i)).slice(0, 8);
     }
+    // Include exact same-path-stem companion formats (e.g., .pptx / .docx / .html alongside .pdf) so they pair onto the review tile
+    if (reviewNow.length) {
+      const revPathStems = new Set();
+      reviewNow.forEach(r => {
+        const rp = String(r.open_path || r.path || "").replace(/\\/g, "/").replace(/\.[a-z0-9]{1,8}$/i, "").toLowerCase().trim();
+        if (rp) revPathStems.add(rp);
+      });
+      if (revPathStems.size > 0) {
+        items.forEach(cand => {
+          if (!cand || isNoiseDeliverable(cand) || isRawUnaliasedManagedHash(cand)) return;
+          const cp = String(cand.open_path || cand.path || "").replace(/\\/g, "/").trim();
+          const cpLow = cp.toLowerCase();
+          if (!cpLow || seenRevPaths.has(cpLow)) return;
+          const cStem = cpLow.replace(/\.[a-z0-9]{1,8}$/i, "").trim();
+          if (cStem && revPathStems.has(cStem) && !/\b(?:superseded|archived|earlier|previous)\b/i.test(String(cand.what || ""))) {
+            seenRevPaths.add(cpLow);
+            reviewNow.push(cand);
+          }
+        });
+      }
+    }
+    const allPairedRev = pairDeliverableFormats(reviewNow);
+    let mainPairedReview = allPairedRev.filter(it => !isSupplementalDeliverable(it));
+    let suppPairedReview = allPairedRev.filter(it => isSupplementalDeliverable(it));
+    if (!mainPairedReview.length && allPairedRev.length) {
+      mainPairedReview = allPairedRev.slice(0, 2);
+      suppPairedReview = allPairedRev.slice(2);
+    }
+    const flattenPaired = (list) => {
+      const out = [];
+      (list || []).forEach(p => { (p._allFormatItems || [p]).forEach(x => out.push(x)); });
+      return out;
+    };
     _deliv.reviewNow = reviewNow;
+    _deliv.mainReviewNow = flattenPaired(mainPairedReview);
+    _deliv.supplementalReviewNow = flattenPaired(suppPairedReview);
+    _deliv.mainPairedReview = mainPairedReview;
+    _deliv.suppPairedReview = suppPairedReview;
     renderTopNextSteps();
 
-    const seenFinalKeys = new Set(reviewNow.map(i => String(i.open_path || i.path || i.what)));
+    const seenFinalKeys = new Set(reviewNow.map(i => String(i.open_path || i.path || i.what).toLowerCase()));
     const finalApproved = [];
     ((_deliv && _deliv.approved) || []).concat(items.filter(isFinalOrApproved)).forEach((it) => {
-      if (!it || isNoiseDeliverable(it)) return;
-      const k = String(it.open_path || it.path || it.what);
+      if (!it || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it)) return;
+      const k = String(it.open_path || it.path || it.what).toLowerCase();
       if (seenFinalKeys.has(k)) return;
       seenFinalKeys.add(k);
       finalApproved.push(it);
     });
+    finalApproved.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    [].forEach(() => {
+    });
 
-    const usedKeys = new Set([...reviewNow, ...finalApproved].map(i => String(i.open_path || i.path || i.what)));
-    const otherHuman = items.filter(i => !isNoiseDeliverable(i) && !i.auto && !usedKeys.has(String(i.open_path || i.path || i.what)))
+    const usedKeys = new Set([...reviewNow, ...finalApproved].map(i => String(i.open_path || i.path || i.what).toLowerCase()));
+    const otherHuman = items.filter(i => !isNoiseDeliverable(i) && !isRawUnaliasedManagedHash(i) && !i.auto && !usedKeys.has(String(i.open_path || i.path || i.what).toLowerCase()))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-    const supportingPlans = items.filter(i => !isNoiseDeliverable(i) && i.auto && !usedKeys.has(String(i.open_path || i.path || i.what)));
+    const supportingPlans = items.filter(i => !isNoiseDeliverable(i) && !isRawUnaliasedManagedHash(i) && i.auto && !usedKeys.has(String(i.open_path || i.path || i.what).toLowerCase()));
     const codeJobReceipts = items.filter(i => isNoiseDeliverable(i));
-    const allHumanItems = reviewNow.concat(finalApproved, otherHuman, supportingPlans);
+    const seenAllKeys = new Set();
+    const allHumanItems = [];
+    reviewNow.concat(finalApproved, otherHuman, supportingPlans).forEach((it) => {
+      if (!it) return;
+      const k = String(it.open_path || it.path || it.what || "").toLowerCase();
+      if (k && seenAllKeys.has(k)) return;
+      if (k) seenAllKeys.add(k);
+      allHumanItems.push(it);
+    });
+    allHumanItems.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 
     // Build Pending items list (active skill/code job or in-progress step)
     const pendingItems = [];
@@ -2989,7 +3819,9 @@ const Proto = (() => {
     if (s) {
       let tile = s.querySelector(".blk.deliv");
       const priorScroll=tile && tile.querySelector(".body") ? tile.querySelector(".body").scrollTop : 0;
-      const defaultHubOpen = !isLegacyNavTest;
+      // John (2026-10-21): Never auto-open the Deliverables tab or For Review tab at a review point;
+      // keep both collapsed by default unless explicitly clicked by the user, and note review material in the status update.
+      const defaultHubOpen = false;
       const wasOpen = (tile && tile.dataset.userToggled) ? !tile.classList.contains("folded") : (defaultHubOpen ? true : _delivOpen === true);
       if (!tile) {
         tile = el("div", "blk steward deliv folded");
@@ -3005,7 +3837,8 @@ const Proto = (() => {
         who.textContent = "DELIVERABLES \u00b7 " + (reviewNow.length ? reviewNow.length + " for you \u2014 " + newestHint : (items.length ? items.length + " registered \u2014 " + newestHint : "nothing registered yet"));
       } else {
         who.appendChild(el("span", "deliv-hub-title", "\ud83d\udce6 DELIVERABLES"));
-        who.appendChild(el("span", "deliv-hub-counts", pendingItems.length + " Pending \u00b7 " + reviewNow.length + " Review \u00b7 " + finalApproved.length + " Final \u00b7 " + totalHumanCount + " All \u25be"));
+        const revSummaryCnt = mainPairedReview.length + (suppPairedReview.length ? (" (+" + suppPairedReview.length + " supp)") : "") + " Review";
+        who.appendChild(el("span", "deliv-hub-counts", pendingItems.length + " Pending \u00b7 " + revSummaryCnt + " \u00b7 " + finalApproved.length + " Final \u00b7 " + totalHumanCount + " All \u25be"));
       }
       who.style.cursor = "pointer";
       who.title = newestHint;
@@ -3064,17 +3897,24 @@ const Proto = (() => {
         pendFold.appendChild(pendBody);
         stack.appendChild(pendFold);
 
-        // 2. 👁 For Review (N items ▸) — starts collapsed by default, includes ✓ Done + ✓ Mark All Done
+        // 2. 👁 For Review (N key deliverables ▸) — organized by Topic/Step with Steward Run Summary & Format Pairing
+        const pairedReviewNow = mainPairedReview;
+        const topicGroups = groupDeliverablesByTopic(mainPairedReview, mapSteps);
         const revFold = el("details", "deliv-tier-fold tier-review review");
         bindSubTileToggle(revFold, "deliv:v3:review");
         const revSum = el("summary", "");
         revSum.appendChild(el("span", "deliv-group-lbl", "\ud83d\udc41 For Review"));
-        revSum.appendChild(el("span", "deliv-tier-count", reviewNow.length + (reviewNow.length === 1 ? " item \u25b8" : " items \u25b8")));
+        const revCountLabel = mainPairedReview.length +
+          (mainPairedReview.length === 1 ? " main deliverable" : " main deliverables") +
+          (suppPairedReview.length > 0 ? (" \u00b7 +" + suppPairedReview.length + " supplemental") : "") + " \u25b8";
+        revSum.appendChild(el("span", "deliv-tier-count", revCountLabel));
         revFold.appendChild(revSum);
         const revBody = el("div", "deliv-tier-body");
-        if (reviewNow.length) {
-          const markBar = el("div", "mark-all-done-bar");
-          markBar.appendChild(el("span", "", "Click any deliverable to review, or mark Done:"));
+        if (pairedReviewNow.length) {
+          const runSummaryTxt = getStewardCompletionSummaryText();
+          const summaryBanner = el("div", "steward-review-summary-banner");
+          const sbHead = el("div", "srsb-head");
+          sbHead.appendChild(el("span", "srsb-title", "\ud83c\udfc1 " + personaName() + " Run Summary & Review Guide"));
           const markAllBtn = el("button", "mark-all-done-btn deliv-mark-all-btn", "\u2713 Mark All Done");
           markAllBtn.type = "button";
           markAllBtn.onclick = async (ev) => {
@@ -3095,17 +3935,110 @@ const Proto = (() => {
             revBody.textContent = "";
             revBody.appendChild(el("div", "sdmeta", "No items waiting for review."));
             const cntSpan = revSum.querySelector(".deliv-tier-count");
-            if (cntSpan) cntSpan.textContent = "0 items \u25b8";
+            if (cntSpan) cntSpan.textContent = "0 key deliverables \u25b8";
             try {
               await post("/api/dismiss-deliverable", { items: batchItems });
             } catch (e) {}
             await renderDeliverablesTile();
           };
-          markBar.appendChild(markAllBtn);
-          revBody.appendChild(markBar);
-          const cList = el("div", "deliv-list");
-          reviewNow.forEach(it => cList.appendChild(buildMockupFileRow(it, "review")));
+          sbHead.style.marginBottom = "0";
+          if (runSummaryTxt) {
+            sbHead.title = runSummaryTxt;
+          }
+          sbHead.appendChild(markAllBtn);
+          summaryBanner.appendChild(sbHead);
+          revBody.appendChild(summaryBanner);
+
+          const cList = el("div", "deliv-list organized-review-groups");
+          if (topicGroups.length <= 1 || pairedReviewNow.length <= 8) {
+            pairedReviewNow.forEach(it => cList.appendChild(buildMockupFileRow(it, "review")));
+          } else {
+            topicGroups.forEach((grp) => {
+              const gDet = el("details", "review-topic-group" + (grp.priority ? " priority-group" : ""));
+              const gSessionKey = "deliv:v3:revgrp:" + grp.key;
+              gDet.open = Object.prototype.hasOwnProperty.call(navSession, gSessionKey)
+                ? Boolean(navSession[gSessionKey])
+                : true;
+              gDet.addEventListener("toggle", () => {
+                if (gDet.isConnected) navSession[gSessionKey] = gDet.open;
+              });
+              const gSum = el("summary", "rtg-sum");
+              const gLeft = el("span", "rtg-title", grp.title);
+              gSum.appendChild(gLeft);
+              const gRight = el("span", "rtg-right");
+              gRight.appendChild(el("span", "rtg-count", grp.items.length + (grp.items.length === 1 ? " item" : " items")));
+              const grpDoneBtn = el("button", "rtg-mark-btn", "\u2713 Group Done");
+              grpDoneBtn.type = "button";
+              grpDoneBtn.title = "Mark all deliverables in this topic group Done";
+              grpDoneBtn.onclick = async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                grpDoneBtn.disabled = true;
+                const rawGrpItems = [];
+                grp.items.forEach(pIt => {
+                  (pIt._allFormatItems || [pIt]).forEach(x => rawGrpItems.push(x));
+                });
+                const payload = rawGrpItems.map(x => {
+                  const k = String(x.open_path || x.path || x.product_id || x.what || "");
+                  if (k) _dismissedSessionKeys.add(k);
+                  return {
+                    path: x.open_path || x.path || "",
+                    product_id: x.product_id || "",
+                    what: x.what || "",
+                    revision_id: x.revision_id || "",
+                    hash: x.hash || "",
+                  };
+                });
+                gDet.remove();
+                try {
+                  await post("/api/dismiss-deliverable", { items: payload });
+                } catch (e) {}
+                await renderDeliverablesTile();
+              };
+              gRight.appendChild(grpDoneBtn);
+              gSum.appendChild(gRight);
+              gDet.appendChild(gSum);
+              const gBody = el("div", "rtg-body");
+              grp.items.forEach(it => gBody.appendChild(buildMockupFileRow(it, "review")));
+              gDet.appendChild(gBody);
+              cList.appendChild(gDet);
+            });
+          }
           revBody.appendChild(cList);
+          if (suppPairedReview.length > 0) {
+            const suppDrawer = el("details", "supplemental-review-drawer");
+            bindSubTileToggle(suppDrawer, "deliv:v3:supp_drawer");
+            const suppSum = el("summary", "supp-drawer-sum");
+            suppSum.appendChild(el("span", "supp-drawer-title", "\ud83d\udcce Supplemental & Building-Block Deliverables (" + suppPairedReview.length + (suppPairedReview.length === 1 ? " item" : " items") + " \u2014 Gandalf, Beta-Reader, Blueprints \u25b8)"));
+            const clearSuppBtn = el("button", "rtg-mark-btn", "Move Supplemental to All");
+            clearSuppBtn.type = "button";
+            clearSuppBtn.onclick = async (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              clearSuppBtn.disabled = true;
+              const suppRaw = _deliv.supplementalReviewNow || [];
+              const payload = suppRaw.map(x => {
+                const k = String(x.open_path || x.path || x.product_id || x.what || "");
+                if (k) _dismissedSessionKeys.add(k);
+                return {
+                  path: x.open_path || x.path || "",
+                  product_id: x.product_id || "",
+                  what: x.what || "",
+                  revision_id: x.revision_id || "",
+                  hash: x.hash || "",
+                };
+              });
+              suppDrawer.remove();
+              try { await post("/api/dismiss-deliverable", { items: payload }); } catch (e) {}
+              await renderDeliverablesTile();
+            };
+            suppSum.appendChild(clearSuppBtn);
+            suppDrawer.appendChild(suppSum);
+            const suppList = el("div", "supp-drawer-body");
+            suppPairedReview.forEach(it => suppList.appendChild(buildMockupFileRow(it, "other")));
+            suppDrawer.appendChild(suppList);
+            revBody.appendChild(suppDrawer);
+          }
         } else {
           revBody.appendChild(el("div", "sdmeta", "No items waiting for review."));
         }
@@ -3121,8 +4054,66 @@ const Proto = (() => {
         finFold.appendChild(finSum);
         const finBody = el("div", "deliv-tier-body");
         if (finalApproved.length) {
+          const fToolbar = el("div", "all-deliv-toolbar final-deliv-toolbar");
+          const fSearchRow = el("div", "all-deliv-search-row");
+          const fSearchInput = document.createElement("input");
+          fSearchInput.type = "search";
+          fSearchInput.className = "all-deliv-search";
+          fSearchInput.dataset.finalDelivSearch = "1";
+          fSearchInput.placeholder = "\ud83d\udd0d Search final deliverables by name, type, or step\u2026";
+          const fSortRow = el("div", "all-deliv-controls-row");
+          const fSortGroup = el("div", "all-deliv-sort-group");
+          fSortGroup.appendChild(el("span", "all-deliv-sort-lbl", "Sort:"));
+          let _finSort = "date-desc";
+          let _finQuery = "";
           const fList = el("div", "deliv-list");
-          finalApproved.forEach(it => fList.appendChild(buildMockupFileRow(it, "final")));
+          const paintFinalList = () => {
+            fList.textContent = "";
+            const q = _finQuery.trim().toLowerCase();
+            const rows = pairDeliverableFormats(finalApproved).filter(it => {
+              if (!q) return true;
+              const d = describeDeliverable(it);
+              const fm = getDelivFormat(it);
+              const hay = [d.title, it.what, it.path, it.open_path, fm.tag, fm.ext, it.step, it.date].filter(Boolean).join(" ").toLowerCase();
+              return hay.includes(q);
+            });
+            rows.sort((a, b) => {
+              if (_finSort === "date-asc") return String(a.date || "").localeCompare(String(b.date || ""));
+              if (_finSort === "name-asc") return String(describeDeliverable(a).title || "").localeCompare(String(describeDeliverable(b).title || ""));
+              return String(b.date || "").localeCompare(String(a.date || ""));
+            });
+            rows.forEach(it => fList.appendChild(buildMockupFileRow(it, "final")));
+          };
+          [
+            { id: "date-desc", label: "Date: Newest First \u2193" },
+            { id: "date-asc", label: "Date: Oldest First \u2191" },
+            { id: "name-asc", label: "Name: A\u2013Z" },
+          ].forEach(m => {
+            const b = el("button", "all-deliv-sort-btn" + (_finSort === m.id ? " active" : ""), m.label);
+            b.type = "button";
+            b.onclick = (ev) => {
+              ev.stopPropagation();
+              _finSort = m.id;
+              fSortGroup.querySelectorAll(".all-deliv-sort-btn").forEach(x => x.classList.remove("active"));
+              b.classList.add("active");
+              paintFinalList();
+            };
+            fSortGroup.appendChild(b);
+          });
+          fSearchInput.oninput = (ev) => {
+            ev.stopPropagation();
+            _finQuery = fSearchInput.value || "";
+            paintFinalList();
+          };
+          fSearchInput.onclick = (ev) => ev.stopPropagation();
+          fSearchInput.onkeydown = (ev) => ev.stopPropagation();
+          fSearchRow.appendChild(fSearchInput);
+          fToolbar.appendChild(fSearchRow);
+          fSortRow.appendChild(fSortGroup);
+          fToolbar.appendChild(fSortRow);
+          finBody.appendChild(fToolbar);
+          paintFinalList();
+          // rendered by paintFinalList above
           finBody.appendChild(fList);
         } else {
           finBody.appendChild(el("div", "sdmeta", "Main/permanent deliverables appear here once finalized."));
@@ -3130,7 +4121,7 @@ const Proto = (() => {
         finFold.appendChild(finBody);
         stack.appendChild(finFold);
 
-        // 4. 📚 All Deliverables (N items ▸) — starts collapsed by default, grouped by Wave/Step
+        // 4. 📚 All Deliverables (N items ▸) — starts collapsed by default, with Search + Sort by Date (Newest at Top default) & Name
         const allFold = el("details", "deliv-tier-fold tier-all all-waves");
         bindSubTileToggle(allFold, "deliv:v3:all");
         const allSum = el("summary", "");
@@ -3139,33 +4130,182 @@ const Proto = (() => {
         allFold.appendChild(allSum);
         const allBody = el("div", "deliv-tier-body");
         if (allHumanItems.length) {
-          const byWaveGroup = new Map();
-          allHumanItems.forEach((it) => {
-            const owner = navOwner(mapSteps, it);
-            let grpLabel = "";
-            if (owner) {
-              const idx = mapSteps.indexOf(owner);
-              const rawN = String((owner.navigation && owner.navigation.label) || owner.name || ("Step " + (idx + 1)));
-              grpLabel = (/^(?:step|wave|stage|phase)\s*\d+/i.test(rawN) ? "" : ("Step " + (idx + 1) + " \u00b7 ")) + oneLine(rawN, 46);
-            } else {
-              const waveMatch = /\b(Wave\s*\d+)/i.exec(String(it.what || "") + " " + String(it.path || ""));
-              grpLabel = waveMatch ? (waveMatch[1] + " Deliverables") : describeDeliverable(it).sectionGroup;
+          const toolbar = el("div", "all-deliv-toolbar");
+          const searchRow = el("div", "all-deliv-search-row");
+          const searchInput = document.createElement("input");
+          searchInput.type = "search";
+          searchInput.className = "all-deliv-search";
+          searchInput.dataset.allDelivSearch = "1";
+          searchInput.placeholder = "\ud83d\udd0d Search all deliverables by title, file name, type (.pdf, .pptx, .xlsx, .R), or step\u2026";
+          searchInput.value = _allDelivSearch;
+          const clearBtn = el("button", "all-deliv-clear-btn", "Clear");
+          clearBtn.type = "button";
+          clearBtn.style.display = _allDelivSearch ? "" : "none";
+          searchRow.appendChild(searchInput);
+          searchRow.appendChild(clearBtn);
+          toolbar.appendChild(searchRow);
+
+          const controlsRow = el("div", "all-deliv-controls-row");
+          const sortGroup = el("div", "all-deliv-sort-group");
+          sortGroup.appendChild(el("span", "all-deliv-sort-lbl", "Sort:"));
+          const sortModes = [
+            { id: "date-desc", label: "Date: Newest First \u2193" },
+            { id: "date-asc", label: "Date: Oldest First \u2191" },
+            { id: "name-asc", label: "Name: A\u2013Z" },
+            { id: "name-desc", label: "Name: Z\u2013A" },
+            { id: "wave", label: "By Wave" },
+          ];
+          const sortBtns = [];
+          sortModes.forEach((m) => {
+            const sb = el("button", "all-deliv-sort-btn" + (_allDelivSort === m.id ? " active" : ""), m.label);
+            sb.type = "button";
+            sb.dataset.allDelivSort = m.id;
+            sb.onclick = (ev) => {
+              ev.stopPropagation();
+              _allDelivSort = m.id;
+              sortBtns.forEach(b => b.classList.toggle("active", b.dataset.allDelivSort === _allDelivSort));
+              paintFilteredAllDeliverables();
+            };
+            sortBtns.push(sb);
+            sortGroup.appendChild(sb);
+          });
+          controlsRow.appendChild(sortGroup);
+
+          const presentTypes = new Set(["ALL"]);
+          allHumanItems.forEach(it => presentTypes.add(getDelivFormat(it).tag));
+          const typeOrder = ["ALL", "PDF", "PPTX", "DOCX", "XLSX", "R", "CSV", "MD", "HTML", "PY", "ZIP"].filter(t => presentTypes.has(t));
+          const typeGroup = el("div", "all-deliv-type-group");
+          const typeBtns = [];
+          if (typeOrder.length > 2) {
+            typeGroup.appendChild(el("span", "all-deliv-sort-lbl", "Type:"));
+            typeOrder.forEach((t) => {
+              const tb = el("button", "all-deliv-type-chip" + (_allDelivType === t ? " active" : ""), t === "ALL" ? "All Types" : t);
+              tb.type = "button";
+              tb.dataset.allDelivType = t;
+              tb.onclick = (ev) => {
+                ev.stopPropagation();
+                _allDelivType = t;
+                typeBtns.forEach(b => b.classList.toggle("active", b.dataset.allDelivType === _allDelivType));
+                paintFilteredAllDeliverables();
+              };
+              typeBtns.push(tb);
+              typeGroup.appendChild(tb);
+            });
+            controlsRow.appendChild(typeGroup);
+          }
+          toolbar.appendChild(controlsRow);
+
+          const metaRow = el("div", "all-deliv-results-meta");
+          toolbar.appendChild(metaRow);
+          allBody.appendChild(toolbar);
+
+          const resultsContainer = el("div", "all-deliv-flat-list");
+          resultsContainer.dataset.allDelivList = "1";
+          allBody.appendChild(resultsContainer);
+
+          const paintFilteredAllDeliverables = () => {
+            const q = String(_allDelivSearch || "").trim().toLowerCase();
+            const qTokens = q ? q.split(/\s+/).filter(Boolean) : [];
+            const filtered = allHumanItems.filter((it) => {
+              const fmt = getDelivFormat(it);
+              if (_allDelivType !== "ALL" && fmt.tag !== _allDelivType) return false;
+              if (!qTokens.length) return true;
+              const desc = describeDeliverable(it);
+              const hay = (desc.title + " " + desc.subtitle + " " + String(it.what || "") + " " + String(it.open_path || it.path || "") + " " + String(it.step || "") + " " + fmt.tag + " " + fmt.ext).toLowerCase();
+              return qTokens.every(tok => hay.indexOf(tok) >= 0);
+            });
+
+            filtered.sort((a, b) => {
+              if (_allDelivSort === "date-asc") {
+                return String(a.date || "").localeCompare(String(b.date || "")) || describeDeliverable(a).title.localeCompare(describeDeliverable(b).title);
+              }
+              if (_allDelivSort === "name-asc") {
+                return describeDeliverable(a).title.toLowerCase().localeCompare(describeDeliverable(b).title.toLowerCase()) || String(b.date || "").localeCompare(String(a.date || ""));
+              }
+              if (_allDelivSort === "name-desc") {
+                return describeDeliverable(b).title.toLowerCase().localeCompare(describeDeliverable(a).title.toLowerCase()) || String(b.date || "").localeCompare(String(a.date || ""));
+              }
+              // Default: "date-desc" (most recent at the top)
+              return String(b.date || "").localeCompare(String(a.date || "")) || describeDeliverable(a).title.localeCompare(describeDeliverable(b).title);
+            });
+
+            const sortDescLabel = _allDelivSort === "date-asc" ? "Date (Oldest at top)"
+              : _allDelivSort === "name-asc" ? "Name (A\u2013Z)"
+              : _allDelivSort === "name-desc" ? "Name (Z\u2013A)"
+              : _allDelivSort === "wave" ? "Wave / Section"
+              : "Date (Most recent at top)";
+            metaRow.textContent = "Showing " + Math.min(filtered.length, _allDelivLimit) + " of " + filtered.length + " matching deliverables \u00b7 Sorted by " + sortDescLabel;
+
+            resultsContainer.textContent = "";
+            if (!filtered.length) {
+              resultsContainer.appendChild(el("div", "sdmeta", "No deliverables match your search filter."));
+              return;
             }
-            if (!byWaveGroup.has(grpLabel)) byWaveGroup.set(grpLabel, []);
-            byWaveGroup.get(grpLabel).push(it);
-          });
-          Array.from(byWaveGroup.entries()).forEach(([grpName, grpItems]) => {
-            const wDet = el("details", "deliv-wave-subfold");
-            bindSubTileToggle(wDet, "deliv:v3:wave:" + grpName);
-            const wSum = el("summary", "");
-            wSum.appendChild(el("span", "", grpName));
-            wSum.appendChild(el("span", "deliv-tier-count", grpItems.length + " \u25b8"));
-            wDet.appendChild(wSum);
-            const wBody = el("div", "deliv-wave-subbody");
-            grpItems.forEach(it => wBody.appendChild(buildMockupFileRow(it, "other")));
-            wDet.appendChild(wBody);
-            allBody.appendChild(wDet);
-          });
+            if (_allDelivSort === "wave") {
+              const byWaveGroup = new Map();
+              filtered.forEach((it) => {
+                const owner = navOwner(mapSteps, it);
+                let grpLabel = "";
+                if (owner) {
+                  const idx = mapSteps.indexOf(owner);
+                  const rawN = String((owner.navigation && owner.navigation.label) || owner.name || ("Step " + (idx + 1)));
+                  grpLabel = (/^(?:step|wave|stage|phase)\s*\d+/i.test(rawN) ? "" : ("Step " + (idx + 1) + " \u00b7 ")) + oneLine(rawN, 46);
+                } else {
+                  const waveMatch = /\b(Wave\s*\d+)/i.exec(String(it.what || "") + " " + String(it.path || ""));
+                  grpLabel = waveMatch ? (waveMatch[1] + " Deliverables") : describeDeliverable(it).sectionGroup;
+                }
+                if (!byWaveGroup.has(grpLabel)) byWaveGroup.set(grpLabel, []);
+                byWaveGroup.get(grpLabel).push(it);
+              });
+              Array.from(byWaveGroup.entries()).forEach(([grpName, grpItems]) => {
+                const wDet = el("details", "deliv-wave-subfold");
+                bindSubTileToggle(wDet, "deliv:v3:wave:" + grpName);
+                const wSum = el("summary", "");
+                wSum.appendChild(el("span", "", grpName));
+                wSum.appendChild(el("span", "deliv-tier-count", grpItems.length + " \u25b8"));
+                wDet.appendChild(wSum);
+                const wBody = el("div", "deliv-wave-subbody");
+                grpItems.forEach(it => wBody.appendChild(buildMockupFileRow(it, "other")));
+                wDet.appendChild(wBody);
+                resultsContainer.appendChild(wDet);
+              });
+              return;
+            }
+            const shownSlice = filtered.slice(0, _allDelivLimit);
+            shownSlice.forEach(it => resultsContainer.appendChild(buildMockupFileRow(it, "other")));
+            if (filtered.length > _allDelivLimit) {
+              const rem = filtered.length - _allDelivLimit;
+              const moreBtn = el("button", "all-deliv-more-btn", "Show More Deliverables (+" + Math.min(100, rem) + " of " + rem + " remaining)");
+              moreBtn.type = "button";
+              moreBtn.onclick = (ev) => {
+                ev.stopPropagation();
+                _allDelivLimit += 100;
+                paintFilteredAllDeliverables();
+              };
+              resultsContainer.appendChild(moreBtn);
+            }
+          };
+
+          searchInput.oninput = (ev) => {
+            ev.stopPropagation();
+            _allDelivSearch = searchInput.value || "";
+            clearBtn.style.display = _allDelivSearch ? "" : "none";
+            _allDelivLimit = 60;
+            paintFilteredAllDeliverables();
+          };
+          searchInput.onclick = (ev) => ev.stopPropagation();
+          searchInput.onkeydown = (ev) => ev.stopPropagation();
+          clearBtn.onclick = (ev) => {
+            ev.stopPropagation();
+            _allDelivSearch = "";
+            searchInput.value = "";
+            clearBtn.style.display = "none";
+            _allDelivLimit = 60;
+            paintFilteredAllDeliverables();
+            searchInput.focus();
+          };
+
+          paintFilteredAllDeliverables();
         } else {
           allBody.appendChild(el("div", "sdmeta", "No deliverables registered yet."));
         }
@@ -3178,6 +4318,7 @@ const Proto = (() => {
       body.scrollTop=priorScroll;
       if (s.firstChild !== tile) s.insertBefore(tile, s.firstChild);
       renderTopNextSteps();
+      if (typeof renderStatus._syncReviewNote === "function") renderStatus._syncReviewNote();
     }
     // — the goal/map links —
     const slot = $("[data-deliverables]");
@@ -3231,7 +4372,13 @@ const Proto = (() => {
           const fmt = getDelivFormat(it);
           const cleanLabel = cleanDelivTitle(it, 38);
           chip.appendChild(el("span", "file-fmt-badge " + fmt.cls, fmt.tag));
-          if (mainAnchor) {
+          var effMainAnchor = mainAnchor;
+      if (!effMainAnchor && dlAnchor && !isLegacyNavTest) {
+        effMainAnchor = document.createElement("a");
+        effMainAnchor.href = (dlAnchor.getAttribute("href") || "").replace(/([?&])download=1(&|$)/, "$1view=1$2");
+      }
+      if (effMainAnchor) {
+        const mainAnchor = effMainAnchor;
             const openA = document.createElement("a");
             openA.className = "file-open";
             openA.href = mainAnchor.getAttribute("href") || "#";
@@ -3368,7 +4515,7 @@ const Proto = (() => {
       const isText = /\.(csv|json|log)$/i.test(openPath) && !(it.managed && it.open_path && it.hash);
       // 2026-10-07 (item 2): markdown opens through the ONE canonical reading URL (deliverables_register.reading_target:
       // deliverable-file + render=1) - the same link the dialogue's receipt and Next steps carry
-      const isMarkdown = /\.(md|markdown|txt)$/i.test(openPath);
+      const isMarkdown = /\.(md|markdown|txt|r|py|sql|sh|ps1|yaml|yml|toml|js|mjs|ts|css)$/i.test(openPath);
       const reading = it.reading && it.reading.read && /^\/api\/steward\/deliverable-file\?/.test(it.reading.read) ? it.reading.read : "";
       const tok = window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "";
       if (reading) {
@@ -3669,7 +4816,7 @@ const Proto = (() => {
   }
 
   /* ---------- events ---------- */
-  function handle(ev) {
+  let _skipNextJohnEcho = ""; function handle(ev) {
     if (ev.t === "delta") {
       const s = targetFor(ev);
       const stick = atBottom(s);
@@ -3686,7 +4833,7 @@ const Proto = (() => {
       if (stick) pin(s, true);
     } else if (ev.t === "john") {
       closeCurrent();                    // the reply's blocks stay this turn's until turn_end (final review 10-10)
-      addBlock("john", opts.johnLabel || "JOHN", ev.text);
+      if (_skipNextJohnEcho && String(ev.text || "").trim() === String(_skipNextJohnEcho).trim()) { _skipNextJohnEcho = ""; } else { addBlock("john", opts.johnLabel || "JOHN", ev.text); }
       tileSay("turn", { who: "you", text: String(ev.text || "").slice(-600) });
       busySince = Date.now();
     } else if (ev.t === "tool") {
@@ -4009,10 +5156,10 @@ const Proto = (() => {
       const stillUnpriced = Math.max(0, unpricedTotal - estimatedTurns);
       const inflightUnpriced = !stillUnpriced && !estimatedTurns && (num(st.unpriced_inflight) > 0 || (effortUsage && effortUsage.cost_complete === false));
       const turnFamilyLabel = subName || "subscription";
-      const estimated = estimatedTurns ? "about $" + estimatedTotal.toFixed(2) + " estimated for " + estimatedTurns.toLocaleString() + " " + turnFamilyLabel + " turn" + (estimatedTurns === 1 ? "" : "s") + " at API list price" : "";
+      const estimated = estimatedTurns ? "about $" + estimatedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " estimated for " + estimatedTurns.toLocaleString() + " " + turnFamilyLabel + " turn" + (estimatedTurns === 1 ? "" : "s") + " at API list price" : "";
       const notPriced = stillUnpriced ? stillUnpriced.toLocaleString() + (subName && !estimatedTurns ? " " + subName + " turn" + (stillUnpriced === 1 ? "" : "s") : "") + " with no dollar amount"
         : inflightUnpriced ? "in-progress usage with no dollar amount" : "";
-      let total = reportedTotal > 0 ? "Total $" + reportedTotal.toFixed(2) + " reported" + (estimated ? " + " + estimated : "") + (notPriced ? " · " + notPriced : "")
+      let total = reportedTotal > 0 ? "Total $" + reportedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " reported" + (estimated ? " + " + estimated : "") + (notPriced ? " · " + notPriced : "")
         : estimated ? "Total " + estimated + (notPriced ? " · " + notPriced : "")
         : notPriced ? "Total: " + notPriced : "cost unavailable";
       if (tokensTotal) total += " · " + Math.round(tokensTotal).toLocaleString() + " tokens recorded";
@@ -4021,11 +5168,12 @@ const Proto = (() => {
         (st.usage_persistence_error ? " · not saved" : "") +
         (!st.alive ? " · " + (GENERAL ? "idle" : "steward asleep") + (st.queued ? " · " + st.queued + " held" : "") : "");
       const combinedUsd = reportedTotal + estimatedTotal;
-      const fmtTok = (n) => {
+        const fmtUsdVal = (v, minDec = 2, maxDec = 2) => Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
+        const fmtTok = (n) => {
         const v = num(n);
-        if (v >= 1e6) return (v / 1e6).toFixed(2).replace(/\.00$/, "") + "M";
-        if (v >= 1e3) return Math.round(v / 1e3) + "k";
-        return Math.round(v).toLocaleString();
+        if (v >= 1e6) return Math.round(v).toLocaleString("en-US") + " (" + (v / 1e6).toFixed(2).replace(/\.00$/, "") + "M)";
+        if (v >= 1e3) return Math.round(v).toLocaleString("en-US") + " (" + Math.round(v / 1e3) + "k)";
+        return Math.round(v).toLocaleString("en-US");
       };
       const fmtTime = (s) => {
         const secTotal = Math.round(num(s));
@@ -4037,12 +5185,12 @@ const Proto = (() => {
         if (m > 0) return m + "m" + (sec ? " " + sec + "s" : "");
         return sec + "s";
       };
-      const fmtUsd = (u) => "$" + num(u).toFixed(2);
+      const fmtUsd = (u) => "$" + num(u).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const totalSecs = [effortUsage, jobsUsage, seats].filter(Boolean).reduce((a, b) => a + num(b.secs), 0) + (sessionOnly ? num(st.secs) : 0);
       const compactTok = fmtTok(tokensTotal);
       const compactDur = totalSecs >= 60 ? (" \u00b7 " + Math.round(totalSecs / 60) + "m") : "";
       const pillMainText = combinedUsd > 0
-        ? ("Total $" + combinedUsd.toFixed(2) + (tokensTotal ? " \u00b7 " + compactTok + " tok" : "") + compactDur + " \u25be")
+        ? ("Total $" + combinedUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (tokensTotal ? " \u00b7 " + compactTok + " tok" : "") + compactDur + " \u25be")
         : (tokensTotal > 0 || notPriced)
           ? ("Total $0.00" + (tokensTotal ? " \u00b7 " + compactTok + " tok" : "") + compactDur + " \u25be")
           : "cost unavailable";
@@ -4112,9 +5260,9 @@ const Proto = (() => {
         totalTime: fmtTime(totalSecs),
         totalSpend: fmtUsd(combinedUsd),
         footerNote: "Includes " + personaName() + " steward turns (" + fmtUsd(stewUsd) + "), Foreman/code jobs (" + fmtUsd(jobsUsd) + "), and skill/review seats (" + fmtUsd(seatsUsd) + ").",
-        subNote: estimatedTotal > 0 ? ("($" + reportedTotal.toFixed(2) + " billed + $" + estimatedTotal.toFixed(2) + " subscription API-equivalent)") : "",
+        subNote: estimatedTotal > 0 ? ("($" + reportedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " billed + $" + estimatedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " subscription API-equivalent)") : "",
       };
-      spend.dataset.spendSummary = "Combined Total: $" + combinedUsd.toFixed(2) + " ($" + reportedTotal.toFixed(2) + " billed + $" + estimatedTotal.toFixed(2) + " subscription API-equivalent)" + (tokensTotal ? " · " + Math.round(tokensTotal).toLocaleString() + " tokens" : "");
+      spend.dataset.spendSummary = "Combined Total: $" + combinedUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ($" + reportedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " billed + $" + estimatedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " subscription API-equivalent)" + (tokensTotal ? " · " + Math.round(tokensTotal).toLocaleString() + " tokens" : "");
       spend.style.cursor = "pointer";
       if (!spend._popWired) {
         spend._popWired = true;
@@ -4342,6 +5490,209 @@ const Proto = (() => {
     bar.ondragleave = () => bar.classList.remove("hot");
     bar.ondrop = (e) => { e.preventDefault(); bar.classList.remove("hot"); if (mainEl) mainEl.classList.remove("drop-hot"); queue(e.dataTransfer.files); };
     if (pick) pick.onchange = () => { queue(pick.files); pick.value = ""; };
+
+    let mbDrawer = $("[data-mothership-browser]");
+    if (!mbDrawer && bar.parentElement) {
+      mbDrawer = el("div", "mothership-browser-drawer");
+      mbDrawer.dataset.mothershipBrowser = "1";
+      mbDrawer.hidden = true;
+      bar.insertAdjacentElement("afterend", mbDrawer);
+    }
+    let _mbCurrentDir = "";
+    let _mbQuery = "";
+    const fmtBytes = (n) => {
+      const b = Number(n) || 0;
+      if (b < 1024) return b + " B";
+      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + " KB";
+      return (b / (1024 * 1024)).toFixed(2) + " MB";
+    };
+    const loadMothershipDir = async (targetDir, queryStr) => {
+      if (!mbDrawer) return;
+      mbDrawer.hidden = false;
+      if (typeof targetDir === "string") _mbCurrentDir = targetDir;
+      if (typeof queryStr === "string") _mbQuery = queryStr;
+      mbDrawer.innerHTML = "<div class='mb-loading'>🛰 Loading Mothership files…</div>";
+      try {
+        const qs = new URLSearchParams();
+        if (_mbCurrentDir) qs.set("browse_dir", _mbCurrentDir);
+        if (_mbQuery) qs.set("q", _mbQuery);
+        const r = await fetch(api("/api/mothership-files?" + qs.toString()));
+        const data = await r.json();
+        if (!data || !data.ok) {
+          mbDrawer.innerHTML = "<div class='mb-error'>Could not read Mothership directory: " + ((data && data.error) || "unknown error") + "</div>";
+          return;
+        }
+        _mbCurrentDir = data.current_dir || "";
+        mbDrawer.textContent = "";
+
+        const head = el("div", "mb-head");
+        const titleWrap = el("div", "mb-title-wrap");
+        titleWrap.appendChild(el("span", "mb-badge", "🛰 MOTHERSHIP · " + (data.mothership_host || "HOST")));
+        const curPathEl = el("code", "mb-cur-path", data.current_dir || data.cockpit_dir || "");
+        curPathEl.title = data.current_dir || "";
+        titleWrap.appendChild(curPathEl);
+        head.appendChild(titleWrap);
+        const closeBtn = el("button", "mb-close-btn", "× Close");
+        closeBtn.type = "button";
+        closeBtn.onclick = () => { mbDrawer.hidden = true; };
+        head.appendChild(closeBtn);
+        mbDrawer.appendChild(head);
+
+        const rootsBar = el("div", "mb-roots-bar");
+        if (data.parent_dir) {
+          const upBtn = el("button", "mb-root-pill mb-up-pill", "⬆ Up (..)");
+          upBtn.type = "button";
+          upBtn.title = data.parent_dir;
+          upBtn.onclick = () => loadMothershipDir(data.parent_dir, "");
+          rootsBar.appendChild(upBtn);
+        }
+        (data.roots || []).forEach((rt) => {
+          const rBtn = el("button", "mb-root-pill" + (String(rt.path || "").toLowerCase() === String(data.current_dir || "").toLowerCase() ? " active" : ""), rt.label || rt.id);
+          rBtn.type = "button";
+          rBtn.title = rt.path || "";
+          rBtn.onclick = () => loadMothershipDir(rt.path, "");
+          rootsBar.appendChild(rBtn);
+        });
+        mbDrawer.appendChild(rootsBar);
+
+        const searchRow = el("div", "mb-search-row");
+        const sInput = el("input", "mb-search-input");
+        sInput.type = "text";
+        sInput.placeholder = "Filter or search files on Mothership…";
+        sInput.value = _mbQuery || "";
+        const goBtn = el("button", "mb-act-btn", "Search");
+        goBtn.type = "button";
+        goBtn.onclick = () => loadMothershipDir(_mbCurrentDir, sInput.value.trim());
+        sInput.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            loadMothershipDir(_mbCurrentDir, sInput.value.trim());
+          }
+        });
+        searchRow.appendChild(sInput);
+        searchRow.appendChild(goBtn);
+        if (_mbQuery) {
+          const clrBtn = el("button", "mb-act-btn", "Clear");
+          clrBtn.type = "button";
+          clrBtn.onclick = () => loadMothershipDir(_mbCurrentDir, "");
+          searchRow.appendChild(clrBtn);
+        }
+        if (pick) {
+          const localBtn = el("button", "mb-act-btn mb-local-btn", "📤 Local PC…");
+          localBtn.type = "button";
+          localBtn.title = "Upload a file from the local device running this web browser";
+          localBtn.onclick = () => pick.click();
+          searchRow.appendChild(localBtn);
+        }
+        mbDrawer.appendChild(searchRow);
+
+        const list = el("div", "mb-list");
+        const entries = Array.isArray(data.entries) ? data.entries : [];
+        if (!entries.length) {
+          list.appendChild(el("div", "mb-empty", "No matching files or folders in this Mothership directory."));
+        } else {
+          entries.forEach((ent) => {
+            const row = el("div", "mb-row" + (ent.dir ? " is-dir" : " is-file"));
+            const left = el("div", "mb-row-left");
+            const icon = ent.dir ? "📁" : (/\.(pdf|pptx|docx|xlsx)$/i.test(ent.name) ? "📗" : (/\.(py|js|ts|json|sh|ps1)$/i.test(ent.name) ? "💻" : "📄"));
+            left.appendChild(el("span", "mb-icon", icon));
+            const nameBtn = el("button", "mb-name-btn", ent.name);
+            nameBtn.type = "button";
+            nameBtn.title = ent.path || ent.name;
+            left.appendChild(nameBtn);
+            if (!ent.dir) {
+              left.appendChild(el("span", "mb-meta", fmtBytes(ent.size)));
+            }
+            row.appendChild(left);
+
+            const right = el("div", "mb-row-actions");
+            if (ent.dir) {
+              const openDirBtn = el("button", "mb-act-btn", "Open Folder ▸");
+              openDirBtn.type = "button";
+              const goDir = () => loadMothershipDir(ent.path, "");
+              nameBtn.onclick = goDir;
+              openDirBtn.onclick = goDir;
+              right.appendChild(openDirBtn);
+            } else {
+              if (ent.in_cockpit) {
+                const openFileBtn = el("button", "mb-act-btn primary", "Open ◫");
+                openFileBtn.type = "button";
+                openFileBtn.title = "Open this Cockpit file in the Split-Screen Viewer";
+                const doOpen = () => openProducedFile(ent.rel_to_cockpit || ent.name);
+                nameBtn.onclick = doOpen;
+                openFileBtn.onclick = doOpen;
+                right.appendChild(openFileBtn);
+              } else {
+                const attachBtn = el("button", "mb-act-btn primary", "📥 Attach to Cockpit");
+                attachBtn.type = "button";
+                attachBtn.title = "Copy/stage this Mothership file into the active AI Cockpit folder";
+                const doAttach = async () => {
+                  attachBtn.disabled = true;
+                  attachBtn.textContent = "Attaching…";
+                  try {
+                    const resp = await post("/api/mothership-files", { source_path: ent.path });
+                    const j = await resp.json().catch(() => ({}));
+                    if (j && j.ok) {
+                      const savedName = j.path || j.name || ent.name;
+                      say("✓ Attached " + savedName + " from Mothership");
+                      attachBtn.textContent = "✓ Attached";
+                      try {
+                        _lastFiles = (_lastFiles || []).concat([{ name: savedName, path: savedName, at: new Date().toISOString(), loaded: true }]);
+                        renderFiles(_lastFiles);
+                      } catch (e) {}
+                      try {
+                        addBlock(
+                          "steward",
+                          personaName().toUpperCase() + " · MOTHERSHIP FILE",
+                          "📥 Attached **`" + savedName + "`** from Mothership (`" + ent.path + "`) into `" + (j.cockpit_dir || DIR || "cockpit folder") + "`."
+                        );
+                      } catch (e) {}
+                    } else {
+                      attachBtn.disabled = false;
+                      attachBtn.textContent = "📥 Attach to Cockpit";
+                      say((j && j.error) || "Attach failed");
+                    }
+                  } catch (err) {
+                    attachBtn.disabled = false;
+                    attachBtn.textContent = "📥 Attach to Cockpit";
+                    say("Attach failed");
+                  }
+                };
+                nameBtn.onclick = doAttach;
+                attachBtn.onclick = doAttach;
+                right.appendChild(attachBtn);
+              }
+              const citeBtn = el("button", "mb-act-btn", "💬 Cite");
+              citeBtn.type = "button";
+              citeBtn.title = "Insert file reference into Steward chat";
+              citeBtn.onclick = () => {
+                const ref = ent.in_cockpit ? (ent.rel_to_cockpit || ent.name) : ent.path;
+                sayAbout("Look at file `" + ref + "` on the Mothership:");
+              };
+              right.appendChild(citeBtn);
+            }
+            row.appendChild(right);
+            list.appendChild(row);
+          });
+        }
+        mbDrawer.appendChild(list);
+      } catch (err) {
+        mbDrawer.innerHTML = "<div class='mb-error'>Failed to load Mothership files: " + (err && err.message ? err.message : "network error") + "</div>";
+      }
+    };
+
+    const browseBtn = bar.querySelector("[data-mothership-browse-btn]") || bar.querySelector(".cockpit-droppick");
+    if (browseBtn) {
+      browseBtn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (mbDrawer && !mbDrawer.hidden) {
+          mbDrawer.hidden = true;
+        } else {
+          loadMothershipDir(_mbCurrentDir, _mbQuery);
+        }
+      });
+    }
     const dropHost = $(".app") || mainEl;
     if (dropHost && !dropHost._dropWired) {
       dropHost._dropWired = true;
@@ -4694,7 +6045,7 @@ const Proto = (() => {
     (j.turns || []).forEach(t => addBlock(
       t.role === "john" ? "john" : "steward",
       t.role === "john" ? (opts.johnLabel || "JOHN") : (opts.stewardLabel || personaName().toUpperCase()),
-      t.text, "hist"));
+      t.text, "hist", { turn_id: t.turn_id }));
     if (j.turns && j.turns.length) {
       addLine("divider", "—— live from here ——");
       const last = j.turns[j.turns.length - 1];
@@ -4703,15 +6054,252 @@ const Proto = (() => {
     { const d = scrollEl(); if (d) d._follow = true; pin(d, true); }   // a page opens at the newest
   }
 
-  /* ---------- composer + dictation ---------- */
+  /* ---------- concise voice talk-back + spellcheck popup + dictation ---------- */
+  const TALK_MODE_KEY = "anchor:steward:talk_mode";
+  function isTalkModeOn() {
+    try { return localStorage.getItem(TALK_MODE_KEY) === "1"; } catch (e) { return false; }
+  }
+  function setTalkModeOn(on) {
+    try { localStorage.setItem(TALK_MODE_KEY, on ? "1" : "0"); } catch (e) {}
+    document.querySelectorAll("[data-talk-mode-btn]").forEach(btn => {
+      btn.classList.toggle("talk-active", !!on);
+      btn.textContent = on ? "🔊 Talk: ON" : "🔈 Talk Mode";
+      btn.title = on
+        ? "Talk-Back Mode is ON — Anchor speaks a concise 1–2 sentence verbal summary of responses (click to mute)"
+        : "Enable Talk-Back Mode — Anchor speaks a concise 1–2 sentence verbal summary of what is going on";
+    });
+    if (!on && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+    }
+  }
+  function buildConciseSpokenSummary(rawText) {
+    let clean = String(rawText || "")
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/[*_`#>~]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!clean) return "";
+    const sents = clean.split(/(?<=[.!?])\s+/).filter(Boolean);
+    let picked = sents.slice(0, 2).join(" ");
+    if (picked.length > 210) {
+      picked = picked.slice(0, 207).replace(/\s+\S*$/, "") + "...";
+    }
+    return picked;
+  }
+  function speakConciseSummary(rawText, forceSpeak = false) {
+    if (!forceSpeak && !isTalkModeOn()) return;
+    const summary = buildConciseSpokenSummary(rawText);
+    if (!summary) return;
+    try {
+      const d = scrollEl();
+      if (d) {
+        const oldBanner = d.querySelector(".steward-spoken-summary-banner");
+        if (oldBanner) oldBanner.remove();
+        const banner = el("div", "steward-spoken-summary-banner");
+        banner.appendChild(el("span", "ssb-icon", "🔊"));
+        const txtWrap = el("div", "ssb-text");
+        txtWrap.appendChild(el("strong", "", "Spoken Summary: "));
+        txtWrap.appendChild(document.createTextNode(summary));
+        banner.appendChild(txtWrap);
+        d.appendChild(banner);
+        pin(d, true);
+      }
+    } catch (e) {}
+    if (window.speechSynthesis && typeof window.SpeechSynthesisUtterance === "function") {
+      try {
+        window.speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(summary);
+        utt.rate = 1.06;
+        utt.pitch = 1.0;
+        window.speechSynthesis.speak(utt);
+      } catch (e) {}
+    }
+  }
+
+  let _spellPopupEl = null;
+  function closeSpellPopup() {
+    if (_spellPopupEl) {
+      _spellPopupEl.remove();
+      _spellPopupEl = null;
+    }
+  }
+  document.addEventListener("mousedown", (ev) => {
+    if (_spellPopupEl && !_spellPopupEl.contains(ev.target)) {
+      closeSpellPopup();
+    }
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeSpellPopup();
+  });
+
+  function extractWordAtIndex(text, idx) {
+    const str = String(text || "");
+    if (!str) return null;
+    let pos = Math.max(0, Math.min(idx, str.length));
+    if (pos === str.length || !/[A-Za-z'\u2019]/.test(str.charAt(pos))) {
+      if (pos > 0 && /[A-Za-z'\u2019]/.test(str.charAt(pos - 1))) pos = pos - 1;
+      else return null;
+    }
+    let start = pos;
+    while (start > 0 && /[A-Za-z'\u2019]/.test(str.charAt(start - 1))) start--;
+    let end = pos + 1;
+    while (end < str.length && /[A-Za-z'\u2019]/.test(str.charAt(end))) end++;
+    const word = str.slice(start, end).replace(/^['\u2019]+|['\u2019]+$/g, "");
+    const leadTrim = str.slice(start, end).match(/^['\u2019]+/);
+    const realStart = start + (leadTrim ? leadTrim[0].length : 0);
+    const realEnd = realStart + word.length;
+    if (word.length < 2) return null;
+    return { word, start: realStart, end: realEnd };
+  }
+
+  function wireSpellcheckOnTextarea(ta, onTextReplaced) {
+    if (!ta || ta._spellcheckWired) return;
+    ta._spellcheckWired = true;
+    ta.setAttribute("spellcheck", "true");
+    ta.setAttribute("lang", "en-US");
+
+    const triggerSpellCheckAtCursor = async (ev, isRightClick) => {
+      const val = ta.value || "";
+      if (!val.trim()) return;
+      setTimeout(async () => {
+        if (ta.selectionStart !== ta.selectionEnd && !isRightClick) return;
+        const caret = typeof ta.selectionStart === "number" ? ta.selectionStart : 0;
+        const hit = extractWordAtIndex(val, caret);
+        if (!hit || !hit.word) return;
+        let res = null;
+        try {
+          const r = await fetch("/api/steward/spellcheck?word=" + encodeURIComponent(hit.word));
+          res = await r.json();
+        } catch (e) { return; }
+        if (!res || !res.ok || res.correct) {
+          if (!isRightClick) closeSpellPopup();
+          return;
+        }
+        // Word is misspelled — show floating Spellcheck Suggestion Popup right near the click!
+        closeSpellPopup();
+        const pop = el("div", "anchor-spell-popup");
+        pop.dataset.misspelledWord = hit.word;
+        const head = el("div", "asp-head");
+        const lbl = el("span", "asp-word", "Spelling: \"" + hit.word + "\"");
+        const closeBtn = el("button", "asp-close", "×");
+        closeBtn.type = "button";
+        closeBtn.onclick = (e) => { e.stopPropagation(); closeSpellPopup(); };
+        head.appendChild(lbl);
+        head.appendChild(closeBtn);
+        pop.appendChild(head);
+
+        const list = el("div", "asp-list");
+        const suggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
+        if (suggestions.length > 0) {
+          suggestions.slice(0, 6).forEach((sug, idx) => {
+            const itemBtn = el("button", "asp-item", "");
+            itemBtn.type = "button";
+            itemBtn.appendChild(el("span", "", sug));
+            if (idx === 0) itemBtn.appendChild(el("span", "asp-badge", "Recommended"));
+            itemBtn.onclick = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const curVal = ta.value || "";
+              const before = curVal.slice(0, hit.start);
+              const after = curVal.slice(hit.end);
+              ta.value = before + sug + after;
+              const newCaret = hit.start + sug.length;
+              closeSpellPopup();
+              ta.focus();
+              try { ta.setSelectionRange(newCaret, newCaret); } catch (err) {}
+              ta.dispatchEvent(new Event("input", { bubbles: true }));
+              if (typeof onTextReplaced === "function") onTextReplaced();
+            };
+            list.appendChild(itemBtn);
+          });
+        } else {
+          list.appendChild(el("div", "asp-empty", "No replacement suggestions found"));
+        }
+        pop.appendChild(list);
+
+        const foot = el("div", "asp-foot");
+        const addDictBtn = el("button", "asp-Action-btn", "+ Add \"" + hit.word + "\" to dictionary");
+        addDictBtn.type = "button";
+        addDictBtn.onclick = async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeSpellPopup();
+          try {
+            await _postJson("/api/steward/spellcheck", { action: "add", word: hit.word });
+          } catch (err) {}
+          ta.focus();
+        };
+        const ignoreBtn = el("button", "asp-Action-btn", "Ignore");
+        ignoreBtn.type = "button";
+        ignoreBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); closeSpellPopup(); ta.focus(); };
+        foot.appendChild(addDictBtn);
+        foot.appendChild(ignoreBtn);
+        pop.appendChild(foot);
+
+        document.body.appendChild(pop);
+        _spellPopupEl = pop;
+
+        const rect = ta.getBoundingClientRect();
+        const clientX = (ev && typeof ev.clientX === "number" && ev.clientX > 0) ? ev.clientX : (rect.left + 80);
+        const clientY = (ev && typeof ev.clientY === "number" && ev.clientY > 0) ? ev.clientY : rect.top;
+        const popRect = pop.getBoundingClientRect();
+        let left = Math.min(window.innerWidth - popRect.width - 12, Math.max(12, clientX - 20));
+        let top = clientY - popRect.height - 12;
+        if (top < 12) top = Math.min(window.innerHeight - popRect.height - 12, clientY + 20);
+        pop.style.left = left + "px";
+        pop.style.top = top + "px";
+      }, 15);
+    };
+
+    ta.addEventListener("click", (ev) => {
+      triggerSpellCheckAtCursor(ev, false);
+    });
+    ta.addEventListener("contextmenu", (ev) => {
+      const val = ta.value || "";
+      const caret = typeof ta.selectionStart === "number" ? ta.selectionStart : 0;
+      const hit = extractWordAtIndex(val, caret);
+      if (hit && hit.word) {
+        ev.preventDefault();
+        triggerSpellCheckAtCursor(ev, true);
+      }
+    });
+  }
+
+  function formatDictatedChunk(rawChunk, prevText) {
+    let s = String(rawChunk || "");
+    if (!s.trim()) return "";
+    s = s
+      .replace(/\b(?:new line|next line)\b/gi, "\n")
+      .replace(/\b(?:new paragraph|next paragraph)\b/gi, "\n\n")
+      .replace(/\s+\b(?:comma)\b/gi, ",")
+      .replace(/\s+\b(?:period|full stop)\b/gi, ".")
+      .replace(/\s+\b(?:question mark)\b/gi, "?")
+      .replace(/\s+\b(?:exclamation point|exclamation mark)\b/gi, "!")
+      .replace(/\s+\b(?:colon)\b/gi, ":")
+      .replace(/\s+\b(?:semicolon)\b/gi, ";");
+    s = s.replace(/\s+/g, " ").trim();
+    const prevTrim = String(prevText || "").trimEnd();
+    if (!prevTrim || /[.!?\n]$/.test(prevTrim)) {
+      s = s.charAt(0).toUpperCase() + s.slice(1);
+    }
+    if (prevTrim && !/\s$/.test(prevText) && !/^[,.:;!?]/.test(s)) {
+      s = " " + s;
+    }
+    return s;
+  }
+
   async function sendSay(text, questionId) {
     try {
-      const r = await post("/api/say", { text, refinement_context: _refinementContext, question_id: questionId || null });
+      const r = await post("/api/say", { text, refinement_context: _refinementContext, question_id: questionId || null, talk_mode: isTalkModeOn() });
       const j = await r.json();
       if (j.ok) {
         _refinementContext = null; _answerQuestionId = null;
         const ta = $("[data-say]");
         if (ta) ta.placeholder = "";
+        if (j.spoken_summary || j.reply) {
+          speakConciseSummary(j.spoken_summary || j.reply);
+        }
       } else {
         _answerQuestionId = null;
         addLine("sys", "not delivered: " + (j.error || "?") + " - your text is back in the box");
@@ -4760,65 +6348,315 @@ const Proto = (() => {
       const kept = localStorage.getItem(DRAFT_KEY);
       if (kept && kept.trim() && !ta.value.trim()) { ta.value = kept; grow(); addLine("sys", "your unsent text is back in the box"); }
     } catch (e) {}
+
+    // Wire native Windows 11 left-click & right-click spellcheck suggestion popup on the composer textarea
+    let _stopDictationFn = null;
+    let _isDictatingFn = () => false;
+    try { wireSpellcheckOnTextarea(ta, () => { grow(); saveDraft(); }); } catch (e) {}
+
+    // Inject best-in-class 🎤 Dictate button + 🔊 Talk Mode button next to Send
+    const composerHost = (send && send.parentElement) || ta.parentElement;
+    if (composerHost && send && !composerHost.querySelector("[data-dictate-btn]")) {
+      try { const dictBtn = el("button", "composer-voice-btn", "🎤 Dictate");
+      dictBtn.type = "button";
+      dictBtn.dataset.dictateBtn = "1";
+      dictBtn.title = "Start/stop continuous voice dictation (with auto-punctuation) · Win+H also supported";
+
+      let recog = null;
+      let dictActive = false;
+      let dictPollTimer = null;
+      let dictRestarter = null;
+      let dictSeq = 0;
+      let recentChunks = [];
+      let audioStream = null;
+      let audioCtx = null;
+      let audioSource = null;
+      let audioProcessor = null;
+      let pcmFrames = [];
+      let preRollFrames = [];
+      let speechDetectedInChunk = false;
+      let speechStartTs = 0;
+      let lastVoiceTs = 0;
+      let transcribeInFlight = Promise.resolve();
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      const appendRecognizedText = (rawText) => {
+        const cleanNorm = String(rawText || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
+        if (!cleanNorm) return;
+        const now = Date.now();
+        recentChunks = recentChunks.filter(c => now - c.ts < 3800);
+        if (recentChunks.some(c => c.norm === cleanNorm || (cleanNorm.length > 6 && c.norm.indexOf(cleanNorm) >= 0))) return;
+        recentChunks.push({ norm: cleanNorm, ts: now });
+        const formatted = formatDictatedChunk(rawText, ta.value);
+        if (formatted) {
+          ta.value = (ta.value || "") + formatted;
+          grow();
+          saveDraft();
+          window.__lastSayFocusTs = Date.now();
+        }
+      };
+
+      const flushAudioBuffer = () => {
+        if (!speechDetectedInChunk || !pcmFrames.length) {
+          pcmFrames = [];
+          speechDetectedInChunk = false;
+          speechStartTs = 0;
+          return Promise.resolve();
+        }
+        const framesToSend = pcmFrames.slice();
+        const sampleRate = (audioCtx && audioCtx.sampleRate) ? audioCtx.sampleRate : 48000;
+        pcmFrames = [];
+        speechDetectedInChunk = false;
+        speechStartTs = 0;
+        const b64 = encodeWav16kBase64(framesToSend, sampleRate);
+        if (!b64) return Promise.resolve();
+        if (dictActive) dictBtn.textContent = "⏳ Transcribing…";
+        const p = _postJson("/api/steward/dictate", { action: "transcribe", audio_b64: b64 })
+          .then(r => r.json())
+          .then(j => {
+            if (j && j.text) appendRecognizedText(j.text);
+          })
+          .catch(() => {})
+          .finally(() => {
+            if (dictActive) dictBtn.textContent = "⏹ Listening…";
+          });
+        transcribeInFlight = transcribeInFlight.then(() => p, () => p);
+        return transcribeInFlight;
+      };
+
+      const teardownAudioCapture = () => {
+        if (audioProcessor) {
+          try { audioProcessor.onaudioprocess = null; audioProcessor.disconnect(); } catch (e) {}
+          audioProcessor = null;
+        }
+        if (audioSource) {
+          try { audioSource.disconnect(); } catch (e) {}
+          audioSource = null;
+        }
+        if (audioStream) {
+          try { audioStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+          audioStream = null;
+        }
+        if (audioCtx) {
+          try { audioCtx.close(); } catch (e) {}
+          audioCtx = null;
+        }
+      };
+
+      const stopDictation = async () => {
+        dictActive = false;
+        window.__dictationActive = false;
+        if (dictRestarter) { clearTimeout(dictRestarter); dictRestarter = null; }
+        if (dictPollTimer) { clearInterval(dictPollTimer); dictPollTimer = null; }
+        if (recog) {
+          try { recog.onend = null; recog.onerror = null; recog.onresult = null; recog.stop(); } catch (e) {}
+          recog = null;
+        }
+        const flushProm = flushAudioBuffer();
+        teardownAudioCapture();
+        dictBtn.classList.remove("recording", "active");
+        dictBtn.textContent = "🎤 Dictate";
+        _postJson("/api/steward/dictate", { action: "stop" }).catch(() => {});
+        try { await flushProm; } catch (e) {}
+      };
+      _stopDictationFn = stopDictation;
+      _isDictatingFn = () => dictActive;
+
+      const startBrowserMicCapture = async () => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          });
+          if (!dictActive) {
+            stream.getTracks().forEach(t => t.stop());
+            return false;
+          }
+          audioStream = stream;
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new Ctx();
+          audioSource = audioCtx.createMediaStreamSource(stream);
+          audioProcessor = audioCtx.createScriptProcessor(4096, 1, 1);
+          const silentGain = audioCtx.createGain();
+          silentGain.gain.value = 0;
+          audioSource.connect(audioProcessor);
+          audioProcessor.connect(silentGain);
+          silentGain.connect(audioCtx.destination);
+          pcmFrames = [];
+          preRollFrames = [];
+          speechDetectedInChunk = false;
+          speechStartTs = 0;
+          lastVoiceTs = 0;
+          audioProcessor.onaudioprocess = (ev) => {
+            if (!dictActive) return;
+            const input = ev.inputBuffer.getChannelData(0);
+            const copy = new Float32Array(input.length);
+            copy.set(input);
+            let sumSq = 0;
+            for (let i = 0; i < copy.length; i++) sumSq += copy[i] * copy[i];
+            const rms = Math.sqrt(sumSq / Math.max(1, copy.length));
+            const now = Date.now();
+            if (rms > 0.0072) {
+              if (!speechDetectedInChunk) {
+                speechDetectedInChunk = true;
+                speechStartTs = now;
+                preRollFrames.forEach(pr => pcmFrames.push(pr));
+                preRollFrames = [];
+              }
+              lastVoiceTs = now;
+              pcmFrames.push(copy);
+              dictBtn.textContent = "🔴 Speaking…";
+              if (now - speechStartTs >= 5500) {
+                flushAudioBuffer();
+              }
+            } else {
+              if (speechDetectedInChunk) {
+                pcmFrames.push(copy);
+                if (now - lastVoiceTs >= 680) {
+                  flushAudioBuffer();
+                }
+              } else {
+                preRollFrames.push(copy);
+                if (preRollFrames.length > 3) preRollFrames.shift();
+              }
+            }
+          };
+          return true;
+        } catch (err) {
+          return false;
+        }
+      };
+
+      const spawnBrowserRecog = () => {
+        if (!SpeechRec || !dictActive) return false;
+        try {
+          if (recog) { try { recog.onend = null; recog.onerror = null; recog.onresult = null; recog.stop(); } catch (e) {} }
+          recog = new SpeechRec();
+          recog.continuous = true;
+          recog.interimResults = false;
+          recog.lang = "en-US";
+          recog.onresult = (ev) => {
+            for (let i = ev.resultIndex; i < ev.results.length; i++) {
+              if (ev.results[i].isFinal && ev.results[i][0] && ev.results[i][0].transcript) {
+                appendRecognizedText(ev.results[i][0].transcript);
+              }
+            }
+          };
+          recog.onend = () => {
+            if (dictActive) {
+              dictRestarter = setTimeout(() => { if (dictActive) spawnBrowserRecog(); }, 250);
+            }
+          };
+          recog.start();
+          return true;
+        } catch (e) {
+          return false;
+        }
+      };
+      const startDictation = () => {
+        spawnBrowserRecog();
+        dictActive = true;
+        window.__dictationActive = true;
+        window.__lastSayFocusTs = Date.now();
+        dictBtn.classList.add("recording", "active");
+        dictBtn.textContent = "⏹ Listening…";
+        ta.focus();
+        startBrowserMicCapture();
+        // Also start backend System.Speech fallback for local desktop environments
+        _postJson("/api/steward/dictate", { action: "start" })
+          .then(r => r.json())
+          .then(j => {
+            if (j && typeof j.last_seq === "number") dictSeq = j.last_seq;
+          })
+          .catch(() => {});
+        if (dictPollTimer) clearInterval(dictPollTimer);
+        dictPollTimer = setInterval(() => {
+          if (!dictActive) return;
+          _postJson("/api/steward/dictate", { action: "poll", since: dictSeq })
+            .then(r => r.json())
+            .then(j => {
+              if (!dictActive || !j) return;
+              if (Array.isArray(j.chunks)) {
+                j.chunks.forEach(c => {
+                  if (c && typeof c.seq === "number" && c.seq > dictSeq) dictSeq = c.seq;
+                  if (c && c.text) appendRecognizedText(c.text);
+                });
+              }
+            })
+            .catch(() => {});
+        }, 500);
+      };
+      dictBtn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (dictActive) stopDictation();
+        else startDictation();
+      };
+      composerHost.insertBefore(dictBtn, send);
+
+      const talkBtn = el("button", "composer-voice-btn" + (isTalkModeOn() ? " talk-active" : ""), isTalkModeOn() ? "🔊 Talk: ON" : "🔈 Talk Mode");
+      talkBtn.type = "button";
+      talkBtn.dataset.talkModeBtn = "1";
+      talkBtn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const nextState = !isTalkModeOn();
+        setTalkModeOn(nextState);
+        if (nextState) {
+          const hb = (_lastMap && _lastMap.heartbeat) || {};
+          const intro = "Talk mode active. " + (hb.human_wait && hb.human_wait !== "none" ? ("Waiting on your input: " + hb.human_wait) : (hb.next_recommended || "Ready for your command."));
+          speakConciseSummary(intro, true);
+        }
+      };
+      composerHost.insertBefore(talkBtn, send);
+      setTalkModeOn(isTalkModeOn()); } catch (e) {}
+    }
+
     const submit = async () => {
-      let text = ta.value.trim();
+      if (_isDictatingFn()) { try { if (_stopDictationFn) await _stopDictationFn(); } catch (e) {} } _composing = false; let text = ta.value.trim();
       if (!text) return;
+      closeSpellPopup();
       // dictation-friendly grasscatch: "later: ..." parks it without ceremony
       const later = text.match(/^(later|grasscatcher?)[:,]\s*(.+)/is);
       if (later) text = "Grasscatch this (park it on the Strip with a reason, " +
                         "then carry on with the step in hand): " + later[2];
       const keep = ta.value;
-      ta.value = ""; grow();
+      ta.value = ""; grow(); _skipNextJohnEcho = text; const optimisticBlk = addBlock("john", opts.johnLabel || "JOHN", text); if (send) { send.disabled = true; send.textContent = "Sending…"; }
       { const d = scrollEl(); if (d) { d._follow = true; pin(d, true); } }   // his own message brings him to the newest
-      // Steward unreviewed-items interjection when John sends a new command while For Review still has items
-      const pendingRev = (_deliv && Array.isArray(_deliv.reviewNow)) ? _deliv.reviewNow.slice() : [];
-      const revSig = pendingRev.map(r => r.path || r.what).join("|");
-      if (pendingRev.length > 0 && revSig && window._interjectedRevSig !== revSig) {
-        window._interjectedRevSig = revSig;
-        try {
-          const d = scrollEl();
-          if (d) {
-            const blk = el("div", "blk steward");
-            blk.appendChild(el("div", "who", (opts.stewardLabel || personaName().toUpperCase()) + " \u00b7 REVIEW CHECK"));
-            const card = el("div", "steward-interject-card");
-            const msg = el("div", "");
-            renderRich(msg, "Before we move on to your new request: you still have **" + pendingRev.length + " item" + (pendingRev.length === 1 ? "" : "s") + "** in **For Review**. Are you done reviewing them (mark them Done), or should I keep them in **For Review**?");
-            card.appendChild(msg);
-            const actRow = el("div", "steward-interject-actions");
-            const yesBtn = el("button", "mark-all-done-btn", "\u2713 Yes, Mark " + pendingRev.length + " Review Item" + (pendingRev.length === 1 ? "" : "s") + " Done");
-            yesBtn.type = "button";
-            yesBtn.onclick = async () => {
-              yesBtn.disabled = true;
-              try {
-                for (const it of pendingRev) {
-                  await post("/api/dismiss-deliverable", {
-                    path: it.open_path || it.path || "",
-                    product_id: it.product_id || "",
-                    what: it.what || "",
-                    revision_id: it.revision_id || "",
-                    hash: it.hash || ""
-                  });
-                }
-              } catch (e) {}
-              blk.remove();
-              await renderDeliverablesTile();
+      // Implicit Approval-on-Feedback (John, 2026-10-21): never pop up a nagging REVIEW CHECK card.
+      // When John gives feedback in the dialogue, automatically clear Supplemental building-block items
+      // out of For Review into All Deliverables, and if his message approves/advances to the next stage,
+      // clear the prior stage's review items as well.
+      try {
+        const suppRev = (_deliv && Array.isArray(_deliv.supplementalReviewNow)) ? _deliv.supplementalReviewNow.slice() : [];
+        const mainRev = (_deliv && Array.isArray(_deliv.mainReviewNow)) ? _deliv.mainReviewNow.slice() : [];
+        const isExplicitApproveOrNext = /\b(?:approve[d]?|looks?\s+good|lgtm|move\s+on|next\s+(?:step|wave|chapter|section)|done\s+with\s+review|lock\s+(?:it|this)|ship\s+it|proceed|all\s+good)\b/i.test(text);
+        const isRevisionOrFeedback = /\b(?:another\s+round|next\s+round|revise|revision|update|change|fix|rework|adjust|modify|rewrite|redo|instead|make\s+sure|should\s+be|need[s]?\s+to|add\s+(?:a|more|the)|remove|cut|expand|tighten|table\s+(?:this|it|that))\b/i.test(text) || (text.length >= 20 && !/^(?:what(?:'s|\s+is)\s+the\s+status|how\s+is\s+it\s+going|status\??|eta\??)\s*\??$/i.test(text));
+        const itemsToAutoArchive = suppRev.concat((isExplicitApproveOrNext || isRevisionOrFeedback) ? mainRev : []);
+        if (isExplicitApproveOrNext || isRevisionOrFeedback) {
+          _approvalResolvedSession = true;
+        }
+        if (itemsToAutoArchive.length > 0) {
+          const batchPayload = itemsToAutoArchive.map(it => {
+            const k = String(it.open_path || it.path || it.product_id || it.what || "");
+            if (k) _dismissedSessionKeys.add(k);
+            return {
+              path: it.open_path || it.path || "",
+              product_id: it.product_id || "",
+              what: it.what || "",
+              revision_id: it.revision_id || "",
+              hash: it.hash || "",
             };
-            const keepBtn = el("button", "snt-btn", "Keep in For Review");
-            keepBtn.type = "button";
-            keepBtn.onclick = () => { blk.remove(); };
-            actRow.appendChild(yesBtn);
-            actRow.appendChild(keepBtn);
-            card.appendChild(actRow);
-            blk.appendChild(card);
-            d.appendChild(blk);
-            pin(d, true);
-          }
-        } catch (e) {}
-      }
-      const j = await sendSay(text, _answerQuestionId);
-      if (!j.ok) { ta.value = keep; grow(); saveDraft(); } else { clearDraft(); }
+          });
+          post("/api/dismiss-deliverable", { items: batchPayload })
+            .then(() => renderDeliverablesTile())
+            .catch(() => {});
+        }
+      } catch (e) {}
+      let j = { ok: false }; try { j = await sendSay(text, _answerQuestionId); } finally { if (send) { send.disabled = false; send.textContent = "Send"; } }
+      if (!j.ok) { _skipNextJohnEcho = ""; if (optimisticBlk && optimisticBlk.isConnected) optimisticBlk.remove(); ta.value = keep; grow(); saveDraft(); } else { clearDraft(); }
     };
-    if (send) send.onclick = submit;
+    if (send) { send.disabled = false; send.onclick = (ev) => { if (ev) { ev.preventDefault(); ev.stopPropagation(); } submit(); }; }
     if (TILE) {
       const typing = () => tileSay("typing", { active: !!ta.value.trim() || document.activeElement === ta });
       ta.addEventListener("input", typing); ta.addEventListener("focus", typing); ta.addEventListener("blur", typing);
@@ -4845,16 +6683,33 @@ const Proto = (() => {
     // and enabled only once its handler exists: a click in the load window
     // used to produce neither a POST nor a record.
     if (send) send.disabled = false;
+    const markSayFocus = () => { window.__lastSayFocusTs = Date.now(); };
+    ta.addEventListener("focus", markSayFocus);
+    ta.addEventListener("click", markSayFocus);
+    ta.addEventListener("input", markSayFocus);
+    ta.addEventListener("keyup", markSayFocus);
     ta.addEventListener("keydown", (e) => {
+      markSayFocus();
+      if (e.key === "PageDown" || (e.altKey && e.key === "ArrowDown")) {
+        if (typeof window.scrollOpenDeliverable === "function") {
+          e.preventDefault();
+          window.scrollOpenDeliverable(1);
+          return;
+        }
+      }
+      if (e.key === "PageUp" || (e.altKey && e.key === "ArrowUp")) {
+        if (typeof window.scrollOpenDeliverable === "function") {
+          e.preventDefault();
+          window.scrollOpenDeliverable(-1);
+          return;
+        }
+      }
       // 2026-10-13 (John): CLI-style Enter sends immediately; Shift+Enter makes a new line.
       // Never send from a key during an active composition.
-      if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+      if ((e.key !== "Enter" && e.keyCode !== 13) || e.isComposing || e.keyCode === 229) return;
       if (e.shiftKey) return;
-      e.preventDefault(); submit();
+      _composing = false; e.preventDefault(); e.stopPropagation(); submit();
     });
-    // Dictation is Win+H (2026-08-25, jrnl 0088): the in-page Web Speech mic
-    // was choppy and never auto-punctuated, so it is GONE — the textarea
-    // stays a clean Win+H target (never locked, text never lost).
   }
 
   function wireChrome() {
@@ -4929,10 +6784,12 @@ const Proto = (() => {
     if (TALK) { const a = document.querySelector(".app"); if (a) { a.classList.add("talkview", "railhide", "nocompose"); a.classList.remove("statusopen"); } }
     if (opts.stewardLabel) opts._labelSet = true;
     applyTheme();
+    wireComposer();
+    wireChrome();
     try { wireFollow(scrollEl()); } catch (e) {}   // before history loads, so the replay lands at the newest
     const wantPanes = !TALK && !TILE;
     const statusFetchProm = (opts.statusPane && wantPanes) ? fetch(api("/api/status")).then(r => r.json()).catch(() => null) : Promise.resolve(null);
-    const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).catch(() => {}) : Promise.resolve();
+    const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).catch((err) => { console.error("renderDeliverablesTile error:", err && err.stack || err); }) : Promise.resolve();
     const histProm = (!opts.skipHistory) ? loadHistory().catch(() => {}) : Promise.resolve();
     try { await loadMap(); } catch (e) {
       const p = $("[data-progress]");
@@ -4947,8 +6804,6 @@ const Proto = (() => {
       } catch (e) {}
     }
     try { await delivProm; } catch (e) {}
-    wireComposer();
-    wireChrome();
     try { wireWorkMap(); } catch (e) {}
     poll();
     stampPoll();

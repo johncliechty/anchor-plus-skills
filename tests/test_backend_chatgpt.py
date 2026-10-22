@@ -180,7 +180,7 @@ def test_browser_role_controls_disable_honestly_and_link_judge(stack, monkeypatc
         assert option_disabled("#mpReview option[value=chatgpt]") is False
         assert option_disabled("#mpJudge option[value=chatgpt]") is False
 
-        page.select_option("#mpJudge", "grok")
+        page.select_option("#mpReview", "grok")
         page.wait_for_function(
             "document.querySelector('#mpReview').value === 'grok' && "
             "document.querySelector('#mpJudge').value === 'grok'"

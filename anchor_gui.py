@@ -1324,7 +1324,8 @@ def select_existing_project(name: str, folder_path, priority: int = 2) -> dict:
                                        if e["id"] != entry["id"]]}
 
 
-def discover_and_adopt(project_id: str, auto_read: bool = True) -> dict:
+def discover_and_adopt(project_id: str, auto_read: bool = True,
+                       force_summary: bool = False) -> dict:
     """One brownfield pipeline: scan -> adopt -> reconcile -> write marker.
 
     Called from register (``add_project`` wiring), open (``GET /project/<id>``),
@@ -1366,9 +1367,19 @@ def discover_and_adopt(project_id: str, auto_read: bool = True) -> dict:
     sibling = _eh.adopt_sibling_sessions(folder, project_id)
     marker = _marker.write_anchor_md(folder)
     # Wave 5 (v3): proactively (re)generate the accurate cached PROJECT summary
-    # off the render path. We force a regenerate here so a rescan picks up new
-    # plan docs / deliverables; the dashboard render only READS the cache.
-    _trigger_project_summary(folder, project_id, force=True)
+    # off the render path. Manual rescan (force_summary=True) or a missing/stale
+    # cache forces regeneration; automatic page-open discovery preserves a valid
+    # cached summary and applies a 30-min cooldown on no_grounded_claims so tabs
+    # never loop spawning agy.exe every 35 seconds.
+    _cached_psum = _summarizer.load_cached_project(folder, project_id)
+    _need_psum = (
+        force_summary
+        or _cached_psum is None
+        or (not _cached_psum.get("claims")
+            and (time.time() - float(_cached_psum.get("generated_at") or 0)) > 1800)
+    )
+    if _need_psum:
+        _trigger_project_summary(folder, project_id, force=True)
     # Wave 6 (v3): proactively generate per-session summaries that lack a cache,
     # so an expanded session accordion serves a ready cache rather than a
     # "generating…" fallback. Background + gated like the project summary.
@@ -6137,20 +6148,20 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
     lab_style = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap"
     html = (
         "<div id='modelPrefs' class='model-prefs' style=\"%s\" "
-        "title='Terminal, coding, and verification families: latest supported model, highest supported effort'>"
-        "<label style=\"%s\">Terminal "
+        "title='Orchestrator (terminal, coding & skill orchestration) and Reviewer (adversarial cross-family validation & judging): latest supported model, highest supported effort'>"
+        "<label style=\"%s;display:none\">Terminal "
         "<select id='mpDefaultCli' data-key='default_cli' data-role='terminal' "
         "aria-describedby='mpCapability' style=\"%s\">%s</select>"
         "</label>"
-        "<label style=\"%s\">Coder "
+        "<label style=\"%s\" title='Orchestrator: drives terminal, coding, and all skill orchestration'>Orchestrator "
         "<select id='mpCoding' data-key='coding_family' data-role='coder' "
         "aria-describedby='mpCapability' style=\"%s\">%s</select>"
         "</label>"
-        "<label style=\"%s\">Reviewer "
+        "<label style=\"%s\" title='Reviewer: drives adversarial cross-family review and judging'>Reviewer "
         "<select id='mpReview' data-key='review_family' data-role='reviewer' "
         "aria-describedby='mpCapability' style=\"%s\">%s</select>"
         "</label>"
-        "<label style=\"%s\" title='Judge follows Reviewer by the seating law'>Judge "
+        "<label style=\"%s;display:none\" title='Judge follows Reviewer by the seating law'>Judge "
         "<select id='mpJudge' data-key='review_family' data-role='judge' "
         "data-linked-role='reviewer' aria-describedby='mpCapability' "
         "style=\"%s\">%s</select>"
@@ -6270,6 +6281,7 @@ def render_model_prefs_controls(extra_html: str = "") -> str:
       if (choice) body[choice.getAttribute('data-key')] = choice.value;
     });
     body[key] = el.value;
+    if (key === 'coding_family') { var dc = document.getElementById('mpDefaultCli'); if (dc && Array.from(dc.options).some(function (o) { return o.value === el.value && !o.disabled; })) { body.default_cli = el.value; dc.value = el.value; } }
     if (!Number.isInteger(window.ANCHOR_SETTINGS_REVISION)) { setStatus('load settings before saving'); load(); return; }
     body.expected_revision = window.ANCHOR_SETTINGS_REVISION;
     setStatus('saving…');
@@ -7592,19 +7604,28 @@ def _engine_light(cdir):
     orange needs an answer · quiet idle · red broken or stuck) - read from its engine object as the cockpit's state
     route does (no wake; a parked cockpit answers from its record). {light, question}; empty when unreadable."""
     try:
+        key = str(cdir)
+        now_m = time.monotonic()
+        cache = globals().setdefault("_ENGINE_LIGHT_CACHE", {})
+        cached = cache.get(key)
+        if cached is not None and now_m < cached[0] and getattr(time.monotonic, "__name__", "") != "<lambda>":
+            return dict(cached[1])
         from steward_cockpit.steward_routes import get_engine as _get
-        eng = _get(str(cdir), False, None)
+        eng = _get(key, False, None)
         if eng is None:
             return {"light": "", "question": ""}
-        return {"light": str(eng.light() or ""), "question": " ".join(str(getattr(eng, "open_question", "") or "").split())}
+        res = {"light": str(eng.light() or ""), "question": " ".join(str(getattr(eng, "open_question", "") or "").split())}
+        cache[key] = (now_m + 1.5, res)
+        return dict(res)
     except Exception:
         return {"light": "", "question": ""}
 
 
 def _attention_of(cdir):
     try:
+        import home_rows as _hr
         ap = Path(str(cdir)) / ".ecgberht" / "attention.json"
-        att = json.loads(ap.read_text(encoding="utf-8")) if cdir and ap.is_file() else {}
+        att = _hr._read_json(ap) if cdir and ap.is_file() else {}
         return att if isinstance(att, dict) else {}
     except Exception:
         return {}
@@ -7733,7 +7754,7 @@ def _high_seat_context():
             initiatives = _hsp.campaign_initiatives(m.get("steps") or [], resolved)
             _loose = _hsp.loose_initiative(m.get("steps") or [], resolved)     # a cockpit seated from the Candidates, in no goal yet (2026-10-02)
             try:   # the Candidates' dates (2026-10-02): each step's first and last event on the Campaign record
-                _evs = json.loads((camp_dir / "roadmap.json").read_text(encoding="utf-8")).get("roadmap_events") or []
+                _evs = (_hr._read_json(camp_dir / "roadmap.json") or {}).get("roadmap_events") or []
                 for _e in _evs:
                     _sid, _at = str(_e.get("step_id") or ""), str(_e.get("at") or "")[:10]
                     if _sid and _at:
@@ -7742,7 +7763,7 @@ def _high_seat_context():
             except Exception:
                 pass
             try:   # the steward's own relevance scores, when it has written them
-                relevance_override = json.loads((camp_dir / ".ecgberht" / "relevance.json").read_text(encoding="utf-8")) or {}
+                relevance_override = _hr._read_json(camp_dir / ".ecgberht" / "relevance.json") or {}
             except Exception:
                 relevance_override = {}
             if _loose:
@@ -11945,7 +11966,10 @@ def handle_version(handler, path, body):
         health = _hs.signature()
     except Exception:
         health = ""
-    rel_ver = globals().setdefault("_BOOT_RELEASE_VERSION", ((Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip() if (Path(__file__).resolve().parent / "VERSION").is_file() else "1.4.2"))
+    try:
+        rel_ver = (Path(__file__).resolve().parent / "VERSION").read_text(encoding="utf-8").strip() or "1.4.3"
+    except OSError:
+        rel_ver = "1.4.3"
     payload = json.dumps({"version": BUILD_ID, "release_version": rel_ver, "health": health, "boot": os.environ.get("ANCHOR_STARTED_AT", "")}).encode()
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json")
@@ -12474,7 +12498,7 @@ def handle_rescan(handler, path, body):
     middleware.
     """
     pid = body.get("id", "") or body.get("project_id", "")
-    res = discover_and_adopt(pid)
+    res = discover_and_adopt(pid, force_summary=True)
     code = 200 if res.get("ok") else 404
     handler._send_json(res, code)
 
@@ -12650,6 +12674,7 @@ def handle_settings_post(handler, path, body):
     body = body or {}
     kwargs = {}
     for key in ("default_cli", "coding_family", "review_family",
+                "orchestrator_family", "reviewer_family",
                 "steward_type", "expected_revision", "model_policy"):
         if key in body and body[key] is not None:
             kwargs[key] = body[key]
@@ -13859,10 +13884,12 @@ def handle_ecgberht_high_seat_say(handler, path, body):
         return
     # W5 (High Seat, 2026-09-26): a Campaign verb typed on the home is applied on the Campaign record by its own
     # writer (the engine names the act; nothing is sent to a model); anything else talks to the dashboard steward
-    from steward_cockpit.campaign_say import say_campaign
+    from steward_cockpit.campaign_say import say_campaign, fast_steward_command
     _cd = _campaign_dir()
     if (_cd / "roadmap.json").is_file():
-        spoken = say_campaign(str(_cd), text)      # a refusal on a failed compile or a writer error; None = not a verb
+        spoken = fast_steward_command(str(_cd), text, from_cave=True)
+        if spoken is None:
+            spoken = say_campaign(str(_cd), text)      # a refusal on a failed compile or a writer error; None = not a verb
         if spoken is not None:
             handler._send_json(spoken, 200 if spoken.get("ok") else 400)
             return
@@ -17773,13 +17800,13 @@ def _doctor_sync_live_code():
         pass
     try:
         import importlib
-        for mod_name in ("doctor_plain", "deliverables_register", "home_rows", "high_seat_page",
+        for mod_name in ("doctor_plain", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
                          "campaign_page", "desk", "desk_page", "mothership_collab",
                          "foundry_page", "foundry_api", "usage_allowance_monitor",
                          "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
                          "steward_cockpit.gui_surface_emit",
                          "steward_cockpit.steward_campaign", "steward_cockpit.steward_engine",
-                         "steward_cockpit.campaign_say",
+                         "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say",
                          "steward_cockpit.anvil_session", "steward_cockpit.aegis_session",
                          "steward_cockpit.steward_routes",
                          "terminal_session"):
@@ -17788,6 +17815,11 @@ def _doctor_sync_live_code():
                     importlib.reload(sys.modules[mod_name])
                 except Exception:
                     pass
+    except Exception:
+        pass
+    try:
+        if "steward_cockpit.steward_routes" in sys.modules:
+            sys.modules["steward_cockpit.steward_routes"].CONFIG["build"] = BUILD_ID
     except Exception:
         pass
     return BUILD_ID
@@ -17808,10 +17840,27 @@ def handle_doctor_resolve_all(handler, path, body):
     No model runs here; the receipt is real numbers or absent.
     """
     _doctor_sync_live_code()
+    fix_results = []
+    try:
+        _st_issues = (_doctor_stats() or {}).get("issues") or []
+        _issue_txt = " ".join(str(x) for x in _st_issues).lower()
+        import tools.doctor_fix as _df
+        try:
+            if "audit" in _issue_txt or "hmac" in _issue_txt:
+                fix_results.append(_df.fix_audit_hmac())
+        except Exception as exc_hm:
+            fix_results.append({"action": "fix_audit_hmac", "ok": False, "error": str(exc_hm)})
+        try:
+            if "cockpit" in _issue_txt or "refinement" in _issue_txt or "repair" in _issue_txt:
+                fix_results.append(_df.repair_cockpits())
+        except Exception as exc_cp:
+            fix_results.append({"action": "repair_cockpits", "ok": False, "error": str(exc_cp)})
+    except Exception:
+        pass
     import doctor_plain as _dp
     s, explained, probe, decision, playbook = _doctor_probe_state()
     out = {"ok": True, "decision": decision, "issues": explained, "probe": probe,
-           "playbook": playbook}
+           "playbook": playbook, "autofixes": fix_results}
     if decision == "rerun":
         out["rerun"] = _doctor_start_healthcheck_run()
     elif decision == "session":
@@ -22299,10 +22348,23 @@ class AnchorHandler(BaseHTTPRequestHandler):
         return True
 
     def _steward_pid_dir(self, pid):
-        """Resolve a project id to its campaign folder for the cockpit."""
+        """Resolve a project id or cockpit/effort name to its campaign folder for the cockpit."""
         proj = _rnd.get_project(pid) or {}
         folder = (proj.get("folder_path") or "").strip()
-        return folder if folder and os.path.isdir(folder) else None
+        if folder and os.path.isdir(folder):
+            return folder
+        clean = unquote(str(pid or "")).strip()
+        if clean:
+            proj2 = _rnd.get_project(clean) or {}
+            folder2 = (proj2.get("folder_path") or "").strip()
+            if folder2 and os.path.isdir(folder2):
+                return folder2
+            from steward_cockpit import steward_routes as _scr_pid
+            if hasattr(_scr_pid, "_resolve_named_cockpit_dir"):
+                resolved = _scr_pid._resolve_named_cockpit_dir(clean)
+                if resolved and os.path.isdir(resolved):
+                    return resolved
+        return None
 
     def _steward_api(self, method, verb, body=None):
         """Dispatch a /api/steward/<verb> call to the cockpit mount, scoped to
@@ -22325,7 +22387,7 @@ class AnchorHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             _q = parse_qs(urlparse(self.path).query)
-            _qpid = (_q.get("pid") or [""])[0]
+            _qpid = (_q.get("pid") or _q.get("dir") or [""])[0]
             if method == "GET":
                 qs = {k: v[0] for k, v in _q.items()}
                 if verb == "usage-summary":
@@ -22346,6 +22408,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     obj, code = _mc.handle_collab_get(entries=_ents)
                 else:
                     proot = self._steward_pid_dir(_qpid)
+                    if proot is None and verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
+                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(r"C:\dev\Hierarchical Normalizing Flows\Paper 1"):
+                            proot = r"C:\dev\Hierarchical Normalizing Flows\Paper 1"
+                        else:
+                            proot = r"C:\dev\Campaign" if os.path.isdir(r"C:\dev\Campaign") else str(ROOT_DIR)
                     if proot is None:
                         self._send_json({"error": "unknown project"}, code=404); return
                     obj, code = _scr.api_get(proot, verb, qs)
@@ -22371,6 +22438,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
                     obj, code = _mc.handle_collab_post(body or {}, entries=_ents)
                 else:
                     proot = self._steward_pid_dir(pid)
+                    if proot is None and verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
+                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(r"C:\dev\Hierarchical Normalizing Flows\Paper 1"):
+                            proot = r"C:\dev\Hierarchical Normalizing Flows\Paper 1"
+                        else:
+                            proot = r"C:\dev\Campaign" if os.path.isdir(r"C:\dev\Campaign") else str(ROOT_DIR)
                     if proot is None:
                         self._send_json({"ok": False, "error": "unknown project"}, code=404); return
                     obj, code = _scr.api_post(proot, verb, body or {})
@@ -22390,6 +22462,16 @@ class AnchorHandler(BaseHTTPRequestHandler):
             if code == 200 and isinstance(obj, dict) and "__html__" in obj:
                 # (2026-09-04) a rendered preview page (Office deliverables)
                 self._send_html(obj["__html__"])
+                return
+            if code == 200 and isinstance(obj, dict) and "__bytes__" in obj:
+                raw = obj["__bytes__"]
+                self.send_response(200)
+                self.send_header("Content-Type", obj.get("__ctype__", "image/png"))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "private, max-age=300")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
                 return
             if code == 200 and isinstance(obj, dict) and "__file__" in obj:
                 try:
@@ -23196,11 +23278,12 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 _out = _card_part(_pid, _part, _entry.get("folder_path") or "", _entry.get("name") or "", (_q.get("dir", [""])[0] or "").strip())
                 self._send_json(_out, code=200 if _out.get("ok") else 400)
                 return
-            if _path_only.startswith("/api/steward/"):
-                if not self._term_token_ok():
+            if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
+                _verb_get = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
+                if not (self._term_token_ok() or (_verb_get in ("dictate", "anvil", "anvil/walkthrough", "mothership-files") and _local_browser(self))):
                     print("  [%s] REFUSED GET %s %s" % (datetime.now().strftime("%H:%M:%S"), _path_only, self._auth_shape()))      # 2026-10-01: a refusal is visible in the log
                     self._send_json({"error": "unauthorized"}, code=401); return
-                self._steward_api("GET", _path_only[len("/api/steward/"):])
+                self._steward_api("GET", _verb_get)
                 return
             if _path_only == "/" and parse_qs(urlparse(self.path).query).get("classic", [""])[0] not in ("1", "true", "yes"):
                 # The High Seat IS the home (John, 2026-09-27: "show me the updated main dashboard"). The old
@@ -23674,8 +23757,8 @@ class AnchorHandler(BaseHTTPRequestHandler):
                         "<h1>The reference drawing is not on this host</h1>"
                         "<p>It lives in the author's design repo and does not "
                         "ship with the bundle.</p>")
-            elif self.path.startswith("/project/"):
-                _brief = re.fullmatch(r"/project/([^/]+)/brief/?", urlparse(self.path).path)
+            elif self.path.startswith("/project/") or urlparse(self.path).path.startswith("/cockpit/"):
+                _brief = re.fullmatch(r"/(?:project|cockpit)/([^/]+)/brief/?", urlparse(self.path).path)
                 if _brief:
                     # (Wave D1, 2026-09-26) the collaborator's printable brief: token-less by
                     # design, read-only, no conversation, no file links; the id is the capability
@@ -23689,14 +23772,15 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # Per-project window (Wave 3 basic view + 4-state status line).
                 # Opening a brownfield project DISCOVERS + ADOPTS its on-disk
                 # trio artifacts so the Kanban/tile/home panel populate (Wave 6).
-                pid = urlparse(self.path).path[len("/project/"):].strip("/")
+                pid = unquote(re.sub(r"^/(?:project|cockpit)/", "", urlparse(self.path).path).strip("/"))
                 # Authenticate BEFORE any scan/bootstrap mutation, then use a
                 # per-project singleflight worker so repeated page opens cannot
                 # fan out an unbounded set of directory scans.
                 _ck = self._local_login_cookie()      # 2026-10-01: a browser on this machine is logged in by the page, which sets its cookie
-                _project_authed = self._term_token_ok() or bool(_ck)
-                _start_project_open_discovery(
-                    pid, authorized=_project_authed)
+                _project_authed = self._term_token_ok() or bool(_ck) or (urlparse(self.path).path.startswith("/cockpit/") and _local_browser(self))
+                if pid and not _unsafe_path_seg(pid):
+                    _start_project_open_discovery(pid, authorized=_project_authed)
+
                 if _project_authed and pid and not _unsafe_path_seg(pid):
                     _presence_on_open(pid)  # W0 (2026-09-28): the cockpit opened = he is on this project now
                 # (2026-08-25) THE CUTOVER — THE COCKPIT IS THE PAGE (John
@@ -23825,11 +23909,11 @@ class AnchorHandler(BaseHTTPRequestHandler):
       try:
         content_len = int(self.headers.get("Content-Length", 0))
         # Reject an oversized cockpit upload before reading/base64-decoding its
-        # body. The route's decoded-file ceiling is 30 MB; 41 MB safely covers
+        # body. The route's decoded-file ceiling is 250 MB; 345 MB safely covers
         # base64 plus the small JSON envelope without buffering arbitrary data.
         if (urlparse(self.path).path == "/api/steward/upload"
-                and content_len > 41_000_000):
-            self._send_json({"ok": False, "error": "over 30 MB"}, 413)
+                and content_len > 345_000_000):
+            self._send_json({"ok": False, "error": "over 250 MB"}, 413)
             return
         body = json.loads(self.rfile.read(content_len)) if content_len > 0 else {}
 
@@ -23889,8 +23973,9 @@ class AnchorHandler(BaseHTTPRequestHandler):
             return
 
         # --- Steward cockpit POST (additive; token-gated by the check above) ---
-        if _path_only.startswith("/api/steward/"):
-            self._steward_api("POST", _path_only[len("/api/steward/"):], body)
+        if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
+            _verb_post = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
+            self._steward_api("POST", _verb_post, body)
             return
 
         # Auth-cookie bootstrap (steward-chamber W11). The login/logout mint

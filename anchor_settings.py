@@ -327,6 +327,17 @@ def _save_settings_locked(**kwargs) -> dict:
         raise ValueError("expected_revision must be a nonnegative integer")
     if expected is not None and expected != current["settings_revision"]:
         raise SettingsInvalid("Model settings changed; reload before saving")
+    if "orchestrator_family" in kwargs and kwargs["orchestrator_family"] is not None:
+        oval = kwargs["orchestrator_family"]
+        if not isinstance(oval, str) or oval.strip() not in VALID_CLIS:
+            raise ValueError("invalid orchestrator_family %r (expected one of %s)" % (oval, "|".join(sorted(VALID_CLIS))))
+        current["default_cli"] = oval.strip()
+        current["coding_family"] = oval.strip()
+    if "reviewer_family" in kwargs and kwargs["reviewer_family"] is not None:
+        rval = kwargs["reviewer_family"]
+        if not isinstance(rval, str) or rval.strip() not in VALID_REVIEW_FAMILIES:
+            raise ValueError("invalid reviewer_family %r (expected one of %s)" % (rval, "|".join(sorted(VALID_REVIEW_FAMILIES))))
+        current["review_family"] = rval.strip()
     for key in ("default_cli", "coding_family", "review_family"):
         if key not in kwargs:
             continue
@@ -394,6 +405,16 @@ def get_review_family() -> str:
     return load_settings()["review_family"]
 
 
+def get_orchestrator_family() -> str:
+    """Orchestrator drives terminal, coding, and skill orchestration."""
+    return load_settings()["coding_family"]
+
+
+def get_reviewer_family() -> str:
+    """Reviewer drives adversarial cross-family review and judging."""
+    return load_settings()["review_family"]
+
+
 def families_are_cross_model() -> bool:
     """True when coding and review families differ (cross-model verification)."""
     s = load_settings()
@@ -415,8 +436,12 @@ def export_env_overrides() -> dict:
     return {
         "ANCHOR_DATA_DIR": str(settings_path().parent),
         "ANCHOR_DEFAULT_CLI": s["default_cli"],
+        "ANCHOR_ORCHESTRATOR_FAMILY": coding,
+        "ANCHOR_REVIEWER_FAMILY": review,
         "ANCHOR_CODING_FAMILY": coding,
         "ANCHOR_REVIEW_FAMILY": review,
+        "ORCHESTRATOR_FAMILY": coding,
+        "REVIEWER_FAMILY": review,
         "CODING_FAMILY": coding,
         "REVIEW_FAMILY": review,
         "CROSS_MODEL": cross,

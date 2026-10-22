@@ -64,8 +64,8 @@ def _fmt_tokens_short(n: int) -> str:
     if n >= 1_000_000:
         return f"{n / 1_000_000:.1f}M"
     if n >= 1_000:
-        return f"{n / 1_000:.1f}k"
-    return str(n)
+        return f"{n:,} ({n / 1_000:.1f}k)"
+    return f"{n:,}"
 
 
 def rate_limits_dir() -> Path:
@@ -322,7 +322,7 @@ def compute_allowance_monitor(usage_summary: Optional[Dict[str, Any]] = None) ->
             summary_line = f"5h: {pct_5h}% left" + (f" · resets {reset_5h_text}" if reset_5h_text else "")
             short_allowance = f"5h: {pct_5h}% left"
         elif tokens_7d > 0:
-            summary_line = f"7d: {_fmt_tokens_short(tokens_7d)} tok (~${usd_7d:.2f}) · CLI quota % not published"
+            summary_line = f"7d: {_fmt_tokens_short(tokens_7d)} tok (~${usd_7d:,.2f}) · CLI quota % not published"
             short_allowance = f"7d: {_fmt_tokens_short(tokens_7d)} tok"
         else:
             summary_line = "CLI Ready · 0 tok (7d) · quota % not published"

@@ -6812,7 +6812,7 @@ def check_supervisor_seam(report: Report):
             "research", project_id="hc-sup-pid", folder_path=str(folder),
             cwd=str(folder), backend="claude",
             extra_args=["--lines", "6", "--line-interval",
-                                         "0.15", "--sleep", "6"])
+                                         "0.15", "--sleep", "20"])
         jid = rec["job_id"]
 
         # Let a couple of lines drip, then record the durable cursor.

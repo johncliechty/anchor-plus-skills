@@ -632,7 +632,11 @@ def _engine_launch_argv(cmd, backend, engine_uuid, *, selection=None):
     argv = _engine_session_argv(cmd, backend, engine_uuid)
     if selection is not None:
         import model_policy
-        argv.extend(model_policy.launch_args(selection))
+        if backend == _reg.BACKEND_GEMINI and os.environ.get("ANCHOR_PTY_BACKEND") != "stub":
+            if not str(selection.get("model") or "").startswith("gemini-4-argon"):
+                argv.extend(model_policy.launch_args(selection))
+        else:
+            argv.extend(model_policy.launch_args(selection))
     return argv
 
 

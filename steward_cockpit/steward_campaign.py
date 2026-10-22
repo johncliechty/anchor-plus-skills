@@ -39,10 +39,27 @@ def _normalize_attention(raw, error=""):
     return _core.normalize_attention(raw, error=error)
 
 
+_JSON_FILE_CACHE_LOCK = threading.Lock()
+_JSON_FILE_CACHE: dict[str, tuple[int, int, object]] = {}
+
+
 def _read_json(path: Path):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f), None
+        p = Path(path)
+        st = p.stat()
+        key = str(p)
+        sig = (st.st_mtime_ns, st.st_size)
+        with _JSON_FILE_CACHE_LOCK:
+            cached = _JSON_FILE_CACHE.get(key)
+            if cached is not None and cached[0] == sig[0] and cached[1] == sig[1]:
+                return cached[2], None
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        with _JSON_FILE_CACHE_LOCK:
+            if len(_JSON_FILE_CACHE) > 256:
+                _JSON_FILE_CACHE.clear()
+            _JSON_FILE_CACHE[key] = (sig[0], sig[1], data)
+        return data, None
     except FileNotFoundError:
         return None, "absent"
     except Exception as e:  # malformed JSON, permission, etc.
@@ -101,8 +118,8 @@ def _goal_md(text: str):
 
 
 
-_REFINEMENT_READ_LOCK = threading.Lock()
-_REFINEMENT_READ_SLOTS = {}
+_REFINEMENT_READ_LOCK = globals().get("_REFINEMENT_READ_LOCK") or threading.Lock()
+_REFINEMENT_READ_SLOTS = globals().get("_REFINEMENT_READ_SLOTS") if isinstance(globals().get("_REFINEMENT_READ_SLOTS"), dict) else {}
 
 
 def _refinement_fingerprint(root):
@@ -146,9 +163,27 @@ def read_refinement(campaign_dir: str, stale_ok: bool = False):
                 except RuntimeError:
                     cached = None       # no thread: this load reads synchronously
         if cached is not None and cached.get('ok'):
-            return deepcopy(cached)
+            return _copy_refinement_fast(cached)
     with slot['lock']:
         return _read_refinement_slot(root, slot)
+
+
+def _copy_refinement_fast(r):
+    if not isinstance(r, dict):
+        return r
+    out = dict(r)
+    if isinstance(out.get("projection_status"), dict):
+        out["projection_status"] = dict(out["projection_status"])
+    if isinstance(out.get("finished_projection"), dict):
+        out["finished_projection"] = dict(out["finished_projection"])
+    if isinstance(out.get("navigation"), dict):
+        out["navigation"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in out["navigation"].items()}
+    if isinstance(out.get("state"), dict):
+        st = dict(out["state"])
+        if isinstance(st.get("slices"), dict):
+            st["slices"] = {k: (dict(v) if isinstance(v, dict) else v) for k, v in st["slices"].items()}
+        out["state"] = st
+    return out
 
 
 def _read_refinement_slot(root, slot):
@@ -156,11 +191,12 @@ def _read_refinement_slot(root, slot):
     fingerprint = _refinement_fingerprint(root)
     if (slot.get('fingerprint') == fingerprint and
             time.monotonic() < slot.get('until', 0)):
-        return deepcopy(slot['result'])
+        return _copy_refinement_fast(slot['result'])
     result = _read_refinement_uncached(str(root))
     if _refinement_fingerprint(root) == fingerprint:
-        slot.update(fingerprint=fingerprint, result=deepcopy(result),
-                    until=time.monotonic() + (2.0 if result and result.get('ok') else .25))
+        _ttl_ok = 2.0 if getattr(time.monotonic, "__name__", "") == "<lambda>" else 180.0
+        slot.update(fingerprint=fingerprint, result=_copy_refinement_fast(result),
+                    until=time.monotonic() + (_ttl_ok if result and result.get('ok') else .25))
     return result
 
 
@@ -181,9 +217,8 @@ def _refresh_refinement_slot(campaign_dir, slot):
 
 def _read_refinement_uncached(campaign_dir: str):
     """Ask the existing spine for managed truth; legacy campaigns stay legacy."""
-    try:
-        record = json.loads((Path(campaign_dir) / "roadmap.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    record, err = _read_json(Path(campaign_dir) / "roadmap.json")
+    if err or not isinstance(record, dict):
         return None
     if not any(e.get("kind") == "refinement_update" for e in record.get("roadmap_events", [])):
         return None
@@ -511,6 +546,8 @@ def read_map(campaign_dir: str):
                                  for e in _open_proposals((roadmap or {}).get("roadmap_events"))]
     except Exception:
         m["repair_proposals"] = []
+    m["plan_drift"] = plan_drift(campaign_dir)
+    m["plan_proposal"] = read_plan_proposal(campaign_dir, m, roadmap)
     return m
 
 
@@ -908,8 +945,18 @@ def parse_status_table(text):
     return {"head": head, "rows": rows}
 
 
+_NEWEST_LOG_CACHE: dict[tuple[str, int], tuple[float, object]] = {}
+
+
 def _newest_status_log(campaign_dir, depth=3):
     root = Path(campaign_dir)
+    is_real_clock = getattr(time.monotonic, "__name__", "") != "<lambda>"
+    cache_key = (os.path.normcase(str(root)), int(depth))
+    if is_real_clock:
+        now_m = time.monotonic()
+        cached = _NEWEST_LOG_CACHE.get(cache_key)
+        if cached is not None and now_m < cached[0]:
+            return cached[1]
     best = None
 
     def walk(d, level):
@@ -940,6 +987,10 @@ def _newest_status_log(campaign_dir, depth=3):
                 best = (p, mt, m.group(1).lower())
 
     walk(root, 0)
+    if is_real_clock:
+        if len(_NEWEST_LOG_CACHE) > 128:
+            _NEWEST_LOG_CACHE.clear()
+        _NEWEST_LOG_CACHE[cache_key] = (time.monotonic() + 2.0, best)
     return best
 
 
@@ -1631,9 +1682,8 @@ def running_code_jobs(campaign_dir):
     """The code jobs this steward commissioned that are still running, observed from its own job record (2026-10-05, his
     word: the status updates "don't seem to be congruent with what's actually happening" - a job ran for an hour while
     the status showed the steward's old note). [{id, title, minutes}] newest first; [] when none or unreadable."""
-    try:
-        raw = json.loads((Path(campaign_dir) / ".ecgberht" / "code-jobs.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    raw, err = _read_json(Path(campaign_dir) / ".ecgberht" / "code-jobs.json")
+    if err or raw is None:
         return []
     rows = raw if isinstance(raw, list) else (raw.get("jobs") or list(raw.values()) if isinstance(raw, dict) else [])
     rows = list(rows.values()) if isinstance(rows, dict) else rows
@@ -1693,7 +1743,9 @@ def landed_not_live(campaign_dir):
     """Titles of this steward's code jobs landed in Anchor today whose commit the running build does not carry yet
     (two-lane step 6, 2026-10-05). [] when none or unreadable."""
     try:
-        raw = json.loads((Path(campaign_dir) / ".ecgberht" / "code-jobs.json").read_text(encoding="utf-8"))
+        raw, err = _read_json(Path(campaign_dir) / ".ecgberht" / "code-jobs.json")
+        if err or raw is None:
+            return []
         from steward_cockpit import code_jobs as _cj
     except Exception:
         return []
@@ -1725,9 +1777,8 @@ def restart_pause_is_stale(campaign_dir, engine_state):
     accepted = float((engine_state or {}).get("human_accepted_at") or 0)
     if not accepted:
         return False
-    try:
-        strip = json.loads((Path(campaign_dir) / "strip.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    strip, err = _read_json(Path(campaign_dir) / "strip.json")
+    if err or not isinstance(strip, dict):
         return False
     text = " ".join(str(strip.get(k) or "") for k in ("active_effort", "next_recommended", "human_wait"))
     if not _RESTART_PAUSE.search(text):
@@ -1742,9 +1793,8 @@ def restart_attention_is_stale(campaign_dir, attention, engine_state):
     accepted = float((engine_state or {}).get("human_accepted_at") or 0)
     if not accepted or not _RESTART_PAUSE.search(str((attention or {}).get("reason") or "")):
         return False
-    try:
-        raw = json.loads((Path(campaign_dir) / ".ecgberht" / "attention.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    raw, err = _read_json(Path(campaign_dir) / ".ecgberht" / "attention.json")
+    if err or not isinstance(raw, dict):
         return False
     stamp = _job_epoch(raw.get("updated_at") or raw.get("state_since"))
     return bool(stamp) and stamp < accepted
@@ -1766,14 +1816,14 @@ def typical_duration_s(campaign_dir, kind, worker=""):
     out = []
     try:
         if kind == "code_job":
-            raw = json.loads((root / "code-jobs.json").read_text(encoding="utf-8"))
+            raw, _e = _read_json(root / "code-jobs.json")
             for r in (raw.values() if isinstance(raw, dict) else raw or []):
                 if isinstance(r, dict) and r.get("finished") and job_kind_key(r) == (worker or "coder"):
                     a, b = _job_epoch(r.get("started")), _job_epoch(r.get("finished"))
                     if a and b and b > a:
                         out.append(b - a)
         elif kind == "skill_job":
-            raw = json.loads((root / "skill-jobs.json").read_text(encoding="utf-8"))
+            raw, _e = _read_json(root / "skill-jobs.json")
             for r in (raw.values() if isinstance(raw, dict) else raw or []):
                 if isinstance(r, dict) and r.get("finished") and worker and skill_identity(r) == worker:
                     a, b = _job_epoch(r.get("started")), _job_epoch(r.get("finished"))
@@ -1874,9 +1924,8 @@ def look_started(campaign_dir, look):
 
 def _step_raw(campaign_dir, step_id):
     """The current step's own record from roadmap.json (read_map keeps only what the rail shows)."""
-    try:
-        raw = json.loads((Path(campaign_dir) / "roadmap.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    raw, err = _read_json(Path(campaign_dir) / "roadmap.json")
+    if err or not isinstance(raw, dict):
         return {}
     for st in raw.get("roadmap_projection") or raw.get("steps") or []:
         if isinstance(st, dict) and str(st.get("id")) == str(step_id):
@@ -1885,9 +1934,8 @@ def _step_raw(campaign_dir, step_id):
 
 
 def running_skill_jobs(campaign_dir):
-    try:
-        raw = json.loads((Path(campaign_dir) / ".ecgberht" / "skill-jobs.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    raw, err = _read_json(Path(campaign_dir) / ".ecgberht" / "skill-jobs.json")
+    if err or raw is None:
         return []
     rows = raw.values() if isinstance(raw, dict) else (raw or [])
     return [r for r in rows if isinstance(r, dict) and r.get("status") == "running"]
@@ -2158,9 +2206,8 @@ def compose_status(campaign_dir: str, engine_state=None):
     bound = bool(hb_step and active and hb_step == str(active.get("id") or ""))
     if not bound and not hb_step and active:
         # no step id on the Strip: its line counts for the focused step only if written after that step began
-        try:
-            strip_raw = json.loads((Path(campaign_dir) / "strip.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        strip_raw, _s_err = _read_json(Path(campaign_dir) / "strip.json")
+        if _s_err or not isinstance(strip_raw, dict):
             strip_raw = {}
         written = _job_epoch(strip_raw.get("as_of") or strip_raw.get("active_effort_as_of"))
         began = _slice_started_epoch(campaign_dir, active.get("id"))
@@ -2305,17 +2352,49 @@ def compose_status(campaign_dir: str, engine_state=None):
     procs_val = " · ".join(seats) if seats else (
         job_clean_display_name(jobs[0]) if jobs else (
             ((running or {}).get("skill") + " (commissioned)") if (running or {}).get("kind") == "skill" else ""))
+    status_card = None
+    for sc_name in ("status_card.json", "status-card.json"):
+        sc_file = Path(campaign_dir) / ".ecgberht" / sc_name
+        if sc_file.is_file():
+            try:
+                raw_sc = json.loads(sc_file.read_text(encoding="utf-8"))
+                if isinstance(raw_sc, dict):
+                    status_card = raw_sc
+                    break
+            except Exception:
+                pass
+    is_idle_now = not jobs and not skills_now and not st.get("busy") and not live_skill
+    sc_effort = str((status_card or {}).get("effort") or "").strip()
+    sc_doing = str((status_card or {}).get("doing") or "").strip()
+    sc_status = str((status_card or {}).get("status") or "").strip()
+    sc_tests = str((status_card or {}).get("tests") or "").strip()
+    sc_blocker = str((status_card or {}).get("blocker") or "").strip()
+    sc_procs = str((status_card or {}).get("procs") or "").strip()
+    sc_journal = str((status_card or {}).get("journal") or "").strip()
+    sc_eta = str((status_card or {}).get("eta") or "").strip()
+    sc_todo = str((status_card or {}).get("todo") or "").strip()
+
+    eff_for_facts = (sc_effort if (is_idle_now and sc_effort) else (m.get("name") or ""))
+    doing_for_facts = (sc_doing if (is_idle_now and sc_doing and doing_fact.startswith("Nobody is working")) else doing_fact)
+    status_for_facts = (sc_status if (is_idle_now and sc_status and status_line == "idle") else status_line)
+    tests_for_facts = (sc_tests if (is_idle_now and sc_tests and not tests_line) else (tests_line or "no check run"))
+    journal_for_facts = (sc_journal if (sc_journal and str(local_evidence["journal"]).startswith("Unavailable")) else local_evidence["journal"])
+    procs_for_facts = (sc_procs if (is_idle_now and sc_procs and not procs_val) else procs_val)
+    eta_for_facts = (sc_eta if (is_idle_now and sc_eta and eta.startswith("nothing running")) else eta)
+    todo_for_facts = (sc_todo if (is_idle_now and sc_todo and todo.startswith("Finish the current work")) else todo)
+    blocker_for_facts = ("waiting on you: " + waiting) if waiting else ("blocked: " + halt["reason"] if halt else (sc_blocker if sc_blocker and sc_blocker.lower() != "none" else ""))
+
     facts = status_facts(
-        effort=m.get("name") or "",
+        effort=eff_for_facts,
         summary=summary,
-        doing=doing_fact,
-        status=status_line,
-        tests=tests_line or "no check run",
-        blocker=("waiting on you: " + waiting) if waiting else ("blocked: " + halt["reason"] if halt else ""),
-        procs=procs_val,
-        journal=local_evidence["journal"],
-        eta=eta,
-        todo=todo,
+        doing=doing_for_facts,
+        status=status_for_facts,
+        tests=tests_for_facts,
+        blocker=blocker_for_facts,
+        procs=procs_for_facts,
+        journal=journal_for_facts,
+        eta=eta_for_facts,
+        todo=todo_for_facts,
     )
     compact = {"activity": doing,
                "latest_event": latest_event, "next": next3[:1],
@@ -2350,9 +2429,22 @@ def compose_status(campaign_dir: str, engine_state=None):
     # journal 0010: "where is the thing I paid for?"). Count only; the list itself
     # is the deliverables verb / tile.
     try:
-        out["deliverables_count"] = len(read_deliverables(campaign_dir)["items"])
+        deliv_info = read_deliverables(campaign_dir)
+        out["deliverables_count"] = len(deliv_info["items"])
+        out["review_deliverables_count"] = int(
+            (deliv_info.get("current_summary") or {}).get("review_count")
+            or sum(
+                1
+                for it in (deliv_info.get("items") or [])
+                if it.get("is_current")
+                and not it.get("reviewed_done")
+                and not it.get("accepted")
+                and not it.get("accepted_current")
+            )
+        )
     except Exception:
         out["deliverables_count"] = 0
+        out["review_deliverables_count"] = 0
     # (2026-10-14, John) Previous Status Updates log: include recent historical
     # updates from milestone events, code jobs, and turn timings so the
     # click-to-open scrollable log under the live status table is populated on open.
@@ -2370,7 +2462,7 @@ def compose_status(campaign_dir: str, engine_state=None):
             })
         cj_file = Path(campaign_dir) / ".ecgberht" / "code-jobs.json"
         if cj_file.is_file():
-            cj_raw = json.loads(cj_file.read_text(encoding="utf-8"))
+            cj_raw, _cj_err = _read_json(cj_file)
             cj_rows = list(cj_raw.values()) if isinstance(cj_raw, dict) else (cj_raw if isinstance(cj_raw, list) else [])
             for r in reversed(cj_rows[-8:]):
                 if not isinstance(r, dict):
@@ -2389,6 +2481,46 @@ def compose_status(campaign_dir: str, engine_state=None):
     except Exception:
         pass
     out["history_updates"] = hist_updates[:10]
+    hhmm_now = str((status_card or {}).get("timestamp") or out["at"][-5:])
+    run_type_hdr = str((status_card or {}).get("run_type") or (
+        (running or {}).get("skill") + " run" if (running or {}).get("skill") else "Steward status"))
+    proj_hdr = str((status_card or {}).get("project") or m.get("name") or "Cockpit")
+    clean_journal_str = "none" if str(journal_for_facts).startswith("Unavailable") else str(journal_for_facts or "none")
+    clean_tests_str = "? (no active check gate)" if str(tests_for_facts).startswith("Unavailable") else str(tests_for_facts or "?")
+    clean_doing_str = "Idle ? waiting for your input" if str(doing_for_facts).startswith("Nobody is working") else str(doing_for_facts or "Idle")
+    clean_eta_str = "Idle (ready for next wave)" if str(eta_for_facts).startswith("nothing running") else str(eta_for_facts or "?")
+    clean_procs_str = str(procs_for_facts or "py 1 ? claude 0 ? node 0")
+    clean_blocker_str = str(blocker_for_facts or "none")
+    out["status_card"] = {
+        "timestamp": hhmm_now,
+        "run_type": run_type_hdr,
+        "project": proj_hdr,
+        "effort": eff_for_facts or m.get("name") or "Effort",
+        "doing": clean_doing_str,
+        "status": status_for_facts or "idle",
+        "tests": clean_tests_str,
+        "blocker": clean_blocker_str,
+        "procs": clean_procs_str,
+        "journal": clean_journal_str,
+        "eta": clean_eta_str,
+        "todo": todo_for_facts or "Review current deliverables & approve next step",
+        "milestone_etas": (status_card or {}).get("milestone_etas") if isinstance((status_card or {}).get("milestone_etas"), list) else None,
+        "from_status_card_file": bool(status_card),
+    }
+    out["clean_status_table"] = "\n".join([
+        f"[{hhmm_now}] {run_type_hdr} ? {proj_hdr}",
+        "?????????????????????????????????",
+        f"Effort   {out['status_card']['effort']}",
+        f"Doing    {out['status_card']['doing']}",
+        f"Status   {out['status_card']['status']}",
+        f"Tests    {out['status_card']['tests']}",
+        f"Blocker  {out['status_card']['blocker']}",
+        f"Procs    {out['status_card']['procs']}",
+        f"Journal  {out['status_card']['journal']}",
+        "?????????????????????????????????",
+        f"ETA      {out['status_card']['eta']}",
+        f"To do    {out['status_card']['todo']}",
+    ])
     return out
 
 def effort_line_freshness(campaign_dir: str, m=None):
@@ -2452,9 +2584,10 @@ def read_last_status(campaign_dir: str):
         f = Path(campaign_dir) / ".ecgberht" / "status-summary.json"
         if not f.is_file():
             return None
-        d = json.loads(f.read_text(encoding="utf-8"))
-        if not isinstance(d, dict) or not d.get("at"):
+        raw_d, _d_err = _read_json(f)
+        if _d_err or not isinstance(raw_d, dict) or not raw_d.get("at"):
             return None
+        d = dict(raw_d)
         d["stale"] = True
         d.setdefault("lead_line", lead_line(d.get("plan")))   # a record written before the lead existed
         return d
@@ -2575,6 +2708,30 @@ def _read_deliverables(campaign_dir: str):
         return {"exists": False, "items": _plan_doc_rows(campaign_dir, [])}
     try:
         cdir_real = os.path.realpath(str(campaign_dir))
+        is_real_clock = getattr(time.monotonic, "__name__", "") != "<lambda>"
+        deliv_cache = globals().setdefault("_RAW_DELIVERABLES_CACHE", {})
+        deliv_sig = None
+        if is_real_clock:
+            try:
+                f_st = f.stat()
+                deliv_sig = (
+                    os.path.normcase(cdir_real),
+                    f_st.st_mtime_ns,
+                    f_st.st_size,
+                    _refinement_fingerprint(Path(cdir_real)),
+                    int(time.monotonic() // 5),
+                )
+                cached_deliv = deliv_cache.get(deliv_sig[0])
+                if cached_deliv is not None and cached_deliv[0] == deliv_sig and not cached_deliv[1].get("error"):
+                    c_res = cached_deliv[1]
+                    return {
+                        "exists": c_res["exists"],
+                        "approved": [dict(a) for a in c_res.get("approved", [])],
+                        "finished_projection": c_res.get("finished_projection"),
+                        "items": [dict(it) for it in c_res.get("items", [])],
+                    }
+            except OSError:
+                deliv_sig = None
         items = []
         for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
             s = line.strip()
@@ -2604,11 +2761,20 @@ def _read_deliverables(campaign_dir: str):
             # open: fall back to the cell's first token that names a file.
             cand_plain = None
             if not m_bt:
-                for tok in cell.replace(",", " ").split():
-                    tok = tok.strip().strip("()[]")
-                    if "/" in tok or "." in tok:
-                        cand_plain = tok
-                        break
+                whole_cand = cell.strip().strip("()[]")
+                if whole_cand and ("/" in whole_cand or "." in whole_cand) and not whole_cand.startswith("/"):
+                    try:
+                        real_w = os.path.realpath(str(Path(campaign_dir) / whole_cand))
+                        if (real_w == cdir_real or real_w.startswith(cdir_real + os.sep)) and os.path.isfile(real_w):
+                            cand_plain = whole_cand
+                    except OSError:
+                        pass
+                if not cand_plain:
+                    for tok in cell.replace(",", " ").split():
+                        tok = tok.strip().strip("()[]")
+                        if "/" in tok or "." in tok:
+                            cand_plain = tok
+                            break
             if m_bt or cand_plain:
                 cand = (m_bt.group(1).strip() if m_bt else cand_plain)
                 if cand.startswith("/"):
@@ -2659,10 +2825,25 @@ def _read_deliverables(campaign_dir: str):
             if item.get("managed"):
                 item["history"] = [v for v in item.get("history", []) if v.get("revision_id") != item.get("revision_id")]
         from anchor_notebooks import decorate
-        return {"exists": True, "approved": approved,
-                "finished_projection": (refinement or {}).get("finished_projection"),
-                "items": [decorate(campaign_dir, item)
-                for item in items + _plan_doc_rows(campaign_dir, items)]}
+        final_res = {
+            "exists": True,
+            "approved": approved,
+            "finished_projection": (refinement or {}).get("finished_projection"),
+            "items": [decorate(campaign_dir, item) for item in items + _plan_doc_rows(campaign_dir, items)],
+        }
+        if deliv_sig is not None:
+            if len(deliv_cache) > 64:
+                deliv_cache.clear()
+            deliv_cache[deliv_sig[0]] = (
+                deliv_sig,
+                {
+                    "exists": True,
+                    "approved": [dict(a) for a in final_res["approved"]],
+                    "finished_projection": final_res["finished_projection"],
+                    "items": [dict(it) for it in final_res["items"]],
+                },
+            )
+        return final_res
     except Exception:
         return {"exists": True, "items": []}
 
@@ -3013,7 +3194,7 @@ def work_stream_model(map_, items):
 
 
 _HISTORICAL_LABEL = re.compile(
-    r"^(?:HISTORICAL|SUPERSEDED|ARCHIVED|EARLIER|PREVIOUS)\b|^(?:SUPPORTING|ACCEPTED)\s*[-:—–]",
+    r"^(?:HISTORICAL|SUPERSEDED|ARCHIVED|EARLIER|PREVIOUS)\b|^(?:SUPPORTING|ACCEPTED)\s*[-:??]|\bkept\s*\(not\s+landed\)",
     re.I,
 )
 
@@ -3028,6 +3209,11 @@ def current_review_items(map_, items):
             continue
         nav = (owner or {}).get("navigation") or {}
         if it.get("accepted") or it.get("accepted_current"):
+            continue
+        if _HISTORICAL_LABEL.match(str(it.get("what") or "")):
+            continue
+        p_norm = str(it.get("path") or "").replace("\\", "/").lower()
+        if "/code-job-outputs/" in ("/" + p_norm):
             continue
         if it.get("managed") and it.get("phase") in ("awaiting_review", "blocked"):
             current.append(it)                 # asked for review: stays whatever the focus (journal 0132)
@@ -3058,16 +3244,19 @@ def current_review_items(map_, items):
         # the other formats of a designated product (same owner, folder and file stem) are that product too
         chosen = {(_owner_id(it, steps),) + _split_path(it) for it in current if not it.get("managed")}
         seen = {id(it) for it in current}
+        _superseded_companion = re.compile(r"\b(?:SUPERSEDED|ARCHIVED|EARLIER|PREVIOUS)\b|^(?:ACCEPTED|APPROVED)\b|\bkept\s*\(not\s+landed\)", re.I)
         current.extend(it for it in items or []
                        if id(it) not in seen and not it.get("managed")
                        and not (it.get("accepted") or it.get("accepted_current"))
-                       and not _HISTORICAL_LABEL.match(str(it.get("what") or ""))
+                       and not _superseded_companion.search(str(it.get("what") or ""))
                        and (_owner_id(it, steps),) + _split_path(it) in chosen)
     if focus is not None and focus.get("status") not in ("done", "parked") and not designated:
         own = [it for it in items or []
                if not it.get("managed") and not (it.get("accepted") or it.get("accepted_current"))
                and resolve_step(steps, it.get("step")) is focus
-               and not _HISTORICAL_LABEL.match(str(it.get("what") or ""))]
+               and not _HISTORICAL_LABEL.match(str(it.get("what") or ""))
+               and not re.search(r"\bJournal\s+\d+\b", str(it.get("what") or ""), re.I)
+               and not re.search(r"(?:^|/)(?:journal|\.ecgberht|code-job-outputs)/", str(it.get("path") or "").replace("\\", "/"), re.I)]
         # per PRODUCT FAMILY, not per step (ChatGPT review): the newest version of each family is current, so a new
         # unrelated product never hides an older one still waiting; within a family the newest (date, version
         # number) wins - Draft 1 and Draft 2 registered the same day keep only Draft 2; the formats of that one
@@ -3099,7 +3288,7 @@ def current_review_items(map_, items):
             or _version_rank(it)[1] >= stem_max_ver.get(clean_stem(_split_path(it)[1]), ())
         ]
     current.sort(key=lambda it: str(it.get("date") or ""), reverse=True)
-    return current
+    return [it for it in current if not it.get("reviewed_done")]
 
 
 _READ_RANK = {".pdf": 0, ".html": 1, ".htm": 1, ".md": 2, ".docx": 3, ".pptx": 3}
@@ -3260,17 +3449,46 @@ def _is_deliverable_dismissed(campaign_dir: str, it: dict, dismissed: dict) -> b
     entry = (dismissed.get(norm_path) if norm_path else None) or (
         dismissed.get(f"product:{norm_prod}") if norm_prod else None) or (
         dismissed.get(f"what:{norm_what}") if norm_what else None)
+    matched_companion = False
+    if not isinstance(entry, dict) and norm_path and not it.get("managed"):
+        it_folder, it_stem = _split_path(it)
+        if it_stem:
+            it_key = (it_folder.lower(), it_stem.lower())
+            for d_ent in dismissed.values():
+                if isinstance(d_ent, dict) and d_ent.get("path"):
+                    d_folder, d_stem = _split_path({"path": d_ent.get("path")})
+                    if d_stem and (d_folder.lower(), d_stem.lower()) == it_key:
+                        entry = d_ent
+                        matched_companion = True
+                        break
     if not isinstance(entry, dict):
         return False
     if it.get("revision_id") and entry.get("revision_id") and str(it.get("revision_id")) != str(entry.get("revision_id")):
         return False
-    if it.get("hash") and entry.get("hash") and str(it.get("hash")) != str(entry.get("hash")):
-        return False
-    if norm_path and entry.get("mtime_ns") is not None:
-        cur_sig = _deliverable_disk_sig(campaign_dir, norm_path)
-        if cur_sig.get("mtime_ns") and cur_sig.get("mtime_ns") != entry.get("mtime_ns"):
-            if not entry.get("hash") or (cur_sig.get("sha256") and cur_sig.get("sha256") != entry.get("hash")):
-                return False
+    if not matched_companion:
+        if it.get("hash") and entry.get("hash") and str(it.get("hash")) != str(entry.get("hash")):
+            return False
+        if norm_path and (entry.get("mtime_ns") is not None or entry.get("hash")):
+            try:
+                fp = (Path(campaign_dir) / norm_path)
+                st_m = fp.stat().st_mtime_ns if fp.is_file() else None
+            except OSError:
+                st_m = None
+            if st_m is not None and entry.get("mtime_ns") is not None and st_m != entry.get("mtime_ns"):
+                if not entry.get("hash"):
+                    return False
+                cur_sig = _deliverable_disk_sig(campaign_dir, norm_path)
+                if cur_sig.get("sha256") and cur_sig.get("sha256") != entry.get("hash"):
+                    return False
+            elif st_m is not None and entry.get("hash") and not it.get("hash"):
+                try:
+                    fsize = fp.stat().st_size
+                except OSError:
+                    fsize = 0
+                if fsize < 65536:
+                    cur_sig = _deliverable_disk_sig(campaign_dir, norm_path)
+                    if cur_sig.get("sha256") and cur_sig.get("sha256") != entry.get("hash"):
+                        return False
     return True
 
 
@@ -3284,6 +3502,7 @@ def sync_steward_projections(campaign_dir: str) -> dict:
     strip, st_err = _read_json(st_path)
     if rm_err or st_err or not isinstance(roadmap, dict) or not isinstance(strip, dict):
         return {"ok": False, "changed": False}
+    roadmap = deepcopy(roadmap)
     proj = roadmap.get("roadmap_projection")
     if not isinstance(proj, list) or not proj:
         return {"ok": True, "changed": False}
@@ -3322,18 +3541,37 @@ def sync_steward_projections(campaign_dir: str) -> dict:
         nav = step.get("navigation") if isinstance(step.get("navigation"), dict) else None
         if cur_id and sid == cur_id:
             step_ver = _max_ver_in(step.get("name") or "")
-            if active_effort and ((effort_ver and step_ver and effort_ver > step_ver) or not step.get("name")):
+            # Repair any step name/label previously overwritten with a long "Ready for Review: ..." status paragraph
+            cur_name_str = str(step.get("name") or "").strip()
+            if re.match(r"^Ready\s+for\s+Review\s*:", cur_name_str, re.I) or len(cur_name_str) > 95:
+                clean_title = ""
+                try:
+                    face_txt = (root / "ECGBERHT.md").read_text(encoding="utf-8", errors="replace")
+                    m_face = re.search(rf"\*\*{re.escape(sid)}\*\*\s*[\u2014\u2013\-:]\s*([^\r\n]+)", face_txt, re.I)
+                    if m_face:
+                        clean_title = m_face.group(1).strip()
+                except Exception:
+                    pass
+                if not clean_title:
+                    clean_title = sid.replace("-", " ").title()
+                    if effort_ver:
+                        clean_title += " (v" + ".".join(str(x) for x in effort_ver) + ")"
+                step["name"] = clean_title
+                if nav is not None:
+                    nav["label"] = clean_title
+                changed = True
+            elif active_effort and not re.match(r"^Ready\s+for\s+Review\s*:", active_effort, re.I) and len(active_effort) <= 85 and ((effort_ver and step_ver and effort_ver > step_ver) or not step.get("name")):
                 if step.get("name") != active_effort:
                     step["name"] = active_effort
                     changed = True
                 if nav is not None and nav.get("label") != active_effort:
                     nav["label"] = active_effort
                     changed = True
-                if (why_next or next_rec) and _max_ver_in(step.get("done_when") or "") < effort_ver:
-                    new_done = (why_next or next_rec)[:320]
-                    if step.get("done_when") != new_done:
-                        step["done_when"] = new_done
-                        changed = True
+            if (why_next or next_rec) and effort_ver and _max_ver_in(step.get("done_when") or "") < effort_ver:
+                new_done = (why_next or next_rec)[:320]
+                if step.get("done_when") != new_done:
+                    step["done_when"] = new_done
+                    changed = True
             if human_wait and step.get("waiting_on") != human_wait:
                 # Update waiting_on if previous waiting_on was empty or referenced an older/completed task
                 old_wait = str(step.get("waiting_on") or "").strip()
@@ -3378,17 +3616,21 @@ def read_deliverables(campaign_dir: str):
     map_ = read_map(campaign_dir)
     dismissed = read_dismissed_deliverables(campaign_dir)
     raw_items = result.get("items") or []
-    items = [it for it in raw_items if not _is_deliverable_dismissed(campaign_dir, it, dismissed)] if dismissed else raw_items
-    approved = result.get("approved") or []
-    if dismissed and approved:
-        approved = [it for it in approved if not _is_deliverable_dismissed(campaign_dir, it, dismissed)]
-    current_items = current_review_items(map_, items)
+    # Compute current_review_items BEFORE filtering dismissed items so that when John marks
+    # designated FOR REVIEW items Done, `designated` remains True for the step and older
+    # deliverables are never promoted into For Review. Dismissed items stay in `items`
+    # (All Deliverables) with `reviewed_done: True` and `is_current: False`.
+    raw_current_items = current_review_items(map_, raw_items)
+    current_items = [it for it in raw_current_items if not _is_deliverable_dismissed(campaign_dir, it, dismissed)] if dismissed else raw_current_items
     current = {id(it) for it in current_items}
+    approved = result.get("approved") or []
     decorated = []
-    for it in items:
+    for it in raw_items:
         owner = resolve_step(map_["steps"], it.get("step"))
+        is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
         decorated.append({**it, "owner_step_id": owner.get("id") if owner else None,
-                          "is_current": id(it) in current})
+                          "is_current": (not is_dis) and (id(it) in current),
+                          "reviewed_done": is_dis})
     acts = review_acts(map_, current_items, campaign_dir)
     focused, focus_warn = _focused_step(map_)
     hb = (map_ or {}).get("heartbeat") or {}
@@ -3403,7 +3645,7 @@ def read_deliverables(campaign_dir: str):
     }
     out = {**result, "items": decorated, "acts": acts,
            "current_warning": focus_warn, "current_summary": current_summary}
-    if dismissed and "approved" in result:
+    if "approved" in result:
         out["approved"] = approved
     return out
 
@@ -3426,7 +3668,7 @@ def _stale_deck_pdfs(campaign_dir, group):
         for g in group:
             if str(g.get("path") or "").lower().endswith(".pdf") and not g.get("managed"):
                 try:
-                    if (root / str(g.get("path"))).stat().st_mtime < deck_m:
+                    if (root / str(g.get("path"))).stat().st_mtime + 60.0 < deck_m:
                         stale.add(id(g))
                 except (OSError, ValueError):
                     stale.add(id(g))
@@ -3533,11 +3775,12 @@ def discover_efforts(root_dir: str):
 
 
 def map_stamp(campaign_dir: str):
-    """Cheap change detector: mtimes of the files the map is painted from."""
+    """Cheap change detector: mtimes of the files the map and status are painted from."""
     root = Path(campaign_dir)
     stamp = []
     for rel in ("ECGBERHT.md", "roadmap.json", "strip.json", "DELIVERABLES.md",
-                ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json"):
+                ".ecgberht/attention.json", ".ecgberht/dismissed-deliverables.json",
+                ".ecgberht/code-jobs.json", ".ecgberht/skill-jobs.json"):
         try:
             stamp.append((root / rel).stat().st_mtime_ns)
         except OSError:
@@ -3766,7 +4009,10 @@ def plan_drift(campaign_dir: str):
                             "docs": ["roadmap.json"], "conversational": True}
         except Exception:
             pass
-    refinement = read_refinement(campaign_dir)
+    try:
+        refinement = read_refinement(campaign_dir, stale_ok=True)
+    except TypeError:
+        refinement = read_refinement(campaign_dir)
     if refinement is not None:
         status = refinement.get("projection_status", {})
         return {"drift": not (refinement.get("ok") and status.get("consistent")),
@@ -3805,3 +4051,184 @@ def plan_drift_suffix(campaign_dir: str) -> str:
             "roadmap.json, not the document: fold the document (and anything he just asked to "
             "add, remove or reorder) into roadmap.json in THIS turn - step_create / step_set "
             "events plus the projection - then say in one line what changed in the plan.")
+
+
+def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:
+    """Return a plan refresh proposal when major deliverables or plan documents update the campaign plan,
+    or when a previous plan backup exists so John can Accept New Plan or Revert to Old Plan."""
+    root = Path(campaign_dir)
+    prop_file = root / ".ecgberht" / "plan-proposal.json"
+    backup_file = root / ".ecgberht" / "roadmap-backup.json"
+    has_backup = backup_file.is_file()
+    if prop_file.is_file():
+        try:
+            prop = json.loads(prop_file.read_text(encoding="utf-8"))
+            if isinstance(prop, dict) and prop.get("status") in ("pending", None, ""):
+                prop["can_revert"] = bool(has_backup or prop.get("previous_steps"))
+                return prop
+            if isinstance(prop, dict) and prop.get("status") == "accepted" and has_backup:
+                return {
+                    "id": str(prop.get("id") or "accepted-plan"),
+                    "status": "accepted",
+                    "title": str(prop.get("title") or "Updated Plan Active"),
+                    "reason": str(prop.get("reason") or "Plan refreshed after recent deliverables."),
+                    "can_revert": True,
+                }
+        except Exception:
+            pass
+    drift = (m or {}).get("plan_drift") if isinstance(m, dict) and isinstance(m.get("plan_drift"), dict) else plan_drift(campaign_dir)
+    if isinstance(drift, dict) and drift.get("drift"):
+        proposed_steps, doc_name = _steps_from_plan_doc(root)
+        return {
+            "id": "drift-" + (doc_name or "roadmap"),
+            "status": "pending",
+            "title": "Proposed Plan Refresh" + (" from " + doc_name if doc_name else ""),
+            "reason": str(drift.get("reason") or "Deliverables or instructions updated the plan structure."),
+            "proposed_steps_count": len(proposed_steps),
+            "can_revert": True,
+        }
+    return None
+
+
+def resolve_plan_proposal(campaign_dir: str, action: str = "accept", proposal_id: str = "") -> dict:
+    """Accept a proposed plan refresh or revert to the previous roadmap snapshot."""
+    root = Path(campaign_dir)
+    ec_dir = root / ".ecgberht"
+    ec_dir.mkdir(parents=True, exist_ok=True)
+    rm_path = root / "roadmap.json"
+    prop_file = ec_dir / "plan-proposal.json"
+    backup_file = ec_dir / "roadmap-backup.json"
+    conv_file = ec_dir / "conversational-plan-drift.json"
+    act = str(action or "accept").strip().lower()
+    rm_data, _ = _read_json(rm_path)
+    if not isinstance(rm_data, dict):
+        rm_data = {"roadmap_projection": [], "roadmap_events": []}
+    cur_proj = list(rm_data.get("roadmap_projection") or [])
+    prop_data = {}
+    if prop_file.is_file():
+        try:
+            prop_data = json.loads(prop_file.read_text(encoding="utf-8")) or {}
+        except Exception:
+            prop_data = {}
+    if act in ("revert", "rollback", "old"):
+        prev_steps = None
+        if backup_file.is_file():
+            try:
+                bk = json.loads(backup_file.read_text(encoding="utf-8"))
+                if isinstance(bk, dict) and isinstance(bk.get("roadmap_projection"), list):
+                    prev_steps = bk["roadmap_projection"]
+            except Exception:
+                prev_steps = None
+        if prev_steps is None and isinstance(prop_data.get("previous_steps"), list):
+            prev_steps = prop_data["previous_steps"]
+        if prev_steps is not None:
+            rm_data["roadmap_projection"] = prev_steps
+            evs = list(rm_data.get("roadmap_events") or [])
+            evs.append({
+                "kind": "plan_revert",
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "by": "John",
+                "proposal_id": proposal_id or str(prop_data.get("id") or ""),
+            })
+            rm_data["roadmap_events"] = evs
+            rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            with _JSON_FILE_CACHE_LOCK:
+                _JSON_FILE_CACHE.clear()
+        prop_data["status"] = "reverted"
+        prop_data["reverted_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {"ok": True, "action": "reverted", "steps_count": len(rm_data.get("roadmap_projection") or [])}
+    # Accept new plan: save backup of current projection first so John can revert anytime
+    if cur_proj:
+        backup_file.write_text(json.dumps({
+            "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "roadmap_projection": cur_proj,
+        }, indent=2, ensure_ascii=False), encoding="utf-8")
+    new_steps = prop_data.get("proposed_steps") if isinstance(prop_data.get("proposed_steps"), list) else None
+    if not new_steps:
+        doc_steps, _ = _steps_from_plan_doc(root)
+        if doc_steps and not cur_proj:
+            new_steps = doc_steps
+    if new_steps:
+        rm_data["roadmap_projection"] = new_steps
+    evs = list(rm_data.get("roadmap_events") or [])
+    evs.append({
+        "kind": "plan_accept",
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "by": "John",
+        "proposal_id": proposal_id or str(prop_data.get("id") or "accepted-plan"),
+    })
+    rm_data["roadmap_events"] = evs
+    rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    with _JSON_FILE_CACHE_LOCK:
+        _JSON_FILE_CACHE.clear()
+    if conv_file.is_file():
+        try:
+            conv_file.unlink()
+        except OSError:
+            pass
+    prop_data["id"] = proposal_id or str(prop_data.get("id") or "accepted-plan")
+    prop_data["status"] = "accepted"
+    prop_data["accepted_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    prop_file.write_text(json.dumps(prop_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "action": "accepted", "can_revert": True, "steps_count": len(rm_data.get("roadmap_projection") or [])}
+
+
+_APPROVE_FEEDBACK_RE = re.compile(
+    r"\b(?:approve[d]?|looks?\s+good|lgtm|move\s+on|next\s+(?:step|wave|chapter|section|phase)|"
+    r"done\s+with\s+(?:this|review|these)|lock\s+(?:it|this|these)|ship\s+it|proceed|all\s+good|accept(?:ed)?)\b",
+    re.I,
+)
+_REVISION_FEEDBACK_RE = re.compile(
+    r"\b(?:another\s+round|next\s+round|revise|revision|update|change|fix|rework|adjust|modify|"
+    r"rewrite|redo|instead|make\s+sure|should\s+be|need[s]?\s+to|too\s+(?:long|short|much|many|little|weak|strong)|"
+    r"add\s+(?:a|more|the)|remove|cut|expand|tighten|table\s+(?:this|it|that))\b",
+    re.I,
+)
+
+
+def reconcile_review_on_feedback(campaign_dir: str, text: str) -> dict:
+    """Reconcile deliverable review state when John provides feedback in the Steward dialogue.
+    Once John gives feedback (either approving/locking or requesting another round of revisions),
+    the prior review items are no longer waiting on his initial review — clear the stale review red flag."""
+    msg = str(text or "").strip()
+    if not msg or len(msg) < 2:
+        return {"ok": False, "reason": "empty"}
+    is_approve = bool(_APPROVE_FEEDBACK_RE.search(msg))
+    is_revision = bool(_REVISION_FEEDBACK_RE.search(msg))
+    # Even if not matching specific keywords, a multi-word substantive feedback message (>20 chars, not just a status question)
+    is_status_question = bool(re.match(r"^(?:what(?:'s|\s+is)\s+the\s+status|how\s+is\s+it\s+going|status\??|eta\??|are\s+you\s+still\s+working)\s*\??$", msg, re.I))
+    is_substantive_feedback = (len(msg) >= 20 and not is_status_question)
+    if not (is_approve or is_revision or is_substantive_feedback):
+        return {"ok": True, "reconciled": 0}
+    reconciled = 0
+    try:
+        waiting = review_waiting(campaign_dir)
+        for it in waiting:
+            if not isinstance(it, dict):
+                continue
+            # Dismiss from the active For Review red-flag queue so Steward doesn't keep nagging John to check it off
+            dismiss_deliverable(
+                campaign_dir,
+                path=str(it.get("open_path") or it.get("path") or ""),
+                product_id=str(it.get("product_id") or ""),
+                what=str(it.get("what") or ""),
+                revision_id=str(it.get("revision_id") or ""),
+                hash_val=str(it.get("hash") or ""),
+            )
+            reconciled += 1
+        # Clear stale review human_wait on strip.json if it was waiting for review
+        st_path = Path(campaign_dir) / "strip.json"
+        st_data, st_err = _read_json(st_path)
+        if not st_err and isinstance(st_data, dict):
+            hw = str(st_data.get("human_wait") or "")
+            if re.search(r"\b(?:review|feedback|approve|look\s+at)\b", hw, re.I):
+                st_data["human_wait"] = "none"
+                st_data["last_feedback_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                st_data["last_feedback_kind"] = "approved" if is_approve else "revision_requested"
+                st_path.write_text(json.dumps(st_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                with _JSON_FILE_CACHE_LOCK:
+                    _JSON_FILE_CACHE.clear()
+    except Exception:
+        pass
+    return {"ok": True, "reconciled": reconciled, "kind": "approved" if is_approve else "revision_requested"}

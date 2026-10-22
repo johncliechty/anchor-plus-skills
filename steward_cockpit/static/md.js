@@ -30,7 +30,7 @@ function mdFileHref(rawPath) {
     if (resolved) p = resolved;
   }
   if (!p || p.startsWith("/") || /(?:^|\/)\.\.(?:\/|$)/.test(p)) return null;
-  const isMd = /\.(md|markdown|txt)$/i.test(p);
+  const isMd = /\.(md|markdown|txt|r|py|sql|sh|ps1|yaml|yml|toml|js|mjs|ts|css)$/i.test(p);
   const isOffice = /\.(docx|pptx|xlsx)$/i.test(p);
   return "/api/steward/deliverable-file?pid=" + encodeURIComponent(window.STEWARD_PID) +
     "&dir=" + encodeURIComponent(dirRel) +
@@ -39,7 +39,17 @@ function mdFileHref(rawPath) {
     (isMd ? "&render=1" : "") +
     (window.STEWARD_TOKEN ? "&token=" + encodeURIComponent(window.STEWARD_TOKEN) : "");
 }
-function mdReportHref(raw) {
+function mdYouTubeId(raw) {
+  const m = String(raw || "").trim().match(/^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,15})/i);
+  return m ? m[1] : "";
+}
+function mdReportHref(raw, label) {
+  const ytId = mdYouTubeId(raw);
+  if (ytId) {
+    return "/steward-static/video.html?v=" + encodeURIComponent(ytId) +
+      "&url=" + encodeURIComponent(String(raw || "").trim()) +
+      (label ? "&title=" + encodeURIComponent(String(label).trim()) : "");
+  }
   if (/^file:\/\/\//i.test(String(raw || "").trim())) {
     const mapped = mdFileHref(raw);
     if (mapped) return mapped;
@@ -64,7 +74,7 @@ function mdReportHref(raw) {
     dest.searchParams.delete("token");
     if (window.STEWARD_TOKEN) dest.searchParams.set("token", window.STEWARD_TOKEN);
     // 2026-10-07: a markdown product opens formatted (the canonical reading URL carries render=1)
-    if (dest.pathname === "/api/steward/deliverable-file" && /\.(md|markdown|txt)$/i.test(dest.searchParams.get("path") || "")
+    if (dest.pathname === "/api/steward/deliverable-file" && /\.(md|markdown|txt|r|py|sql|sh|ps1|yaml|yml|toml|js|mjs|ts|css)$/i.test(dest.searchParams.get("path") || "")
         && !dest.searchParams.has("download")) dest.searchParams.set("render", "1");
     return dest.pathname + dest.search + dest.hash;
   }
@@ -108,6 +118,29 @@ function mdDownloadHref(href) {
   const cleaned = h.replace(/([?&])(render|view)=1(&|$)/g, (m, p1, _k, p3) => p3 ? p1 : "");
   return cleaned + (cleaned.includes("?") ? "&" : "?") + "download=1";
 }
+function mdFileTypeBadge(target, href, label) {
+  let probe = "";
+  try {
+    const u = new URL(String(href || target || ""), window.location.origin);
+    probe = u.searchParams.get("path") || u.pathname || "";
+  } catch (_) {
+    probe = String(target || href || "");
+  }
+  const combined = (probe + " " + String(target || "") + " " + String(label || "")).trim();
+  if (/\.pdf(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "PDF", ext: ".pdf", cls: "fmt-pdf" };
+  if (/\.pptx?(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "PPTX", ext: ".pptx", cls: "fmt-pptx" };
+  if (/\.docx?(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "DOCX", ext: ".docx", cls: "fmt-docx" };
+  if (/\.xlsx?(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "XLSX", ext: ".xlsx", cls: "fmt-xlsx" };
+  if (/\.r(?:$|\?|&|\b|\s|\))/i.test(probe)) return { tag: "R", ext: ".R", cls: "fmt-r" };
+  if (/\.csv(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "CSV", ext: ".csv", cls: "fmt-csv" };
+  if (/\.py(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "PY", ext: ".py", cls: "fmt-py" };
+  if (/\.html?(?:$|\?|&|\b|\s|\))/i.test(probe)) return { tag: "HTML", ext: ".html", cls: "fmt-html" };
+  if (/\.zip(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "ZIP", ext: ".zip", cls: "fmt-zip" };
+  if (/\.json(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "JSON", ext: ".json", cls: "fmt-json" };
+  if (/\.(?:md|markdown)(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "MD", ext: ".md", cls: "fmt-md" };
+  if (/\.txt(?:$|\?|&|\b|\s|\))/i.test(combined)) return { tag: "TXT", ext: ".txt", cls: "fmt-txt" };
+  return null;
+}
 function wireMdSplitLink(a, label, href) {
   if (!href || /^(?:https?:\/\/|mailto:|ms-\w+:)/i.test(href)) return;
   a.onclick = (ev) => {
@@ -121,16 +154,23 @@ function wireMdSplitLink(a, label, href) {
   function inline(node, s) {
     splitLinks(String(s)).forEach(seg => {
       if (typeof seg !== "string") {
-        const href = mdReportHref(seg.target);
+        const href = mdReportHref(seg.target, seg.label);
+        const fmt = mdFileTypeBadge(seg.target, href, seg.label);
+        if (fmt) {
+          const badge = el("span", "file-fmt-badge md-fmt-pill " + fmt.cls, fmt.tag);
+          badge.title = "File type: " + fmt.tag + " (" + fmt.ext + ")";
+          node.appendChild(badge);
+        }
         const a = el("a", "md-file-link", seg.label); a.href = href;
+        if (fmt) a.title = seg.label + " (" + fmt.tag + " · " + fmt.ext + ")";
         a.target = "_blank"; a.rel = "noopener noreferrer";
-        wireMdSplitLink(a, seg.label, href);
+        wireMdSplitLink(a, fmt ? (seg.label + " (" + fmt.ext + ")") : seg.label, href);
         node.appendChild(a);
         const dlHref = mdDownloadHref(href);
         if (dlHref) {
-          const dl = el("span", "md-dl", "⬇");
+          const dl = el("span", "md-dl", fmt ? ("⬇ " + fmt.ext) : "⬇"); // el("a", "md-dl", "⬇")
           dl.setAttribute("role", "button");
-          dl.title = "Download file";
+          dl.title = "Download " + (fmt ? (fmt.tag + " (" + fmt.ext + ")") : "file");
           dl.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); window.open(dlHref, "_blank", "noopener,noreferrer"); };
           node.appendChild(dl);
         }
@@ -141,17 +181,23 @@ function wireMdSplitLink(a, label, href) {
         else if (/^`[^`]+`$/.test(p)) {
           const inner = p.slice(1, -1).trim();
           const isDocPath = !/^\s*-/.test(inner) && !/\s{2,}/.test(inner) &&
-            /\.(?:md|markdown|pdf|html?|docx|pptx|xlsx|csv|txt|json|py|m?js|css|zip)(?:#L?\d+(?:-L?\d+)?)?$/i.test(inner);
+            /\.(?:md|markdown|pdf|html?|docx|pptx|xlsx|csv|txt|json|py|r|sql|sh|ps1|yaml|yml|toml|m?js|css|zip)(?:#L?\d+(?:-L?\d+)?)?$/i.test(inner);
           const href = isDocPath ? mdFileHref(inner) : null;
           if (href) {
+            const fmt = mdFileTypeBadge(inner, href, inner);
+            if (fmt) {
+              const badge = el("span", "file-fmt-badge md-fmt-pill " + fmt.cls, fmt.tag);
+              badge.title = "File type: " + fmt.tag + " (" + fmt.ext + ")";
+              node.appendChild(badge);
+            }
             const a = el("a", "md-file-link"); a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
-            a.title = "Open " + inner;
+            a.title = "Open " + inner + (fmt ? (" (" + fmt.tag + " · " + fmt.ext + ")") : "");
             a.appendChild(el("code", "", inner));
             wireMdSplitLink(a, inner, href);
             node.appendChild(a);
             const dlHref = mdDownloadHref(href);
             if (dlHref) {
-              const dl = el("span", "md-dl", "⬇");
+              const dl = el("span", "md-dl", fmt ? ("⬇ " + fmt.ext) : "⬇");
               dl.setAttribute("role", "button");
               dl.title = "Download " + inner;
               dl.onclick = (ev) => { ev.preventDefault(); ev.stopPropagation(); window.open(dlHref, "_blank", "noopener,noreferrer"); };
