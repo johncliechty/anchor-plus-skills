@@ -247,7 +247,7 @@ def _closed_today(roadmap, step_id):
         return False
 
 
-def read_map(campaign_dir: str):
+def read_map(campaign_dir: str, include_plan_history: bool = True):
     root = Path(campaign_dir)
     gaps = []
 
@@ -547,8 +547,12 @@ def read_map(campaign_dir: str):
     except Exception:
         m["repair_proposals"] = []
     m["plan_drift"] = plan_drift(campaign_dir)
-    m["plan_proposal"] = read_plan_proposal(campaign_dir, m, roadmap)
-    m["plan_history"] = read_plan_history(campaign_dir, m, roadmap)
+    if include_plan_history:
+        m["plan_proposal"] = read_plan_proposal(campaign_dir, m, roadmap)
+        m["plan_history"] = read_plan_history(campaign_dir, m, roadmap)
+    else:
+        m["plan_proposal"] = None
+        m["plan_history"] = []
     return m
 
 
@@ -2065,7 +2069,7 @@ def compose_status(campaign_dir: str, engine_state=None):
     ``<cdir>/.ecgberht/status-summary.json``, and the main-dashboard tile.
     """
     clear_stale_job_flag(campaign_dir)          # W4: only a flag that names its job, and only when that job stopped
-    m = read_map(campaign_dir)
+    m = read_map(campaign_dir, include_plan_history=False)
     st = engine_state or {}
     active, focus_warning = _focused_step(m)
     look = status_lookthrough(campaign_dir)
@@ -3972,7 +3976,7 @@ def review_waiting(campaign_dir: str):
     out = []
     try:
         d = read_deliverables(campaign_dir)
-        m = read_map(campaign_dir)
+        m = read_map(campaign_dir, include_plan_history=False)
         cur = current_review_items(m, d.get("items") or [])
         for it in cur:
             if it.get("accepted") or it.get("accepted_current"):

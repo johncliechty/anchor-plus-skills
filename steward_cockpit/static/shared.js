@@ -3198,7 +3198,7 @@ const Proto = (() => {
             return hay.includes(q);
           });
           if (!filtered.length) {
-            timelineUl.appendChild(el("li", "php-empty", "No historical plans match "" + _planHistoryFilter + ""."));
+            timelineUl.appendChild(el("li", "php-empty", "No historical plans match '" + _planHistoryFilter + "'."));
             return;
           }
           filtered.forEach((snap) => {

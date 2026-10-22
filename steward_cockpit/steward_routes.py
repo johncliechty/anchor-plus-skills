@@ -767,7 +767,7 @@ def _efforts(cdir):
     out = []
     for e in campaign.discover_efforts(cdir):
         edir = str(Path(cdir) / e["rel"]) if e["rel"] else cdir
-        m = campaign.read_map(edir)
+        m = campaign.read_map(edir, include_plan_history=False)
         eng = get_engine(m["dir"], create=False)
         if eng is not None:
             eff_light = eng.light(m["attention"])
