@@ -79,6 +79,137 @@ def data_dir() -> Path:
     return CODE_DIR
 
 
+_AUTO_ECGBERHT_ROOT: str | None = None
+
+
+def _discover_skills_root_dirs(anchor_root: Path, anchor_parent: Path) -> list[Path]:
+    """Return candidate skills-root directories from env and skills_root.json."""
+    import json as _json
+
+    out: list[Path] = []
+    for env_key in ("SKILLS_ROOT", "ANCHOR_SKILLS_ROOT"):
+        val = (os.environ.get(env_key) or "").strip()
+        if val:
+            out.append(Path(val).expanduser())
+
+    json_candidates = [
+        anchor_parent / "skills_root.json",
+        anchor_parent / ".anchor" / "skills_root.json",
+        anchor_parent / "governance" / "skills_root.json",
+        anchor_root / "skills_root.json",
+        anchor_root / ".anchor" / "skills_root.json",
+    ]
+    try:
+        dd = data_dir()
+        if dd != anchor_root:
+            json_candidates.append(dd / "skills_root.json")
+            json_candidates.append(dd / ".anchor" / "skills_root.json")
+    except Exception:
+        pass
+
+    for jp in json_candidates:
+        try:
+            if jp.is_file():
+                doc = _json.loads(jp.read_text(encoding="utf-8"))
+                sr = (doc.get("skills_root") or "") if isinstance(doc, dict) else ""
+                if sr and str(sr).strip():
+                    out.append(Path(str(sr).strip()).expanduser())
+        except Exception:
+            continue
+    return out
+
+
+def resolve_ecgberht_root(anchor_root=None) -> tuple[Path, list[str]]:
+    """Resolve the Ecgberht engine root directory and return ``(path, checked_paths)``.
+
+    Checks in order:
+      1. ``ECGBERHT_ROOT`` and ``ECGBERHT_DIR`` environment variables,
+      2. ``<anchor_parent>/Ecgberht`` (e.g. ``C:\\dev\\Ecgberht``),
+      3. ``<anchor_parent>/skills/ecgberht`` (e.g. ``C:\\dev\\skills\\ecgberht`` — share/onboard layout),
+      4. ``<SKILLS_ROOT>/ecgberht`` (from ``SKILLS_ROOT`` env or ``skills_root.json``),
+      5. ``<anchor_root>/skills/ecgberht`` and ``<anchor_root>/vendor/bundled-skills/ecgberht``.
+
+    When resolved via a fallback candidate (such as ``<anchor_parent>/skills/ecgberht``),
+    automatically sets ``ECGBERHT_ROOT`` in ``os.environ`` via ``setdefault`` so child
+    processes inherit the discovered root immediately.
+    """
+    global _AUTO_ECGBERHT_ROOT
+    base = Path(anchor_root).expanduser().resolve() if anchor_root is not None else CODE_DIR
+    parent = base.parent
+
+    candidates: list[Path] = []
+    explicit_env_candidates: list[Path] = []
+    for env_name in ("ECGBERHT_ROOT", "ECGBERHT_DIR"):
+        raw = (os.environ.get(env_name) or "").strip()
+        if not raw:
+            continue
+        if anchor_root is not None and _AUTO_ECGBERHT_ROOT and raw == _AUTO_ECGBERHT_ROOT:
+            continue
+        cp = Path(raw).expanduser()
+        explicit_env_candidates.append(cp)
+        candidates.append(cp)
+
+    candidates.append(parent / "Ecgberht")
+    candidates.append(parent / "skills" / "ecgberht")
+    for sr in _discover_skills_root_dirs(base, parent):
+        candidates.append(sr / "ecgberht")
+        candidates.append(sr / "Ecgberht")
+    candidates.append(base / "skills" / "ecgberht")
+    candidates.append(base / "vendor" / "bundled-skills" / "ecgberht")
+
+    seen: set[str] = set()
+    checked_paths: list[str] = []
+    uniq_candidates: list[Path] = []
+    for c in candidates:
+        s = str(c)
+        key = s.lower() if os.name == "nt" else s
+        if key not in seen:
+            seen.add(key)
+            checked_paths.append(s)
+            uniq_candidates.append(c)
+
+    for ec in explicit_env_candidates:
+        if ec.is_dir():
+            return ec, checked_paths
+
+    for c in uniq_candidates:
+        try:
+            if (
+                (c / "scripts" / "seal-chamber-bridge.mjs").is_file()
+                or (c / "bin" / "ecgberht.mjs").is_file()
+                or (c / "scripts" / "commission-run-bridge.mjs").is_file()
+            ):
+                if not explicit_env_candidates:
+                    if "ECGBERHT_ROOT" not in os.environ or os.environ.get("ECGBERHT_ROOT") == _AUTO_ECGBERHT_ROOT:
+                        _AUTO_ECGBERHT_ROOT = str(c)
+                        os.environ.setdefault("ECGBERHT_ROOT", str(c))
+                        os.environ["ECGBERHT_ROOT"] = str(c)
+                return c, checked_paths
+        except OSError:
+            continue
+
+    for c in uniq_candidates:
+        try:
+            if c.is_dir():
+                if not explicit_env_candidates:
+                    if "ECGBERHT_ROOT" not in os.environ or os.environ.get("ECGBERHT_ROOT") == _AUTO_ECGBERHT_ROOT:
+                        _AUTO_ECGBERHT_ROOT = str(c)
+                        os.environ.setdefault("ECGBERHT_ROOT", str(c))
+                        os.environ["ECGBERHT_ROOT"] = str(c)
+                return c, checked_paths
+        except OSError:
+            continue
+
+    fallback = explicit_env_candidates[0] if explicit_env_candidates else (parent / "Ecgberht")
+    return fallback, checked_paths
+
+
+def ecgberht_root(anchor_root=None) -> Path:
+    """Return the resolved Ecgberht engine root :class:`~pathlib.Path`."""
+    found, _ = resolve_ecgberht_root(anchor_root=anchor_root)
+    return found
+
+
 # ── Canonical data paths (each resolved lazily via data_dir()) ─────────────
 
 def dashboard_md() -> Path:

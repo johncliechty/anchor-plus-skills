@@ -123,7 +123,7 @@ def parse_json_body(raw_bytes: bytes | str | None) -> tuple[Dict[str, Any], str 
 def validate_upload_meta(
     filename: str | None,
     size_bytes: int,
-    max_bytes: int = 30_000_000,
+    max_bytes: int = 250_000_000,
     deny_ext: Iterable[str] = (),
 ) -> tuple[bool, str]:
     """Validate an uploaded file's basename, extension, and byte size before staging."""
@@ -136,5 +136,5 @@ def validate_upload_meta(
     if size_bytes < 0:
         return False, "bad file size"
     if size_bytes > max_bytes:
-        return False, "over 30 MB"
+        return False, "over 250 MB"
     return True, "ok"

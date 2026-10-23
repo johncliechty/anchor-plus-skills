@@ -408,13 +408,13 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 @media(prefers-reduced-motion:reduce){.tile.ready,.tile.quiet.ready{animation:readyedge 2.8s ease-in-out infinite;border-color:#fbbf24;box-shadow:none}}
 /* the compact card (John, 2026-09-27): the name with the effort as a suffix and the cockpit link beside it, ONE line
    clamped to two, the acts on one line; the description, the next step behind a wait and the effort line open with it */
-.t-top{display:flex;align-items:baseline;gap:8px}
+.t-top{display:flex;align-items:center;gap:7px}
 .t-name{font-size:13px;font-weight:650;letter-spacing:-.2px;line-height:1.25;flex:1;min-width:0}
 .t-name .t-nm{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* the effort on its own small line under the name (Grok R7 held the suffix whole; on the live pixels one row cut BOTH —
    "MBA T… · Suplemental Material…" — so each gets the row: the name whole, the effort whole; +13 px on a card that names one) */
 .t-name .t-eff{display:block;margin-top:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:500;color:var(--text-dim2);letter-spacing:0}
-.t-go{flex:none;font-size:10px;color:var(--accent-t);text-decoration:none;white-space:nowrap}
+.t-go{flex:none;font-size:10px;color:var(--accent-t);text-decoration:none;white-space:nowrap;display:inline-flex;align-items:center;gap:2px}
 .t-go:hover{text-decoration:underline}
 .t-line{font-size:11.5px;margin-top:3px;line-height:1.35;color:var(--text-warm);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .t-line .k{font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-dim2);font-weight:700;margin-right:5px}
@@ -1021,7 +1021,30 @@ code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace}
 .tc-btn.done,.t-done-btn,.tw-btn.done{border-color:rgba(74,222,128,.45);background:rgba(74,222,128,.12);color:#4ade80;font-weight:650}
 .tc-btn.done:hover,.t-done-btn:hover,.tw-btn.done:hover{background:rgba(74,222,128,.22);border-color:#4ade80}
 .tc-btn.primary{border-color:rgba(108,156,252,.5);background:rgba(108,156,252,.16);color:var(--accent-t)}
-.t-done-btn{font-size:10.5px;padding:2px 8px;border-radius:6px;border:1px solid rgba(74,222,128,.45);margin-right:4px;white-space:nowrap}
+/* Adaptive Card Header Controls:
+   - Default (when card has room): full button pills ('▾ On deck'/'▴ Active', '✓ Done', 'cockpit ↗')
+   - Compact (.tile.compact-acts, when name would truncate): collapse to 8px blue dot, 8px green dot, and plain '↗' arrow;
+     hovering any dot or the arrow expands that control inline back into the full button tile! */
+.t-done-btn{font-size:10.5px;padding:2px 8px;border-radius:6px;border:1px solid rgba(74,222,128,.45);margin-right:2px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;flex:none;cursor:pointer}
+.t-seat-btn{font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid rgba(108,156,252,.42);background:rgba(108,156,252,.11);color:var(--accent-t);font-weight:650;margin-right:2px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;flex:none;cursor:pointer}
+.t-seat-btn:hover{background:rgba(108,156,252,.22);border-color:var(--accent)}
+.t-dot-ind{display:none;width:8px;height:8px;border-radius:50%;flex:none;pointer-events:none}
+.t-dot-ind.blue{background:#6c9cfc;box-shadow:0 0 5px rgba(108,156,252,.65)}
+.t-dot-ind.green{background:#4ade80;box-shadow:0 0 5px rgba(74,222,128,.65)}
+.tile.compact-acts .t-seat-btn:not(:hover):not(:focus-visible),
+.tile.compact-acts .t-done-btn:not(:hover):not(:focus-visible){padding:3px;border:0;background:transparent;margin-right:1px}
+.tile.compact-acts .t-seat-btn:not(:hover):not(:focus-visible) .t-btn-txt,
+.tile.compact-acts .t-done-btn:not(:hover):not(:focus-visible) .t-btn-txt{display:none}
+.tile.compact-acts .t-seat-btn:not(:hover):not(:focus-visible) .t-dot-ind,
+.tile.compact-acts .t-done-btn:not(:hover):not(:focus-visible) .t-dot-ind{display:block}
+.tile.compact-acts .t-go:not(:hover):not(:focus-visible) .t-btn-txt{display:none}
+.tile.compact-acts .t-go:not(:hover):not(:focus-visible) .t-go-arr{font-size:12px;font-weight:700;color:var(--accent-t);padding:0 2px}
+.tile.compact-acts .t-go:hover,.tile.compact-acts .t-go:focus-visible{padding:2px 6px;border-radius:5px;border:1px solid rgba(108,156,252,.45);background:rgba(108,156,252,.14);text-decoration:none}
+.cand-cockpit-pill{font-size:10.5px;font-weight:700;color:var(--accent-t);background:rgba(108,156,252,.14);border:1px solid rgba(108,156,252,.42);border-radius:999px;padding:1px 8px;margin-left:4px}
+.cand-filter{display:inline-flex;gap:4px;background:#11141d;padding:2px;border-radius:7px;border:1px solid var(--border)}
+.cand-flt{font-size:10.5px;font-weight:650;padding:2px 8px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--text-dim);cursor:pointer}
+.cand-flt.on{background:var(--surface2);color:var(--accent-t);border-color:rgba(108,156,252,.48)}
+.cand-go{margin-right:4px}
 .desk-cockpit-btn{border-color:rgba(108,156,252,.5)!important;background:rgba(108,156,252,.14)!important;color:var(--accent-t)!important;font-weight:650}
 
 /* Two-Horizon Schedule: Today & This Week 4-column board + height-capped 6-Week Compact Horizon */

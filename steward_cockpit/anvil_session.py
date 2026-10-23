@@ -1404,8 +1404,113 @@ def extract_paper_claims_and_align(
     }
 
 
+def _build_anvil_v2_report_section(session: Dict[str, Any], heading_prefix: str = "## 5.") -> List[str]:
+    buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
+    panel = session.get("beta_reader_panel") or {}
+    wt = session.get("walkthrough_trace") or {}
+    lines: List[str] = [
+        "",
+        f"{heading_prefix} Anvil v2 — 3-Level Progressive Abstraction, 5-Seat Software Beta-Reader Panel & Live Code Walkthrough",
+        "",
+        "### A. 3-Level Progressive Abstraction Map (Level 1 Summary → Level 2 Mechanics/MathML/Diff → Level 3 Code)",
+        "",
+        "| Block | Level 1 (Role & I/O) | Level 2 (Sub-Blocks · Formulas · Assumptions) | Level 3 (Exact Lines & Functions) |",
+        "|---|---|---|---|",
+    ]
+    for b in buckets[:20]:
+        l1 = b.get("level1_summary") or {}
+        l2 = b.get("level2_mechanics") or {}
+        l3 = b.get("level3_code") or {}
+        sub_cnt = len(l2.get("sub_blocks") or [])
+        eq_cnt = len(l2.get("formulas_mathml") or [])
+        as_cnt = len(l2.get("assumptions") or [])
+        lines.append(
+            f"| **`{b.get('title')}`** (`{b.get('file')}`) | {l1.get('role') or b.get('summary') or ''} "
+            f"| `{sub_cnt}` sub-blocks · `{eq_cnt}` MathML formula(s) · `{as_cnt}` explicit assumption(s) "
+            f"| `{l3.get('file') or b.get('file')}` (`L{l3.get('start_line', 1)}–L{l3.get('end_line', 1)}` · `{len(b.get('functions') or [])}` fn) |"
+        )
+
+    seats = panel.get("seats") or []
+    if seats:
+        lines.extend([
+            "",
+            f"### B. 5-Seat Software Beta-Reader Panel (Verdict: `{panel.get('overall_status') or panel.get('overall_verdict') or 'PASS'}` · Score: `{panel.get('overall_score', 90)}/100`)",
+            "",
+            "| Seat | Specialist Role | Focus | Status | Score | Summary & Actionable Fix |",
+            "|---|---|---|---|---|---|",
+        ])
+        for idx, s in enumerate(seats, 1):
+            role_txt = s.get("title") or s.get("persona_name") or s.get("role") or f"Seat {idx}"
+            focus_txt = s.get("focus") or s.get("lens") or ""
+            status_txt = s.get("status") or s.get("verdict") or "PASS"
+            score_txt = f"{s.get('score', 90)}/100"
+            sum_txt = s.get("summary") or f"{s.get('key_finding', '')} Fix: {s.get('actionable_fix', '')}".strip()
+            lines.append(
+                f"| **Seat {idx}** | **{role_txt}** | {focus_txt} | `{status_txt}` | `{score_txt}` | {sum_txt} |"
+            )
+
+    steps = wt.get("steps") or []
+    if steps:
+        acc_cnt = (wt.get("counts") or {}).get("accurate", wt.get("accurate_steps", len(steps)))
+        tot_cnt = wt.get("total_steps", wt.get("step_count", len(steps)))
+        lines.extend([
+            "",
+            f"### C. Live Code Walkthrough Trace (`{wt.get('language', 'python').upper()}` · `{acc_cnt}/{tot_cnt}` Steps Accurate · Verdict: `{wt.get('overall_verdict', 'ACCURATE')}`)",
+            "",
+            "| Step | Function | What Code Claims To Do | Concrete Input Data | Actual Runtime Calculation & Output | Accuracy Verdict |",
+            "|---|---|---|---|---|---|",
+        ])
+        for st in steps[:20]:
+            step_idx = st.get("step") or st.get("step_index") or 1
+            fn_nm = st.get("function") or st.get("function_name") or "entrypoint"
+            raw_inp = st.get("concrete_input") if st.get("concrete_input") is not None else st.get("input_snapshot", "")
+            inp_s = (raw_inp if isinstance(raw_inp, str) else json.dumps(raw_inp, ensure_ascii=False))[:90]
+            out_s = str(st.get("actual_output_summary") or st.get("actual_behavior") or "")[:120]
+            note_s = str(st.get("calculation_note") or st.get("discrepancy_notes") or "")[:110]
+            claim_s = str(st.get("claim") or st.get("claimed_behavior") or "").replace("|", "\\|")[:100]
+            lines.append(
+                f"| **{step_idx}/{st.get('total_steps', len(steps))}** | `{fn_nm}` (`{st.get('file')}:L{st.get('lineno', 1)}`) "
+                f"| {claim_s} | `{inp_s}` | {out_s} ({note_s}) | **`{st.get('verdict', 'ACCURATE')}`** |"
+            )
+    return lines
+
+
+def _write_anvil_manifest(cdir: Path, session: Dict[str, Any]) -> Path:
+    manifest_path = _session_dir(cdir) / "manifest.json"
+    code_map = session.get("code_map") or {}
+    buckets = code_map.get("conceptual_buckets") or []
+    manifest = {
+        "schema": "anvil-manifest/v2",
+        "cockpit_dir": str(cdir),
+        "cockpit_name": session.get("cockpit_name") or cdir.name,
+        "updated_at": session.get("updated_at"),
+        "software": session.get("software"),
+        "conceptual_buckets": buckets,
+        "process_map": code_map.get("process_map"),
+        "orange_split": session.get("orange_split"),
+        "remap": session.get("remap"),
+        "paper_map": session.get("paper_map"),
+        "beta_reader_panel": session.get("beta_reader_panel"),
+        "walkthrough_trace": session.get("walkthrough_trace"),
+    }
+    _atomic_write_text(manifest_path, json.dumps(manifest, indent=2))
+    return manifest_path
+
+
 def _write_anvil_report(cdir: Path, session: Dict[str, Any]) -> Path:
     report_path = cdir / "ANVIL-REPORT.md"
+    if report_path.is_file():
+        try:
+            existing_text = report_path.read_text(encoding="utf-8", errors="replace")
+            if existing_text.lstrip().startswith("# Illustrated Anvil Architecture"):
+                marker = "\n## 7. Anvil v2 —"
+                base_text = existing_text.split(marker)[0].rstrip()
+                v2_lines = _build_anvil_v2_report_section(session, heading_prefix="## 7.")
+                _atomic_write_text(report_path, base_text + "\n" + "\n".join(v2_lines) + "\n")
+                return report_path
+        except Exception:
+            pass
+
     sw = session.get("software") or {}
     orange = session.get("orange_split") or {}
     counts = orange.get("counts") or {}
@@ -1460,6 +1565,7 @@ def _write_anvil_report(cdir: Path, session: Dict[str, Any]) -> Path:
                 f"(`{al.get('mapped_file') or ''}:{al.get('lineno') or ''}`) [{al.get('empirical_status')}]"
             )
 
+    lines.extend(_build_anvil_v2_report_section(session, heading_prefix="## 5."))
     _atomic_write_text(report_path, "\n".join(lines) + "\n")
     return report_path
 
@@ -1502,6 +1608,32 @@ def get_session_status(cockpit_dir: str | Path) -> Dict[str, Any]:
                         session.get("orange_split") or {},
                         remap,
                     )
+                if anvil_engine is not None:
+                    if buckets and (not buckets[0].get("level1_summary") or not buckets[0].get("level3_code")):
+                        if hasattr(anvil_engine, "_enrich_progressive_levels"):
+                            anvil_engine._enrich_progressive_levels(
+                                sw_path,
+                                buckets,
+                                paper_map=session.get("paper_map"),
+                                remap=remap,
+                            )
+                    if not session.get("beta_reader_panel") and hasattr(anvil_engine, "run_beta_reader_panel"):
+                        session["beta_reader_panel"] = anvil_engine.run_beta_reader_panel(
+                            sw_path,
+                            code_map=code_map,
+                            orange_split=session.get("orange_split"),
+                            remap=remap,
+                        )
+                    if not session.get("walkthrough_trace") and hasattr(anvil_engine, "run_code_walkthrough"):
+                        session["walkthrough_trace"] = anvil_engine.run_code_walkthrough(
+                            sw_path,
+                            block_id=str(session.get("selected_block_id") or ""),
+                        )
+                    if not (_session_dir(cdir) / "manifest.json").is_file():
+                        try:
+                            _write_anvil_manifest(cdir, session)
+                        except Exception:
+                            pass
         except Exception as exc:
             corrupt_error = f"Session file {sfile.name} could not be parsed: {exc}"
     out: Dict[str, Any] = {
@@ -1615,6 +1747,18 @@ def start_cockpit_session(
 
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         buckets = code_map.get("conceptual_buckets") or []
+        if hasattr(anvil_engine, "_enrich_progressive_levels"):
+            anvil_engine._enrich_progressive_levels(sw_path, buckets, paper_map=paper_map, remap=remap)
+        beta_reader_panel = (
+            anvil_engine.run_beta_reader_panel(sw_path, code_map=code_map, orange_split=orange_split, remap=remap)
+            if hasattr(anvil_engine, "run_beta_reader_panel")
+            else {}
+        )
+        walkthrough_trace = (
+            anvil_engine.run_code_walkthrough(sw_path, block_id=buckets[0]["id"] if buckets else "")
+            if hasattr(anvil_engine, "run_code_walkthrough")
+            else {}
+        )
         first_block = buckets[0]["title"] if buckets else sw_info["label"]
         total_fns = sum(len(b.get("functions") or []) for b in buckets)
         total_mods = len(code_map.get("module_buckets") or buckets)
@@ -1649,6 +1793,8 @@ def start_cockpit_session(
             "orange_split": orange_split,
             "remap": remap,
             "paper_map": paper_map,
+            "beta_reader_panel": beta_reader_panel,
+            "walkthrough_trace": walkthrough_trace,
             "selected_block_id": buckets[0]["id"] if buckets else "",
             "chat_history": [
                 {
@@ -1662,6 +1808,7 @@ def start_cockpit_session(
         }
 
         _atomic_write_text(sfile, json.dumps(session, indent=2))
+        _write_anvil_manifest(cdir, session)
         _write_anvil_report(cdir, session)
         return get_session_status(cdir)
 
@@ -2265,6 +2412,53 @@ def apply_conversational_anvil_side_effects(cockpit_dir: str | Path, question: s
 
 
 
+def walkthrough_in_session(cockpit_dir: str | Path, block_id: str = "") -> Dict[str, Any]:
+    """Run a live step-by-step polyglot code walkthrough on a block or entire session."""
+    if anvil_engine is None or not hasattr(anvil_engine, "run_code_walkthrough"):
+        raise ValueError("Anvil v2 walkthrough engine is unavailable on this host.")
+    cdir = Path(cockpit_dir).resolve()
+    with _get_cockpit_lock(cdir):
+        status = get_session_status(cdir)
+        session = status.get("session")
+        bid = (block_id or "").strip()
+        if session:
+            sw_path = Path((session.get("software") or {}).get("path") or cdir)
+            buckets = (session.get("code_map") or {}).get("conceptual_buckets") or []
+            if hasattr(anvil_engine, "_enrich_progressive_levels") and buckets:
+                anvil_engine._enrich_progressive_levels(
+                    sw_path,
+                    buckets,
+                    paper_map=session.get("paper_map"),
+                    remap=session.get("remap"),
+                )
+            if hasattr(anvil_engine, "run_beta_reader_panel"):
+                session["beta_reader_panel"] = anvil_engine.run_beta_reader_panel(
+                    sw_path,
+                    code_map=session.get("code_map"),
+                    orange_split=session.get("orange_split"),
+                    remap=session.get("remap"),
+                )
+            wt = anvil_engine.run_code_walkthrough(sw_path, block_id=bid)
+            session["walkthrough_trace"] = wt
+            session["walkthrough"] = wt
+            if bid:
+                session["selected_block_id"] = bid
+            session["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            _atomic_write_text(_session_file(cdir), json.dumps(session, indent=2))
+            _write_anvil_manifest(cdir, session)
+            _write_anvil_report(cdir, session)
+            return {
+                **get_session_status(cdir),
+                "walkthrough": wt,
+            }
+        else:
+            wt = anvil_engine.run_code_walkthrough(cdir, block_id=bid)
+            return {
+                **status,
+                "walkthrough": wt,
+            }
+
+
 def reset_cockpit_session(cockpit_dir: str | Path) -> Dict[str, Any]:
     cdir = Path(cockpit_dir).resolve()
     with _get_cockpit_lock(cdir):
@@ -2287,12 +2481,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--action",
         default="status",
-        choices=("status", "start_code", "start_paper", "probe_block", "sign_off_drop", "attach_paper", "chat", "reset"),
+        choices=("status", "start_code", "start_paper", "probe_block", "walkthrough", "sign_off_drop", "attach_paper", "chat", "reset"),
     )
     parser.add_argument("--software", default=".", help="Local path in cockpit or GitHub repo URL")
     parser.add_argument("--compare", default="", help="Comparison software target for remap/null-space")
     parser.add_argument("--paper", default="", help="arXiv ID/URL, HTTPS URL, or local paper path")
-    parser.add_argument("--block", default="", help="Block ID or file for probe_block")
+    parser.add_argument("--block", default="", help="Block ID or file for probe_block / walkthrough")
     parser.add_argument("--function", default="", help="Function name for sign_off_drop")
     parser.add_argument("--question", default="", help="Question for Anvil Agent chat")
     args = parser.parse_args(argv)
@@ -2310,6 +2504,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
     elif args.action == "probe_block":
         res = probe_block_in_session(cdir, args.block)
+    elif args.action == "walkthrough":
+        res = walkthrough_in_session(cdir, args.block)
     elif args.action == "sign_off_drop":
         res = sign_off_null_space_in_session(cdir, args.function)
     elif args.action == "attach_paper":

@@ -2701,7 +2701,9 @@ def _materialize_report(cdir, job):
     lines.append("Collect this original job's CURRENT result before acting (steward_code_job.py collect --job %s). "
                  "A later attempt supersedes an earlier result. Reconcile prior delivery; never start another worker "
                  "because this notice repeats. For unchanged kept work, inspect/recover this original job instead of "
-                 "rebuilding. Report briefly, preserve pending human decisions, and continue independent authorized work." % job["id"])
+                 "rebuilding. Report briefly, preserve pending human decisions, and continue independent authorized work. "
+                 "Give John a concise 2-3 sentence summary of what this run accomplished, followed by organized clickable "
+                 "links to the key deliverables grouped by topic/step (never an unorganized wall of links)." % job["id"])
     receipt = handoff.save_result(cdir, job, "\n".join(lines))
     if receipt:
         if kept:
@@ -3101,7 +3103,7 @@ def announce_kept(cdir, job):
                 j_noun = _job_noun(job)
                 try:
                     registration = {"written": True} if old else _dr.register(
-                        cdir, "%s %s kept (not landed): %s" % (j_noun[:1].upper() + j_noun[1:], job["id"], Path(name).name), "`%s`" % where, notify=False)
+                        cdir, "Supporting - %s %s kept (not landed): %s" % (j_noun[:1].upper() + j_noun[1:], job["id"], Path(name).name), "`%s`" % where, notify=False)
                 except Exception as exc:
                     registration = {"reason": str(exc)[:200]}
                 item["registered"] = bool(registration.get("written") or registration.get("reason") == "dup")

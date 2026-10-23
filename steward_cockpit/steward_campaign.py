@@ -39,8 +39,8 @@ def _normalize_attention(raw, error=""):
     return _core.normalize_attention(raw, error=error)
 
 
-_JSON_FILE_CACHE_LOCK = threading.Lock()
-_JSON_FILE_CACHE: dict[str, tuple[int, int, object]] = {}
+_JSON_FILE_CACHE_LOCK = globals().get("_JSON_FILE_CACHE_LOCK") or threading.Lock()
+_JSON_FILE_CACHE: dict[str, tuple[int, int, object]] = globals().get("_JSON_FILE_CACHE") if isinstance(globals().get("_JSON_FILE_CACHE"), dict) else {}
 
 
 def _read_json(path: Path):
@@ -950,7 +950,7 @@ def parse_status_table(text):
     return {"head": head, "rows": rows}
 
 
-_NEWEST_LOG_CACHE: dict[tuple[str, int], tuple[float, object]] = {}
+_NEWEST_LOG_CACHE: dict[tuple[str, int], tuple[float, object]] = globals().get("_NEWEST_LOG_CACHE") if isinstance(globals().get("_NEWEST_LOG_CACHE"), dict) else {}
 
 
 def _newest_status_log(campaign_dir, depth=3):
@@ -4059,8 +4059,8 @@ def plan_drift_suffix(campaign_dir: str) -> str:
             "events plus the projection - then say in one line what changed in the plan.")
 
 
-_PLAN_HISTORY_CACHE_LOCK = threading.Lock()
-_PLAN_HISTORY_CACHE: dict[str, tuple[tuple, list[dict]]] = {}
+_PLAN_HISTORY_CACHE_LOCK = globals().get("_PLAN_HISTORY_CACHE_LOCK") or threading.Lock()
+_PLAN_HISTORY_CACHE: dict[str, tuple[tuple, list[dict]]] = globals().get("_PLAN_HISTORY_CACHE") if isinstance(globals().get("_PLAN_HISTORY_CACHE"), dict) else {}
 
 _FINAL_DELIV_RE = re.compile(
     r"^(?:Approved\s*[\u2014\u2013\-:]\s*Finalized|Approved\b|FINAL\b|Final\s+Deliverable)",
@@ -4262,7 +4262,7 @@ def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: st
             changed = True
         elif kind == "step_set" and sid and sid in steps_map:
             fields = ev.get("fields") if isinstance(ev.get("fields"), dict) else (ev.get("patch") if isinstance(ev.get("patch"), dict) else {})
-            prev_status = steps_map[sid].get("status")
+            steps_map[sid] = dict(steps_map[sid]); prev_status = steps_map[sid].get("status")
             prev_name = steps_map[sid].get("name")
             for fk in ("name", "status", "done_when", "waiting_on", "due", "part", "commissioned_as", "navigation", "ref"):
                 if fk in fields and fields[fk] is not None:
@@ -4275,7 +4275,7 @@ def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: st
             elif steps_map[sid].get("name") != prev_name:
                 note = f"Updated '{sname}'"
         elif kind == "status_flip" and sid and sid in steps_map:
-            to_st = str(ev.get("to") or ev.get("status") or steps_map[sid].get("status") or "active")
+            steps_map[sid] = dict(steps_map[sid]); to_st = str(ev.get("to") or ev.get("status") or steps_map[sid].get("status") or "active")
             steps_map[sid]["status"] = to_st
             if to_st == "done":
                 steps_map[sid]["waiting_on"] = None
@@ -4287,7 +4287,7 @@ def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: st
             op_act = str(op.get("action") or "").strip().lower()
             op_sid = str(op.get("step_id") or sid or "").strip()
             if op_sid and op_sid in steps_map and op_act in ("close", "accept", "present", "feedback"):
-                sname = one_line(str(steps_map[op_sid].get("name") or op_sid), 40)
+                steps_map[op_sid] = dict(steps_map[op_sid]); sname = one_line(str(steps_map[op_sid].get("name") or op_sid), 40)
                 if op_act == "close" or (op_act == "accept" and op.get("complete_current")):
                     steps_map[op_sid]["status"] = "done"
                     steps_map[op_sid]["waiting_on"] = None
@@ -4298,7 +4298,7 @@ def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: st
                     note = f"Presented '{sname}' for review"
                     changed = True
         elif kind == "commission_bind" and sid and sid in steps_map:
-            steps_map[sid]["commissioned_as"] = ev.get("commissioned_as")
+            steps_map[sid] = dict(steps_map[sid]); steps_map[sid]["commissioned_as"] = ev.get("commissioned_as")
             changed = True
         elif kind == "reorder" and sid and sid in order:
             after_id = str(ev.get("after") or "").strip()
@@ -4322,7 +4322,7 @@ def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: st
             changed = True
 
         if changed and date_str and steps_map:
-            snap_steps = [deepcopy(steps_map[k]) for k in order if k in steps_map]
+            snap_steps = [dict(steps_map[k]) for k in order if k in steps_map]
             done_c = sum(1 for s in snap_steps if s.get("status") == "done")
             tot_c = len(snap_steps)
             bucket = date_snapshots.setdefault(date_str, {
@@ -4372,7 +4372,7 @@ def _reconstruct_plan_history_from_events(roadmap: dict | None, campaign_dir: st
             "digest": dig,
             "steps_done": b["steps_done"],
             "steps_total": b["steps_total"],
-            "steps": b["steps"],
+            "steps": [deepcopy(s) for s in b["steps"]],
         })
     out.reverse()
     return out
@@ -4689,8 +4689,8 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
     }
 
 
-_PLAN_PROPOSAL_CACHE_LOCK = threading.Lock()
-_PLAN_PROPOSAL_CACHE: dict[str, tuple[tuple, dict | None]] = {}
+_PLAN_PROPOSAL_CACHE_LOCK = globals().get("_PLAN_PROPOSAL_CACHE_LOCK") or threading.Lock()
+_PLAN_PROPOSAL_CACHE: dict[str, tuple[tuple, dict | None]] = globals().get("_PLAN_PROPOSAL_CACHE") if isinstance(globals().get("_PLAN_PROPOSAL_CACHE"), dict) else {}
 
 
 def read_plan_proposal(campaign_dir: str, m: dict | None = None, roadmap: dict | None = None) -> dict | None:

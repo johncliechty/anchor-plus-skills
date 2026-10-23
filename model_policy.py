@@ -120,8 +120,13 @@ def normalize_catalog(family, raw):
             row(entry["model"], entry["efforts"], ranks[index], None, "provider_catalog_order")
     elif family == "claude":
         # `best` is the provider's moving frontier alias, not a product-name pin.
-        rows.append({"model": "best", "efforts": raw.get("efforts", []), "rank": 0,
-                     "upgrade": None, "evidence": "provider_moving_alias"})
+        # Also advertise `opus`, `sonnet`, and `haiku` at lower ranks so Setup
+        # and entitlement-aware fallbacks can select Opus or Sonnet when `best`
+        # (e.g. Fable 5.1) requires extra usage credits on the user's plan.
+        efforts = raw.get("efforts", [])
+        for rank_idx, alias in enumerate(("best", "opus", "sonnet", "haiku")):
+            rows.append({"model": alias, "efforts": efforts, "rank": rank_idx,
+                         "upgrade": None, "evidence": "provider_moving_alias"})
     else:
         raise PolicyUnavailable(family, "the installed transport does not expose verified model capabilities")
     if not rows:

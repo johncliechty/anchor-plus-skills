@@ -457,7 +457,7 @@ def reconcile_comms_with_roadmaps(entries: list[dict] | None = None, facts: dict
         if not rm_path.is_file():
             continue
         try:
-            rm = json.loads(rm_path.read_text(encoding="utf-8"))
+            from steward_cockpit.steward_campaign import _read_json as _sc_read_json; rm, _ = _sc_read_json(rm_path); rm = rm or {}
             steps = rm.get("roadmap_projection") or rm.get("steps") or []
         except Exception:
             steps = []

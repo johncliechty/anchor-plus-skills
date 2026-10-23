@@ -51,8 +51,9 @@ def snapshot(job):
         return {"error": str(exc)[:300]}
 
 
-_SKIP_WT_DIRS = {".git", ".anchor", ".ecgberht", ".foreman", ".foreman-job", "__pycache__", ".pytest_cache", "node_modules"}
+_SKIP_WT_DIRS = {".git", ".anchor", ".ecgberht", ".foreman", ".foreman-job", "__pycache__", ".pytest_cache", "node_modules", ".next", "dist", "build", "venv", ".venv", ".worktrees", "rnd_jobs", "health_reports", "vendor"}
 _WT_ACTIVITY_CACHE = {}
+_WT_ACTIVITY_LOCK = threading.Lock()
 _AUTO_FINISHING = set()
 
 
@@ -69,50 +70,53 @@ def worktree_activity(job):
         floor = float(job.get("worker_birth") or job.get("phase_at") or 0) - 2.0
         if floor <= 0:
             return None
-        now_bucket = int(time.time() // 5)
+        now_bucket = int(time.time() // 10)
         cache_key = (wt_raw, int(floor), now_bucket)
         if cache_key in _WT_ACTIVITY_CACHE:
             return _WT_ACTIVITY_CACHE[cache_key]
-        modified = []
-        newest_mtime = 0.0
-        newest_rel = ""
-        newest_size = 0
-        for root_dir, dirs, files in os.walk(wt):
-            dirs[:] = [d for d in dirs if d not in _SKIP_WT_DIRS]
-            for fname in files:
-                if fname in ("foreman.config.json", "_foreman-status.log", "foreman-checkpoint.json") or fname.endswith((".pyc", ".pyo", ".tmp")):
-                    continue
-                fpath = Path(root_dir) / fname
-                try:
-                    st = fpath.stat()
-                except OSError:
-                    continue
-                if st.st_mtime >= floor:
-                    rel = fpath.relative_to(wt).as_posix()
-                    if cj._runtime(rel) or cj.never_lands(rel):
+        with _WT_ACTIVITY_LOCK:
+            if cache_key in _WT_ACTIVITY_CACHE:
+                return _WT_ACTIVITY_CACHE[cache_key]
+            modified = []
+            newest_mtime = 0.0
+            newest_rel = ""
+            newest_size = 0
+            for root_dir, dirs, files in os.walk(wt):
+                dirs[:] = [d for d in dirs if d not in _SKIP_WT_DIRS]
+                for fname in files:
+                    if fname in ("foreman.config.json", "_foreman-status.log", "foreman-checkpoint.json") or fname.endswith((".pyc", ".pyo", ".tmp")):
                         continue
-                    modified.append(rel)
-                    if st.st_mtime >= newest_mtime:
-                        newest_mtime = st.st_mtime
-                        newest_rel = rel
-                        newest_size = st.st_size
-        if not modified:
-            _WT_ACTIVITY_CACHE[cache_key] = None
-            return None
-        kb = max(0.1, round(newest_size / 1024.0, 1)) if newest_size else 0.0
-        summary = "%d file(s) modified in worktree \u00b7 latest %s (%.1f KB)" % (len(modified), newest_rel, kb)
-        prog_stamp = "wt:%d:%s:%d" % (len(modified), newest_rel, int(newest_mtime))
-        res = {
-            "last_activity": newest_mtime,
-            "progress_at": newest_mtime,
-            "progress_token": prog_stamp,
-            "worktree_summary": summary,
-            "modified_count": len(modified),
-        }
-        if len(_WT_ACTIVITY_CACHE) > 128:
-            _WT_ACTIVITY_CACHE.clear()
-        _WT_ACTIVITY_CACHE[cache_key] = res
-        return res
+                    fpath = Path(root_dir) / fname
+                    try:
+                        st = fpath.stat()
+                    except OSError:
+                        continue
+                    if st.st_mtime >= floor:
+                        rel = fpath.relative_to(wt).as_posix()
+                        if cj._runtime(rel) or cj.never_lands(rel):
+                            continue
+                        modified.append(rel)
+                        if st.st_mtime >= newest_mtime:
+                            newest_mtime = st.st_mtime
+                            newest_rel = rel
+                            newest_size = st.st_size
+            if not modified:
+                _WT_ACTIVITY_CACHE[cache_key] = None
+                return None
+            kb = max(0.1, round(newest_size / 1024.0, 1)) if newest_size else 0.0
+            summary = "%d file(s) modified in worktree \u00b7 latest %s (%.1f KB)" % (len(modified), newest_rel, kb)
+            prog_stamp = "wt:%d:%s:%d" % (len(modified), newest_rel, int(newest_mtime))
+            res = {
+                "last_activity": newest_mtime,
+                "progress_at": newest_mtime,
+                "progress_token": prog_stamp,
+                "worktree_summary": summary,
+                "modified_count": len(modified),
+            }
+            if len(_WT_ACTIVITY_CACHE) > 128:
+                _WT_ACTIVITY_CACHE.clear()
+            _WT_ACTIVITY_CACHE[cache_key] = res
+            return res
     except Exception:
         return None
 

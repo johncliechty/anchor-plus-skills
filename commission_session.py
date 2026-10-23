@@ -85,11 +85,8 @@ WORK_TURN = (
 # ── Bridge (the one door to the Ecgberht engine) ─────────────────────────────
 
 def _ecgberht_root() -> Path:
-    """ECGBERHT_ROOT env override, else the sibling checkout beside Anchor."""
-    env = os.environ.get("ECGBERHT_ROOT", "").strip()
-    if env:
-        return Path(env)
-    return ANCHOR_DIR.parent / "Ecgberht"
+    """Resolve Ecgberht root via paths.ecgberht_root() (env, sibling Ecgberht, skills/ecgberht, SKILLS_ROOT)."""
+    return _paths.ecgberht_root()
 
 
 def run_bridge(mode: str, payload: dict, timeout: int = BRIDGE_TIMEOUT_S) -> dict:

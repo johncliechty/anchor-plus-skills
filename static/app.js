@@ -155,8 +155,13 @@
   // ---------- what an address is ----------
   function resolve(u, fromWin) {
     if (u === undefined || u === null || u === "" || String(u) === "about:blank") return { blank: true };
+    var s = String(u);
+    var yt = s.match(/^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,15})/i);
+    if (yt && (!fromWin || !fromWin.location || fromWin.location.pathname !== "/steward-static/video.html")) {
+      s = "/steward-static/video.html?v=" + encodeURIComponent(yt[1]) + "&url=" + encodeURIComponent(s);
+    }
     var x;
-    try { x = new URL(String(u), fromWin && fromWin.location ? fromWin.location.href : location.href); }
+    try { x = new URL(s, fromWin && fromWin.location ? fromWin.location.href : location.href); }
     catch (e) { return null; }
     if (x.origin !== location.origin || !/^https?:$/.test(x.protocol)) return null;
     return { url: x.href, path: x.pathname, q: x.searchParams };
@@ -617,8 +622,17 @@
 
   // ---------- the pane headers, the gutter, the toggle ----------
   heads.forEach(function (h, k) {
-    h.addEventListener("pointerdown", function (ev) { if (!ev.target.closest(".x") && active !== k) { active = k; layout(); render(); } });
+    h.addEventListener("pointerdown", function (ev) { if (!ev.target.closest(".x, .pane-scroll") && active !== k) { active = k; layout(); render(); } });
     h.querySelector(".x").addEventListener("click", function () { closePane(k); });
+    h.querySelectorAll(".pane-scroll").forEach(function (btn) {
+      btn.addEventListener("pointerdown", function (ev) { ev.preventDefault(); ev.stopPropagation(); });
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var dir = Number(btn.getAttribute("data-scroll") || "1") || 1;
+        api.scrollPane(k, dir * Math.max(380, Math.round(window.innerHeight * 0.72)));
+      });
+    });
   });
   document.getElementById("one").addEventListener("click", function () { setTwo(false); });
   document.getElementById("two").addEventListener("click", function () { setTwo(true); });
@@ -704,6 +718,23 @@
   };
   api.closeRightDeliverable = function () {
     if (two && panes[1]) closePane(1);
+  };
+  api.scrollPane = function (k, deltaY) {
+    var t = byId(panes[k]);
+    if (!t || !t.frame || !t.frame.contentWindow) return false;
+    var d = Number(deltaY) || 420;
+    try { t.frame.contentWindow.scrollBy({ top: d, behavior: "smooth" }); } catch (e) {}
+    try { t.frame.contentWindow.postMessage({ type: "anchor-scroll-deliverable", deltaY: d }, "*"); } catch (e) {}
+    return true;
+  };
+  api.scrollDeliverable = function (deltaY) {
+    if (!two) return false;
+    var docPane = 1;
+    var t1 = byId(panes[1]), t0 = byId(panes[0]);
+    if (t1 && t1.kind === "doc") docPane = 1;
+    else if (t0 && t0.kind === "doc") docPane = 0;
+    else docPane = active === 0 ? 1 : 0;
+    return api.scrollPane(docPane, deltaY);
   };
   api.zoomKeys(document);
 

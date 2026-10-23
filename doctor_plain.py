@@ -29,7 +29,7 @@ KIND_CHECKS_FAILED = "checks-failed"
 KIND_OTHER = "other"
 
 _UNREACHABLE = re.compile(
-    r"actively refused|timed out|transport error|WinError 10061|Connection refused",
+    r"actively refused|timed out|timeouterror|transport error|WinError 10061|Connection refused",
     re.I)
 _PASSED = re.compile(r"(\d+)\s*/\s*(\d+)\s+passed")
 _FAILED_N = re.compile(r"(\d+)\s+failed")
@@ -215,15 +215,17 @@ def decide(explained, probe, playbook_hits=None):
     """
     if not explained:
         return "nothing"
-    all_auto_recheck = all(
-        e.get("kind") in (KIND_SELF_TEST_UNREACHABLE, KIND_SERVICE_STALE_CODE)
-        for e in explained
-    )
     all_answer = bool(probe) and all(bool(p.get("ok")) for p in probe)
-    if all_auto_recheck and all_answer:
-        return "rerun"
-    hits = playbook_hits if playbook_hits is not None else match_playbook(explained)
+    cases = load_playbook()
+    hits = playbook_hits if playbook_hits is not None else match_playbook(explained, cases)
     if hits and len(hits) == len(explained) and all(h.get("suggested") == "rerun" for h in hits):
+        return "rerun"
+    def _row_can_rerun(row):
+        if row.get("kind") in (KIND_SELF_TEST_UNREACHABLE, KIND_SERVICE_STALE_CODE) and all_answer:
+            return True
+        hit = next((c for c in cases if _case_matches(c, row)), None)
+        return bool(hit and hit.get("suggested") == "rerun" and (all_answer or not probe))
+    if all(_row_can_rerun(e) for e in explained):
         return "rerun"
     return "session"
 
@@ -287,7 +289,7 @@ def _sync_live_steward_modules():
         "steward_cockpit.steward_engine",
         "steward_cockpit.anvil_session",
         "steward_cockpit.steward_routes",
-        "terminal_session",
+        "terminal_session", "comms_connector", "high_seat_page", "home_rows", "proc_probe",
     ):
         try:
             if mod_name in sys.modules:
@@ -375,6 +377,37 @@ def _sync_live_steward_modules():
 
         main_mod._live_steward_estate = _fast_live_steward_estate
         main_mod._project_steward_usage = _fast_project_steward_usage
+        def _fast_working_pids(entries, sessions):
+            out = set()
+            try:
+                for rec in sessions or ():
+                    if isinstance(rec, dict) and rec.get("status") == "running" and rec.get("project_id"):
+                        out.add(str(rec["project_id"]))
+            except Exception:
+                pass
+            try:
+                from steward_cockpit.steward_routes import ENGINES as _engines
+                folders = []
+                for e in entries or ():
+                    try:
+                        if e.get("folder_path") and e.get("id"):
+                            folders.append((Path(e["folder_path"]).resolve(), str(e["id"])))
+                    except Exception:
+                        continue
+                for cdir, eng in list(_engines.items()):
+                    try:
+                        if not ((eng.alive() and (getattr(eng, "busy", False) or getattr(eng, "queue", None))) or main_mod._engine_light(cdir)["light"] == "green"):
+                            continue
+                        c = Path(str(cdir)).resolve()
+                        for f, pid in folders:
+                            if c == f or f in c.parents:
+                                out.add(pid)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            return out
+        main_mod._working_pids = _fast_working_pids
         orig_probe = getattr(main_mod, "_orig_doctor_live_probe", None) or getattr(main_mod, "_doctor_live_probe", None)
         if orig_probe is not None:
             main_mod._orig_doctor_live_probe = orig_probe

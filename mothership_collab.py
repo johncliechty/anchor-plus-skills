@@ -1,9 +1,12 @@
-"""Wave 11 — Multi-Mothership Collaboration & Shared Cockpits (stdlib only, 2026-10-15).
+"""Wave 11 & Wave 22/23 — Multi-Mothership Collaboration, Pseudonyms, Ghost World Lab Hub,
+3 Steward Incarnations, Single-Leader Cockpit Baton, 3-Tier Data/Papers & Foundry Federation (stdlib only).
 
 Enables two or more independent Anchor Motherships (installed via ``distro.build_distro``)
-to share project cockpits, claim conflict-free step leases on ``roadmap.json``, and
-exchange portable, host-path-free Cockpit Handoff Packets (``.anchor-cockpit.json``)
-over Git remotes, Tailscale peers, or direct packet import/export.
+to collaborate under privacy-preserving Pseudonyms (defaulting to J.R.R. Tolkien's canonical
+``"Samwise Gamgee"`` with alias ``"Samwise Gamgi"``), manage ACL Standing Trust grants via the
+Ghost World Lab Central Hub + Tailscale P2P DualPathTransport, coordinate Single-Leader Cockpit
+Batons and conflict-free step leases, synchronize 3-Tier hybrid data/papers, and federate Skill
+Foundry skills through the 4-stage Aegis quarantine gate.
 """
 from __future__ import annotations
 
@@ -12,17 +15,20 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import socket
 import subprocess
 import time
 from typing import Any
 import urllib.request
 
+import anchor_agent_protocol as aap
+import cockpit_baton_and_tiers as cbt
+import foundry_federation as ffed
+import gwl_clearinghouse as gwl
 import paths
 
 
 PACKET_SCHEMA = "anchor.cockpit.packet.v1"
-VALID_TRANSPORTS = ("git_remote", "tailscale_peer", "bundle_pack", "packet_bundle")
+VALID_TRANSPORTS = ("git_remote", "tailscale_peer", "tailscale_http", "bundle_pack", "packet_bundle", "gwl_hybrid")
 
 
 def _utc_now_iso() -> str:
@@ -48,28 +54,63 @@ def _identity_file() -> Path:
     return _collab_dir() / "mothership_identity.json"
 
 
-def local_mothership_identity() -> dict[str, str]:
-    """Return this Mothership's deterministic identity without leaking personal OS paths."""
+def _invitations_file() -> Path:
+    return _collab_dir() / "collab_invitations.json"
+
+
+def local_mothership_identity() -> dict[str, Any]:
+    """Return this Mothership's deterministic pseudonym-backed identity without leaking personal OS paths."""
     fp = _identity_file()
     if fp.is_file():
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
             if isinstance(data, dict) and data.get("id"):
+                raw_pseudo = data.get("pseudonym") or aap.PSEUDONYM_DEFAULT
+                canon_pseudo, canon_aliases = aap.canonicalize_pseudonym(
+                    raw_pseudo,
+                    data.get("pseudonym_aliases"),
+                )
+                slug = str(data.get("pseudonym_slug") or aap.slugify_pseudonym(canon_pseudo))
+                did = str(data.get("did") or aap.did_from_pseudonym(canon_pseudo))
                 return {
+                    "schema": aap.IDENTITY_SCHEMA,
                     "id": str(data["id"]),
-                    "label": str(data.get("label") or data["id"]),
+                    "did": did,
+                    "pseudonym": canon_pseudo,
+                    "pseudonym_slug": slug,
+                    "pseudonym_aliases": canon_aliases,
+                    "label": str(data.get("label") or f"{canon_pseudo} · Mother Ship"),
                     "role": str(data.get("role") or "lead"),
+                    "incarnations": list(data.get("incarnations") or aap.STEWARD_INCARNATIONS),
                 }
         except Exception:
             pass
-    host = (socket.gethostname() or "anchor-mothership").strip().lower()
-    safe_id = "".join(ch if (ch.isalnum() or ch == "-") else "-" for ch in host).strip("-") or "anchor-mothership"
-    ident = {
-        "id": f"{safe_id}-mothership",
-        "label": f"{host.capitalize()} · Mother Ship",
-        "role": "lead",
+
+    rec = aap.get_or_create_identity(persist=False)
+    return {
+        "schema": aap.IDENTITY_SCHEMA,
+        "id": str(rec["id"]),
+        "did": str(rec["did"]),
+        "pseudonym": str(rec["pseudonym"]),
+        "pseudonym_slug": str(rec["pseudonym_slug"]),
+        "pseudonym_aliases": list(rec["pseudonym_aliases"]),
+        "label": str(rec["label"]),
+        "role": str(rec.get("role") or "lead"),
+        "incarnations": list(rec.get("incarnations") or aap.STEWARD_INCARNATIONS),
     }
-    return ident
+
+
+def set_local_pseudonym(pseudonym: str, aliases: list[str] | None = None) -> dict[str, Any]:
+    """Update the local user's public collaborator pseudonym and register it in the GWL Clearinghouse."""
+    rec = aap.get_or_create_identity(pseudonym=pseudonym, aliases=aliases, persist=True)
+    hub = gwl.GWLClearinghouse()
+    hub.register_account(
+        pseudonym=rec["pseudonym"],
+        account_id=f"acct-{rec['pseudonym_slug']}",
+        aliases=rec["pseudonym_aliases"],
+        pubkey_hmac_sha256=rec.get("pubkey_hmac_sha256", ""),
+    )
+    return local_mothership_identity()
 
 
 def list_peers() -> list[dict[str, Any]]:
@@ -94,9 +135,10 @@ def _save_peers(peers: list[dict[str, Any]]) -> None:
 
 
 def register_peer(peer: dict[str, Any]) -> dict[str, Any]:
-    """Register or update a collaborator Mothership peer."""
+    """Register or update a collaborator Mothership peer (with pseudonym & DID metadata)."""
     pid = str(peer.get("id") or "").strip()
-    label = str(peer.get("label") or pid or "Collaborator Mothership").strip()
+    raw_pseudo = str(peer.get("pseudonym") or peer.get("label") or pid or "Collaborator").strip()
+    label = str(peer.get("label") or raw_pseudo or pid or "Collaborator Mothership").strip()
     if not pid:
         slug = "".join(ch if (ch.isalnum() or ch == "-") else "-" for ch in label.lower()).strip("-")
         pid = slug or "peer-mothership"
@@ -113,8 +155,15 @@ def register_peer(peer: dict[str, Any]) -> dict[str, Any]:
     else:
         shared_list = []
 
+    p_slug = aap.slugify_pseudonym(raw_pseudo)
+    p_did = str(peer.get("did") or aap.did_from_pseudonym(raw_pseudo))
+
     rec = {
         "id": pid,
+        "did": p_did,
+        "pseudonym": raw_pseudo,
+        "pseudonym_slug": p_slug,
+        "pseudonym_aliases": list(peer.get("pseudonym_aliases") or []),
         "label": label,
         "transport": transport,
         "endpoint": endpoint,
@@ -130,6 +179,16 @@ def register_peer(peer: dict[str, Any]) -> dict[str, Any]:
     else:
         peers.append(rec)
     _save_peers(peers)
+
+    try:
+        gwl.GWLClearinghouse().register_account(
+            pseudonym=raw_pseudo,
+            account_id=f"acct-{pid}",
+            aliases=rec["pseudonym_aliases"],
+            tailscale_endpoint=endpoint if "http" in endpoint else "",
+        )
+    except Exception:
+        pass
     return rec
 
 
@@ -170,7 +229,8 @@ def claim_step_lease(
         return {"ok": False, "error": "roadmap_not_found"}
     ident = local_mothership_identity()
     ms_id = str(mothership_id or ident["id"]).strip()
-    ms_label = str(owner_label or holder_label or ident["label"]).strip()
+    ms_label = str(owner_label or holder_label or ident.get("pseudonym") or ident["label"]).strip()
+    ms_did = str(ident.get("did") or aap.did_from_pseudonym(ms_label))
     rm = json.loads(rm_path.read_text(encoding="utf-8"))
     steps = _roadmap_steps_list(rm)
     target = next((s for s in steps if str(s.get("id") or s.get("step_id") or "") == str(step_id)), None)
@@ -199,6 +259,8 @@ def claim_step_lease(
     lease_obj = {
         "step_id": str(step_id),
         "mothership_id": ms_id,
+        "holder_did": ms_did,
+        "holder_pseudonym": str(ident.get("pseudonym") or aap.PSEUDONYM_DEFAULT),
         "owner_label": ms_label,
         "leased_at": now_iso,
     }
@@ -208,6 +270,7 @@ def claim_step_lease(
         "step_id": str(step_id),
         "event": "step_leased",
         "mothership_id": ms_id,
+        "holder_did": ms_did,
         "at": now_iso,
     })
     rm_path.write_text(json.dumps(rm, indent=2) + "\n", encoding="utf-8")
@@ -234,7 +297,7 @@ def release_step_lease(cdir: str | Path, step_id: str, mothership_id: str = "") 
 
 
 def _scrub_host_paths_in_value(val: Any, root_str_win: str, root_str_posix: str) -> Any:
-    """Recursively replace absolute project root prefixes with <project_root> so packets are 100% portable."""
+    """Recursively replace absolute project root prefixes with <project_root> and scrub OS usernames."""
     if isinstance(val, str):
         out = val
         if root_str_win:
@@ -243,7 +306,7 @@ def _scrub_host_paths_in_value(val: Any, root_str_win: str, root_str_posix: str)
         if root_str_posix:
             out = out.replace(root_str_posix, "<project_root>")
             out = out.replace(root_str_posix.lower(), "<project_root>")
-        return out
+        return aap.scrub_private_identity_leaks(out)
     if isinstance(val, list):
         return [_scrub_host_paths_in_value(x, root_str_win, root_str_posix) for x in val]
     if isinstance(val, dict):
@@ -295,6 +358,12 @@ def export_cockpit_packet(cdir: str | Path, mothership_id: str = "", project_nam
         if isinstance(s, dict) and (s.get("id") or s.get("step_id")) and isinstance(s.get("lease"), dict)
     }
 
+    baton = cbt.init_or_get_baton(
+        cpath,
+        lead_did=str(ident.get("did") or "did:anchor:samwise-gamgee"),
+        lead_pseudonym=str(ident.get("pseudonym") or aap.PSEUDONYM_DEFAULT),
+    )
+
     payload_for_hash = json.dumps(
         {"roadmap": portable_rm, "strip": portable_strip, "face": portable_face},
         sort_keys=True,
@@ -306,6 +375,7 @@ def export_cockpit_packet(cdir: str | Path, mothership_id: str = "", project_nam
         "exported_at": _utc_now_iso(),
         "packet_digest": digest,
         "origin_mothership": ident,
+        "cockpit_baton": baton,
         "project": {
             "name": str(project_name or cpath.name),
             "portable_root": "<project_root>",
@@ -451,13 +521,217 @@ def import_cockpit_packet(cdir: str | Path, packet: dict[str, Any]) -> dict[str,
     }
 
 
+# ── Wave 22.3: Cave-to-Cave Invitations, Standing Consent & Cockpit Handoff ────────────────────
+
+def _load_invitations() -> list[dict[str, Any]]:
+    fp = _invitations_file()
+    if not fp.is_file():
+        return []
+    try:
+        data = json.loads(fp.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("invitations"), list):
+            return [inv for inv in data["invitations"] if isinstance(inv, dict)]
+    except Exception:
+        pass
+    return []
+
+
+def _save_invitations(invitations: list[dict[str, Any]]) -> None:
+    fp = _invitations_file()
+    fp.parent.mkdir(parents=True, exist_ok=True)
+    fp.write_text(
+        json.dumps({"invitations": invitations, "updated_at": _utc_now_iso()}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def send_project_invitation(
+    recipient_pseudonym: str,
+    project_uid: str,
+    project_name: str = "",
+    cdir: str | Path = "",
+    peer_online: bool | None = None,
+    peer_endpoint: str = "",
+    message: str = "",
+) -> dict[str, Any]:
+    """Cave Steward (`steward:cave`) sends a signed `INVITE_PROJECT` envelope to a collaborator."""
+    ident = local_mothership_identity()
+    hub = gwl.GWLClearinghouse()
+    resolved_recip = hub.lookup_pseudonym(recipient_pseudonym)
+    r_pseudo = str(resolved_recip.get("pseudonym") if resolved_recip.get("ok") else recipient_pseudonym).strip()
+    r_did = str(resolved_recip.get("did") if resolved_recip.get("ok") else aap.did_from_pseudonym(r_pseudo))
+
+    p_uid = aap.slugify_pseudonym(project_uid or project_name or "shared-project")
+    p_name = str(project_name or project_uid or p_uid)
+
+    pkt: dict[str, Any] = {}
+    if cdir and Path(cdir).is_dir():
+        pkt = export_cockpit_packet(cdir, project_name=p_name)
+
+    env = aap.create_agent_envelope(
+        intent="INVITE_PROJECT",
+        recipient_pseudonym=r_pseudo,
+        recipient_did=r_did,
+        sender_pseudonym=ident["pseudonym"],
+        sender_did=ident["did"],
+        from_incarnation="steward:cave",
+        to_incarnation="steward:cave",
+        project_uid=p_uid,
+        payload={
+            "project_uid": p_uid,
+            "project_name": p_name,
+            "message": message or f"{ident['pseudonym']} invited {r_pseudo} to collaborate on {p_name}.",
+            "cockpit_packet": pkt,
+        },
+    )
+
+    transport = gwl.DualPathTransport(clearinghouse=hub)
+    delivery = transport.send_envelope(env, peer_endpoint=peer_endpoint, peer_online=peer_online)
+
+    inv_record = {
+        "invitation_id": env["envelope_id"],
+        "project_uid": p_uid,
+        "project_name": p_name,
+        "sender_did": ident["did"],
+        "sender_pseudonym": ident["pseudonym"],
+        "recipient_did": r_did,
+        "recipient_pseudonym": r_pseudo,
+        "status": "sent",
+        "transport_used": delivery.get("transport_used"),
+        "envelope": env,
+        "created_at": _utc_now_iso(),
+    }
+    invs = _load_invitations()
+    invs.append(inv_record)
+    _save_invitations(invs)
+    return {
+        "ok": True,
+        "invitation": inv_record,
+        "delivery": delivery,
+        "envelope": env,
+    }
+
+
+def respond_project_invitation(
+    invitation_or_envelope: dict[str, Any] | str,
+    decision: str = "auto",
+    recipient_pseudonym: str = "",
+) -> dict[str, Any]:
+    """Evaluate Standing Consent (`auto_accept_scoped` vs `prompt_first`) or human decision on an invitation.
+
+    When accepted, mounts the shared cockpit under ``.anchor/shared_cockpits/<project_uid>`` and emits
+    a ``COCKPIT_MOUNT_HANDOFF`` envelope to ``steward:cockpit:<project_uid>``.
+    """
+    invs = _load_invitations()
+    if isinstance(invitation_or_envelope, str):
+        inv_id = invitation_or_envelope.strip()
+        found = next((x for x in invs if x.get("invitation_id") == inv_id), None)
+        if found is None:
+            return {"ok": False, "error": "invitation_not_found", "invitation_id": inv_id}
+        env = found.get("envelope") or found
+    elif isinstance(invitation_or_envelope, dict) and invitation_or_envelope.get("schema") == aap.ENVELOPE_SCHEMA:
+        env = invitation_or_envelope
+        found = next((x for x in invs if x.get("invitation_id") == env.get("envelope_id")), None)
+    elif isinstance(invitation_or_envelope, dict) and isinstance(invitation_or_envelope.get("envelope"), dict):
+        found = invitation_or_envelope
+        env = found["envelope"]
+    else:
+        return {"ok": False, "error": "invalid_invitation_input"}
+
+    sender_did = str(env.get("sender_did") or "")
+    sender_pseudo = str(env.get("sender_pseudonym") or aap.PSEUDONYM_DEFAULT)
+    recip_pseudo = str(recipient_pseudonym or env.get("recipient_pseudonym") or local_mothership_identity()["pseudonym"])
+    recip_did = aap.did_from_pseudonym(recip_pseudo)
+    p_uid = str(env.get("project_uid") or (env.get("payload") or {}).get("project_uid") or "shared-project")
+    p_name = str((env.get("payload") or {}).get("project_name") or p_uid)
+
+    hub = gwl.GWLClearinghouse()
+    # Check if recipient has granted standing trust to sender (or vice versa)
+    auth_check = hub.authorize_collaboration(recip_did, sender_did, project_uid=p_uid, incarnation="steward:cave")
+    if not auth_check.get("authorized"):
+        auth_check = hub.authorize_collaboration(sender_did, recip_did, project_uid=p_uid, incarnation="steward:cave")
+
+    trust_mode = str(auth_check.get("standing_trust_mode") or "prompt_first")
+    eff_decision = str(decision or "auto").strip().lower()
+
+    if eff_decision == "reject":
+        if found is not None:
+            found["status"] = "rejected"
+            _save_invitations(invs)
+        return {"ok": True, "accepted": False, "status": "rejected", "project_uid": p_uid}
+
+    auto_accepted = (eff_decision == "auto" and trust_mode == "auto_accept_scoped")
+    human_accepted = (eff_decision in ("accept", "approve", "yes"))
+
+    if not auto_accepted and not human_accepted:
+        if found is not None:
+            found["status"] = "awaiting_human_consent"
+            _save_invitations(invs)
+        return {
+            "ok": True,
+            "accepted": False,
+            "status": "awaiting_human_consent",
+            "standing_trust_mode": trust_mode,
+            "project_uid": p_uid,
+        }
+
+    # Mount into .anchor/shared_cockpits/<project_uid>
+    mount_dir = _collab_dir() / "shared_cockpits" / p_uid
+    mount_dir.mkdir(parents=True, exist_ok=True)
+    pkt = (env.get("payload") or {}).get("cockpit_packet")
+    if isinstance(pkt, dict) and pkt.get("schema") == PACKET_SCHEMA:
+        import_cockpit_packet(mount_dir, pkt)
+    else:
+        rm_path = mount_dir / "roadmap.json"
+        if not rm_path.is_file():
+            rm_path.write_text(
+                json.dumps({"steps": [{"id": "step-1", "name": f"Kickoff {p_name}", "status": "open"}], "roadmap_events": []}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+    baton = cbt.init_or_get_baton(mount_dir, lead_did=sender_did, lead_pseudonym=sender_pseudo, project_uid=p_uid)
+
+    handoff_env = aap.create_agent_envelope(
+        intent="COCKPIT_MOUNT_HANDOFF",
+        recipient_pseudonym=sender_pseudo,
+        recipient_did=sender_did,
+        sender_pseudonym=recip_pseudo,
+        sender_did=recip_did,
+        from_incarnation="steward:cave",
+        to_incarnation=f"steward:cockpit:{p_uid}",
+        project_uid=p_uid,
+        payload={
+            "project_uid": p_uid,
+            "mounted_cockpit_dir": "<shared_cockpits>/" + p_uid,
+            "consent_mode": "auto_accept_scoped" if auto_accepted else "human_approved",
+            "lead_baton_did": baton.get("lead_did"),
+        },
+    )
+
+    if found is not None:
+        found["status"] = "accepted"
+        found["mounted_cdir"] = str(mount_dir)
+        _save_invitations(invs)
+
+    return {
+        "ok": True,
+        "accepted": True,
+        "auto_accepted": auto_accepted,
+        "status": "mounted",
+        "project_uid": p_uid,
+        "mounted_cdir": str(mount_dir),
+        "baton": baton,
+        "handoff_envelope": handoff_env,
+    }
+
+
 def sync_peer_mothership(
     peer_id: str = "",
     cdir: str | Path = "",
     entries: list[dict[str, Any]] | None = None,
     timeout: float = 3.0,
 ) -> dict[str, Any]:
-    """Wave 15 Deep Hardening: Execute live Tailscale HTTP P2P push/pull, Git remote ref inspection, or packet bundle sync."""
+    """Wave 15 & Wave 22: Execute live Tailscale HTTP P2P push/pull, Git remote ref inspection, or packet bundle sync."""
     peers = list_peers()
     now_iso = _utc_now_iso()
     results = []
@@ -495,7 +769,7 @@ def sync_peer_mothership(
                 p["sync_note"] = "Imported packet bundle transport ready"
                 results.append({"peer_id": pid, "ok": True, "transport": transport, "reachability": "reachable", "note": p["sync_note"]})
 
-        elif transport == "tailscale_peer" or endpoint.startswith(("http://", "https://")) or (":" in endpoint and not endpoint.endswith(".git") and not os.path.isfile(endpoint)):
+        elif transport in ("tailscale_peer", "tailscale_http", "gwl_hybrid") or endpoint.startswith(("http://", "https://")) or (":" in endpoint and not endpoint.endswith(".git") and not os.path.isfile(endpoint)):
             base_url = endpoint if endpoint.startswith(("http://", "https://")) else f"http://{endpoint}"
             base_url = base_url.rstrip("/")
             collab_url = base_url if base_url.endswith("/api/steward/collab") else f"{base_url}/api/steward/collab"
@@ -529,7 +803,7 @@ def sync_peer_mothership(
                 p["status"] = "configured"
                 p["reachability"] = "offline"
                 p["last_sync"] = now_iso
-                p["sync_note"] = f"Tailscale peer unreachable ({type(exc).__name__}); local leases & packets ready"
+                p["sync_note"] = f"Tailscale peer unreachable ({type(exc).__name__}); GWL Hub offline mailbox & local leases ready"
                 results.append({"peer_id": pid, "ok": False, "transport": "tailscale_peer", "reachability": "offline", "note": p["sync_note"]})
 
         else:
@@ -562,7 +836,7 @@ def sync_peer_mothership(
                         p["status"] = "configured"
                         p["reachability"] = "offline"
                         p["last_sync"] = now_iso
-                        p["sync_note"] = f"Git remote configured (offline or auth required)"
+                        p["sync_note"] = "Git remote configured (offline or auth required)"
                         results.append({"peer_id": pid, "ok": False, "transport": "git_remote", "reachability": "offline", "note": p["sync_note"]})
                 except Exception as exc:
                     p["status"] = "configured"
@@ -581,6 +855,9 @@ def sync_peer_mothership(
     return summary
 
 
+_COLLAB_SUMMARY_CACHE: dict[str, Any] = {"until": 0.0, "key": None, "result": None}
+
+
 def collab_summary_for_cave(
     entries: list[dict[str, Any]] | None = None,
     facts: dict[str, Any] | None = None,
@@ -590,7 +867,9 @@ def collab_summary_for_cave(
     peers = list_peers()
     active_leases = []
     shared_cockpits = []
+    active_batons = []
     facts_map = facts if isinstance(facts, dict) else {}
+    import home_rows as _hr
     for e in entries or ():
         if not isinstance(e, dict):
             continue
@@ -601,23 +880,23 @@ def collab_summary_for_cave(
         if not rm_path.is_file():
             continue
         try:
-            raw_rm = json.loads(rm_path.read_text(encoding="utf-8"))
-            try:
-                from steward_cockpit import steward_campaign as _sc
-                rm = _sc.read_map(str(fp))
-            except Exception:
-                rm = raw_rm
-            steps = (rm.get("steps") if isinstance(rm, dict) else None) or _roadmap_steps_list(raw_rm)
+            raw_rm = _hr._read_json(rm_path)
+            if not isinstance(raw_rm, dict):
+                continue
             raw_steps = _roadmap_steps_list(raw_rm)
+            steps = raw_steps
             leases = [
                 {
                     "project": str(e.get("name") or Path(fp).name),
+                    "project_name": str(e.get("name") or Path(fp).name),
                     "pid": str(e.get("id") or ""),
                     "cdir": str(fp),
                     "step_id": str(s.get("id") or s.get("step_id") or ""),
                     "step_name": str(s.get("name") or s.get("id") or ""),
                     "mothership_id": str(s["lease"].get("mothership_id") or ""),
+                    "holder_mothership": str(s["lease"].get("mothership_id") or ""),
                     "owner_label": str(s["lease"].get("owner_label") or s["lease"].get("mothership_id") or ""),
+                    "holder_label": str(s["lease"].get("owner_label") or s["lease"].get("mothership_id") or ""),
                 }
                 for s in raw_steps
                 if isinstance(s, dict) and isinstance(s.get("lease"), dict)
@@ -643,15 +922,51 @@ def collab_summary_for_cave(
                 "leases_count": len(leases),
                 "first_open_step_id": first_open,
             })
+            baton_fp = Path(fp) / "cockpit_baton.json"
+            if baton_fp.is_file():
+                try:
+                    active_batons.append(json.loads(baton_fp.read_text(encoding="utf-8")))
+                except Exception:
+                    pass
         except Exception:
             continue
+
     shared_cockpits.sort(key=lambda c: (-int(c.get("leases_count") or 0), -int(c.get("steps_total") or 0), str(c.get("name") or "")))
+
+    hub = gwl.GWLClearinghouse()
+    fed = ffed.FoundryStewardFederation()
+    acl_grants = aap.list_acl_grants()
+    invitations = _load_invitations()
+    nightly_bcast = hub.generate_nightly_broadcast()
+    bcast_updates = hub.check_nightly_broadcast_updates(nightly_bcast)
+    nightly_broadcast_payload = {
+        **nightly_bcast,
+        **bcast_updates,
+        "bulletin": nightly_bcast,
+    }
+
     return {
         "ok": True,
         "mothership": ident,
+        "pseudonym": ident.get("pseudonym", aap.PSEUDONYM_DEFAULT),
+        "pseudonym_aliases": ident.get("pseudonym_aliases", list(aap.PSEUDONYM_ALIASES_DEFAULT)),
+        "did": ident.get("did", "did:anchor:samwise-gamgee"),
+        "steward_incarnations": list(aap.STEWARD_INCARNATIONS),
         "peers": peers,
         "active_leases": active_leases,
         "shared_cockpits": shared_cockpits[:8],
+        "nightly_broadcast": nightly_broadcast_payload,
+        "zero_binary_law": ffed.ZERO_BINARY_LAW,
+        "clearinghouse": {
+            "hub_id": gwl.HUB_ID,
+            "architecture": "hybrid_split_plane_gwl_hub_plus_tailscale_p2p",
+            "accounts_registered": len(hub.list_accounts()),
+            "acl_grants": acl_grants,
+            "invitations": invitations,
+            "active_batons": active_batons,
+            "foundry_quarantine_tray": fed.list_quarantined_skills(),
+            "nightly_broadcast": nightly_broadcast_payload,
+        },
     }
 
 
@@ -667,6 +982,78 @@ def handle_collab_post(body: dict[str, Any], entries: list[dict[str, Any]] | Non
     if action == "remove_peer":
         removed = remove_peer(str(body.get("id") or body.get("peer_id") or ""))
         return {"ok": True, "removed": removed, "peers": list_peers()}, 200
+    if action == "set_pseudonym":
+        pseudo = str(body.get("pseudonym") or aap.PSEUDONYM_DEFAULT).strip()
+        aliases = body.get("aliases") if isinstance(body.get("aliases"), list) else None
+        ident = set_local_pseudonym(pseudo, aliases=aliases)
+        return {"ok": True, "mothership": ident}, 200
+    if action in ("grant_acl", "set_standing_trust"):
+        grantee = str(body.get("grantee_pseudonym") or body.get("grantee") or "Merrill").strip()
+        trust_mode = str(body.get("standing_trust_mode") or "prompt_first").strip()
+        scopes = body.get("scope_projects") if isinstance(body.get("scope_projects"), list) else ["*"]
+        can_baton = bool(body.get("can_hold_lead_baton", True))
+        grant = aap.create_acl_grant(
+            grantee_pseudonym=grantee,
+            scope_projects=scopes,
+            standing_trust_mode=trust_mode,
+            can_hold_lead_baton=can_baton,
+        )
+        gwl.GWLClearinghouse().publish_acl_grant(grant)
+        return {"ok": True, "grant": grant}, 200
+    if action == "revoke_acl":
+        gid = str(body.get("grant_id") or "").strip()
+        res = gwl.GWLClearinghouse().revoke_acl_grant(gid)
+        return res, (200 if res.get("ok") else 404)
+    if action == "send_invitation":
+        res = send_project_invitation(
+            recipient_pseudonym=str(body.get("recipient_pseudonym") or body.get("recipient") or "Merrill"),
+            project_uid=str(body.get("project_uid") or ""),
+            project_name=str(body.get("project_name") or ""),
+            cdir=str(body.get("cdir") or ""),
+            peer_online=body.get("peer_online"),
+            peer_endpoint=str(body.get("peer_endpoint") or ""),
+            message=str(body.get("message") or ""),
+        )
+        return res, 200
+    if action == "respond_invitation":
+        inv = body.get("invitation") or body.get("envelope") or body.get("invitation_id") or ""
+        res = respond_project_invitation(
+            inv,
+            decision=str(body.get("decision") or "auto"),
+            recipient_pseudonym=str(body.get("recipient_pseudonym") or ""),
+        )
+        return res, (200 if res.get("ok") else 400)
+    if action == "transfer_baton":
+        cdir = str(body.get("cdir") or "").strip()
+        if not cdir:
+            return {"ok": False, "error": "missing_cdir"}, 400
+        res = cbt.transfer_lead_baton(
+            cdir=cdir,
+            from_did=str(body.get("from_did") or local_mothership_identity()["did"]),
+            to_did=str(body.get("to_did") or body.get("to_pseudonym") or ""),
+            to_pseudonym=str(body.get("to_pseudonym") or ""),
+        )
+        return res, (200 if res.get("ok") else 409)
+    if action == "sync_tier_resources":
+        cdir = str(body.get("cdir") or "").strip()
+        if not cdir:
+            return {"ok": False, "error": "missing_cdir"}, 400
+        extra = body.get("extra_descriptors") if isinstance(body.get("extra_descriptors"), list) else None
+        manifest = cbt.classify_and_manifest_resources(cdir, extra_descriptors=extra)
+        return {"ok": True, "manifest": manifest}, 200
+    if action == "share_foundry_skill":
+        fed = ffed.FoundryStewardFederation()
+        bundle = body.get("bundle")
+        if not isinstance(bundle, dict):
+            bundle = fed.export_skill_bundle(
+                skill_id=str(body.get("skill_id") or "custom-skill"),
+                author_pseudonym=str(body.get("author_pseudonym") or local_mothership_identity()["pseudonym"]),
+                skill_md=str(body.get("skill_md") or ""),
+                scripts=body.get("scripts") if isinstance(body.get("scripts"), dict) else None,
+            )
+        q_res = fed.receive_into_quarantine(bundle)
+        eval_res = fed.evaluate_quarantined_skill(bundle)
+        return {"ok": True, "bundle": bundle, "quarantine": q_res, "evaluation": eval_res}, 200
     if action == "claim_step":
         cdir = str(body.get("cdir") or "").strip()
         if not cdir:

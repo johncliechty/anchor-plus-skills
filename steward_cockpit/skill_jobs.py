@@ -543,7 +543,8 @@ def _result_text(job):
                  "in place, uncommitted (a read-only skill left none). Never call it landed, installed or live.")
     lines.append("Collect this original job's CURRENT result before acting (steward_skill.py collect --job %s). A "
                  "repeated notice is the same result: never start another run because it repeats. Tell John the "
-                 "result in two or three plain sentences, with links to what it produced." % job["id"])
+                 "result in two or three plain sentences, with links to what it produced (give a concise summary "
+                 "of what the run accomplished and organize clickable links to the key deliverables by topic/step)." % job["id"])
     return "\n".join(lines)
 
 

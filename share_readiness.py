@@ -190,3 +190,38 @@ def is_green_ready(doc) -> bool:
     if validate_readiness_doc(doc):
         return False
     return doc.get("status") == "ready"
+
+
+LIVE_PROBES_SKIPPED_NOTE = (
+    "Live CLI probes were skipped during non-interactive install — "
+    "click 'Verify & Test Services' in the Onboarding Wizard to run live probes and mark Ready"
+)
+live_probes_skipped_note = LIVE_PROBES_SKIPPED_NOTE
+
+
+def readiness_human_explanation(doc: dict | None) -> str:
+    """Return a clear, non-alarmist human explanation of a readiness.json stamp."""
+    if not isinstance(doc, dict):
+        return LIVE_PROBES_SKIPPED_NOTE
+    status = str(doc.get("status") or "").strip().lower()
+    if status == "ready":
+        return "System is Ready — governance and coding AI seat verified."
+    codes = list(doc.get("reason_codes") or [])
+    notes = str(doc.get("notes") or "")
+    if (
+        "interactive_onboard_required" in codes
+        or "silent/non-interactive" in notes.lower()
+        or "live cli probes were skipped" in notes.lower()
+    ):
+        return LIVE_PROBES_SKIPPED_NOTE
+    if "seat_probe_failed" in codes or "no_coding_seat" in codes:
+        return (
+            LIVE_PROBES_SKIPPED_NOTE
+            + " (Current reason codes: "
+            + ", ".join(str(c) for c in codes)
+            + ")"
+        )
+    if status == "degraded":
+        return "System is running in degraded mode (" + ", ".join(str(c) for c in codes) + ")."
+    return LIVE_PROBES_SKIPPED_NOTE
+

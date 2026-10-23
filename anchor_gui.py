@@ -7586,7 +7586,7 @@ def _working_pids(entries, sessions):
                 continue
         for cdir, eng in list(_engines.items()):
             try:
-                if not ((eng.alive() and (getattr(eng, "busy", False) or getattr(eng, "queue", None))) or eng.light() == "green"):
+                if not ((eng.alive() and (getattr(eng, "busy", False) or getattr(eng, "queue", None))) or _engine_light(cdir)["light"] == "green"):
                     continue
                 c = Path(str(cdir)).resolve()
                 for f, pid in folders:
@@ -8371,6 +8371,13 @@ def render_high_seat_page(logged_in=False) -> str:
         with _SlowWatch("the Cave of Wonders"):
             ctx = _high_seat_context()
             ctx["logged_in"] = bool(logged_in)
+            try:
+                import onboard_wizard as _ow
+                _uprof = _ow.get_active_user_profile()
+                if _uprof.get("configured") and _uprof.get("display_name"):
+                    ctx["you"] = str(_uprof["display_name"]).strip()
+            except Exception:
+                pass
             return _hsp.render_high_seat_html(ctx)
     except Exception as e:
         return ("<!DOCTYPE html><html><body style=\"font-family:system-ui;background:#0b0e14;color:#e6e9ef;padding:24px\">"
@@ -12857,13 +12864,10 @@ def handle_boneyard(handler, path, body):
 
 
 def _ecgberht_root():
-    """Resolve the Ecgberht engine root: ECGBERHT_ROOT env override, else the
-    sibling checkout next to this Anchor tree (Ecgberht beside Anchor).
+    """Resolve the Ecgberht engine root via paths.ecgberht_root() (including
+    <parent>/skills/ecgberht, <SKILLS_ROOT>/ecgberht, and bundled fallbacks).
     Never a host-absolute literal in call sites."""
-    env = os.environ.get("ECGBERHT_ROOT", "").strip()
-    if env:
-        return Path(env)
-    return Path(__file__).resolve().parent.parent / "Ecgberht"
+    return _paths.ecgberht_root()
 
 
 def _presence_record_dir(pid):
@@ -12908,12 +12912,14 @@ def _ecgberht_bridge(args, timeout=20):
     """Spawn the Ecgberht seal-chamber bridge (Node, read-only) and parse its
     one-line JSON. Same closed verb bodies as the ecgberht CLI (parity)."""
     import subprocess
-    root = _ecgberht_root()
+    root, checked_paths = _paths.resolve_ecgberht_root()
     bridge = root / "scripts" / "seal-chamber-bridge.mjs"
     if not bridge.exists():
         return {"ok": False, "error": "ecgberht_engine_missing",
+                "checked_paths": checked_paths,
                 "message": "seal-chamber bridge not found (set ECGBERHT_ROOT "
-                           "or keep Ecgberht checkout beside Anchor)"}
+                           "or keep Ecgberht checkout beside Anchor); checked: "
+                           + ", ".join(checked_paths)}
     try:
         res = subprocess.run(
             ["node", str(bridge)] + list(args),
@@ -17800,8 +17806,8 @@ def _doctor_sync_live_code():
         pass
     try:
         import importlib
-        for mod_name in ("doctor_plain", "proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
-                         "campaign_page", "desk", "desk_page", "mothership_collab",
+        for mod_name in ("proc_probe", "lanes", "deliverables_register", "home_rows", "high_seat_page",
+                         "campaign_page", "desk", "desk_page", "mothership_collab", "website_portal",
                          "foundry_page", "foundry_api", "usage_allowance_monitor",
                          "steward_cockpit.gui_ingress_routes", "steward_cockpit.gui_domain_core",
                          "steward_cockpit.gui_surface_emit",
@@ -17809,7 +17815,7 @@ def _doctor_sync_live_code():
                          "steward_cockpit.campaign_acts", "steward_cockpit.campaign_say",
                          "steward_cockpit.anvil_session", "steward_cockpit.aegis_session",
                          "steward_cockpit.steward_routes",
-                         "terminal_session"):
+                         "terminal_session", "comms_connector", "doctor_plain"):
             if mod_name in sys.modules:
                 try:
                     importlib.reload(sys.modules[mod_name])
@@ -23318,12 +23324,55 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 # gone; the doctor gate regression-tests its absence.
                 _lock, _ck = self._locked_page()        # the Doctor (locked 2026-10-03)
                 self._send_html(_lock or render_doctor_page_html(), cookie=None if _lock else _ck)
+            elif _path_only in ("/website", "/download-portal"):
+                import website_portal as _wp
+                self._send_html(_wp.render_public_website_html())
+            elif _path_only == "/api/website/catalog":
+                import website_portal as _wp
+                self._send_json(_wp.get_portal_state(), 200)
+            elif _path_only in ("/download/Anchor.zip", "/download/Anchor-Test-Onboard.zip"):
+                import onboard_wizard as _ow
+                pkg_kind = "test" if "Test" in _path_only else "prod"
+                zpath, fname = _ow.build_or_resolve_exe_zip_package(pkg_kind)
+                data_bytes = zpath.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Length", str(len(data_bytes)))
+                self.end_headers()
+                self.wfile.write(data_bytes)
+            elif _path_only in ("/onboard-wizard", "/onboard"):
+                import onboard_wizard as _ow
+                q = parse_qs(urlparse(self.path).query)
+                is_sb = str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
+                _ck = self._local_login_cookie()
+                self._send_html(_ow.render_onboard_wizard_html(sandbox=is_sb), cookie=_ck)
+            elif _path_only == "/api/onboard-wizard/state":
+                import onboard_wizard as _ow
+                q = parse_qs(urlparse(self.path).query)
+                is_sb = str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
+                self._send_json(_ow.get_wizard_full_state(sandbox=is_sb), 200)
             elif _path_only == "/api/foundry/page":
                 self._send_json(_fpage.catalog())
             elif _path_only == "/api/foundry/skill":
                 q = parse_qs(urlparse(self.path).query)
                 detail = _fpage.skill_detail((q.get("skill") or [""])[0])
                 self._send_json(detail or {"error": "unknown skill"}, 200 if detail else 404)
+            elif _path_only == "/api/foundry/anvil":
+                q = parse_qs(urlparse(self.path).query)
+                anvil = _fpage.anvil_detail((q.get("skill") or [""])[0])
+                self._send_json(anvil or {"error": "unknown skill"}, 200 if anvil else 404)
+            elif _path_only == "/api/foundry/librarian":
+                q = parse_qs(urlparse(self.path).query)
+                payload = _fpage.librarian_payload(query=(q.get("q") or [""])[0], skill_id=(q.get("skill") or [""])[0], kind=(q.get("kind") or [""])[0], focus=(q.get("focus") or [""])[0], budget=(q.get("budget") or ["1500"])[0])
+                self._send_json(payload, 200)
+            elif _path_only == "/foundry/anvil":
+                q = parse_qs(urlparse(self.path).query)
+                page = _fpage.anvil_page((q.get("skill") or ["researchprime"])[0])
+                if page is None:
+                    self._send_json({"error": "unknown skill"}, 404)
+                else:
+                    self._send_html(page)
             elif _path_only == "/foundry/source":
                 q = parse_qs(urlparse(self.path).query)
                 # embed=1 (sent by the SANDBOXED display dialog, which blocks
@@ -23965,6 +24014,43 @@ class AnchorHandler(BaseHTTPRequestHandler):
         # open POST would be honored (rearch W8: post-middleware consults the
         # route-table auth policy).
         _path_only = urlparse(self.path).path
+        if _path_only == "/api/website/license/accept":
+            import website_portal as _wp
+            _b = body if isinstance(body, dict) else {}
+            _out = _wp.accept_non_resale_license(
+                _b.get("pseudonym_or_handle") or _b.get("pseudonym") or "",
+                _b.get("accepted_non_resale"),
+                intended_use=_b.get("intended_use") or "personal_or_research",
+                version=_b.get("version") or _wp.LICENSE_VERSION,
+            )
+            self._send_json(_out, int(_out.get("code") or (200 if _out.get("ok") else 400)))
+            return
+        if _path_only == "/api/website/download":
+            import website_portal as _wp
+            _b = body if isinstance(body, dict) else {}
+            _out = _wp.authorize_package_download(
+                _b.get("package_id") or "",
+                _b.get("platform_os") or "windows",
+                _b.get("license_token") or _b.get("receipt"),
+                arch=_b.get("arch") or "x64",
+            )
+            self._send_json(_out, int(_out.get("code") or (200 if _out.get("ok") else 403)))
+            return
+        if _path_only == "/api/website/feedback":
+            import website_portal as _wp
+            _b = body if isinstance(body, dict) else {}
+            _out = _wp.submit_portal_feedback(_b)
+            self._send_json(_out, int(_out.get("code") or (200 if _out.get("ok") else 400)))
+            return
+        if _path_only == "/api/onboard-wizard/action":
+            import onboard_wizard as _ow
+            _b = body if isinstance(body, dict) else {}
+            q = parse_qs(urlparse(self.path).query)
+            is_sb = bool(_b.get("sandbox")) or str((q.get("sandbox") or [""])[0]).strip().lower() in ("1", "true", "yes")
+            _act = str(_b.get("action") or "").strip()
+            _out = _ow.dispatch_wizard_action(_act, _b, sandbox=is_sb)
+            self._send_json(_out, 200 if _out.get("ok") else 400)
+            return
         _post_route = _routes.match("POST", _path_only)
         _post_open = (_post_route is not None
                       and _post_route.auth == _routes.AUTH_OPEN)

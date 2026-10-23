@@ -22,16 +22,8 @@ from .campaign_seeds import seed_by_id
 
 
 def _ecgberht_root() -> Path:
-    env = os.environ.get("ECGBERHT_DIR")
-    if env and env.strip():
-        return Path(env.strip()).resolve()
-    sibling = Path(__file__).resolve().parents[2] / "Ecgberht"
-    bundled = Path(__file__).resolve().parents[1] / "vendor" / "bundled-skills" / "ecgberht"
-    if sibling.exists():
-        return sibling
-    if bundled.exists():
-        return bundled
-    return sibling
+    import paths as _paths
+    return _paths.ecgberht_root()
 
 
 ECG = _ecgberht_root() / "bin" / "ecgberht.mjs"
@@ -812,20 +804,100 @@ def _heal_roadmap_if_needed(tdir):
         pass
 
 
+def _unseat_campaign_step_fast(project, sid):
+    """Unseat a Campaign component off the Active/On deck board (both via engine CLI/spine and direct projection fallback)."""
+    s = _step(project, sid)
+    if not isinstance(s, dict):
+        return None, None
+    old_seat = s.get("seat") if s.get("seat") in ("active", "deck") else None
+    if not old_seat:
+        return None, None
+    try:
+        old_pos = _seat_ids(project, old_seat).index(sid)
+    except Exception:
+        old_pos = int(s.get("seat_order") or 0)
+    try:
+        r_home = home(project, sid)
+        if r_home.get("ok"):
+            return old_seat, old_pos
+    except Exception:
+        pass
+    # Fallback direct roadmap.json update if CLI/spine refused on a synthetic or legacy record
+    try:
+        rm_p = Path(project) / "roadmap.json"
+        if rm_p.is_file():
+            raw = json.loads(rm_p.read_text(encoding="utf-8"))
+            for item in raw.get("roadmap_projection") or []:
+                if isinstance(item, dict) and item.get("id") == sid:
+                    item.pop("seat", None)
+                    item.pop("seat_order", None)
+            others = [x for x in (raw.get("roadmap_projection") or []) if isinstance(x, dict) and x.get("seat") == old_seat]
+            others.sort(key=lambda x: int(x.get("seat_order") or 0))
+            for k, x in enumerate(others):
+                x["seat_order"] = k
+            rm_p.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+            return old_seat, old_pos
+    except Exception:
+        pass
+    return None, None
+
+
+def _reseat_campaign_step_fast(project, sid, seat_to, pos=0):
+    """Restore a Campaign component to Active or On deck on Undo."""
+    if seat_to not in ("active", "deck") or not sid:
+        return False
+    try:
+        r_seat = seat(project, sid, seat_to, pos)
+        if r_seat.get("ok"):
+            return True
+    except Exception:
+        pass
+    try:
+        rm_p = Path(project) / "roadmap.json"
+        if rm_p.is_file():
+            raw = json.loads(rm_p.read_text(encoding="utf-8"))
+            target = next((x for x in (raw.get("roadmap_projection") or []) if isinstance(x, dict) and x.get("id") == sid), None)
+            if target is not None:
+                others = [x for x in (raw.get("roadmap_projection") or []) if isinstance(x, dict) and x.get("seat") == seat_to and x.get("id") != sid]
+                others.sort(key=lambda x: int(x.get("seat_order") or 0))
+                idx = max(0, min(int(pos or 0), len(others)))
+                others.insert(idx, target)
+                target["seat"] = seat_to
+                for k, x in enumerate(others):
+                    x["seat_order"] = k
+                rm_p.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def mark_done(project, step="", target_dir="", target_step="", reason=""):
-    """Wave 6b/7: Mark a step done from the Cave of Wonders or Star Chart (either a project/effort step in target_dir or a Campaign part)."""
+    """Wave 6b/7/22: Mark a step or seated AI Cockpit tile done from the Cave of Wonders or Star Chart.
+    When clicked on a seated Cave of Wonders tile (`step` is a Campaign component in Active or On deck and `target_step`
+    is not specified), it immediately moves that cockpit tile off the board (back to its goal) AND marks the current
+    open step in `target_dir` done if one exists."""
+    explicit_target_step = str(target_step or "").strip()
     if isinstance(step, dict):
         d = step
         target_dir = d.get("target_dir") or target_dir
-        target_step = d.get("target_step") or d.get("step_id") or d.get("step") or target_step
+        explicit_target_step = str(d.get("target_step") or d.get("step_id") or "").strip()
+        target_step = explicit_target_step or d.get("step") or target_step
         reason = d.get("reason") or d.get("note") or reason
         step = d.get("step") or ""
-    if not str(target_dir or "").strip() and str(step or "").strip():
+    camp_sid = str(step or "").strip()
+    c_wrap = _step(project, camp_sid) if camp_sid else None
+    c_name = str((c_wrap or {}).get("name") or camp_sid)
+    old_seat, old_seat_pos = (None, None)
+    # If this is a seated tile on the Cave of Wonders board (not a specific sub-step card in #thisWeekBoard), unseat it off the board!
+    if isinstance(c_wrap, dict) and c_wrap.get("seat") in ("active", "deck") and not explicit_target_step:
+        old_seat, old_seat_pos = _unseat_campaign_step_fast(project, camp_sid)
+
+    if not str(target_dir or "").strip() and camp_sid:
         try:
             from .campaign_parts import parse_ref, _default_lookup
-            wrap = _step(project, str(step).strip())
-            if isinstance(wrap, dict) and wrap.get("ref"):
-                pr = parse_ref(wrap.get("ref"))
+            if isinstance(c_wrap, dict) and c_wrap.get("ref"):
+                pr = parse_ref(c_wrap.get("ref"))
                 if pr and pr.get("pid"):
                     ent = _default_lookup(pr["pid"])
                     if isinstance(ent, dict) and ent.get("folder_path"):
@@ -836,16 +908,25 @@ def mark_done(project, step="", target_dir="", target_step="", reason=""):
                             target_dir = str(Path(ent["folder_path"]) / pr["sub"])
                         elif pr.get("kind") == "project":
                             target_dir = str(ent["folder_path"])
+            elif isinstance(c_wrap, dict) and c_wrap.get("effort_dir"):
+                target_dir = str(c_wrap.get("effort_dir"))
         except Exception:
             pass
     tdir = Path(str(target_dir).strip()) if str(target_dir or "").strip() else Path(str(project))
     if not tdir.is_dir():
+        if old_seat:
+            seat_lbl = "Active" if old_seat == "active" else "On deck"
+            return _ok(
+                "✓ Done with ‘%s’ for now — moved off %s" % (c_name, seat_lbl),
+                closed_step=camp_sid,
+                unseated=camp_sid,
+                undo={"act": "reopen_step", "step": camp_sid, "old_seat": old_seat, "old_seat_pos": old_seat_pos},
+            )
         return _no("target folder not found")
     _heal_roadmap_if_needed(tdir)
     proj_steps = _projection(tdir)
     tsid = str(target_step or step or "").strip()
     if not tsid or _step(tdir, tsid) is None:
-        # Fallback to current_step_id on strip.json or first open step
         try:
             st = json.loads((tdir / "strip.json").read_text(encoding="utf-8"))
             cur_id = str(st.get("current_step_id") or "").strip()
@@ -859,10 +940,26 @@ def mark_done(project, step="", target_dir="", target_step="", reason=""):
                 tsid = str(open_step.get("id") or "")
     target_obj = _step(tdir, tsid)
     if target_obj is None:
+        if old_seat:
+            seat_lbl = "Active" if old_seat == "active" else "On deck"
+            return _ok(
+                "✓ Done with ‘%s’ for now — moved off %s" % (c_name, seat_lbl),
+                closed_step=camp_sid,
+                unseated=camp_sid,
+                undo={"act": "reopen_step", "step": camp_sid, "old_seat": old_seat, "old_seat_pos": old_seat_pos},
+            )
         return _no("no open step found to mark done")
     old_status = str(target_obj.get("status") or "active")
     step_name = str(target_obj.get("name") or tsid)
     if old_status == "done":
+        if old_seat:
+            seat_lbl = "Active" if old_seat == "active" else "On deck"
+            return _ok(
+                "✓ Done with ‘%s’ for now — moved off %s" % (c_name, seat_lbl),
+                closed_step=tsid,
+                unseated=camp_sid,
+                undo={"act": "reopen_step", "step": camp_sid, "old_seat": old_seat, "old_seat_pos": old_seat_pos},
+            )
         return _ok("✓ ‘%s’ is already marked done" % step_name, closed_step=tsid)
     # If strip.json points current_step_id to tsid, advance current_step_id first so Ecgberht's invariant holds
     try:
@@ -890,6 +987,14 @@ def mark_done(project, step="", target_dir="", target_step="", reason=""):
     why = " ".join(str(reason or "").split()) or "Marked done by John from Cave of Wonders"
     r = _cli(tdir, "roadmap-set", "--step", tsid, "--status", "done", "--who", WHO, "--reason", why, "--goal-reread", "reaffirmed")
     if not r.get("ok"):
+        if old_seat:
+            seat_lbl = "Active" if old_seat == "active" else "On deck"
+            return _ok(
+                "✓ Done with ‘%s’ for now — moved off %s" % (c_name, seat_lbl),
+                closed_step=camp_sid,
+                unseated=camp_sid,
+                undo={"act": "reopen_step", "step": camp_sid, "old_seat": old_seat, "old_seat_pos": old_seat_pos},
+            )
         return _no("the engine refused: %s" % r.get("error"))
     try:
         from .steward_campaign import compose_status, write_attention
@@ -899,32 +1004,56 @@ def mark_done(project, step="", target_dir="", target_step="", reason=""):
         compose_status(str(tdir))
     except Exception:
         pass
+    undo_payload = {"act": "reopen_step", "step": step, "target_dir": str(tdir), "target_step": tsid, "old_status": old_status}
+    if old_seat:
+        undo_payload["old_seat"] = old_seat
+        undo_payload["old_seat_pos"] = old_seat_pos
+        seat_lbl = "Active" if old_seat == "active" else "On deck"
+        return _ok(
+            "✓ Done with ‘%s’ for now (moved off %s · marked ‘%s’ done)" % (c_name, seat_lbl, step_name),
+            closed_step=tsid,
+            unseated=camp_sid,
+            undo=undo_payload,
+        )
     return _ok(
         "✓ Marked ‘%s’ done" % step_name,
         closed_step=tsid,
-        undo={"act": "reopen_step", "step": step, "target_dir": str(tdir), "target_step": tsid, "old_status": old_status},
+        undo=undo_payload,
     )
 
 
-def reopen_step(project, step="", target_dir="", target_step="", old_status="active"):
-    """Undo of mark_done: reopen the step to its prior status."""
+def reopen_step(project, step="", target_dir="", target_step="", old_status="active", old_seat=None, old_seat_pos=None):
+    """Undo of mark_done: reopen the step to its prior status and/or restore its seat on the Cave of Wonders board."""
     if isinstance(step, dict):
         d = step
         target_dir = d.get("target_dir") or target_dir
         target_step = d.get("target_step") or d.get("step_id") or d.get("step") or target_step
         old_status = d.get("old_status") or old_status
+        old_seat = d.get("old_seat") or old_seat
+        old_seat_pos = d.get("old_seat_pos") if d.get("old_seat_pos") is not None else old_seat_pos
         step = d.get("step") or ""
+    camp_sid = str(step or "").strip()
+    reseated = False
+    if old_seat in ("active", "deck") and camp_sid:
+        reseated = _reseat_campaign_step_fast(project, camp_sid, old_seat, old_seat_pos or 0)
     tdir = Path(str(target_dir).strip()) if str(target_dir or "").strip() else Path(str(project))
     tsid = str(target_step or step or "").strip()
     _heal_roadmap_if_needed(tdir)
-    target_obj = _step(tdir, tsid)
-    if target_obj is None:
-        return _no("no such step to reopen")
+    target_obj = _step(tdir, tsid) if tsid else None
+    if target_obj is None or (camp_sid and tsid == camp_sid and tdir == Path(str(project)) and target_obj.get("status") != "done"):
+        if reseated:
+            c_obj = _step(project, camp_sid) or {}
+            return _ok("Restored ‘%s’ to %s" % (c_obj.get("name") or camp_sid, "Active" if old_seat == "active" else "On deck"), reopened_step=camp_sid)
+        if target_obj is None:
+            return _no("no such step to reopen")
     restore_st = str(old_status or "active")
     if restore_st not in ("active", "planned", "waiting", "blocked", "proposed"):
         restore_st = "active"
     r = _cli(tdir, "roadmap-set", "--step", tsid, "--status", restore_st, "--who", WHO, "--reason", "Reopened by John (undo mark done)", "--goal-reread", "reaffirmed")
     if not r.get("ok"):
+        if reseated:
+            c_obj = _step(project, camp_sid) or {}
+            return _ok("Restored ‘%s’ to %s" % (c_obj.get("name") or camp_sid, "Active" if old_seat == "active" else "On deck"), reopened_step=camp_sid)
         return _no("the engine refused: %s" % r.get("error"))
     try:
         from .steward_campaign import compose_status
@@ -1034,7 +1163,7 @@ def act(project, body):
         if a == "mark_done":
             return mark_done(project, body.get("step"), body.get("target_dir"), body.get("target_step"), body.get("reason"))
         if a == "reopen_step":
-            return reopen_step(project, body.get("step"), body.get("target_dir"), body.get("target_step"), body.get("old_status"))
+            return reopen_step(project, body.get("step"), body.get("target_dir"), body.get("target_step"), body.get("old_status"), body.get("old_seat"), body.get("old_seat_pos"))
         if a == "schedule_date":
             return schedule_date(project, body.get("step"), body.get("due"), body.get("target_dir"), body.get("target_step"))
     except Exception as e:

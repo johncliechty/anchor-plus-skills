@@ -680,9 +680,17 @@ def chat_in_aegis_session(
     if not q:
         return state
 
+    user_who = "JOHN"
+    try:
+        import onboard_wizard as _ow
+        _uprof = _ow.get_active_user_profile()
+        if _uprof.get("configured") and _uprof.get("display_name"):
+            user_who = str(_uprof["display_name"]).strip().upper()
+    except Exception:
+        pass
     dialogue.append({
         "role": "user",
-        "who": "JOHN",
+        "who": user_who,
         "ts": _now_iso(),
         "text": q,
     })

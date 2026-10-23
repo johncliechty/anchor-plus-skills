@@ -369,9 +369,9 @@ def candidates_model(
     for i in ctx.get("initiatives") or ():
         for p in i.get("parts") or ():
             if p.get("kind") in ("project", "effort") and p.get("pid"):
+                if i.get("nogoal") and not p.get("seat"):
+                    continue
                 on_map.add((p["pid"], p.get("dir") or ""))
-                if p.get("kind") == "project":
-                    on_map.add((p["pid"], "*"))
     facts = ctx.get("facts") or {}
     today = ctx.get("today") or date.today()
     ev = ctx.get("campaign_step_dates") or {}
@@ -395,7 +395,8 @@ def candidates_model(
     for e in ctx.get("entries") or ():
         pid = e.get("id")
         f = facts.get(pid) or {}
-        if not pid or pid == camp or not f.get("has_record") or (pid, "*") in on_map:
+        has_folder_on_disk = bool(f.get("folder") and os.path.isdir(str(f.get("folder"))))
+        if not pid or pid == camp or (not f.get("has_record") and not has_folder_on_disk):
             continue
         effs = [x for x in (f.get("efforts") or []) if isinstance(x, dict)]
         if not effs:
@@ -403,14 +404,18 @@ def candidates_model(
                 loose.append({
                     "ref": "project:%s" % pid,
                     "name": f.get("name") or e.get("name") or pid[:8],
-                    "where": "a project",
+                    "where": "an AI cockpit" if f.get("has_record") else "a project folder (ready for cockpit)",
                     "needs": bool(f.get("needs_you")),
                     "folder": f.get("folder") or "",
+                    "pid": pid,
+                    "dir": "",
                 })
             continue
         for x in effs:
             rel = str(x.get("rel") or "")
             if (pid, rel) in on_map:
+                continue
+            if rel and len(effs) == 1 and (pid, "") in on_map:
                 continue
             nm = f.get("name") or e.get("name") or pid[:8]
             loose.append({
@@ -419,6 +424,8 @@ def candidates_model(
                 "where": ("an effort of %s" % nm) if rel else "a project",
                 "needs": bool(x.get("needs_you")),
                 "folder": (f.get("folder") or "") + (("/" + rel) if rel else ""),
+                "pid": pid,
+                "dir": rel,
             })
     for c in loose:
         c["created"], c["worked"] = date_reader(c["folder"]) if (date_reader and c.get("folder")) else ("", "")

@@ -373,15 +373,25 @@ CONTRACT = (
     "asks - the target is zero; (12) commit as you go IS enforced: every cadence "
     "tick that finds the working tree dirty gets a commit with a sensible "
     "message before you continue; "
-    "(12b) IMMEDIATE RESPONSIVENESS & COCKPIT SYNC (John, 2026-10-15): on every "
+    "(12b) IMMEDIATE RESPONSIVENESS & COCKPIT SYNC (John, 2026-10-15 / 2026-10-21): on every "
     "human turn, ALWAYS write one direct opening sentence addressing John's question "
     "or confirming what you are checking BEFORE invoking any tool, and keep status/file "
     "inspections bounded (<= 4 fast reads) so he never waits in silence. Whenever work "
     "lands or changes version, update strip.json (active_effort, current_step_id, "
     "human_wait, next_recommended), roadmap.json (the active step's name, done_when, "
-    "waiting_on, and navigation.featured_paths), and DELIVERABLES.md (new rows at the "
-    "TOP of the table with 'START HERE - FOR REVIEW' and superseded versions relabeled "
-    "'Supporting - ...') in the same turn; "
+    "waiting_on, and navigation.featured_paths), .ecgberht/status_card.json (the clean "
+    "10-minute status summary fields: timestamp, run_type, project, effort, doing, "
+    "status, tests, blocker, procs, journal, eta, todo), and DELIVERABLES.md in the same turn. "
+    "(12c) TWO-TIER DELIVERABLES & IMPLICIT APPROVAL ON FEEDBACK (John, 2026-10-21): in "
+    "DELIVERABLES.md, reserve 'START HERE - FOR REVIEW' ONLY for the 1-2 MAIN deliverables "
+    "John asked for (e.g. the chapter manuscript and the visual summary); label all "
+    "building-block / supporting artifacts (Gandalf analyses, Beta-Reader reports, "
+    "scene blueprints, audits) as 'Supporting - (Companion) ...' so they fold into the "
+    "Supplemental drawer instead of cluttering Pending / For Review. Never ask John to "
+    "click 'Mark All Done': when he looks at the main deliverables and gives feedback "
+    "to advance to the next stage or revision, treat that feedback as implicit completion "
+    "of the prior review shelf and relabel the prior stage's rows to 'Supporting - ...' "
+    "so they move down into All Deliverables automatically; "
     ""
 )
 
@@ -954,6 +964,42 @@ def _is_campaign_dir(folder):
     except Exception as e:      # the Campaign's steward would silently keep the reset: say it once in the log
         print("  [%s] ONE CONVERSATION check failed for %s: %r" % (time.strftime("%H:%M:%S"), folder, e))
         return False
+
+
+def _personalize_prompt_for_user(prompt_text: str, user_profile: dict | None = None) -> str:
+    """Personalize steward prompt text for the active human user profile so non-John users (e.g. Merrill) are addressed by their own name and pseudonym."""
+    explicit = user_profile is not None
+    if user_profile is None:
+        try:
+            import onboard_wizard as _ow
+            user_profile = _ow.get_active_user_profile()
+        except Exception:
+            user_profile = {"display_name": "John", "pseudonym": "", "role": "Owner", "configured": False}
+    if not isinstance(user_profile, dict):
+        return prompt_text
+    display_name = str(user_profile.get("display_name") or "").strip() or "John"
+    pseudonym = str(user_profile.get("pseudonym") or "").strip()
+    role = str(user_profile.get("role") or "Owner").strip() or "Owner"
+    configured = bool(user_profile.get("configured"))
+    if not explicit and (not configured or display_name.lower() == "john"):
+        return prompt_text
+    out = str(prompt_text or "")
+    if display_name.lower() != "john":
+        out = re.sub(r"\bJohn's\b", f"{display_name}'s", out)
+        out = re.sub(r"\bJohn\b", display_name, out)
+    if display_name.lower() != "john" or explicit:
+        footer = (
+            f"\n[ACTIVE HUMAN USER PROFILE]\n"
+            f"- The human user you are speaking with is: {display_name}"
+            + (f' (Steward Pseudonym / Callsign: "{pseudonym}")' if pseudonym else "")
+            + f"\n- Role: {role}\n"
+            f"- Always address the user as {display_name}"
+            + (f" (or {pseudonym} when in character)" if pseudonym else "")
+            + f". Never call them John unless their name is John.\n"
+        )
+        if "[ACTIVE HUMAN USER PROFILE]" not in out:
+            out = out + footer
+    return out
 
 
 def campaign_mode_name(steward):
@@ -1638,6 +1684,63 @@ class Engine:
         self._journal_routing(action="halt", message="No capable selected cockpit provider remains")
         raise RuntimeError("No capable selected cockpit provider remains; check subscription health")
 
+    _CLAUDE_ENTITLEMENT_LADDER = {"best": "opus", "opus": "sonnet"}
+
+    def _try_claude_credit_gate_fallback(self, err_text, ev=None):
+        """When Claude rejects a turn because '--model best' (Fable 5.1) or Opus requires
+        extra usage credits, automatically step down to the next entitled Claude model
+        ('best' -> 'opus' -> 'sonnet'), persist the preference, and replay the turn."""
+        if str(self.cli or "").lower() != "claude":
+            return False
+        if not re.search(
+            r"requires usage credits|switch to another model|fable[\s\w.]*credits|not entitled to model",
+            str(err_text or ""),
+            re.I,
+        ):
+            return False
+        cur_model = str((self.model_selection or {}).get("model") or "best").strip().lower()
+        next_model = self._CLAUDE_ENTITLEMENT_LADDER.get(cur_model)
+        if not next_model:
+            return False
+        effort = str((self.model_selection or {}).get("effort") or "max").strip() or "max"
+        self.provider_quality = {"model": next_model, "effort": effort}
+        try:
+            import anchor_settings
+            from copy import deepcopy
+            st = anchor_settings.read_settings_state()
+            rev = st.get("settings", {}).get("settings_revision", 0) if st.get("valid") else 0
+            pprefs = deepcopy((st.get("settings") or {}).get("provider_preferences") or {})
+            pprefs.setdefault("quality", {})["claude"] = {"model": next_model, "effort": effort}
+            anchor_settings.save_settings(provider_preferences=pprefs, expected_revision=rev)
+        except Exception:
+            pass
+        new_sel = dict(self.model_selection or {"family": "claude", "cli": "claude", "effort": effort})
+        new_sel["model"] = next_model
+        new_sel["cli_args"] = ["--model", next_model, "--effort", effort]
+        self.model_selection = new_sel
+        _update_state(self.skey(), {"model_policy": self.model_selection})
+        self._emit({
+            "t": "sys",
+            "text": (
+                f"Claude model '{cur_model}' requires extra usage credits; "
+                f"automatically switching Claude to '{next_model}' and retrying turn."
+            ),
+        })
+        self._journal_receipt(
+            "claude_entitlement_fallback",
+            f"claude model '{cur_model}' -> '{next_model}' ({err_text})",
+        )
+        if self.fake or os.environ.get("STEWARD_COCKPIT_FAKE"):
+            return True
+        proc = self.proc
+        self.proc = None
+        if proc is not None and proc.poll() is None:
+            self._kill_tree(proc)
+        self.session_id = None
+        seed = self._last_submitted or ""
+        ok, _ = self._wake_locked(fresh=True, seed=seed if seed else None)
+        return bool(ok)
+
     def _rollover_locked(self, target, settings, text):
         """Idle-boundary handoff; the next message is never sent to the old seat."""
         import model_policy
@@ -1956,6 +2059,8 @@ class Engine:
             else:
                 self._emit({"t": "sys", "text": "steward awake - standing up (reading the campaign record)"})
                 initial_prompt = STAND_UP
+        if initial_prompt is not None:
+            initial_prompt = _personalize_prompt_for_user(initial_prompt)
         if send_initial and initial_prompt is not None and not self._send_locked(initial_prompt, origin="control"):
             self.broken = True
             self._emit({"t": "sys", "text":
@@ -2408,6 +2513,15 @@ class Engine:
             if not human:
                 self._emit({"t": "sys", "text": text})
             text = _scoped_text(text, goal, goal_name)      # the model is told which goal he is in; his shown words stay his own
+            if human and not self.general:
+                try:
+                    from steward_cockpit import campaign_say as _cs_guard
+                    if _cs_guard.is_campaign_folder(self.dir) or _cs_guard.is_cave_folder(self.dir):
+                        scope_guard = _cs_guard._campaign_scope_prompt_block(self.dir, his_words)
+                        if scope_guard:
+                            text += scope_guard
+                except Exception:
+                    pass
             if not human and not _is_machine_text(text):
                 text = MACHINE_MARK + text                   # persisted with the entry: never delivered as John's
             if answer_context:
@@ -2970,10 +3084,12 @@ class Engine:
         # reaches every steward and job with no Anchor change
         from steward_cockpit import foundry_tools
         if self.code_job:
-            return CODER_CONTRACT + foundry_tools.block(steward=False)
-        if self.effort_on():
-            return EFFORT_DUTY + CONTRACT + EFFORT_RULES + foundry_tools.block()
-        return SMALL_DUTY + CONTRACT + foundry_tools.block()
+            raw = CODER_CONTRACT + foundry_tools.block(steward=False)
+        elif self.effort_on():
+            raw = EFFORT_DUTY + CONTRACT + EFFORT_RULES + foundry_tools.block()
+        else:
+            raw = SMALL_DUTY + CONTRACT + foundry_tools.block()
+        return _personalize_prompt_for_user(raw)
 
     def _fire_turn_done(self, result):
         cb, self.on_turn_done = self.on_turn_done, None
@@ -3541,6 +3657,26 @@ class Engine:
                 env[_key] = _account_env[_key]
             else:
                 env.pop(_key, None)   # R6-A: another family's home never rides into this child
+        # Forward user-configured ANTHROPIC_DEFAULT_*_MODEL overrides from ~/.claude/settings.json
+        # even when fenced Claude runs with --setting-sources project (Merrill report 2026-10-22).
+        if str(self.cli or "").lower() == "claude":
+            try:
+                _cdir = Path(env.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude"))
+                _cset_file = _cdir / "settings.json"
+                if _cset_file.is_file():
+                    _cset_doc = json.loads(_cset_file.read_text(encoding="utf-8"))
+                    _cset_env = (_cset_doc.get("env") or {}) if isinstance(_cset_doc, dict) else {}
+                    for _mkey in (
+                        "ANTHROPIC_DEFAULT_FABLE_MODEL",
+                        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+                    ):
+                        _mval = _cset_env.get(_mkey) or os.environ.get(_mkey)
+                        if isinstance(_mval, str) and _mval.strip():
+                            env[_mkey] = _mval.strip()
+            except Exception:
+                pass
         # A1 (delegated-work PROPOSAL v0.3; Grok code R1 F1-F3, R2 N1-N2): every git ANY agent session runs - steward,
         # code job or workbench terminal - goes through gitguard, which refuses tree-rewriting verbs outside a code
         # job's own worktree BEFORE git runs: a real git.exe (found for `git` and `git.exe` alike), a `git` script and
@@ -3960,6 +4096,8 @@ class Engine:
                     # Error turns never trigger answer nudges or auto-drive on
                     # the exhausted provider. Only a confirmed unsubmitted/
                     # rejected turn can replay the original message.
+                    if self._try_claude_credit_gate_fallback(err_text, ev):
+                        return
                     if limit and not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")):
                         try:
                             import anchor_settings

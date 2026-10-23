@@ -237,14 +237,62 @@
   });
   // the Candidates: a search and a sort (his word, 2026-10-02: by date created, last date worked on, the steward's relevance)
   var candApply = function () {};
+
+  function measureNaturalTextWidth(el) {
+    if (!el) return 0;
+    var prevDisplay = el.style.display;
+    var prevWidth = el.style.width;
+    el.style.display = 'inline-block';
+    el.style.width = 'auto';
+    var w = el.scrollWidth || el.offsetWidth || 0;
+    el.style.display = prevDisplay;
+    el.style.width = prevWidth;
+    return w;
+  }
+
+  function syncCompactActs() {
+    // Switch to compact dots SOONER rather than later: keep at least 96px of breathing room
+    // after the cockpit name (and collapse whenever the tile is under 520px wide) so names
+    // never get cramped or close to truncating before the blue/green dots + arrow appear.
+    var SAFETY_BUFFER_PX = 96;
+    var MIN_FULL_BTN_TILE_WIDTH = 520;
+    $$('.tile').forEach(function (tile) {
+      var nmWrap = tile.querySelector('.t-name');
+      var nm = tile.querySelector('.t-name .t-nm') || nmWrap;
+      var eff = tile.querySelector('.t-name .t-eff');
+      if (!nm || !nmWrap) return;
+      tile.classList.remove('compact-acts');
+      var availW = nmWrap.clientWidth || 0;
+      var nmW = measureNaturalTextWidth(nm);
+      var effW = measureNaturalTextWidth(eff);
+      var earlyCrowd = (nmW + SAFETY_BUFFER_PX > availW) || (effW > 0 && (effW + SAFETY_BUFFER_PX > availW));
+      var nmTrunc = (nm.scrollWidth > nm.clientWidth + 1);
+      var effTrunc = eff ? (eff.scrollWidth > eff.clientWidth + 1) : false;
+      if (earlyCrowd || nmTrunc || effTrunc || tile.clientWidth < MIN_FULL_BTN_TILE_WIDTH) {
+        tile.classList.add('compact-acts');
+      }
+    });
+  }
+  window.addEventListener('resize', syncCompactActs);
+  setTimeout(syncCompactActs, 0);
+  setTimeout(syncCompactActs, 150);
+
   function bindCands() {   // at load, and when the tile is placed in the page for the first time (W4)
-    var q = document.getElementById('candSearch'), srt = document.getElementById('candSort'), note = document.getElementById('candNote');
+    syncCompactActs();
+    var q = document.getElementById('candSearch'), srt = document.getElementById('candSort'), note = document.getElementById('candNote'), fltWrap = document.getElementById('candFilter');
     if (!q || !srt || q._bound) return; q._bound = true;
-    try { var ks = sessionStorage.getItem('hs_cands_sort'); if (ks) srt.value = ks; q.value = sessionStorage.getItem('hs_cands_q') || ''; } catch (e) {}
+    var kflt = 'all';
+    try { var ks = sessionStorage.getItem('hs_cands_sort'); if (ks) srt.value = ks; q.value = sessionStorage.getItem('hs_cands_q') || ''; kflt = sessionStorage.getItem('hs_cands_kflt') || 'all'; } catch (e) {}
+    function syncFltBtns() {
+      if (!fltWrap) return;
+      $$('.cand-flt', fltWrap).forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-cand-filter') === kflt); });
+    }
+    syncFltBtns();
     function apply() {
       var term = q.value.trim().toLowerCase(), key = srt.value, shown = 0, all = 0;
-      $$('#shCands .cand-group ul').forEach(function (ul) {
-        var rows = $$('li.cand', ul);
+      $$('#shCands .cand-group').forEach(function (grp) {
+        var ul = grp.querySelector('ul'); if (!ul) return;
+        var rows = $$('li.cand', ul), grpShown = 0;
         rows.sort(function (a, b) {
           if (key === 'name') return a.querySelector('.cn').textContent.localeCompare(b.querySelector('.cn').textContent);
           var va = key === 'score' ? +a.getAttribute('data-score') : (a.getAttribute('data-' + key) || ''), vb = key === 'score' ? +b.getAttribute('data-score') : (b.getAttribute('data-' + key) || '');
@@ -252,16 +300,26 @@
         });
         rows.forEach(function (r) {
           ul.appendChild(r); all++;
-          var hit = !term || r.textContent.toLowerCase().indexOf(term) >= 0;
-          r.hidden = !hit; if (hit) shown++;
+          var kindOk = (kflt === 'all') || ((r.getAttribute('data-cand-kind') || 'cockpit') === kflt);
+          var hit = (!term || r.textContent.toLowerCase().indexOf(term) >= 0) && kindOk;
+          r.hidden = !hit; if (hit) { shown++; grpShown++; }
         });
+        grp.hidden = (grpShown === 0) && (!!term || kflt !== 'all');
       });
-      if (note) note.textContent = term ? (shown + ' of ' + all) : '';
-      try { sessionStorage.setItem('hs_cands_sort', key); sessionStorage.setItem('hs_cands_q', q.value); } catch (e) {}
+      if (note) note.textContent = (term || kflt !== 'all') ? (shown + ' of ' + all) : '';
+      try { sessionStorage.setItem('hs_cands_sort', key); sessionStorage.setItem('hs_cands_q', q.value); sessionStorage.setItem('hs_cands_kflt', kflt); } catch (e) {}
     }
     q.addEventListener('input', apply); srt.addEventListener('change', apply);
+    if (fltWrap) {
+      fltWrap.addEventListener('click', function (ev) {
+        var b = ev.target.closest('.cand-flt'); if (!b) return;
+        kflt = b.getAttribute('data-cand-filter') || 'all';
+        syncFltBtns(); apply();
+      });
+    }
     candApply = apply;
-    if (q.value || srt.value !== 'score') apply();
+    syncCompactActs();
+    if (q.value || srt.value !== 'score' || kflt !== 'all') apply();
     // the Candidates tile stays open across a reload (2026-10-02)
     var t = document.getElementById('candsTile'); if (!t) return;
     try { if (sessionStorage.getItem('hs_cands_open') === '1') t.open = true; } catch (e) {}
@@ -547,7 +605,7 @@
     (function next(i) {
       if (i >= list.length) return;
       var f = list[i];
-      if (f.size > 30000000) { dropNote(card, f.name + ' is over 30 MB \u2014 not loaded', true); next(i + 1); return; }
+      if (f.size > 250000000) { dropNote(card, f.name + ' is over 250 MB \u2014 not loaded', true); next(i + 1); return; }
       var r = new FileReader();
       r.onerror = function () { dropNote(card, f.name + ' could not be read', true); next(i + 1); };
       r.onload = function () {
@@ -692,7 +750,8 @@
     var openHzBtn = $('#shTriage .chz-card.open'), openHzKey = openHzBtn ? openHzBtn.getAttribute('data-hz-toggle') : '';
     var calWasOpen = $('#cal') && $('#cal').classList.contains('open');
     var collabWasOpen = $('#caveCollabStrip') && $('#caveCollabStrip').classList.contains('open');
-    ['shTriage', 'thisWeekBoard', 'cal', 'caveCollabStrip', 'nudgeSlot', 'seedCount', 'seedLbl', 'seedPanel', 'ptileCount', 'apGroups'].forEach(function (id) { var a = document.getElementById(id), b = doc.getElementById(id); if (a && b) morph(a, b); });
+    ['shTriage', 'thisWeekBoard', 'cal', 'caveCollabStrip'].forEach(function (id) { var a = document.getElementById(id), b = doc.getElementById(id); if (a && b) morph(a, b); });
+    ['nudgeSlot', 'seedCount', 'seedLbl', 'seedPanel', 'ptileCount', 'apGroups'].forEach(function (id) { var a = document.getElementById(id), b = doc.getElementById(id); if (a && b) morph(a, b); });
     if (openHzKey) {
       var nb = $('#shTriage .chz-card[data-hz-toggle="' + openHzKey + '"]'), nd = document.getElementById('hzDrawer-' + openHzKey);
       if (nb && nd) { nb.classList.add('open'); nb.setAttribute('aria-expanded', 'true'); nd.hidden = false; }
@@ -870,7 +929,11 @@
     }
     Promise.all([worker(),worker(),worker(),worker()]).finally(function () {
       feedbackBusy = false;
-      if (moved) refreshFaces();
+      var nowMs = Date.now();
+      if (moved && (!window._lastFaceRefreshAt || (nowMs - window._lastFaceRefreshAt) > 15000)) {
+        window._lastFaceRefreshAt = nowMs;
+        refreshFaces();
+      }
       if (feedbackAgain) { feedbackAgain = false; refreshFeedback(); }
     });
   }
@@ -1243,6 +1306,13 @@
         if (j && j.ok && j.talk && dlg) { dlg.send(text, null, dlg.mainList(), send, say, DRAFT_KEY); return; }   // not a verb: the steward, in the dialogue
         if (!j || !j.ok) { receipt((j && (j.say || j.message || j.error)) || 'No answer came back — nothing was done.', true); return; }
         say.value = ''; say.dispatchEvent(new Event('input')); clearDraft(); receipt(j.say || '…', false, j.undo || null);
+        if (window.StewardDialogue && typeof window.StewardDialogue.speakConciseSummary === 'function' && (j.spoken_summary || j.say)) {
+          try { window.StewardDialogue.speakConciseSummary(j.spoken_summary || j.say); } catch (e) {}
+        }
+        if (j.act === 'open_deliverable' && j.open_deliverable_url && window.StewardDialogue && typeof window.StewardDialogue.openCaveDeliverableDrawer === 'function') {
+          window.StewardDialogue.openCaveDeliverableDrawer(j.open_deliverable_title || 'Deliverable', j.open_deliverable_url);
+          return;
+        }
         if (j.campaign_act && !j.read_only) { renewInPlace(); return; }   // W4: the change is placed in the page; the line and its undo stay
         if (j.project_create && j.project_create.folder) projectCard(j.project_create);   // R11: the card is here, not on the old dashboard
       })
@@ -1771,4 +1841,45 @@
       return;
     }
   });
+  function ensureHeaderDownloadButtons() {
+    var hdrRight = document.querySelector('.hdr-right') || document.querySelector('.top-actions') || document.querySelector('header');
+    if (!hdrRight) return;
+    if (!document.getElementById('hs-onboard-wizard-btn')) {
+      var wBtn = document.createElement('a');
+      wBtn.id = 'hs-onboard-wizard-btn';
+      wBtn.className = 'btn';
+      wBtn.href = '/onboard-wizard';
+      wBtn.title = 'Open the 7-Step Onboarding & Setup Wizard (or Sandbox Test Walkthrough)';
+      wBtn.style.cssText = 'text-decoration:none;border-color:rgba(124,92,255,0.55);color:#c4b5fd;font-weight:600';
+      wBtn.textContent = '🧭 Setup & Onboard';
+      hdrRight.insertBefore(wBtn, hdrRight.firstChild);
+    }
+    if (!document.getElementById('hs-download-test-exe-btn')) {
+      var tBtn = document.createElement('a');
+      tBtn.id = 'hs-download-test-exe-btn';
+      tBtn.className = 'btn';
+      tBtn.href = '/static/downloads/Anchor-Test-Onboard.zip?download=1';
+      tBtn.setAttribute('download', 'Anchor-Test-Onboard.zip');
+      tBtn.title = 'Download isolated Desktop Onboard-Test Anchor.exe package (runs on port 8787 + isolated AppData so your live Anchor.exe & Tailscale stay untouched)';
+      tBtn.style.cssText = 'text-decoration:none;border-color:rgba(245,158,11,0.55);color:#fcd34d;font-weight:600';
+      tBtn.textContent = '🧪 Desktop Onboard-Test.exe';
+      var ref = document.getElementById('hs-onboard-wizard-btn');
+      if (ref && ref.nextSibling) hdrRight.insertBefore(tBtn, ref.nextSibling);
+      else hdrRight.appendChild(tBtn);
+    }
+    if (!document.getElementById('hs-download-prod-exe-btn')) {
+      var pBtn = document.createElement('a');
+      pBtn.id = 'hs-download-prod-exe-btn';
+      pBtn.className = 'btn';
+      pBtn.href = '/static/downloads/Anchor.zip?download=1';
+      pBtn.setAttribute('download', 'Anchor.zip');
+      pBtn.title = 'Download production Anchor.exe package (shareable with collaborators)';
+      pBtn.style.cssText = 'text-decoration:none;border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:600';
+      pBtn.textContent = '📦 Anchor.exe';
+      var ref2 = document.getElementById('hs-onboard-wizard-btn');
+      if (ref2 && ref2.nextSibling) hdrRight.insertBefore(pBtn, ref2.nextSibling);
+      else hdrRight.appendChild(pBtn);
+    }
+  }
+  ensureHeaderDownloadButtons();
 })();

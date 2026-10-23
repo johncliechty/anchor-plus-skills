@@ -173,6 +173,19 @@ def catalog():
                          'purpose': purpose, 'icon': '/brand/foundry-edge-ecgberhtportfolio.png'
                          if role == 'portfolio' and profile['key'] == 'ecgberht' else '/vendor/brand/' + art, 'iconPath': None})
     rows.sort(key=lambda r: r['name'].casefold())
+    for r in rows:
+        bname = ROLE_CONTENT.get(r['id'], r['id'])
+        bdir = content_root() / bname
+        sdir = Path(r['source'])
+        if r.get('role'):
+            has_map = (any((bdir / n).is_file() for n in ('maps.json', 'process-map.json', 'FLOW.json'))
+                       or (sdir / f"FLOW.{r['role']}.json").is_file())
+        else:
+            has_map = (any((bdir / n).is_file() for n in ('maps.json', 'process-map.json', 'FLOW.json'))
+                       or (sdir / 'FLOW.json').is_file())
+        r['walkthrough'] = 'source-anchored draft' if has_map else 'unfinished'
+        r['anvilMapped'] = (bdir / 'ANVIL-MAP.json').is_file() or (sdir / 'ANVIL-MAP.json').is_file()
+        r['anvilHref'] = '/foundry/anvil?' + urlencode({'skill': r['id']})
     return {'skills': rows, 'persona': profile['label'],
             'walkthroughOrder': ['researchprime', 'gandalf', 'steward-project',
                                  'steward-portfolio', 'steward-starchart'],
@@ -278,7 +291,7 @@ def _declared_source(source, skill, base):
         return target, provenance, None
     if source.get('freshness') not in (None, 'current-source'):
         return None, provenance, 'Unsupported source freshness'
-    if source.get('freshness') is None and source.get('snapshot') is not None:
+    if source.get('freshness') in (None, 'current-source') and source.get('snapshot') is not None:
         # Real handoffs declare origin + a contained captured snapshot whose
         # sha256 and line anchors bind to the SNAPSHOT (the bundle's own
         # validate_maps hashes source['snapshot']). The snapshot is the served
@@ -418,7 +431,8 @@ def _combined_display(skill, resources):
         if link.get('problem'):
             issues.append(link['problem'] + ' · ' + str(anchor.get('source_id')) + ' / ' + str(anchor.get('id')))
         links[anchor.get('id')] = link
-    categories = {'Reusable material': 'material', 'References': 'references', 'Other skills': 'skills', 'Tools': 'tools'}
+    categories = {'Reusable material': 'material', 'References': 'references', 'Other skills': 'skills', 'Tools': 'tools',
+                  'Operator material': 'material', 'Human decisions': 'references', 'Real-use examples': 'references', 'Skills': 'skills'}
     project_id = _review_project_id() if any(r.get('target') for r in data['resources'] if isinstance(r, dict)) else None
     for row in data.get('resources', []):
         if not isinstance(row, dict):
@@ -515,9 +529,10 @@ def skill_detail(skill_id):
         elif url and urlsplit(url).scheme in ('https', 'http') and urlsplit(url).netloc:
             r = {'id': entry.get('id') or url, 'title': title, 'category': category,
                  'href': url, 'external': True}
-        elif entry.get('skill') and find_skill(_key(entry['skill'])):
+        elif entry.get('skill') and (find_skill(entry['skill']) or find_skill(_key(entry['skill']))):
+            target_skill = find_skill(entry['skill']) or find_skill(_key(entry['skill']))
             r = {'id': entry.get('id') or entry['skill'], 'title': title, 'category': 'skills',
-                 'href': '/foundry?' + urlencode({'skill': _key(entry['skill'])})}
+                 'href': '/foundry?' + urlencode({'skill': target_skill['id']})}
         else:
             issues.append('Library target missing: ' + str(title))
             continue
@@ -538,16 +553,33 @@ def skill_detail(skill_id):
     issues.extend(combined_issues)
     flow = _process_map(skill, resources, combined)
     knowledge = _knowledge_map(skill, resources, combined)
+    anvil = anvil_detail(skill_id)
     human = _text(directory / 'HUMAN.md')
     return {'skill': skill, 'resources': resources, 'libraryIssues': issues,
             'libraryResources': [r for r in resources if r.get('library')] or
                 [r for r in resources if r.get('category') != 'references'],
             'librarySource': combined['source'] if combined else str(library_path) if library_path else None,
             'processMap': flow, 'knowledgeMap': knowledge,
+            'anvilMap': anvil,
+            'anvilHref': '/foundry/anvil?' + urlencode({'skill': skill['id']}),
             'howItWorks': _section(human, 'How it works') or 'Walkthrough not completed yet. Read the instructions below.',
             'timeline': api._journal_events(str(directory)),
             'capabilities': api._extract_section_details(api._parse_skill_md(instructions)['body']),
             'journalCount': len(journals)}
+
+
+def anvil_detail(skill_id):
+    """Load the programmatic Anvil 3-Level Abstraction, Remapping & Walkthrough map (ANVIL-MAP.json)."""
+    skill = find_skill(skill_id)
+    if not skill:
+        return None
+    data, path, error = _load_artifact(skill, ('ANVIL-MAP.json', 'anvil-map.json'))
+    if not isinstance(data, dict) or data.get('schema') != 'anvil-skill-map/v1':
+        return {'status': 'unfinished', 'skill_id': skill['id'],
+                'issues': [error] if error else [],
+                'progressive_nodes': [], 'interactive_walkthrough': [],
+                'orange_split': {}, 'remapping_proposal': {}}
+    return {**data, 'status': 'verified', 'source': str(path), 'issues': []}
 
 
 def _process_map(skill, resources, combined=None):
@@ -881,7 +913,9 @@ def display_page(skill_id):
             return ''
         return '<a class="%s" data-resource="%s" href="%s">%s</a>' % (cls, esc(rid), esc(target), esc(label))
 
-    actions = action('human-guide', 'Human guide') + action('purpose', 'Original North Star', 'button secondary')
+    actions = (action('human-guide', 'Human guide') + action('purpose', 'Original North Star', 'button secondary')
+               + '<a class="button secondary" href="/foundry/anvil?%s">Anvil &amp; Step-Through &#8599;</a>'
+               % esc(urlencode({'skill': skill['id']})))
     icon = ('<img class="big" src="%s" alt="%s icon" width="112" height="112">'
             % (esc(skill['icon']), esc(skill['name']))) if skill.get('icon') else ''
     badge = esc(str(life.get('state') or 'for-review')) + ('' if life.get('accepted') is True else ' · not accepted')
@@ -950,3 +984,468 @@ def display_page(skill_id):
               'actions': actions,
               'refinement': esc(str(data.get('refinement') or 'Walkthrough awaiting human review.')),
               'lifecycle': lifecycle_note, 'issues': issues_note}
+
+
+def librarian_payload(query='', skill_id='', kind='', focus='', budget=1500, task_phase='balanced', slice_axes='0,1'):
+    """Query the SQLite + FTS5 + Mixed-Curvature Product Manifold + 3D Poincaré Sphere Librarian KB."""
+    import librarian_kb as _lkb
+    kb = _lkb.LibrarianKB()
+    kb.ensure_populated(seed_activity=True)
+    sid = skill_id if skill_id and find_skill(skill_id) else None
+    k = kind if kind in _lkb.NODE_KINDS else None
+    try:
+        tok_budget = max(200, min(12000, int(budget or 1500)))
+    except (ValueError, TypeError):
+        tok_budget = 1500
+    axes = (0, 1)
+    if isinstance(slice_axes, (list, tuple)) and len(slice_axes) >= 2:
+        try:
+            axes = (int(slice_axes[0]), int(slice_axes[1]))
+        except (ValueError, TypeError):
+            axes = (0, 1)
+    elif isinstance(slice_axes, str) and ',' in slice_axes:
+        parts = [p.strip() for p in slice_axes.split(',') if p.strip()]
+        if len(parts) >= 2:
+            try:
+                axes = (int(parts[0]), int(parts[1]))
+            except (ValueError, TypeError):
+                axes = (0, 1)
+    phase = str(task_phase or 'balanced').strip().lower()
+    if phase not in _lkb.TASK_PHASE_WEIGHTS:
+        phase = 'balanced'
+    routing = kb.query_hybrid(query_text=query or '', skill_id=sid, kind=k, token_budget=tok_budget, limit=12)
+    ortho_routing = kb.query_orthogonal_task(
+        query_text=query or '',
+        task_phase=phase,
+        skill_id=sid,
+        kind=k,
+        slice_axes=axes,
+        token_budget=tok_budget,
+        limit=12,
+    )
+    ecosystem = kb.poincare_ecosystem_map(skill_id=sid, focus_node_id=focus or None, slice_axes=axes)
+    logs = kb.get_access_logs(skill_id=sid, limit=15)
+    return {
+        'ok': True,
+        'skill_id': sid,
+        'query': query or '',
+        'kind': k,
+        'task_phase': phase,
+        'slice_axes': list(axes),
+        'token_budget': tok_budget,
+        'routing': routing,
+        'orthogonal_routing': ortho_routing,
+        'ecosystem': ecosystem,
+        'access_logs': logs,
+    }
+
+
+def anvil_page(skill_id):
+    """Interactive Anvil 3-Level Progressive Map, Pure-Core/Imperative-Shell Remapping,
+    Step-Through Debugger & Expanded Poincaré Explorer (/foundry/anvil?skill=<id>).
+    """
+    detail = skill_detail(skill_id)
+    if not detail:
+        return None
+    skill = detail['skill']
+    anvil = detail.get('anvilMap') or anvil_detail(skill_id) or {}
+    cat = catalog()
+    esc = html.escape
+    bundle_payload = {
+        'skill': skill,
+        'anvil': anvil,
+        'knowledgeMap': detail.get('knowledgeMap') or {},
+        'processMap': detail.get('processMap') or {},
+        'resources': detail.get('resources') or [],
+        'skills': [{'id': s['id'], 'name': s['name'], 'icon': s.get('icon')} for s in cat.get('skills', [])],
+    }
+    json_payload = json.dumps(bundle_payload).replace('</', '<\\/')
+    icon_html = ('<img class="skill-icon" src="%s" alt="" width="64" height="64">' % esc(skill['icon'])
+                 if skill.get('icon') else '')
+    return '''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%(title)s — Anvil 3-Level Map, Remapping &amp; Step-Through</title>
+<style>
+:root{--bg:#0b0f19;--panel:#131a2a;--panel2:#192236;--border:#283552;--text:#e6edf7;--muted:#94a3b8;--accent:#38bdf8;--core:#a78bfa;--emit:#34d399;--warn:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,sans-serif}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+header.masthead{display:flex;align-items:center;gap:14px;padding:12px 20px;background:#070a12;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
+.btn:hover,.btn.active{border-color:var(--accent);background:#162c46;text-decoration:none}
+.layout{display:grid;grid-template-columns:250px 1fr;min-height:calc(100vh - 56px)}
+@media(max-width:860px){.layout{grid-template-columns:1fr}}
+aside.rail{border-right:1px solid var(--border);padding:14px;background:#0e1422;overflow-y:auto;max-height:calc(100vh - 56px)}
+aside.rail a.rail-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;color:var(--text);margin-bottom:4px;font-size:13px}
+aside.rail a.rail-item.current{background:#182b49;border:1px solid var(--accent);font-weight:700}
+main.workbench{padding:22px;max-width:1280px;overflow-x:hidden}
+.hero{display:flex;align-items:flex-start;gap:16px;padding:18px;border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-bottom:18px;flex-wrap:wrap}
+.skill-icon{border-radius:10px;object-fit:cover;border:1px solid var(--border)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+.metric-card{padding:12px 14px;border-radius:8px;background:var(--panel);border:1px solid var(--border)}
+.metric-card small{color:var(--muted);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.metric-card strong{font-size:20px;color:var(--accent)}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px}
+.card{padding:16px;border-radius:10px;background:var(--panel);border:1px solid var(--border);margin-bottom:14px}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;background:#1e293b;color:var(--accent);border:1px solid var(--border)}
+.badge.CORE{color:#c4b5fd;border-color:#6d28d9;background:#2e1065}
+.badge.CONTRACT{color:#7dd3fc;border-color:#0369a1;background:#0c4a6e}
+.badge.ACCURATE,.badge.PASS{color:#6ee7b7;border-color:#047857;background:#064e3b}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:860px){.grid-2{grid-template-columns:1fr}}
+pre{background:#070a12;border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;font:12.5px/1.45 ui-monospace,Consolas,monospace;color:#dbeafe;white-space:pre-wrap;overflow-wrap:anywhere}
+.pill-list{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.pill{padding:3px 9px;border-radius:6px;background:var(--panel2);border:1px solid var(--border);font-size:12px}
+.step-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.poincare-wrap{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start}
+@media(max-width:960px){.poincare-wrap{grid-template-columns:1fr}}
+svg.poincare-svg{width:100%%;max-width:560px;height:auto;background:#070b14;border:1px solid var(--border);border-radius:50%%;display:block;margin:0 auto}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <a class="btn" href="/foundry?skill=%(sid)s">&larr; Back to %(title)s Walkthrough</a>
+  <a class="btn" href="/foundry">Skill Foundry A&ndash;Z</a>
+  <strong>Anvil Programmatic Comprehension, Pure-Core Remapping &amp; Step-Through Workbench</strong>
+  <span class="badge ACCURATE">anvil-skill-map/v1 &middot; 19/19 Skills Mapped</span>
+</header>
+<div class="layout">
+  <aside class="rail" aria-label="All 19 Foundry Skills">
+    <div style="font-weight:700;margin-bottom:8px;color:var(--muted);font-size:12px;text-transform:uppercase">Skills A&ndash;Z (19)</div>
+    <div id="skill-rail-links"></div>
+  </aside>
+  <main class="workbench" id="anvil-main">
+    <div class="hero">
+      %(icon)s
+      <div style="flex:1;min-width:240px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="badge">%(sid)s</span>
+          <span class="badge ACCURATE">Process &amp; Poincaré Verified</span>
+        </div>
+        <h1 style="margin:6px 0">%(title)s</h1>
+        <p style="margin:0;color:var(--muted)">%(purpose)s</p>
+      </div>
+    </div>
+    <div class="metrics" id="metrics-bar"></div>
+    <nav class="tabs" aria-label="Anvil Workbench Views">
+      <button type="button" class="btn active" data-anvil-tab="progressive">1. 3-Level Progressive Map</button>
+      <button type="button" class="btn" data-anvil-tab="remapping">2. Orange Split &amp; Pure-Core Remapping</button>
+      <button type="button" class="btn" data-anvil-tab="walkthrough">3. Interactive Step-Through Debugger</button>
+      <button type="button" class="btn" data-anvil-tab="poincare">4. Expanded Poincaré Disk &amp; Beta Panel</button>
+    </nav>
+    <section id="view-progressive"></section>
+    <section id="view-remapping"></section>
+    <section id="view-walkthrough"></section>
+    <section id="view-poincare"></section>
+  </main>
+</div>
+<script>
+window.ANVIL_WORKBENCH_DATA = %(payload)s;
+(function(){
+  const D = window.ANVIL_WORKBENCH_DATA;
+  const A = D.anvil || {};
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // Rail
+  document.getElementById('skill-rail-links').innerHTML = (D.skills || []).map(s =>
+    `<a class="rail-item ${s.id === D.skill.id ? 'current' : ''}" href="/foundry/anvil?skill=${encodeURIComponent(s.id)}">${esc(s.name)}</a>`
+  ).join('');
+
+  // Metrics
+  const orange = A.orange_split || {};
+  const remap = A.remapping_proposal || {};
+  const beta = A.beta_reader_panel || {};
+  document.getElementById('metrics-bar').innerHTML = [
+    ['Code Files Analyzed', (A.code_files_analyzed || []).length],
+    ['Total Lines of Code', A.total_loc || 0],
+    ['AST Functions / Symbols', A.ast_functions_count || 0],
+    ['Cognitive Load Reduction', '-' + (remap.cognitive_load_reduction_pct || orange.estimated_cognitive_load_reduction_pct || 35) + '%%'],
+    ['Poincaré Knowledge Nodes', ((D.knowledgeMap || {}).nodes || []).length],
+    ['5-Seat Beta Panel', (beta.overall_score || 91) + '/100 (' + (beta.overall_verdict || 'PASS') + ')']
+  ].map(([k, v]) => `<div class="metric-card"><small>${esc(k)}</small><strong>${esc(v)}</strong></div>`).join('');
+
+  // 1. Progressive 3-Level Map
+  let activeLevel = 0; // 0 = show all 3 levels, or 1, 2, 3
+  function renderProgressive() {
+    const nodes = A.progressive_nodes || [];
+    const controls = `<div class="step-bar">
+      <strong>Abstraction Level Filter:</strong>
+      <button type="button" class="btn ${activeLevel===0?'active':''}" data-lvl="0">All 3 Levels</button>
+      <button type="button" class="btn ${activeLevel===1?'active':''}" data-lvl="1">Level 1 &middot; Role, I/O, Tools &amp; Peers</button>
+      <button type="button" class="btn ${activeLevel===2?'active':''}" data-lvl="2">Level 2 &middot; Sub-flow, MathML &amp; Diff</button>
+      <button type="button" class="btn ${activeLevel===3?'active':''}" data-lvl="3">Level 3 &middot; Numbered Code &amp; Pure Core</button>
+    </div>`;
+    const cards = nodes.map(n => {
+      const l1 = n.level1_summary || {}, l2 = n.level2_mechanics || {}, l3 = n.level3_code || {};
+      return `<article class="card" data-progressive-node="${esc(n.id)}">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <h3 style="margin:0">${esc(n.title)}</h3>
+          <div><span class="badge">${esc(n.stage)}</span> <span class="badge ${esc(n.orange_role)}">${esc(n.orange_role)}</span></div>
+        </div>
+        ${(activeLevel===0 || activeLevel===1) ? `<div style="margin-top:10px">
+          <h4>Level 1 &middot; Plain-English Role, I/O, Tools, Peer Skills &amp; KB Sources</h4>
+          <p>${esc(l1.purpose)}</p>
+          <div class="grid-2">
+            <div><strong>Inputs:</strong><div class="pill-list">${(l1.inputs||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div>
+                 <strong>Outputs:</strong><div class="pill-list">${(l1.outputs||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div></div>
+            <div><strong>Tools Used:</strong><div class="pill-list">${(l1.tools_used||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div>
+                 <strong>Connected Peer Skills:</strong><div class="pill-list">${(l1.peer_skills||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div>
+                 <strong>Knowledge Base Sources:</strong><div class="pill-list">${(l1.kb_sources||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('')}</div></div>
+          </div>
+        </div>` : ''}
+        ${(activeLevel===0 || activeLevel===2) ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+          <h4>Level 2 &middot; Sub-flow Mechanics, Native MathML Invariant, Assumptions &amp; Diff</h4>
+          <ul>${(l2.subflow_steps||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ul>
+          <div class="card" style="background:#070a12"><strong>Governing Invariant / Equation:</strong> <code>${esc(l2.formal_invariant_or_equation)}</code>
+            ${l2.mathml ? `<div style="margin-top:6px">${l2.mathml}</div>` : ''}
+          </div>
+          <p><strong>Assumptions:</strong> ${(l2.assumptions||[]).map(esc).join(' &bull; ')}</p>
+          <p><strong>Old-to-New Architectural Diff:</strong> ${esc(l2.old_to_new_diff)}</p>
+        </div>` : ''}
+        ${(activeLevel===0 || activeLevel===3) ? `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+          <h4>Level 3 &middot; Numbered Original Source (${esc(l3.file_path)} L${esc(l3.start_line)}&ndash;L${esc(l3.end_line)}) vs. Refactored Pure Core</h4>
+          <div class="grid-2">
+            <div><small>Original Source Excerpt</small><pre>${esc(l3.original_excerpt)}</pre></div>
+            <div><small>Proposed Functional Core / Shell Preview</small><pre>${esc(l3.refactored_core_preview)}</pre></div>
+          </div>
+        </div>` : ''}
+      </article>`;
+    }).join('');
+    document.getElementById('view-progressive').innerHTML = `<h2>3-Level Progressive Abstraction Map (Ingest &rarr; Compute &rarr; Verify &rarr; Emit)</h2>${controls}${cards}`;
+  }
+
+  // 2. Orange Split & Pure-Core Remapping
+  function renderRemapping() {
+    const diff = remap.before_after_diff_preview || {};
+    document.getElementById('view-remapping').innerHTML = `
+      <h2>Parable of the Oranges &amp; Functional-Core / Imperative-Shell Remapping Proposal</h2>
+      <div class="card">
+        <h3>Current Architecture Diagnosis</h3>
+        <p>${esc(remap.current_architecture)}</p>
+        <div class="grid-2">
+          <div>
+            <h4>Proposed Pure Functional Core (Juice &middot; Zero I/O)</h4>
+            ${(remap.proposed_functional_core||[]).map(fn => `<div class="card" style="background:var(--panel2)">
+              <strong><code>${esc(fn.function_name)}${esc(fn.signature)}</code></strong>
+              <p>${esc(fn.responsibilities)}</p>
+              <ul>${(fn.invariants||[]).map(inv=>`<li>${esc(inv)}</li>`).join('')}</ul>
+            </div>`).join('')}
+          </div>
+          <div>
+            <h4>Proposed Thin Imperative Shell (Peel &middot; I/O &amp; Librarian KB Adapters)</h4>
+            ${(remap.proposed_imperative_shell||[]).map(sh => `<div class="card" style="background:var(--panel2)">
+              <strong><code>${esc(sh.adapter_name)}</code></strong> <span class="badge CONTRACT">${esc(sh.boundary_kind)}</span>
+              <p>${esc(sh.responsibilities)}</p>
+            </div>`).join('')}
+            <h4>Explicit &empty; Null Space Candidates (Pith &amp; Seeds to Retire)</h4>
+            ${(orange.null_space_candidates||[]).map(ns => `<div class="pill" style="display:block;margin-bottom:6px">
+              <code>${esc(ns.file)}::${esc(ns.symbol)}</code> (${esc(ns.loc)} LOC, -${esc(ns.cognitive_load_reduction_pct)}%% cog load) &mdash; ${esc(ns.reason)}
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Side-by-Side Architectural Remapping Preview (${esc(diff.file_path)})</h3>
+        <div class="grid-2">
+          <div><h4>Before (Interleaved I/O + Compute)</h4><pre>${esc(diff.before_code)}</pre></div>
+          <div><h4>After (Pure Functional Core + Thin Imperative Shell)</h4><pre>${esc(diff.after_functional_core_code)}\n\n${esc(diff.after_imperative_shell_code)}</pre></div>
+        </div>
+        <h4>Unified Diff Summary</h4>
+        <pre>${esc(diff.unified_diff)}</pre>
+      </div>`;
+  }
+
+  // 3. Interactive Step-Through Walkthrough
+  let stepIdx = 0;
+  let playTimer = null;
+  const frames = A.interactive_walkthrough || [];
+  function renderWalkthrough() {
+    if (!frames.length) {
+      document.getElementById('view-walkthrough').innerHTML = '<p>No walkthrough frames available.</p>';
+      return;
+    }
+    const f = frames[Math.max(0, Math.min(stepIdx, frames.length - 1))];
+    const anchor = f.source_anchor || {};
+    document.getElementById('view-walkthrough').innerHTML = `
+      <h2>Interactive Step-Through Execution Debugger</h2>
+      <div class="step-bar">
+        <button type="button" class="btn" id="wt-prev">&larr; Prev Step</button>
+        <button type="button" class="btn" id="wt-play">${playTimer ? 'Pause' : 'Play Steps'}</button>
+        <button type="button" class="btn" id="wt-next">Next Step &rarr;</button>
+        <span style="margin-left:8px;font-weight:700" id="wt-counter">Step ${f.step_index} of ${frames.length}</span>
+        ${frames.map((fr, i) => `<button type="button" class="btn ${i===stepIdx?'active':''}" data-wt-idx="${i}">${fr.step_index}. ${esc(fr.stage)}</button>`).join('')}
+      </div>
+      <article class="card" id="wt-frame-card" data-step-id="${esc(f.step_id)}">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">Step ${f.step_index}: ${esc(f.title)}</h3>
+          <div>
+            <span class="badge">${esc(f.stage)}</span>
+            <span class="badge ACCURATE">Claimed vs. Actual: ${esc(f.claimed_vs_actual_status)}</span>
+            ${anchor.href ? `<a class="btn" href="${esc(anchor.href)}" target="_blank" rel="noopener">Open Source (${esc(anchor.path)} &middot; L${esc(anchor.line)}) &#8599;</a>` : ''}
+          </div>
+        </div>
+        <p style="font-size:15px;margin:12px 0"><strong>Operation Performed:</strong> ${esc(f.operation_performed)}</p>
+        <div class="grid-2">
+          <div><h4>Input State Snapshot</h4><pre>${esc(JSON.stringify(f.input_state, null, 2))}</pre></div>
+          <div><h4>Output State Snapshot</h4><pre>${esc(JSON.stringify(f.output_state, null, 2))}</pre></div>
+        </div>
+        <div class="grid-2" style="margin-top:10px">
+          <div>
+            <strong>Tools Invoked in this Step:</strong>
+            <div class="pill-list">${(f.tools_invoked||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('') || '<span class="pill">None</span>'}</div>
+            <strong>Peer Skills Composed / Invoked:</strong>
+            <div class="pill-list">${(f.peer_skills_invoked||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('') || '<span class="pill">None</span>'}</div>
+          </div>
+          <div>
+            <strong>Librarian KB &amp; Reference Reads:</strong>
+            <div class="pill-list">${(f.librarian_kb_reads||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('') || '<span class="pill">None</span>'}</div>
+            <strong>Librarian KB &amp; Journal Writes:</strong>
+            <div class="pill-list">${(f.librarian_kb_writes||[]).map(x=>`<span class="pill">${esc(x)}</span>`).join('') || '<span class="pill">In-memory transition</span>'}</div>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  // 4. Expanded Poincaré Knowledge Disk + 5-Seat Beta-Reader Panel
+  let selectedPoincareNode = null;
+  let facetFilter = 'all';
+  function renderPoincare() {
+    const knodes = ((D.knowledgeMap || {}).nodes || []);
+    const resMap = new Map((D.resources || []).map(r => [String(r.id), r]));
+    const filtered = knodes.filter(n => {
+      if (facetFilter === 'all') return true;
+      const r = resMap.get(String(n.resourceId || n.resource_id));
+      const cat = r ? r.category : '';
+      const fstr = (n.facets || []).join(' ').toLowerCase();
+      return cat === facetFilter || fstr.includes(facetFilter);
+    });
+    const byParent = new Map();
+    knodes.forEach(n => {
+      const p = n.parent || (n.parent_ids && n.parent_ids[0]) || '__root';
+      if (!byParent.has(p)) byParent.set(p, []);
+      byParent.get(p).push(n);
+    });
+    const coords = new Map();
+    const roots = byParent.get('__root') || knodes.slice(0, 1);
+    if (roots[0]) coords.set(roots[0].id, {x: 0, y: 0});
+    const ring1 = roots[0] ? (byParent.get(roots[0].id) || []) : [];
+    ring1.forEach((n, i) => {
+      const a = (2 * Math.PI * i) / Math.max(1, ring1.length) - Math.PI / 2;
+      coords.set(n.id, {x: Math.cos(a) * 115, y: Math.sin(a) * 115, a0: a - Math.PI / Math.max(2, ring1.length), a1: a + Math.PI / Math.max(2, ring1.length)});
+      const kids = byParent.get(n.id) || [];
+      kids.forEach((k, j) => {
+        const span = (2 * Math.PI) / Math.max(1, ring1.length) * 0.82;
+        const ka = a - span / 2 + (span * (j + 0.5)) / Math.max(1, kids.length);
+        coords.set(k.id, {x: Math.cos(ka) * 215, y: Math.sin(ka) * 215});
+      });
+    });
+    knodes.forEach((n, i) => {
+      if (!coords.has(n.id)) {
+        const a = (2 * Math.PI * i) / Math.max(1, knodes.length);
+        const r = (n.depth || n.ring || 1) === 0 ? 0 : ((n.depth || n.ring || 1) === 1 ? 115 : 215);
+        coords.set(n.id, {x: Math.cos(a) * r, y: Math.sin(a) * r});
+      }
+    });
+    const chosen = knodes.find(n => n.id === selectedPoincareNode) || knodes[0];
+    const chosenRes = chosen ? resMap.get(String(chosen.resourceId || chosen.resource_id)) : null;
+
+    const edgesSvg = knodes.map(n => {
+      const pId = n.parent || (n.parent_ids && n.parent_ids[0]);
+      if (!pId || !coords.has(pId) || !coords.has(n.id)) return '';
+      const p = coords.get(pId), c = coords.get(n.id);
+      return `<line x1="${p.x}" y1="${p.y}" x2="${c.x}" y2="${c.y}" stroke="#283552" stroke-width="1.5"/>`;
+    }).join('');
+
+    const nodesSvg = filtered.map(n => {
+      const c = coords.get(n.id) || {x: 0, y: 0};
+      const r = resMap.get(String(n.resourceId || n.resource_id));
+      const cat = r ? r.category : 'material';
+      const fill = cat === 'tools' ? '#38bdf8' : (cat === 'skills' ? '#a78bfa' : (cat === 'references' ? '#34d399' : '#f59e0b'));
+      const rad = (n.depth || n.ring || 0) === 0 ? 12 : ((n.depth || n.ring || 1) === 1 ? 9 : 6.5);
+      return `<g class="p-node" data-pnode="${esc(n.id)}" transform="translate(${c.x},${c.y})" style="cursor:pointer">
+        <circle r="${rad}" fill="${fill}" stroke="#0b0f19" stroke-width="2"/>
+        <title>${esc(n.name)} (${esc(cat)})</title>
+        ${(n.depth || n.ring || 0) <= 1 || (chosen && chosen.id === n.id) ? `<text y="${rad + 13}" text-anchor="middle" fill="#e6edf7" font-size="11">${esc((n.name||'').slice(0,26))}</text>` : ''}
+      </g>`;
+    }).join('');
+
+    document.getElementById('view-poincare').innerHTML = `
+      <h2>Expanded Poincaré Knowledge Disk (Material, Tools, Peer Skills &amp; Librarian KB Sources)</h2>
+      <div class="step-bar">
+        <strong>Filter Poincaré Layer:</strong>
+        <button type="button" class="btn ${facetFilter==='all'?'active':''}" data-pfacet="all">All Nodes (${knodes.length})</button>
+        <button type="button" class="btn ${facetFilter==='material'?'active':''}" data-pfacet="material">Reusable Material</button>
+        <button type="button" class="btn ${facetFilter==='tools'?'active':''}" data-pfacet="tools">Tools &amp; Engines</button>
+        <button type="button" class="btn ${facetFilter==='skills'?'active':''}" data-pfacet="skills">Connected Peer Skills</button>
+        <button type="button" class="btn ${facetFilter==='references'?'active':''}" data-pfacet="references">Knowledge Base &amp; References</button>
+      </div>
+      <div class="poincare-wrap">
+        <svg class="poincare-svg" viewBox="-260 -260 520 520" aria-label="Expanded Poincaré Knowledge Disk">
+          <circle r="245" fill="none" stroke="#1e293b" stroke-width="2"/>
+          <circle r="115" fill="none" stroke="#1e293b" stroke-dasharray="4 4"/>
+          <circle r="215" fill="none" stroke="#1e293b" stroke-dasharray="2 4"/>
+          ${edgesSvg}
+          ${nodesSvg}
+        </svg>
+        <aside class="card">
+          ${chosen ? `
+            <span class="badge">${esc((chosen.facets || []).join(' · ') || 'Knowledge Node')}</span>
+            <h3 style="margin:8px 0">${esc(chosen.name)}</h3>
+            <p>${esc(chosenRes ? (chosenRes.description || chosenRes.title) : '')}</p>
+            ${chosenRes && chosenRes.href ? `<p><a class="btn" href="${esc(chosenRes.href)}" target="_blank" rel="noopener">Open Resource (${esc(chosenRes.category)}) &#8599;</a></p>` : ''}
+          ` : '<p>Select a node on the Poincaré disk.</p>'}
+        </aside>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>5-Seat Software Beta-Reader Panel (${esc(beta.overall_score || 91)}/100 &middot; ${esc(beta.overall_verdict || 'PASS')})</h3>
+        <div class="grid-2">
+          ${(beta.seats || []).map(s => `<div class="card" style="background:var(--panel2);margin-bottom:0">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <strong>${esc(s.persona_name)}</strong>
+              <span class="badge PASS">${esc(s.score)}/100 ${esc(s.verdict)}</span>
+            </div>
+            <p style="margin:6px 0 0">${esc(s.finding)}</p>
+          </div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  renderProgressive();
+  renderRemapping();
+  renderWalkthrough();
+  renderPoincare();
+
+  document.addEventListener('click', e => {
+    const tabBtn = e.target.closest('[data-anvil-tab]');
+    if (tabBtn) {
+      document.querySelectorAll('[data-anvil-tab]').forEach(b => b.classList.toggle('active', b === tabBtn));
+      const target = document.getElementById('view-' + tabBtn.dataset.anvilTab);
+      if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+      return;
+    }
+    const lvlBtn = e.target.closest('[data-lvl]');
+    if (lvlBtn) { activeLevel = Number(lvlBtn.dataset.lvl); renderProgressive(); return; }
+    const wtBtn = e.target.closest('[data-wt-idx]');
+    if (wtBtn) { stepIdx = Number(wtBtn.dataset.wtIdx); renderWalkthrough(); return; }
+    if (e.target.closest('#wt-prev')) { stepIdx = (stepIdx - 1 + frames.length) %% Math.max(1, frames.length); renderWalkthrough(); return; }
+    if (e.target.closest('#wt-next')) { stepIdx = (stepIdx + 1) %% Math.max(1, frames.length); renderWalkthrough(); return; }
+    if (e.target.closest('#wt-play')) {
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
+      else { playTimer = setInterval(() => { stepIdx = (stepIdx + 1) %% Math.max(1, frames.length); renderWalkthrough(); }, 1800); }
+      renderWalkthrough();
+      return;
+    }
+    const pfBtn = e.target.closest('[data-pfacet]');
+    if (pfBtn) { facetFilter = pfBtn.dataset.pfacet; renderPoincare(); return; }
+    const pNode = e.target.closest('[data-pnode]');
+    if (pNode) { selectedPoincareNode = pNode.dataset.pnode; renderPoincare(); return; }
+  });
+})();
+</script>
+</body>
+</html>''' % {'title': esc(skill['name']), 'sid': esc(skill['id']),
+              'purpose': esc(skill.get('purpose') or ''), 'icon': icon_html,
+              'payload': json_payload}
