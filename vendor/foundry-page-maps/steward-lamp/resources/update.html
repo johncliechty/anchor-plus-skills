@@ -1,0 +1,310 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>The existing update door · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="update" data-anchor-id="a-verbs-verbUpdate">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>The existing update door</h1>
+<p class="intro">verbUpdate applies permitted narrative and Strip updates; managed wait is protected. Never hand-edit the event fold.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.626705+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/verb-bodies.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 6123e3295f9ac17a2def6608b7d028e1a3db0e80584738df1b5ff9d3e976b087</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\verb-bodies.mjs · lines 884–1181</p><pre>export function verbUpdate(opts = {}) {
+  const verb_name = opts.verb_name ?? &#x27;update&#x27;;
+  const project_path = resolveProjectPath({
+    project: opts.project,
+    cwd: opts.cwd,
+  });
+  const surfaces = opts.surfaces ?? loadProjectSurfaces(project_path);
+  const lifecycle = loadProjectRoadmap(project_path);
+  const managed = lifecycle.ok &amp;&amp; lifecycle.roadmap?.roadmap_events?.some(e=&gt;e.kind===&#x27;refinement_update&#x27;);
+  if(managed &amp;&amp; [opts.face_patch,opts.strip_tip,opts.strip_in_place_patch].some(p=&gt;p &amp;&amp;
+      (Object.hasOwn(p,&#x27;human_wait&#x27;) || Object.hasOwn(p,&#x27;pending_request&#x27;) || Object.hasOwn(p,&#x27;wait_ref&#x27;)))) {
+    return {ok:false,error:&#x27;managed-wait-event-owned&#x27;,message:&#x27;Use refinement-update; a stamp cannot change managed human wait.&#x27;};
+  }
+  // W0 (2026-09-28): a wait&#x27;s subject is a typed reference or &#x27;none&#x27; — never free prose
+  const wait_ref_in = opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27; ? opts.strip_tip.wait_ref : undefined;
+  if (wait_ref_in !== undefined &amp;&amp; !isWaitRef(wait_ref_in)) {
+    return { ok: false, error: &#x27;bad_wait_ref&#x27;, wait_ref: wait_ref_in, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, project_path,
+             message: &#x27;--wait-ref must be step:&lt;id&gt;, deliverable:&lt;row&gt;@&lt;version&gt;, decision:&lt;id&gt;, or none.&#x27; };
+  }
+  // W4 (2026-09-28): a repair act is a roadmap act and travels alone
+  if (opts.repair_propose || opts.repair_resolve) {
+    return repairAct(opts, project_path, lifecycle, verb_name);
+  }
+
+  if (!surfaces.strip &amp;&amp; !surfaces.face) {
+    return {
+      ok: false,
+      error: &#x27;no_face_or_strip&#x27;,
+      spelling: SPELLING,
+      verb: verb_name,
+      primary: &#x27;update&#x27;,
+      project_path,
+      message: &#x27;update/heartbeat needs Face or Strip&#x27;,
+    };
+  }
+
+  // W3 (2026-09-28): --horizon derives the line from the plan — the focus, then what follows it — and writes it as a
+  // stamped instrument (the roadmap&#x27;s last seq and the focus it derived from). A record whose stamp already covers
+  // the last event with the same focus is unchanged: no write. The focus read is the strip&#x27;s CURRENT one, so a focus
+  // change he made is honoured, never overridden. Deterministic; no model.
+  let horizon = null;
+  if (opts.horizon) {
+    const proj = lifecycle.ok &amp;&amp; Array.isArray(lifecycle.roadmap?.roadmap_projection) ? lifecycle.roadmap.roadmap_projection : [];
+    const evs = lifecycle.ok &amp;&amp; Array.isArray(lifecycle.roadmap?.roadmap_events) ? lifecycle.roadmap.roadmap_events : [];
+    const lastEv = evs.length ? evs[evs.length - 1] : null;
+    const focusId = opts.current_step_id ?? surfaces.strip?.current_step_id ?? null;
+    horizon = deriveHorizon({ projection: proj, current_step_id: focusId, n: 3, last_event: lastEv, reason: opts.horizon_reason });
+    if (!horizon.ok) {
+      return { ok: false, error: &#x27;no_horizon&#x27;, reason: horizon.reason, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, project_path,
+               message: `No horizon can be derived: ${horizon.reason}.` };
+    }
+    const lastSeq = lastEv &amp;&amp; typeof lastEv.seq === &#x27;number&#x27; ? lastEv.seq : 0;
+    const stampedSeq = surfaces.strip?.horizon_source_seq;
+    const whyOut = horizon.why ?? (surfaces.strip?.why_next ?? &#x27;&#x27;);
+    const otherFields = Object.keys(opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27; ? opts.strip_tip : {}).length
+      || Object.keys(opts.face_patch ?? {}).length || !!opts.current_step_id || !!opts.leave;
+    // unchanged (no write) only when the stamp covers the last event with the same focus AND the line and why on
+    // the strip already equal the derivation AND the call changes nothing else — a later edit of the line by
+    // another update clears the stamp (below), so it can never freeze an old line (Grok W3)
+    if (!opts.force &amp;&amp; !otherFields &amp;&amp; typeof stampedSeq === &#x27;number&#x27; &amp;&amp; stampedSeq &gt;= lastSeq
+        &amp;&amp; surfaces.strip?.horizon_focus === horizon.focus
+        &amp;&amp; surfaces.strip?.next_recommended === horizon.line &amp;&amp; String(surfaces.strip?.why_next ?? &#x27;&#x27;) === String(whyOut)) {
+      return { ok: true, unchanged: true, horizon, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, project_path };
+    }
+    opts = { ...opts, strip_tip: { ...(opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27; ? opts.strip_tip : {}),
+      next_recommended: horizon.line, why_next: whyOut, horizon_source_seq: lastSeq, horizon_focus: horizon.focus, horizon_steps: horizon.steps } };
+  } else if (opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27;
+             &amp;&amp; (opts.strip_tip.next_recommended != null || opts.strip_tip.why_next != null || (opts.face_patch &amp;&amp; opts.face_patch.why_next != null))) {
+    // a line written by hand (the turn&#x27;s, his) is not the derived one: the stamp clears so the next --horizon
+    // re-derives rather than reporting &quot;unchanged&quot; over it
+    opts = { ...opts, strip_tip: { ...opts.strip_tip, horizon_source_seq: null, horizon_focus: null } };
+  }
+  // the strip&#x27;s next / why / wait are capped by words (the lead line must fit)
+  const face_patch0 = opts.face_patch ?? {};
+  const tip0 = opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27; ? opts.strip_tip : {};
+  for (const [field, value] of [[&#x27;next_recommended&#x27;, tip0.next_recommended], [&#x27;why_next&#x27;, tip0.why_next ?? face_patch0.why_next],
+                                [&#x27;human_wait&#x27;, tip0.human_wait ?? face_patch0.human_wait]]) {
+    const over = overCap(field, value);
+    if (over) {
+      return { ok: false, error: &#x27;over_cap&#x27;, ...over, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, project_path,
+               message: `${field} is ${over.words} words; the cap is ${over.cap}. Say it shorter.` };
+    }
+  }
+  // --current-step pins the step that follows; a pin needs a next and a why
+  const pin_id = typeof opts.current_step_id === &#x27;string&#x27; &amp;&amp; opts.current_step_id.trim() ? opts.current_step_id.trim() : null;
+  let pin_steps = null;
+  if (pin_id) {
+    pin_steps = lifecycle.ok &amp;&amp; Array.isArray(lifecycle.roadmap?.roadmap_projection) ? lifecycle.roadmap.roadmap_projection : [];
+    if (!pin_steps.some((st) =&gt; st &amp;&amp; st.id === pin_id)) {
+      return { ok: false, error: &#x27;unknown_step&#x27;, step_id: pin_id, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, project_path,
+               message: `--current-step ${pin_id}: no such step in the roadmap.` };
+    }
+    const missing = missingSpine(surfaces.strip, { next_recommended: tip0.next_recommended, why_next: tip0.why_next ?? face_patch0.why_next });
+    if (missing.length) {
+      return { ok: false, error: &#x27;spine_required&#x27;, missing, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, project_path,
+               message: &#x27;A pin needs a next and a why: pass --next-recommended and --strip-why-next (or have them on the strip).&#x27; };
+    }
+  }
+
+  const prior_as_of = surfaces.strip?.as_of ?? null;
+  const prior_instruments = Array.isArray(surfaces.strip?.instruments)
+    ? surfaces.strip.instruments.map((e) =&gt; ({ ...e }))
+    : [];
+  const prior_receipts = Array.isArray(surfaces.strip?.receipts)
+    ? surfaces.strip.receipts.map((e) =&gt; ({ ...e }))
+    : [];
+  const prior_instruments_len = prior_instruments.length;
+  const prior_receipts_len = prior_receipts.length;
+
+  // Reject any attempt to silently rewrite Strip clocks in place
+  if (opts.strip_in_place_patch &amp;&amp; Object.keys(opts.strip_in_place_patch).length) {
+    const rejected = mutateStripInPlace(surfaces.strip, opts.strip_in_place_patch);
+    return {
+      ...rejected,
+      spelling: SPELLING,
+      verb: verb_name,
+      primary: &#x27;update&#x27;,
+      project_path,
+    };
+  }
+
+  const face_patch = opts.face_patch ?? {};
+  const face_result =
+    Object.keys(face_patch).length &gt; 0
+      ? rewriteFaceNarrative(surfaces.face?.narrative ?? {}, face_patch)
+      : {
+          ok: true,
+          authority: &#x27;face_human_narrative&#x27;,
+          narrative: surfaces.face?.narrative ?? {},
+          rewritten: [],
+        };
+
+  let strip = surfaces.strip ? { ...surfaces.strip } : null;
+  let strip_append = null;
+  let receipt_append = null;
+
+  // W0: a bare `--leave` records where he left and moves no clock — no instrument, one receipt
+  const leave_only = !!opts.leave &amp;&amp; !Object.keys(face_patch).length &amp;&amp; !pin_id
+    &amp;&amp; !(opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27; &amp;&amp; Object.keys(opts.strip_tip).length);
+  if (strip &amp;&amp; opts.leave) {
+    const events = lifecycle.ok &amp;&amp; Array.isArray(lifecycle.roadmap?.roadmap_events) ? lifecycle.roadmap.roadmap_events : [];
+    const last = events.length ? events[events.length - 1] : null;
+    // the deliverable version he was on: copied ONLY when the last event already carries one (a refinement
+    // event&#x27;s presentation), never invented (Grok W0)
+    const op = last &amp;&amp; last.kind === &#x27;refinement_update&#x27; &amp;&amp; last.operation &amp;&amp; typeof last.operation === &#x27;object&#x27; ? last.operation : null;
+    const presentation = op ? (op.presentation_id ?? op.base_presentation_id ?? null) : null;
+    const receipt = {
+      schema: RECEIPT_SCHEMA_ID,
+      kind: &#x27;leave&#x27;,
+      as_of: opts.as_of ?? todayIso(),
+      at: typeof opts.leave_at === &#x27;string&#x27; &amp;&amp; opts.leave_at.trim() ? opts.leave_at.trim() : new Date().toISOString(),
+      current_step_id: strip.current_step_id ?? null,
+      last_event_seq: last?.seq ?? null,
+      last_event_at: last?.at ?? null,
+      last_event_kind: last?.kind ?? null,
+      last_event_step_id: last?.step_id ?? op?.step_id ?? null,
+      presentation_id: presentation,
+      active_effort: strip.active_effort ?? null,
+      wait_ref: strip.wait_ref ?? null,
+      human_wait: strip.human_wait ?? &#x27;none&#x27;,
+    };
+    const rec = appendStripReceipt(strip, receipt, { apply_to_projection: false });
+    if (!rec.ok) {
+      return { ok: false, error: rec.error, spelling: SPELLING, verb: verb_name, primary: &#x27;update&#x27;, message: &#x27;Leave receipt append failed&#x27; };
+    }
+    strip = rec.strip;
+    receipt_append = receipt;
+  }
+
+  if (strip &amp;&amp; !leave_only) {
+    const instrument = {
+      _kind: &#x27;instrument&#x27;,
+      kind: verb_name === &#x27;heartbeat&#x27; ? &#x27;heartbeat&#x27; : (horizon ? &#x27;horizon&#x27; : &#x27;update&#x27;),
+      as_of: opts.as_of ?? todayIso(),
+      source: horizon ? &#x27;verb_update:horizon&#x27; : &#x27;verb_update&#x27;,
+      ...(horizon ? { derived: true } : {}),
+      ...(opts.strip_tip &amp;&amp; typeof opts.strip_tip === &#x27;object&#x27; ? opts.strip_tip : {}),
+    };
+    // Map face active_effort / human_wait into strip tip when provided
+    if (face_patch.active_effort != null) instrument.active_effort = face_patch.active_effort;
+    if (face_patch.human_wait != null) instrument.human_wait = face_patch.human_wait;
+    if (face_patch.why_next != null &amp;&amp; instrument.why_next == null) {
+      instrument.why_next = face_patch.why_next;
+    }
+    if (pin_id) instrument.current_step_id = pin_id;
+
+    const appended = appendStripInstrument(strip, instrument, { apply_to_projection: true });
+    if (!appended.ok) {
+      return {
+        ok: false,
+        error: appended.error,
+        spelling: SPELLING,
+        verb: verb_name,
+        primary: &#x27;update&#x27;,
+        message: &#x27;Strip instrument append failed&#x27;,
+      };
+    }
+    strip = appended.strip;
+    strip_append = instrument;
+
+    // Heartbeat also leaves a structured receipt
+    if (verb_name === &#x27;heartbeat&#x27; || opts.append_receipt) {
+      const receipt = {
+        schema: RECEIPT_SCHEMA_ID,
+        kind: &#x27;heartbeat&#x27;,
+        as_of: instrument.as_of,
+        active_effort: strip.active_effort ?? null,
+        why_next: strip.why_next ?? null,
+        human_wait: strip.human_wait ?? &#x27;none&#x27;,
+        uncertainty_flags: Array.isArray(strip.uncertainty_flags)
+          ? [...strip.uncertainty_flags]
+          : [],
+      };
+      const rec = appendStripReceipt(strip, receipt, { apply_to_projection: false });
+      if (rec.ok) {
+        strip = rec.strip;
+        receipt_append = receipt;
+      }
+    }
+  }
+
+  // Prove prior history clocks were not rewritten: prior entries deep-equal prefix
+  const history_intact =
+    !strip ||
+    (Array.isArray(strip.instruments) &amp;&amp;
+      prior_instruments.every((e, i) =&gt; stableEqual(strip.instruments[i], e)) &amp;&amp;
+      prior_receipts.every((e, i) =&gt; stableEqual(strip.receipts[i], e)));
+
+  const persist = opts.persist !== false &amp;&amp; !opts.dry_run;
+  const written = { face: false, strip: false };
+  if (persist &amp;&amp; !opts.surfaces) {
+    if (face_result.rewritten.length &amp;&amp; surfaces.face_path) {
+      writeFaceNarrative(surfaces.face_path, face_result.narrative, surfaces.face?.raw);
+      written.face = true;
+    } else if (face_result.rewritten.length) {
+      const facePath = path.join(project_path, FACE_FILE_NAME);
+      writeFaceNarrative(facePath, face_result.narrative, surfaces.face?.raw);
+      written.face = true;
+    }
+    if (strip &amp;&amp; surfaces.strip_source === &#x27;strip.json&#x27;) {
+      const stripPath = surfaces.strip_path ?? path.join(project_path, STRIP_FILE_NAME);
+      // Atomic: this is the append-only receipt ledger, and the bridge caller
+      // can be KILLED on timeout — a truncated write here loses receipts.
+      writeFileAtomicSync(stripPath, `${JSON.stringify(strip, null, 2)}\n`);
+      written.strip = true;
+    }
+    // the same call pins the roadmap: navigation.current on the step that follows, off the rest
+    if (pin_id) {
+      written.pinned = pin_id;
+      written.unpinned = [];
+      // a step without a course navigation is pinned by the strip alone (the reader&#x27;s current_step_id comes first)
+      for (const st of pin_steps) {
+        const nav = st.navigation &amp;&amp; typeof st.navigation === &#x27;object&#x27; ? st.navigation : null;
+        const isTarget = st.id === pin_id;
+        if (!nav) continue;
+        if (!isTarget &amp;&amp; nav.current !== true) continue;
+        if (isTarget &amp;&amp; nav.current === true) continue;
+        const res = appendRoadmapEventThroughSpine(project_path,
+          { kind: &#x27;step_set&#x27;, step_id: st.id, fields: { navigation: { ...nav, current: isTarget } } }, { skip_index: true });
+        if (!res.ok) return { ...res, verb: verb_name, primary: &#x27;update&#x27;, project_path, pinned: false };
+        if (!isTarget) written.unpinned.push(st.id);
+      }
+    }
+    // TW2 precompute hook: brief cache is a declared projection (zero write
+    // authority) refreshed at update/heartbeat time so the packet opens with
+    // zero further gathering. Opt-in via --precompute-brief.
+    if (opts.precompute_brief) {
+      precomputeBriefCache(project_path);
+      written.brief_cache = true;
+    }
+  }
+
+  return {
+    ok: true,
+    spelling: SPELLING,
+    verb: verb_name,
+    primary: &#x27;update&#x27;,
+    project_path,
+    authority: {
+      face: &#x27;human_narrative_rewrite&#x27;,
+      strip: &#x27;append_only&#x27;,
+    },
+    face: face_result,
+    strip,
+    strip_append,
+    receipt_append,
+    prior_as_of,
+    prior_instruments_length: prior_instruments_len,
+    prior_receipts_length: prior_receipts_len,
+    instruments_length: strip?.instruments?.length ?? 0,
+    receipts_length: strip?.receipts?.length ?? 0,
+    history_intact,
+    strip_history_rewritten: !history_intact,
+    persisted: written,
+    dry_run: Boolean(opts.dry_run) || opts.persist === false,
+    message: &#x27;Face narrative updated where patched; Strip history append-only&#x27;,
+  };
+}</pre>
+<p><a class="button" href="../source-pages/verbs.html#L884">Open numbered source</a>
+<a href="../sources/verbs.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/cli">Alternate entry: closed Node CLI</a> · <a target="_top" href="../index.html#process/writers">Write through the existing doors</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">6123e3295f9ac17a2def6608b7d028e1a3db0e80584738df1b5ff9d3e976b087</span></p><p>Excerpt hash: <span class="path">e42bf9d74a122dd43581830264773da78f18b5d789ad2a45298a692163c20e8b</span></p></details></article></main></body></html>

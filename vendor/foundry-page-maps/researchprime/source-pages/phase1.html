@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>phase1 · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>phase1</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\phase1.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 d9d535bfbf2dce32656f80a8642a60d507507ae8a043f13997b787b67a3c4448</p></details>
+<p><a href="../sources/phase1.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/phase1.mjs — Wave 4 Phase-1 seam: run the stakes adjudication + Oranges foresight and emit</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> // ONE persisted Phase-1 receipt (IMPLEMENTATION-PLAN Wave 4 done-when: &quot;Phase-1 emits a persisted</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // stakes vector → governor tier, and an Oranges receipt&quot;).</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> //</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // This is the seam the engine (Wave 5+) calls before the verification loop: it adjudicates the</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // declared stakes into a governor tier (which scales the loop) and runs foresight to re-aim the</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // research plan, then PERSISTS both as a single durable receipt so the run is replayable and</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // reviewer-checkable. Persistence is additive: the receipt embeds the RAW declared stakes vector</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // verbatim (`receipt.stakes.raw`), so a consumer that only knows the declared axes still reads them</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> // after the round-trip — no schema break.</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> // The write is atomic (temp file + rename) so a crash mid-write can never leave a torn receipt —</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // the same durability discipline the trio&#x27;s checkpointing uses. The module is otherwise pure:</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> // `runPhase1` is a deterministic function of its input.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> import { fileURLToPath } from &#x27;node:url&#x27;;</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> import { adjudicateStakes } from &#x27;./stakes.mjs&#x27;;</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> import { runForesight } from &#x27;./oranges.mjs&#x27;;</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> export const PHASE1_SCHEMA_VERSION = 1;</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> /**</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>  * Run the Phase-1 seam over one item.</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a>  * @param {{ stakes: object, plan: {branches:object[]} }} item</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a>  *   - `stakes`: the declared stakes vector (see bin/stakes.mjs adjudicateStakes).</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a>  *   - `plan`:   the research plan to re-aim (see bin/oranges.mjs runForesight).</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a>  * @returns {{ schema_version:number, tier:string, stakes:object, foresight:object }}</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a>  */</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> export function runPhase1(item) {</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>   if (!item || typeof item !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>     throw new TypeError(&#x27;runPhase1 requires an item { stakes, plan }&#x27;);</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>   }</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   const stakes = adjudicateStakes(item.stakes ?? {});</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>   const foresight = runForesight(item.plan ?? { branches: [] });</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>   return {</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>     schema_version: PHASE1_SCHEMA_VERSION,</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>     tier: stakes.tier, // the governor tier the loop scales by (projection of the stakes vector)</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>     stakes, // carries `raw` (the verbatim declared vector) + axis_tiers + overrides</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>     foresight, // the Oranges receipt (dropped/reordered + stamp + crit3_satisfied)</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   };</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> }</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> /**</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>  * Persist a Phase-1 receipt durably (atomic temp-file + rename).</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>  * @param {object} receipt a value from runPhase1</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>  * @param {URL|string} file destination</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>  */</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> export function persistPhase1(receipt, file) {</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>   const dest = file instanceof URL ? fileURLToPath(file) : file;</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   const tmp = `${dest}.tmp`;</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>   fs.writeFileSync(tmp, JSON.stringify(receipt, null, 2) + &#x27;\n&#x27;);</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>   fs.renameSync(tmp, dest); // atomic publish — readers never see a torn file</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> }</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> /**</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>  * Load a persisted Phase-1 receipt.</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>  * @param {URL|string} file</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>  * @returns {object} the parsed receipt</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>  */</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> export function loadPhase1(file) {</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>   const src = file instanceof URL ? fileURLToPath(file) : file;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a>   return JSON.parse(fs.readFileSync(src, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> }</span></pre></main></body></html>

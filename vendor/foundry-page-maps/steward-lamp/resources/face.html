@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Face: goal and current effort · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="face" data-anchor-id="a-face-loadProjectSurfaces">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Face: goal and current effort</h1>
+<p class="intro">loadProjectSurfaces reads narrative and Strip clocks; their write authorities differ. A stale pointer does not establish live activity.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.626332+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/face-strip.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: fda6ab9bc887237afbf12ee277c20942ceac83f7521d6a3f50df44d4f9ef7837</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\face-strip.mjs · lines 204–264</p><pre>export function loadProjectSurfaces(projectPath) {
+  const root = path.resolve(projectPath);
+  const stripPath = path.join(root, STRIP_FILE_NAME);
+  const facePath = path.join(root, FACE_FILE_NAME);
+
+  const result = {
+    ok: true,
+    project_path: root,
+    face_path: null,
+    strip_path: null,
+    strip_source: null,
+    face: null,
+    strip: null,
+    face_loaded: false,
+    errors: [],
+  };
+
+  if (fs.existsSync(stripPath) &amp;&amp; fs.statSync(stripPath).isFile()) {
+    try {
+      const raw = fs.readFileSync(stripPath, &#x27;utf8&#x27;);
+      const parsed = parseStrip(raw);
+      if (parsed.ok) {
+        result.strip = parsed.strip;
+        result.strip_path = stripPath;
+        result.strip_source = &#x27;strip.json&#x27;;
+      } else {
+        result.errors.push(parsed);
+      }
+    } catch (e) {
+      result.errors.push({ error: &#x27;strip_read_failed&#x27;, message: String(e?.message ?? e) });
+    }
+  }
+
+  if (fs.existsSync(facePath) &amp;&amp; fs.statSync(facePath).isFile()) {
+    try {
+      const raw = fs.readFileSync(facePath, &#x27;utf8&#x27;);
+      const face = parseFaceDocument(raw);
+      if (face.ok) {
+        result.face = face;
+        result.face_path = facePath;
+        result.face_loaded = true;
+        if (!result.strip &amp;&amp; face.strip_fence) {
+          const parsed = parseStrip(face.strip_fence);
+          if (parsed.ok) {
+            result.strip = parsed.strip;
+            result.strip_source = &#x27;face_fence&#x27;;
+          }
+        }
+      }
+    } catch (e) {
+      result.errors.push({ error: &#x27;face_read_failed&#x27;, message: String(e?.message ?? e) });
+    }
+  }
+
+  if (!result.strip &amp;&amp; !result.face) {
+    result.ok = false;
+    result.error = &#x27;no_face_or_strip&#x27;;
+  }
+
+  return result;
+}</pre>
+<p><a class="button" href="../source-pages/face.html#L204">Open numbered source</a>
+<a href="../sources/face.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/intake">Read the full continuity record</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">fda6ab9bc887237afbf12ee277c20942ceac83f7521d6a3f50df44d4f9ef7837</span></p><p>Excerpt hash: <span class="path">f24f5ec051da6caa5e3fe20d13913b89eb25a8994597446b55a5ffd426590ab5</span></p></details></article></main></body></html>

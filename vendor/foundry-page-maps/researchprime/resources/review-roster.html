@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Reviewer roster and agreement · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="review-roster" data-anchor-id="a012">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Reviewer roster and agreement</h1>
+<p class="intro">The imported Skeptic, Contrarian and Analyst roster, plus the code that tallies agreement.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\crucible\bin\shark-tank.mjs</span><br>Lines 39–60 · frozen source snapshot</p>
+<pre class="excerpt">export const SHARK_ROLES = [
+  { role: &#x27;Skeptic&#x27;, persona: &#x27;Critic&#x27; },
+  { role: &#x27;Contrarian&#x27;, persona: &quot;Devil&#x27;s-Advocate&quot; },
+  { role: &#x27;Analyst&#x27;, persona: &#x27;researchPrime&#x27; },
+];
+
+/** PM&#x27;s 8 critique angles, rotated across Sharks/rounds for diverse pushback. */
+export const PM_CRITIQUE_ANGLES = [
+  &#x27;security&#x27;,
+  &#x27;frustrated-UX&#x27;,
+  &#x27;operator&#x27;,
+  &#x27;skeptical-researcher&#x27;,
+  &#x27;competitor&#x27;,
+  &#x27;bored-investor&#x27;,
+  &#x27;future-maintainer&#x27;,
+  &#x27;steel-man-the-premise&#x27;,
+];
+
+/**
+ * The critique angle a given Shark wears this round. Rotates across BOTH the
+ * Shark index and the round number so the same Shark sees fresh angles over a
+ * multi-round loop and no angle is starved.</pre>
+<div class="actions"><a class="button" href="../source-pages/roster.html#L39">Open numbered source at line 39</a>
+<a class="button secondary" href="../sources/roster.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/panel">Independent verification reviewers</a> · <a target="_top" href="../index.html#process/tally">Agreement, origins and conflicts</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">5797bb62ef6540b2de74aed3d59ff628bc7e0cba97e11367b41fc3af6320eabe</span></p>
+<p>Excerpt SHA-256 <span class="path">df4c55972b8b12b77f6923b4b524747df33d39d6aaaa91478c74ae450fc050f8</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

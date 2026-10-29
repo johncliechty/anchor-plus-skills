@@ -1,8 +1,0 @@
-You are the VERIFIER (cross-model check). Repo: C:\dev\Skill Foundry; build worktree:
-C:\dev\Anchor-zombie. Do NOT trust my claims — reproduce.
-TASK CLAIMED DONE: Live-service wiring for zombie hunter (HANDOFF step 2)
-GATE TO RE-RUN: python -m pytest tests/test_zombie_hunter.py -v
-FILES TO READ (diff vs master): C:\dev\Anchor-zombie\anchor_gui.py C:\dev\Anchor-zombie\job_runner.py C:\dev\Anchor-zombie\pty_manager.py C:\dev\Anchor-zombie\terminal_session.py C:\dev\Anchor-zombie\proc_probe.py
-Return STRICT JSON only:
-{"verdict":"AGREE|DISAGREE","gate_rerun":"<command you ran>","gate_result":"<pass/fail counts>",
- "findings":[{"file":"...","line":0,"issue":"..."}],"notes":"<short>"}

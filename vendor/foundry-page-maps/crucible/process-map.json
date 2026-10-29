@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Crucible execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Crucible)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Crucible context.",
+      "code": {
+        "path": "bin/_steward_redesign_stage1.mjs",
+        "symbol": "import { writeFileSync, mkdirSync } from 'node:fs'"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## North Star (LOCKED \u2014 John, 2026-08-25)"
+      },
+      "resource_ids": [
+        "crucible-mat-skill-md",
+        "crucible-tool-bin-steward-redesign-stage1-mjs"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Crucible never repeats cold-start discovery.",
+      "code": {
+        "path": "bin/_steward_redesign_stage2.mjs",
+        "symbol": "import { writeFileSync, readFileSync, mkdirSync } "
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "crucible-journal-readme",
+        "crucible-journal-0108-parallel-study-matrix-and-",
+        "crucible-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Crucible)",
+      "kind": "model",
+      "role": "Primary Crucible Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Crucible, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "bin/_steward_stage1.mjs",
+        "symbol": "import { writeFileSync } from 'node:fs';"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Crucible"
+      },
+      "resource_ids": [
+        "crucible-tool-bin-steward-redesign-stage1-mjs",
+        "crucible-tool-bin-steward-redesign-stage2-mjs",
+        "crucible-peer-foreman"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "bin/_steward_stage2.mjs",
+        "symbol": "* Crucible Stage 2 launcher \u2014 Anchor steward campa"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## What Crucible is / is NOT"
+      },
+      "resource_ids": [
+        "crucible-peer-foreman",
+        "crucible-peer-researchprime",
+        "crucible-journal-readme"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Crucible deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "bin/self-run.mjs",
+        "symbol": "export async function main(argv = process.argv.slice(2), { e"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## Two guiding principles"
+      },
+      "resource_ids": [
+        "crucible-mat-master-plan-md",
+        "crucible-kb-researchprime-code-rewriting-tools"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Crucible primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Crucible work product + machine run receipt."
+}

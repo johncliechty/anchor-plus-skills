@@ -1,0 +1,16 @@
+{
+  "result": "passed",
+  "pdf": "planning/working-plan/PLAN-review-copy-1.pdf",
+  "pdf_sha256": "51ca14f12fce36ce0d9288c2e336edcfd4e219b176e67cb7f4b81de3b8a4bcb5",
+  "receipt_sha256": "9a8f99f5894b8a6aeb916028764715be246295744b0f1b58ac8b21a48a28ef1a",
+  "registered": true,
+  "names_settled": true,
+  "obsolete_question_in_current_records": false,
+  "reader": "Existing installed Chrome PDF viewer, isolated loopback GET",
+  "scope": "Exact current PDF opened; prior authenticated live dialogue click remains separately preserved. No live service modified.",
+  "pdf_embed": true,
+  "frames": 3,
+  "screenshot": "screenshots/plan-pdf-reader.png",
+  "screenshot_sha256": "d6d32a990e68f26ca8fa163ac78e8f6b96cde8aec3452bbf1d1fd8901b9538da",
+  "prior_live_click_sha256": "686cf3881ce92f8374d5f386806173ec82e6c37a0ef5fb17f7712420769f7cc3"
+}

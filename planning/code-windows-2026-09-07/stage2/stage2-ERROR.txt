@@ -1,7 +1,0 @@
-HaltError: trio seat seat_unavailable: synthesizer:direct:r1
-    at failedSeatError (file:///C:/dev/trio/drivers/index.mjs:542:17)
-    at dispatchWithFailover (file:///C:/dev/trio/drivers/index.mjs:711:26)
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async file:///C:/dev/trio/crucible/bin/enhanced.mjs:261:19
-    at async runOnce (file:///C:/dev/trio/drivers/reliability.mjs:189:16)
-    at async logicalCall (file:///C:/dev/trio/drivers/reliability.mjs:214:19)

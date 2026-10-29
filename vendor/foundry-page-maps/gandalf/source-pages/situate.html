@@ -1,0 +1,219 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>situate · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>situate</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/seam/situate.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 bfca0d88698c3847fee7e911a7ce01572fe6844a2d385046f0aa9b6ed0d529a8</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf advisor — the SITUATE compose SEAM (Wave 3).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // NS2 SITUATE: Gandalf situates the effort in the best-in-class landscape by COMMISSIONING</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // researchPrime &quot;where warranted&quot; — it does NOT re-implement research. This module is the</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // single seam that runs (and provenances) the SITUATE pipeline:</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> //</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> //   S0-abstract → firing gate → commission researchPrime (the bare trio `agent()` seam)</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> //     → structure-map (≥2 relational correspondences, answer-first) → outside-view base rate</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> //</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> // Two honesty invariants are load-bearing here and are enforced at the deterministic gate</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> // (test/harness.mjs `assertSituateScoreCeiling` + `assertCeiling`), label/semantic TRUTH</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> // staying the advisory layer&#x27;s job (PRINCIPLE-D):</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //   • SAME-FAMILY ⇒ NO INDEPENDENT-ORIGIN CREDIT. On a single-family substrate</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //     (cross_model:false / Fable 5), a researchPrime commission is same-family, so it earns</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //     NO independent origin: a SITUATE finding may not SELF-CORROBORATE (cap = CLAIMED), and</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //     unverifiable facts are routed to a researchPrime `needs_verification` handoff.</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> //   • Because the commission is same-family, the resulting elevation&#x27;s tier ceiling is</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> //     PROMISING (the B-ceiling canary; GROUNDED is unreachable without a cross-family refuter).</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> //</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> // PRINCIPLE-D: the live `agent()` spawn is NOT in the gate. `commissionResearchPrime` mints</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> // the typed commission ENVELOPE (the seam&#x27;s deterministic surface); actually dispatching it</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> // to the trio `agent()` seam is the integration point the deterministic gate never executes.</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> //</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> // Public surface:</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> //   SITUATE_KIND                                   — the finding `kind` for a situate leg</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> //   PERSONA_FAMILY                                 — single-family substrate marker (Fable 5)</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> //   FIRING_STAKES_LADDER / MIN_FIRING_STAKES       — firing-gate stakes ordering + floor</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> //   shouldFireSituate(context)                     — firing gate: commission &quot;where warranted&quot;</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> //   abstractEffort(effort)                         — S0: the structural skeleton (abstraction)</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> //   MIN_CORRESPONDENCES                            — structure-map minimum (=2)</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> //   isWellFormedStructureMap(map)                  — ≥2 answer-first relational correspondences</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> //   commissionResearchPrime({question, cross_model, commission_id})  — typed commission envelope</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> //   independentOriginCredit(commission)            — same-family ⇒ false (no independent origin)</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> //   SITUATE_SELF_MAX_RUNG                          — rung cap for a non-independent situate finding</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> //   composeSituate(stages)                         — assemble a provenanced, capped situate finding</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> //   needsVerificationHandoff(finding)              — predicate: carries a researchPrime handoff</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38">38</a> /** The finding `kind` for the SITUATE leg. */</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> export const SITUATE_KIND = &#x27;situate&#x27;;</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> </span>
+<span class="source-line" id="L41"><a href="#L41">41</a> /** The single-family persona substrate (cross_model:false). A commission to a same-family</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>  *  skill earns NO independent-origin credit, which is what caps the SITUATE rung/tier. */</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> export const PERSONA_FAMILY = &#x27;fable-5&#x27;;</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45">45</a> // --- self-contained helpers (the seam imports nothing; harness.mjs imports the seam) ------</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> function isNonEmptyString(v) {</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   return typeof v === &#x27;string&#x27; &amp;&amp; v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> }</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> function isNonEmpty(v) {</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   if (v === undefined || v === null) return false;</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   if (Array.isArray(v)) return v.length &gt; 0;</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   if (typeof v === &#x27;string&#x27;) return v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>   if (typeof v === &#x27;object&#x27;) return Object.keys(v).length &gt; 0;</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   return true; // numbers, booleans</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> }</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> // --- the SITUATE firing gate (&quot;where warranted&quot;) -----------------------------------------</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> /** Stakes ladder for the firing gate (low → high). DISTINCT from the refuter-firing</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>  *  threshold in prereg-constants.json (that gates the Wave-4 refuter, not the commission). */</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> export const FIRING_STAKES_LADDER = [&#x27;low&#x27;, &#x27;medium&#x27;, &#x27;high&#x27;];</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> export const MIN_FIRING_STAKES = &#x27;medium&#x27;;</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63">63</a> /** The SITUATE firing gate (NORTH-STAR clause 2: commission researchPrime &quot;where warranted&quot;).</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>  *  Fires only when ALL hold: a central, load-bearing claim is in play; a plausible</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>  *  better-in-class frame exists; and stakes ≥ medium. Otherwise SITUATE does NOT commission</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>  *  (no spawn, no elevation) — the cheap-default that keeps the per-run spawn cap honest. */</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> export function shouldFireSituate(context) {</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   if (context === null || typeof context !== &#x27;object&#x27;) return false;</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   const { central_load_bearing_claim, better_in_class_frame, stakes } = context;</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>   const stakesIdx = FIRING_STAKES_LADDER.indexOf(stakes);</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   return (</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>     Boolean(central_load_bearing_claim) &amp;&amp;</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>     Boolean(better_in_class_frame) &amp;&amp;</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>     stakesIdx !== -1 &amp;&amp;</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>     stakesIdx &gt;= FIRING_STAKES_LADDER.indexOf(MIN_FIRING_STAKES)</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   );</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> }</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> </span>
+<span class="source-line" id="L79"><a href="#L79">79</a> // --- S0: abstraction ----------------------------------------------------------------------</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> /** S0-abstract: lift the concrete effort to a structural skeleton (the relational shape the</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>  *  structure-map will look for correspondences against). Returns a fresh abstraction record;</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>  *  throws on an empty effort. Kept deliberately thin — the abstraction CONTENT is advisory;</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>  *  the seam guarantees only that S0 ran and produced a populated skeleton. */</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> export function abstractEffort(effort) {</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   if (!isNonEmptyString(effort)) {</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>     throw new Error(&#x27;situate: abstractEffort requires a non-empty effort description&#x27;);</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   }</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>   return { stage: &#x27;S0-abstract&#x27;, skeleton: effort.trim() };</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> }</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> </span>
+<span class="source-line" id="L91"><a href="#L91">91</a> // --- structure-map (≥2 relational correspondences, answer-first) --------------------------</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> /** A structure-map must carry at least this many relational correspondences. */</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> export const MIN_CORRESPONDENCES = 2;</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95">95</a> /** Predicate: is `map` a well-formed structure-map? Requires (a) ANSWER-FIRST key order —</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>  *  the `answer` (the load-bearing correspondence conclusion) precedes the `correspondences`</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>  *  elaboration; (b) ≥ MIN_CORRESPONDENCES correspondences; and (c) each correspondence is</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>  *  RELATIONAL — it maps a source RELATION to a target RELATION (`source_relation` →</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>  *  `target_relation`), not a surface-attribute match. Pure; never throws. */</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> export function isWellFormedStructureMap(map) {</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>   if (map === null || typeof map !== &#x27;object&#x27; || Array.isArray(map)) return false;</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   const keys = Object.keys(map);</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>   const answerIdx = keys.indexOf(&#x27;answer&#x27;);</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   const corrIdx = keys.indexOf(&#x27;correspondences&#x27;);</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   if (answerIdx === -1 || corrIdx === -1) return false;</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   if (answerIdx &gt; corrIdx) return false; // not answer-first</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   if (!isNonEmptyString(map.answer)) return false;</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   const corr = map.correspondences;</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   if (!Array.isArray(corr) || corr.length &lt; MIN_CORRESPONDENCES) return false;</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   return corr.every(</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>     (c) =&gt;</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>       c !== null &amp;&amp;</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>       typeof c === &#x27;object&#x27; &amp;&amp;</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>       !Array.isArray(c) &amp;&amp;</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>       isNonEmptyString(c.source_relation) &amp;&amp;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>       isNonEmptyString(c.target_relation)</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>   );</span>
+<span class="source-line" id="L118"><a href="#L118">118</a> }</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> </span>
+<span class="source-line" id="L120"><a href="#L120">120</a> // --- commission researchPrime (the bare trio `agent()` seam) ------------------------------</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> /** Mint a typed researchPrime commission ENVELOPE. This is the deterministic surface of the</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>  *  bare `agent()` seam: it records WHAT would be dispatched and, crucially, whether the</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>  *  commission earns INDEPENDENT origin. A commission is independent ONLY when it crosses the</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>  *  model family (cross_model:true); on the single-family substrate (cross_model:false) it is</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>  *  same-family and earns no independent origin. `commission_id` is honor-system in</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>  *  Increment 1 (the unforgeable orchestrator-minted ledger is an external, later dependency).</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>  *  Throws on an empty question. */</span>
+<span class="source-line" id="L128"><a href="#L128">128</a> export function commissionResearchPrime({ question, cross_model = false, commission_id = null } = {}) {</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   if (!isNonEmptyString(question)) {</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     throw new Error(&#x27;situate: commissionResearchPrime requires a non-empty question&#x27;);</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   }</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   const independent = cross_model === true;</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   return {</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     skill: &#x27;researchPrime&#x27;,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>     question: question.trim(),</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>     cross_model: Boolean(cross_model),</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     origin_family: PERSONA_FAMILY,</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>     independent_origin: independent,</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>     researchprime_commission_id: commission_id,</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>   };</span>
+<span class="source-line" id="L141"><a href="#L141">141</a> }</span>
+<span class="source-line" id="L142"><a href="#L142">142</a> </span>
+<span class="source-line" id="L143"><a href="#L143">143</a> /** Does `commission` earn independent-origin credit? True iff it explicitly crossed the model</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>  *  family. Same-family (cross_model:false) ⇒ false — the anti-laundering &quot;same-family ⇒ no</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>  *  independent origin&quot; rule, the thing that caps a SITUATE finding&#x27;s rung/tier. Pure. */</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> export function independentOriginCredit(commission) {</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   return commission !== null &amp;&amp; typeof commission === &#x27;object&#x27; &amp;&amp; commission.independent_origin === true;</span>
+<span class="source-line" id="L148"><a href="#L148">148</a> }</span>
+<span class="source-line" id="L149"><a href="#L149">149</a> </span>
+<span class="source-line" id="L150"><a href="#L150">150</a> // --- compose a provenanced, honesty-capped SITUATE finding --------------------------------</span>
+<span class="source-line" id="L151"><a href="#L151">151</a> /** The rung a SITUATE finding may reach on its OWN (same-family) evidence. Without an</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>  *  independent-origin commission it cannot self-corroborate, so it caps at CLAIMED. */</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> export const SITUATE_SELF_MAX_RUNG = &#x27;CLAIMED&#x27;;</span>
+<span class="source-line" id="L154"><a href="#L154">154</a> </span>
+<span class="source-line" id="L155"><a href="#L155">155</a> /** Assemble a SITUATE finding from the pipeline stages, applying the honesty caps:</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>  *  the rung is CORROBORATED only when the commission earned independent origin, else it is</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>  *  capped at SITUATE_SELF_MAX_RUNG (CLAIMED) — NO self-CORROBORATED. When the underlying</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>  *  facts are not verified, a `needs_verification` researchPrime handoff is attached (an</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>  *  unverifiable correspondence is routed out, never asserted as real).</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>  *</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>  *  `reasoning` precedes `verdict` in the returned key order (reasoning-before-verdict). The</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>  *  structure-map and outside-view base rate are validated for well-formedness; throws if the</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>  *  pipeline is incomplete. Returns a FRESH object. */</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> export function composeSituate({</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   id,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>   abstraction,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>   commission,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   structure_map,</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>   outside_view_base_rate,</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   reasoning,</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>   verdict,</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>   facts_verified = false,</span>
+<span class="source-line" id="L173"><a href="#L173">173</a> } = {}) {</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   if (!isNonEmptyString(id)) throw new Error(&#x27;situate: composeSituate requires an id&#x27;);</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   if (!isNonEmpty(abstraction)) throw new Error(&#x27;situate: composeSituate requires an S0 abstraction&#x27;);</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   if (commission === null || typeof commission !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     throw new Error(&#x27;situate: composeSituate requires a researchPrime commission envelope&#x27;);</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>   }</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   if (!isWellFormedStructureMap(structure_map)) {</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     throw new Error(&#x27;situate: composeSituate requires a structure-map with ≥2 answer-first relational correspondences&#x27;);</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>   }</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>   if (!isNonEmpty(outside_view_base_rate)) {</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     throw new Error(&#x27;situate: composeSituate requires an outside-view base rate&#x27;);</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   }</span>
+<span class="source-line" id="L185"><a href="#L185">185</a> </span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   const independent = independentOriginCredit(commission);</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   const verified = facts_verified === true;</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>   // No self-CORROBORATED: only an independent-origin commission lifts the rung above the cap.</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   const rung = independent &amp;&amp; verified ? &#x27;CORROBORATED&#x27; : SITUATE_SELF_MAX_RUNG;</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> </span>
+<span class="source-line" id="L191"><a href="#L191">191</a>   const finding = {</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     id,</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     kind: SITUATE_KIND,</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     rung,</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>     reasoning: isNonEmptyString(reasoning) ? reasoning : `SITUATE: structure-mapped against ${commission.question}.`,</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>     verdict: isNonEmptyString(verdict) ? verdict : structure_map.answer,</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     s0_abstraction: abstraction,</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>     researchprime_commission_id: commission.researchprime_commission_id ?? null,</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>     independent_origin: independent,</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>     structure_map,</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     outside_view_base_rate,</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>     facts_verified: verified,</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   };</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   // Unverifiable facts are routed to a researchPrime verification handoff (never asserted real).</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   if (!verified) {</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>     finding.needs_verification = `route to researchPrime: independently verify the structure-map correspondences and outside-view base rate for &#x27;${id}&#x27; (single-family substrate earns no independent-origin credit)`;</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   }</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>   return finding;</span>
+<span class="source-line" id="L209"><a href="#L209">209</a> }</span>
+<span class="source-line" id="L210"><a href="#L210">210</a> </span>
+<span class="source-line" id="L211"><a href="#L211">211</a> /** Predicate: does `finding` carry a researchPrime `needs_verification` handoff? Pure. */</span>
+<span class="source-line" id="L212"><a href="#L212">212</a> export function needsVerificationHandoff(finding) {</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   return finding !== null &amp;&amp; typeof finding === &#x27;object&#x27; &amp;&amp; isNonEmpty(finding.needs_verification);</span>
+<span class="source-line" id="L214"><a href="#L214">214</a> }</span></pre></main></body></html>

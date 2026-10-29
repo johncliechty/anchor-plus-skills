@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Priority and deadline exception · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="head" data-anchor-id="a-attention-head_act">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Priority and deadline exception</h1>
+<p class="intro">Seat order leads attention. A due lower-tier wait can lead only in the named exception; it does not rewrite priority.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.530988+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/home_attention.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 65b33926f0dd8284cb0117959366e3ed6269e7c55bd3887801dde68822f3e96d</p></aside>
+<p class="path">C:/dev/Anchor/home_attention.py · lines 321–389</p><pre>def head_act(initiatives, facts, today=None):
+    &quot;&quot;&quot;THE HEAD — one act, never a list (W2 of the steward revision, 2026-09-28; the synthesis R2; his answer Q3).
+    The SEATS read first (2026-09-30, his three levels): an ACTIVE initiative — a cockpit, an effort or a desk item
+    he pulled out of its goal — that needs him leads, in his order; then one ON DECK that needs him; the sentence
+    says the date when there is one. Then his tiers: the first Tier-1 part that needs him, in his
+    order (a Tier-1 part that needs him AND is due comes first among them); the one exception, his word (narrowed on
+    Grok&#x27;s W2 read): a Tier-2/3 part that NEEDS him and is due today or overdue — marked as the exception, with its
+    date — earliest date first, then his tier and order; it yields to a Tier-1 part that needs him and is due, and to
+    anything inside the set (an outside deadline while he is deep in the set is W3&#x27;s nudge, not the head). Else the
+    oldest wait across the projects, with its age from the record. ``None`` when nothing needs him and nothing is
+    due.&quot;&quot;&quot;
+    today = today or date.today()
+    inits = sorted([i for i in initiatives or () if isinstance(i, dict)],
+                   key=lambda i: (i.get(&quot;tier&quot;) or 9, int(i.get(&quot;order&quot;) or 0), str(i.get(&quot;name&quot;) or &quot;&quot;)))
+
+    def _act(i, p, kind, **more):
+        parts = [x for x in i.get(&quot;parts&quot;) or () if isinstance(x, dict)]
+        after = next((x for x in parts[parts.index(p) + 1:] if _part_open(x)), None) if p in parts else None
+        a = {&quot;kind&quot;: kind, &quot;tier&quot;: i.get(&quot;tier&quot;), &quot;initiative&quot;: str(i.get(&quot;name&quot;) or &quot;&quot;), &quot;text&quot;: str(p.get(&quot;text&quot;) or &quot;&quot;),
+             &quot;target&quot;: str(p.get(&quot;target&quot;) or &quot;&quot;), &quot;pid&quot;: str(p.get(&quot;pid&quot;) or &quot;&quot;), &quot;href&quot;: str(p.get(&quot;href&quot;) or &quot;&quot;),
+             &quot;date&quot;: str(p.get(&quot;date&quot;) or &quot;&quot;), &quot;then&quot;: str(after.get(&quot;text&quot;) or &quot;&quot;) if after else &quot;&quot;, &quot;age_days&quot;: None,
+             &quot;effort&quot;: &quot;&quot;, &quot;dir&quot;: None,
+             # the seated act (2026-09-30): the initiative&#x27;s own name and what it waits for, said as the sentence says them
+             &quot;part&quot;: str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;&quot;),
+             &quot;what&quot;: _wait_reason(p)}
+        a.update(more)
+        return a
+
+    def _due(p):
+        d = _iso_date(p.get(&quot;date&quot;)) if p.get(&quot;date&quot;) else None
+        return d if (d is not None and d &lt;= today) else None
+
+    def _needs(p):
+        return _part_open(p) and bool(p.get(&quot;needs_you&quot;))
+
+    # the seats read FIRST (2026-09-30): an active initiative that needs him, in his order; then one on deck
+    from high_seat_page import seated
+    for kind in (&quot;active&quot;, &quot;deck&quot;):
+        for g, p in seated(inits, kind):
+            if _needs(p):
+                d = _due(p)
+                return _act(g, p, kind, due=d.isoformat() if d else &quot;&quot;, overdue=bool(d and d &lt; today))
+    # a Tier-1 part that needs him and is due leads everything
+    t1_due = sorted(((_due(p), int(i.get(&quot;order&quot;) or 0), n, i, p) for i in inits if i.get(&quot;tier&quot;) == 1
+                     for n, p in enumerate(i.get(&quot;parts&quot;) or ()) if _needs(p) and _due(p)), key=lambda t: t[:3])
+    if t1_due:
+        _d, _o, _n, i, p = t1_due[0]
+        return _act(i, p, &quot;tier1&quot;)
+    # the exception: a lower-tier part that needs him, due today or overdue — earliest date, then tier and order
+    low = sorted(((_due(p), int(i.get(&quot;tier&quot;)), int(i.get(&quot;order&quot;) or 0), n, i, p)
+                  for i in inits if i.get(&quot;tier&quot;) in (2, 3)
+                  for n, p in enumerate(i.get(&quot;parts&quot;) or ()) if _needs(p) and _due(p)), key=lambda t: t[:4])
+    if low:
+        d, _t, _o, _n, i, p = low[0]
+        return _act(i, p, &quot;exception&quot;, due=d.isoformat(), overdue=d &lt; today)
+    for i in inits:
+        if i.get(&quot;tier&quot;) == 1:
+            for p in i.get(&quot;parts&quot;) or ():
+                if _needs(p):
+                    return _act(i, p, &quot;tier1&quot;)
+    waits = [f for f in facts or () if isinstance(f, dict) and f.get(&quot;needs_you&quot;)]
+    if waits:
+        f = max(waits, key=lambda f: (f.get(&quot;wait_age_days&quot;) if isinstance(f.get(&quot;wait_age_days&quot;), (int, float)) else -1))
+        return {&quot;kind&quot;: &quot;oldest-wait&quot;, &quot;tier&quot;: None, &quot;initiative&quot;: &quot;&quot;, &quot;text&quot;: str(f.get(&quot;needs_you&quot;) or &quot;&quot;),
+                &quot;target&quot;: str(f.get(&quot;name&quot;) or &quot;&quot;), &quot;pid&quot;: str(f.get(&quot;id&quot;) or &quot;&quot;), &quot;href&quot;: str(f.get(&quot;href&quot;) or &quot;&quot;),
+                &quot;date&quot;: &quot;&quot;, &quot;then&quot;: str(f.get(&quot;next&quot;) or &quot;&quot;), &quot;age_days&quot;: f.get(&quot;wait_age_days&quot;),
+                &quot;effort&quot;: str(f.get(&quot;needs_you_effort&quot;) or f.get(&quot;effort&quot;) or &quot;&quot;),
+                &quot;dir&quot;: str(f.get(&quot;needs_you_effort&quot;) or f.get(&quot;effort&quot;) or &quot;&quot;)}
+    return None</pre>
+<p><a class="button" href="../source-pages/attention.html#L321">Open numbered source</a>
+<a href="../sources/attention.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/head">Choose one act and name the exception</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">65b33926f0dd8284cb0117959366e3ed6269e7c55bd3887801dde68822f3e96d</span></p><p>Excerpt hash: <span class="path">5e35f65320a4213198294b232a3126831fedf04f6d81532698099a14569fbc7b</span></p></details></article></main></body></html>

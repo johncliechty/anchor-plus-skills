@@ -1,0 +1,692 @@
+{
+ "schema": "ecgberht-strip-v0",
+ "project_id": "30ffba93f3614ce48aeda6252b74cf42",
+ "face_path": "ECGBERHT.md",
+ "as_of": "2026-10-05",
+ "phase": "planning",
+ "active_effort": "researchPrime and Gandalf drafts are landed and open for separate feedback. Aladdin-Lamp Initial draft is preserved on its coder branch: the final source check failed, so repair and recheck that draft before landing.",
+ "effort_status": "PENDING",
+ "tool_depth_cell": "LITE",
+ "human_wait": "",
+ "capacity": "unknown",
+ "negative_heartbeat": {
+  "no_attention_needed": false,
+  "why": null,
+  "until": null
+ },
+ "anti_starvation_age_days": 0,
+ "grasscatch": [],
+ "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+ "why_next": "Stargazer follows the skill documentation under the approved working plan.",
+ "uncertainty_flags": [],
+ "instruments": [
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "phase": "planning",
+   "tool_depth_cell": "LITE",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "phase": "planning",
+   "tool_depth_cell": "LITE",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "Resume the existing page mockup review before settling the candidate plan.",
+   "why_next": "Organization is complete; mockup feedback remains open and no new build is authorized.",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Organization is complete; mockup feedback remains open and no new build is authorized.",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "why_next": "The existing mockup still needs feedback before the candidate plan can be settled."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or",
+   "horizon_source_seq": 15,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "Review researchPrime purpose and navigation in mockup v7; then inspect its process map.",
+   "why_next": "John resumed mockup feedback; clarity of the first skill screen comes before reviewing map contents.",
+   "horizon_source_seq": null,
+   "horizon_focus": null
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John resumed mockup feedback; clarity of the first skill screen comes before reviewing map contents.",
+   "horizon_source_seq": 17,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Existing mockup v7 is directly openable from Current work after refresh and reopening; its first skill screen is presented for",
+   "horizon_source_seq": 17,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-05",
+   "source": "verb_update",
+   "next_recommended": "Decide on a plain researchPrime introduction; then review process-map contents.",
+   "why_next": "First-screen controls are readable; the technical North Star would benefit from a plain introduction.",
+   "horizon_source_seq": null,
+   "horizon_focus": null
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "First-screen controls are readable; the technical North Star would benefit from a plain introduction.",
+   "horizon_source_seq": 18,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-05",
+   "source": "verb_update",
+   "next_recommended": "Prepare researchPrime library and maps; integrate when the Anchor repository is free.",
+   "why_next": "John authorized this sequence; another Anchor job blocks integration but independent researchPrime preparation can proceed.",
+   "horizon_source_seq": null,
+   "horizon_focus": null
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John authorized this sequence; another Anchor job blocks integration but independent researchPrime preparation can proceed.",
+   "horizon_source_seq": 18,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "John authorized this sequence; another Anchor job blocks integration but independent researchPrime preparation can proceed.",
+   "horizon_source_seq": 26,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is",
+   "horizon_source_seq": 33,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ],
+   "current_step_id": "gwl-walk-researchprime"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is",
+   "horizon_source_seq": 34,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an",
+   "horizon_source_seq": 40,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ],
+   "current_step_id": "gwl-walk-researchprime"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Anchor code job 20261004-191301-c36b42 finished; 17 targeted walkthrough tests passed. Commit 9392411 remains on its branch because landing is paused",
+   "horizon_source_seq": 42,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ],
+   "active_effort": "Both researchPrime Refinement 1 and Anchor page integration are built and saved on their coder branches. Their targeted checks passed; automatic landing remains paused, so the running Anchor client is unchanged.",
+   "current_step_id": "gwl-page"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Anchor code job 20261004-191301-c36b42 finished; 17 targeted walkthrough tests passed. Commit 9392411 remains on its branch because landing is paused",
+   "horizon_source_seq": 44,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Gandalf - library, knowledge map; then Steward: AI cockpit - Lamp / proposed Tarmac name",
+   "why_next": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance",
+   "horizon_source_seq": 50,
+   "horizon_focus": "gwl-walk-gandalf",
+   "horizon_steps": [
+    "gwl-walk-gandalf",
+    "gwl-walk-steward-lamp"
+   ],
+   "active_effort": "The new Foundry page and researchPrime Refinement 1 are safely landed and render after the restart. Preparing the authorized Gandalf Library and map population job; researchPrime remains open for independent feedback.",
+   "current_step_id": "gwl-walk-gandalf"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Gandalf - library, knowledge map; then Steward: AI cockpit - Lamp / proposed Tarmac name",
+   "why_next": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance",
+   "horizon_source_seq": 52,
+   "horizon_focus": "gwl-walk-gandalf",
+   "horizon_steps": [
+    "gwl-walk-gandalf",
+    "gwl-walk-steward-lamp"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job",
+   "horizon_source_seq": 56,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ],
+   "current_step_id": "gwl-walk-steward-lamp"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job",
+   "horizon_source_seq": 58,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "The three Steward names are settled and the plan PDF is ready. Gandalf is built and checked; populate Lamp next",
+   "horizon_source_seq": 59,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ],
+   "active_effort": "Current plan PDF review copy 1 is available. researchPrime Refinement 1 and Gandalf Initial draft are landed and remain open for separate feedback. Prepare the authorized Aladdin-Lamp walkthrough next.",
+   "current_step_id": "gwl-walk-steward-lamp"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "The three Steward names are settled and the plan PDF is ready. Gandalf is built and checked; populate Lamp next",
+   "horizon_source_seq": 60,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "Stargazer follows the skill documentation under the approved working plan.",
+   "horizon_source_seq": 63,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ],
+   "active_effort": "researchPrime and Gandalf drafts are landed and open for separate feedback. Aladdin-Lamp Initial draft is preserved on its coder branch: the final source check failed, so repair and recheck that draft before landing.",
+   "current_step_id": "gwl-walk-steward-lamp"
+  }
+ ],
+ "receipts": [
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "face_confirm",
+   "as_of": "2026-10-04",
+   "who": "John",
+   "when": "2026-10-04",
+   "note": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T14:57:37Z",
+   "current_step_id": null,
+   "last_event_seq": 14,
+   "last_event_at": "2026-10-04T14:54:54.041Z",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-review",
+   "presentation_id": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "wait_ref": null,
+   "human_wait": "none",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T15:01:57Z",
+   "current_step_id": null,
+   "last_event_seq": 14,
+   "last_event_at": "2026-10-04T14:54:54.041Z",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-review",
+   "presentation_id": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "wait_ref": null,
+   "human_wait": "none",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T20:44:38Z",
+   "current_step_id": null,
+   "last_event_seq": 14,
+   "last_event_at": "2026-10-04T14:54:54.041Z",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-review",
+   "presentation_id": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "wait_ref": null,
+   "human_wait": "none",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-04T20:52:04Z",
+   "source": "engine",
+   "step_id": null,
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0002-authority-pickup.md",
+   "entry_id": "0002-authority-pickup",
+   "summary": "Foundry page and maps pickup - 2026-10-04"
+  },
+  {
+   "at": "2026-10-04T20:53:58Z",
+   "source": "engine",
+   "step_id": null,
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0003-overall-plan-status.md",
+   "entry_id": "0003-overall-plan-status",
+   "summary": "Foundry page and maps: overall plan explained - 2026-10-04"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T20:58:40Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T20:59:41Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T21:00:41Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T21:01:33Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-04T21:05:08Z",
+   "source": "engine",
+   "step_id": null,
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0004-mockup-v7-review-resumed.md",
+   "entry_id": "0004-mockup-v7-review-resumed",
+   "summary": "Foundry mockup v7 review resumed - 2026-10-04"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-05",
+   "at": "2026-10-05T00:37:17Z",
+   "current_step_id": null,
+   "last_event_seq": 17,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-05T01:42:10Z",
+   "source": "engine",
+   "step_id": "gwl-walk-researchprime",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0005-researchprime-refinement-1-handback.md",
+   "entry_id": "0005-researchprime-refinement-1-handback",
+   "summary": "researchPrime Refinement 1 handback - 2026-10-04"
+  },
+  {
+   "at": "2026-10-05T01:46:04Z",
+   "source": "engine",
+   "step_id": "gwl-page",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0006-anchor-foundry-integration-handback.md",
+   "entry_id": "0006-anchor-foundry-integration-handback",
+   "summary": "Anchor Foundry integration handback - 2026-10-04"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-05",
+   "at": "2026-10-05T19:01:08Z",
+   "current_step_id": "gwl-page",
+   "last_event_seq": 44,
+   "last_event_at": "2026-10-05",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-researchprime",
+   "presentation_id": null,
+   "active_effort": "Both researchPrime Refinement 1 and Anchor page integration are built and saved on their coder branches. Their targeted checks passed; automatic landing remains paused, so the running Anchor client is unchanged.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-05T19:15:35Z",
+   "source": "engine",
+   "step_id": "gwl-walk-gandalf",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0007-gandalf-population-after-restart.md",
+   "entry_id": "0007-gandalf-population-after-restart",
+   "summary": "Foundry restarted; Gandalf population resumed - 2026-10-05"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-05",
+   "at": "2026-10-05T19:17:43Z",
+   "current_step_id": "gwl-walk-gandalf",
+   "last_event_seq": 52,
+   "last_event_at": "2026-10-05",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-gandalf",
+   "presentation_id": null,
+   "active_effort": "The new Foundry page and researchPrime Refinement 1 are safely landed and render after the restart. Preparing the authorized Gandalf Library and map population job; researchPrime remains open for independent feedback.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-05T19:55:42Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-lamp",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0009-readable-plan-pdf-review-copy-1.md",
+   "entry_id": "0009-readable-plan-pdf-review-copy-1",
+   "summary": "**Date:** 2026-10-05; Aladdin, Ecgberht/Lamp steward."
+  },
+  {
+   "at": "2026-10-05T23:29:31Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-lamp",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0010-lamp-final-check-and-naming-handback.md",
+   "entry_id": "0010-lamp-final-check-and-naming-handback",
+   "summary": "Lamp final check and naming handback"
+  }
+ ],
+ "horizon_source_seq": 63,
+ "horizon_focus": "gwl-walk-steward-lamp",
+ "current_step_id": "gwl-walk-steward-lamp"
+}

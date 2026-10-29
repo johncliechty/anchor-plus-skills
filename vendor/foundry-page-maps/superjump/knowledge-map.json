@@ -1,0 +1,470 @@
+{
+  "nodes": [
+    {
+      "id": "superjump-root",
+      "name": "Superjump Knowledge & Execution Architecture",
+      "title": "Superjump Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "superjump-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "superjump-root"
+      ],
+      "ring": 1,
+      "resource_id": "superjump-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "superjump-root"
+      ],
+      "ring": 1,
+      "resource_id": "superjump-tool-bin-superjump-run-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "superjump-root"
+      ],
+      "ring": 1,
+      "resource_id": "superjump-peer-jumper",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "superjump-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "superjump-root"
+      ],
+      "ring": 1,
+      "resource_id": "superjump-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-mat-1",
+      "name": "Superjump Agent & Execution Protocol (SKILL.md)",
+      "title": "Superjump Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "superjump-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-mat-2",
+      "name": "Superjump Human Guide (HUMAN.md)",
+      "title": "Superjump Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "superjump-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-mat-3",
+      "name": "Superjump Locked North Star (NORTH-STAR.md)",
+      "title": "Superjump Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "superjump-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-1",
+      "name": "superjump-run.mjs (bin/superjump-run.mjs)",
+      "title": "superjump-run.mjs (bin/superjump-run.mjs)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-tool-bin-superjump-run-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-2",
+      "name": "index.js (index.js)",
+      "title": "index.js (index.js)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-tool-index-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-3",
+      "name": "fit.mjs (fit.mjs)",
+      "title": "fit.mjs (fit.mjs)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-tool-fit-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-4",
+      "name": "gen-page.mjs (planning/crucible-2026-09-14/gen-page.mjs)",
+      "title": "gen-page.mjs (planning/crucible-2026-09-14/gen-page.mjs)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-tool-planning-crucible-2026-09-14-gen-",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-5",
+      "name": "progress.mjs (progress.mjs)",
+      "title": "progress.mjs (progress.mjs)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-tool-progress-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-6",
+      "name": "prompts.mjs (prompts.mjs)",
+      "title": "prompts.mjs (prompts.mjs)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-tool-prompts-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "superjump-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "superjump-leaf-skill-1",
+      "name": "Jumper Fast Ideation Engine",
+      "title": "Jumper Fast Ideation Engine",
+      "parent_ids": [
+        "superjump-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-peer-jumper",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "superjump-leaf-skill-2",
+      "name": "Gandalf Cross-Family Judge",
+      "title": "Gandalf Cross-Family Judge",
+      "parent_ids": [
+        "superjump-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "superjump-leaf-skill-3",
+      "name": "Crucible Execution Planner",
+      "title": "Crucible Execution Planner",
+      "parent_ids": [
+        "superjump-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-peer-crucible",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-1",
+      "name": "Superjump LESSONS.md",
+      "title": "Superjump LESSONS.md",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-2",
+      "name": "Superjump CHANGELOG.md",
+      "title": "Superjump CHANGELOG.md",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-ref-changelog",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-3",
+      "name": "Reference: improvement.md",
+      "title": "Reference: improvement.md",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-ref-improvement",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-4",
+      "name": "Reference: journal-schema.md",
+      "title": "Reference: journal-schema.md",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-ref-journal-schema",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-5",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-6",
+      "name": "Journal: 0018-book1-conflict-spine-v2",
+      "title": "Journal: 0018-book1-conflict-spine-v2",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-journal-0018-book1-conflict-spine-v2",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-7",
+      "name": "Journal: 0017-chapter3-refinement4-provider-outcome",
+      "title": "Journal: 0017-chapter3-refinement4-provider-outcome",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-journal-0017-chapter3-refinement4-prov",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "superjump-leaf-ref-8",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "superjump-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "superjump-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

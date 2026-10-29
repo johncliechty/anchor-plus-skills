@@ -1,3 +1,0 @@
-{"event": "system", "subtype": "init"}
-{"event": "result", "subtype": "error_during_execution"}
-{"status": "unavailable_or_incomplete", "receipt": "grok-release-deployment-2026-09-09.json"}

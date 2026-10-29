@@ -1,0 +1,21 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Clean-fixture tests missed a live failure · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="rollback" data-anchor-id="a-landing-failed">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">References</p><h1>Clean-fixture tests missed a live failure</h1>
+<p class="intro">A refused merge rolled back shared uncommitted work. The later private-index/CAS repair is recorded separately; this map does not reproduce live landing.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="frozen-example"><p><strong>Frozen historical example</strong> · captured <time>2026-10-05T23:34:37.586457+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/journal/2072-landing-rollback-incident.md</p><p>Historical shared-tree rollback incident; not a reproduction of current landing behavior.</p><p class="path">Capture SHA-256: dcb1cd8e7ee2534c31b97768dab05c7b7cba56dc963379fbad913e43f7c234d8</p></aside>
+<p class="path">Foundry page and knowledge maps/steward-lamp/sources/landing-failed.md · lines 1–9</p><pre># Code-job landing rolled back shared uncommitted work - 2026-10-04
+
+**Skill:** Ecgberht (the code-job hand-off from journal 2071), across the Cave, Distribution and Foundry cockpits.
+**Input:** Anchor reflog (failed merges 18:49:34 and 18:59:14 with &quot;updating HEAD&quot;), file times (eight tracked files reset at 18:59), the four cockpits&#x27; code-jobs.json, John: &quot;What happened to the star chart? It seems to have disappeared.&quot;
+**Work:** Traced the rollback; restored the registry (four projects from ids in their own records) and settings; landed the two stuck jobs once the index was clean; froze landing; renamed the running jobs&#x27; branches; restarted on John&#x27;s word; relaunched the Foundry coders from their held branches; notified the other Claude sessions.
+**Output:** Anchor f255c1f (freeze + restored state), merges c2c5c1c and 7933539; relaunched jobs 20261004-191251-2cc7b3 (Skill Foundry) and 20261004-191301-c36b42 (Anchor); journal Anchor/journal/2026-10-04-landing-rollback-incident.md.
+**Result:** The Star Chart, the four projects and his Aladdin persona are back. Another session&#x27;s uncommitted code is lost in source (rescue copies exist). Root cause: landing by `git merge` in a shared, always-dirty working tree (cockpits inside the product repo, runtime state tracked in git).
+**Friction:** My 2071 build tested landing only against clean temp repos; the shared live tree was never in the tests. Grok&#x27;s R1 F2 had flagged aborting merges, not that a refused merge itself resets the tree.
+**Next:** The proposal at planning/delegated-work-2026-10-04/PROPOSAL.md (clash strategy, delegation inside the effort, context hand-off at ~70%), through review, then John&#x27;s word. Host Claude Code (Opus 5.5).</pre>
+<p><a class="button" href="../source-pages/landing-failed.html#L1">Open numbered source</a>
+<a href="../sources/landing-failed.md" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/land">Reconcile in the job tree and check again</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">dcb1cd8e7ee2534c31b97768dab05c7b7cba56dc963379fbad913e43f7c234d8</span></p><p>Excerpt hash: <span class="path">33f0287b289a936f9a6e262bd607ef0b0da87e524206e4ff32b99f29f39a23e6</span></p></details></article></main></body></html>

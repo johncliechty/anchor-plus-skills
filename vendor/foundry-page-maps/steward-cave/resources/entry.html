@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>First action on opening the Cave · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="entry" data-anchor-id="a-gui-render_high_seat_page">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>First action on opening the Cave</h1>
+<p class="intro">The server assembles a portfolio context and renders it without a model call or bridge spawn. Conversation runs separately in an embedded cockpit.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.526345+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/anchor_gui.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: f33f3b26412c413f1b415bb44e39dc63b3e5dc5aef807c4bde5f09f6af0393dd</p></aside>
+<p class="path">C:/dev/Anchor/anchor_gui.py · lines 8324–8336</p><pre>def render_high_seat_page(logged_in=False) -&gt; str:
+    &quot;&quot;&quot;GET /high-seat — the steward&#x27;s portfolio surface (W1b); an honest error page, never a blank. ``logged_in``: the
+    request carried a valid token or the login cookie (W2c-4: the page shows its login box only when it did not).&quot;&quot;&quot;
+    try:
+        import high_seat_page as _hsp
+        with _SlowWatch(&quot;the Cave of Wonders&quot;):
+            ctx = _high_seat_context()
+            ctx[&quot;logged_in&quot;] = bool(logged_in)
+            return _hsp.render_high_seat_html(ctx)
+    except Exception as e:
+        return (&quot;&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body style=\&quot;font-family:system-ui;background:#0b0e14;color:#e6e9ef;padding:24px\&quot;&gt;&quot;
+                &quot;&lt;h1&gt;The High Seat could not render&lt;/h1&gt;&lt;p&gt;%s&lt;/p&gt;&lt;p&gt;&lt;a href=\&quot;/dashboard\&quot; style=\&quot;color:#8ab4f8\&quot;&gt;the dashboard&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;&quot;
+                % html_lib.escape(&quot;%s: %s&quot; % (type(e).__name__, e)))</pre>
+<p><a class="button" href="../source-pages/gui.html#L8324">Open numbered source</a>
+<a href="../sources/gui.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/entry">Open the Cave</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">f33f3b26412c413f1b415bb44e39dc63b3e5dc5aef807c4bde5f09f6af0393dd</span></p><p>Excerpt hash: <span class="path">3d14818eb6ce1af12b7c700afca6152cdb6c6d4fcb24030623a1621c834093eb</span></p></details></article></main></body></html>

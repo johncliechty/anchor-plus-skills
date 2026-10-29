@@ -1,0 +1,66 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Replace only named requirements · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="feedback" data-anchor-id="a-feedback-fold">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Replace only named requirements</h1>
+<p class="intro">Feedback binds its source and base presentation. Supersession names the old requirement and preserves unaffected requirements.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.629994+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/refinement-state.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\refinement-state.mjs · lines 650–703</p><pre>    case &#x27;feedback&#x27;: {
+      const review = elegance(operation.elegance, &#x27;RC6&#x27;);
+      identifier(operation.feedback_id, &#x27;feedback_id&#x27;);
+      demand(!slice.feedback.some(item =&gt; item.id === operation.feedback_id),
+        &#x27;DUPLICATE_FEEDBACK&#x27;, &#x27;Feedback ID already exists.&#x27;);
+      demand(nonempty(operation.source_message), &#x27;FEEDBACK_SOURCE_REQUIRED&#x27;, &#x27;Feedback requires its source message.&#x27;);
+      if (slice.presentations.length &gt; 0 || operation.base_presentation_id != null) {
+        getPresentation(slice, operation.base_presentation_id);
+      }
+      demand(Array.isArray(operation.changes), &#x27;INVALID_REQUIREMENTS&#x27;, &#x27;Feedback changes must be an array.&#x27;);
+      if (currentRound(slice).presentations.length &gt; 0) {
+        slice.round += 1;
+        slice.rounds.push({ index: slice.round, feedback_ids: [], presentations: [] });
+      }
+      const priorRequirements = new Set(Object.keys(slice.requirements));
+      const superseded = new Set();
+      const feedback = {
+        id: operation.feedback_id, source_message: operation.source_message,
+        base_presentation_id: operation.base_presentation_id ?? null,
+        round: slice.round, disposition: &#x27;pending&#x27;, changes: [],
+        at: state.last_event_at, generation: state.generation,
+      };
+      for (const change of operation.changes) {
+        identifier(change?.id, &#x27;requirement id&#x27;);
+        demand(!Object.hasOwn(slice.requirements, change.id),
+          &#x27;REQUIREMENT_EXISTS&#x27;, &#x27;Requirement IDs are immutable; use a new ID and explicit supersedes.&#x27;);
+        demand(nonempty(change.scope) &amp;&amp; nonempty(change.text) &amp;&amp;
+          [&#x27;require&#x27;, &#x27;preserve&#x27;, &#x27;exclude&#x27;].includes(change.directive),
+        &#x27;INVALID_REQUIREMENT&#x27;, &#x27;Each requirement needs scope, text and a supported directive.&#x27;);
+        if (change.supersedes !== undefined) {
+          identifier(change.supersedes, &#x27;supersedes&#x27;);
+          demand(priorRequirements.has(change.supersedes) &amp;&amp; !superseded.has(change.supersedes),
+            &#x27;INVALID_SUPERSESSION&#x27;, &#x27;Supersedes must identify one existing prior requirement, once per feedback.&#x27;);
+          demand(!Object.values(slice.requirements).some(item =&gt;
+            item.supersedes === change.supersedes &amp;&amp; [&#x27;pending&#x27;, &#x27;active&#x27;].includes(item.status)),
+          &#x27;SUPERSESSION_CONFLICT&#x27;, &#x27;An active or unresolved replacement already supersedes that requirement.&#x27;);
+          superseded.add(change.supersedes);
+        }
+        slice.requirements[change.id] = {
+          id: change.id, scope: change.scope, directive: change.directive, text: change.text,
+          ...(change.supersedes !== undefined ? { supersedes: change.supersedes } : {}),
+          feedback_id: feedback.id, source_message: feedback.source_message,
+          round: slice.round, status: &#x27;pending&#x27;,
+        };
+        feedback.changes.push(change.id);
+      }
+      slice.feedback.push(feedback);
+      currentRound(slice).feedback_ids.push(feedback.id);
+      unclose(slice, state.generation, &#x27;new_feedback&#x27;);
+      slice.work_phase = &#x27;revising&#x27;;
+      supersedeRequests(state, slice, &#x27;new_feedback&#x27;);
+      recordElegance(slice, review, operation.action, state);
+      break;
+    }</pre>
+<p><a class="button" href="../source-pages/fold.html#L650">Open numbered source</a>
+<a href="../sources/fold.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/publish">Managed effort: freeze and present</a> · <a target="_top" href="../index.html#process/feedback">Carry cumulative feedback forward</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</span></p><p>Excerpt hash: <span class="path">f874b9474b1894daea0a5cc58d0be1feb2f655188ebee8fe168eda75c709baf6</span></p></details></article></main></body></html>

@@ -1,0 +1,687 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>skill · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>skill</h1>
+<p>instructions · exact captured bytes</p><p class="path">Original: C:/dev/Ecgberht/SKILL.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 a00dcde3f35f9a2ef9629a6f93d45277b07fd8a18dd4fa3601f787a2b7cbe709</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.524058+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/SKILL.md</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: a00dcde3f35f9a2ef9629a6f93d45277b07fd8a18dd4fa3601f787a2b7cbe709</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> ---</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> name: ecgberht</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> description: &gt;</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>   Project and portfolio steward (JARVIS-class). Owns campaign memory (Face), typed</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>   attention heartbeat (Strip), tool-depth judgment via dispatch table, grasscatcher,</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   and next-action ranking. Commissions researchPrime, Crucible, Foreman, Gandalf,</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   Jumper — never reimplements them. Use when John asks &quot;where is this project&quot;,</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   &quot;what next&quot;, &quot;stand up Ecgberht&quot;, portfolio brief, heartbeat, soft-vet, or when</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   opening a project that has ECGBERHT.md / needs campaign continuity.</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> icon: assets/icons/icon.jpg</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> # Project tile = royal steward seal (icon.jpg). Portfolio/main dashboard =</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> # assets/icons/ecgberht-portfolio-high-seat.jpg (empty high seat). See</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> # NEXT-UX-AND-ANCHOR-ORCHESTRATION.md for E9/E10 embed vision.</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> ---</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16">16</a> &lt;!-- ELEGANCE-LAW v2 --&gt;</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> ## The Elegance Law (locked by John — binding on this skill)</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19">19</a> Canonical text: `Skill Foundry/ELEGANCE.md`. Applies to ANY agent running this</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> skill on ANY host. If this block and a longer procedure below disagree, this</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> block wins.</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23">23</a> 1. **Approvals are ≤200 words** — what changes in his world, the recommendation,</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>    the one thing that gets worse. The artifact stays on disk and is named, not</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>    pasted. An approval obtained with a longer block is VOID.</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> 2. **Summaries are ≤150 words** — goal in one line, done / not done, ≤3 findings</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>    ranked by consequence, the single next decision. Never rounds, waves, seats,</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>    stamps, gate counts, or file inventories.</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> 3. **Default to the lightest band, without asking.** A heavier tier requires the</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>    first status line to NAME its trigger: irreversible or externally visible,</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>    inputs unconverged, a prior failure in this exact area, or he asked for it.</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> 4. **Needed-because line.** Any element he did not request carries one line:</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>    &quot;Needed because ___; dropping it costs ___.&quot; No line, no element.</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> 5. **Show a cut.** ONE dry round ends a review loop — never a streak. Every plan</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>    names something it removed; &quot;nothing cut&quot; is said aloud.</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> **THE VERIFICATION LAW** (added 2026-08-15 after its FOURTH recurrence — each of</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> the first three was written into a journal and recurred anyway):</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> </span>
+<span class="source-line" id="L40"><a href="#L40">40</a> 6. **Verify the claim you actually made, on the surface he actually uses.**</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>    &quot;It&#x27;s live / fixed / renders&quot; is a claim about HIS screen. That the server</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>    emits new bytes, that a build exited zero, or that assertions passed are</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>    claims about something else. Render it and look at it.</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> 7. **A symptom reported twice retires the first explanation.** Test the</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>    hypothesis; never repeat it. An explanation that makes his report false</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>    (&quot;it&#x27;s your cache&quot;, &quot;it&#x27;s a data issue&quot;) needs MORE evidence, not less.</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> 8. **Prefer a mechanism to an instruction.** If the same instruction is given</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>    every session, the instruction is the defect — build what removes it.</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> 9. **A correction that lives only in a journal or a memory has not been made.**</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>    Promote it to where it is loaded BEFORE the work starts.</span>
+<span class="source-line" id="L51"><a href="#L51">51</a> </span>
+<span class="source-line" id="L52"><a href="#L52">52</a> **Two laws these serve.** A gate that cannot see what the user sees is not a gate</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> — structure diffs are lints, and must be labelled as lints. And a guardrail is</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> never the whole product of a turn — if enforcement withholds output he already</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> paid for, show it anyway.</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> **Steward-local corollaries (sleep 2026-08-15).** (a) **Test the STEADY STATE,</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> never the first frame** — the chamber painted M1 then deleted it one fetch</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> later for twelve green waves; a surface gate asserts survival after the page</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> settles, not presence at first paint (0083). (b) **Multi-KB PTY writes are</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> chunked and paced** (Anchor 4d152d4: &gt;512 chars ⇒ 256-char chunks @20ms) —</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> one-shot writes fuse characters and mangle the brief (0080). (c) **Status</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> delivery is engine-enforced or it did not happen** — timer-turn chat posts</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> can silently not render; the outbox/mediator path is the ONLY delivery of</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> record, and a decision gate must never wait on a channel that was not</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> verified once with John&#x27;s ack (0081).</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> &lt;!-- ELEGANCE-V2.1 addendum --&gt;</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> **What elegance IS (researchPrime-vetted, 2026-08-15):** the largest result</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> carried by the least machinery its user can actually hold — every element</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> forced by an INDEPENDENT citable need, nothing present the objective does not</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> pay for. Earned by iteration, never by skipping work: as simple as the task</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> allows, no simpler than a single datum permits.</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> </span>
+<span class="source-line" id="L74"><a href="#L74">74</a> **The Rabbit-Catcher (canonical battery: `ELEGANCE.md` Part II, ships with</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> the bundle):** the steering seat runs the full RC battery at PLAN APPROVAL</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> and on any NEW mid-run element; round boundaries ask only RC-6 (&quot;still on the</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> critical path?&quot;). Uncertain ⇒ PARK the element (zero further spend) + one</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> batched line in the next block the user already reads — never silent pursuit,</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> never ad-hoc interruption. Needs and hazards must be independent of their</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> proposer (no self-authored justification records); malleability work is</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> never cut as &quot;unused capability&quot;; guards are judged by RC-G, never by</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> retirement. Verdicts: KEEP / HOLD (with written trigger or budget) / CUT</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> (logged).</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85">85</a> **THE SPEAKING LAW (John, 2026-08-16 — ELEGANCE.md Part III):** every ask,</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> HALT, or summary this skill puts to the user describes the DECISION, never</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> the machinery (a gate ask took FOUR attempts because it kept narrating waves</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> and gates); a few plain sentences carrying the two-three details that matter</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> + where the full detail lives; genuinely complicated content goes in NUMBERED</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> BATCHES, one at a time, each ending &quot;OK so far?&quot;; no seat/stamp/gate</span>
+<span class="source-line" id="L91"><a href="#L91">91</a> vocabulary in the sentence the user must read; every ask ends with a question</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> answerable in one word AND carries a recommendation (what you would choose +</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> one line of why + alternatives when the choice has them + &quot;or tell me</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> something else&quot; — options are a convenience, never a cage). **This is</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> MECHANISM, not manners (2026-08-26):** the cockpit engine injects the full</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> decision shape in its contract and checks every decision turn — a turn that</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> pins a question with no recommendation is sent back once to be re-asked in</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> that shape. The law was written here all along and still drifted in live</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> sessions; a rule nothing checks is a rule that decays.</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> &lt;!-- /ELEGANCE-V2.1 --&gt;</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> &lt;!-- /ELEGANCE-LAW --&gt;</span>
+<span class="source-line" id="L102"><a href="#L102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103">103</a> </span>
+<span class="source-line" id="L104"><a href="#L104">104</a> # Ecgberht — Foundry skill + deterministic engine</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106">106</a> **Spelling:** **Ecgberht** only (never Expert as product name; Egbert/Ecgbert are historical asides only).</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> </span>
+<span class="source-line" id="L108"><a href="#L108">108</a> **North Star (LOCKED — John, 2026-08-25, as written):** Ecgberht keeps durable campaign memory and cheap portfolio attention so a fresh session knows the north star, active effort, human wait, and best next action — commissioning slice tools without becoming them.</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110">110</a> &gt; **Humans:** this file is the agent/engine protocol. Templates live under `templates/`; schemas under `schema/`; fixtures under `fixtures/`; CLI under `bin/ecgberht.mjs`.</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a> ---</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> </span>
+<span class="source-line" id="L114"><a href="#L114">114</a> ## Is / is not</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> </span>
+<span class="source-line" id="L116"><a href="#L116">116</a> | Ecgberht **is** | Ecgberht **is not** |</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> |-----------------|---------------------|</span>
+<span class="source-line" id="L118"><a href="#L118">118</a> | Long-horizon campaign memory (Face) + typed heartbeat (Strip) | A coding agent inventing features mid-build |</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> | Owner of multi-effort roadmap + ranked next | Replacement for Crucible or Foreman |</span>
+<span class="source-line" id="L120"><a href="#L120">120</a> | Chooser of tool depth via dispatch table | Itself a Crucible stage or Foreman wave loop |</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> | Soft-vet + grasscatcher with structured receipts | Shark Tank / full Oranges multi-path |</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> | Compose-only commission of foundry/trio skills | OpenClaw substrate or multi-agent harness |</span>
+<span class="source-line" id="L123"><a href="#L123">123</a> | Subscription seats via Anchor model prefs | Hardcoded product model IDs or raw API-key seat paths |</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> | Portfolio strip-first rank (anti-N-full-read) | Default chat gateway tax on every turn |</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> | Steward of attention across projects | Replacement for Anchor job_runner |</span>
+<span class="source-line" id="L126"><a href="#L126">126</a> </span>
+<span class="source-line" id="L127"><a href="#L127">127</a> **THE READ-BEFORE-PLAN LAW (journal 0084 — owed since 2026-08-14).** Before the</span>
+<span class="source-line" id="L128"><a href="#L128">128</a> steward plans, diagnoses, or proposes ANYTHING about a project, it OPENS ITS OWN</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> CAMPAIGN RECORD for that project: the roadmap, the latest reference-run pointer</span>
+<span class="source-line" id="L130"><a href="#L130">130</a> (e.g. a `*-JOHN-RUN-POINTER.md` under the project&#x27;s planning docs), and the most</span>
+<span class="source-line" id="L131"><a href="#L131">131</a> recent journal entries. Code and git history tell you what the project IS;</span>
+<span class="source-line" id="L132"><a href="#L132">132</a> only the campaign record tells you where the CAMPAIGN stands — 0084&#x27;s steward</span>
+<span class="source-line" id="L133"><a href="#L133">133</a> produced two inverted plans by diagnosing from code while its own record held</span>
+<span class="source-line" id="L134"><a href="#L134">134</a> the answer. **`attention.json` is not campaign memory** — it is a single edge,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> never the story. A plan whose provenance section cannot cite the campaign</span>
+<span class="source-line" id="L136"><a href="#L136">136</a> record it read is planned from the wrong substrate; start over.</span>
+<span class="source-line" id="L137"><a href="#L137">137</a> </span>
+<span class="source-line" id="L138"><a href="#L138">138</a> ---</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140">140</a> ## Closed verb list</span>
+<span class="source-line" id="L141"><a href="#L141">141</a> </span>
+<span class="source-line" id="L142"><a href="#L142">142</a> CLI: `node bin/ecgberht.mjs &lt;verb&gt; [args…]` (package bin: `ecgberht`).</span>
+<span class="source-line" id="L143"><a href="#L143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144">144</a> | Verb | Aliases | Intent (bodies BUILT — engine-enforced; &quot;later waves&quot; line retired 2026-08-25) |</span>
+<span class="source-line" id="L145"><a href="#L145">145</a> |------|---------|--------------------------------------|</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> | `status` | — | Pointer from Strip (+ Face if needed): active effort, human wait, next |</span>
+<span class="source-line" id="L147"><a href="#L147">147</a> | `next` | — | N=1 or portfolio next; strip-first rank + why |</span>
+<span class="source-line" id="L148"><a href="#L148">148</a> | `update` | `heartbeat` | Patch Face narrative; append Strip instruments/receipts. The one door for the strip and the after rule: `--current-step` (the pin) · `--wait-ref` (the wait&#x27;s subject) · `--leave` (the leave receipt) · `--horizon` (the derived line) · `--repair-propose` / `--repair-resolve` (the correction set and his word on it) |</span>
+<span class="source-line" id="L149"><a href="#L149">149</a> | `depth-suggest` | — | Table-driven depth cell (LITE bias; override needs receipt) |</span>
+<span class="source-line" id="L150"><a href="#L150">150</a> | `soft-vet` | `grasscatch` | Park idea with reason + grasscatch/receipt fields |</span>
+<span class="source-line" id="L151"><a href="#L151">151</a> | `receipt-validate` | — | Validate structured receipt; monologue-only invalid |</span>
+<span class="source-line" id="L152"><a href="#L152">152</a> | `roadmap-show` | — | Roadmap projection from append-only events; drift → reject + heal |</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> | `roadmap-propose` | — | Propose step → `step_create` event only (status `proposed`) |</span>
+<span class="source-line" id="L154"><a href="#L154">154</a> | `roadmap-set` | — | Set fields / flip status (receipt required) / bind commission → events only |</span>
+<span class="source-line" id="L155"><a href="#L155">155</a> | `refinement-update` | — | JSON lifecycle operations: cumulative feedback, frozen versions, review and explicit close through the same spine |</span>
+<span class="source-line" id="L156"><a href="#L156">156</a> | `brief` | — | Decision Packet (Q1–Q12 deterministic retrieval; Phase A zero model calls; `seen` receipt delta anchor; cached projection) |</span>
+<span class="source-line" id="L157"><a href="#L157">157</a> | `commission-propose` | — | Steward proposes a commission for a Roadmap step (skill + depth defaults; requires confirm — not a mode picker) |</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> | `commission-confirm` | — | Confirm proposal → job `queued` composing Anchor job_runner; `commission_bind` + Strip append (M2 lifecycle `queued→running→done\|failed\|orphaned\|reaped`; abnormal exit → `commission_abnormal` receipt) |</span>
+<span class="source-line" id="L159"><a href="#L159">159</a> | `seat-hop` | — | Switch seat (chatgpt/claude/gemini/grok) wired to Anchor prefs; `seat_hop` receipt who/when/from→to; non-event — next turn continues from Face/Strip/Roadmap/packet, no re-brief |</span>
+<span class="source-line" id="L160"><a href="#L160">160</a> </span>
+<span class="source-line" id="L161"><a href="#L161">161</a> **Law:** unknown verb → structured refuse (`error: unknown_verb`). No open plugin dispatch. No daemon/listen loop.</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> </span>
+<span class="source-line" id="L163"><a href="#L163">163</a> **Dialogue — CONVERSATIONAL since 2026-08-04.** Talk is routed by `routeUtterance` (`engine/steward-conversation.mjs`), not by a regex table alone:</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> </span>
+<span class="source-line" id="L165"><a href="#L165">165</a> - **Control verbs stay deterministic.** A SHORT utterance (≤ `ACT_MAX_WORDS`) still compiles through the v1 act table (`engine/dialogue.mjs`) — carry on / park that / confirm commission / switch seat. A model never decides to spend or write. A short destructive command (&quot;delete all projects&quot;) still refuses and writes nothing.</span>
+<span class="source-line" id="L166"><a href="#L166">166</a> - **Everything else is a CONVERSATION.** Free-form speech goes to the steward&#x27;s **seat model** with whatever durable context exists: Face when present, roadmap projection, active plan entry, confirmed kickoff, and the open kickoff preview. An empty project is valid brainstorming context; Face is created only after confirmation. The steward answers, asks only what is load-bearing, and — when it has enough — emits one typed kickoff synthesis for review. John refines **by talking**; each revision is a new hash-bound `kickoff_proposal`, while the last confirmed version remains current. The legacy `scaffold_proposal` reader remains for existing campaigns.</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> - **The destructive guard does NOT run on the converse lane.** &quot;Drop that stage&quot; is ordinary editing, and nothing on this lane executes: the seat is read-only and every proposal needs a human hash-bound confirm.</span>
+<span class="source-line" id="L168"><a href="#L168">168</a> - **The Campaign verbs (High Seat W5, 2026-09-26).** Six command-shaped acts, appended after the eleven, compile at any length and are applied by Anchor&#x27;s Campaign writer on the Campaign record only: `move &lt;initiative&gt; to tier n` · `add a part to &lt;initiative&gt;: &lt;text&gt; [due &lt;date&gt;]` · `make &lt;seed&gt; an initiative [in tier n] [under &lt;area&gt;]` · `park &lt;part&gt; until &lt;trigger&gt;` · `unpark &lt;part&gt;` · `what needs me [this week|today]`. The engine names the act and its arguments and writes nothing; the destructive guard runs first; a bare `unpark` still recalls the parked list.</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170">170</a> **Campaign standing rules — 2026-08-25 (promoting the steward&#x27;s OWN journaled laws;</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> Elegance rule 9: a correction that lives only in a journal has not been made).**</span>
+<span class="source-line" id="L172"><a href="#L172">172</a> </span>
+<span class="source-line" id="L173"><a href="#L173">173</a> - **Instructional Python/R are notebook work products.** Explicitly identify scripts meant</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   for a reader to run; do not convert application code indiscriminately. Use the installed</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   Anchor helper `notebook_products.py --root &lt;workspace&gt; --source &lt;relative.py-or.R&gt;</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   --what &lt;title&gt; --step &lt;producing-step&gt;`. It retains the verbatim source, creates an</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>   unexecuted `.ipynb` plus relative companion metadata, and maintains one logical row in</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>   `DELIVERABLES.md`. Deliverables, Plan and Files resolve that row through Anchor&#x27;s built-in</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   notebook route to the exact JupyterLab tab on the Anchor host. No browser-local kernels,</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   `run:` rows, token-bearing URLs or `RUN-*.html` launch pages. Source remains downloadable.</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>   Preserve edited notebooks; request a new revision explicitly when source changes. Persist</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>   and verify the source/notebook/companion/register in MAIN before completing a step or</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>   discarding its worktree. Missing setup is an explicit setup-required result, never a claim</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   of execution. Follow the installed Anchor `docs/notebook-work-products.md` for host setup</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>   and real authenticated-route/kernel-host proof; opening alone does not execute cells.</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   Ship generic helpers/instructions only, never a user&#x27;s projects, tokens or runtime state.</span>
+<span class="source-line" id="L187"><a href="#L187">187</a> - **Status freshness is the whole heartbeat, not one field (John, 2026-09-07: &quot;the status</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>   does not seem to be up to date, why?&quot;; steward journal 0111, Econ 588 journal 0026).** The</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   pane and rail must reflect the current effort, why-next, phase and roadmap. At each</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>   step close or decision, refresh those facts together and record the goal reread.</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>   For managed campaigns, human wait is exclusively the fold&#x27;s `pending_request`</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>   (or explicit none); do not write it through Face, Strip, attention or a stamp.</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>   Managed Done requires explicit current-version acceptance: the close operation or opt-in completion after every required current product is individually accepted.</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>   Legacy unmanaged campaigns retain their existing Face/Strip wait convention.</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>   Read the composed status afterward; a finished effort shown as current is stale.</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> - **Deliverables register (campaign journal 0010).** Every campaign keeps</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>   `DELIVERABLES.md` at its root — one table row (What | Where | Date | Step) per thing a</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   human would open; finals also copied to `deliverables/`. A roadmap step whose</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   done-condition produces a human-facing artifact is NOT done until listed. When</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   John asks &quot;what have we produced / where are the deliverables?&quot;, answer FROM</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   this register — titles, one-liners, paths. The cockpit&#x27;s 📦 tile and goal-bar</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   links read the same file; there is exactly one register. The Step column</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   (optional but PREFER filling it) names the roadmap step that produced the</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   artifact — prefer its stable step ID; legacy hints remain readable — and the cockpit embeds the</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   link under that step in the plan, so the work product sits where the work</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   happened.</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   **Who decides what goes in (John, 2026-08-25):** if John calls something a</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>   deliverable, it goes in — no debate. Clearly human-facing artifacts (a</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>   report, a deck, a final figure, a paper draft) go in proactively without</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>   asking. Borderline items: SUGGEST it in one line (&quot;worth listing X as a</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   deliverable?&quot;) and let him rule. Plan-identified or user-requested intermediate</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   checkpoints belong here with current and history links. Scratch, logs and</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   rerun noise stay out — the register is the short list of things</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>   worth opening, and clutter kills it. Natural deliverables: the REPORTS the</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>   big skills produce (researchPrime, Crucible, Foreman, Gandalf, the foundry</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>   skills) and anything a work-session/terminal produces that John would read.</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   JOURNAL your register calls — when an include/exclude/suggest decision</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>   teaches you something about the boundary, write the refined criterion into</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>   a campaign journal entry so the judgment improves instead of resetting.</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   **One current reading or collection.** Put one prominent START HERE in the</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   existing register. It can name a useful collection with distinct products;</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   an integrated report is appropriate when it helps the requested work, not</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   compulsory for every campaign. Use backticked contained paths in legacy</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>   table cells and stable step IDs. HTML opens in the contained sandboxed</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>   preview, Markdown in the reader, PDF inline; verify the actual link.</span>
+<span class="source-line" id="L226"><a href="#L226">226</a> - **Outstanding reviews survive focus changes (John, 2026-09-15).** Before a</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>   review request, verify the exact version is directly openable in Current work</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>   and review. Keep every independently pending review there across topic, skill</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>   and provider changes; a focus pin is not the review queue. Only John&#x27;s scoped</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   acceptance, deferral, withdrawal or replacement disposes of that review.</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>   Never set `navigation.current:false` merely because conversation moved while</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>   its products still await review. Preserve actual product ownership and the</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>   existing register/lifecycle; do not move unrelated files into the focused</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   step or create another list. In legacy campaigns recover pending review from</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   original instructions without inventing acceptance. Check the actual panel</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   after refresh/reopening, not only file existence or a link in another note.</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   This applies to Chekhov and every other producer. It supersedes journal0127&#x27;s</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   single-current-step corollary, not the useful distinction of one work focus.</span>
+<span class="source-line" id="L239"><a href="#L239">239</a> - **Cumulative refinement within the slice (formal improvement, 2026-09-10).**</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>   Important intermediate foundations have the same loop as final products:</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>   Initial draft, Refinement 1, Refinement 2, and further rounds as requested.</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>   Saves/retries are technical revisions, not new user rounds. Each presented</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>   round freezes its exact product membership and hashes; show current phase,</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>   count and collapsible clickable history under its stable slice. Carry forward</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>   earlier active requirements and working parts; retire superseded choices,</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>   and never restore rejected content without explicit user instruction. At</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>   handback summarize changed, preserved and unresolved; inspect the content</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>   against cumulative directives, not just this round&#x27;s message.</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>   Listing output or passing checks is not human close. Older-version acceptance</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>   never closes newer work. Explicit per-product `accept` with `complete_current:true`</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>   closes the current slice when every declared current member has an applicable</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>   explicit acceptance and the existing close guards pass; no extra approval ceremony.</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>   Ordinary historical `accept` events keep their original semantics. An explicit human close of</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   the current presented candidate with applicable checks and no later work</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>   sets Done. Foundation-dependent work pins the explicitly closed version;</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   reopening it flags affected reconciliation and preserves downstream bytes.</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>   Independent authorized work continues. Apply RC-6 each round; full Rabbit-</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>   Catcher at plan approval or a new element, never for each ordinary save.</span>
+<span class="source-line" id="L259"><a href="#L259">259</a> - **Managed lifecycle command.** Capability-check `refinement-update` through</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>   the existing `bin/ecgberht.mjs` CLI, with `--project` and JSON on stdin.</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   `action: capabilities` identifies `ecgberht-refinement-v1`; `action: read`</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>   reports event-derived state, sequence and projection consistency. Mutations</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>   carry operation_id and expected_seq; use the same ID/payload to reconcile</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>   an interrupted operation, never invent acceptance history. Supported actions</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>   are adopt, open_slice, begin, feedback, resolve_feedback, publish, present,</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>   accept, close, reconcile, view, visual_companion, producer_handoff and resolve_handoff. Use the shared Node writer, not direct</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>   edits to managed PLAN/DELIVERABLES fences or a Python event fold. First adopt</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>   is explicit and preserves unmanaged bytes; unsupported registrars must</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>   refuse managed writes. In managed campaigns the event-derived pending_request</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>   owns human wait; Face/Strip/attention/stamp text cannot override it. Legacy</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>   campaigns retain their existing paths until explicitly adopted.</span>
+<span class="source-line" id="L272"><a href="#L272">272</a> - **Discovery and the selected cockpit layout (September 11).** Before a substantial</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>   new plan, clarify consequential uncertainty one question at a time, with context,</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>   recommendation and what an answer changes. Usually three or four questions suffice;</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>   there is no fixed quota or second-turn deadline. Recover answered questions from</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   durable conversation history. Ask about shared solutions versus group-specific work,</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   individual completion and real prerequisites when relevant. Reuse stable identities</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>   when updating the plan through the existing writer. Anchor keeps the conversation</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>   central, Plan left and Deliverables right. Both use the roadmap&#x27;s domain navigation;</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>   Plan has a check for done work, a white arrow for unfinished work, and a red flag only when something needs attention. Deliverables shows Current work, Approved, then hierarchy.</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>   Set `navigation.current:false` when John defers an item; retain its required place</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>   in the hierarchy and remove that override when work resumes. This changes display,</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>   never acceptance. Import documented pre-cockpit versions before the first managed</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>   handback with `publish.products[].source_history:{iteration,at,source}`; do not invent</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>   past presentations. Preserve their exact files and sourced ordinal labels.</span>
+<span class="source-line" id="L286"><a href="#L286">286</a> - **Approved outputs and useful viewing.** `read` returns `approved_products` and</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>   `current_approvals`. New presentations preserve product-specific requirement context;</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>   scope a change to an exact declared product ID when it affects only that product.</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>   Other scope labels remain global. An unchanged accepted sibling stays current when</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   only another product changes; unknown legacy applicability remains conservative.</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>   `read` also returns</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>   `finished_projection`. The existing writer derives the physical `Finished Deliverables`</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>   folder from explicit acceptance history; a newer draft does not replace its accepted</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>   predecessor. Repair an interrupted projection with `action:repair`; never infer approval</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>   from directory contents or overwrite an edited generated file. For a PowerPoint, bind</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>   its same-version PDF using `visual_companion`, `step_id`, `revision_id`, `source_hash`,</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>   `preview_source_path`, optional `preview_hash`, and a concrete `evidence` source. Verify</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>   the visual correspondence before registering it. Anchor opens that exact PDF and offers</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>   the original PowerPoint as a secondary download. A text extraction is not a slide preview.</span>
+<span class="source-line" id="L300"><a href="#L300">300</a> - **Authorized partial work.** Explain and challenge a prerequisite before treating it</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>   as essential. If John authorizes useful partial production, `publish` may carry</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>   `provisional:{human:{explicit:true,source_message},scope,reason}`. This preserves its</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>   output under the same product while final presentation/acceptance still requires the</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>   applicable foundations. Never relabel a provisional draft as final readiness.</span>
+<span class="source-line" id="L305"><a href="#L305">305</a> - **Producer handoff, including direct terminals.** Before a tool-producing turn</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>   or commissioned job, retain the mapped slice&#x27;s round, requirements, candidate</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>   and dependency pins as dispatch_context. At completion record a stable</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>   producer_handoff through the same CLI, even when the output inventory or slice</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>   mapping is not yet known. Anchor records its own job/conversation observations;</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>   a direct terminal must record its terminal handoff explicitly. Inspect pending</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>   handoffs at pickup and before advancing the plan. Verify actual source outputs,</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>   map them to the declared products, carry forward active feedback, run the</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>   content and RC-6 checks, then publish and present through the normal lifecycle.</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>   Resolve a handoff to the named presentation, or record a sourced reason for</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>   no_deliverable/superseded. A source reference or job report route is not an</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>   immutable revision. Unknown or stale dispatch context requires reconciliation;</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>   producer completion never closes a slice or asks John to accept unchecked work.</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>   Published resolution must cover each declared output with an exact immutable</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>   member path or a sourced output_mappings entry naming the selected product and</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   revision. An unknown empty inventory needs an inspected mapping, not just a</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>   claim that the inventory was checked. Keep producing and subsequent inspection</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>   separate; never resolve fresh output to an old presentation without verifying</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>   that its selected revisions actually contain the output.</span>
+<span class="source-line" id="L324"><a href="#L324">324</a> - **Restart continuity.** Recover the actual pending request and named version</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>   from the event record. Preserve prior explicit authorization across session</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>   boundaries; do not demand another read-back approval for already-authorized</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>   work. Clarify a genuinely ambiguous new response without reviving a retired</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>   choice or applying a generic old answer to a newer candidate.</span>
+<span class="source-line" id="L329"><a href="#L329">329</a> - **Plain language at WRITE time (campaign journal 0009).** Every string bound</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>   for John — the ask sentence, next-recommended, the Face pointer — is written</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>   in plain words when it is written; codenames (step ids, K=notation, OSF codes)</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>   stay in machine fields only. A sentence John must read that contains a step id</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>   is not done being written.</span>
+<span class="source-line" id="L334"><a href="#L334">334</a> - **Kickoff synthesis + work-product map (2026-08-30).** After a rich project</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>   description, show one compact proposal containing the goal, observable</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>   success signals, one deliverable, its stable components, a coarse plan, the</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>   first end-to-end slice, and — only for a genuinely multi-component product —</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>   typed relationships plus observable integration proof. Do not ask a ritual</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>   question first. The whole proposal is editable by talking and becomes truth</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>   only through one hash-bound `kickoff_confirm`. A confirmed vN remains current</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>   while vN+1 is merely open. The cockpit **Work product** tile reads confirmed</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>   kickoff components; it never reconstructs product structure from workflow tags.</span>
+<span class="source-line" id="L343"><a href="#L343">343</a> - **Software gets a play surface and a review, always (John, 2026-09-04 — promoted</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>   here, not journaled).** Any plan whose step produces software carries two further steps</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>   by default: an **explore-and-refine** step (part `slice`) whose done-condition is that</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>   John can drive the software himself with its knobs exposed on one simple surface (a</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>   one-command explorer with sliders or an equivalent), has played with it, and his</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>   refinements are folded back; and a **software review** step (part `rigor`) with a gate</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>   command (tests plus an expert-coder review) before the software&#x27;s results are quoted in</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>   any deliverable. &quot;Needed because John refines by playing, and a result from software he</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>   could not touch is a result he cannot trust; dropping it costs the refinement loop.&quot; A</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>   roadmap with a software step and no play surface is incomplete.</span>
+<span class="source-line" id="L353"><a href="#L353">353</a> - **Slice loop (2026-08-28, hardened workflow).** Steward owns the overall plan.</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>   Tag every roadmap step `part=research|slice|rigor|integrate|harden` (and a</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>   `gate` command when the step will be commissioned). These tags describe how</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>   execution proceeds; they are metadata, never work-product components and never</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>   the product map. Default: do a small slice in this</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>   session. **No in-process Shark swarm** (`in_process_shark_tank: false`); that</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>   is Crucible, only when commissioned. Commission Crucible/Foreman only when</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>   the session cannot hold the work AND the step has a `gate` (a command that</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>   can fail). **A close states the next act (2026-09-20).** First pin the step that follows with its</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>   next and why (`ecgberht update --current-step &lt;id&gt; --next-recommended … --strip-why-next …`); then</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>   close with `--goal-reread reaffirmed|rewritten` (or `goal_reread` on the refinement close) — the</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>   engine refuses a close without either and writes the `goal_flip` itself. Update the Face if</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>   rewritten; then recommend whether to move on — he decides.</span>
+<span class="source-line" id="L366"><a href="#L366">366</a> </span>
+<span class="source-line" id="L367"><a href="#L367">367</a> **The Grasscatcher capacity — 2026-08-19 (John&#x27;s commission).** The grasscatch</span>
+<span class="source-line" id="L368"><a href="#L368">368</a> list is a first-class conversational duty, not just a verb. It is the talking</span>
+<span class="source-line" id="L369"><a href="#L369">369</a> face of the Rabbit-Catcher and the Parable of the Oranges:</span>
+<span class="source-line" id="L370"><a href="#L370">370</a> </span>
+<span class="source-line" id="L371"><a href="#L371">371</a> - **Structured entries.** New grasscatch writes are `{text, when (ISO date),</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>   source (session/effort), status: caught|revived|dropped}` appended to</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>   `strip.json → grasscatch` via the normal Strip path (single writer; legacy</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>   bare strings stay valid on read). UI surfaces (the Anchor seal page) render</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>   this list read-only.</span>
+<span class="source-line" id="L376"><a href="#L376">376</a> - **Catch proactively.** When a described scope splits in two, OFFER the split:</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>   do the load-bearing part now, catch the other with its reason and handback</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>   shape. When John says &quot;too complicated — simplify,&quot; whatever the</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>   simplification removes is CAUGHT, never silently dropped. When the steward</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>   itself doubts a step (&quot;are you sure you want all of these?&quot;), the doubted</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>   steps are offered to the catcher, one line, his call.</span>
+<span class="source-line" id="L382"><a href="#L382">382</a> - **Zero-ceremony catch.** An utterance starting &quot;later:&quot; / &quot;grasscatcher:&quot;</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>   is caught verbatim in the same turn, and the turn returns to the step in</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>   hand — no follow-up questions.</span>
+<span class="source-line" id="L385"><a href="#L385">385</a> - **Revive at stand-up.** READ-BEFORE-PLAN includes the grasscatch list; when</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>   a caught idea matches the current discussion, surface it — at most ONE per</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>   turn, one line, with its date and source.</span>
+<span class="source-line" id="L388"><a href="#L388">388</a> </span>
+<span class="source-line" id="L389"><a href="#L389">389</a> **E5 — AMENDED 2026-08-05 (John&#x27;s decision).** The conversation is now KEPT, and is never authoritative.</span>
+<span class="source-line" id="L390"><a href="#L390">390</a> </span>
+<span class="source-line" id="L391"><a href="#L391">391</a> | store | what it holds | authoritative for project state? |</span>
+<span class="source-line" id="L392"><a href="#L392">392</a> |---|---|---|</span>
+<span class="source-line" id="L393"><a href="#L393">393</a> | Strip receipts / roadmap events / Face | project **state** | **yes — these are the only ones** |</span>
+<span class="source-line" id="L394"><a href="#L394">394</a> | `.ecgberht/conversation-log.json` (per project) | what was **said**, each turn tagged with the proposal version it produced | no |</span>
+<span class="source-line" id="L395"><a href="#L395">395</a> | `~/.ecgberht/portfolio-ledger.json` | what the steward **did**, across all projects | no |</span>
+<span class="source-line" id="L396"><a href="#L396">396</a> </span>
+<span class="source-line" id="L397"><a href="#L397">397</a> Why: the roadmap records *what* each kickoff proposal contained, but not *why* it changed. Only a matching `kickoff_confirm` makes one version authoritative; the conversation never does. Why the amendment is narrow: E5 existed to stop two sources of truth for project state drifting apart — that is still prevented. The transcript can never `mint_step`, `flip_status`, `authorize_spend` or `commission`; the portfolio ledger **refuses** any record carrying `status`/`goal`/`steps`/`next_action`; and **where they disagree with confirmed kickoff/roadmap truth, the ledger wins.** Both are enforced structurally (`assertTranscriptNonAuthoritative`, `assertRecordsNoProjectState`) and by the amended second-task-DB canary, which now has red cases for an authoritative transcript and for one allowed to mint a step. The CLI&#x27;s own `--resume` stays unused — model-side session state would be a memory nobody can audit.</span>
+<span class="source-line" id="L398"><a href="#L398">398</a> </span>
+<span class="source-line" id="L399"><a href="#L399">399</a> **The High Seat shows both:** `bringItUp` carries the project&#x27;s conversation summary (turns, proposal versions, recent exchanges); `assembleHighSeat` carries `steward_efforts` — activity per project, and which projects have gone quiet.</span>
+<span class="source-line" id="L400"><a href="#L400">400</a> </span>
+<span class="source-line" id="L401"><a href="#L401">401</a> **Seat + spend.** `scripts/seat-call.mjs` owns the transport (engine law: nothing under `engine/` may spawn). The model is chosen by ROLE, never by name — `engine/seat-tiers.mjs` maps `frontier` (planning) and `conversational` (one tier below, talking) to CLI **aliases**, so new model releases are picked up with no code change; a test fails the build if a version number appears there. Talking turns get **no tools** (fast); only the planning turn reads the project. A **background allowance** opens itself on the first turn — no approval gate — capped at **$50 of MEASURED spend** with **unlimited turns**; reaching the cap stops the steward and offers to raise it.</span>
+<span class="source-line" id="L402"><a href="#L402">402</a> </span>
+<span class="source-line" id="L403"><a href="#L403">403</a> **Proving it (the capture protocol).** The acceptance lane must enter at the surface a human touches, with **John&#x27;s verbatim text** (`test/fixtures/ba815-appendix-a.txt`, vendored by `scripts/vendor-appendix-a.mjs`, drift-checked against the brief) — never a sentence the implementer chose:</span>
+<span class="source-line" id="L404"><a href="#L404">404</a> </span>
+<span class="source-line" id="L405"><a href="#L405">405</a> | lane | door | seat |</span>
+<span class="source-line" id="L406"><a href="#L406">406</a> |---|---|---|</span>
+<span class="source-line" id="L407"><a href="#L407">407</a> | `test/wh4-conversational-steward.test.mjs` | bridge spawned with argv | recorded real reply, **bound to the prompt hash** (drift ⇒ fail) |</span>
+<span class="source-line" id="L408"><a href="#L408">408</a> | `Anchor/tests/test_steward_goal_authon_2026_07_30.py` | real say box, Playwright, auth ON | recorded real reply, not prompt-bound (proves the surface is wired) |</span>
+<span class="source-line" id="L409"><a href="#L409">409</a> </span>
+<span class="source-line" id="L410"><a href="#L410">410</a> Re-record with `node scripts/record-steward-fixture.mjs` (two live seat calls) whenever the prompt changes — a stale tape fails rather than passing. The lane also carries an **anti-vacuity test**: the deterministic fallback ALONE must NOT satisfy the criterion, so a green result cannot be produced without the seat doing the work.</span>
+<span class="source-line" id="L411"><a href="#L411">411</a> </span>
+<span class="source-line" id="L412"><a href="#L412">412</a> Verb help templates: `templates/verb-help/&lt;verb&gt;.md`.</span>
+<span class="source-line" id="L413"><a href="#L413">413</a> </span>
+<span class="source-line" id="L414"><a href="#L414">414</a> ---</span>
+<span class="source-line" id="L415"><a href="#L415">415</a> </span>
+<span class="source-line" id="L416"><a href="#L416">416</a> - **The High Seat runs the Campaign (John, 2026-09-26; PLAN v2.5.1 §6 of the High Seat cycle,</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>   `Skill Foundry/planning/high-seat-2026-09-24`; revised by the steward revision of 2026-09-28,</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>   `Skill Foundry/planning/steward-revision-2026-09-28`, on his three answers). Standing lines for the steward</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>   on Anchor&#x27;s home:**</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>   1. **The portfolio is run from the Campaign&#x27;s tiers and order, strip-first.** Every High Seat turn loads</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>      the Campaign&#x27;s initiatives in tier order (`tier` 1 · 2 · 3, then the group&#x27;s `order`) with their next</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>      part before any other project&#x27;s record; Tier 1 is read for what to do first, Tier 2 for what is next,</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>      Tier 3 for what waits for room; a project&#x27;s record is opened only when the turn acts on one of its</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>      parts. **The tiers and the order are John&#x27;s — moved only on his word**, and a move&#x27;s receipt names the</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>      old and the new priority.</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>   2. **Parts are references.** A Campaign part is a step with `ref` (`project:&lt;pid&gt;` · `step:&lt;pid&gt;/&lt;sid&gt;` ·</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>      `deliverable:&lt;pid&gt;/&lt;row&gt;` · `calendar:&lt;id&gt;`); the Campaign never writes a referenced step&#x27;s date or</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>      state or a project&#x27;s status — it reads them through the resolver — and a broken reference is named</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>      on the page, never filled in. (The engine refuses a `due` or a status flip on a `ref` step and a</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>      duplicate `ref`; W0b.) A part&#x27;s open/next comes from the RESOLVED target&#x27;s state: a finished target is</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>      never &quot;next&quot;.</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>   3. **The head is one act (his Q3, 2026-09-28; the seats, 2026-09-30).** The brief leads with ONE act: an ACTIVE</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>      initiative that needs him, in his order; else one ON DECK that needs him; else under his tiers: the first</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>      Tier-1 part that needs him and is due; else — the named exception — a lower-tier part that needs him</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>      and is due today or overdue, marked &quot;Exception, due …&quot;, his order untouched; else the first Tier-1</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>      part that needs him; else the oldest wait across the portfolio, with the decision&#x27;s age read from the</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>      record. What follows it (&quot;Then: …&quot;) and what closed since he last opened the page ride in the same</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>      sentence; the rest folds. The engine&#x27;s rank orders WITHIN a tier only; archived and parked projects</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>      are excluded. Never a menu at the head; a quiet day repeats nothing.</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>   4. **The after rule (his Q1, 2026-09-28: &quot;that one line only&quot;).** `next_recommended` / `why_next` may be</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>      derived from the plan with no seat awake, and nothing else may. `update --horizon [--horizon-reason</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>      &lt;word&gt;]` derives the focus (`current_step_id`; else the one pinned step; else the one active step —</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>      never a guess among several) and the open steps that follow it in the plan&#x27;s order (done, parked,</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>      cancelled, dropped skipped; the prerequisite skip is by order — the projection carries no dependency</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>      field) and writes them as ONE `horizon` instrument stamped with the roadmap&#x27;s last seq and the focus;</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>      `why_next` is the last event&#x27;s OWN why. Triggers: an acceptance, the feedback turn (after its reply),</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>      an answered decision, a produced or stalled run, and the cockpit&#x27;s tick for any record whose roadmap</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>      moved past the stamp. A line written by hand clears the stamp; a refusal (no focus) is remembered until</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>      the plan moves; the line is not the wait.</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>   5. **Repair is a proposal (his Q2, 2026-09-28: &quot;propose the tidying too&quot;).** After he accepts a</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>      presentation on a step, `update --repair-propose --after-step &lt;id&gt; [--after-presentation &lt;id&gt;]`</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>      composes the correction set from the records alone — the waits that named the accepted step (matched as</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>      whole words); the slices whose dependency pin on it went stale (shown as &quot;needs a second look&quot;, never</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>      written: the refinement fold owns a managed slice&#x27;s wait) — and appends it as ONE `repair_proposal`</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>      event (the same set already open is answered; a later acceptance supersedes the open set and the new</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>      composition follows; an empty set appends nothing; no step changes; a refinement fold that throws</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>      fails the propose). Nothing inside approved work changes until his word: `update --repair-resolve &lt;id&gt;</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>      --disposition accepted|dismissed --who &lt;name&gt;` — on accepted each correction still true of the roadmap</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>      lands as a receipted `step_set` naming the proposal, THEN the word is appended over what landed; what</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>      moved since (or was never composed) is skipped by name; a dismiss is refused once any correction has</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>      landed. Scope, dates, priorities and commitments are never in a set. On the home: the tile says &quot;proposed: N corrections&quot;; the Status part</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>      shows the set in words with accept and dismiss; one route carries his word.</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>   6. **The four record identities (2026-09-28).** A wait names its subject — `wait_ref` beside</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>      `human_wait`: `step:&lt;id&gt;` · `deliverable:&lt;row&gt;@&lt;version&gt;` · `decision:&lt;id&gt;` · `none` (a managed</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>      campaign&#x27;s is projected from its pending request; never prose). A `leave` receipt is appended to the</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>      strip when he switches projects (the step in hand, the last event and its time, the effort, the</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>      presentation he was on; the cockpit&#x27;s quiet transition is the fallback only); Resume on the card</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>      reads it against the record as it stands now. A spawned job&#x27;s session carries its `step_id` in the</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>      registry. The speaking boundaries are ONE constant (`engine/boundaries.mjs`, mirrored in the cockpit</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>      and held equal by test): page_open · card_open · turn_submitted · step_closed · run_finished; no route</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>      reads it at runtime yet, and no boundary is added without its version bump. Never: a background writer of steps, statuses or tiers; invented state; a</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>      re-ask; an interruption while he types; a menu at the head; the four-hour silence rule widened.</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>   7. **The three levels (John, 2026-09-30; PLAN v1.3.1 of the active set).** A **goal** is the Campaign&#x27;s heading</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>      step — a large effort with one sentence of done-when, in Tier 1 or Tier 2, with a `pace`; what is neither is</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>      a **seed goal**; a heading whose status is done or parked is in the **boneyard**, never deleted. A goal&#x27;s</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>      **components** are its parts: a **cockpit** (`project:`), one cockpit within a project (`effort:&lt;pid&gt;/&lt;dir&gt;`),</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>      a step of a project, a deliverable, a date, or a **desk item** (a task with no project, handled by the</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>      Campaign&#x27;s own steward in the goal&#x27;s brainstorm). An **initiative** is a component he works interactively —</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>      a cockpit, an effort, or a desk item — and it sits in one **seat**: in its goal (no `seat`), **on deck**</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>      (`seat: deck` — out, inactive, needs attention: his pick-up list) or **active** (`seat: active`), each in</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>      his `seat_order`. The steward keeps these: every High Seat turn loads the goals with their tiers, paces and</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>      deadlines and their components&#x27; seats before any project&#x27;s record; the head reads them as line 3 says. A</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>      seat, a tier, a pace or a goal changes only by his act or his word.</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>   8. **The goal&#x27;s guide (John, 2026-09-30; PLAN v1.3.1 fit 11; W2d of the active set).** Each goal has ONE guide —</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>      `goals/&lt;goal id&gt;/GUIDE.md` under the Campaign — its high-level planning guide, which the steward writes from what</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>      he dictates in the goal&#x27;s conversation (brainstorm, feedback, downloads: logged there, never the guide itself)</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>      and from the record: `# &lt;goal name&gt; — the guide`, then `## The goal` (its done-when, in his words), `## The plan,</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>      at a high level`, `## Where we are`, `## Decisions`, `## Deliverables`, `## History` (one dated line per change:</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>      `- 2026-09-30 16:20 — written from the goal&#x27;s conversation` · `— updated: …`; his page revision arrives as</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>      `— revised by John in the goal&#x27;s place`). It is written ONLY on his word in the goal&#x27;s conversation —</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>      &quot;write the guide&quot; / &quot;update the guide&quot; — never unasked and never as the answer to a question: the file whole,</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>      rewritten from the conversation and the record with the History kept and one line added, committed with the</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>      checkpoint; the answer in the conversation is one line saying it was written and what changed. He revises it in</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>      the goal&#x27;s place; the steward reads it back as it stands and never overwrites his revision without his word.</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>      Reading: every High Seat turn loads the goals with their seats AND their guides before any project&#x27;s record; the</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>      guide is what drives the steward&#x27;s attention for that goal — what it brings to him, what it names as a</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>      deliverable, the seat change it suggests (the Parable of the Oranges: the guide says which oranges). A goal with</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>      no guide is said so once, when it matters, never nagged.</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>   9. **The nudges (John, 2026-09-29/10-01; PLAN v1.3.2 fits 8–9; W3 of the active set).** The steward steps in</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>      unasked at a speaking boundary — the High Seat&#x27;s brief at the page open, a goal&#x27;s conversation at its open —</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>      with ONE nudge and its reason, derived from the records by the page (`steward_cockpit/nudges.py`), never a</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>      model turn and never a write: a dated part due within three days in a goal he is not working in; an initiative</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>      that waits on him and is only on deck (&quot;make it active?&quot;); a Tier-1 goal untouched for a week, a Tier-2 for two</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>      (&quot;put one of its cockpits on deck?&quot;); a seed that reads like a goal (&quot;make it one?&quot;); a free moment with</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>      something on deck. Each carries the fact it read and one-click acts (make it active · put it on deck · make</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>      it a goal · open · not now). &quot;Not now&quot; is a receipt in `.ecgberht/nudges.json` under the Campaign that silences</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>      that nudge until its fact changes (the key names the kind, the subject and the fact); it has undo. Never while</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>      he types; never twice for the same fact; never more than one at a boundary. The steward&#x27;s own turns do not</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>      repeat a nudge the page shows; they may act on it when he says so.</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>   10. **A proposal names its goal; one conversation (John, 2026-09-29, of the goal board: &quot;This is what drives and</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>       disciplines the steward&quot;; 2026-10-01: &quot;is there some type of reset for the steward conversation … That should</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>       not be the case&quot;; W5 of the active set).** A proposal names the goal it serves and the seat it sits in; work</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>       that is in no goal is said to be in none. The Campaign&#x27;s steward holds ONE continuous conversation across the</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>       High Seat and the Campaign page: it stays awake through a quiet spell, a wake after a restart puts no greeting</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>       in the dialogue, and its first turn after a wake is the conversation&#x27;s next turn — no pickup, no recap, no</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>       re-introduction, never a re-ask of what the record answers; a question that still waits on him is shown on the</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>       page, not repeated by the steward. A cockpit&#x27;s steward keeps its wake summary.</span>
+<span class="source-line" id="L518"><a href="#L518">518</a> </span>
+<span class="source-line" id="L519"><a href="#L519">519</a> ## Face + Strip write authority</span>
+<span class="source-line" id="L520"><a href="#L520">520</a> </span>
+<span class="source-line" id="L521"><a href="#L521">521</a> | Surface | Role | Write authority |</span>
+<span class="source-line" id="L522"><a href="#L522">522</a> |---------|------|-----------------|</span>
+<span class="source-line" id="L523"><a href="#L523">523</a> | **Face** | Human narrative / cold-start constitution | May rewrite north star, active effort and why-next; human-wait only in legacy unmanaged campaigns |</span>
+<span class="source-line" id="L524"><a href="#L524">524</a> | **Strip** | Typed instrument heartbeat | Append-only instruments/receipts; reject silent in-place clock rewrite |</span>
+<span class="source-line" id="L525"><a href="#L525">525</a> | **Proposal** | A correction set after an acceptance (2026-09-28) | Append-only `repair_proposal` event on the roadmap; applied ONLY by his `repair_resolve` (accepted) as receipted `step_set` events; never applied unattended |</span>
+<span class="source-line" id="L526"><a href="#L526">526</a> </span>
+<span class="source-line" id="L527"><a href="#L527">527</a> **Face fields only (no depth/grasscatch jargon on Face):** north star · active effort · why next; legacy unmanaged human wait. Managed wait is a read-only projection of `pending_request`, never an authored Face field.</span>
+<span class="source-line" id="L528"><a href="#L528">528</a> Markers: `schema/face-markers.json`. Template: `templates/ECGBERHT.md`.</span>
+<span class="source-line" id="L529"><a href="#L529">529</a> </span>
+<span class="source-line" id="L530"><a href="#L530">530</a> **Strip locked fields (`ecgberht-strip-v0`):** phase · active_effort · human_wait · capacity `known|unknown` · negative_heartbeat · grasscatch · uncertainty_flags · tool_depth_cell · next_recommended · why_next; since 2026-09-28 also wait_ref · current_step_id · horizon_source_seq · horizon_focus (all projected from the instruments — `STRIP_CLOCK_FIELDS`). Receipt kinds: heartbeat · leave.  </span>
+<span class="source-line" id="L531"><a href="#L531">531</a> Schema: `schema/strip.schema.json`. Templates: `templates/strip.json`, `templates/strip-fence.md`.</span>
+<span class="source-line" id="L532"><a href="#L532">532</a> </span>
+<span class="source-line" id="L533"><a href="#L533">533</a> ### Heal law (enforced in engine helpers)</span>
+<span class="source-line" id="L534"><a href="#L534">534</a> </span>
+<span class="source-line" id="L535"><a href="#L535">535</a> | Rule | Meaning |</span>
+<span class="source-line" id="L536"><a href="#L536">536</a> |------|---------|</span>
+<span class="source-line" id="L537"><a href="#L537">537</a> | Face wins narrative | Human north-star / why-stakes / active-effort prose may be rewritten on Face |</span>
+<span class="source-line" id="L538"><a href="#L538">538</a> | Strip wins clocks | Instruments/receipts are **append-only**; silent in-place clock rewrite is **rejected** |</span>
+<span class="source-line" id="L539"><a href="#L539">539</a> | Crisis = explicit re-sync | `healResync({ explicit: true, … })` only — ambient chat cannot dual-write |</span>
+<span class="source-line" id="L540"><a href="#L540">540</a> | Silence = negative-heartbeat | Do not invent “all clear”; record `negative_heartbeat` |</span>
+<span class="source-line" id="L541"><a href="#L541">541</a> | Chat cannot invent truth | Claims must ground in Face or Strip surfaces |</span>
+<span class="source-line" id="L542"><a href="#L542">542</a> | Fence/schema drift | Repair Face fence text from Strip projection; **never** silently rewrite Strip history |</span>
+<span class="source-line" id="L543"><a href="#L543">543</a> </span>
+<span class="source-line" id="L544"><a href="#L544">544</a> Engine modules: `engine/write-authority.mjs`, `engine/heal.mjs`, `engine/face-strip.mjs`.</span>
+<span class="source-line" id="L545"><a href="#L545">545</a> </span>
+<span class="source-line" id="L546"><a href="#L546">546</a> ### Campaign Roadmap (TW1 — engine truth)</span>
+<span class="source-line" id="L547"><a href="#L547">547</a> </span>
+<span class="source-line" id="L548"><a href="#L548">548</a> The Roadmap is engine truth via append-only events + a derived projection. Face prose is **never** the only step list.</span>
+<span class="source-line" id="L549"><a href="#L549">549</a> </span>
+<span class="source-line" id="L550"><a href="#L550">550</a> | Surface | Rule |</span>
+<span class="source-line" id="L551"><a href="#L551">551</a> |---------|------|</span>
+<span class="source-line" id="L552"><a href="#L552">552</a> | `roadmap_events[]` | Append-only history (`step_create` · `step_set` · `status_flip` · `commission_bind` · `goal_flip` · `kickoff_proposal` · `kickoff_confirm` · … — the list is `ROADMAP_EVENT_KINDS`, version 9 since 2026-09-28, which added `reorder` (his act; receipted; folds the step&#x27;s place), `repair_proposal` and `repair_resolve` (project-level; fold nothing)); prior entries never rewritten |</span>
+<span class="source-line" id="L553"><a href="#L553">553</a> | `roadmap_projection` | **Derived-only** execution list (`id, name, status, done_when, waiting_on, commissioned_as, part, gate`) plus confirmed kickoff references (`component_ids, end_to_end_slice, kickoff_version, kickoff_proposal_hash`); direct writes rejected |</span>
+<span class="source-line" id="L554"><a href="#L554">554</a> | Status flip | Requires a receipt (`who`/`why`) on the `status_flip` event — flip without receipt = refuse write / reject on validate |</span>
+<span class="source-line" id="L555"><a href="#L555">555</a> | Silent rewrite | Stored projection that disagrees with the event fold → structured reject (`roadmap_silent_rewrite`); **heal** rebuilds projection from events (events untouched) |</span>
+<span class="source-line" id="L556"><a href="#L556">556</a> | Face-only prose | `roadmap-show` / `status` return an **empty projection + honest gap** (`face_prose_only`) — steps are never invented from prose |</span>
+<span class="source-line" id="L557"><a href="#L557">557</a> </span>
+<span class="source-line" id="L558"><a href="#L558">558</a> **Single writer path (TW3 hook):** durable operations use `appendRoadmapEventThroughSpine` (including `roadmap-propose`, `roadmap-set` and `refinement-update`); `appendRoadmapEvent` supplies the pure fold. TW3 job lifecycle (commission propose/confirm; `queued → running → done | failed | orphaned | reaped`) binds through this same writer: `commission_bind` attaches a step to a commissioned job and receipted `status_flip` records ordinary step changes. A managed slice reaches Done through its explicit current-presentation close or guarded completion after all current products are individually accepted; job completion cannot bypass that boundary. No dual-write, second store or UI-only state. Contract constant: `ROADMAP_SINGLE_WRITER`.</span>
+<span class="source-line" id="L559"><a href="#L559">559</a> </span>
+<span class="source-line" id="L560"><a href="#L560">560</a> Statuses: `proposed | planned | active | waiting | done | parked`.  </span>
+<span class="source-line" id="L561"><a href="#L561">561</a> Module: `engine/roadmap.mjs` · schema: `schema/roadmap.schema.json` · template: `templates/roadmap.json` · fixture: `fixtures/roadmap-minimal.json` · file: `roadmap.json` at project root.</span>
+<span class="source-line" id="L562"><a href="#L562">562</a> </span>
+<span class="source-line" id="L563"><a href="#L563">563</a> ### A1 discovery (no registry)</span>
+<span class="source-line" id="L564"><a href="#L564">564</a> </span>
+<span class="source-line" id="L565"><a href="#L565">565</a> - Roots: CLI `--roots` and/or env `ECGBERHT_STRIP_ROOTS` (OS path separator).</span>
+<span class="source-line" id="L566"><a href="#L566">566</a> - Per directory, first match wins: `strip.json`, else `ECGBERHT.md` Strip JSON fence.</span>
+<span class="source-line" id="L567"><a href="#L567">567</a> - Scan: listed roots + **one level** of subdirs; ignore `node_modules` / `.git` / `vendor` / junk.</span>
+<span class="source-line" id="L568"><a href="#L568">568</a> - Empty roots → structured empty result (not a crash).</span>
+<span class="source-line" id="L569"><a href="#L569">569</a> - Module: `engine/discovery.mjs`.</span>
+<span class="source-line" id="L570"><a href="#L570">570</a> </span>
+<span class="source-line" id="L571"><a href="#L571">571</a> ### Strip-first rank</span>
+<span class="source-line" id="L572"><a href="#L572">572</a> </span>
+<span class="source-line" id="L573"><a href="#L573">573</a> Portfolio `next`/`status` rank **Strip projections only**. Full Face only for top-k drill-in or heal.  </span>
+<span class="source-line" id="L574"><a href="#L574">574</a> `capacity=unknown` → rank penalty + LITE-bias flag — **never silent green**.  </span>
+<span class="source-line" id="L575"><a href="#L575">575</a> Anti-starvation: `negative_heartbeat`, `anti_starvation_age_days`. Module: `engine/rank.mjs`.</span>
+<span class="source-line" id="L576"><a href="#L576">576</a> </span>
+<span class="source-line" id="L577"><a href="#L577">577</a> ---</span>
+<span class="source-line" id="L578"><a href="#L578">578</a> </span>
+<span class="source-line" id="L579"><a href="#L579">579</a> ## Seating (Anchor prefs only)</span>
+<span class="source-line" id="L580"><a href="#L580">580</a> </span>
+<span class="source-line" id="L581"><a href="#L581">581</a> - Resolve seats from Anchor model prefs: `coding_family` / `review_family` / `default_cli` (mirror: model prefs file under the Anchor data dir — never hardcode host home paths in engine logic).</span>
+<span class="source-line" id="L582"><a href="#L582">582</a> - Map families to **subscription** drivers only (chatgpt-cli / claude / gemini-cli|agy / grok-cli).</span>
+<span class="source-line" id="L583"><a href="#L583">583</a> - Stamp `cross_model` honestly when same-family.</span>
+<span class="source-line" id="L584"><a href="#L584">584</a> - **Forbidden:** hardcoded ChatGPT/Claude/Gemini/Grok product model IDs in skill prose or engine; raw API-key HTTP paths for production seats.</span>
+<span class="source-line" id="L585"><a href="#L585">585</a> - Module: `engine/seating.mjs`.</span>
+<span class="source-line" id="L586"><a href="#L586">586</a> </span>
+<span class="source-line" id="L587"><a href="#L587">587</a> ### Commission adapters (compose-only)</span>
+<span class="source-line" id="L588"><a href="#L588">588</a> </span>
+<span class="source-line" id="L589"><a href="#L589">589</a> | Skill | Role |</span>
+<span class="source-line" id="L590"><a href="#L590">590</a> |-------|------|</span>
+<span class="source-line" id="L591"><a href="#L591">591</a> | researchPrime | Evidence research |</span>
+<span class="source-line" id="L592"><a href="#L592">592</a> | Crucible | Plan forge |</span>
+<span class="source-line" id="L593"><a href="#L593">593</a> | Foreman | Wave build |</span>
+<span class="source-line" id="L594"><a href="#L594">594</a> | Gandalf | Deep adversarial read |</span>
+<span class="source-line" id="L595"><a href="#L595">595</a> | Jumper | Ideation tournament |</span>
+<span class="source-line" id="L596"><a href="#L596">596</a> </span>
+<span class="source-line" id="L597"><a href="#L597">597</a> - Spawn/handback contracts only: pass depth cell, active effort, receipt envelope + resolved seats.</span>
+<span class="source-line" id="L598"><a href="#L598">598</a> - **Zero** in-process Shark Tank or Foreman wave loop inside Ecgberht.</span>
+<span class="source-line" id="L599"><a href="#L599">599</a> - Handback must carry structured fields (`active_effort`, `why_next`, `grasscatch_why`, `tool_depth_why`, `human_wait`, `uncertainty_flags`) or `receipt-validate` fails.</span>
+<span class="source-line" id="L600"><a href="#L600">600</a> - Module: `engine/commission.mjs`. Boundary canaries: `runBoundaryCanaries`.</span>
+<span class="source-line" id="L601"><a href="#L601">601</a> </span>
+<span class="source-line" id="L602"><a href="#L602">602</a> ---</span>
+<span class="source-line" id="L603"><a href="#L603">603</a> </span>
+<span class="source-line" id="L604"><a href="#L604">604</a> ## Non-goals (enforced)</span>
+<span class="source-line" id="L605"><a href="#L605">605</a> </span>
+<span class="source-line" id="L606"><a href="#L606">606</a> - No edits to Anchor-release-v1.0 / public freeze tags  </span>
+<span class="source-line" id="L607"><a href="#L607">607</a> - No OpenClaw substrate or multi-agent wallets  </span>
+<span class="source-line" id="L608"><a href="#L608">608</a> - No full calendar/email OAuth connectors in this build  </span>
+<span class="source-line" id="L609"><a href="#L609">609</a> - No default chat gateway tax on every turn  </span>
+<span class="source-line" id="L610"><a href="#L610">610</a> - No replacing Anchor job_runner  </span>
+<span class="source-line" id="L611"><a href="#L611">611</a> - No in-app chat personality product  </span>
+<span class="source-line" id="L612"><a href="#L612">612</a> - No Family-Finances domain features  </span>
+<span class="source-line" id="L613"><a href="#L613">613</a> - Harness product (if ever) is a separate Grasscatcher-scope product — not this engine  </span>
+<span class="source-line" id="L614"><a href="#L614">614</a> </span>
+<span class="source-line" id="L615"><a href="#L615">615</a> ### Grasscatcher ledger (W6 — permanent scope deferrals)</span>
+<span class="source-line" id="L616"><a href="#L616">616</a> </span>
+<span class="source-line" id="L617"><a href="#L617">617</a> Distinct from campaign `soft-vet` / `grasscatch` verb receipts. The ledger freezes product non-goals so MVP scope cannot silently expand. Each item carries receipt shape (`deferred`, `grasscatch_why`, `suggested_later_owner`, `handback_shape`) and is **not** an MVP verb or engine surface.</span>
+<span class="source-line" id="L618"><a href="#L618">618</a> </span>
+<span class="source-line" id="L619"><a href="#L619">619</a> | Deferred | Suggested later owner |</span>
+<span class="source-line" id="L620"><a href="#L620">620</a> |----------|----------------------|</span>
+<span class="source-line" id="L621"><a href="#L621">621</a> | OpenClaw harness product | separate-harness-product |</span>
+<span class="source-line" id="L622"><a href="#L622">622</a> | calendar/email OAuth | connector-product |</span>
+<span class="source-line" id="L623"><a href="#L623">623</a> | Anchor v1.0.x release edits | anchor-release-owners |</span>
+<span class="source-line" id="L624"><a href="#L624">624</a> | default chat gateway | chat-product |</span>
+<span class="source-line" id="L625"><a href="#L625">625</a> | Family-Finances domain | family-finances-project |</span>
+<span class="source-line" id="L626"><a href="#L626">626</a> | Anchor 1.1 portfolio UI | anchor-1.1 |</span>
+<span class="source-line" id="L627"><a href="#L627">627</a> | launch-tree merge | launch-orchestration |</span>
+<span class="source-line" id="L628"><a href="#L628">628</a> </span>
+<span class="source-line" id="L629"><a href="#L629">629</a> - Fixture: `fixtures/grasscatcher-ledger.json`  </span>
+<span class="source-line" id="L630"><a href="#L630">630</a> - Module: `engine/grasscatcher-ledger.mjs`  </span>
+<span class="source-line" id="L631"><a href="#L631">631</a> - Strip labels: `strip.json` → `grasscatch`  </span>
+<span class="source-line" id="L632"><a href="#L632">632</a> </span>
+<span class="source-line" id="L633"><a href="#L633">633</a> ### Stage-2 freeze set + canary pack (W6 — enforced in code, prose moved)</span>
+<span class="source-line" id="L634"><a href="#L634">634</a> </span>
+<span class="source-line" id="L635"><a href="#L635">635</a> Both are ENFORCED by `engine/stage2-freeze.mjs` + `engine/canary-pack.mjs` (fixtures:</span>
+<span class="source-line" id="L636"><a href="#L636">636</a> `fixtures/stage2-freeze.json`); the descriptive tables live in `docs/BUILD-CANON.md`</span>
+<span class="source-line" id="L637"><a href="#L637">637</a> (moved 2026-08-25 — they were context tax on every load; enforcement unchanged).</span>
+<span class="source-line" id="L638"><a href="#L638">638</a> </span>
+<span class="source-line" id="L639"><a href="#L639">639</a> ---</span>
+<span class="source-line" id="L640"><a href="#L640">640</a> </span>
+<span class="source-line" id="L641"><a href="#L641">641</a> ## Install / junction (Skill Foundry peers)</span>
+<span class="source-line" id="L642"><a href="#L642">642</a> </span>
+<span class="source-line" id="L643"><a href="#L643">643</a> 1. This package root **is** the skill root: `SKILL.md`, `templates/`, `schema/`, `fixtures/`, `bin/`, `engine/`, `package.json`.</span>
+<span class="source-line" id="L644"><a href="#L644">644</a> 2. Seat like peer Foundry skills: junction or symlink the folder as `ecgberht` into the host skills directory used by your agent host.</span>
+<span class="source-line" id="L645"><a href="#L645">645</a> 3. Engine CLI: `node bin/ecgberht.mjs &lt;verb&gt;` or install package bin `ecgberht`.</span>
+<span class="source-line" id="L646"><a href="#L646">646</a> 4. Tests: `node scripts/run-all-tests.mjs` (or `npm test`).</span>
+<span class="source-line" id="L647"><a href="#L647">647</a> 5. **Trio pin** for compose compatibility: commit **`77de811`** (see frozen `IMPLEMENTATION-PLAN.md`). Prefer committed trio behavior if a local dirty stage1 file is present.</span>
+<span class="source-line" id="L648"><a href="#L648">648</a> </span>
+<span class="source-line" id="L649"><a href="#L649">649</a> ---</span>
+<span class="source-line" id="L650"><a href="#L650">650</a> </span>
+<span class="source-line" id="L651"><a href="#L651">651</a> ## Layout</span>
+<span class="source-line" id="L652"><a href="#L652">652</a> </span>
+<span class="source-line" id="L653"><a href="#L653">653</a> ```</span>
+<span class="source-line" id="L654"><a href="#L654">654</a> SKILL.md                 # this protocol</span>
+<span class="source-line" id="L655"><a href="#L655">655</a> package.json             # name ecgberht + bin</span>
+<span class="source-line" id="L656"><a href="#L656">656</a> bin/ecgberht.mjs         # CLI</span>
+<span class="source-line" id="L657"><a href="#L657">657</a> engine/                  # verbs, face-strip, roadmap, brief, anchor-knowledge (read-only), dispatch, seating, commission, grasscatcher-ledger, canary-pack, stage2-freeze, verification-pack</span>
+<span class="source-line" id="L658"><a href="#L658">658</a> templates/ECGBERHT.md    # Face scaffold</span>
+<span class="source-line" id="L659"><a href="#L659">659</a> templates/strip.json     # Strip JSON stub</span>
+<span class="source-line" id="L660"><a href="#L660">660</a> templates/strip-fence.md # dual-section fence stub</span>
+<span class="source-line" id="L661"><a href="#L661">661</a> templates/roadmap.json   # Roadmap stub (append-only events + derived projection)</span>
+<span class="source-line" id="L662"><a href="#L662">662</a> templates/verb-help/     # closed-list help</span>
+<span class="source-line" id="L663"><a href="#L663">663</a> schema/                  # face markers, strip, receipt, roadmap</span>
+<span class="source-line" id="L664"><a href="#L664">664</a> fixtures/                # strip-minimal, dispatch-table-seed, grasscatcher-ledger, stage2-freeze, roadmap-minimal</span>
+<span class="source-line" id="L665"><a href="#L665">665</a> test/                    # unit suite (w1–w6)</span>
+<span class="source-line" id="L666"><a href="#L666">666</a> scripts/run-all-tests.mjs</span>
+<span class="source-line" id="L667"><a href="#L667">667</a> ```</span>
+<span class="source-line" id="L668"><a href="#L668">668</a> </span>
+<span class="source-line" id="L669"><a href="#L669">669</a> ### Dispatch table (W4)</span>
+<span class="source-line" id="L670"><a href="#L670">670</a> </span>
+<span class="source-line" id="L671"><a href="#L671">671</a> - Dimensions: phase × uncertainty × human_wait × cost → `LITE` | `FULL` | `SPIKE` | `commission` | `refuse`</span>
+<span class="source-line" id="L672"><a href="#L672">672</a> - Defaults bias **LITE**; SPIKE for unknown data shape; FULL only when a cell says so</span>
+<span class="source-line" id="L673"><a href="#L673">673</a> - refuse when `human_wait` blocks or out-of-scope; `capacity=unknown` → LITE bias flag (never silent FULL green)</span>
+<span class="source-line" id="L674"><a href="#L674">674</a> - Human override of table outcome requires structured receipt: who / when / why / from→to</span>
+<span class="source-line" id="L675"><a href="#L675">675</a> - Module: `engine/dispatch-table.mjs` · fixture: `fixtures/dispatch-table-seed.json`</span>
+<span class="source-line" id="L676"><a href="#L676">676</a> </span>
+<span class="source-line" id="L677"><a href="#L677">677</a> ---</span>
+<span class="source-line" id="L678"><a href="#L678">678</a> </span>
+<span class="source-line" id="L679"><a href="#L679">679</a> ## When to use / when NOT to use</span>
+<span class="source-line" id="L680"><a href="#L680">680</a> </span>
+<span class="source-line" id="L681"><a href="#L681">681</a> - **Use when:** resume a project campaign, rank what-next, soft-vet an idea, choose tool depth before commissioning a slice skill, stand up Face+Strip.</span>
+<span class="source-line" id="L682"><a href="#L682">682</a> - **Do NOT use when:** you need an actual plan forge (Crucible), wave build (Foreman), deep adversarial read (Gandalf), ideation tournament (Jumper), or evidence research (researchPrime) — **commission** those; do not reimplement them here.</span></pre></main></body></html>

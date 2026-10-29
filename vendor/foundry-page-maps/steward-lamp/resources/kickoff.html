@@ -1,0 +1,72 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Confirm the exact kickoff · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="kickoff" data-anchor-id="a-kickoff-confirmKickoffSpoken">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Confirm the exact kickoff</h1>
+<p class="intro">A proposal remains a preview until hash-bound confirmation. New previews preserve the previous confirmed lineage.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630422+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/kickoff-conversation.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: d9912e79d657dccd5ca4f87d756fc4f1c86bff2366801c29fe4fc7b5ffe5d6c4</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\kickoff-conversation.mjs · lines 434–493</p><pre>export function confirmKickoffSpoken(projectPath, opts = {}) {
+  const root = path.resolve(projectPath);
+  const providedHash = String(opts.proposal_hash ?? &#x27;&#x27;).trim();
+  const lineage = readKickoffLineage(root);
+  if (!lineage.ok) return { ...lineage, lane: &#x27;store&#x27;, mirror: null };
+
+  const named = lineage.proposals.find((proposal) =&gt; proposal.proposal_hash === providedHash) ?? null;
+  if (!named) {
+    const legacy = confirmKickoff(root, {
+      proposal_hash: providedHash,
+      prior_confirmed_hash: opts.prior_confirmed_hash,
+      who: opts.who,
+      client_event_id: opts.client_event_id,
+      project_id: opts.project_id,
+      at: opts.at,
+    });
+    return { ...legacy, lane: &#x27;roadmap&#x27;, store_state: lineage.state, mirror: null };
+  }
+
+  let proseHash = String(opts.rendered_prose_hash ?? &#x27;&#x27;).trim();
+  const resolved = !proseHash;
+  if (resolved) proseHash = named.rendered_prose_hash;
+  const receipt = confirmKickoffProposal(root, {
+    who: opts.who,
+    proposal_hash: providedHash,
+    rendered_prose_hash: proseHash,
+    client_event_id: opts.client_event_id,
+    at: opts.at,
+    timeoutMs: opts.timeoutMs,
+  });
+  if (!receipt.ok) return { ...receipt, lane: &#x27;store&#x27;, mirror: null };
+
+  // The Wave 4 writer: the Face and projection.json are re-derived from the receipt at
+  // every matching confirmation - byte-identical on a repeat, so double-confirm is
+  // harmless downstream. A refused receipt above never reaches this line, which is what
+  // keeps the Face absent on open, rejected, and stale paths.
+  const storeProjection = writeKickoffProjection(root, { timeoutMs: opts.timeoutMs });
+
+  const mirror = opts.mirror === false
+    ? null
+    : mirrorConfirmedKickoffToRoadmap(root, receipt.proposal, {
+      who: opts.who,
+      client_event_id: receipt.receipt?.client_event_id ?? opts.client_event_id,
+      project_id: opts.project_id,
+      at: opts.at,
+    });
+  return {
+    ...receipt,
+    lane: &#x27;store&#x27;,
+    rendered_prose_hash_resolved_from_store: resolved,
+    mirror,
+    face_created_on: KICKOFF_FACE_CREATED_ON,
+    store_projection: storeProjection,
+    projection_written: storeProjection.ok === true &amp;&amp; storeProjection.projection_written === true,
+    face_written: storeProjection.ok === true &amp;&amp; storeProjection.face_written === true,
+    projection: mirror?.projection ?? null,
+    projection_pending: mirror ? mirror.ok !== true || mirror.projection_pending === true : false,
+    plan_entries_written: mirror?.plan_entries_written ?? 0,
+  };
+}</pre>
+<p><a class="button" href="../source-pages/kickoff.html#L434">Open numbered source</a>
+<a href="../sources/kickoff.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/proposal">Preview and confirm exact kickoff</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">d9912e79d657dccd5ca4f87d756fc4f1c86bff2366801c29fe4fc7b5ffe5d6c4</span></p><p>Excerpt hash: <span class="path">901938f957e701cee9c6f984fbeadc7332055b03fc791b105b103ecde23aaa3f</span></p></details></article></main></body></html>

@@ -1,0 +1,332 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>seams · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>seams</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/runtime/seam-pass.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 e4d3c3a3fdfc91f030280700f713dc871cf548e52a83a251c747f61dbfc21c53</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf runtime host — the deterministic SEAM-PASS composer (Tier-1).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // THE MISSING RUNTIME (journal/0001 + LESSONS.md). The first real Gandalf cycles proved the model</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // produces excellent DIAGNOSE/SITUATE/ANTICIPATE *content* but, run as pure SKILL.md prose, keeps</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // hand-approximating the tier stamps and failing the B-honesty canary. Root cause: the honest tiers +</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> // refutation stamps are meant to be APPLIED DETERMINISTICALLY by the shipped seams, not produced by</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> // the model. This module is that wiring: it takes the model&#x27;s RAW draft (un-stamped findings /</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> // elevations / diagnosis) and runs it through the already-shipped `seam/*.mjs` to produce a</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> // canary-conformant, honestly-graded advisor output that passes `assertIncrement1Conformant` by</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> // construction.</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> //</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> // SCOPE = Tier 1 (deterministic), by design (planning/runtime-host/DESCRIPTION.md):</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //   • ONE model run, the deterministic seam pass — NO live independent named-defeater refuters and NO</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //     researchPrime SITUATE commission (that needs the `agent()` seam the repo flags as the integration</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //     point the gate never runs). So every ELEVATION honestly lands at SPECULATIVE carrying the</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //     NO_INDEPENDENT_REFUTATION_STAMP — the seam&#x27;s own honest floor (`vetElevationRefutation`). The</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> //     live-refuter PROMISING tier is a sequenced follow-on (needs `agent()`). NOT in this effort.</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> //   • DIAGNOSE findings keep their evidence rungs + `gandalf_core` provenance; `risk_labels` are capped</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> //     at the single-family PROMISING ceiling (`composeRiskLabels`, cross_model:false). Only REFUTED drops.</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> //</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> // REUSES (never forks) the shipped engine — it invents NO grading logic. A malformed/partial raw draft</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> // produces an HONEST named error (`SeamPassInputError`), never a fabricated finding or a forged output.</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24">24</a> import {</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   vetElevationRefutation,</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> } from &#x27;../seam/refute.mjs&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> import { createCommissionLedger } from &#x27;../seam/commission-ledger.mjs&#x27;;</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> import {</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>   labelTier,</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>   composeRiskLabels,</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>   dropsFromOutput,</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> } from &#x27;../seam/score-label.mjs&#x27;;</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> import { stampDiagnoseCoreProvenance } from &#x27;../seam/diagnose-core.mjs&#x27;;</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> import { composeAnticipation } from &#x27;../seam/anticipate.mjs&#x27;;</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> import { composeSituate } from &#x27;../seam/situate.mjs&#x27;;</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> /** The committed schema version (prereg-constants.json / fixtures.mjs `emptyConformantOutput`). */</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> export const SCHEMA_VERSION = &#x27;gandalf-advisor-1&#x27;;</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> </span>
+<span class="source-line" id="L40"><a href="#L40">40</a> /** Thrown when the supplied raw draft is malformed/partial. A distinct, NAMED class so the host can</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>  *  fail HONESTLY (no fabricated finding, no forged conformant output) and the caller can discriminate</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>  *  an input problem from an internal seam failure. */</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> export class SeamPassInputError extends Error {</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   constructor(message) {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>     super(`SeamPassInputError: ${message}`);</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     this.name = &#x27;SeamPassInputError&#x27;;</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   }</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> }</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> </span>
+<span class="source-line" id="L50"><a href="#L50">50</a> function isPlainObject(v) {</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   return v !== null &amp;&amp; typeof v === &#x27;object&#x27; &amp;&amp; !Array.isArray(v);</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> }</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> function isNonEmptyString(v) {</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   return typeof v === &#x27;string&#x27; &amp;&amp; v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> }</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> const _RUNGS = [&#x27;REFUTED&#x27;, &#x27;UNVERIFIED&#x27;, &#x27;CLAIMED&#x27;, &#x27;CORROBORATED&#x27;, &#x27;OBSERVED&#x27;];</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> const _VALUES = [&#x27;low&#x27;, &#x27;medium&#x27;, &#x27;high&#x27;];</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> const _SEVERITIES = [&#x27;minor&#x27;, &#x27;major&#x27;, &#x27;critical&#x27;];</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> const _KINDS = [&#x27;diagnose&#x27;, &#x27;situate&#x27;, &#x27;anticipate&#x27;, &#x27;nitpick&#x27;];</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> // Real models reach for reasonable SYNONYMS the committed enum doesn&#x27;t list</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> // (e.g. severity &quot;moderate&quot;/&quot;info&quot;). Map the common ones to the nearest committed</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> // value; an unmappable value is dropped (the field is optional) rather than failing</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> // the whole read on a strict enum reject.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> const _SEVERITY_SYNONYMS = {</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>   moderate: &#x27;major&#x27;, medium: &#x27;major&#x27;, med: &#x27;major&#x27;, high: &#x27;critical&#x27;,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>   severe: &#x27;critical&#x27;, blocker: &#x27;critical&#x27;, fatal: &#x27;critical&#x27;,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   info: &#x27;minor&#x27;, informational: &#x27;minor&#x27;, note: &#x27;minor&#x27;, nit: &#x27;minor&#x27;,</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   low: &#x27;minor&#x27;, trivial: &#x27;minor&#x27;, cosmetic: &#x27;minor&#x27;,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> };</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> function _asString(v) {</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>   return typeof v === &#x27;string&#x27; ? v : (v === undefined || v === null ? &#x27;&#x27; : String(v));</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> }</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a> /** Coerce ONE item to the schema&#x27;s required-key shape AND sanitize its enum fields, WITHOUT inventing</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>  *  content: a missing/blank id gets a stable positional id; a missing/invalid rung honestly defaults to</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>  *  UNVERIFIED; reasoning + verdict are guaranteed present as strings (preserving the reasoning-BEFORE-</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>  *  verdict key order the canary enforces); an out-of-enum `severity` is mapped from a known synonym</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>  *  (moderate→major, info→minor, …) or dropped; an out-of-enum `kind` is dropped (→ a generic finding).</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>  *  Every other key (gandalf_core, future_state_condition, tier, value_if_true, …) is kept. THIS is what</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>  *  makes the host robust to a real model run that omits a field OR uses an off-enum synonym on an item —</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>  *  the read survives instead of the whole run failing on a strict-validation reject. */</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> function ensureItemKeys(item, index, prefix) {</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   const id = isNonEmptyString(item.id) ? item.id : `${prefix}${index}`;</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   const rung = _RUNGS.includes(item.rung) ? item.rung : &#x27;UNVERIFIED&#x27;;</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   const rest = { ...item };</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   delete rest.id; delete rest.rung; delete rest.reasoning; delete rest.verdict;</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>   // Sanitize enum fields the committed schema would reject (preserve the item, not the bad value).</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   if (&#x27;severity&#x27; in rest) {</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     const s = typeof rest.severity === &#x27;string&#x27; ? rest.severity.toLowerCase().trim() : &#x27;&#x27;;</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     if (_SEVERITIES.includes(s)) rest.severity = s;</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     else if (_SEVERITY_SYNONYMS[s]) rest.severity = _SEVERITY_SYNONYMS[s];</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     else delete rest.severity; // unknown → drop (optional field)</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   }</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   if (&#x27;kind&#x27; in rest &amp;&amp; !_KINDS.includes(rest.kind)) delete rest.kind; // invalid kind → generic finding</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   // id, rung, then the rest, then reasoning, then verdict (reasoning before verdict — load-bearing).</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   return { id, rung, ...rest, reasoning: _asString(item.reasoning), verdict: _asString(item.verdict) };</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> }</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a> /** Validate the RAW draft shape. We require only the structural minimum a read needs — a plain object</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>  *  with a non-empty `reasoning` + `verdict` (the headline a real model reliably emits). The three item</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>  *  arrays are COERCED to [] when absent (a model that emits no nitpicks is not an error) and each item</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>  *  is normalized per-item below, so an imperfect-but-real draft yields a graded read rather than a</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>  *  whole-run failure. Genuinely empty/garbage input still fails honestly (SeamPassInputError). */</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> function validateRawDraft(rawDraft) {</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   if (!isPlainObject(rawDraft)) {</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     throw new SeamPassInputError(&#x27;the raw draft must be a plain object (got &#x27; + (rawDraft === null ? &#x27;null&#x27; : Array.isArray(rawDraft) ? &#x27;array&#x27; : typeof rawDraft) + &#x27;)&#x27;);</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   if (!isNonEmptyString(rawDraft.reasoning)) {</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>     throw new SeamPassInputError(&quot;the raw draft must carry a non-empty &#x27;reasoning&#x27; string (reasoning-before-verdict)&quot;);</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>   }</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   if (!isNonEmptyString(rawDraft.verdict)) {</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     throw new SeamPassInputError(&quot;the raw draft must carry a non-empty &#x27;verdict&#x27; string&quot;);</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   }</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> }</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> </span>
+<span class="source-line" id="L117"><a href="#L117">117</a> /** True iff `item` ran degraded. */</span>
+<span class="source-line" id="L118"><a href="#L118">118</a> function itemDegraded(item) {</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   return isPlainObject(item) &amp;&amp; item.degraded === true;</span>
+<span class="source-line" id="L120"><a href="#L120">120</a> }</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> </span>
+<span class="source-line" id="L122"><a href="#L122">122</a> /** Turn ONE raw finding into its seam-stamped, schema-conformant finding by `kind`. Throws</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>  *  SeamPassInputError on a malformed finding (a non-object, or one the seam refuses) — never fabricates. */</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> function passFinding(raw, index) {</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>   if (!isPlainObject(raw)) {</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     throw new SeamPassInputError(`findings[${index}] is not an object`);</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>   }</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   const kind = raw.kind;</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   try {</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     if (kind === &#x27;diagnose&#x27;) {</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>       // The vetted-core diagnosis keeps its rung; the seam appends gandalf_core provenance.</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>       return stampDiagnoseCoreProvenance(raw);</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     }</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     if (kind === &#x27;anticipate&#x27;) {</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>       // composeAnticipation enforces subject_cardinality:1 + a populated future-state + enabling</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>       // assumption (B3 + B9), and refuses any Oranges-engine field. It mints a FRESH finding from</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>       // the raw stages, so we pass the raw fields straight through.</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>       const composed = composeAnticipation({</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>         id: raw.id,</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>         future_state_condition: raw.future_state_condition,</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>         enabling_assumption: raw.enabling_assumption,</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>         reasoning: raw.reasoning,</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>         verdict: raw.verdict,</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>         rung: raw.rung ?? &#x27;UNVERIFIED&#x27;,</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>         severity: raw.severity,</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>       });</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>       // Preserve an honest per-item degraded flag the seam does not carry (B6 rolls it up).</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>       if (raw.degraded === true) composed.degraded = true;</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>       return composed;</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     }</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     if (kind === &#x27;situate&#x27;) {</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>       // composeSituate runs the SITUATE honesty caps (no self-CORROBORATED; unverifiable → handoff).</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>       // Tier-1 has no live researchPrime commission, so facts_verified is false by construction and</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>       // the seam attaches the needs_verification handoff itself.</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>       const composed = composeSituate({</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>         id: raw.id,</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>         abstraction: raw.abstraction,</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>         commission: raw.commission,</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>         structure_map: raw.structure_map,</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>         outside_view_base_rate: raw.outside_view_base_rate,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>         reasoning: raw.reasoning,</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>         verdict: raw.verdict,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>         facts_verified: false, // Tier-1: no independent commission ran ⇒ never self-verified</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>       });</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>       if (raw.degraded === true) composed.degraded = true;</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>       return composed;</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>     }</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>     // Any other finding kind (incl. a bare nitpick-shaped finding) passes through untouched — the</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>     // schema only gates diagnose/situate/anticipate provenance.</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>     return { ...raw };</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>   } catch (err) {</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>     if (err instanceof SeamPassInputError) throw err;</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>     // The seam refused this item (e.g. an anticipate finding missing its future-state, or a situate</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>     // finding missing its structure map) — a real model draft will sometimes do this. Don&#x27;t fail the</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>     // whole run: PRESERVE the content as a GENERIC finding (strip the leg `kind` + any half-formed</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>     // provenance so no leg-specific canary applies); it is normalized to the required keys downstream.</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     const { kind: _k, gandalf_core: _gc, ...generic } = raw;</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     return generic;</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   }</span>
+<span class="source-line" id="L180"><a href="#L180">180</a> }</span>
+<span class="source-line" id="L181"><a href="#L181">181</a> </span>
+<span class="source-line" id="L182"><a href="#L182">182</a> /** Turn ONE raw elevation into its seam-graded elevation. Every elevation runs through</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>  *  `vetElevationRefutation`: an honestly-refuted elevation keeps its tier and gets its DERIVED</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>  *  `cross_family_refuted` flag (from the injected ledger resolver); an un-refuted one downgrades to</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>  *  SPECULATIVE + the no-independent-refutation stamp.</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>  *</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>  *  W2b: the tier ceiling is keyed off the DERIVED per-elevation cross-family eligibility, NOT any</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>  *  caller flag. `labelTier` is called with `cross_model: &lt;the elevation&#x27;s own derived eligibility&gt;`,</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>  *  so ONLY an elevation with a genuine ledger-bound, family-distinct, digest-matched refutation may</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>  *  reach the cross-family (GROUNDED) tier; every other elevation is capped at PROMISING. Returns null</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>  *  when the elevation drops (rung REFUTED). Throws on a non-object. */</span>
+<span class="source-line" id="L192"><a href="#L192">192</a> function passElevation(raw, index, resolveCommission) {</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>   if (!isPlainObject(raw)) {</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     throw new SeamPassInputError(`elevations[${index}] is not an object`);</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>   }</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>   // Only REFUTED drops (the single drop condition).</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>   if (dropsFromOutput(raw)) return null;</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   const degraded = raw.degraded === true;</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   let vetted = vetElevationRefutation(raw, { resolveCommission });</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   // DERIVED cross-family eligibility — the SOLE key to the GROUNDED ceiling (never the caller flag).</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   const crossFamilyEligible = vetted.cross_family_refuted === true;</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   const { dropped, tier } = labelTier(vetted, { cross_model: crossFamilyEligible });</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   if (dropped) return null;</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   const out = { ...vetted, tier };</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   if (degraded) out.degraded = true;</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   return out;</span>
+<span class="source-line" id="L207"><a href="#L207">207</a> }</span>
+<span class="source-line" id="L208"><a href="#L208">208</a> </span>
+<span class="source-line" id="L209"><a href="#L209">209</a> /**</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>  * applySeamPass — the deterministic Tier-1 host composer.</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>  *</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>  * Turn a model&#x27;s RAW draft ({ reasoning, verdict, findings[], nitpicks[], elevations[] } with</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>  * un-stamped items) into a canary-conformant, honestly-graded advisor output by applying ONLY the</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>  * shipped seams. PURE (returns a fresh object; does not mutate `rawDraft`). Single-family by default</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>  * (cross_model:false) ⇒ the PROMISING ceiling.</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>  *</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>  * W2b ANTI-OVERCLAIM DERIVATION: the top-level `cross_model` stamp is DERIVED, never caller-set. It</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>  * is true IFF at least one shipped elevation carries a genuine ledger-bound, family-distinct,</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>  * digest-matched refutation (its DERIVED `cross_family_refuted` flag from vetElevationRefutation).</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>  * The incoming `cross_model` flag is an INTENT only — recorded as `cross_model_requested` — and can</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>  * NEVER by itself set the output stamp true or lift any tier ceiling.</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>  *</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>  * PER-RUN LEDGER (replay-hardening): when no `resolveCommission` is injected, this run instantiates a</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>  * FRESH ledger via createCommissionLedger() and threads ITS resolver — NEVER the module-default</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>  * singleton. This kills the cross-run state leak (an id minted on the shared singleton by one run can</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>  * never resolve inside another). The fresh ledger&#x27;s minted-this-run set is empty until the live minter</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>  * lands (W3), so a Tier-1 run authenticates nothing — the honest single-family behavior — while W3&#x27;s</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>  * minter will mint on THIS same per-run ledger. A test may inject a stub via `opts.resolveCommission`.</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>  *</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>  * @param {object} rawDraft</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>  * @param {{cross_model?: boolean, resolveCommission?: Function}} [opts]</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>  * @returns {object} a conformant output that passes `assertIncrement1Conformant`.</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>  * @throws {SeamPassInputError} on a malformed/partial draft — no partial output is returned.</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>  */</span>
+<span class="source-line" id="L235"><a href="#L235">235</a> export function applySeamPass(rawDraft, { cross_model = false, resolveCommission } = {}) {</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   validateRawDraft(rawDraft);</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   const crossModelRequested = cross_model === true; // the caller INTENT — never the stamp itself</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   // A FRESH per-run ledger (no module-default singleton state leak). The injection seam wins: tests and</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   // future callers may pass an explicit resolver; otherwise this run resolves against its own ledger.</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>   const resolve = typeof resolveCommission === &#x27;function&#x27;</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     ? resolveCommission</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     : createCommissionLedger().resolveCommission;</span>
+<span class="source-line" id="L243"><a href="#L243">243</a> </span>
+<span class="source-line" id="L244"><a href="#L244">244</a>   // The three item arrays are coerced to [] when the model omitted them (lenient input).</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>   const rawFindings = Array.isArray(rawDraft.findings) ? rawDraft.findings : [];</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>   const rawNitpicks = Array.isArray(rawDraft.nitpicks) ? rawDraft.nitpicks : [];</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>   const rawElevations = Array.isArray(rawDraft.elevations) ? rawDraft.elevations : [];</span>
+<span class="source-line" id="L248"><a href="#L248">248</a> </span>
+<span class="source-line" id="L249"><a href="#L249">249</a>   // --- findings: dispatch by kind through the shipped seams; drop only REFUTED -----------------</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>   // 2026-08-25 (John-ratified card — journals 0301/0303: killed/dropped items left NO record,</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>   // so a kill was indistinguishable from a silent omission — an honesty hole in an honesty</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>   // engine): every drop is RECORDED with its reason in output.kill_log (below the fold).</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>   const killLog = { findings: [], nitpicks: [], elevations: [] };</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   const briefOf = (raw) =&gt; String(raw?.topic ?? raw?.claim ?? raw?.message ?? raw?.id ?? &#x27;(untitled)&#x27;).slice(0, 120);</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>   const findings = [];</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   let anyDegraded = false;</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>   rawFindings.forEach((raw, i) =&gt; {</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     if (!isPlainObject(raw)) { killLog.findings.push({ index: i, reason: &#x27;not an object&#x27; }); return; }</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     if (dropsFromOutput(raw)) { killLog.findings.push({ index: i, brief: briefOf(raw), reason: &#x27;REFUTED — rung refuted by its refutation record&#x27; }); return; }</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     const passed = passFinding(raw, i); // never throws now (a seam refusal → a generic finding)</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>     if (itemDegraded(passed)) anyDegraded = true;</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     findings.push(ensureItemKeys(passed, i, &#x27;f&#x27;));</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>   });</span>
+<span class="source-line" id="L264"><a href="#L264">264</a> </span>
+<span class="source-line" id="L265"><a href="#L265">265</a>   // --- nitpicks: normalize to the required keys; skip non-objects; drop REFUTED -----------------</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>   const nitpicks = [];</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>   rawNitpicks.forEach((raw, i) =&gt; {</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>     if (!isPlainObject(raw)) { killLog.nitpicks.push({ index: i, reason: &#x27;not an object&#x27; }); return; }</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     if (dropsFromOutput(raw)) { killLog.nitpicks.push({ index: i, brief: briefOf(raw), reason: &#x27;REFUTED — rung refuted by its refutation record&#x27; }); return; }</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     if (itemDegraded(raw)) anyDegraded = true;</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     nitpicks.push(ensureItemKeys(raw, i, &#x27;n&#x27;));</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>   });</span>
+<span class="source-line" id="L273"><a href="#L273">273</a> </span>
+<span class="source-line" id="L274"><a href="#L274">274</a>   // --- elevations: vet refutation (SPECULATIVE floor) → label tier; drop REFUTED ----------------</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>   const elevations = [];</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   let anyCrossFamily = false; // W2b: DERIVES the top-level cross_model — set only by a genuine refutation</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   rawElevations.forEach((raw, i) =&gt; {</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>     if (!isPlainObject(raw)) { killLog.elevations.push({ index: i, reason: &#x27;not an object&#x27; }); return; }</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     let passed;</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     try {</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>       passed = passElevation(raw, i, resolve);</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     } catch (e) {</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>       // an un-salvageable elevation is dropped, never fatal to the run — but RECORDED</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>       killLog.elevations.push({ index: i, brief: briefOf(raw), reason: `un-salvageable: ${e?.message ?? e}` });</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>       return;</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     }</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     if (passed === null) {</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>       // dropped (REFUTED) — record WHY, incl. the refutation&#x27;s named defeater when present</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>       const defeater = raw?.refutation_provenance?.defeater ?? null;</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>       killLog.elevations.push({ index: i, brief: briefOf(raw), reason: &#x27;REFUTED — the named defeater landed&#x27;, defeater });</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>       return;</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     }</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     if (passed.cross_family_refuted === true) anyCrossFamily = true; // a real ledger-bound refutation</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     if (itemDegraded(passed)) anyDegraded = true;</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     // Guarantee a valid value_if_true (required enum) before normalizing the rest.</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     if (!_VALUES.includes(passed.value_if_true)) passed = { ...passed, value_if_true: &#x27;low&#x27; };</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>     elevations.push(ensureItemKeys(passed, i, &#x27;e&#x27;));</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>   });</span>
+<span class="source-line" id="L299"><a href="#L299">299</a> </span>
+<span class="source-line" id="L300"><a href="#L300">300</a>   // --- assemble the partial output, then synthesize honest risk_labels over it ------------------</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>   // B6: if any item ran degraded, OR the draft itself declared degraded, the top level owns it.</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>   const degraded = anyDegraded || rawDraft.degraded === true;</span>
+<span class="source-line" id="L303"><a href="#L303">303</a> </span>
+<span class="source-line" id="L304"><a href="#L304">304</a>   // W2b: cross_model is DERIVED — true IFF a shipped elevation earned a genuine cross-family</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>   // refutation. The caller&#x27;s intent flag is recorded separately and never sets this true.</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>   const output = {</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>     schema_version: SCHEMA_VERSION,</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     cross_model: anyCrossFamily === true,</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     cross_model_requested: crossModelRequested,</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     degraded,</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     reasoning: rawDraft.reasoning, // reasoning BEFORE verdict (key order is load-bearing)</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     verdict: rawDraft.verdict,</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>     findings,</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     nitpicks,</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     elevations,</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     risk_labels: [], // filled below from the finalized findings</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>   };</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>   // composeRiskLabels reads the finalized findings: one label per present leg, envelope rung,</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>   // PROMISING ceiling on a single-family run.</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   output.risk_labels = composeRiskLabels(output);</span>
+<span class="source-line" id="L321"><a href="#L321">321</a> </span>
+<span class="source-line" id="L322"><a href="#L322">322</a>   // Kill log rides below the fold (additive; schema additionalProperties:true) — John sees</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>   // WHY each recommendation died, and a kill is never confusable with a silent omission.</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>   output.kill_log = killLog;</span>
+<span class="source-line" id="L325"><a href="#L325">325</a> </span>
+<span class="source-line" id="L326"><a href="#L326">326</a>   return output;</span>
+<span class="source-line" id="L327"><a href="#L327">327</a> }</span></pre></main></body></html>

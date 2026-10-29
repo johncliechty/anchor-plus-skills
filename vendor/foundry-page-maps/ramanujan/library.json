@@ -1,0 +1,158 @@
+{
+  "resources": [
+    {
+      "id": "ramanujan-mat-skill-md",
+      "title": "Ramanujan Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "ramanujan-mat-human-md",
+      "title": "Ramanujan Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "ramanujan-mat-north-star-md",
+      "title": "Ramanujan Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "ramanujan-mat-description-md",
+      "title": "Ramanujan Detailed Specification (DESCRIPTION.md)",
+      "category": "material",
+      "path": "DESCRIPTION.md",
+      "description": "Detailed capability specification and module breakdown."
+    },
+    {
+      "id": "ramanujan-mat-implementation-plan-md",
+      "title": "Ramanujan Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "category": "material",
+      "path": "IMPLEMENTATION-PLAN.md",
+      "description": "Wave-by-wave engineering plan and verification gates."
+    },
+    {
+      "id": "ramanujan-mat-triage-block",
+      "title": "Ramanujan Universal Triage & Seating Block",
+      "category": "material",
+      "path": "foundry/triage/generated/ramanujan.triage-block.md",
+      "description": "Generated Universal Seating Law & complexity triage protocol block."
+    },
+    {
+      "id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "title": "wasm-sandbox-runner.mjs (_archive/overhaul-orphans-2026-07-25/wasm-sandbox-runner.mjs)",
+      "category": "tools",
+      "path": "_archive/overhaul-orphans-2026-07-25/wasm-sandbox-runner.mjs",
+      "description": "Executable .mjs module (18 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "ramanujan-tool-bin-ramanujan-run-mjs",
+      "title": "ramanujan-run.mjs (bin/ramanujan-run.mjs)",
+      "category": "tools",
+      "path": "bin/ramanujan-run.mjs",
+      "description": "Executable .mjs module (315 LOC; key symbols: parseArith, ws, fail, factor)."
+    },
+    {
+      "id": "ramanujan-tool-run-foreman-mjs",
+      "title": "run-foreman.mjs (run-foreman.mjs)",
+      "category": "tools",
+      "path": "run-foreman.mjs",
+      "description": "Executable .mjs module (35 LOC; key symbols: emit)."
+    },
+    {
+      "id": "ramanujan-tool-src-adjudication-mjs",
+      "title": "adjudication.mjs (src/adjudication.mjs)",
+      "category": "tools",
+      "path": "src/adjudication.mjs",
+      "description": "Executable .mjs module (493 LOC; key symbols: runtimeFingerprint, canonicalize, sortDeep, canonicalStdoutHash)."
+    },
+    {
+      "id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "title": "certifier-queue.mjs (_archive/overhaul-orphans-2026-07-25/certifier-queue.mjs)",
+      "category": "tools",
+      "path": "_archive/overhaul-orphans-2026-07-25/certifier-queue.mjs",
+      "description": "Executable .mjs module (86 LOC; key symbols: refuse)."
+    },
+    {
+      "id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "title": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "category": "tools",
+      "path": "_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs",
+      "description": "Executable .mjs module (238 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "ramanujan-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "ramanujan-peer-researchprime",
+      "title": "researchPrime Literature & Prior-Art Engine",
+      "category": "skills",
+      "skill": "researchprime",
+      "description": "Cross-checks mathematical conjectures against published theorems and counterexamples"
+    },
+    {
+      "id": "ramanujan-peer-gandalf",
+      "title": "Gandalf Proof & Assumption Refuter",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Hunts for hidden boundary assumptions, singular matrices, and unstated lemmas"
+    },
+    {
+      "id": "ramanujan-peer-anvil",
+      "title": "Anvil Numerical Equivalence Verifier",
+      "category": "skills",
+      "skill": "anvil",
+      "description": "Binds symbolic Z3/SymPy/Decimal invariants to executable Python/JS code"
+    },
+    {
+      "id": "ramanujan-ref-lessons",
+      "title": "Ramanujan LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "ramanujan-ref-changelog",
+      "title": "Ramanujan CHANGELOG.md",
+      "category": "references",
+      "path": "CHANGELOG.md",
+      "description": "Accumulated operational lessons and historical evolution in CHANGELOG.md."
+    },
+    {
+      "id": "ramanujan-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "ramanujan-journal-0027-mba-homework-ta-revision1",
+      "title": "Journal: 0027-mba-homework-ta-revision1-audit",
+      "category": "references",
+      "path": "journal/0027-mba-homework-ta-revision1-audit.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0027-mba-homework-ta-revision1-audit.md)."
+    },
+    {
+      "id": "ramanujan-journal-0026-all-souls-v33-conceptual-",
+      "title": "Journal: 0026-all-souls-v33-conceptual-review",
+      "category": "references",
+      "path": "journal/0026-all-souls-v33-conceptual-review.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0026-all-souls-v33-conceptual-review.md)."
+    },
+    {
+      "id": "ramanujan-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>landing-fixed · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>landing-fixed</h1>
+<p>use record · exact captured bytes</p><p class="path">Original: Foundry page and knowledge maps/steward-cave/sources/landing-fixed.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 ac5a72f0fba07b68dabd4ecfc8d30ed24ffb9bb7f7ce9e8bad3d41c7b4eea214</p></details>
+<aside class="source-provenance" data-source-freshness="frozen-example"><p><strong>Frozen historical example</strong> · captured <time>2026-10-05T23:59:10.722571+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/journal/2073-safe-landing-live.md</p><p>Historical repair report. Current code is checked separately; live landing is not reproduced by this display.</p><p class="path">Capture SHA-256: ac5a72f0fba07b68dabd4ecfc8d30ed24ffb9bb7f7ce9e8bad3d41c7b4eea214</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> # 2073 — Safe landing live (delegated-work Part A)</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> **Skill:** Ecgberht (steward code jobs) · 2026-10-05</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> **Situation:** 2072&#x27;s incident: a code job&#x27;s refused `git merge` reset the shared Anchor tree and wiped uncommitted work.</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> **Did:** Part A of `planning/delegated-work-2026-10-04/PROPOSAL.md` v0.3, live at Anchor `da09bb5`: one commit lock,</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> snapshots before every land, a by-path lander that commits the job&#x27;s blobs from a private index and moves HEAD by</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> compare-and-swap, gitguard as every agent&#x27;s `git` (refuses tree rewrites outside a job&#x27;s own worktree), runtime state</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> untracked. Grok code R1–R5 (R5 SOUND).</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> **Lesson:** a steward&#x27;s land must never use porcelain that reads the shared tree (`merge`, `commit -- &lt;paths&gt;`, `add`)</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> — those race the user. Build the commit from blobs; move the ref by CAS.</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> **Next:** land the held Foundry jobs; Parts B and C.</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> **Detail:** `C:\dev\Anchor\journal\2026-10-05-safe-landing-live.md`.</span></pre></main></body></html>

@@ -1,0 +1,380 @@
+{
+  "nodes": [
+    {
+      "id": "aegis-root",
+      "name": "Aegis Knowledge & Execution Architecture",
+      "title": "Aegis Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "aegis-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "aegis-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "aegis-root"
+      ],
+      "ring": 1,
+      "resource_id": "aegis-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "aegis-root"
+      ],
+      "ring": 1,
+      "resource_id": "aegis-tool-scripts-aegis-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "aegis-root"
+      ],
+      "ring": 1,
+      "resource_id": "aegis-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "aegis-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "aegis-root"
+      ],
+      "ring": 1,
+      "resource_id": "aegis-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "aegis-leaf-mat-1",
+      "name": "Aegis Agent & Execution Protocol (SKILL.md)",
+      "title": "Aegis Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "aegis-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-mat-2",
+      "name": "Aegis Human Guide (HUMAN.md)",
+      "title": "Aegis Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "aegis-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-mat-3",
+      "name": "Aegis Locked North Star (NORTH-STAR.md)",
+      "title": "Aegis Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "aegis-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-tool-1",
+      "name": "aegis_engine.py (scripts/aegis_engine.py)",
+      "title": "aegis_engine.py (scripts/aegis_engine.py)",
+      "parent_ids": [
+        "aegis-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-tool-scripts-aegis-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-tool-2",
+      "name": "test_aegis_engine.py (tests/test_aegis_engine.py)",
+      "title": "test_aegis_engine.py (tests/test_aegis_engine.py)",
+      "parent_ids": [
+        "aegis-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-tool-tests-test-aegis-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-tool-3",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "aegis-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-tool-4",
+      "name": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "parent_ids": [
+        "aegis-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-shared-tool-mapping",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-tool-5",
+      "name": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "parent_ids": [
+        "aegis-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-shared-tool-foreman-lib",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "aegis-leaf-skill-1",
+      "name": "Gandalf Deep-Think Security Verifier",
+      "title": "Gandalf Deep-Think Security Verifier",
+      "parent_ids": [
+        "aegis-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "aegis-leaf-skill-2",
+      "name": "Anvil AST & LibCST Engine",
+      "title": "Anvil AST & LibCST Engine",
+      "parent_ids": [
+        "aegis-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-peer-anvil",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "aegis-leaf-skill-3",
+      "name": "Foreman Build Gate",
+      "title": "Foreman Build Gate",
+      "parent_ids": [
+        "aegis-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-peer-foreman",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "aegis-leaf-ref-1",
+      "name": "Aegis LESSONS.md",
+      "title": "Aegis LESSONS.md",
+      "parent_ids": [
+        "aegis-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "aegis-leaf-ref-2",
+      "name": "Reference: AEGIS-OWASP-CWE-REMEDIATION-REFERENCE.md",
+      "title": "Reference: AEGIS-OWASP-CWE-REMEDIATION-REFERENCE.md",
+      "parent_ids": [
+        "aegis-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-ref-aegis-owasp-cwe-remediation-reference",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "aegis-leaf-ref-3",
+      "name": "Journal: 0001-aegis-v1-defensive-security-engine",
+      "title": "Journal: 0001-aegis-v1-defensive-security-engine",
+      "parent_ids": [
+        "aegis-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-journal-0001-aegis-v1-defensive-security-e",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "aegis-leaf-ref-4",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "aegis-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "aegis-leaf-ref-5",
+      "name": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "title": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "parent_ids": [
+        "aegis-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "aegis-kb-researchprime-code-rewriting-tools",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

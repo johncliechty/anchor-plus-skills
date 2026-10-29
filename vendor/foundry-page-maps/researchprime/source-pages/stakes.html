@@ -1,0 +1,149 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>stakes · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>stakes</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\stakes.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 1636a05ea157090beff712555f8e5f4a0253978e9083c8f6a0e4a9c2c26c55cd</p></details>
+<p><a href="../sources/stakes.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/stakes.mjs — Wave 4 Phase-1 seam: the adjudicated STAKES VECTOR → governor tier.</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // MASTER-PLAN Phase A: &quot;Emit a stakes vector (captures irreversibility; reviewer-checkable;</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // irreversible ⇒ tier ≥ medium), projected to a governor tier.&quot; IMPLEMENTATION-PLAN Wave 4:</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // &quot;Given reversibility=&#x27;irreversible&#x27;, Then tier ≥ medium (I6); raw vector persisted (no schema</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // break).&quot;</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> //</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // The honesty lever here is I6 (&quot;no gamed gates&quot;): the stakes that scale the whole verification</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // loop must NOT be whatever the author casually declared — the vector is ADJUDICATED. The author&#x27;s</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> // declaration is one axis among several, and an irreversible action forces the governor tier up to</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> // at least `medium` even when the author declared it `low` (the under-call guard the fixture&#x27;s</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> // `declared-low-but-irreversible` probe exists to catch). Every upgrade is recorded in `overrides`</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // so the adjudication is reviewer-checkable, not a black box.</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> // This module is PURE: `adjudicateStakes` is a deterministic function of its input (no clock, no</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> // randomness), and it NEVER mutates the caller&#x27;s input — the raw declared vector is copied verbatim</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> // onto the result so a downstream consumer that only knows the declared axes still reads them</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> // unchanged (the &quot;no schema break&quot;: adjudication is strictly ADDITIVE).</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> // ── Tier ladder (ordinal) ────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> // The governor tier the rest of the engine scales by. Ordered low &lt; medium &lt; high.</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> export const TIERS = Object.freeze([&#x27;low&#x27;, &#x27;medium&#x27;, &#x27;high&#x27;]);</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> /** Ordinal rank of a tier; -1 for an unknown tier (so unknowns never silently win a max). */</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> export function tierRank(tier) {</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a>   return TIERS.indexOf(tier);</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> }</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> </span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> /** The higher of two tiers (the projection combinator). Throws on an unknown tier. */</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> export function maxTier(a, b) {</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>   const ra = tierRank(a);</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>   const rb = tierRank(b);</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>   if (ra &lt; 0) throw new RangeError(`unknown tier: ${JSON.stringify(a)}`);</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>   if (rb &lt; 0) throw new RangeError(`unknown tier: ${JSON.stringify(b)}`);</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   return ra &gt;= rb ? a : b;</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> }</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> /** Whether `tier` is at least `floor` on the ladder (the ≥ comparison crit-tests assert). */</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> export function tierAtLeast(tier, floor) {</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>   const rt = tierRank(tier);</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>   const rf = tierRank(floor);</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   if (rt &lt; 0) throw new RangeError(`unknown tier: ${JSON.stringify(tier)}`);</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   if (rf &lt; 0) throw new RangeError(`unknown floor: ${JSON.stringify(floor)}`);</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>   return rt &gt;= rf;</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> }</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> // ── The stakes axes: each maps a declared value to the tier it justifies ───────────────────────</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> // Reviewer-checkable: a reviewer can read each axis&#x27;s contribution and the projection rule.</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> // `reversibility` carries the I6 floor — `irreversible` justifies AT LEAST `medium` regardless of</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> // the author&#x27;s declared stakes (it is the under-call guard, not merely another input).</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> const AXIS_TIER_MAPS = Object.freeze({</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   declared_stakes: { low: &#x27;low&#x27;, medium: &#x27;medium&#x27;, high: &#x27;high&#x27; },</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>   reversibility: { reversible: &#x27;low&#x27;, &#x27;hard-to-reverse&#x27;: &#x27;medium&#x27;, irreversible: &#x27;medium&#x27; },</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>   blast_radius: { narrow: &#x27;low&#x27;, moderate: &#x27;medium&#x27;, wide: &#x27;high&#x27; },</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a>   magnitude: { minor: &#x27;low&#x27;, moderate: &#x27;medium&#x27;, major: &#x27;high&#x27; },</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> });</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> /** The recognized stakes-vector axes, in a stable order (for reviewer-facing rationale). */</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> export const STAKES_AXES = Object.freeze(Object.keys(AXIS_TIER_MAPS));</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> // Irreversibility forces the governor tier to AT LEAST this (I6; IMPLEMENTATION-PLAN Wave 4).</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> export const IRREVERSIBLE_FLOOR = &#x27;medium&#x27;;</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> /**</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>  * Map one axis value to the tier it justifies. An unrecognized value for a known axis contributes</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>  * nothing (`low`) — it can never silently RAISE the tier, only the recognized scale words can — so</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>  * a typo&#x27;d or novel value fails safe (no spurious upgrade) and is left for a reviewer to catch.</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>  */</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> function axisTier(axis, value) {</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>   const map = AXIS_TIER_MAPS[axis];</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>   if (!map) return &#x27;low&#x27;;</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>   return map[value] ?? &#x27;low&#x27;;</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> }</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> /**</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>  * Adjudicate a declared stakes input into a governor tier (I6).</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>  *</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>  * @param {object} input the declared stakes vector — any of {declared_stakes, reversibility,</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>  *   blast_radius, magnitude}, plus an optional `id`/extra fields (preserved verbatim).</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>  * @returns {{</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>  *   id: string|undefined,</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>  *   raw: object,                       // the caller&#x27;s declared vector, copied verbatim (no schema break)</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>  *   axis_tiers: Record&lt;string,string&gt;, // each recognized axis&#x27;s tier contribution (reviewer-checkable)</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>  *   declared_tier: string,             // what the author&#x27;s `declared_stakes` alone would have set</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>  *   tier: string,                      // the adjudicated governor tier (the projection)</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>  *   overrides: Array&lt;{axis,from,to,reason}&gt;, // every upgrade above the declared tier (auditable)</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>  *   rationale: string,</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>  * }}</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>  */</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a> export function adjudicateStakes(input) {</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>   if (!input || typeof input !== &#x27;object&#x27; || Array.isArray(input)) {</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>     throw new TypeError(&#x27;adjudicateStakes requires a stakes-vector object&#x27;);</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>   }</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>   // Per-axis tier contributions (only for axes the caller actually declared).</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>   const axis_tiers = {};</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>   for (const axis of STAKES_AXES) {</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>     if (input[axis] !== undefined) axis_tiers[axis] = axisTier(axis, input[axis]);</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>   }</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a> </span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>   // The author&#x27;s self-declaration alone (the number the under-call guard must beat).</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>   const declared_tier = input.declared_stakes !== undefined</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>     ? axisTier(&#x27;declared_stakes&#x27;, input.declared_stakes)</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>     : &#x27;low&#x27;;</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>   // Projection: the highest tier any declared axis justifies.</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   let tier = &#x27;low&#x27;;</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>   for (const t of Object.values(axis_tiers)) tier = maxTier(tier, t);</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>   // I6 under-call guard (defensive floor): irreversibility forces tier ≥ medium regardless of the</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>   // axis map (so the floor survives even if the reversibility scale is ever re-tuned).</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>   if (input.reversibility === &#x27;irreversible&#x27;) tier = maxTier(tier, IRREVERSIBLE_FLOOR);</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a> </span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>   // Record every axis (other than the author&#x27;s own declaration) that pushed the governor tier ABOVE</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>   // the author&#x27;s declared tier, so a reviewer sees exactly WHY the governor over-rode the author.</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>   // The canonical case is the irreversibility floor beating a `low` declaration (the under-call</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>   // guard); the same loop also catches e.g. a `wide` blast_radius beating a `low` declaration.</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>   const overrides = [];</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>   for (const axis of STAKES_AXES) {</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>     if (axis === &#x27;declared_stakes&#x27;) continue;</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>     const at = axis_tiers[axis];</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>     if (!at || tierRank(at) &lt;= tierRank(declared_tier)) continue;</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>     const reason =</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>       axis === &#x27;reversibility&#x27; &amp;&amp; input.reversibility === &#x27;irreversible&#x27;</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>         ? `reversibility=&#x27;irreversible&#x27; forces tier ≥ ${IRREVERSIBLE_FLOOR} (I6 under-call guard)`</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>         : `${axis}=&#x27;${input[axis]}&#x27; justifies tier ${at}, above the declared ${declared_tier}`;</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>     overrides.push({ axis, from: declared_tier, to: at, reason });</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>   }</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> </span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>   const rationale =</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>     `adjudicated governor tier=${tier} (declared=${declared_tier})` +</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>     (overrides.length ? `; upgraded by: ${overrides.map((o) =&gt; o.axis).join(&#x27;, &#x27;)}` : &#x27;; no upgrade&#x27;);</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a> </span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>   return {</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>     id: input.id,</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>     raw: { ...input }, // verbatim copy — additive adjudication, never mutates the declared vector</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>     axis_tiers,</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>     declared_tier,</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>     tier,</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>     overrides,</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>     rationale,</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>   };</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a> }</span></pre></main></body></html>

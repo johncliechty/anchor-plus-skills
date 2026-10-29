@@ -1,0 +1,59 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>One repository-owning code job · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="code-job" data-anchor-id="a-jobs-start">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>One repository-owning code job</h1>
+<p class="intro">start refuses a second owned job, creates a worktree and gives an artifact-only coder contract. The registry does not lock every external OS writer.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.632747+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/code_jobs.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: ea9e29c9fa793dfc952a55b0019750d2b52056821c869f08b45021cd804d59f7</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\code_jobs.py · lines 148–194</p><pre>def start(cdir, repo, brief, check=&quot;&quot;, engine_factory=None, steward=&quot;&quot;):
+    &quot;&quot;&quot;Start a code job for the steward at ``cdir``: a worktree of ``repo`` and a coder engine given ``brief``.
+    ``engine_factory(worktree) -&gt; engine`` is the seam (steward_routes passes get_engine).&quot;&quot;&quot;
+    brief = str(brief or &quot;&quot;).strip()
+    if not brief:
+        return {&quot;ok&quot;: False, &quot;error&quot;: &quot;a code job needs a brief&quot;}
+    root = _repo_root(repo or &quot;&quot;)
+    if root is None:
+        return {&quot;ok&quot;: False, &quot;error&quot;: &quot;not a git repository: %s&quot; % repo}
+    job_id = time.strftime(&quot;%Y%m%d-%H%M%S&quot;) + &quot;-&quot; + uuid.uuid4().hex[:6]
+    branch = &quot;steward-job-&quot; + job_id
+    wt = jobs_base() / job_id
+    with _LOCK:      # the check, the worktree and the busy entry: one step, so two stewards never both start
+        if _norm(root) in busy_repos():
+            return {&quot;ok&quot;: False, &quot;error&quot;: &quot;a code job is already running on %s; one writer at a time&quot; % root}
+        code, base, err = _git(root, &quot;rev-parse&quot;, &quot;HEAD&quot;)
+        if code != 0:
+            return {&quot;ok&quot;: False, &quot;error&quot;: &quot;the repository has no commit to start from: %s&quot; % err}
+        code, _, err = _git(root, &quot;worktree&quot;, &quot;add&quot;, &quot;-b&quot;, branch, str(wt), base, timeout=600)
+        if code != 0:
+            return {&quot;ok&quot;: False, &quot;error&quot;: &quot;could not make the worktree: %s&quot; % err[:300]}
+        job = {&quot;id&quot;: job_id, &quot;repo&quot;: str(root), &quot;branch&quot;: branch, &quot;worktree&quot;: str(wt), &quot;base&quot;: base, &quot;brief&quot;: brief[:8000],
+               &quot;check&quot;: str(check or &quot;&quot;)[:500], &quot;status&quot;: &quot;running&quot;, &quot;started&quot;: time.strftime(&quot;%Y-%m-%d %H:%M:%S&quot;),
+               &quot;steward_dir&quot;: str(cdir), &quot;steward&quot;: steward}
+        _write_job(cdir, job)
+        b = _busy_read()
+        b[_norm(root)] = {&quot;job&quot;: job_id, &quot;cdir&quot;: str(cdir)}
+        _busy_write(b)
+    # the coder&#x27;s own folder record: one workbench terminal
+    terms = Path(wt) / &quot;.anchor&quot; / &quot;steward-terms.json&quot;
+    terms.parent.mkdir(parents=True, exist_ok=True)
+    terms.write_text(json.dumps({&quot;1&quot;: {&quot;label&quot;: &quot;code job &quot; + job_id, &quot;created&quot;: job[&quot;started&quot;], &quot;archived&quot;: False}}), encoding=&quot;utf-8&quot;)
+    _exclude_local(wt)
+    try:
+        eng = engine_factory(str(wt)) if engine_factory else None
+        if eng is None:
+            raise RuntimeError(&quot;no engine slot for the coder&quot;)
+        eng.code_job = {&quot;cdir&quot;: str(cdir), &quot;id&quot;: job_id, &quot;repo&quot;: str(root)}
+        eng.on_turn_done = lambda result: threading.Thread(target=finish, args=(cdir, job_id, result), name=&quot;code-job-&quot; + job_id, daemon=True).start()
+        ok, why = eng.wake(fresh=True, seed=coder_brief(job))
+        if not ok:
+            raise RuntimeError(why)
+    except Exception as e:
+        j = _transition(cdir, job_id, LIVE, status=&quot;failed&quot;, finished=time.strftime(&quot;%Y-%m-%d %H:%M:%S&quot;), error=&quot;the coder could not start: %s&quot; % e)
+        _cleanup(j or job, keep_branch=False)
+        return {&quot;ok&quot;: False, &quot;error&quot;: &quot;the coder could not start: %s&quot; % e, &quot;job&quot;: job_id}
+    return {&quot;ok&quot;: True, &quot;job&quot;: job_id, &quot;branch&quot;: branch, &quot;worktree&quot;: str(wt)}</pre>
+<p><a class="button" href="../source-pages/jobs.html#L148">Open numbered source</a>
+<a href="../sources/jobs.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/job">Launch one repository-owning code job</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">ea9e29c9fa793dfc952a55b0019750d2b52056821c869f08b45021cd804d59f7</span></p><p>Excerpt hash: <span class="path">143f2017ed873ab1562baa40338aaea16c0f16f951b3797a0d9b2d1b712c22b6</span></p></details></article></main></body></html>

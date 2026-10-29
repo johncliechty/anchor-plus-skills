@@ -1,0 +1,436 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>personas · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>personas</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Anchor\anchor_settings.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 58b8b56d0e3c82a7ef3aaeebc1e1afa1ebbc64b776a4b461a2b6d35252444bfa</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.633536+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/anchor_settings.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 58b8b56d0e3c82a7ef3aaeebc1e1afa1ebbc64b776a4b461a2b6d35252444bfa</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> #!/usr/bin/env python3</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> &quot;&quot;&quot;Anchor durable settings store — model/engine prefs (stdlib only).</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> </span>
+<span class="source-line" id="L4"><a href="#L4">4</a> Single source of truth for the interactive default CLI and the coding/review</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> model families. Written under ``paths.WRITE_LOCK`` with atomic primary + mirror</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> writes so concurrent ThreadingHTTPServer writers and non-Anchor agents (VS Code,</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> Claude Code, Grok Build) share the same prefs.</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9">9</a> Primary: ``paths.data_dir() / &quot;settings.json&quot;``</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> Mirror:  ``~/.anchor/model_prefs.json`` (discoverable without ANCHOR_DATA_DIR)</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> </span>
+<span class="source-line" id="L12"><a href="#L12">12</a> Display reads remain available during configuration errors. Model launches use</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> get_launch_settings(), which refuses corrupt or missing authoritative settings.</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16">16</a> from __future__ import annotations</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> </span>
+<span class="source-line" id="L18"><a href="#L18">18</a> import json</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> import os</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> import time</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> from contextlib import contextmanager</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> from datetime import datetime, timezone</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> from pathlib import Path</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> </span>
+<span class="source-line" id="L25"><a href="#L25">25</a> import paths as _paths</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> from model_policy import DEFAULT_POLICY, validate_policy</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> import provider_settings as _providers</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> </span>
+<span class="source-line" id="L29"><a href="#L29">29</a> VALID_CLIS = frozenset({&quot;claude&quot;, &quot;gemini&quot;, &quot;grok&quot;, &quot;chatgpt&quot;})</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> VALID_FAMILIES = VALID_CLIS</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> # (John, 2026-09-05) ChatGPT reviews and judges: the Codex transport attests the</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> # family, not the served model, so its verdicts carry a model-unattested stamp.</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> VALID_REVIEW_FAMILIES = frozenset({&quot;claude&quot;, &quot;gemini&quot;, &quot;grok&quot;, &quot;chatgpt&quot;})</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> # (John, 2026-09-05) ChatGPT drives the interactive terminal too — the Codex TUI</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> # in the cockpit PTY — so every family is a valid default terminal CLI.</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> VALID_DEFAULT_CLIS = VALID_CLIS</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38">38</a> # ── Steward personas (2026-07-29) ────────────────────────────────────────────</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> # One steward engine, selectable livery. The HIGH SEAT icon fronts the</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> # portfolio steward on the main dashboard; the SEAL icon fronts each project</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> # (the Projects tile + future per-project chamber). Icon files live in</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> # vendor/brand/ and ship with the bundle.</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> STEWARDS = {</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>     &quot;ecgberht&quot;: {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>         &quot;label&quot;: &quot;Ecgberht&quot;,</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>         &quot;desc&quot;: &quot;The royal steward — stone high seat and wax seal (the original).&quot;,</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>         &quot;high_seat&quot;: &quot;ecgberht-portfolio-high-seat.jpg&quot;,</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>         &quot;seal&quot;: &quot;ecgberht-project-seal.jpg&quot;,</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>         # Persona-consistent NAMING (2026-07-30): the portfolio surface and</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>         # the project mark are called by the persona&#x27;s OWN names everywhere</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>         # (tile titles, hints, tooltips) — never a mixed livery.</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>         &quot;high_seat_name&quot;: &quot;High Seat&quot;,</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>         &quot;seal_name&quot;: &quot;Seal&quot;,</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>         &quot;projects_hint&quot;: &quot;each under Ecgberht&amp;rsquo;s seal&quot;,</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>         # The Campaign page in the steward&#x27;s goals-and-foresight mode takes this name and picture</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>         # (John, 2026-10-03: Aladdin the Star Chart, Jarvis the Chart Room, Ecgberht the Beacon).</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>         &quot;campaign_name&quot;: &quot;Beacon&quot;,</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>         &quot;campaign_icon&quot;: &quot;campaign-ecgberht-beacon.jpg&quot;,</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     },</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     &quot;aladdin&quot;: {</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>         &quot;label&quot;: &quot;Aladdin&quot;,</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         &quot;desc&quot;: &quot;The genie-lamp world — the opened treasure cave and the watchful lamp.&quot;,</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>         &quot;high_seat&quot;: &quot;aladdin-high-seat-cave.jpg&quot;,</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>         &quot;seal&quot;: &quot;aladdin-seal-lamp.jpg&quot;,</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>         &quot;high_seat_name&quot;: &quot;Cave of Wonders&quot;,</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>         &quot;seal_name&quot;: &quot;Lamp&quot;,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>         &quot;projects_hint&quot;: &quot;each kept under the Lamp&amp;rsquo;s watch&quot;,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>         &quot;campaign_name&quot;: &quot;Star Chart&quot;,</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>         &quot;campaign_icon&quot;: &quot;campaign-aladdin-star-chart.jpg&quot;,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>     },</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>     &quot;jarvis&quot;: {</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>         &quot;label&quot;: &quot;Jarvis&quot;,</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>         &quot;desc&quot;: &quot;The unseen English butler — the tipped bowler and the silver server.&quot;,</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>         &quot;high_seat&quot;: &quot;jarvis-high-seat-hat.jpg&quot;,</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>         &quot;seal&quot;: &quot;jarvis-seal-salver.jpg&quot;,</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>         &quot;high_seat_name&quot;: &quot;Tip of the Hat&quot;,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>         # (2026-07-30, John) The tray is called the SERVER, not the &quot;salver&quot; —</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>         # at a glance that word reads as &quot;slaver&quot;, which is not a thing this</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>         # dashboard should ever appear to say. The image filename keeps its</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>         # original slug (asset identity + ship manifest); only the human-facing</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>         # label changed.</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>         &quot;seal_name&quot;: &quot;Server&quot;,</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>         &quot;projects_hint&quot;: &quot;each served on the Server&quot;,</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>         &quot;campaign_name&quot;: &quot;Chart Room&quot;,</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>         &quot;campaign_icon&quot;: &quot;campaign-jarvis-chart-room.jpg&quot;,</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>     },</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> }</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> VALID_STEWARDS = frozenset(STEWARDS)</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90">90</a> DEFAULTS = {</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     &quot;default_cli&quot;: &quot;grok&quot;,</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     &quot;coding_family&quot;: &quot;claude&quot;,</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     &quot;review_family&quot;: &quot;gemini&quot;,</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     &quot;steward_type&quot;: &quot;ecgberht&quot;,</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> }</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> </span>
+<span class="source-line" id="L97"><a href="#L97">97</a> SETTINGS_NAME = &quot;settings.json&quot;</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> MIRROR_DIRNAME = &quot;.anchor&quot;</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> MIRROR_NAME = &quot;model_prefs.json&quot;</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> </span>
+<span class="source-line" id="L101"><a href="#L101">101</a> </span>
+<span class="source-line" id="L102"><a href="#L102">102</a> class SettingsInvalid(ValueError):</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     &quot;&quot;&quot;Display may continue, but no model may launch from invalid authority.&quot;&quot;&quot;</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> </span>
+<span class="source-line" id="L105"><a href="#L105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106">106</a> @contextmanager</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> def _settings_write_lock():</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>     &quot;&quot;&quot;Serialize UI and standalone writers across processes, not just threads.&quot;&quot;&quot;</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>     with _paths.WRITE_LOCK:</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>         lock_path = settings_path().with_name(&quot;.settings.lock&quot;)</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>         lock_path.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>         with lock_path.open(&quot;a+b&quot;) as stream:</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>             stream.seek(0, os.SEEK_END)</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>             if stream.tell() == 0:</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>                 stream.write(b&quot;0&quot;)</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>                 stream.flush()</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>             deadline = time.monotonic() + 5</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>             while True:</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>                 try:</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>                     stream.seek(0)</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>                     if os.name == &quot;nt&quot;:</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>                         import msvcrt</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>                         msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>                     else:</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>                         import fcntl</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>                         fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>                     break</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>                 except OSError:</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>                     if time.monotonic() &gt;= deadline:</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>                         raise SettingsInvalid(&quot;Settings are busy; try saving again&quot;)</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>                     time.sleep(0.05)</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>             try:</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>                 yield</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>             finally:</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>                 stream.seek(0)</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>                 if os.name == &quot;nt&quot;:</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>                     import msvcrt</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>                     msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>                 else:</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>                     import fcntl</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>                     fcntl.flock(stream.fileno(), fcntl.LOCK_UN)</span>
+<span class="source-line" id="L142"><a href="#L142">142</a> </span>
+<span class="source-line" id="L143"><a href="#L143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144">144</a> def settings_path() -&gt; Path:</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     &quot;&quot;&quot;Return the fixed primary settings path for this Anchor checkout/data dir.</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> </span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     Mirror content is never path authority.  In particular, its informational</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     ``primary_path`` field cannot redirect a later save to another host path.</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     return _paths.data_dir() / SETTINGS_NAME</span>
+<span class="source-line" id="L151"><a href="#L151">151</a> </span>
+<span class="source-line" id="L152"><a href="#L152">152</a> </span>
+<span class="source-line" id="L153"><a href="#L153">153</a> def mirror_path() -&gt; Path:</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     &quot;&quot;&quot;Absolute path to ``~/.anchor/model_prefs.json`` (agent-discoverable mirror).&quot;&quot;&quot;</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     return Path.home() / MIRROR_DIRNAME / MIRROR_NAME</span>
+<span class="source-line" id="L156"><a href="#L156">156</a> </span>
+<span class="source-line" id="L157"><a href="#L157">157</a> </span>
+<span class="source-line" id="L158"><a href="#L158">158</a> def _now_iso() -&gt; str:</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()</span>
+<span class="source-line" id="L160"><a href="#L160">160</a> </span>
+<span class="source-line" id="L161"><a href="#L161">161</a> </span>
+<span class="source-line" id="L162"><a href="#L162">162</a> def _normalize(raw) -&gt; dict:</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     &quot;&quot;&quot;Return a complete, validated settings dict from arbitrary input.</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> </span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     Unknown / invalid field values fall back to :data:`DEFAULTS`. Always returns</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>     a new dict with every schema key present (including ``updated_at``).</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>     out = dict(DEFAULTS)</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>     out[&quot;model_policy&quot;] = dict(DEFAULT_POLICY)</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>     out[&quot;settings_revision&quot;] = 0</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>     out[&quot;provider_connections&quot;] = _providers.default_connections()</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>     from copy import deepcopy</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>     out[&quot;provider_preferences&quot;] = deepcopy(_providers.DEFAULT_PREFERENCES)</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>     out[&quot;updated_at&quot;] = _now_iso()</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>     if not isinstance(raw, dict):</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>         return out</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     cli = raw.get(&quot;default_cli&quot;)</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     if isinstance(cli, str) and cli.strip() in VALID_DEFAULT_CLIS:</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>         out[&quot;default_cli&quot;] = cli.strip()</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     fam = raw.get(&quot;coding_family&quot;)</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     if isinstance(fam, str) and fam.strip() in VALID_CLIS:</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>         out[&quot;coding_family&quot;] = fam.strip()</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     review = raw.get(&quot;review_family&quot;)</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     if isinstance(review, str) and review.strip() in VALID_REVIEW_FAMILIES:</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>         out[&quot;review_family&quot;] = review.strip()</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     stew = raw.get(&quot;steward_type&quot;)</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>     if isinstance(stew, str) and stew.strip() in VALID_STEWARDS:</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>         out[&quot;steward_type&quot;] = stew.strip()</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>     ts = raw.get(&quot;updated_at&quot;)</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>     if isinstance(ts, str) and ts.strip():</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>         out[&quot;updated_at&quot;] = ts.strip()</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     if isinstance(raw.get(&quot;settings_revision&quot;), int) and not isinstance(raw[&quot;settings_revision&quot;], bool):</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>         out[&quot;settings_revision&quot;] = raw[&quot;settings_revision&quot;]</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     if &quot;model_policy&quot; in raw:</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>         try:</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>             out[&quot;model_policy&quot;] = validate_policy(raw[&quot;model_policy&quot;])</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>         except ValueError:</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>             pass  # Display normalization only; read_settings_state rejects it for launch.</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>     if &quot;provider_connections&quot; in raw:</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>         out[&quot;provider_connections&quot;] = _providers.validate_connections(raw[&quot;provider_connections&quot;])</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     if &quot;provider_preferences&quot; in raw:</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>         out[&quot;provider_preferences&quot;] = _providers.validate_preferences(raw[&quot;provider_preferences&quot;], out[&quot;provider_connections&quot;])</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     return out</span>
+<span class="source-line" id="L204"><a href="#L204">204</a> </span>
+<span class="source-line" id="L205"><a href="#L205">205</a> </span>
+<span class="source-line" id="L206"><a href="#L206">206</a> def _read_settings_dict(path: Path) -&gt; dict | None:</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>     &quot;&quot;&quot;Read one settings object, returning ``None`` on any invalid input.&quot;&quot;&quot;</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     try:</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>         raw = json.loads(path.read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>         return raw if isinstance(raw, dict) else None</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     except (OSError, json.JSONDecodeError, TypeError, ValueError):</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>         return None</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> </span>
+<span class="source-line" id="L214"><a href="#L214">214</a> </span>
+<span class="source-line" id="L215"><a href="#L215">215</a> def _prefer_valid_values(preferred, fallback) -&gt; dict:</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     &quot;&quot;&quot;Overlay valid preference values without letting junk mask fallbacks.&quot;&quot;&quot;</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     merged = dict(fallback) if isinstance(fallback, dict) else {}</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     if not isinstance(preferred, dict):</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>         return merged</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>     cli = preferred.get(&quot;default_cli&quot;)</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>     if isinstance(cli, str) and cli.strip() in VALID_DEFAULT_CLIS:</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>         merged[&quot;default_cli&quot;] = cli.strip()</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>     fam = preferred.get(&quot;coding_family&quot;)</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     if isinstance(fam, str) and fam.strip() in VALID_CLIS:</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>         merged[&quot;coding_family&quot;] = fam.strip()</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>     review = preferred.get(&quot;review_family&quot;)</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>     if isinstance(review, str) and review.strip() in VALID_REVIEW_FAMILIES:</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>         merged[&quot;review_family&quot;] = review.strip()</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>     steward = preferred.get(&quot;steward_type&quot;)</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>     if isinstance(steward, str) and steward.strip() in VALID_STEWARDS:</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>         merged[&quot;steward_type&quot;] = steward.strip()</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     updated_at = preferred.get(&quot;updated_at&quot;)</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>     if isinstance(updated_at, str) and updated_at.strip():</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>         merged[&quot;updated_at&quot;] = updated_at.strip()</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>     return merged</span>
+<span class="source-line" id="L236"><a href="#L236">236</a> </span>
+<span class="source-line" id="L237"><a href="#L237">237</a> </span>
+<span class="source-line" id="L238"><a href="#L238">238</a> def read_settings_state() -&gt; dict:</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>     &quot;&quot;&quot;Primary wins. Corrupt primary cannot be hidden by mirror or defaults.&quot;&quot;&quot;</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>     primary_path = settings_path()</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     try:</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>         primary_exists = primary_path.exists()</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>         selected_path = primary_path</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>         if not primary_exists:</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>             if mirror_path().exists():</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>                 selected_path = mirror_path()</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>         if not selected_path.exists():</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>             return {&quot;settings&quot;: _normalize(None), &quot;valid&quot;: False, &quot;missing&quot;: True,</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>                     &quot;error&quot;: &quot;Model preferences are not configured&quot;, &quot;source&quot;: str(primary_path)}</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>         raw = json.loads(selected_path.read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>         if not isinstance(raw, dict):</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>             raise ValueError(&quot;expected a settings object&quot;)</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>         for key, allowed in ((&quot;default_cli&quot;, VALID_DEFAULT_CLIS), (&quot;coding_family&quot;, VALID_CLIS),</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>                              (&quot;review_family&quot;, VALID_REVIEW_FAMILIES)):</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>             if key not in raw or raw[key] not in allowed:</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>                 raise ValueError(f&quot;missing or invalid {key}&quot;)</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>         validate_policy(raw.get(&quot;model_policy&quot;, DEFAULT_POLICY))</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>         revision = raw.get(&quot;settings_revision&quot;, 0)</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>         if not isinstance(revision, int) or isinstance(revision, bool) or revision &lt; 0:</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>             raise ValueError(&quot;invalid settings_revision&quot;)</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>         result = _normalize(raw)</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>         mirror = _read_settings_dict(mirror_path())</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>         if selected_path == primary_path and mirror is not None:</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>             if any(mirror.get(key, DEFAULT_POLICY if key == &quot;model_policy&quot; else 0 if key == &quot;settings_revision&quot; else None)</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>                    != result[key] for key in (&quot;default_cli&quot;, &quot;coding_family&quot;, &quot;review_family&quot;, &quot;steward_type&quot;,</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>                                              &quot;model_policy&quot;, &quot;settings_revision&quot;)):</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>                 result[&quot;mirror_out_of_sync&quot;] = True</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>         return {&quot;settings&quot;: result, &quot;valid&quot;: True, &quot;missing&quot;: False,</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>                 &quot;error&quot;: None, &quot;source&quot;: str(selected_path)}</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     except (OSError, ValueError, TypeError) as error:</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>         return {&quot;settings&quot;: _normalize(None), &quot;valid&quot;: False, &quot;missing&quot;: False,</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>                 &quot;error&quot;: f&quot;Model preferences are invalid ({type(error).__name__}); repair settings before launching AI&quot;,</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>                 &quot;source&quot;: str(primary_path)}</span>
+<span class="source-line" id="L274"><a href="#L274">274</a> </span>
+<span class="source-line" id="L275"><a href="#L275">275</a> </span>
+<span class="source-line" id="L276"><a href="#L276">276</a> def load_settings() -&gt; dict:</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>     &quot;&quot;&quot;Non-raising display contract; invalid values are explicitly NOT launchable.&quot;&quot;&quot;</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>     state = read_settings_state()</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     result = dict(state[&quot;settings&quot;])</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     if not state[&quot;valid&quot;]:</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>         result[&quot;settings_error&quot;] = state[&quot;error&quot;]</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     return result</span>
+<span class="source-line" id="L283"><a href="#L283">283</a> </span>
+<span class="source-line" id="L284"><a href="#L284">284</a> </span>
+<span class="source-line" id="L285"><a href="#L285">285</a> def get_launch_settings() -&gt; dict:</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     state = read_settings_state()</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     if not state[&quot;valid&quot;]:</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>         raise SettingsInvalid(state[&quot;error&quot;])</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     return dict(state[&quot;settings&quot;])</span>
+<span class="source-line" id="L290"><a href="#L290">290</a> </span>
+<span class="source-line" id="L291"><a href="#L291">291</a> </span>
+<span class="source-line" id="L292"><a href="#L292">292</a> def _atomic_write_json(path: Path, obj: dict) -&gt; None:</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     &quot;&quot;&quot;Atomic JSON write (tmp + os.replace). Caller holds WRITE_LOCK.&quot;&quot;&quot;</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     path.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     text = json.dumps(obj, indent=2, ensure_ascii=False) + &quot;\n&quot;</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     _paths.backup_rotate(path)          # A4: untracked runtime state keeps its own backups</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>     _paths.atomic_write_text(path, text)</span>
+<span class="source-line" id="L298"><a href="#L298">298</a> </span>
+<span class="source-line" id="L299"><a href="#L299">299</a> </span>
+<span class="source-line" id="L300"><a href="#L300">300</a> def save_settings(**kwargs) -&gt; dict:</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     &quot;&quot;&quot;Read/merge/write one revision under the stable cross-process lock.&quot;&quot;&quot;</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>     with _settings_write_lock():</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>         return _save_settings_locked(**kwargs)</span>
+<span class="source-line" id="L304"><a href="#L304">304</a> </span>
+<span class="source-line" id="L305"><a href="#L305">305</a> </span>
+<span class="source-line" id="L306"><a href="#L306">306</a> def _save_settings_locked(**kwargs) -&gt; dict:</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>     &quot;&quot;&quot;Merge partial updates into settings, validate, write primary + mirror.</span>
+<span class="source-line" id="L308"><a href="#L308">308</a> </span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     Only recognized keys (``default_cli``, ``coding_family``, ``review_family``)</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     are applied; invalid values raise :class:`ValueError`. Returns the full</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     settings dict after write. Always stamps a fresh ``updated_at``.</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>     state = read_settings_state()</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     if not state[&quot;valid&quot;] and not state[&quot;missing&quot;]:</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>         raise SettingsInvalid(state[&quot;error&quot;])</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     current = dict(state[&quot;settings&quot;])</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>     current.pop(&quot;mirror_out_of_sync&quot;, None)</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>     expected = kwargs.get(&quot;expected_revision&quot;)</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>     if expected is not None and (type(expected) is not int or expected &lt; 0):</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>         raise ValueError(&quot;expected_revision must be a nonnegative integer&quot;)</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>     if expected is not None and expected != current[&quot;settings_revision&quot;]:</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>         raise SettingsInvalid(&quot;Model settings changed; reload before saving&quot;)</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>     for key in (&quot;default_cli&quot;, &quot;coding_family&quot;, &quot;review_family&quot;):</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>         if key not in kwargs:</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>             continue</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>         val = kwargs[key]</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>         allowed = (VALID_REVIEW_FAMILIES if key == &quot;review_family&quot;</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>                    else VALID_DEFAULT_CLIS if key == &quot;default_cli&quot;</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>                    else VALID_CLIS)</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>         if not isinstance(val, str) or val.strip() not in allowed:</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>             raise ValueError(</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>                 &quot;invalid %s %r (expected one of %s)&quot;</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>                 % (key, val, &quot;|&quot;.join(sorted(allowed)))</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>             )</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>         current[key] = val.strip()</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     if &quot;steward_type&quot; in kwargs:</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>         val = kwargs[&quot;steward_type&quot;]</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>         if not isinstance(val, str) or val.strip() not in VALID_STEWARDS:</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>             raise ValueError(</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>                 &quot;invalid steward_type %r (expected one of %s)&quot;</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>                 % (val, &quot;|&quot;.join(sorted(VALID_STEWARDS)))</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>             )</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>         current[&quot;steward_type&quot;] = val.strip()</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>     if &quot;model_policy&quot; in kwargs:</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>         current[&quot;model_policy&quot;] = validate_policy(kwargs[&quot;model_policy&quot;])</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     if &quot;provider_connections&quot; in kwargs:</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>         current[&quot;provider_connections&quot;] = _providers.validate_connections(kwargs[&quot;provider_connections&quot;])</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>     if &quot;provider_preferences&quot; in kwargs:</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>         current[&quot;provider_preferences&quot;] = _providers.validate_preferences(kwargs[&quot;provider_preferences&quot;], current[&quot;provider_connections&quot;])</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     current[&quot;settings_revision&quot;] += 1</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>     current[&quot;updated_at&quot;] = _now_iso()</span>
+<span class="source-line" id="L352"><a href="#L352">352</a> </span>
+<span class="source-line" id="L353"><a href="#L353">353</a>     primary = settings_path()</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>     mirror = mirror_path()</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>     mirror_payload = dict(current)</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>     mirror_payload[&quot;source&quot;] = &quot;anchor&quot;</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>     mirror_payload[&quot;primary_path&quot;] = str(primary.resolve())</span>
+<span class="source-line" id="L358"><a href="#L358">358</a> </span>
+<span class="source-line" id="L359"><a href="#L359">359</a>     with _paths.WRITE_LOCK:</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>         _atomic_write_json(primary, current)</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>         mirror_write_ok = True</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>         try:</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>             _atomic_write_json(mirror, mirror_payload)</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>         except OSError:</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>             # Primary stays authoritative. Report the incomplete mirror without</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>             # rolling back or letting stale mirror values undo the saved choice.</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>             mirror_write_ok = False</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>     result = load_settings()</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>     if not mirror_write_ok or any(</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>         result.get(k) != current.get(k)</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>         for k in (&quot;default_cli&quot;, &quot;coding_family&quot;, &quot;review_family&quot;, &quot;steward_type&quot;, &quot;model_policy&quot;, &quot;settings_revision&quot;)</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>     ):</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>         result = dict(result)</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>         result[&quot;mirror_out_of_sync&quot;] = True</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>     return result</span>
+<span class="source-line" id="L376"><a href="#L376">376</a> </span>
+<span class="source-line" id="L377"><a href="#L377">377</a> </span>
+<span class="source-line" id="L378"><a href="#L378">378</a> def get_default_cli() -&gt; str:</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>     return load_settings()[&quot;default_cli&quot;]</span>
+<span class="source-line" id="L380"><a href="#L380">380</a> </span>
+<span class="source-line" id="L381"><a href="#L381">381</a> </span>
+<span class="source-line" id="L382"><a href="#L382">382</a> def get_coding_family() -&gt; str:</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>     return load_settings()[&quot;coding_family&quot;]</span>
+<span class="source-line" id="L384"><a href="#L384">384</a> </span>
+<span class="source-line" id="L385"><a href="#L385">385</a> </span>
+<span class="source-line" id="L386"><a href="#L386">386</a> def get_review_family() -&gt; str:</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>     return load_settings()[&quot;review_family&quot;]</span>
+<span class="source-line" id="L388"><a href="#L388">388</a> </span>
+<span class="source-line" id="L389"><a href="#L389">389</a> </span>
+<span class="source-line" id="L390"><a href="#L390">390</a> def families_are_cross_model() -&gt; bool:</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>     &quot;&quot;&quot;True when coding and review families differ (cross-model verification).&quot;&quot;&quot;</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>     s = load_settings()</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>     return s[&quot;coding_family&quot;] != s[&quot;review_family&quot;]</span>
+<span class="source-line" id="L394"><a href="#L394">394</a> </span>
+<span class="source-line" id="L395"><a href="#L395">395</a> </span>
+<span class="source-line" id="L396"><a href="#L396">396</a> def resolve_tier_label(family: str, tier: str) -&gt; str:</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>     &quot;&quot;&quot;Workflow depth never lowers the shared latest/highest model policy.&quot;&quot;&quot;</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>     fam = (family or &quot;&quot;).strip() or &quot;unknown&quot;</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>     return &quot;%s:latest-supported / highest-supported effort&quot; % fam</span>
+<span class="source-line" id="L400"><a href="#L400">400</a> </span>
+<span class="source-line" id="L401"><a href="#L401">401</a> </span>
+<span class="source-line" id="L402"><a href="#L402">402</a> def export_env_overrides() -&gt; dict:</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>     &quot;&quot;&quot;Env vars agents/engines should honor for the current settings.&quot;&quot;&quot;</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>     s = load_settings()</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     coding = s[&quot;coding_family&quot;]</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>     review = s[&quot;review_family&quot;]</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>     cross = &quot;true&quot; if coding != review else &quot;false&quot;</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>     return {</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>         &quot;ANCHOR_DATA_DIR&quot;: str(settings_path().parent),</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>         &quot;ANCHOR_DEFAULT_CLI&quot;: s[&quot;default_cli&quot;],</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>         &quot;ANCHOR_CODING_FAMILY&quot;: coding,</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>         &quot;ANCHOR_REVIEW_FAMILY&quot;: review,</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>         &quot;CODING_FAMILY&quot;: coding,</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>         &quot;REVIEW_FAMILY&quot;: review,</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>         &quot;CROSS_MODEL&quot;: cross,</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>     }</span>
+<span class="source-line" id="L417"><a href="#L417">417</a> </span>
+<span class="source-line" id="L418"><a href="#L418">418</a> </span>
+<span class="source-line" id="L419"><a href="#L419">419</a> def steward_profile(settings: dict | None = None) -&gt; dict:</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>     &quot;&quot;&quot;The ACTIVE steward persona: {key, label, desc, high_seat, seal}.</span>
+<span class="source-line" id="L421"><a href="#L421">421</a> </span>
+<span class="source-line" id="L422"><a href="#L422">422</a>     Total — an unknown/corrupt stored value falls back to the Ecgberht</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>     default, so callers can always render an icon pair.</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>     s = settings if isinstance(settings, dict) else load_settings()</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>     key = s.get(&quot;steward_type&quot;) or DEFAULTS[&quot;steward_type&quot;]</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>     if key not in STEWARDS:</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>         key = DEFAULTS[&quot;steward_type&quot;]</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>     prof = dict(STEWARDS[key])</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>     prof[&quot;key&quot;] = key</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>     return prof</span></pre></main></body></html>

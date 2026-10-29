@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Selected subscription families · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="model-policy" data-anchor-id="a019">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Selected subscription families</h1>
+<p class="intro">Resolve valid primary settings, then the mirror only if the primary is absent. Requested families are not observed participation.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\drivers\model-policy.mjs</span><br>Lines 120–133 · frozen source snapshot</p>
+<pre class="excerpt">export function loadPolicyPrefs(env = process.env) {
+  const mirror = path.join(profileDirectory(env), &#x27;.anchor&#x27;, &#x27;model_prefs.json&#x27;);
+  const primary = env.ANCHOR_DATA_DIR ? path.join(env.ANCHOR_DATA_DIR, &#x27;settings.json&#x27;) : null;
+  if (primary &amp;&amp; present(primary)) return validatePrefs(readJson(primary, null, &#x27;settings_invalid&#x27;), &#x27;primary&#x27;);
+  if (present(mirror)) return validatePrefs(readJson(mirror, null, &#x27;settings_invalid&#x27;), &#x27;mirror&#x27;);
+  return validatePrefs({
+    coding_family: &#x27;claude&#x27;, review_family: &#x27;claude&#x27;, default_cli: &#x27;claude&#x27;,
+    model_policy: DEFAULT_POLICY, settings_revision: 0,
+  }, &#x27;historical-default&#x27;);
+}
+
+function modelId(value, family) {
+  if (typeof value !== &#x27;string&#x27; || MODEL_ID.exec(value)?.[0] !== value) fail(family, &#x27;The catalog contains an invalid model identifier.&#x27;);
+  return value;</pre>
+<div class="actions"><a class="button" href="../source-pages/policy.html#L120">Open numbered source at line 120</a>
+<a class="button secondary" href="../sources/policy.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/route">Resolve live or replay seats</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">c012f2b2ab9bed983d1c3c4204ad503c4c21da45b22ae3e97dd633af0f46e2c1</span></p>
+<p>Excerpt SHA-256 <span class="path">4f811651c0d92fce655f2126a5a37cf3c7f97d968393bab5142cba456b74f7d8</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

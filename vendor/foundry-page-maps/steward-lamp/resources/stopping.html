@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Drive, wait, pause and cap · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="stopping" data-anchor-id="a-cockpit-_maybe_drive_locked">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Drive, wait, pause and cap</h1>
+<p class="intro">Drive refuses when busy, queued, pending recovery, human wait or maintenance blocks it and pauses at its continuation cap. Idle sleep and user stop are different boundaries.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630821+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\steward_engine.py · lines 3106–3150</p><pre>    def _maybe_drive_locked(self, was_tick=False, completed_text=&quot;&quot;):
+        &quot;&quot;&quot;Choose and send one drive continuation while holding ``_lock``.
+
+        Human ingress, queued text, nudges, and drive all share this arbiter;
+        drive must never stack onto an already accepted turn.
+        &quot;&quot;&quot;
+        if (self.busy or self.queue or not self.drive or not self.alive()
+                or getattr(self, &quot;_pending_refinement_handoffs&quot;, {})):
+            return
+        from steward_cockpit import maintenance
+        if maintenance.is_active():
+            return  # Wave 1.6: no self-started turn behind the barrier
+        if was_tick:
+            return   # a cadence-tick turn is not a step - never counts as drive
+        txt = (completed_text or &quot;&quot;).strip()
+        try:
+            from steward_cockpit import steward_campaign as campaign
+            attention = campaign.read_map(self.dir)[&quot;attention&quot;]
+        except Exception:
+            attention = {&quot;state&quot;: &quot;unknown&quot;}
+        if attention.get(&quot;managed_refinement&quot;):
+            if (self._question_contexts(attention) or attention.get(&quot;producer_recovery_required&quot;)
+                    or attention.get(&quot;state&quot;) == &quot;unknown&quot;):
+                return
+        elif self.open_question or txt.endswith(&quot;?&quot;):
+            return
+        att = attention.get(&quot;state&quot;)
+        # drive housekeeping lines are status-pane traffic, not conversation
+        # (handoff 2026-08-25 #4 — CLI declutter): the tick tag routes them
+        if att == &quot;needs_you&quot;:
+            self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;tick&quot;: True,
+                        &quot;text&quot;: &quot;drive: campaign flag says needs-you - waiting&quot;})
+            return
+        if self.auto_count &gt;= self.DRIVE_CAP:
+            self.drive = False
+            self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;tick&quot;: True,
+                        &quot;text&quot;: f&quot;drive: cap reached ({self.DRIVE_CAP} continues) - pausing; say go to re-arm&quot;})
+            return
+        self.auto_count += 1
+        self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;tick&quot;: True,
+                    &quot;text&quot;: f&quot;drive: continuing ({self.auto_count})&quot;})
+        self._send_locked(
+            &quot;(drive - not John) Continue. Next step per the plan; stop only &quot;
+            &quot;for a decision that is genuinely John&#x27;s, and if you stop, end &quot;
+            &quot;with the question.&quot;)</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L3106">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/stop">Honor stop, sleep and continuation cap</a> · <a target="_top" href="../index.html#process/halt">Named failure, pause or exhausted budget</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</span></p><p>Excerpt hash: <span class="path">c724574bcfa331f1341490b9edcac29c0e9722d240b4e1840a6079f803e310fe</span></p></details></article></main></body></html>

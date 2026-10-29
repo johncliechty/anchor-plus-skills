@@ -1,0 +1,579 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>harness · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>harness</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/test/harness.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 93e7d8668be83e98801cc77d15efc904540f444d12cb1d199608c2e47246a157</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf advisor — canary harness foundation (Wave 1 / GATE-0).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // This is the SHAPE + RUNG-CONSISTENCY substrate every later wave&#x27;s canary builds on.</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // It owns deterministic, field-level assertions only; label/semantic TRUTH is the</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // advisory layer&#x27;s job (PRINCIPLE-D). Zero external dependencies — it ships a compact</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> // JSON-Schema-subset validator so `node --test` runs with no install step.</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> //</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> // Public surface (consumed by the wave test suites):</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> //   RUNG_LADDER, TIER_LADDER, VALUE_LADDER, SEVERITY_LADDER  — ordered low→high</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> //   rungIndex / tierIndex / rungAtLeast / tierAtMost          — ladder helpers</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> //   isPopulated                                               — &quot;field carries a value&quot;</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> //   validateShape(output)                                     — → string[] of errors</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //   assertSchemaConformant(output)                            — throws on shape error</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //   assertReasoningBeforeVerdict(obj, label)                  — key-order invariant</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //   assertCaps(output)                                        — nitpick/elevation caps</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //   assertRungCeiling(finding, {field, minRung})              — rung-gated field assertion</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> //   assertDiagnoseCoreProvenance(finding)                     — B5: diagnose exclusive to the core</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> //   assertDiagnoseSeam(output)                                — B5 over every finding in an output</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> //   assertTierCeiling(item, {cross_model, where})             — B-ceiling on one tier-bearing item</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> //   assertCeiling(output)                                     — B-ceiling over an output (W3)</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> //   assertSituateScoreCeiling(finding)                        — SITUATE no self-CORROBORATED (W3)</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> //   assertSituateSeam(output)                                 — SITUATE cap over every finding (W3)</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> //   assertHonestRefutation(elevation)                         — B-honesty on one elevation (W4)</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> //   assertRefutationSeam(output)                              — B-honesty over every elevation (W4)</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> //   assertBoundedPremortem(finding)                           — B3: premortem ≠ Oranges-engine (W5)</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> //   assertForwardLooking(finding)                             — B9: not-yet-present future-state (W5)</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> //   assertAnticipateSeam(output)                              — B3+B9 over every anticipate finding (W5)</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> //   assertNoIdeation(finding)                                 — B1: zero ideation (ideation is Jumper&#x27;s) (W6)</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> //   assertNoSilentDegradation(output)                         — B6: no per-item degraded under top-level clean (W6)</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> //   assertHonestSynthesis(output)                             — B8: every leg labelled, rung ≤ envelope (W6)</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> //   assertScoreLabelSeam(output)                              — B1+B6+B8 over a whole output (W6)</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> //   assertIncrement1Conformant(output)                        — the FULL Increment-1 canary set (W7)</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> //   assertConformant(output)                                  — umbrella: shape + order + caps</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> //   SCHEMA, CONSTANTS                                         — the committed artifacts</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36">36</a> import SCHEMA from &#x27;../schema/advisor-output.schema.json&#x27; with { type: &#x27;json&#x27; };</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> import CONSTANTS from &#x27;../prereg-constants.json&#x27; with { type: &#x27;json&#x27; };</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> import { GANDALF_CORE_PROTOCOL, EXTERNAL_COMMISSION_FIELDS } from &#x27;../seam/diagnose-core.mjs&#x27;;</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> import { SITUATE_KIND, SITUATE_SELF_MAX_RUNG } from &#x27;../seam/situate.mjs&#x27;;</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> import {</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>   firesRefuter,</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>   isNamedDefeater,</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>   hasNoIndependentRefutationStamp,</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   NO_INDEPENDENT_REFUTATION_STAMP,</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> } from &#x27;../seam/refute.mjs&#x27;;</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> import {</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   ANTICIPATE_KIND,</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   BOUNDED_SUBJECT_CARDINALITY,</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   ORANGES_ENGINE_FIELDS,</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   hasOrangesEngineField,</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   isForwardLookingAnticipation,</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> } from &#x27;../seam/anticipate.mjs&#x27;;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> import {</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   isIdeationFinding,</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>   hasSilentDegradation,</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>   degradedItems,</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>   legsPresent,</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   legEnvelopeRung,</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> } from &#x27;../seam/score-label.mjs&#x27;;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61">61</a> export { SCHEMA, CONSTANTS };</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63">63</a> // --- Ladders (low → high). Schema enums mirror these; harness.test.mjs asserts agreement. ---</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> export const RUNG_LADDER = [&#x27;REFUTED&#x27;, &#x27;UNVERIFIED&#x27;, &#x27;CLAIMED&#x27;, &#x27;CORROBORATED&#x27;, &#x27;OBSERVED&#x27;];</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> export const TIER_LADDER = [&#x27;SPECULATIVE&#x27;, &#x27;PROMISING&#x27;, &#x27;GROUNDED&#x27;];</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> export const VALUE_LADDER = [&#x27;low&#x27;, &#x27;medium&#x27;, &#x27;high&#x27;];</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> export const SEVERITY_LADDER = [&#x27;minor&#x27;, &#x27;major&#x27;, &#x27;critical&#x27;];</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69">69</a> export function rungIndex(rung) {</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>   const i = RUNG_LADDER.indexOf(rung);</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   if (i === -1) throw new Error(`harness: unknown rung ${JSON.stringify(rung)}`);</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>   return i;</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> }</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> export function tierIndex(tier) {</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>   const i = TIER_LADDER.indexOf(tier);</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   if (i === -1) throw new Error(`harness: unknown tier ${JSON.stringify(tier)}`);</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>   return i;</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> }</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> export function rungAtLeast(rung, minRung) {</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   return rungIndex(rung) &gt;= rungIndex(minRung);</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> }</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> export function tierAtMost(tier, maxTier) {</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>   return tierIndex(tier) &lt;= tierIndex(maxTier);</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> }</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> </span>
+<span class="source-line" id="L86"><a href="#L86">86</a> // A field &quot;carries a value&quot; (is gated) when present and non-empty.</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> export function isPopulated(v) {</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>   if (v === undefined || v === null) return false;</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   if (Array.isArray(v)) return v.length &gt; 0;</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>   if (typeof v === &#x27;string&#x27;) return v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   if (typeof v === &#x27;object&#x27;) return Object.keys(v).length &gt; 0;</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>   return true; // numbers, booleans</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95">95</a> // --- Zero-dependency JSON-Schema-subset validator -------------------------------------</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> // Supports: type (string|array), required, properties, items, enum, const,</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> // minimum/maximum, minItems/maxItems, additionalProperties:false. No $ref (schema is inlined).</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> function typeOk(value, t) {</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   switch (t) {</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>     case &#x27;string&#x27;: return typeof value === &#x27;string&#x27;;</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>     case &#x27;boolean&#x27;: return typeof value === &#x27;boolean&#x27;;</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>     case &#x27;number&#x27;: return typeof value === &#x27;number&#x27;;</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     case &#x27;integer&#x27;: return typeof value === &#x27;number&#x27; &amp;&amp; Number.isInteger(value);</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     case &#x27;array&#x27;: return Array.isArray(value);</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     case &#x27;object&#x27;: return value !== null &amp;&amp; typeof value === &#x27;object&#x27; &amp;&amp; !Array.isArray(value);</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     case &#x27;null&#x27;: return value === null;</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     default: throw new Error(`harness: unsupported schema type ${JSON.stringify(t)}`);</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> }</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> function describe(v) {</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>   if (v === null) return &#x27;null&#x27;;</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   if (Array.isArray(v)) return &#x27;array&#x27;;</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>   return typeof v;</span>
+<span class="source-line" id="L114"><a href="#L114">114</a> }</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> function validate(value, schema, path, errors) {</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>   if (schema.type !== undefined) {</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     const types = Array.isArray(schema.type) ? schema.type : [schema.type];</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     if (!types.some((t) =&gt; typeOk(value, t))) {</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>       errors.push(`${path}: expected type ${types.join(&#x27;|&#x27;)}, got ${describe(value)}`);</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>       return; // type mismatch — deeper checks would be noise</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>     }</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>   }</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>   if (schema.const !== undefined &amp;&amp; value !== schema.const) {</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     errors.push(`${path}: expected const ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`);</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>   }</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>   if (schema.enum !== undefined &amp;&amp; !schema.enum.includes(value)) {</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>     errors.push(`${path}: ${JSON.stringify(value)} not in enum [${schema.enum.join(&#x27;, &#x27;)}]`);</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   }</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   if (typeof value === &#x27;number&#x27;) {</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     if (schema.minimum !== undefined &amp;&amp; value &lt; schema.minimum) errors.push(`${path}: ${value} &lt; minimum ${schema.minimum}`);</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     if (schema.maximum !== undefined &amp;&amp; value &gt; schema.maximum) errors.push(`${path}: ${value} &gt; maximum ${schema.maximum}`);</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   }</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   if (Array.isArray(value)) {</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     if (schema.minItems !== undefined &amp;&amp; value.length &lt; schema.minItems) errors.push(`${path}: ${value.length} items &lt; minItems ${schema.minItems}`);</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>     if (schema.maxItems !== undefined &amp;&amp; value.length &gt; schema.maxItems) errors.push(`${path}: ${value.length} items &gt; maxItems ${schema.maxItems}`);</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>     if (schema.items) value.forEach((v, i) =&gt; validate(v, schema.items, `${path}[${i}]`, errors));</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>   }</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   if (value !== null &amp;&amp; typeof value === &#x27;object&#x27; &amp;&amp; !Array.isArray(value)) {</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>     if (schema.required) {</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>       for (const k of schema.required) if (!(k in value)) errors.push(`${path}: missing required key &#x27;${k}&#x27;`);</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     }</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     if (schema.properties) {</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>       for (const [k, sub] of Object.entries(schema.properties)) if (k in value) validate(value[k], sub, `${path}.${k}`, errors);</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>     }</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     if (schema.additionalProperties === false &amp;&amp; schema.properties) {</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>       for (const k of Object.keys(value)) if (!(k in schema.properties)) errors.push(`${path}: unexpected key &#x27;${k}&#x27;`);</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     }</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>   }</span>
+<span class="source-line" id="L149"><a href="#L149">149</a> }</span>
+<span class="source-line" id="L150"><a href="#L150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151">151</a> /** Validate an advisor output against the committed typed schema. Returns an array of</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>  *  error strings (empty array ⇒ shape-conformant). Pure; never throws on data. */</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> export function validateShape(output, schema = SCHEMA) {</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>   const errors = [];</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>   validate(output, schema, &#x27;$&#x27;, errors);</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>   return errors;</span>
+<span class="source-line" id="L157"><a href="#L157">157</a> }</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159">159</a> export function assertSchemaConformant(output) {</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>   const errors = validateShape(output);</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   if (errors.length) {</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     throw new Error(`schema-conformance FAILED:\n  - ${errors.join(&#x27;\n  - &#x27;)}`);</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>   }</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> }</span>
+<span class="source-line" id="L165"><a href="#L165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166">166</a> // --- reasoning-before-verdict invariant ------------------------------------------------</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> /** Assert that, in `obj`&#x27;s own key order, &#x27;reasoning&#x27; appears before &#x27;verdict&#x27; and both</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>  *  are present. JS preserves string-key insertion order, so this is deterministic. */</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> export function assertReasoningBeforeVerdict(obj, label = &#x27;$&#x27;) {</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   if (obj === null || typeof obj !== &#x27;object&#x27; || Array.isArray(obj)) {</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>     throw new Error(`reasoning-before-verdict: ${label} is not an object`);</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>   }</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>   const keys = Object.keys(obj);</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   const r = keys.indexOf(&#x27;reasoning&#x27;);</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   const v = keys.indexOf(&#x27;verdict&#x27;);</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   if (r === -1) throw new Error(`reasoning-before-verdict: ${label} missing &#x27;reasoning&#x27;`);</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>   if (v === -1) throw new Error(`reasoning-before-verdict: ${label} missing &#x27;verdict&#x27;`);</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>   if (r &gt; v) throw new Error(`reasoning-before-verdict: ${label} has &#x27;verdict&#x27; (pos ${v}) before &#x27;reasoning&#x27; (pos ${r})`);</span>
+<span class="source-line" id="L179"><a href="#L179">179</a> }</span>
+<span class="source-line" id="L180"><a href="#L180">180</a> </span>
+<span class="source-line" id="L181"><a href="#L181">181</a> // --- nitpick / elevation caps ----------------------------------------------------------</span>
+<span class="source-line" id="L182"><a href="#L182">182</a> export function assertCaps(output) {</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>   const { max_nitpicks, max_elevations } = CONSTANTS.output_caps;</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   const nN = Array.isArray(output.nitpicks) ? output.nitpicks.length : 0;</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>   const nE = Array.isArray(output.elevations) ? output.elevations.length : 0;</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   if (nN &gt; max_nitpicks) throw new Error(`nitpick cap exceeded: ${nN} &gt; ${max_nitpicks}`);</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   if (nE &gt; max_elevations) throw new Error(`elevation cap exceeded: ${nE} &gt; ${max_elevations}`);</span>
+<span class="source-line" id="L188"><a href="#L188">188</a> }</span>
+<span class="source-line" id="L189"><a href="#L189">189</a> </span>
+<span class="source-line" id="L190"><a href="#L190">190</a> // --- rung-gated field assertion (the core Wave-1 capability) ----------------------------</span>
+<span class="source-line" id="L191"><a href="#L191">191</a> /** Assert that a rung-gated field obeys its rung ceiling: if `finding[field]` carries a</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>  *  value, the finding&#x27;s rung must be at or above `minRung` on the evidence ladder.</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>  *  A finding that asserts a higher-evidence field while sitting on a lower rung FAILS</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>  *  (this is the field-level, rung-gated assertion the harness is built to support). */</span>
+<span class="source-line" id="L195"><a href="#L195">195</a> export function assertRungCeiling(finding, { field, minRung }) {</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>   if (finding === null || typeof finding !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     throw new Error(`rung-ceiling: target is not an object`);</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   }</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   rungIndex(minRung); // validate minRung is a known rung</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   if (!isPopulated(finding[field])) return; // field absent ⇒ nothing gated</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   const rung = finding.rung;</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   if (rung === undefined) {</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     throw new Error(`rung-ceiling: finding populates &#x27;${field}&#x27; but carries no rung`);</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   }</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   if (!rungAtLeast(rung, minRung)) {</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>     throw new Error(</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>       `rung-ceiling: finding &#x27;${finding.id ?? &#x27;?&#x27;}&#x27; populates &#x27;${field}&#x27; (requires rung ≥ ${minRung}) but is at rung ${rung}`</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     );</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>   }</span>
+<span class="source-line" id="L210"><a href="#L210">210</a> }</span>
+<span class="source-line" id="L211"><a href="#L211">211</a> </span>
+<span class="source-line" id="L212"><a href="#L212">212</a> // --- B5: diagnose exclusive to the vetted core (the Wave-2 capability) -------------------</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> /** B5 (diagnose exclusive to core). Assert that a `kind:&#x27;diagnose&#x27;` finding came from the</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>  *  vetted diagnose core (PROTOCOL v2), not re-derived inline and not sourced from a</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>  *  commissioned skill. A diagnose finding FAILS when it: (a) carries no `gandalf_core`</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>  *  provenance, (b) carries a `gandalf_core` envelope that does not name the vetted-core</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>  *  protocol (re-derived inline / foreign source), or (c) carries an external commission id.</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>  *  Non-diagnose findings are not gated by B5 (their provenance is a later wave&#x27;s seam). */</span>
+<span class="source-line" id="L219"><a href="#L219">219</a> export function assertDiagnoseCoreProvenance(finding) {</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   if (finding === null || typeof finding !== &#x27;object&#x27; || Array.isArray(finding)) {</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>     throw new Error(&#x27;B5 diagnose-provenance: target is not an object&#x27;);</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   }</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   if (finding.kind !== &#x27;diagnose&#x27;) return; // only diagnose findings are gated by B5</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>   const id = finding.id ?? &#x27;?&#x27;;</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>   const prov = finding.gandalf_core;</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>   if (!isPopulated(prov)) {</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>     throw new Error(`B5 diagnose-provenance: diagnose finding &#x27;${id}&#x27; carries no gandalf_core provenance (re-derived inline?)`);</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>   }</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>   const protocol = typeof prov === &#x27;object&#x27; &amp;&amp; !Array.isArray(prov) ? prov.protocol : prov;</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   if (protocol !== GANDALF_CORE_PROTOCOL) {</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>     throw new Error(</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>       `B5 diagnose-provenance: diagnose finding &#x27;${id}&#x27; gandalf_core provenance is not the vetted core (${GANDALF_CORE_PROTOCOL}); got ${JSON.stringify(protocol)} (re-derived inline / foreign source)`</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>     );</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   }</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   for (const f of EXTERNAL_COMMISSION_FIELDS) {</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>     if (isPopulated(finding[f])) {</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>       throw new Error(`B5 diagnose-provenance: diagnose finding &#x27;${id}&#x27; carries external commission id &#x27;${f}&#x27; — diagnosis is exclusive to the vetted core`);</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>     }</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   }</span>
+<span class="source-line" id="L240"><a href="#L240">240</a> }</span>
+<span class="source-line" id="L241"><a href="#L241">241</a> </span>
+<span class="source-line" id="L242"><a href="#L242">242</a> /** Apply B5 to every finding in an advisor output: the vetted diagnose core is the SOLE</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>  *  diagnosis source, so no `kind:&#x27;diagnose&#x27;` finding may exist without vetted-core</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>  *  provenance. Throws on the first violation. */</span>
+<span class="source-line" id="L245"><a href="#L245">245</a> export function assertDiagnoseSeam(output) {</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>   findings.forEach((f) =&gt; assertDiagnoseCoreProvenance(f));</span>
+<span class="source-line" id="L248"><a href="#L248">248</a> }</span>
+<span class="source-line" id="L249"><a href="#L249">249</a> </span>
+<span class="source-line" id="L250"><a href="#L250">250</a> // --- B-ceiling: single-family ⇒ max tier PROMISING (the Wave-3 capability) ----------------</span>
+<span class="source-line" id="L251"><a href="#L251">251</a> /** B-ceiling on a single tier-bearing item (elevation or risk_label). On a single-family run</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>  *  (`cross_model:false`) the max achievable tier is PROMISING — the deterministic embodiment</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>  *  of the CBS-5 re-stamp: a GROUNDED stamp is unreachable without a cross-family refuter, so</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>  *  it FAILS. When the run is NOT single-family (cross_model !== false) the ceiling does not</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>  *  bite. An item with no `tier` is not gated. `where` labels the failure site. */</span>
+<span class="source-line" id="L256"><a href="#L256">256</a> export function assertTierCeiling(item, { cross_model, where = &#x27;item&#x27; } = {}) {</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>   if (cross_model !== false) return; // ceiling only bites on a single-family substrate</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>   if (item === null || typeof item !== &#x27;object&#x27;) return;</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>   const tier = item.tier;</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>   if (tier === undefined) return;</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   if (!tierAtMost(tier, &#x27;PROMISING&#x27;)) {</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     throw new Error(</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>       `B-ceiling: ${where} is stamped ${tier} on a cross_model:false run — the single-family substrate ceiling is PROMISING (GROUNDED is unreachable without a cross-family refuter)`</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     );</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>   }</span>
+<span class="source-line" id="L266"><a href="#L266">266</a> }</span>
+<span class="source-line" id="L267"><a href="#L267">267</a> </span>
+<span class="source-line" id="L268"><a href="#L268">268</a> /** B-ceiling over a whole advisor output: when the run is single-family</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>  *  (`output.cross_model === false`), NO elevation and NO risk_label may be stamped GROUNDED;</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>  *  the max achievable tier is PROMISING. Throws on the first violation. */</span>
+<span class="source-line" id="L271"><a href="#L271">271</a> export function assertCeiling(output) {</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>   const cross_model = output?.cross_model;</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>   const elevations = Array.isArray(output?.elevations) ? output.elevations : [];</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>   elevations.forEach((e, i) =&gt;</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>     assertTierCeiling(e, { cross_model, where: `elevations[${i}] &#x27;${e?.id ?? &#x27;?&#x27;}&#x27;` })</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   );</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   const riskLabels = Array.isArray(output?.risk_labels) ? output.risk_labels : [];</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>   riskLabels.forEach((r, i) =&gt;</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     assertTierCeiling(r, { cross_model, where: `risk_labels[${i}] leg &#x27;${r?.leg ?? &#x27;?&#x27;}&#x27;` })</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>   );</span>
+<span class="source-line" id="L281"><a href="#L281">281</a> }</span>
+<span class="source-line" id="L282"><a href="#L282">282</a> </span>
+<span class="source-line" id="L283"><a href="#L283">283</a> // --- SITUATE honesty cap: no self-CORROBORATED (the Wave-3 capability) ---------------------</span>
+<span class="source-line" id="L284"><a href="#L284">284</a> /** The SITUATE scoring cap. A `kind:&#x27;situate&#x27;` finding&#x27;s facts come from a commissioned</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>  *  researchPrime; on a single-family substrate that commission is same-family and earns NO</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>  *  independent-origin credit, so the finding may NOT self-corroborate. This asserts:</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>  *    (a) NO self-CORROBORATED — a situate finding at rung ≥ CORROBORATED must carry</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>  *        `independent_origin:true` (only a cross-family commission earns it); otherwise it is</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>  *        capped at SITUATE_SELF_MAX_RUNG (CLAIMED) and FAILS here; and</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>  *    (b) unverifiable ⇒ handoff — a situate finding whose `facts_verified` is false must carry</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>  *        a `needs_verification` researchPrime handoff (the unverifiable fact is routed out,</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>  *        never asserted as real).</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>  *  Non-situate findings are not gated (their provenance is another leg&#x27;s seam). */</span>
+<span class="source-line" id="L294"><a href="#L294">294</a> export function assertSituateScoreCeiling(finding) {</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>   if (finding === null || typeof finding !== &#x27;object&#x27; || Array.isArray(finding)) {</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     throw new Error(&#x27;B-situate: target is not an object&#x27;);</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>   }</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>   if (finding.kind !== SITUATE_KIND) return; // only situate findings are gated here</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>   const id = finding.id ?? &#x27;?&#x27;;</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>   const independent = finding.independent_origin === true;</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>   const rung = finding.rung;</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>   // (a) no self-CORROBORATED: without independent origin, the rung is capped at CLAIMED.</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>   if (!independent &amp;&amp; rung !== undefined &amp;&amp; rungAtLeast(rung, &#x27;CORROBORATED&#x27;)) {</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>     throw new Error(</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>       `B-situate: situate finding &#x27;${id}&#x27; is stamped ${rung} with no independent-origin credit — no self-CORROBORATED (a same-family commission caps the rung at ${SITUATE_SELF_MAX_RUNG})`</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>     );</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>   }</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>   // (b) unverifiable ⇒ researchPrime needs_verification handoff.</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>   if (finding.facts_verified === false &amp;&amp; !isPopulated(finding.needs_verification)) {</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     throw new Error(</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>       `B-situate: situate finding &#x27;${id}&#x27; has unverified facts but carries no needs_verification handoff (an unverifiable correspondence must be routed to a researchPrime handoff, not asserted as real)`</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     );</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>   }</span>
+<span class="source-line" id="L314"><a href="#L314">314</a> }</span>
+<span class="source-line" id="L315"><a href="#L315">315</a> </span>
+<span class="source-line" id="L316"><a href="#L316">316</a> /** Apply the SITUATE cap to every finding in an advisor output. Throws on the first</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>  *  violation; an output with no situate findings trivially passes. */</span>
+<span class="source-line" id="L318"><a href="#L318">318</a> export function assertSituateSeam(output) {</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   findings.forEach((f) =&gt; assertSituateScoreCeiling(f));</span>
+<span class="source-line" id="L321"><a href="#L321">321</a> }</span>
+<span class="source-line" id="L322"><a href="#L322">322</a> </span>
+<span class="source-line" id="L323"><a href="#L323">323</a> // --- B-honesty: the NS4 refutation-discipline spine (the Wave-4 capability) ----------------</span>
+<span class="source-line" id="L324"><a href="#L324">324</a> /** B-honesty on a single elevation. NS4: a vetted suggestion above the SPECULATIVE floor must</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>  *  have survived an INDEPENDENT named-defeater refutation. This asserts, deterministically:</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>  *    • BELOW the refuter-firing threshold (value_if_true &lt; high AND severity &lt; major): the</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>  *      elevation gets no independent refuter, so it must ship SPECULATIVE carrying the</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>  *      &quot;no independent refutation ran&quot; stamp — being stamped above SPECULATIVE FAILS, and a</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>  *      SPECULATIVE one with no stamp FAILS (no silent drop);</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>  *    • FIRES the threshold and stamped SPECULATIVE: it is the honest un-refuted floor and must</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>  *      carry the stamp (else FAIL); and</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>  *    • FIRES the threshold and stamped above SPECULATIVE: it must carry a NAMED concrete</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>  *      defeater (`what_would_refute_it`, not a self-rated confidence word) AND a</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>  *      `refutation_provenance` envelope (an independent refuter ran) — else it FAILS</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>  *      (auto-downgrade to SPECULATIVE; see seam/refute.mjs `vetElevationRefutation`).</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>  *  An item with no `tier` is not gated (not a tier-bearing elevation). */</span>
+<span class="source-line" id="L337"><a href="#L337">337</a> export function assertHonestRefutation(elevation) {</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>   if (elevation === null || typeof elevation !== &#x27;object&#x27; || Array.isArray(elevation)) {</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>     throw new Error(&#x27;B-honesty: target is not an object&#x27;);</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>   }</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>   const tier = elevation.tier;</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>   if (tier === undefined) return; // not a tier-bearing elevation</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>   tierIndex(tier); // validate the tier is a known tier</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>   const id = elevation.id ?? &#x27;?&#x27;;</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>   const fires = firesRefuter(elevation);</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>   const aboveFloor = !tierAtMost(tier, &#x27;SPECULATIVE&#x27;);</span>
+<span class="source-line" id="L347"><a href="#L347">347</a> </span>
+<span class="source-line" id="L348"><a href="#L348">348</a>   if (!fires) {</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>     // Below the firing threshold: no independent refuter runs ⇒ ship SPECULATIVE + the stamp.</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     if (aboveFloor) {</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>       throw new Error(</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>         `B-honesty: elevation &#x27;${id}&#x27; is below the refuter-firing threshold (value_if_true &lt; high and severity &lt; major) but is stamped ${tier} above SPECULATIVE — a below-threshold finding earns no independent refuter and must ship SPECULATIVE with the &quot;${NO_INDEPENDENT_REFUTATION_STAMP}&quot; stamp`</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>       );</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>     }</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>     if (!hasNoIndependentRefutationStamp(elevation)) {</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>       throw new Error(</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>         `B-honesty: elevation &#x27;${id}&#x27; ships SPECULATIVE (no independent refuter fired) but carries no &quot;${NO_INDEPENDENT_REFUTATION_STAMP}&quot; stamp (no silent drop)`</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>       );</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>     }</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>     return;</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>   }</span>
+<span class="source-line" id="L362"><a href="#L362">362</a> </span>
+<span class="source-line" id="L363"><a href="#L363">363</a>   // Fires the threshold but stamped at the floor: the honest un-refuted floor must be stamped.</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>   if (!aboveFloor) {</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>     if (!hasNoIndependentRefutationStamp(elevation)) {</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>       throw new Error(</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>         `B-honesty: elevation &#x27;${id}&#x27; is SPECULATIVE but carries no &quot;${NO_INDEPENDENT_REFUTATION_STAMP}&quot; stamp (a high-value elevation that did not survive an independent refuter must be stamped, not silently dropped)`</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>       );</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>     }</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>     return;</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>   }</span>
+<span class="source-line" id="L372"><a href="#L372">372</a> </span>
+<span class="source-line" id="L373"><a href="#L373">373</a>   // Fires the threshold and stamped above SPECULATIVE: requires a named defeater + provenance.</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>   if (!isNamedDefeater(elevation.what_would_refute_it)) {</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>     throw new Error(</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>       `B-honesty: elevation &#x27;${id}&#x27; is stamped ${tier} but its what_would_refute_it is a self-rated confidence word / empty, not a NAMED concrete defeater — FAILS (auto-downgrade to SPECULATIVE)`</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>     );</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>   }</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>   if (!isPopulated(elevation.refutation_provenance)) {</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>     throw new Error(</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>       `B-honesty: elevation &#x27;${id}&#x27; is stamped ${tier} but carries no refutation_provenance (no INDEPENDENT named-defeater refuter ran) — FAILS (auto-downgrade to SPECULATIVE)`</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>     );</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>   }</span>
+<span class="source-line" id="L384"><a href="#L384">384</a> }</span>
+<span class="source-line" id="L385"><a href="#L385">385</a> </span>
+<span class="source-line" id="L386"><a href="#L386">386</a> /** Apply B-honesty to every elevation in an advisor output. Throws on the first violation; an</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>  *  output with no elevations trivially passes. */</span>
+<span class="source-line" id="L388"><a href="#L388">388</a> export function assertRefutationSeam(output) {</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>   const elevations = Array.isArray(output?.elevations) ? output.elevations : [];</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>   elevations.forEach((e) =&gt; assertHonestRefutation(e));</span>
+<span class="source-line" id="L391"><a href="#L391">391</a> }</span>
+<span class="source-line" id="L392"><a href="#L392">392</a> </span>
+<span class="source-line" id="L393"><a href="#L393">393</a> // --- B3: bounded premortem ≠ Crucible&#x27;s Oranges-engine (the Wave-5 capability) -------------</span>
+<span class="source-line" id="L394"><a href="#L394">394</a> /** B3 on a single anticipate finding. Gandalf&#x27;s ANTICIPATE is a BOUNDED premortem on a SINGLE</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>  *  effort (subject_cardinality == 1), NOT Crucible&#x27;s multi-plan counterfactual-cost engine. A</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>  *  `kind:&#x27;anticipate&#x27;` finding FAILS B3 when it carries a regret/counterfactual-cost field</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>  *  (ORANGES_ENGINE_FIELDS) OR `subject_cardinality &gt; 1` — that work is Crucible&#x27;s, so it routes to</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>  *  a Crucible commission (seam/anticipate.mjs `commissionCrucible`). Non-anticipate findings are</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>  *  not gated by B3. (Cross-path cost reasoning carried only in PROSE is the advisory layer&#x27;s job —</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>  *  `flagCrossPathCostReasoning`, isolated from this gate by PRINCIPLE-D.) */</span>
+<span class="source-line" id="L401"><a href="#L401">401</a> export function assertBoundedPremortem(finding) {</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>   if (finding === null || typeof finding !== &#x27;object&#x27; || Array.isArray(finding)) {</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>     throw new Error(&#x27;B3 bounded-premortem: target is not an object&#x27;);</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>   }</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>   if (finding.kind !== ANTICIPATE_KIND) return; // only anticipate findings are gated by B3</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>   const id = finding.id ?? &#x27;?&#x27;;</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>   if (finding.subject_cardinality !== undefined &amp;&amp; finding.subject_cardinality !== BOUNDED_SUBJECT_CARDINALITY) {</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>     throw new Error(</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>       `B3 bounded-premortem: anticipate finding &#x27;${id}&#x27; has subject_cardinality ${JSON.stringify(finding.subject_cardinality)} (≠ ${BOUNDED_SUBJECT_CARDINALITY}) — a multi-path read is Crucible&#x27;s Oranges-engine; route to a Crucible commission`</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>     );</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>   }</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>   for (const f of ORANGES_ENGINE_FIELDS) {</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>     if (isPopulated(finding[f])) {</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>       throw new Error(</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>         `B3 bounded-premortem: anticipate finding &#x27;${id}&#x27; carries the regret/counterfactual-cost field &#x27;${f}&#x27; — counterfactual-cost-across-paths is Crucible&#x27;s engine, not Gandalf&#x27;s bounded premortem; route to a Crucible commission`</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>       );</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>     }</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>   }</span>
+<span class="source-line" id="L419"><a href="#L419">419</a> }</span>
+<span class="source-line" id="L420"><a href="#L420">420</a> </span>
+<span class="source-line" id="L421"><a href="#L421">421</a> // --- B9: an anticipation is a not-yet-present future-state (the Wave-5 capability) ----------</span>
+<span class="source-line" id="L422"><a href="#L422">422</a> /** B9 on a single anticipate finding. NS3: an anticipation surfaces a COMING problem — a</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>  *  not-yet-present `future_state_condition` plus the `enabling_assumption` that would bring it on.</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>  *  A `kind:&#x27;anticipate&#x27;` finding FAILS B9 when it is PRESENT-TENSE — it lacks a populated,</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>  *  well-formed future-state condition + enabling assumption (per seam/anticipate.mjs</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>  *  `isForwardLookingAnticipation`). Non-anticipate findings are not gated by B9. */</span>
+<span class="source-line" id="L427"><a href="#L427">427</a> export function assertForwardLooking(finding) {</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>   if (finding === null || typeof finding !== &#x27;object&#x27; || Array.isArray(finding)) {</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>     throw new Error(&#x27;B9 forward-looking: target is not an object&#x27;);</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>   }</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>   if (finding.kind !== ANTICIPATE_KIND) return; // only anticipate findings are gated by B9</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>   const id = finding.id ?? &#x27;?&#x27;;</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>   if (!isForwardLookingAnticipation(finding)) {</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>     throw new Error(</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>       `B9 forward-looking: anticipate finding &#x27;${id}&#x27; is present-tense — it carries no populated, well-formed future_state_condition + enabling_assumption (an anticipation is a not-yet-present future state, never a present-tense observation)`</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>     );</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>   }</span>
+<span class="source-line" id="L438"><a href="#L438">438</a> }</span>
+<span class="source-line" id="L439"><a href="#L439">439</a> </span>
+<span class="source-line" id="L440"><a href="#L440">440</a> /** Apply B3 + B9 to every finding in an advisor output: every `kind:&#x27;anticipate&#x27;` finding must be</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>  *  a bounded premortem (B3) AND forward-looking (B9). Throws on the first violation; an output</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>  *  with no anticipate findings trivially passes. */</span>
+<span class="source-line" id="L443"><a href="#L443">443</a> export function assertAnticipateSeam(output) {</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>   findings.forEach((f) =&gt; {</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>     assertBoundedPremortem(f);</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>     assertForwardLooking(f);</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>   });</span>
+<span class="source-line" id="L449"><a href="#L449">449</a> }</span>
+<span class="source-line" id="L450"><a href="#L450">450</a> </span>
+<span class="source-line" id="L451"><a href="#L451">451</a> // --- B1: zero ideation — Gandalf does not brainstorm (the Wave-6 capability) ---------------</span>
+<span class="source-line" id="L452"><a href="#L452">452</a> /** B1 on a single item. NS6 anti-drift: Gandalf&#x27;s value is INSIGHT (understand / situate /</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>  *  anticipate), NOT the open-ended generation of new ideas/extensions — that is Jumper&#x27;s. An</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>  *  &quot;ideate&quot;-class item (a divergent/brainstorm `kind`, or a finding carrying an idea-generation</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>  *  field, per seam/score-label.mjs `isIdeationFinding`) FAILS B1. A grounded diagnose/situate/</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>  *  anticipate finding is not gated. (Judging whether prose is genuinely divergent is the advisory</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>  *  layer&#x27;s job — PRINCIPLE-D; the gate owns the structural ideate-class signal.) */</span>
+<span class="source-line" id="L458"><a href="#L458">458</a> export function assertNoIdeation(item) {</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>   if (item === null || typeof item !== &#x27;object&#x27; || Array.isArray(item)) {</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>     throw new Error(&#x27;B1 zero-ideation: target is not an object&#x27;);</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>   }</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>   if (isIdeationFinding(item)) {</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>     throw new Error(</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>       `B1 zero-ideation: item &#x27;${item.id ?? &#x27;?&#x27;}&#x27; is a divergent/brainstorm ideate-class finding — open-ended idea generation is Jumper&#x27;s, not Gandalf&#x27;s (Gandalf delivers grounded insight: understand / situate / anticipate)`</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>     );</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>   }</span>
+<span class="source-line" id="L467"><a href="#L467">467</a> }</span>
+<span class="source-line" id="L468"><a href="#L468">468</a> </span>
+<span class="source-line" id="L469"><a href="#L469">469</a> /** Apply B1 to every finding AND elevation in an advisor output (the suggestion surfaces where an</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>  *  ideation drift would land). Throws on the first violation; an output with none trivially passes. */</span>
+<span class="source-line" id="L471"><a href="#L471">471</a> export function assertNoIdeationSeam(output) {</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>   const elevations = Array.isArray(output?.elevations) ? output.elevations : [];</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>   findings.forEach((f) =&gt; assertNoIdeation(f));</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>   elevations.forEach((e) =&gt; assertNoIdeation(e));</span>
+<span class="source-line" id="L476"><a href="#L476">476</a> }</span>
+<span class="source-line" id="L477"><a href="#L477">477</a> </span>
+<span class="source-line" id="L478"><a href="#L478">478</a> // --- B6: no silent degradation (the Wave-6 capability) -------------------------------------</span>
+<span class="source-line" id="L479"><a href="#L479">479</a> /** B6 on a whole output. If any item ran DEGRADED (`degraded:true`), the top-level output MUST own</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>  *  it (`degraded:true`). A per-item `degraded:true` under a top-level `degraded:false` is a SILENT</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>  *  degradation and FAILS (per seam/score-label.mjs `hasSilentDegradation`). Throws on the first</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>  *  offending item; an honest output (top-level owns it, or nothing degraded) passes. */</span>
+<span class="source-line" id="L483"><a href="#L483">483</a> export function assertNoSilentDegradation(output) {</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>   if (output === null || typeof output !== &#x27;object&#x27; || Array.isArray(output)) {</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>     throw new Error(&#x27;B6 no-silent-degradation: target is not an object&#x27;);</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>   }</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>   if (!hasSilentDegradation(output)) return;</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>   const first = degradedItems(output)[0];</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>   throw new Error(</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>     `B6 no-silent-degradation: ${first.where} (&#x27;${first.item.id ?? first.item.leg ?? &#x27;?&#x27;}&#x27;) ran degraded:true but the top-level output is degraded:false — degradation must be surfaced at the top level, never silent`</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>   );</span>
+<span class="source-line" id="L492"><a href="#L492">492</a> }</span>
+<span class="source-line" id="L493"><a href="#L493">493</a> </span>
+<span class="source-line" id="L494"><a href="#L494">494</a> // --- B8: honest synthesis (the Wave-6 capability) ------------------------------------------</span>
+<span class="source-line" id="L495"><a href="#L495">495</a> /** B8 on a whole output. Honest synthesis: (a) every leg the run REPORTS (a diagnose/situate/</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>  *  anticipate finding is present) MUST appear in `risk_labels`; and (b) a risk_label&#x27;s rung may NOT</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>  *  exceed its leg&#x27;s EVIDENTIAL ENVELOPE — the strongest rung any finding in the leg reached (a</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>  *  synthesis may not claim more evidence than its leg carries — carry rung at-or-below source). A</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>  *  missing leg OR an over-claiming risk_label FAILS. Throws on the first violation. */</span>
+<span class="source-line" id="L500"><a href="#L500">500</a> export function assertHonestSynthesis(output) {</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>   if (output === null || typeof output !== &#x27;object&#x27; || Array.isArray(output)) {</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>     throw new Error(&#x27;B8 honest-synthesis: target is not an object&#x27;);</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>   }</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>   const riskLabels = Array.isArray(output.risk_labels) ? output.risk_labels : [];</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>   const labelledLegs = new Set(riskLabels.map((r) =&gt; (r &amp;&amp; typeof r === &#x27;object&#x27; ? r.leg : undefined)));</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>   // (a) every present leg must be labelled.</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>   for (const leg of legsPresent(output)) {</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>     if (!labelledLegs.has(leg)) {</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>       throw new Error(</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>         `B8 honest-synthesis: leg &#x27;${leg}&#x27; is present in the findings but absent from risk_labels — honest synthesis must label every leg it reports (no silent omission)`</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>       );</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>     }</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>   }</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>   // (b) no risk_label may out-claim its leg&#x27;s evidential envelope.</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>   riskLabels.forEach((r, i) =&gt; {</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>     if (r === null || typeof r !== &#x27;object&#x27; || r.rung === undefined) return; // no rung ⇒ nothing to over-claim</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>     const envelope = legEnvelopeRung(output, r.leg);</span>
+<span class="source-line" id="L518"><a href="#L518">518</a>     if (envelope === null) return; // a label for a leg with no rung-bearing finding — not gated here</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>     if (rungIndex(r.rung) &gt; rungIndex(envelope)) {</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>       throw new Error(</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>         `B8 honest-synthesis: risk_labels[${i}] for leg &#x27;${r.leg}&#x27; is stamped rung ${r.rung} but the leg&#x27;s evidential envelope is ${envelope} — a synthesis may not claim more evidence than its leg carries (carry rung at-or-below source)`</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>       );</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>     }</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>   });</span>
+<span class="source-line" id="L525"><a href="#L525">525</a> }</span>
+<span class="source-line" id="L526"><a href="#L526">526</a> </span>
+<span class="source-line" id="L527"><a href="#L527">527</a> /** Apply the Wave-6 seam (B1 + B6 + B8) over a whole advisor output. Throws on the first</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>  *  violation; an honest output passes all three. */</span>
+<span class="source-line" id="L529"><a href="#L529">529</a> export function assertScoreLabelSeam(output) {</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>   assertNoIdeationSeam(output);</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>   assertNoSilentDegradation(output);</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>   assertHonestSynthesis(output);</span>
+<span class="source-line" id="L533"><a href="#L533">533</a> }</span>
+<span class="source-line" id="L534"><a href="#L534">534</a> </span>
+<span class="source-line" id="L535"><a href="#L535">535</a> // --- the Increment-1 integration umbrella (the Wave-7 capability) --------------------------</span>
+<span class="source-line" id="L536"><a href="#L536">536</a> /** The FULL Increment-1 deterministic canary set over a WHOLE Gandalf v1 advisor output — the</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>  *  Wave-7 integration gate. This is &quot;the canary set = the test suite&quot; expressed as one call: a</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>  *  conformant Gandalf v1 output must pass EVERY Increment-1 canary at once. It composes, in order:</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>  *    • assertConformant      — schema shape + reasoning-before-verdict + nitpick/elevation caps</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>  *    • assertDiagnoseSeam    — B5  (diagnose exclusive to the vetted core)</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>  *    • assertSituateSeam     — SITUATE honesty cap (no self-CORROBORATED; unverifiable → handoff)</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>  *    • assertCeiling         — B-ceiling (single-family ⇒ max tier PROMISING)</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>  *    • assertRefutationSeam  — B-honesty (named-defeater + provenance, or stamped SPECULATIVE)</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>  *    • assertAnticipateSeam  — B3 + B9 (bounded premortem; forward-looking future-state)</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>  *    • assertScoreLabelSeam  — B1 + B6 + B8 (zero ideation; no silent degradation; honest synthesis)</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>  *  Throws on the FIRST canary a fixture violates. By construction this gate imports NOTHING from the</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>  *  ADVISORY layer (seam/oracle.mjs, seam/anti-laundering.mjs): the deterministic done-floor is</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>  *  provably independent of oracle/judge reachability and of the (BLOCKED-this-cycle) content-binding</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>  *  canaries — PRINCIPLE-D. */</span>
+<span class="source-line" id="L550"><a href="#L550">550</a> export function assertIncrement1Conformant(output) {</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>   assertConformant(output);     // schema + reasoning-before-verdict + caps</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>   assertDiagnoseSeam(output);   // B5</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>   assertSituateSeam(output);    // SITUATE honesty cap</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>   assertCeiling(output);        // B-ceiling</span>
+<span class="source-line" id="L555"><a href="#L555">555</a>   assertRefutationSeam(output); // B-honesty</span>
+<span class="source-line" id="L556"><a href="#L556">556</a>   assertAnticipateSeam(output); // B3 + B9</span>
+<span class="source-line" id="L557"><a href="#L557">557</a>   assertScoreLabelSeam(output); // B1 + B6 + B8</span>
+<span class="source-line" id="L558"><a href="#L558">558</a> }</span>
+<span class="source-line" id="L559"><a href="#L559">559</a> </span>
+<span class="source-line" id="L560"><a href="#L560">560</a> // --- umbrella conformance check (used by the schema-conformance suite) ------------------</span>
+<span class="source-line" id="L561"><a href="#L561">561</a> export function assertConformant(output) {</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>   assertSchemaConformant(output);</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>   assertReasoningBeforeVerdict(output, &#x27;$&#x27;);</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>   for (const [arr, name] of [[output.findings, &#x27;findings&#x27;], [output.nitpicks, &#x27;nitpicks&#x27;], [output.elevations, &#x27;elevations&#x27;]]) {</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>     if (Array.isArray(arr)) {</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>       arr.forEach((item, i) =&gt; {</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>         if (item &amp;&amp; typeof item === &#x27;object&#x27; &amp;&amp; &#x27;reasoning&#x27; in item &amp;&amp; &#x27;verdict&#x27; in item) {</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>           assertReasoningBeforeVerdict(item, `$.${name}[${i}]`);</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>         }</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>       });</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>     }</span>
+<span class="source-line" id="L572"><a href="#L572">572</a>   }</span>
+<span class="source-line" id="L573"><a href="#L573">573</a>   assertCaps(output);</span>
+<span class="source-line" id="L574"><a href="#L574">574</a> }</span></pre></main></body></html>

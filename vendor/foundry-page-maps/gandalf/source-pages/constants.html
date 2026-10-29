@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>constants · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>constants</h1>
+<p>contract · frozen exact bytes</p><p class="path">Original: skills/gandalf/prereg-constants.json</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 dbe22fd8144dbe768f5a2ad5482ea7e5e9da31acbffcfd9d9600274e100a5ddf</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> {</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>   &quot;_note&quot;: &quot;Gandalf advisor — build-time FROZEN CONSTANTS, committed in Wave 1 (GATE-0). Available to ALL waves. These are the dive&#x27;s §5 residuals that are NOT power-calc-set. The power-calc-SET values (G non-additivity margin, k oracle floor) and the calibration ICC live in preregistration.json (committed by the H1 feasibility gate), NEVER here. JSON has no comments; keys prefixed &#x27;_&#x27; are documentation.&quot;,</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>   &quot;schema_version&quot;: &quot;gandalf-advisor-1&quot;,</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>   &quot;substrate&quot;: {</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>     &quot;cross_model&quot;: false,</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>     &quot;_reason&quot;: &quot;Single-family substrate (Fable 5). cross_model:false ⇒ single-family ceiling = PROMISING (B-ceiling).&quot;</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   },</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   &quot;refuter_budget_R&quot;: 3,</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   &quot;refuter_firing_threshold&quot;: {</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>     &quot;value_if_true_at_least&quot;: &quot;high&quot;,</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>     &quot;or_severity_at_least&quot;: &quot;major&quot;,</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>     &quot;_semantics&quot;: &quot;Only elevations with value-if-true ≥ HIGH (top dual-axis band) OR severity ≥ major get an INDEPENDENT named-defeater refuter. The rest ship SPECULATIVE with the &#x27;no independent refutation ran&#x27; stamp.&quot;</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>   },</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>   &quot;spawn_caps&quot;: {</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>     &quot;commission_depth&quot;: 1,</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>     &quot;per_run_spawn_cap&quot;: 5,</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>     &quot;_per_run_breakdown&quot;: &quot;SITUATE commissions (≤2) + refuter budget R (≤3) = 5.&quot;,</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>     &quot;skill_twice_in_commission_chain&quot;: &quot;HALT&quot;,</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>     &quot;_cycle_guard&quot;: &quot;A skill appearing twice in the commission_chain ⇒ HALT-for-human (no silent recursion).&quot;</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   },</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>   &quot;output_caps&quot;: {</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>     &quot;max_nitpicks&quot;: 7,</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>     &quot;max_elevations&quot;: 5,</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>     &quot;_note&quot;: &quot;Carried diagnose-core residuals (Stage-2 committed defaults). Enforced as the nitpick/elevation caps in the Wave-1 schema-conformance suite (assertCaps). Tightenable by a later wave, never silently exceeded.&quot;</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   }</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> }</span></pre></main></body></html>

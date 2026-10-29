@@ -1,0 +1,488 @@
+{
+  "nodes": [
+    {
+      "id": "ramanujan-root",
+      "name": "Ramanujan Knowledge & Execution Architecture",
+      "title": "Ramanujan Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "ramanujan-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "ramanujan-root"
+      ],
+      "ring": 1,
+      "resource_id": "ramanujan-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "ramanujan-root"
+      ],
+      "ring": 1,
+      "resource_id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "ramanujan-root"
+      ],
+      "ring": 1,
+      "resource_id": "ramanujan-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "ramanujan-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "ramanujan-root"
+      ],
+      "ring": 1,
+      "resource_id": "ramanujan-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-mat-1",
+      "name": "Ramanujan Agent & Execution Protocol (SKILL.md)",
+      "title": "Ramanujan Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "ramanujan-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-mat-2",
+      "name": "Ramanujan Human Guide (HUMAN.md)",
+      "title": "Ramanujan Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "ramanujan-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-mat-3",
+      "name": "Ramanujan Locked North Star (NORTH-STAR.md)",
+      "title": "Ramanujan Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "ramanujan-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-mat-4",
+      "name": "Ramanujan Detailed Specification (DESCRIPTION.md)",
+      "title": "Ramanujan Detailed Specification (DESCRIPTION.md)",
+      "parent_ids": [
+        "ramanujan-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-mat-description-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-mat-5",
+      "name": "Ramanujan Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "title": "Ramanujan Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "parent_ids": [
+        "ramanujan-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-mat-implementation-plan-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-mat-6",
+      "name": "Ramanujan Universal Triage & Seating Block",
+      "title": "Ramanujan Universal Triage & Seating Block",
+      "parent_ids": [
+        "ramanujan-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-mat-triage-block",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-1",
+      "name": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "title": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-2",
+      "name": "ramanujan-run.mjs (bin/ramanujan-run.mjs)",
+      "title": "ramanujan-run.mjs (bin/ramanujan-run.mjs)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-tool-bin-ramanujan-run-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-3",
+      "name": "run-foreman.mjs (run-foreman.mjs)",
+      "title": "run-foreman.mjs (run-foreman.mjs)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-tool-run-foreman-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-4",
+      "name": "adjudication.mjs (src/adjudication.mjs)",
+      "title": "adjudication.mjs (src/adjudication.mjs)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-tool-src-adjudication-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-5",
+      "name": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "title": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-6",
+      "name": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "title": "fastpath-queue.mjs (_archive/overhaul-orphans-2026-07-25/fastpath-queue.mjs)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-tool-archive-overhaul-orphans-2026-07-",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "ramanujan-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-skill-1",
+      "name": "researchPrime Literature & Prior-Art Engine",
+      "title": "researchPrime Literature & Prior-Art Engine",
+      "parent_ids": [
+        "ramanujan-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-skill-2",
+      "name": "Gandalf Proof & Assumption Refuter",
+      "title": "Gandalf Proof & Assumption Refuter",
+      "parent_ids": [
+        "ramanujan-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-skill-3",
+      "name": "Anvil Numerical Equivalence Verifier",
+      "title": "Anvil Numerical Equivalence Verifier",
+      "parent_ids": [
+        "ramanujan-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-peer-anvil",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-ref-1",
+      "name": "Ramanujan LESSONS.md",
+      "title": "Ramanujan LESSONS.md",
+      "parent_ids": [
+        "ramanujan-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-ref-2",
+      "name": "Ramanujan CHANGELOG.md",
+      "title": "Ramanujan CHANGELOG.md",
+      "parent_ids": [
+        "ramanujan-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-ref-changelog",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-ref-3",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "ramanujan-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-ref-4",
+      "name": "Journal: 0027-mba-homework-ta-revision1-audit",
+      "title": "Journal: 0027-mba-homework-ta-revision1-audit",
+      "parent_ids": [
+        "ramanujan-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-journal-0027-mba-homework-ta-revision1",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-ref-5",
+      "name": "Journal: 0026-all-souls-v33-conceptual-review",
+      "title": "Journal: 0026-all-souls-v33-conceptual-review",
+      "parent_ids": [
+        "ramanujan-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-journal-0026-all-souls-v33-conceptual-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "ramanujan-leaf-ref-6",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "ramanujan-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "ramanujan-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

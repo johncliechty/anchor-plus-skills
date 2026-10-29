@@ -1,0 +1,62 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Observed-tool guard and small cap · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="ownership" data-anchor-id="a-cockpit-_guard_turn">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Observed-tool guard and small cap</h1>
+<p class="intro">The guard interrupts detected writes in an owned repo and small human turns beyond 15 tool calls. It excludes code jobs and uses heuristics; it is not a filesystem sandbox.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630821+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\steward_engine.py · lines 2230–2279</p><pre>    def _guard_turn(self, block):
+        &quot;&quot;&quot;R2/R3: end a small-mode turn that has grown past the step cap (it is handed to a code job), and a turn
+        that writes into a repository a running code job owns (one writer). True when the turn was ended.&quot;&quot;&quot;
+        if self.general or self.code_job or self.fake or not self.busy:
+            return False
+        reason, note = &quot;&quot;, &quot;&quot;
+        inp = block.get(&quot;input&quot;) or {}
+        paths = [p for p in ([inp.get(&quot;file_path&quot;)] + list(inp.get(&quot;paths&quot;) or [])) if isinstance(p, str) and p.strip()]
+        try:
+            from steward_cockpit import code_jobs as _cj
+            owned = _cj.active_repos()
+        except Exception:
+            owned = []
+        hit = []
+        if owned:
+            name = block.get(&quot;name&quot;) or &quot;&quot;
+            absolute = [p if os.path.isabs(p) else os.path.join(self.dir, p) for p in paths]
+            if name in (&quot;Write&quot;, &quot;Edit&quot;, &quot;NotebookEdit&quot;, &quot;file_change&quot;, &quot;apply_patch&quot;):
+                hit = [p for p in absolute if any(_cj.inside(p, r) for r in owned)]
+            elif name in _SHELL_TOOLS:
+                # a shell or exec call: a write when it runs inside a busy repository, or names one with a writing verb
+                cmd = json.dumps(inp, ensure_ascii=False)[:6000]
+                if any(_cj.inside(self.dir, r) for r in owned) and _WRITE_VERBS.search(cmd):
+                    hit = [self.dir]
+                else:
+                    flat = cmd.replace(&quot;\\\\&quot;, &quot;/&quot;).replace(&quot;\\&quot;, &quot;/&quot;).lower()
+                    for r in owned:
+                        rr = str(r).replace(&quot;\\&quot;, &quot;/&quot;).lower().rstrip(&quot;/&quot;)
+                        if re.search(re.escape(rr) + r&quot;(?:/|[\&quot;&#x27; ]|$)&quot;, flat) and _WRITE_VERBS.search(cmd):
+                            hit = [r]
+                            break
+            if hit:
+                reason = &quot;one writer: a code job is working on that repository&quot;
+                note = (&quot;(interface - not John) Your last turn was ended: it wrote %s while a code job owns that &quot;
+                        &quot;repository. Do not write there until the job reports; tell John in one line.&quot; % hit[0])
+        if not reason and getattr(self, &quot;_turn_origin&quot;, &quot;human&quot;) == &quot;human&quot; and self._turn_tools &gt; STEP_CAP and not self.effort_on():
+            reason = &quot;past %d tool calls: larger than a small change&quot; % STEP_CAP
+            note = (&quot;(interface - not John) Your last turn was ended after %d tool calls: this is larger than a small &quot;
+                    &quot;change. Hand it to a code job now (tools/steward_code_job.py start, with a short brief and a check), &quot;
+                    &quot;then tell John in one line what the coder is doing.&quot; % self._turn_tools)
+        if not reason:
+            return False
+        with self._lock:
+            self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: &quot;%s ended its turn (%s)&quot; % (self.steward or &quot;The steward&quot;, reason)})
+            out = self._interrupt_turn_locked(reason)
+            if isinstance(out, dict) and out.get(&quot;ok&quot;):
+                self.queue.insert(0, note)
+                self._persist_queue()
+                self._wake_locked(fresh=False, seed=None)
+        return True</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L2230">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/small">Perform the authorized small slice</a> · <a target="_top" href="../index.html#process/background">Supervise without duplicate ownership</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</span></p><p>Excerpt hash: <span class="path">739a2bf43bb06ef4f67948bf8a2c225ea508fca1d067c26d04efeb85bc8342b3</span></p></details></article></main></body></html>

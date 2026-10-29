@@ -1,0 +1,44 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>A depth override needs a reason · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="override" data-anchor-id="a-depth-applyDepthOverride">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Human decisions</p><h1>A depth override needs a reason</h1>
+<p class="intro">Record who, when, why and the from/to outcomes for a human override; no implicit upgrade or unbounded swarm.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.540544+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/dispatch-table.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 646e390636ea7898c6136ae6dbc98df4db31a8ef0a2927a9eeb8d63d9a89a4c1</p></aside>
+<p class="path">C:/dev/Ecgberht/engine/dispatch-table.mjs · lines 461–492</p><pre>export function applyDepthOverride(fromOutcome, toOutcome, reason = {}) {
+  const from = normalizeOutcome(fromOutcome);
+  const to = normalizeOutcome(toOutcome);
+  const issues = [];
+  if (!from) issues.push(&#x27;override.from required (valid outcome)&#x27;);
+  if (!to) issues.push(&#x27;override.to required (valid outcome)&#x27;);
+  for (const key of [&#x27;who&#x27;, &#x27;when&#x27;, &#x27;why&#x27;]) {
+    if (reason[key] == null || reason[key] === &#x27;&#x27;) {
+      issues.push(`override.${key} required`);
+    }
+  }
+  if (issues.length) {
+    return {
+      ok: false,
+      error: &#x27;override_receipt_required&#x27;,
+      message: `Human override requires structured receipt reason (who/when/why/from→to): ${issues.join(&#x27;; &#x27;)}`,
+      issues,
+    };
+  }
+  return {
+    ok: true,
+    outcome: to,
+    override: {
+      who: reason.who,
+      when: reason.when,
+      why: reason.why,
+      from,
+      to,
+    },
+    tool_depth_why: `human override ${from}→${to}: ${reason.why}`,
+  };
+}</pre>
+<p><a class="button" href="../source-pages/depth.html#L461">Open numbered source</a>
+<a href="../sources/depth.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/depth">Choose depth without changing model quality</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">646e390636ea7898c6136ae6dbc98df4db31a8ef0a2927a9eeb8d63d9a89a4c1</span></p><p>Excerpt hash: <span class="path">533d538f135c0905de6de50184cfec2625bf0b21328d59a45aa655f9be39bfe6</span></p></details></article></main></body></html>

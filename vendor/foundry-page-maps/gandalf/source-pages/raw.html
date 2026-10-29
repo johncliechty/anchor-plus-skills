@@ -1,0 +1,113 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>raw · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>raw</h1>
+<p>instructions · frozen exact bytes</p><p class="path">Original: skills/gandalf/runtime/RAW-DRAFT-CONTRACT.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 c8aaf75b24df18a1f0ceca97a7b9d6d410fb4976e58205f12ef138a457214d29</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> # Gandalf runtime — the RAW-DRAFT contract (Tier-1)</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> &gt; What the model emits in runtime mode, and what the host does with it. The model emits **only** the</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> &gt; raw draft below as its final message — it does **NOT** self-assign tiers or refutation stamps. The</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> &gt; host (`runtime/gandalf-run.mjs` → `runtime/seam-pass.applySeamPass`) applies the shipped seams and</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> &gt; produces the canary-conformant, honestly-graded `schema/advisor-output.schema.json` output.</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> </span>
+<span class="source-line" id="L8"><a href="#L8">8</a> ## Why a contract (journal/0001 + LESSONS.md)</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> </span>
+<span class="source-line" id="L10"><a href="#L10">10</a> The first real Gandalf runs showed the model produces excellent DIAGNOSE / SITUATE / ANTICIPATE</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> **content** but, asked to also stamp the honest tiers itself, keeps hand-approximating them and failing</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> the B-honesty canary. The honest tiers + stamps are the **seam&#x27;s** job, applied deterministically. So</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> the model&#x27;s job is reduced to emitting the raw findings; the host stamps them. **Do not narrate a tier</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> or a &quot;no independent refutation ran&quot; stamp in `reasoning` — emit the raw fields and let the host apply</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> the seam.**</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> </span>
+<span class="source-line" id="L17"><a href="#L17">17</a> ## Emit ONLY this JSON object (the raw draft)</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19">19</a> ```jsonc</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> {</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>   &quot;reasoning&quot;: &quot;&lt;the deep-think reasoning — emitted BEFORE the verdict&gt;&quot;,</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>   &quot;verdict&quot;:   &quot;&lt;the overall verdict; may be &#x27;this is sound&#x27;&gt;&quot;,</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24">24</a>   &quot;findings&quot;:  [ /* diagnose / situate / anticipate findings — see per-kind shape below */ ],</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   &quot;nitpicks&quot;:  [ /* minor, low-stakes findings: { id, rung, reasoning, verdict } */ ],</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>   &quot;elevations&quot;:[ /* forward, value-adding suggestions — see shape below; NO tier, NO stamp */ ]</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> }</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> ```</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30">30</a> `reasoning`, `verdict` are required non-empty strings; `findings`, `nitpicks`, `elevations` are</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> required arrays (may be empty). A malformed draft (missing a required key, a non-object item, an</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> anticipate finding missing its future-state) is **rejected** by the host with a non-zero exit and an</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> honest stderr message — **no partial / forged output is written.**</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> </span>
+<span class="source-line" id="L35"><a href="#L35">35</a> ### `findings[]` — per `kind` (the fields each seam consumes)</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> **`kind: &quot;diagnose&quot;`** — a vetted-core diagnosis. Do NOT add `gandalf_core`; the host stamps it</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> (`stampDiagnoseCoreProvenance`). Do NOT carry any external commission id (diagnosis is the core&#x27;s).</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> ```jsonc</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> { &quot;id&quot;: &quot;d-1&quot;, &quot;kind&quot;: &quot;diagnose&quot;, &quot;rung&quot;: &quot;&lt;REFUTED|UNVERIFIED|CLAIMED|CORROBORATED|OBSERVED&gt;&quot;,</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>   &quot;reasoning&quot;: &quot;...&quot;, &quot;verdict&quot;: &quot;...&quot;, &quot;severity&quot;: &quot;&lt;minor|major|critical&gt;&quot;? }</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> ```</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a> **`kind: &quot;anticipate&quot;`** — a bounded, forward-looking premortem on the SINGLE effort. Emit the two</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> future-state fields; the host composes the finding (`composeAnticipation` sets `subject_cardinality: 1`</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> and refuses any regret / counterfactual-cost field).</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> ```jsonc</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> { &quot;id&quot;: &quot;a-1&quot;, &quot;kind&quot;: &quot;anticipate&quot;, &quot;rung&quot;: &quot;UNVERIFIED&quot;,</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   &quot;reasoning&quot;: &quot;...&quot;, &quot;verdict&quot;: &quot;...&quot;,</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   &quot;future_state_condition&quot;: &quot;&lt;a not-yet-present condition&gt;&quot;,</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   &quot;enabling_assumption&quot;:    &quot;&lt;what must hold for it to arrive&gt;&quot;,</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   &quot;severity&quot;: &quot;&lt;minor|major|critical&gt;&quot;? }</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> ```</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> **`kind: &quot;situate&quot;`** — a best-in-class framing. Emit the SITUATE pipeline stages; the host composes +</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> honesty-caps the finding (`composeSituate`). **Tier-1 has no live researchPrime commission**, so</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> `facts_verified` is `false` by construction and the host attaches the `needs_verification` handoff.</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> ```jsonc</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> { &quot;id&quot;: &quot;s-1&quot;, &quot;kind&quot;: &quot;situate&quot;, &quot;reasoning&quot;: &quot;...&quot;, &quot;verdict&quot;: &quot;...&quot;,</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>   &quot;abstraction&quot;:  { &quot;stage&quot;: &quot;S0-abstract&quot;, &quot;skeleton&quot;: &quot;&lt;domain-neutral pattern&gt;&quot; },</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>   &quot;commission&quot;:   { &quot;skill&quot;: &quot;researchPrime&quot;, &quot;question&quot;: &quot;...&quot;, &quot;cross_model&quot;: false,</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>                     &quot;origin_family&quot;: &quot;fable-5&quot;, &quot;independent_origin&quot;: false,</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>                     &quot;researchprime_commission_id&quot;: null },</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>   &quot;structure_map&quot;: { &quot;answer&quot;: &quot;&lt;answer-first conclusion&gt;&quot;,</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>                      &quot;correspondences&quot;: [</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>                        { &quot;source_relation&quot;: &quot;...&quot;, &quot;target_relation&quot;: &quot;...&quot; },</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>                        { &quot;source_relation&quot;: &quot;...&quot;, &quot;target_relation&quot;: &quot;...&quot; }  /* &gt;= 2, RELATIONAL */</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>                      ] },</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   &quot;outside_view_base_rate&quot;: &quot;&lt;the outside-view base rate&gt;&quot; }</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> ```</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> </span>
+<span class="source-line" id="L72"><a href="#L72">72</a> A finding of any other `kind` (or none) passes through untouched. A finding with `rung: &quot;REFUTED&quot;`</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> **drops** (the only drop condition).</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a> ### `elevations[]` — forward suggestions (NO tier, NO stamp)</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77">77</a> Emit the suggestion + the **named concrete defeater** (`what_would_refute_it`), never a tier or a</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> stamp. In Tier-1 no independent refuter runs, so the host downgrades **every** elevation to</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> `SPECULATIVE` and stamps it `&quot;no independent refutation ran&quot;` (`vetElevationRefutation` + `labelTier`).</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> ```jsonc</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> { &quot;id&quot;: &quot;e-1&quot;, &quot;value_if_true&quot;: &quot;&lt;low|medium|high&gt;&quot;, &quot;rung&quot;: &quot;&lt;...&gt;&quot;,</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>   &quot;reasoning&quot;: &quot;...&quot;, &quot;verdict&quot;: &quot;...&quot;,</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>   &quot;what_would_refute_it&quot;: &quot;&lt;a NAMED concrete defeater — never a confidence word&gt;&quot;,</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   &quot;severity&quot;: &quot;&lt;minor|major|critical&gt;&quot;? }</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> ```</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> A `rung: &quot;REFUTED&quot;` elevation **drops**.</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> </span>
+<span class="source-line" id="L88"><a href="#L88">88</a> ## What the host applies (deterministically, never the model)</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90">90</a> | Stage | Seam | Effect |</span>
+<span class="source-line" id="L91"><a href="#L91">91</a> |-------|------|--------|</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> | diagnose | `seam/diagnose-core.stampDiagnoseCoreProvenance` | appends `gandalf_core: { protocol: &quot;PROTOCOL v2&quot; }` |</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> | anticipate | `seam/anticipate.composeAnticipation` | `subject_cardinality: 1`; B3 + B9 enforced |</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> | situate | `seam/situate.composeSituate` | rung cap (no self-CORROBORATED) + `needs_verification` handoff |</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> | elevation | `seam/refute.vetElevationRefutation` → `seam/score-label.labelTier` | SPECULATIVE floor + stamp; single-family PROMISING ceiling |</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> | drop | `seam/score-label.dropsFromOutput` | only `rung: &quot;REFUTED&quot;` drops |</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> | synthesis | `seam/score-label.composeRiskLabels` | one `risk_labels` entry per present leg, envelope rung, PROMISING ceiling |</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> | degradation | (host roll-up) | any per-item `degraded: true` ⇒ top-level `degraded: true` (B6) |</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a> The result is validated by the shipped `test/harness.assertIncrement1Conformant` before it is written;</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> if it would not pass, the host exits non-zero and writes nothing.</span>
+<span class="source-line" id="L102"><a href="#L102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103">103</a> ## Scope note (Tier-1)</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> </span>
+<span class="source-line" id="L105"><a href="#L105">105</a> This host runs the **deterministic** seam pass on ONE model run. It does **not** dispatch the live</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> independent named-defeater refuters or the researchPrime SITUATE commission (those need the `agent()`</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> seam the repo flags as the integration point the gate never runs). The **live-refuter PROMISING tier**</span>
+<span class="source-line" id="L108"><a href="#L108">108</a> is the sequenced follow-on — see `LESSONS.md` and `journal/`.</span></pre></main></body></html>

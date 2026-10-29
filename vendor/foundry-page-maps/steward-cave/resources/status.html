@@ -1,0 +1,48 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Status and rendered acknowledgement · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="status" data-anchor-id="a-cockpit-_ticker">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Status and rendered acknowledgement</h1>
+<p class="intro">The ticker composes cockpit status and records acknowledgement separately. An emitted status is not proof John saw it; global chat cadence differs from cockpit instructions.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.533899+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: b31f75a1c121142bdad6c693f96ef9d300f68ff99378a7c98ab86e30aee8e321</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/steward_engine.py · lines 3393–3428</p><pre>    def _ticker(self, proc):
+        while proc is self.proc and proc.poll() is None:
+            time.sleep(TICK_CHECK)
+            if proc is not self.proc:   # superseded by a newer process
+                return
+            now = time.time()
+            if not self.busy and self._pending_refinement_handoffs:
+                if self._retry_refinement_handoffs():
+                    with self._lock:
+                        self._maybe_drive_locked()
+            if self._idle_tick(now):
+                return
+            # THE DETERMINISTIC STATUS CADENCE (handoff 2026-08-25 #2): fires
+            # during the steward&#x27;s OWN busy turn AND during commissioned/
+            # background work — the case the old busy-only trigger missed.
+            # Zero-model; pane + universal file, never the conversation.
+            if (not self.general and now - self.last_status &gt; TICK_SECONDS
+                    and (self.busy or self.queue or self._working_bg())):
+                self.last_status = now
+                self._status_update()
+            # the model-facing cadence nudge (commit + HOLD; the status-table
+            # demand is gone — the engine composes the status now)
+            if (self.busy
+                    and now - self.last_output &gt; TICK_SECONDS
+                    and now - self.last_tick &gt; TICK_SECONDS):
+                # Wave 1.2: nothing is written into a busy broker any more.
+                # Every TICK/REASSERT envelope queued in the pipe became an
+                # extra full turn after the running one (Codex r2 F2) and
+                # delayed John&#x27;s next message again. The cadence commit below
+                # still keys off last_tick; the role re-assert moves to the
+                # resume prefix (Wave 2.1).
+                self.last_tick = now
+            # commit-as-you-go IS a mechanism now: a dirty tree gets committed
+            # on the cadence, independent of whether the model remembers
+            if now - self.last_tick &lt; 2:
+                self._commit_if_dirty(&quot;steward cadence checkpoint&quot;)</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L3393">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/status">Show status; distinguish acknowledgement</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">b31f75a1c121142bdad6c693f96ef9d300f68ff99378a7c98ab86e30aee8e321</span></p><p>Excerpt hash: <span class="path">8d9747995b124a213960a1bcf106d76ad2dfb7a352454a194d20e5e5429cad7c</span></p></details></article></main></body></html>

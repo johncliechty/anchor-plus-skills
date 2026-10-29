@@ -1,0 +1,1016 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>fold · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>fold</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Ecgberht\engine\refinement-state.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.629994+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/refinement-state.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> import { createHash } from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // This module is a deterministic projection of the existing roadmap event stream.</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // File integrity, authenticated human input, operation idempotency and append/CAS</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // belong to the roadmap writer, not to a second store in this module.</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> const SCHEMA = &#x27;ecgberht-refinement-v1&#x27;;</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> const FULL_ASSESSMENTS = [</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   &#x27;RC-1&#x27;, &#x27;RC-2&#x27;, &#x27;RC-3&#x27;, &#x27;RC-4&#x27;, &#x27;RC-5&#x27;, &#x27;RC-6&#x27;, &#x27;RC-7&#x27;, &#x27;RC-8&#x27;, &#x27;RC-G&#x27;,</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> ];</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> </span>
+<span class="source-line" id="L11"><a href="#L11">11</a> function fail(code, detail) {</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>   const error = new Error(detail);</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>   error.code = code;</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>   error.detail = detail;</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>   throw error;</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> }</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> </span>
+<span class="source-line" id="L18"><a href="#L18">18</a> function demand(condition, code, detail) {</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   if (!condition) fail(code, detail);</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> }</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> function nonempty(value) {</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>   return typeof value === &#x27;string&#x27; &amp;&amp; value.trim().length &gt; 0;</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> }</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> function identifier(value, name) {</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>   demand(nonempty(value) &amp;&amp; ![&#x27;__proto__&#x27;, &#x27;constructor&#x27;, &#x27;prototype&#x27;].includes(value),</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>     &#x27;INVALID_IDENTIFIER&#x27;, name + &#x27; must be a nonempty, nonreserved string.&#x27;);</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>   return value;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> }</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> function object(value) {</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>   return value !== null &amp;&amp; typeof value === &#x27;object&#x27; &amp;&amp; !Array.isArray(value);</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> }</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36">36</a> function clone(value) {</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>   try {</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>     return JSON.parse(JSON.stringify(value));</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>   } catch {</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>     fail(&#x27;INVALID_JSON&#x27;, &#x27;Refinement operations must contain serializable JSON values.&#x27;);</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>   }</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> }</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a> function canonical(value, ancestors = new Set()) {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>   if (value === null) return &#x27;null&#x27;;</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   if (typeof value === &#x27;string&#x27; || typeof value === &#x27;boolean&#x27;) return JSON.stringify(value);</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   if (typeof value === &#x27;number&#x27;) {</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     demand(Number.isFinite(value), &#x27;INVALID_DIGEST_VALUE&#x27;, &#x27;Digests require finite JSON numbers.&#x27;);</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>     return JSON.stringify(value);</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   }</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   demand(object(value) || Array.isArray(value), &#x27;INVALID_DIGEST_VALUE&#x27;,</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>     &#x27;Digests require JSON values; undefined and executable values are not supported.&#x27;);</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>   demand(!ancestors.has(value), &#x27;INVALID_DIGEST_VALUE&#x27;, &#x27;Digests cannot contain cycles.&#x27;);</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   ancestors.add(value);</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>   let result;</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>   if (Array.isArray(value)) {</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>     result = &#x27;[&#x27; + Array.from(value, item =&gt; canonical(item, ancestors)).join(&#x27;,&#x27;) + &#x27;]&#x27;;</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   } else {</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     result = &#x27;{&#x27; + Object.keys(value).sort()</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>       .map(key =&gt; JSON.stringify(key) + &#x27;:&#x27; + canonical(value[key], ancestors)).join(&#x27;,&#x27;) + &#x27;}&#x27;;</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>   }</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>   ancestors.delete(value);</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>   return result;</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> }</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66">66</a> export function refinementDigest(value) {</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>   return createHash(&#x27;sha256&#x27;).update(canonical(value)).digest(&#x27;hex&#x27;);</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> }</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> </span>
+<span class="source-line" id="L70"><a href="#L70">70</a> function emptyState() {</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   return {</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>     schema: SCHEMA,</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>     managed: false,</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>     generation: 0, // Lifecycle event count; global roadmap sequence/CAS belongs to the writer.</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>     last_event_at: null,</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>     adoption: null,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     slices: {},</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     producer_handoffs: {},</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     pending_request: null,</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   };</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> }</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83">83</a> function elegance(value, mode) {</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   demand(object(value) &amp;&amp; value.mode === mode &amp;&amp; nonempty(value.source),</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     &#x27;ELEGANCE_REQUIRED&#x27;, &#x27;This operation requires &#x27; + mode + &#x27; elegance evidence and its source.&#x27;);</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   if (mode === &#x27;full&#x27;) {</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>     demand(object(value.assessments) &amp;&amp; FULL_ASSESSMENTS.every(key =&gt; {</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>       const assessment = value.assessments[key];</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>       return nonempty(assessment) || (object(assessment) &amp;&amp; nonempty(assessment.reason));</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     }), &#x27;FULL_ELEGANCE_REQUIRED&#x27;, &#x27;Full review requires sourced assessments for RC-1 through RC-8 and RC-G.&#x27;);</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   } else {</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     demand(nonempty(value.reason), &#x27;ELEGANCE_REASON_REQUIRED&#x27;, &#x27;RC6 requires a concrete review reason.&#x27;);</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   return clone(value);</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> }</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> </span>
+<span class="source-line" id="L97"><a href="#L97">97</a> function getSlice(state, stepId) {</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>   identifier(stepId, &#x27;step_id&#x27;);</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   demand(Object.hasOwn(state.slices, stepId), &#x27;UNKNOWN_SLICE&#x27;, &#x27;Unknown slice: &#x27; + stepId);</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   return state.slices[stepId];</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> }</span>
+<span class="source-line" id="L102"><a href="#L102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103">103</a> function currentRound(slice) {</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   return slice.rounds[slice.round];</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> }</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> </span>
+<span class="source-line" id="L107"><a href="#L107">107</a> function lastPresentation(slice) {</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   return slice.presentations.at(-1) ?? null;</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> }</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> </span>
+<span class="source-line" id="L111"><a href="#L111">111</a> function getPresentation(slice, id) {</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   identifier(id, &#x27;presentation_id&#x27;);</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>   const presentation = slice.presentations.find(item =&gt; item.id === id);</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   demand(presentation, &#x27;UNKNOWN_PRESENTATION&#x27;, &#x27;Unknown presentation: &#x27; + id);</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>   return presentation;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> }</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118">118</a> function revisionHashes(presentation) {</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   return Object.fromEntries(presentation.members.map(member =&gt; [member.product_id, member.hash]));</span>
+<span class="source-line" id="L120"><a href="#L120">120</a> }</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> </span>
+<span class="source-line" id="L122"><a href="#L122">122</a> function activeRequirements(slice) {</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>   return Object.fromEntries(Object.entries(slice.requirements)</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     .filter(([, item]) =&gt; item.status === &#x27;active&#x27; || item.status === &#x27;pending&#x27;)</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>     .map(([id, item]) =&gt; [id, {</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>       scope: item.scope, directive: item.directive, text: item.text,</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>     }]));</span>
+<span class="source-line" id="L128"><a href="#L128">128</a> }</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> </span>
+<span class="source-line" id="L130"><a href="#L130">130</a> function productRequirementsDigest(slice, productId) {</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   return refinementDigest(Object.fromEntries(Object.entries(activeRequirements(slice))</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>     .filter(([,r])=&gt;r.scope===productId || !slice.product_ids.includes(r.scope))));</span>
+<span class="source-line" id="L133"><a href="#L133">133</a> }</span>
+<span class="source-line" id="L134"><a href="#L134">134</a> function productApplicable(slice,presentation,productId) {</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>   const expected=presentation.product_context?.version===1</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>     ? presentation.product_context.requirements_digests[productId]</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     : presentation.applicable_requirements_digest;</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   const current=presentation.product_context?.version===1</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>     ? productRequirementsDigest(slice,productId) : refinementDigest(activeRequirements(slice));</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>   const pending=slice.feedback.some(f=&gt;f.disposition===&#x27;pending&#x27; &amp;&amp;</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     (!f.changes.length || f.changes.some(id=&gt;{</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>       const r=slice.requirements[id];return !r || r.scope===productId || !slice.product_ids.includes(r.scope);</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     })));</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>   return expected===current &amp;&amp; !pending &amp;&amp;</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     presentation.dependencies_digest===refinementDigest(dependencyContext(slice)) &amp;&amp;</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     slice.depends_on.every(d=&gt;[&#x27;pinned&#x27;,&#x27;rechecked&#x27;].includes(d.state));</span>
+<span class="source-line" id="L147"><a href="#L147">147</a> }</span>
+<span class="source-line" id="L148"><a href="#L148">148</a> </span>
+<span class="source-line" id="L149"><a href="#L149">149</a> /** One applicability projection for completion and the cockpit; no new approvals. */</span>
+<span class="source-line" id="L150"><a href="#L150">150</a> export function currentProductApprovals(slice) {</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   const latest=new Map();</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>   for(const accepted of slice.acceptance_history) {</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     const p=getPresentation(slice,accepted.presentation_id);</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     for(const member of p.members)if(!accepted.member_product_id || accepted.member_product_id===member.product_id)</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>       latest.set(member.product_id,{member,presentation:p});</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>   }</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>   return Object.fromEntries(slice.product_ids.map(id=&gt;{</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     const a=latest.get(id),current=slice.revisions[slice.candidate[id]];</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     return [id,!!(a &amp;&amp; current &amp;&amp; a.member.revision_id===current.revision_id &amp;&amp; a.member.hash===current.hash &amp;&amp;</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>       productApplicable(slice,a.presentation,id))];</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   }));</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> }</span>
+<span class="source-line" id="L163"><a href="#L163">163</a> </span>
+<span class="source-line" id="L164"><a href="#L164">164</a> function dependencyContext(slice) {</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   return slice.depends_on.map(dependency =&gt; ({</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>     slice_id: dependency.slice_id,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>     presentation_id: dependency.presentation_id,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>     accepted_revision_hashes: dependency.accepted_revision_hashes,</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>   })).sort((a, b) =&gt; a.slice_id &lt; b.slice_id ? -1 : a.slice_id &gt; b.slice_id ? 1 : 0);</span>
+<span class="source-line" id="L170"><a href="#L170">170</a> }</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> </span>
+<span class="source-line" id="L172"><a href="#L172">172</a> function hasClosedFoundation(state, dependency) {</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>   const foundation = state.slices[dependency.slice_id];</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   return foundation &amp;&amp; foundation.phase === &#x27;done&#x27; &amp;&amp; foundation.closed_presentation !== null;</span>
+<span class="source-line" id="L175"><a href="#L175">175</a> }</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> </span>
+<span class="source-line" id="L177"><a href="#L177">177</a> function foundationsClosed(state, slice, requirePins = true) {</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>   for (const dependency of slice.depends_on) {</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     demand(hasClosedFoundation(state, dependency), &#x27;FOUNDATION_NOT_CLOSED&#x27;,</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>       &#x27;Foundation must be explicitly closed: &#x27; + dependency.slice_id);</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     if (requirePins) {</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>       demand(dependency.presentation_id !== null, &#x27;DEPENDENCY_NOT_PINNED&#x27;,</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>         &#x27;Begin must pin foundation: &#x27; + dependency.slice_id);</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     }</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>   }</span>
+<span class="source-line" id="L186"><a href="#L186">186</a> }</span>
+<span class="source-line" id="L187"><a href="#L187">187</a> </span>
+<span class="source-line" id="L188"><a href="#L188">188</a> function dependenciesCurrent(state, slice) {</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   foundationsClosed(state, slice);</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>   for (const dependency of slice.depends_on) {</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     const foundation = state.slices[dependency.slice_id];</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     const presentation = getPresentation(foundation, foundation.closed_presentation);</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     demand(dependency.presentation_id === presentation.id &amp;&amp;</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>       refinementDigest(dependency.accepted_revision_hashes) === refinementDigest(revisionHashes(presentation)),</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>     &#x27;DEPENDENCY_NEEDS_RECONCILIATION&#x27;, &#x27;Foundation revision changed: &#x27; + dependency.slice_id);</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>   }</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> }</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> </span>
+<span class="source-line" id="L199"><a href="#L199">199</a> function unclose(slice, generation, reason) {</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   if (slice.closed_presentation !== null) {</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     slice.invalidated_closures.push({</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>       presentation_id: slice.closed_presentation, generation, reason,</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     });</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>     slice.closed_presentation = null;</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   }</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> }</span>
+<span class="source-line" id="L207"><a href="#L207">207</a> </span>
+<span class="source-line" id="L208"><a href="#L208">208</a> // Recompute through the DAG so reopening a foundation also blocks grandchildren.</span>
+<span class="source-line" id="L209"><a href="#L209">209</a> // Operational phase is separate from the derived dependency readiness phase.</span>
+<span class="source-line" id="L210"><a href="#L210">210</a> function refreshDependencies(state) {</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   const visiting = new Set();</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   const visited = new Set();</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   function visit(slice) {</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     demand(!visiting.has(slice.step_id), &#x27;DEPENDENCY_CYCLE&#x27;, &#x27;Slice dependencies contain a cycle.&#x27;);</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     if (visited.has(slice.step_id)) return;</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     visiting.add(slice.step_id);</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     for (const dependency of slice.depends_on) {</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>       const foundation = getSlice(state, dependency.slice_id);</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>       visit(foundation);</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>       const previousState = dependency.state;</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>       if (!hasClosedFoundation(state, dependency)) {</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>         dependency.state = dependency.presentation_id === null ? &#x27;waiting&#x27; : &#x27;needs_reconciliation&#x27;;</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>       } else if (dependency.presentation_id === null) {</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>         dependency.state = &#x27;waiting&#x27;;</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>       } else {</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>         const closed = getPresentation(foundation, foundation.closed_presentation);</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>         const matches = dependency.presentation_id === closed.id &amp;&amp;</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>           refinementDigest(dependency.accepted_revision_hashes) === refinementDigest(revisionHashes(closed));</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>         dependency.state = matches</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>           ? (dependency.state === &#x27;rechecked&#x27; ? &#x27;rechecked&#x27; : &#x27;pinned&#x27;)</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>           : &#x27;needs_reconciliation&#x27;;</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>       }</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>       if (dependency.state === &#x27;needs_reconciliation&#x27; &amp;&amp; previousState !== &#x27;needs_reconciliation&#x27;) {</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>         dependency.invalidated_candidate_digest = refinementDigest(slice.candidate);</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>         dependency.invalidated_generation = state.generation;</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>       }</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     }</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>     const stale = slice.depends_on.some(dependency =&gt; dependency.state === &#x27;needs_reconciliation&#x27;);</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>     const waiting = slice.depends_on.some(dependency =&gt; dependency.state === &#x27;waiting&#x27;);</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>     if (stale || waiting) {</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>       unclose(slice, state.generation, &#x27;foundation_not_ready&#x27;);</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>       slice.phase = stale ? &#x27;needs_reconciliation&#x27; : &#x27;waiting_foundation&#x27;;</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>       supersedeRequests(state, slice, &#x27;foundation_not_ready&#x27;);</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>     } else {</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>       slice.phase = slice.work_phase;</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>     }</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     visiting.delete(slice.step_id);</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     visited.add(slice.step_id);</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>   }</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>   for (const slice of Object.values(state.slices)) visit(slice);</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>   refreshProducerHandoffs(state);</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>   refreshPendingRequest(state);</span>
+<span class="source-line" id="L253"><a href="#L253">253</a> }</span>
+<span class="source-line" id="L254"><a href="#L254">254</a> </span>
+<span class="source-line" id="L255"><a href="#L255">255</a> function producerDependencyPins(dependencies) {</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   if (!Array.isArray(dependencies)) return dependencies;</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>   return dependencies.map(dependency =&gt; object(dependency) ? {</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     slice_id: dependency.slice_id ?? null,</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     presentation_id: dependency.presentation_id ?? null,</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     accepted_revision_hashes: dependency.accepted_revision_hashes ?? null,</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   } : dependency).sort((a, b) =&gt; {</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     const aKey = object(a) &amp;&amp; nonempty(a.slice_id) ? a.slice_id : refinementDigest(a);</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>     const bKey = object(b) &amp;&amp; nonempty(b.slice_id) ? b.slice_id : refinementDigest(b);</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     return aKey &lt; bKey ? -1 : aKey &gt; bKey ? 1 : 0;</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>   });</span>
+<span class="source-line" id="L266"><a href="#L266">266</a> }</span>
+<span class="source-line" id="L267"><a href="#L267">267</a> </span>
+<span class="source-line" id="L268"><a href="#L268">268</a> function validateHandoffPresentedOutputs(handoff, slice, presentation, reconciliation) {</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>   const declared = new Set(handoff.outputs.flatMap(output =&gt; typeof output === &#x27;string&#x27; ? [output]</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     : [output.source_ref, output.path].filter(nonempty)));</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>   const presentedRefs = new Set();</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>   for (const member of presentation.members) {</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>     const revision = slice.revisions[member.revision_id];</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>     for (const reference of [member.source_ref, member.path, revision?.source_ref, revision?.path]) {</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>       if (nonempty(reference)) presentedRefs.add(reference);</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>     }</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   }</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>   const mappings = reconciliation?.output_mappings === undefined ? [] : reconciliation.output_mappings;</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>   demand(Array.isArray(mappings), &#x27;INVALID_HANDOFF_OUTPUT_MAPPINGS&#x27;,</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     &#x27;output_mappings must be an array of sourced mappings to selected presentation members.&#x27;);</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>   const mapped = new Set();</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>   for (const mapping of mappings) {</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>     demand(object(mapping) &amp;&amp; nonempty(mapping.source_ref) &amp;&amp; nonempty(mapping.product_id) &amp;&amp;</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>       nonempty(mapping.revision_id) &amp;&amp; nonempty(mapping.source) &amp;&amp; nonempty(mapping.reason),</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>     &#x27;INVALID_HANDOFF_OUTPUT_MAPPING&#x27;,</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     &#x27;Each output mapping requires source_ref, product_id, revision_id, source and reason.&#x27;);</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     demand(declared.has(mapping.source_ref) ||</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>       (!handoff.inventory_complete &amp;&amp; reconciliation.inventory_verified === true),</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     &#x27;HANDOFF_OUTPUT_MAPPING_UNDECLARED&#x27;,</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>     &#x27;Newly inspected references require an originally incomplete inventory and explicit inventory verification.&#x27;);</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     demand(presentation.members.some(member =&gt;</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>       member.product_id === mapping.product_id &amp;&amp; member.revision_id === mapping.revision_id),</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     &#x27;HANDOFF_OUTPUT_MAPPING_MEMBER_UNKNOWN&#x27;,</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     &#x27;An output mapping must name an existing member of the selected presentation.&#x27;);</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     demand(!mapped.has(mapping.source_ref), &#x27;HANDOFF_OUTPUT_MAPPING_CONFLICT&#x27;,</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>       &#x27;Each source reference must have one explicit output mapping.&#x27;);</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>     mapped.add(mapping.source_ref);</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>   }</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>   demand(declared.size &gt; 0 || (!handoff.inventory_complete &amp;&amp; mappings.length &gt; 0),</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>     &#x27;HANDOFF_OUTPUT_INVENTORY_REQUIRED&#x27;,</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     &#x27;Published resolution requires declared outputs, or verified inspected-output mappings for an originally incomplete inventory.&#x27;);</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>   for (const reference of declared) {</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>     demand(presentedRefs.has(reference) || mapped.has(reference), &#x27;HANDOFF_OUTPUT_NOT_PRESENTED&#x27;,</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>       &#x27;Every declared output reference must identify a selected presentation member or have an explicit sourced mapping.&#x27;);</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>   }</span>
+<span class="source-line" id="L306"><a href="#L306">306</a> }</span>
+<span class="source-line" id="L307"><a href="#L307">307</a> </span>
+<span class="source-line" id="L308"><a href="#L308">308</a> // A captured dispatch context is written once (cloned at the handoff) and only read after, so its</span>
+<span class="source-line" id="L309"><a href="#L309">309</a> // field digests are kept with it; a slice&#x27;s digests are taken once per refresh, not once per handoff.</span>
+<span class="source-line" id="L310"><a href="#L310">310</a> // The fold refreshes after every event, so without this the read re-hashed every pending handoff&#x27;s</span>
+<span class="source-line" id="L311"><a href="#L311">311</a> // context on every event (the MBA record: 717 events, ~6 s a read).</span>
+<span class="source-line" id="L312"><a href="#L312">312</a> const capturedDigests = new WeakMap();</span>
+<span class="source-line" id="L313"><a href="#L313">313</a> </span>
+<span class="source-line" id="L314"><a href="#L314">314</a> function capturedDigest(dispatch, field) {</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>   let digests = capturedDigests.get(dispatch);</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>   if (!digests) capturedDigests.set(dispatch, digests = new Map());</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>   if (!digests.has(field)) {</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>     digests.set(field, refinementDigest(field === &#x27;depends_on&#x27; ? producerDependencyPins(dispatch[field]) : dispatch[field]));</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>   }</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   return digests.get(field);</span>
+<span class="source-line" id="L321"><a href="#L321">321</a> }</span>
+<span class="source-line" id="L322"><a href="#L322">322</a> </span>
+<span class="source-line" id="L323"><a href="#L323">323</a> function refreshProducerHandoffs(state) {</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>   const fields = [&#x27;step_id&#x27;, &#x27;round&#x27;, &#x27;requirements&#x27;, &#x27;candidate&#x27;, &#x27;depends_on&#x27;];</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>   const currentDigests = new Map();</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>   const currentDigest = (slice, field) =&gt; {</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     let digests = currentDigests.get(slice);</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     if (!digests) currentDigests.set(slice, digests = new Map());</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     if (!digests.has(field)) {</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>       digests.set(field, refinementDigest(field === &#x27;depends_on&#x27; ? producerDependencyPins(slice[field]) : slice[field]));</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     }</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>     return digests.get(field);</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>   };</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>   for (const handoff of Object.values(state.producer_handoffs)) {</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>     if (handoff.status !== &#x27;pending_steward_review&#x27;) continue;</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     const slice = handoff.step_id === null ? null : getSlice(state, handoff.step_id);</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>     const dispatch = handoff.dispatch_context;</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>     const known = object(dispatch) &amp;&amp; nonempty(dispatch.step_id) &amp;&amp;</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>       Number.isInteger(dispatch.round) &amp;&amp; dispatch.round &gt;= 0 &amp;&amp;</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>       object(dispatch.requirements) &amp;&amp; object(dispatch.candidate) &amp;&amp; Array.isArray(dispatch.depends_on) &amp;&amp;</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>       dispatch.depends_on.every(dependency =&gt; object(dependency) &amp;&amp; nonempty(dependency.slice_id) &amp;&amp;</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>         Object.hasOwn(dependency, &#x27;presentation_id&#x27;) &amp;&amp;</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>         (dependency.presentation_id === null || nonempty(dependency.presentation_id)) &amp;&amp;</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>         object(dependency.accepted_revision_hashes)) &amp;&amp;</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>       new Set(dispatch.depends_on.map(dependency =&gt; dependency.slice_id)).size === dispatch.depends_on.length;</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     const changed = [];</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>     if (slice &amp;&amp; object(dispatch)) {</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>       for (const field of fields) {</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>         if (Object.hasOwn(dispatch, field)) {</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>           if (capturedDigest(dispatch, field) !== currentDigest(slice, field)) changed.push(field);</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>         }</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>       }</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>     }</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>     const reasons = [];</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>     if (!slice) reasons.push(&#x27;slice_unmapped&#x27;);</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>     if (!known) reasons.push(&#x27;dispatch_context_unknown&#x27;);</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>     if (changed.length &gt; 0) reasons.push(&#x27;dispatch_context_changed&#x27;);</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>     if (!handoff.inventory_complete) reasons.push(&#x27;output_inventory_incomplete&#x27;);</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>     if (handoff.terminal === null) reasons.push(&#x27;terminal_observation_missing&#x27;);</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>     handoff.freshness = !slice || !known ? &#x27;unknown&#x27; : changed.length &gt; 0 ? &#x27;stale&#x27; : &#x27;current&#x27;;</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>     handoff.changed_context_fields = changed;</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>     handoff.review_reasons = reasons;</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>   }</span>
+<span class="source-line" id="L364"><a href="#L364">364</a> }</span>
+<span class="source-line" id="L365"><a href="#L365">365</a> </span>
+<span class="source-line" id="L366"><a href="#L366">366</a> function refreshPendingRequest(state) {</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>   let oldest = null;</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>   let oldestGeneration = Infinity;</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>   for (const slice of Object.values(state.slices)) {</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>     for (const request of slice.review_requests) {</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>       if (request.status !== &#x27;pending&#x27;) continue;</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>       const generation = getPresentation(slice, request.presentation_id).generation;</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>       if (generation &lt; oldestGeneration ||</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>         (generation === oldestGeneration &amp;&amp; (oldest === null || request.id &lt; oldest.id))) {</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>         oldest = request;</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>         oldestGeneration = generation;</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>       }</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>     }</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>   }</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>   // Focus is derived from existing requests; it is not a second queue or store.</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>   state.pending_request = oldest === null ? null : clone(oldest);</span>
+<span class="source-line" id="L382"><a href="#L382">382</a> }</span>
+<span class="source-line" id="L383"><a href="#L383">383</a> </span>
+<span class="source-line" id="L384"><a href="#L384">384</a> function supersedeRequests(state, slice, reason) {</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>   for (const request of slice.review_requests) {</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>     if (request.status === &#x27;pending&#x27;) {</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>       request.status = &#x27;superseded&#x27;;</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>       request.superseded_reason = reason;</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>       request.superseded_generation = state.generation;</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>     }</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>   }</span>
+<span class="source-line" id="L392"><a href="#L392">392</a> }</span>
+<span class="source-line" id="L393"><a href="#L393">393</a> </span>
+<span class="source-line" id="L394"><a href="#L394">394</a> function recordElegance(slice, review, action, state) {</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>   slice.elegance_reviews.push({</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>     action, round: slice.round, generation: state.generation, at: state.last_event_at, ...review,</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>   });</span>
+<span class="source-line" id="L398"><a href="#L398">398</a> }</span>
+<span class="source-line" id="L399"><a href="#L399">399</a> </span>
+<span class="source-line" id="L400"><a href="#L400">400</a> function humanEvidence(human) {</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>   demand(object(human) &amp;&amp; human.explicit === true &amp;&amp; nonempty(human.source_message),</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>     &#x27;EXPLICIT_HUMAN_REQUIRED&#x27;, &#x27;Explicit human input naming the revision is required.&#x27;);</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>   return clone(human);</span>
+<span class="source-line" id="L404"><a href="#L404">404</a> }</span>
+<span class="source-line" id="L405"><a href="#L405">405</a> </span>
+<span class="source-line" id="L406"><a href="#L406">406</a> function recomputeRequirements(slice) {</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>   // Feedback disposition concerns a proposed instruction, not its content polarity.</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>   // Declining &quot;include X&quot; does not turn it into an active &quot;exclude X&quot; directive.</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>   for (const requirement of Object.values(slice.requirements)) {</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>     const feedback = slice.feedback.find(item =&gt; item.id === requirement.feedback_id);</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>     requirement.status = feedback.disposition === &#x27;incorporated&#x27; ? &#x27;active&#x27;</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>       : feedback.disposition === &#x27;declined&#x27; ? &#x27;rejected&#x27;</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>       : feedback.disposition === &#x27;parked&#x27; ? &#x27;parked&#x27; : &#x27;pending&#x27;;</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>     delete requirement.superseded_by;</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>   }</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>   for (const requirement of Object.values(slice.requirements)) {</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>     if (requirement.status === &#x27;active&#x27; &amp;&amp; requirement.supersedes) {</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>       const previous = slice.requirements[requirement.supersedes];</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>       previous.status = &#x27;superseded&#x27;;</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>       previous.superseded_by = requirement.id;</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>     }</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>   }</span>
+<span class="source-line" id="L423"><a href="#L423">423</a> }</span>
+<span class="source-line" id="L424"><a href="#L424">424</a> </span>
+<span class="source-line" id="L425"><a href="#L425">425</a> function requireOpenRound(slice) {</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>   demand(currentRound(slice).presentations.length === 0, &#x27;ROUND_ALREADY_PRESENTED&#x27;,</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>     &#x27;Feedback must open the next round before producing another handback.&#x27;);</span>
+<span class="source-line" id="L428"><a href="#L428">428</a> }</span>
+<span class="source-line" id="L429"><a href="#L429">429</a> </span>
+<span class="source-line" id="L430"><a href="#L430">430</a> function candidateMembers(slice) {</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>   demand(Object.keys(slice.candidate).length === slice.product_ids.length &amp;&amp;</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>     slice.product_ids.every(id =&gt; Object.hasOwn(slice.candidate, id)),</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>   &#x27;INCOMPLETE_CANDIDATE&#x27;, &#x27;A presentation must contain every declared product.&#x27;);</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>   return slice.product_ids.map(productId =&gt; {</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>     const revision = slice.revisions[slice.candidate[productId]];</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>     return {</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>       product_id: productId, revision_id: revision.revision_id,</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>       hash: revision.hash, path: revision.path,</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>     };</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>   });</span>
+<span class="source-line" id="L441"><a href="#L441">441</a> }</span>
+<span class="source-line" id="L442"><a href="#L442">442</a> </span>
+<span class="source-line" id="L443"><a href="#L443">443</a> function requireApplicablePresentation(state, slice, presentation) {</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>   dependenciesCurrent(state, slice);</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>   demand(presentation.applicable_requirements_digest === refinementDigest(activeRequirements(slice)),</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>     &#x27;REQUIREMENTS_CHANGED&#x27;, &#x27;The presentation does not match the applicable cumulative requirements.&#x27;);</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>   demand(presentation.dependencies_digest === refinementDigest(dependencyContext(slice)),</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>     &#x27;PRESENTATION_DEPENDENCIES_CHANGED&#x27;, &#x27;The presentation used different foundation revisions.&#x27;);</span>
+<span class="source-line" id="L449"><a href="#L449">449</a> }</span>
+<span class="source-line" id="L450"><a href="#L450">450</a> </span>
+<span class="source-line" id="L451"><a href="#L451">451</a> function applyOperation(state, operation, event) {</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>   demand(object(operation), &#x27;INVALID_OPERATION&#x27;, &#x27;refinement_update requires an operation object.&#x27;);</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>   demand((event.version === undefined || event.version === 1) &amp;&amp;</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>     (operation.version === undefined || operation.version === 1),</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>   &#x27;UNSUPPORTED_VERSION&#x27;, &#x27;Only refinement_update version 1 is supported.&#x27;);</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>   identifier(operation.operation_id, &#x27;operation_id&#x27;);</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>   demand(Number.isInteger(operation.expected_seq) &amp;&amp; operation.expected_seq &gt;= 0,</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     &#x27;INVALID_EXPECTED_SEQ&#x27;, &#x27;expected_seq must be a nonnegative integer.&#x27;);</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>   demand(nonempty(operation.action), &#x27;INVALID_ACTION&#x27;, &#x27;An action is required.&#x27;);</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>   state.generation += 1;</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>   state.last_event_at = event.at ?? event.timestamp ?? event.ts ?? null;</span>
+<span class="source-line" id="L462"><a href="#L462">462</a> </span>
+<span class="source-line" id="L463"><a href="#L463">463</a>   if (operation.action === &#x27;adopt&#x27;) {</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>     demand(!state.managed, &#x27;ALREADY_ADOPTED&#x27;, &#x27;Managed refinement mode can only be adopted once.&#x27;);</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>     identifier(operation.campaign_id, &#x27;campaign_id&#x27;);</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>     for (const name of [&#x27;PLAN.md&#x27;, &#x27;DELIVERABLES.md&#x27;]) {</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>       const document = operation.documents?.[name];</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>       demand(object(document) &amp;&amp; typeof document.exists === &#x27;boolean&#x27; &amp;&amp;</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>         typeof document.baseline === &#x27;string&#x27;, &#x27;INVALID_ADOPTION_BASELINE&#x27;,</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>       &#x27;Adoption must record existence and an exact baseline string for &#x27; + name + &#x27;.&#x27;);</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>     }</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>     state.adoption = {</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>       campaign_id: operation.campaign_id,</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>       documents: clone(operation.documents),</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>       elegance: elegance(operation.elegance, &#x27;full&#x27;),</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>       at: state.last_event_at,</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>       generation: state.generation,</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>     };</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>     state.managed = true;</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>     return state;</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>   }</span>
+<span class="source-line" id="L482"><a href="#L482">482</a> </span>
+<span class="source-line" id="L483"><a href="#L483">483</a>   demand(state.managed, &#x27;NOT_ADOPTED&#x27;, &#x27;Explicit adoption is required before refinement operations.&#x27;);</span>
+<span class="source-line" id="L484"><a href="#L484">484</a> </span>
+<span class="source-line" id="L485"><a href="#L485">485</a>   if (operation.action === &#x27;producer_handoff&#x27;) {</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>     const handoffId = identifier(operation.handoff_id, &#x27;handoff_id&#x27;);</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>     demand(!Object.hasOwn(state.producer_handoffs, handoffId),</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>       &#x27;HANDOFF_EXISTS&#x27;, &#x27;Producer handoff IDs are immutable; retry through ledger operation idempotency.&#x27;);</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>     demand([&#x27;job&#x27;, &#x27;conversation&#x27;, &#x27;terminal&#x27;].includes(operation.producer_kind),</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>       &#x27;INVALID_PRODUCER_KIND&#x27;, &#x27;Producer kind must be job, conversation or terminal.&#x27;);</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>     demand(nonempty(operation.source_ref), &#x27;HANDOFF_SOURCE_REQUIRED&#x27;,</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>       &#x27;A producer handoff requires an explicit source reference.&#x27;);</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>     demand(Array.isArray(operation.outputs) &amp;&amp; operation.outputs.every(output =&gt;</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>       nonempty(output) || (object(output) &amp;&amp; nonempty(output.source_ref))),</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>     &#x27;INVALID_HANDOFF_OUTPUTS&#x27;, &#x27;Outputs must be explicit nonempty references or objects with source_ref.&#x27;);</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>     demand(typeof operation.inventory_complete === &#x27;boolean&#x27;, &#x27;HANDOFF_INVENTORY_REQUIRED&#x27;,</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>       &#x27;A handoff must explicitly state whether its output inventory is complete.&#x27;);</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>     const stepId = operation.step_id ?? null;</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>     if (stepId !== null) getSlice(state, stepId);</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>     const dispatch = operation.dispatch_context ?? null;</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>     demand(dispatch === null || object(dispatch), &#x27;INVALID_DISPATCH_CONTEXT&#x27;,</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>       &#x27;dispatch_context must be a captured context object or null.&#x27;);</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>     const terminal = operation.terminal ?? null;</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>     demand(terminal === null || nonempty(terminal) || object(terminal), &#x27;INVALID_TERMINAL_OBSERVATION&#x27;,</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>       &#x27;terminal must preserve an explicit terminal observation or be null.&#x27;);</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>     state.producer_handoffs[handoffId] = {</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>       handoff_id: handoffId, producer_kind: operation.producer_kind,</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>       source_ref: operation.source_ref, step_id: stepId, outputs: clone(operation.outputs),</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>       dispatch_context: dispatch === null ? null : clone(dispatch),</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>       terminal: terminal === null ? null : clone(terminal),</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>       inventory_complete: operation.inventory_complete,</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>       status: &#x27;pending_steward_review&#x27;,</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>       freshness: &#x27;unknown&#x27;, changed_context_fields: [], review_reasons: [],</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>       operation_id: operation.operation_id, generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>       resolution: null,</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>     };</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>     refreshProducerHandoffs(state);</span>
+<span class="source-line" id="L518"><a href="#L518">518</a>     refreshPendingRequest(state);</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>     return state;</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>   }</span>
+<span class="source-line" id="L521"><a href="#L521">521</a> </span>
+<span class="source-line" id="L522"><a href="#L522">522</a>   if (operation.action === &#x27;resolve_handoff&#x27;) {</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>     const handoffId = identifier(operation.handoff_id, &#x27;handoff_id&#x27;);</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>     demand(Object.hasOwn(state.producer_handoffs, handoffId),</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>       &#x27;UNKNOWN_HANDOFF&#x27;, &#x27;Unknown producer handoff: &#x27; + handoffId);</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>     const handoff = state.producer_handoffs[handoffId];</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>     demand(handoff.status === &#x27;pending_steward_review&#x27;, &#x27;HANDOFF_ALREADY_RESOLVED&#x27;,</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>       &#x27;A handoff disposition is immutable; retry through ledger operation idempotency.&#x27;);</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>     demand([&#x27;published&#x27;, &#x27;no_deliverable&#x27;, &#x27;superseded&#x27;].includes(operation.disposition),</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>       &#x27;INVALID_HANDOFF_DISPOSITION&#x27;, &#x27;A handoff must be published, explicitly have no deliverable, or be superseded.&#x27;);</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>     demand(nonempty(operation.source), &#x27;HANDOFF_DISPOSITION_SOURCE_REQUIRED&#x27;,</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>       &#x27;Resolving a producer handoff requires a recorded source.&#x27;);</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>     let mappedStepId = handoff.step_id;</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>     let presentationId = null;</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>     let reconciliation = null;</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>     if (operation.disposition === &#x27;published&#x27;) {</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>       demand(nonempty(operation.reason), &#x27;HANDOFF_DISPOSITION_REASON_REQUIRED&#x27;,</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>         &#x27;Published resolution requires a reason explaining the verified mapping and current feedback review.&#x27;);</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>       mappedStepId = operation.step_id ?? handoff.step_id;</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>       demand(nonempty(mappedStepId), &#x27;HANDOFF_MAPPING_REQUIRED&#x27;,</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>         &#x27;Published resolution requires an explicit slice mapping.&#x27;);</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>       demand(handoff.step_id === null || handoff.step_id === mappedStepId,</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>         &#x27;HANDOFF_SLICE_MISMATCH&#x27;, &#x27;A published resolution must use the handoff mapped slice.&#x27;);</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>       const mappedSlice = getSlice(state, mappedStepId);</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>       const presentation = getPresentation(mappedSlice, operation.presentation_id);</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>       demand(presentation.generation &gt; handoff.generation, &#x27;HANDOFF_PRESENTATION_PREDATES_HANDOFF&#x27;,</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>         &#x27;Published resolution requires a presentation created after this handoff; late work needs a new reviewed round or an explicit non-deliverable disposition.&#x27;);</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>       demand(lastPresentation(mappedSlice)?.id === presentation.id &amp;&amp; presentation.round === mappedSlice.round,</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>         &#x27;NOT_CURRENT_PRESENTATION&#x27;, &#x27;Published resolution requires the current round and latest presentation.&#x27;);</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>       demand(refinementDigest(mappedSlice.candidate) === presentation.candidate_digest &amp;&amp;</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>         refinementDigest(mappedSlice.requirements) === presentation.requirements_digest &amp;&amp;</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>         mappedSlice.feedback.length === presentation.feedback_count,</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>       &#x27;PRESENTATION_CHANGED&#x27;, &#x27;Candidate or feedback changed after the handoff presentation.&#x27;);</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>       requireApplicablePresentation(state, mappedSlice, presentation);</span>
+<span class="source-line" id="L555"><a href="#L555">555</a>       presentationId = presentation.id;</span>
+<span class="source-line" id="L556"><a href="#L556">556</a>       const needsReconciliation = handoff.freshness !== &#x27;current&#x27; || !handoff.inventory_complete;</span>
+<span class="source-line" id="L557"><a href="#L557">557</a>       const evidence = operation.reconciliation ?? null;</span>
+<span class="source-line" id="L558"><a href="#L558">558</a>       demand(!needsReconciliation || object(evidence), &#x27;HANDOFF_RECONCILIATION_REQUIRED&#x27;,</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>         &#x27;Stale or unknown dispatch context and incomplete output inventories require explicit reconciliation.&#x27;);</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>       if (evidence !== null) {</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>         demand(object(evidence) &amp;&amp; nonempty(evidence.source) &amp;&amp; nonempty(evidence.reason) &amp;&amp;</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>           Array.isArray(evidence.changed_context_fields) &amp;&amp; evidence.changed_context_fields.every(nonempty) &amp;&amp;</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>           Array.isArray(evidence.review_reasons) &amp;&amp; evidence.review_reasons.every(nonempty),</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>         &#x27;INVALID_HANDOFF_RECONCILIATION&#x27;,</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>         &#x27;Reconciliation requires source, reason, changed_context_fields and review_reasons arrays.&#x27;);</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>         demand(handoff.changed_context_fields.every(field =&gt; evidence.changed_context_fields.includes(field)) &amp;&amp;</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>           handoff.review_reasons.every(reason =&gt; evidence.review_reasons.includes(reason)),</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>         &#x27;HANDOFF_RECONCILIATION_INCOMPLETE&#x27;,</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>         &#x27;Reconciliation must cover every recorded context change and review reason.&#x27;);</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>         demand(handoff.inventory_complete || evidence.inventory_verified === true,</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>           &#x27;HANDOFF_INVENTORY_UNVERIFIED&#x27;, &#x27;An incomplete producer inventory must be explicitly verified during reconciliation.&#x27;);</span>
+<span class="source-line" id="L572"><a href="#L572">572</a>         reconciliation = clone(evidence);</span>
+<span class="source-line" id="L573"><a href="#L573">573</a>       }</span>
+<span class="source-line" id="L574"><a href="#L574">574</a>       validateHandoffPresentedOutputs(handoff, mappedSlice, presentation, reconciliation);</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>     } else {</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>       demand(nonempty(operation.reason), &#x27;HANDOFF_DISPOSITION_REASON_REQUIRED&#x27;,</span>
+<span class="source-line" id="L577"><a href="#L577">577</a>         &#x27;No-deliverable and superseded dispositions require an explicit reason.&#x27;);</span>
+<span class="source-line" id="L578"><a href="#L578">578</a>     }</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>     handoff.status = operation.disposition;</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>     handoff.resolution = {</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>       disposition: operation.disposition, source: operation.source,</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>       reason: operation.reason ?? null, step_id: mappedStepId, presentation_id: presentationId,</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>       reconciliation,</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>       operation_id: operation.operation_id, generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>     };</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>     // Resolving producer bookkeeping does not accept a presentation or close a slice.</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>     refreshPendingRequest(state);</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>     return state;</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>   }</span>
+<span class="source-line" id="L590"><a href="#L590">590</a> </span>
+<span class="source-line" id="L591"><a href="#L591">591</a> </span>
+<span class="source-line" id="L592"><a href="#L592">592</a>   if (operation.action === &#x27;open_slice&#x27;) {</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>     const stepId = identifier(operation.step_id, &#x27;step_id&#x27;);</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>     demand(!Object.hasOwn(state.slices, stepId), &#x27;SLICE_EXISTS&#x27;, &#x27;The slice already exists.&#x27;);</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>     demand(nonempty(operation.title), &#x27;INVALID_TITLE&#x27;, &#x27;A slice title is required.&#x27;);</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>     demand(Array.isArray(operation.product_ids) &amp;&amp; operation.product_ids.length &gt; 0,</span>
+<span class="source-line" id="L597"><a href="#L597">597</a>       &#x27;INVALID_PRODUCTS&#x27;, &#x27;A slice must declare at least one stable product ID.&#x27;);</span>
+<span class="source-line" id="L598"><a href="#L598">598</a>     const products = operation.product_ids.map(id =&gt; identifier(id, &#x27;product_id&#x27;));</span>
+<span class="source-line" id="L599"><a href="#L599">599</a>     demand(new Set(products).size === products.length, &#x27;DUPLICATE_PRODUCT&#x27;, &#x27;Duplicate declared product IDs.&#x27;);</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>     for (const existing of Object.values(state.slices)) {</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>       demand(!products.some(id =&gt; existing.product_ids.includes(id)), &#x27;PRODUCT_ALREADY_OWNED&#x27;,</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>         &#x27;A stable product ID can belong to only one slice.&#x27;);</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>     }</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>     demand(Array.isArray(operation.depends_on), &#x27;INVALID_DEPENDENCIES&#x27;, &#x27;depends_on must be an array.&#x27;);</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>     const seen = new Set();</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>     const dependencies = operation.depends_on.map(item =&gt; {</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>       const id = identifier(item?.slice_id, &#x27;slice_id&#x27;);</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>       demand(id !== stepId &amp;&amp; !seen.has(id), &#x27;INVALID_DEPENDENCY&#x27;, &#x27;Self or duplicate dependency.&#x27;);</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>       getSlice(state, id);</span>
+<span class="source-line" id="L610"><a href="#L610">610</a>       seen.add(id);</span>
+<span class="source-line" id="L611"><a href="#L611">611</a>       return { slice_id: id, presentation_id: null, accepted_revision_hashes: {}, state: &#x27;waiting&#x27;,</span>
+<span class="source-line" id="L612"><a href="#L612">612</a>         ...(nonempty(item.reason) ? {reason:item.reason} : {}) };</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>     });</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>     const review = elegance(operation.elegance, &#x27;full&#x27;);</span>
+<span class="source-line" id="L615"><a href="#L615">615</a>     const slice = {</span>
+<span class="source-line" id="L616"><a href="#L616">616</a>       step_id: stepId, title: operation.title, product_ids: products,</span>
+<span class="source-line" id="L617"><a href="#L617">617</a>       phase: &#x27;preparing&#x27;, work_phase: &#x27;preparing&#x27;, round: 0,</span>
+<span class="source-line" id="L618"><a href="#L618">618</a>       rounds: [{ index: 0, feedback_ids: [], presentations: [] }],</span>
+<span class="source-line" id="L619"><a href="#L619">619</a>       requirements: {}, feedback: [], revisions: {}, candidate: {},</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>       presentations: [], accepted_presentation: null, closed_presentation: null,</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>       accepted_members: {}, acceptance_history: [], closure_history: [], invalidated_closures: [],</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>       depends_on: dependencies, checks: [], elegance_reviews: [], review_requests: [],</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>       reconciliation_history: [], views: [],</span>
+<span class="source-line" id="L624"><a href="#L624">624</a>     };</span>
+<span class="source-line" id="L625"><a href="#L625">625</a>     state.slices[stepId] = slice;</span>
+<span class="source-line" id="L626"><a href="#L626">626</a>     recordElegance(slice, review, operation.action, state);</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>     refreshDependencies(state);</span>
+<span class="source-line" id="L628"><a href="#L628">628</a>     return state;</span>
+<span class="source-line" id="L629"><a href="#L629">629</a>   }</span>
+<span class="source-line" id="L630"><a href="#L630">630</a> </span>
+<span class="source-line" id="L631"><a href="#L631">631</a>   const slice = getSlice(state, operation.step_id);</span>
+<span class="source-line" id="L632"><a href="#L632">632</a>   switch (operation.action) {</span>
+<span class="source-line" id="L633"><a href="#L633">633</a>     case &#x27;begin&#x27;: {</span>
+<span class="source-line" id="L634"><a href="#L634">634</a>       const review = elegance(operation.elegance, &#x27;RC6&#x27;);</span>
+<span class="source-line" id="L635"><a href="#L635">635</a>       requireOpenRound(slice);</span>
+<span class="source-line" id="L636"><a href="#L636">636</a>       foundationsClosed(state, slice, false);</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>       for (const dependency of slice.depends_on) {</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>         const foundation = state.slices[dependency.slice_id];</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>         const presentation = getPresentation(foundation, foundation.closed_presentation);</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>         demand(dependency.presentation_id === null || dependency.presentation_id === presentation.id,</span>
+<span class="source-line" id="L641"><a href="#L641">641</a>           &#x27;DEPENDENCY_NEEDS_RECONCILIATION&#x27;, &#x27;Begin cannot silently replace an existing foundation pin.&#x27;);</span>
+<span class="source-line" id="L642"><a href="#L642">642</a>         dependency.presentation_id = presentation.id;</span>
+<span class="source-line" id="L643"><a href="#L643">643</a>         dependency.accepted_revision_hashes = revisionHashes(presentation);</span>
+<span class="source-line" id="L644"><a href="#L644">644</a>         dependency.state = &#x27;pinned&#x27;;</span>
+<span class="source-line" id="L645"><a href="#L645">645</a>       }</span>
+<span class="source-line" id="L646"><a href="#L646">646</a>       slice.work_phase = slice.round === 0 ? &#x27;preparing&#x27; : &#x27;revising&#x27;;</span>
+<span class="source-line" id="L647"><a href="#L647">647</a>       recordElegance(slice, review, operation.action, state);</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>       break;</span>
+<span class="source-line" id="L649"><a href="#L649">649</a>     }</span>
+<span class="source-line" id="L650"><a href="#L650">650</a>     case &#x27;feedback&#x27;: {</span>
+<span class="source-line" id="L651"><a href="#L651">651</a>       const review = elegance(operation.elegance, &#x27;RC6&#x27;);</span>
+<span class="source-line" id="L652"><a href="#L652">652</a>       identifier(operation.feedback_id, &#x27;feedback_id&#x27;);</span>
+<span class="source-line" id="L653"><a href="#L653">653</a>       demand(!slice.feedback.some(item =&gt; item.id === operation.feedback_id),</span>
+<span class="source-line" id="L654"><a href="#L654">654</a>         &#x27;DUPLICATE_FEEDBACK&#x27;, &#x27;Feedback ID already exists.&#x27;);</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>       demand(nonempty(operation.source_message), &#x27;FEEDBACK_SOURCE_REQUIRED&#x27;, &#x27;Feedback requires its source message.&#x27;);</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>       if (slice.presentations.length &gt; 0 || operation.base_presentation_id != null) {</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>         getPresentation(slice, operation.base_presentation_id);</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>       }</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>       demand(Array.isArray(operation.changes), &#x27;INVALID_REQUIREMENTS&#x27;, &#x27;Feedback changes must be an array.&#x27;);</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>       if (currentRound(slice).presentations.length &gt; 0) {</span>
+<span class="source-line" id="L661"><a href="#L661">661</a>         slice.round += 1;</span>
+<span class="source-line" id="L662"><a href="#L662">662</a>         slice.rounds.push({ index: slice.round, feedback_ids: [], presentations: [] });</span>
+<span class="source-line" id="L663"><a href="#L663">663</a>       }</span>
+<span class="source-line" id="L664"><a href="#L664">664</a>       const priorRequirements = new Set(Object.keys(slice.requirements));</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>       const superseded = new Set();</span>
+<span class="source-line" id="L666"><a href="#L666">666</a>       const feedback = {</span>
+<span class="source-line" id="L667"><a href="#L667">667</a>         id: operation.feedback_id, source_message: operation.source_message,</span>
+<span class="source-line" id="L668"><a href="#L668">668</a>         base_presentation_id: operation.base_presentation_id ?? null,</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>         round: slice.round, disposition: &#x27;pending&#x27;, changes: [],</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>         at: state.last_event_at, generation: state.generation,</span>
+<span class="source-line" id="L671"><a href="#L671">671</a>       };</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>       for (const change of operation.changes) {</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>         identifier(change?.id, &#x27;requirement id&#x27;);</span>
+<span class="source-line" id="L674"><a href="#L674">674</a>         demand(!Object.hasOwn(slice.requirements, change.id),</span>
+<span class="source-line" id="L675"><a href="#L675">675</a>           &#x27;REQUIREMENT_EXISTS&#x27;, &#x27;Requirement IDs are immutable; use a new ID and explicit supersedes.&#x27;);</span>
+<span class="source-line" id="L676"><a href="#L676">676</a>         demand(nonempty(change.scope) &amp;&amp; nonempty(change.text) &amp;&amp;</span>
+<span class="source-line" id="L677"><a href="#L677">677</a>           [&#x27;require&#x27;, &#x27;preserve&#x27;, &#x27;exclude&#x27;].includes(change.directive),</span>
+<span class="source-line" id="L678"><a href="#L678">678</a>         &#x27;INVALID_REQUIREMENT&#x27;, &#x27;Each requirement needs scope, text and a supported directive.&#x27;);</span>
+<span class="source-line" id="L679"><a href="#L679">679</a>         if (change.supersedes !== undefined) {</span>
+<span class="source-line" id="L680"><a href="#L680">680</a>           identifier(change.supersedes, &#x27;supersedes&#x27;);</span>
+<span class="source-line" id="L681"><a href="#L681">681</a>           demand(priorRequirements.has(change.supersedes) &amp;&amp; !superseded.has(change.supersedes),</span>
+<span class="source-line" id="L682"><a href="#L682">682</a>             &#x27;INVALID_SUPERSESSION&#x27;, &#x27;Supersedes must identify one existing prior requirement, once per feedback.&#x27;);</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>           demand(!Object.values(slice.requirements).some(item =&gt;</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>             item.supersedes === change.supersedes &amp;&amp; [&#x27;pending&#x27;, &#x27;active&#x27;].includes(item.status)),</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>           &#x27;SUPERSESSION_CONFLICT&#x27;, &#x27;An active or unresolved replacement already supersedes that requirement.&#x27;);</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>           superseded.add(change.supersedes);</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>         }</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>         slice.requirements[change.id] = {</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>           id: change.id, scope: change.scope, directive: change.directive, text: change.text,</span>
+<span class="source-line" id="L690"><a href="#L690">690</a>           ...(change.supersedes !== undefined ? { supersedes: change.supersedes } : {}),</span>
+<span class="source-line" id="L691"><a href="#L691">691</a>           feedback_id: feedback.id, source_message: feedback.source_message,</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>           round: slice.round, status: &#x27;pending&#x27;,</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>         };</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>         feedback.changes.push(change.id);</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>       }</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>       slice.feedback.push(feedback);</span>
+<span class="source-line" id="L697"><a href="#L697">697</a>       currentRound(slice).feedback_ids.push(feedback.id);</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>       unclose(slice, state.generation, &#x27;new_feedback&#x27;);</span>
+<span class="source-line" id="L699"><a href="#L699">699</a>       slice.work_phase = &#x27;revising&#x27;;</span>
+<span class="source-line" id="L700"><a href="#L700">700</a>       supersedeRequests(state, slice, &#x27;new_feedback&#x27;);</span>
+<span class="source-line" id="L701"><a href="#L701">701</a>       recordElegance(slice, review, operation.action, state);</span>
+<span class="source-line" id="L702"><a href="#L702">702</a>       break;</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>     }</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>     case &#x27;resolve_feedback&#x27;: {</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>       const feedback = slice.feedback.find(item =&gt; item.id === operation.feedback_id);</span>
+<span class="source-line" id="L706"><a href="#L706">706</a>       demand(feedback, &#x27;UNKNOWN_FEEDBACK&#x27;, &#x27;Unknown feedback ID.&#x27;);</span>
+<span class="source-line" id="L707"><a href="#L707">707</a>       demand(feedback.disposition === &#x27;pending&#x27;, &#x27;FEEDBACK_ALREADY_RESOLVED&#x27;,</span>
+<span class="source-line" id="L708"><a href="#L708">708</a>         &#x27;A resolved feedback decision is immutable; record a new sourced feedback item.&#x27;);</span>
+<span class="source-line" id="L709"><a href="#L709">709</a>       demand([&#x27;incorporated&#x27;, &#x27;declined&#x27;, &#x27;parked&#x27;].includes(operation.disposition),</span>
+<span class="source-line" id="L710"><a href="#L710">710</a>         &#x27;INVALID_FEEDBACK_DISPOSITION&#x27;, &#x27;Feedback must be incorporated, declined or parked.&#x27;);</span>
+<span class="source-line" id="L711"><a href="#L711">711</a>       demand(nonempty(operation.source), &#x27;FEEDBACK_DISPOSITION_SOURCE_REQUIRED&#x27;, &#x27;A disposition requires its source.&#x27;);</span>
+<span class="source-line" id="L712"><a href="#L712">712</a>       if (operation.disposition !== &#x27;incorporated&#x27;) {</span>
+<span class="source-line" id="L713"><a href="#L713">713</a>         demand(nonempty(operation.reason), &#x27;FEEDBACK_DISPOSITION_REASON_REQUIRED&#x27;,</span>
+<span class="source-line" id="L714"><a href="#L714">714</a>           &#x27;Declining or parking feedback requires an explicit reason.&#x27;);</span>
+<span class="source-line" id="L715"><a href="#L715">715</a>       }</span>
+<span class="source-line" id="L716"><a href="#L716">716</a>       feedback.disposition = operation.disposition;</span>
+<span class="source-line" id="L717"><a href="#L717">717</a>       feedback.resolution = {</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>         source: operation.source, reason: operation.reason ?? null,</span>
+<span class="source-line" id="L719"><a href="#L719">719</a>         at: state.last_event_at, generation: state.generation,</span>
+<span class="source-line" id="L720"><a href="#L720">720</a>       };</span>
+<span class="source-line" id="L721"><a href="#L721">721</a>       recomputeRequirements(slice);</span>
+<span class="source-line" id="L722"><a href="#L722">722</a>       break;</span>
+<span class="source-line" id="L723"><a href="#L723">723</a>     }</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>     case &#x27;publish&#x27;: {</span>
+<span class="source-line" id="L725"><a href="#L725">725</a>       const review = elegance(operation.elegance, &#x27;RC6&#x27;);</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>       requireOpenRound(slice);</span>
+<span class="source-line" id="L727"><a href="#L727">727</a>       if (operation.provisional !== undefined) {</span>
+<span class="source-line" id="L728"><a href="#L728">728</a>         humanEvidence(operation.provisional?.human);</span>
+<span class="source-line" id="L729"><a href="#L729">729</a>         demand(nonempty(operation.provisional.scope) &amp;&amp; nonempty(operation.provisional.reason),</span>
+<span class="source-line" id="L730"><a href="#L730">730</a>           &#x27;PROVISIONAL_SCOPE_REQUIRED&#x27;, &#x27;Partial work needs explicit human scope and a prerequisite explanation.&#x27;);</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>       } else foundationsClosed(state, slice);</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>       demand(Array.isArray(operation.products) &amp;&amp; operation.products.length &gt; 0,</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>         &#x27;INVALID_PRODUCTS&#x27;, &#x27;Publish requires at least one product revision.&#x27;);</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>       const seen = new Set();</span>
+<span class="source-line" id="L735"><a href="#L735">735</a>       for (const product of operation.products) {</span>
+<span class="source-line" id="L736"><a href="#L736">736</a>         identifier(product?.product_id, &#x27;product_id&#x27;);</span>
+<span class="source-line" id="L737"><a href="#L737">737</a>         identifier(product.revision_id, &#x27;revision_id&#x27;);</span>
+<span class="source-line" id="L738"><a href="#L738">738</a>         demand(slice.product_ids.includes(product.product_id), &#x27;UNKNOWN_PRODUCT&#x27;, &#x27;Product is not owned by this slice.&#x27;);</span>
+<span class="source-line" id="L739"><a href="#L739">739</a>         demand(!seen.has(product.product_id), &#x27;DUPLICATE_PRODUCT&#x27;, &#x27;Publish cannot include the same product twice.&#x27;);</span>
+<span class="source-line" id="L740"><a href="#L740">740</a>         seen.add(product.product_id);</span>
+<span class="source-line" id="L741"><a href="#L741">741</a>         demand(!Object.values(state.slices).some(item =&gt; Object.hasOwn(item.revisions, product.revision_id)),</span>
+<span class="source-line" id="L742"><a href="#L742">742</a>           &#x27;REVISION_EXISTS&#x27;, &#x27;Revision IDs are immutable and globally unique.&#x27;);</span>
+<span class="source-line" id="L743"><a href="#L743">743</a>         demand(typeof product.hash === &#x27;string&#x27; &amp;&amp; /^[a-f0-9]{64}$/i.test(product.hash) &amp;&amp; nonempty(product.path),</span>
+<span class="source-line" id="L744"><a href="#L744">744</a>           &#x27;INVALID_REVISION&#x27;, &#x27;A revision needs a SHA256 digest and immutable file locator.&#x27;);</span>
+<span class="source-line" id="L745"><a href="#L745">745</a>         if(product.source_history!==undefined) demand(slice.presentations.length===0 &amp;&amp; object(product.source_history) &amp;&amp;</span>
+<span class="source-line" id="L746"><a href="#L746">746</a>           Number.isInteger(product.source_history.iteration) &amp;&amp; product.source_history.iteration&gt;=0 &amp;&amp;</span>
+<span class="source-line" id="L747"><a href="#L747">747</a>           product.source_history.iteration&lt;=10000 &amp;&amp; !Object.values(slice.revisions).some(r=&gt;r.product_id===product.product_id &amp;&amp;</span>
+<span class="source-line" id="L748"><a href="#L748">748</a>             r.source_history &amp;&amp; r.source_history.iteration&gt;=product.source_history.iteration) &amp;&amp;</span>
+<span class="source-line" id="L749"><a href="#L749">749</a>           nonempty(product.source_history.source) &amp;&amp; nonempty(product.source_history.at),</span>
+<span class="source-line" id="L750"><a href="#L750">750</a>           &#x27;INVALID_SOURCE_HISTORY&#x27;,&#x27;Imported iterations require their actual source and date.&#x27;);</span>
+<span class="source-line" id="L751"><a href="#L751">751</a>         const expectedParent = slice.candidate[product.product_id] ?? null;</span>
+<span class="source-line" id="L752"><a href="#L752">752</a>         const parent = product.parent_revision_id ?? null;</span>
+<span class="source-line" id="L753"><a href="#L753">753</a>         if (parent !== expectedParent) {</span>
+<span class="source-line" id="L754"><a href="#L754">754</a>           const rollback = product.rollback_source;</span>
+<span class="source-line" id="L755"><a href="#L755">755</a>           const sourceRevision = object(rollback) ? slice.revisions[rollback.revision_id] : null;</span>
+<span class="source-line" id="L756"><a href="#L756">756</a>           demand(sourceRevision &amp;&amp; sourceRevision.product_id === product.product_id &amp;&amp;</span>
+<span class="source-line" id="L757"><a href="#L757">757</a>             parent === sourceRevision.revision_id &amp;&amp; nonempty(rollback.source),</span>
+<span class="source-line" id="L758"><a href="#L758">758</a>           &#x27;INVALID_REVISION_PARENT&#x27;, &#x27;Parent must be the current candidate or an explicitly sourced rollback revision.&#x27;);</span>
+<span class="source-line" id="L759"><a href="#L759">759</a>         } else if (product.rollback_source !== undefined) {</span>
+<span class="source-line" id="L760"><a href="#L760">760</a>           const rollback = product.rollback_source;</span>
+<span class="source-line" id="L761"><a href="#L761">761</a>           demand(object(rollback) &amp;&amp; nonempty(rollback.source) &amp;&amp;</span>
+<span class="source-line" id="L762"><a href="#L762">762</a>             slice.revisions[rollback.revision_id]?.product_id === product.product_id,</span>
+<span class="source-line" id="L763"><a href="#L763">763</a>           &#x27;INVALID_ROLLBACK_SOURCE&#x27;, &#x27;Rollback source must identify an existing revision of the same product.&#x27;);</span>
+<span class="source-line" id="L764"><a href="#L764">764</a>         }</span>
+<span class="source-line" id="L765"><a href="#L765">765</a>         slice.revisions[product.revision_id] = {</span>
+<span class="source-line" id="L766"><a href="#L766">766</a>           product_id: product.product_id, revision_id: product.revision_id,</span>
+<span class="source-line" id="L767"><a href="#L767">767</a>           hash: product.hash.toLowerCase(), path: product.path,</span>
+<span class="source-line" id="L768"><a href="#L768">768</a>           parent_revision_id: parent, previous_candidate_revision_id: expectedParent,</span>
+<span class="source-line" id="L769"><a href="#L769">769</a>           ...(product.rollback_source ? { rollback_source: clone(product.rollback_source) } : {}),</span>
+<span class="source-line" id="L770"><a href="#L770">770</a>           round: slice.round, at: state.last_event_at, generation: state.generation,</span>
+<span class="source-line" id="L771"><a href="#L771">771</a>           ...(operation.provisional ? {provisional:clone(operation.provisional)} : {}),</span>
+<span class="source-line" id="L772"><a href="#L772">772</a>           ...(product.source_history ? {source_history:clone(product.source_history)} : {}),</span>
+<span class="source-line" id="L773"><a href="#L773">773</a>         };</span>
+<span class="source-line" id="L774"><a href="#L774">774</a>         slice.candidate[product.product_id] = product.revision_id;</span>
+<span class="source-line" id="L775"><a href="#L775">775</a>       }</span>
+<span class="source-line" id="L776"><a href="#L776">776</a>       slice.work_phase = slice.round === 0 ? &#x27;preparing&#x27; : &#x27;revising&#x27;;</span>
+<span class="source-line" id="L777"><a href="#L777">777</a>       recordElegance(slice, review, operation.action, state);</span>
+<span class="source-line" id="L778"><a href="#L778">778</a>       break;</span>
+<span class="source-line" id="L779"><a href="#L779">779</a>     }</span>
+<span class="source-line" id="L780"><a href="#L780">780</a>     case &#x27;present&#x27;: {</span>
+<span class="source-line" id="L781"><a href="#L781">781</a>       demand(operation.product_context_version===undefined || operation.product_context_version===1,</span>
+<span class="source-line" id="L782"><a href="#L782">782</a>         &#x27;INVALID_PRODUCT_CONTEXT_VERSION&#x27;,&#x27;Unsupported product applicability context.&#x27;);</span>
+<span class="source-line" id="L783"><a href="#L783">783</a>       const review = elegance(operation.elegance, &#x27;RC6&#x27;);</span>
+<span class="source-line" id="L784"><a href="#L784">784</a>       requireOpenRound(slice);</span>
+<span class="source-line" id="L785"><a href="#L785">785</a>       dependenciesCurrent(state, slice);</span>
+<span class="source-line" id="L786"><a href="#L786">786</a>       demand(slice.feedback.every(item =&gt; item.disposition !== &#x27;pending&#x27;),</span>
+<span class="source-line" id="L787"><a href="#L787">787</a>         &#x27;UNRESOLVED_FEEDBACK&#x27;, &#x27;Every feedback item needs an explicit disposition before presentation.&#x27;);</span>
+<span class="source-line" id="L788"><a href="#L788">788</a>       const presentationId = identifier(operation.presentation_id, &#x27;presentation_id&#x27;);</span>
+<span class="source-line" id="L789"><a href="#L789">789</a>       const requestId = identifier(operation.request_id, &#x27;request_id&#x27;);</span>
+<span class="source-line" id="L790"><a href="#L790">790</a>       demand(!Object.values(state.slices).some(item =&gt; item.presentations.some(p =&gt; p.id === presentationId)),</span>
+<span class="source-line" id="L791"><a href="#L791">791</a>         &#x27;PRESENTATION_EXISTS&#x27;, &#x27;Presentation IDs are immutable and globally unique.&#x27;);</span>
+<span class="source-line" id="L792"><a href="#L792">792</a>       demand(!Object.values(state.slices).some(item =&gt; item.review_requests.some(r =&gt; r.id === requestId)),</span>
+<span class="source-line" id="L793"><a href="#L793">793</a>         &#x27;REQUEST_EXISTS&#x27;, &#x27;Review request IDs are globally unique.&#x27;);</span>
+<span class="source-line" id="L794"><a href="#L794">794</a>       demand(nonempty(operation.source_message) &amp;&amp; nonempty(operation.purpose),</span>
+<span class="source-line" id="L795"><a href="#L795">795</a>         &#x27;REVIEW_REQUEST_SOURCE_REQUIRED&#x27;, &#x27;Presentation requires a source message and concrete review purpose.&#x27;);</span>
+<span class="source-line" id="L796"><a href="#L796">796</a>       const members = candidateMembers(slice);</span>
+<span class="source-line" id="L797"><a href="#L797">797</a>       const candidateDigest = refinementDigest(slice.candidate);</span>
+<span class="source-line" id="L798"><a href="#L798">798</a>       const requirementsDigest = refinementDigest(slice.requirements);</span>
+<span class="source-line" id="L799"><a href="#L799">799</a>       demand(Array.isArray(operation.checks) &amp;&amp; operation.checks.some(check =&gt; check.kind === &#x27;content&#x27;),</span>
+<span class="source-line" id="L800"><a href="#L800">800</a>         &#x27;CONTENT_REVIEW_REQUIRED&#x27;, &#x27;A sourced semantic content review is required for each presentation.&#x27;);</span>
+<span class="source-line" id="L801"><a href="#L801">801</a>       for (const check of operation.checks) {</span>
+<span class="source-line" id="L802"><a href="#L802">802</a>         demand(object(check) &amp;&amp; [&#x27;content&#x27;, &#x27;tests&#x27;].includes(check.kind) &amp;&amp;</span>
+<span class="source-line" id="L803"><a href="#L803">803</a>           check.outcome === &#x27;pass&#x27; &amp;&amp; nonempty(check.source),</span>
+<span class="source-line" id="L804"><a href="#L804">804</a>         &#x27;INVALID_CHECK&#x27;, &#x27;Checks must pass and identify their evidence source.&#x27;);</span>
+<span class="source-line" id="L805"><a href="#L805">805</a>         demand(check.candidate_digest === candidateDigest &amp;&amp; check.requirements_digest === requirementsDigest,</span>
+<span class="source-line" id="L806"><a href="#L806">806</a>           &#x27;STALE_CHECK&#x27;, &#x27;Checks must refer to the exact candidate and cumulative requirement state.&#x27;);</span>
+<span class="source-line" id="L807"><a href="#L807">807</a>       }</span>
+<span class="source-line" id="L808"><a href="#L808">808</a>       const presentation = {</span>
+<span class="source-line" id="L809"><a href="#L809">809</a>         id: presentationId, round: slice.round, at: state.last_event_at, generation: state.generation,</span>
+<span class="source-line" id="L810"><a href="#L810">810</a>         members, requirements_digest: requirementsDigest, candidate_digest: candidateDigest,</span>
+<span class="source-line" id="L811"><a href="#L811">811</a>         applicable_requirements_digest: refinementDigest(activeRequirements(slice)),</span>
+<span class="source-line" id="L812"><a href="#L812">812</a>         ...(operation.product_context_version===1 ? {product_context:{version:1,</span>
+<span class="source-line" id="L813"><a href="#L813">813</a>           requirements_digests:Object.fromEntries(slice.product_ids.map(id=&gt;[id,productRequirementsDigest(slice,id)]))}} : {}),</span>
+<span class="source-line" id="L814"><a href="#L814">814</a>         dependency_pins: clone(dependencyContext(slice)),</span>
+<span class="source-line" id="L815"><a href="#L815">815</a>         dependencies_digest: refinementDigest(dependencyContext(slice)),</span>
+<span class="source-line" id="L816"><a href="#L816">816</a>         feedback_count: slice.feedback.length, checks: clone(operation.checks),</span>
+<span class="source-line" id="L817"><a href="#L817">817</a>         elegance: review,</span>
+<span class="source-line" id="L818"><a href="#L818">818</a>       };</span>
+<span class="source-line" id="L819"><a href="#L819">819</a>       slice.presentations.push(presentation);</span>
+<span class="source-line" id="L820"><a href="#L820">820</a>       currentRound(slice).presentations.push(presentationId);</span>
+<span class="source-line" id="L821"><a href="#L821">821</a>       slice.checks.push(...clone(operation.checks).map(check =&gt; ({ ...check, presentation_id: presentationId })));</span>
+<span class="source-line" id="L822"><a href="#L822">822</a>       const request = {</span>
+<span class="source-line" id="L823"><a href="#L823">823</a>         id: requestId, step_id: slice.step_id, presentation_id: presentationId,</span>
+<span class="source-line" id="L824"><a href="#L824">824</a>         members: clone(members), source_message: operation.source_message,</span>
+<span class="source-line" id="L825"><a href="#L825">825</a>         purpose: operation.purpose, status: &#x27;pending&#x27;,</span>
+<span class="source-line" id="L826"><a href="#L826">826</a>       };</span>
+<span class="source-line" id="L827"><a href="#L827">827</a>       slice.review_requests.push(request);</span>
+<span class="source-line" id="L828"><a href="#L828">828</a>       slice.work_phase = &#x27;awaiting_review&#x27;;</span>
+<span class="source-line" id="L829"><a href="#L829">829</a>       recordElegance(slice, review, operation.action, state);</span>
+<span class="source-line" id="L830"><a href="#L830">830</a>       break;</span>
+<span class="source-line" id="L831"><a href="#L831">831</a>     }</span>
+<span class="source-line" id="L832"><a href="#L832">832</a>     case &#x27;accept&#x27;: {</span>
+<span class="source-line" id="L833"><a href="#L833">833</a>       demand(operation.complete_current === undefined || typeof operation.complete_current === &#x27;boolean&#x27;,</span>
+<span class="source-line" id="L834"><a href="#L834">834</a>         &#x27;INVALID_COMPLETION_OPTION&#x27;, &#x27;complete_current must be Boolean.&#x27;);</span>
+<span class="source-line" id="L835"><a href="#L835">835</a>       const human = humanEvidence(operation.human);</span>
+<span class="source-line" id="L836"><a href="#L836">836</a>       const presentation = getPresentation(slice, operation.presentation_id);</span>
+<span class="source-line" id="L837"><a href="#L837">837</a>       if(operation.complete_current===true &amp;&amp; operation.member_product_id &amp;&amp; presentation.product_context) {</span>
+<span class="source-line" id="L838"><a href="#L838">838</a>         dependenciesCurrent(state,slice);</span>
+<span class="source-line" id="L839"><a href="#L839">839</a>         demand(productApplicable(slice,presentation,operation.member_product_id),&#x27;REQUIREMENTS_CHANGED&#x27;,</span>
+<span class="source-line" id="L840"><a href="#L840">840</a>           &#x27;The named product does not match its applicable cumulative requirements.&#x27;);</span>
+<span class="source-line" id="L841"><a href="#L841">841</a>       } else requireApplicablePresentation(state, slice, presentation);</span>
+<span class="source-line" id="L842"><a href="#L842">842</a>       let member = null;</span>
+<span class="source-line" id="L843"><a href="#L843">843</a>       if (operation.member_product_id !== undefined) {</span>
+<span class="source-line" id="L844"><a href="#L844">844</a>         member = presentation.members.find(item =&gt; item.product_id === operation.member_product_id);</span>
+<span class="source-line" id="L845"><a href="#L845">845</a>         demand(member, &#x27;UNKNOWN_PRESENTATION_MEMBER&#x27;, &#x27;The named product is absent from this presentation.&#x27;);</span>
+<span class="source-line" id="L846"><a href="#L846">846</a>         slice.accepted_members[member.product_id] = {</span>
+<span class="source-line" id="L847"><a href="#L847">847</a>           presentation_id: presentation.id, revision_id: member.revision_id,</span>
+<span class="source-line" id="L848"><a href="#L848">848</a>           human, generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L849"><a href="#L849">849</a>         };</span>
+<span class="source-line" id="L850"><a href="#L850">850</a>       } else {</span>
+<span class="source-line" id="L851"><a href="#L851">851</a>         slice.accepted_presentation = presentation.id;</span>
+<span class="source-line" id="L852"><a href="#L852">852</a>       }</span>
+<span class="source-line" id="L853"><a href="#L853">853</a>       slice.acceptance_history.push({</span>
+<span class="source-line" id="L854"><a href="#L854">854</a>         presentation_id: presentation.id, member_product_id: member?.product_id ?? null,</span>
+<span class="source-line" id="L855"><a href="#L855">855</a>         human, generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L856"><a href="#L856">856</a>       });</span>
+<span class="source-line" id="L857"><a href="#L857">857</a>       // Opt-in semantics for new events only: replay of earlier approvals stays unchanged.</span>
+<span class="source-line" id="L858"><a href="#L858">858</a>       // Each latest product decision must still apply to the exact current work.</span>
+<span class="source-line" id="L859"><a href="#L859">859</a>       if (operation.complete_current === true &amp;&amp; member &amp;&amp;</span>
+<span class="source-line" id="L860"><a href="#L860">860</a>           lastPresentation(slice)?.id === presentation.id &amp;&amp; presentation.round === slice.round &amp;&amp;</span>
+<span class="source-line" id="L861"><a href="#L861">861</a>           refinementDigest(slice.candidate) === presentation.candidate_digest &amp;&amp;</span>
+<span class="source-line" id="L862"><a href="#L862">862</a>           refinementDigest(slice.requirements) === presentation.requirements_digest &amp;&amp;</span>
+<span class="source-line" id="L863"><a href="#L863">863</a>           slice.feedback.length === presentation.feedback_count &amp;&amp;</span>
+<span class="source-line" id="L864"><a href="#L864">864</a>           slice.feedback.every(item =&gt; item.disposition !== &#x27;pending&#x27;)) {</span>
+<span class="source-line" id="L865"><a href="#L865">865</a>         const complete=Object.values(currentProductApprovals(slice)).every(Boolean);</span>
+<span class="source-line" id="L866"><a href="#L866">866</a>         if (complete) {</span>
+<span class="source-line" id="L867"><a href="#L867">867</a>           slice.accepted_presentation = presentation.id;</span>
+<span class="source-line" id="L868"><a href="#L868">868</a>           slice.closed_presentation = presentation.id;</span>
+<span class="source-line" id="L869"><a href="#L869">869</a>           slice.work_phase = &#x27;done&#x27;;</span>
+<span class="source-line" id="L870"><a href="#L870">870</a>           slice.closure_history.push({presentation_id:presentation.id, human,</span>
+<span class="source-line" id="L871"><a href="#L871">871</a>             source:&#x27;individual-acceptances&#x27;, generation:state.generation, at:state.last_event_at});</span>
+<span class="source-line" id="L872"><a href="#L872">872</a>           for (const request of slice.review_requests) if (request.presentation_id === presentation.id) {</span>
+<span class="source-line" id="L873"><a href="#L873">873</a>             request.status = &#x27;resolved&#x27;; request.resolved_generation = state.generation;</span>
+<span class="source-line" id="L874"><a href="#L874">874</a>           }</span>
+<span class="source-line" id="L875"><a href="#L875">875</a>         }</span>
+<span class="source-line" id="L876"><a href="#L876">876</a>       }</span>
+<span class="source-line" id="L877"><a href="#L877">877</a>       // Named historical acceptance is valid without completing a newer round.</span>
+<span class="source-line" id="L878"><a href="#L878">878</a>       break;</span>
+<span class="source-line" id="L879"><a href="#L879">879</a>     }</span>
+<span class="source-line" id="L880"><a href="#L880">880</a>     case &#x27;visual_companion&#x27;: {</span>
+<span class="source-line" id="L881"><a href="#L881">881</a>       const revision = slice.revisions[operation.revision_id];</span>
+<span class="source-line" id="L882"><a href="#L882">882</a>       demand(revision &amp;&amp; revision.hash === operation.source_hash, &#x27;PREVIEW_SOURCE_MISMATCH&#x27;,</span>
+<span class="source-line" id="L883"><a href="#L883">883</a>         &#x27;A visual companion must identify the exact preserved source revision.&#x27;);</span>
+<span class="source-line" id="L884"><a href="#L884">884</a>       demand(object(operation.preview) &amp;&amp; /^[a-f0-9]{64}$/.test(operation.preview.hash) &amp;&amp;</span>
+<span class="source-line" id="L885"><a href="#L885">885</a>         nonempty(operation.preview.path) &amp;&amp; operation.preview.path.toLowerCase().endsWith(&#x27;.pdf&#x27;) &amp;&amp;</span>
+<span class="source-line" id="L886"><a href="#L886">886</a>         nonempty(operation.evidence), &#x27;PREVIEW_EVIDENCE_REQUIRED&#x27;, &#x27;A PDF companion needs its digest and same-version evidence.&#x27;);</span>
+<span class="source-line" id="L887"><a href="#L887">887</a>       demand(!revision.visual_companion || refinementDigest(revision.visual_companion) ===</span>
+<span class="source-line" id="L888"><a href="#L888">888</a>         refinementDigest({...operation.preview,source_hash:operation.source_hash,evidence:operation.evidence}),</span>
+<span class="source-line" id="L889"><a href="#L889">889</a>         &#x27;PREVIEW_ALREADY_BOUND&#x27;, &#x27;A visual companion cannot silently replace an existing version binding.&#x27;);</span>
+<span class="source-line" id="L890"><a href="#L890">890</a>       revision.visual_companion = {...clone(operation.preview),source_hash:operation.source_hash,evidence:operation.evidence};</span>
+<span class="source-line" id="L891"><a href="#L891">891</a>       break;</span>
+<span class="source-line" id="L892"><a href="#L892">892</a>     }</span>
+<span class="source-line" id="L893"><a href="#L893">893</a>     case &#x27;view&#x27;: {</span>
+<span class="source-line" id="L894"><a href="#L894">894</a>       const presentation = getPresentation(slice, operation.presentation_id);</span>
+<span class="source-line" id="L895"><a href="#L895">895</a>       const request = slice.review_requests.find(item =&gt; item.id === operation.request_id);</span>
+<span class="source-line" id="L896"><a href="#L896">896</a>       demand(request &amp;&amp; request.presentation_id === presentation.id, &#x27;VIEW_REQUEST_MISMATCH&#x27;,</span>
+<span class="source-line" id="L897"><a href="#L897">897</a>         &#x27;A view receipt must name the request associated with the frozen presentation.&#x27;);</span>
+<span class="source-line" id="L898"><a href="#L898">898</a>       const member = presentation.members.find(item =&gt; item.product_id === operation.member_product_id);</span>
+<span class="source-line" id="L899"><a href="#L899">899</a>       demand(member &amp;&amp; operation.hash === member.hash, &#x27;VIEW_MEMBER_MISMATCH&#x27;,</span>
+<span class="source-line" id="L900"><a href="#L900">900</a>         &#x27;A view receipt must identify the exact frozen member and digest.&#x27;);</span>
+<span class="source-line" id="L901"><a href="#L901">901</a>       demand(nonempty(operation.session_id) &amp;&amp; operation.source === &#x27;cockpit-user-open&#x27;,</span>
+<span class="source-line" id="L902"><a href="#L902">902</a>         &#x27;INVALID_VIEW_SOURCE&#x27;, &#x27;A view receipt requires an explicit cockpit open and session ID.&#x27;);</span>
+<span class="source-line" id="L903"><a href="#L903">903</a>       slice.views.push({</span>
+<span class="source-line" id="L904"><a href="#L904">904</a>         step_id: slice.step_id, presentation_id: presentation.id, request_id: request.id,</span>
+<span class="source-line" id="L905"><a href="#L905">905</a>         member_product_id: member.product_id, revision_id: member.revision_id,</span>
+<span class="source-line" id="L906"><a href="#L906">906</a>         hash: member.hash, session_id: operation.session_id, source: operation.source,</span>
+<span class="source-line" id="L907"><a href="#L907">907</a>         generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L908"><a href="#L908">908</a>       });</span>
+<span class="source-line" id="L909"><a href="#L909">909</a>       break;</span>
+<span class="source-line" id="L910"><a href="#L910">910</a>     }</span>
+<span class="source-line" id="L911"><a href="#L911">911</a>     case &#x27;close&#x27;: {</span>
+<span class="source-line" id="L912"><a href="#L912">912</a>       const human = humanEvidence(operation.human);</span>
+<span class="source-line" id="L913"><a href="#L913">913</a>       const presentation = getPresentation(slice, operation.presentation_id);</span>
+<span class="source-line" id="L914"><a href="#L914">914</a>       demand(lastPresentation(slice)?.id === presentation.id &amp;&amp; presentation.round === slice.round,</span>
+<span class="source-line" id="L915"><a href="#L915">915</a>         &#x27;NOT_CURRENT_PRESENTATION&#x27;, &#x27;Only the current round and latest presentation can be closed.&#x27;);</span>
+<span class="source-line" id="L916"><a href="#L916">916</a>       demand(slice.candidate &amp;&amp; refinementDigest(slice.candidate) === presentation.candidate_digest &amp;&amp;</span>
+<span class="source-line" id="L917"><a href="#L917">917</a>         refinementDigest(slice.requirements) === presentation.requirements_digest &amp;&amp;</span>
+<span class="source-line" id="L918"><a href="#L918">918</a>         slice.feedback.length === presentation.feedback_count,</span>
+<span class="source-line" id="L919"><a href="#L919">919</a>       &#x27;PRESENTATION_CHANGED&#x27;, &#x27;Current candidate or feedback changed after presentation.&#x27;);</span>
+<span class="source-line" id="L920"><a href="#L920">920</a>       demand(slice.feedback.every(item =&gt; item.disposition !== &#x27;pending&#x27;), &#x27;UNRESOLVED_FEEDBACK&#x27;,</span>
+<span class="source-line" id="L921"><a href="#L921">921</a>         &#x27;Unresolved feedback prevents closure.&#x27;);</span>
+<span class="source-line" id="L922"><a href="#L922">922</a>       requireApplicablePresentation(state, slice, presentation);</span>
+<span class="source-line" id="L923"><a href="#L923">923</a>       slice.accepted_presentation = presentation.id;</span>
+<span class="source-line" id="L924"><a href="#L924">924</a>       slice.closed_presentation = presentation.id;</span>
+<span class="source-line" id="L925"><a href="#L925">925</a>       slice.work_phase = &#x27;done&#x27;;</span>
+<span class="source-line" id="L926"><a href="#L926">926</a>       slice.acceptance_history.push({</span>
+<span class="source-line" id="L927"><a href="#L927">927</a>         presentation_id: presentation.id, member_product_id: null,</span>
+<span class="source-line" id="L928"><a href="#L928">928</a>         human, generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L929"><a href="#L929">929</a>       });</span>
+<span class="source-line" id="L930"><a href="#L930">930</a>       slice.closure_history.push({</span>
+<span class="source-line" id="L931"><a href="#L931">931</a>         presentation_id: presentation.id, human, generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L932"><a href="#L932">932</a>       });</span>
+<span class="source-line" id="L933"><a href="#L933">933</a>       for (const request of slice.review_requests) {</span>
+<span class="source-line" id="L934"><a href="#L934">934</a>         if (request.presentation_id === presentation.id) {</span>
+<span class="source-line" id="L935"><a href="#L935">935</a>           request.status = &#x27;resolved&#x27;;</span>
+<span class="source-line" id="L936"><a href="#L936">936</a>           request.resolved_generation = state.generation;</span>
+<span class="source-line" id="L937"><a href="#L937">937</a>         }</span>
+<span class="source-line" id="L938"><a href="#L938">938</a>       }</span>
+<span class="source-line" id="L939"><a href="#L939">939</a>       break;</span>
+<span class="source-line" id="L940"><a href="#L940">940</a>     }</span>
+<span class="source-line" id="L941"><a href="#L941">941</a>     case &#x27;reconcile&#x27;: {</span>
+<span class="source-line" id="L942"><a href="#L942">942</a>       requireOpenRound(slice);</span>
+<span class="source-line" id="L943"><a href="#L943">943</a>       foundationsClosed(state, slice);</span>
+<span class="source-line" id="L944"><a href="#L944">944</a>       const previous = lastPresentation(slice);</span>
+<span class="source-line" id="L945"><a href="#L945">945</a>       const digest = refinementDigest(slice.candidate);</span>
+<span class="source-line" id="L946"><a href="#L946">946</a>       const invalidated = slice.depends_on.filter(item =&gt; item.state === &#x27;needs_reconciliation&#x27;);</span>
+<span class="source-line" id="L947"><a href="#L947">947</a>       const baselineDigests = previous ? [previous.candidate_digest]</span>
+<span class="source-line" id="L948"><a href="#L948">948</a>         : invalidated.map(item =&gt; item.invalidated_candidate_digest);</span>
+<span class="source-line" id="L949"><a href="#L949">949</a>       demand(Object.keys(slice.candidate).length &gt; 0 &amp;&amp; baselineDigests.length &gt; 0 &amp;&amp;</span>
+<span class="source-line" id="L950"><a href="#L950">950</a>         baselineDigests.every(baseline =&gt; nonempty(baseline) &amp;&amp; digest !== baseline),</span>
+<span class="source-line" id="L951"><a href="#L951">951</a>         &#x27;RECONCILIATION_REVISION_REQUIRED&#x27;, &#x27;Reconciliation requires a changed downstream candidate after its handback.&#x27;);</span>
+<span class="source-line" id="L952"><a href="#L952">952</a>       demand(object(operation.evidence) &amp;&amp; operation.evidence.outcome === &#x27;pass&#x27; &amp;&amp;</span>
+<span class="source-line" id="L953"><a href="#L953">953</a>         nonempty(operation.evidence.source) &amp;&amp; operation.evidence.candidate_digest === digest,</span>
+<span class="source-line" id="L954"><a href="#L954">954</a>       &#x27;RECONCILIATION_EVIDENCE_REQUIRED&#x27;, &#x27;Reconciliation must name the changed candidate digest and passing evidence.&#x27;);</span>
+<span class="source-line" id="L955"><a href="#L955">955</a>       demand(Array.isArray(operation.depends_on) &amp;&amp; operation.depends_on.length &gt; 0,</span>
+<span class="source-line" id="L956"><a href="#L956">956</a>         &#x27;INVALID_DEPENDENCIES&#x27;, &#x27;Reconcile requires explicit dependency pins.&#x27;);</span>
+<span class="source-line" id="L957"><a href="#L957">957</a>       const seen = new Set();</span>
+<span class="source-line" id="L958"><a href="#L958">958</a>       for (const requested of operation.depends_on) {</span>
+<span class="source-line" id="L959"><a href="#L959">959</a>         const dependency = slice.depends_on.find(item =&gt; item.slice_id === requested?.slice_id);</span>
+<span class="source-line" id="L960"><a href="#L960">960</a>         demand(dependency &amp;&amp; !seen.has(dependency.slice_id), &#x27;INVALID_DEPENDENCY&#x27;,</span>
+<span class="source-line" id="L961"><a href="#L961">961</a>           &#x27;Reconcile can only update existing dependency edges, once each.&#x27;);</span>
+<span class="source-line" id="L962"><a href="#L962">962</a>         seen.add(dependency.slice_id);</span>
+<span class="source-line" id="L963"><a href="#L963">963</a>         const foundation = state.slices[dependency.slice_id];</span>
+<span class="source-line" id="L964"><a href="#L964">964</a>         demand(requested.presentation_id === foundation.closed_presentation,</span>
+<span class="source-line" id="L965"><a href="#L965">965</a>           &#x27;FOUNDATION_PRESENTATION_NOT_CLOSED&#x27;, &#x27;The replacement pin must name the foundation current closed set.&#x27;);</span>
+<span class="source-line" id="L966"><a href="#L966">966</a>         const presentation = getPresentation(foundation, requested.presentation_id);</span>
+<span class="source-line" id="L967"><a href="#L967">967</a>         dependency.presentation_id = presentation.id;</span>
+<span class="source-line" id="L968"><a href="#L968">968</a>         dependency.accepted_revision_hashes = revisionHashes(presentation);</span>
+<span class="source-line" id="L969"><a href="#L969">969</a>         dependency.state = &#x27;rechecked&#x27;;</span>
+<span class="source-line" id="L970"><a href="#L970">970</a>         delete dependency.invalidated_candidate_digest;</span>
+<span class="source-line" id="L971"><a href="#L971">971</a>         delete dependency.invalidated_generation;</span>
+<span class="source-line" id="L972"><a href="#L972">972</a>       }</span>
+<span class="source-line" id="L973"><a href="#L973">973</a>       slice.reconciliation_history.push({</span>
+<span class="source-line" id="L974"><a href="#L974">974</a>         round: slice.round, candidate_digest: digest, evidence: clone(operation.evidence),</span>
+<span class="source-line" id="L975"><a href="#L975">975</a>         pins: clone(operation.depends_on), generation: state.generation, at: state.last_event_at,</span>
+<span class="source-line" id="L976"><a href="#L976">976</a>       });</span>
+<span class="source-line" id="L977"><a href="#L977">977</a>       slice.work_phase = slice.round === 0 ? &#x27;preparing&#x27; : &#x27;revising&#x27;;</span>
+<span class="source-line" id="L978"><a href="#L978">978</a>       break;</span>
+<span class="source-line" id="L979"><a href="#L979">979</a>     }</span>
+<span class="source-line" id="L980"><a href="#L980">980</a>     default:</span>
+<span class="source-line" id="L981"><a href="#L981">981</a>       fail(&#x27;UNKNOWN_ACTION&#x27;, &#x27;Unsupported refinement action: &#x27; + operation.action);</span>
+<span class="source-line" id="L982"><a href="#L982">982</a>   }</span>
+<span class="source-line" id="L983"><a href="#L983">983</a>   refreshDependencies(state);</span>
+<span class="source-line" id="L984"><a href="#L984">984</a>   return state;</span>
+<span class="source-line" id="L985"><a href="#L985">985</a> }</span>
+<span class="source-line" id="L986"><a href="#L986">986</a> </span>
+<span class="source-line" id="L987"><a href="#L987">987</a> export function foldRefinements(events) {</span>
+<span class="source-line" id="L988"><a href="#L988">988</a>   demand(Array.isArray(events), &#x27;INVALID_EVENTS&#x27;, &#x27;Roadmap events must be an array.&#x27;);</span>
+<span class="source-line" id="L989"><a href="#L989">989</a>   const state = emptyState();</span>
+<span class="source-line" id="L990"><a href="#L990">990</a>   for (const event of events) {</span>
+<span class="source-line" id="L991"><a href="#L991">991</a>     if (event?.kind !== &#x27;refinement_update&#x27;) continue;</span>
+<span class="source-line" id="L992"><a href="#L992">992</a>     applyOperation(state, clone(event.operation), event);</span>
+<span class="source-line" id="L993"><a href="#L993">993</a>   }</span>
+<span class="source-line" id="L994"><a href="#L994">994</a>   return state;</span>
+<span class="source-line" id="L995"><a href="#L995">995</a> }</span>
+<span class="source-line" id="L996"><a href="#L996">996</a> </span>
+<span class="source-line" id="L997"><a href="#L997">997</a> export function validateRefinementOperation(events, operation, context = {}) {</span>
+<span class="source-line" id="L998"><a href="#L998">998</a>   try {</span>
+<span class="source-line" id="L999"><a href="#L999">999</a>     const state = foldRefinements(events);</span>
+<span class="source-line" id="L1000"><a href="#L1000">1000</a>     applyOperation(state, clone(operation), {</span>
+<span class="source-line" id="L1001"><a href="#L1001">1001</a>       at: context.event_at ?? context.at ?? null,</span>
+<span class="source-line" id="L1002"><a href="#L1002">1002</a>     });</span>
+<span class="source-line" id="L1003"><a href="#L1003">1003</a>     return { ok: true, state };</span>
+<span class="source-line" id="L1004"><a href="#L1004">1004</a>   } catch (error) {</span>
+<span class="source-line" id="L1005"><a href="#L1005">1005</a>     return {</span>
+<span class="source-line" id="L1006"><a href="#L1006">1006</a>       ok: false,</span>
+<span class="source-line" id="L1007"><a href="#L1007">1007</a>       error: error.code ?? &#x27;INVALID_OPERATION&#x27;,</span>
+<span class="source-line" id="L1008"><a href="#L1008">1008</a>       detail: error.detail ?? error.message,</span>
+<span class="source-line" id="L1009"><a href="#L1009">1009</a>     };</span>
+<span class="source-line" id="L1010"><a href="#L1010">1010</a>   }</span>
+<span class="source-line" id="L1011"><a href="#L1011">1011</a> }</span></pre></main></body></html>

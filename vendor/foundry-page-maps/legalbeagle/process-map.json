@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Legal-Beagle execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Legal-Beagle)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Legal-Beagle context.",
+      "code": {
+        "path": "bin/legal-round.mjs",
+        "symbol": "function buildReceipt(memoText, sourceTexts, checks) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "legalbeagle-mat-skill-md",
+        "legalbeagle-tool-bin-legal-round-mjs"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Legal-Beagle never repeats cold-start discovery.",
+      "code": {
+        "path": "src/citation-lint.js",
+        "symbol": "function cleanCitationTail(raw) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# legal-beagle"
+      },
+      "resource_ids": [
+        "legalbeagle-ref-lessons",
+        "legalbeagle-journal-readme",
+        "legalbeagle-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Legal-Beagle)",
+      "kind": "model",
+      "role": "Primary Legal-Beagle Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Legal-Beagle, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "test/citation-lint.test.js",
+        "symbol": "// citation-lint.test.js \u2014 Rule 1 as structure (W3"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The adversarial engine (`bin/legal-round.mjs`, 2026-07-25 \u2014 the Heavy procedure ENFORCED)"
+      },
+      "resource_ids": [
+        "legalbeagle-tool-bin-legal-round-mjs",
+        "legalbeagle-tool-src-citation-lint-js",
+        "legalbeagle-peer-researchprime"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "test/legal-round.test.mjs",
+        "symbol": "function buildMiniDocxBuffer(filesMap) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Heavy procedure (WRITTEN, 2026-07-11 \u2014 no longer rediscovered per run)"
+      },
+      "resource_ids": [
+        "legalbeagle-peer-researchprime",
+        "legalbeagle-peer-gandalf",
+        "legalbeagle-ref-lessons"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Legal-Beagle deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "test/legal-round.test.mjs",
+        "symbol": "function buildMiniDocxBuffer(filesMap) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## Hard rules (anti-hallucination \u2014 these override everything else)"
+      },
+      "resource_ids": [
+        "legalbeagle-mat-triage-block",
+        "legalbeagle-kb-portfolio-triage-and-band-eval"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Legal-Beagle primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Legal-Beagle work product + machine run receipt."
+}

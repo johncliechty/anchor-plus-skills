@@ -1,0 +1,542 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>attention · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>attention</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/home_attention.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 65b33926f0dd8284cb0117959366e3ed6269e7c55bd3887801dde68822f3e96d</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.530988+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/home_attention.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 65b33926f0dd8284cb0117959366e3ed6269e7c55bd3887801dde68822f3e96d</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;Home attention — the deterministic v0 ranking behind the steward&#x27;s rail and the</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> &quot;Needs attention&quot; rows on the home page.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> </span>
+<span class="source-line" id="L4"><a href="#L4">4</a> Design contract: ``_mockups/dashboard-v2`` (prototype r3, 2026-08-27/28) and its</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> SCORECARD — &quot;Ranked. One raise. ... no hidden score&quot; — as read by the 2026-08-29</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> best-in-class addendum (&quot;home is an attention and intervention surface, not a</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> repository browser&quot;; &quot;Anchor should show the exact rule that raised an item&quot;).</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9">9</a> Pure: takes facts, returns rows. No I/O, no model, no clock of its own (the</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> caller passes ``today``/``now``), never raises on odd input. The ranking IS the</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> rule order below; every row names the rule that raised it so the order is</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> explainable, and nothing here is a score a user cannot see.</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> </span>
+<span class="source-line" id="L14"><a href="#L14">14</a> The steward&#x27;s own raise queue is NOT computed here — it needs the Ecgberht</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> bridge process, which the home render must never spawn. The page adds that row</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> client-side from the badge it already polls (``static/high-seat.js``).</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> from __future__ import annotations</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> import re</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21">21</a> from datetime import date, datetime, timedelta</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23">23</a> # Rule order == rank order. (name, severity, plain label)</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> RULES = (</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>     (&quot;health&quot;, &quot;red&quot;, &quot;health check&quot;),</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>     (&quot;needs-you&quot;, &quot;red&quot;, &quot;a session is waiting on you&quot;),</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>     (&quot;overdue&quot;, &quot;red&quot;, &quot;overdue task&quot;),</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>     (&quot;due-today&quot;, &quot;amber&quot;, &quot;due today&quot;),</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>     (&quot;due-soon&quot;, &quot;amber&quot;, &quot;due within five weeks&quot;),</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>     (&quot;failed&quot;, &quot;amber&quot;, &quot;failed session (7 days)&quot;),</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> )</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> _RANK = {name: i for i, (name, _sev, _lab) in enumerate(RULES)}</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> _SEV = {name: sev for name, sev, _lab in RULES}</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> _LABEL = {name: lab for name, _sev, lab in RULES}</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36">36</a> FAILED_WINDOW = timedelta(days=7)</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> # Lanes whose sessions are project work a person can act on. Swarm seats and</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> # other engine-internal lanes fail and finish on their own; they are not</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> # &quot;waiting on you&quot;.</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> ACTIONABLE_LANES = frozenset(</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>     {&quot;research&quot;, &quot;plan&quot;, &quot;planning&quot;, &quot;build&quot;, &quot;general&quot;, &quot;grass&quot;, &quot;steward&quot;})</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> </span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a> def _iso_date(v):</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>     &quot;&quot;&quot;&#x27;YYYY-MM-DD&#x27; → date, else None. Tolerates datetimes and junk.&quot;&quot;&quot;</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     if isinstance(v, date):</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>         return v</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     s = str(v or &quot;&quot;).strip()[:10]</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>     try:</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>         return date.fromisoformat(s)</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     except Exception:</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>         return None</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> def _ts(v):</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>     &quot;&quot;&quot;epoch seconds / ISO string → datetime (naive, local), else None.&quot;&quot;&quot;</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>     if v is None or v == &quot;&quot;:</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>         return None</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     try:</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>         if isinstance(v, (int, float)):</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>             return datetime.fromtimestamp(float(v))</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         return datetime.fromisoformat(str(v).replace(&quot;Z&quot;, &quot;+00:00&quot;)).replace(tzinfo=None)</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     except Exception:</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>         return None</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66">66</a> </span>
+<span class="source-line" id="L67"><a href="#L67">67</a> def _row(rule, text, why, href, kind, project_id=&quot;&quot;, label=None):</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     return {</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>         &quot;rule&quot;: rule,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>         &quot;rule_label&quot;: label or _LABEL[rule],</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>         &quot;severity&quot;: _SEV[rule],</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>         &quot;text&quot;: str(text or &quot;&quot;).strip(),</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>         &quot;why&quot;: str(why or &quot;&quot;).strip(),</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>         &quot;href&quot;: href or &quot;&quot;,</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>         &quot;kind&quot;: kind,            # &#x27;system&#x27; | &#x27;project&#x27; | &#x27;task&#x27;</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>         &quot;project_id&quot;: project_id or &quot;&quot;,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     }</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> </span>
+<span class="source-line" id="L79"><a href="#L79">79</a> </span>
+<span class="source-line" id="L80"><a href="#L80">80</a> def build_attention(tasks=(), sessions=(), health=None, today=None, now=None,</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>                     project_names=None, limit=6, projects=()):</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     &quot;&quot;&quot;Return the ranked attention rows (at most ``limit``).</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> </span>
+<span class="source-line" id="L84"><a href="#L84">84</a>     ``tasks``    — home task dicts (``text`` · ``priority`` · ``due`` · ``done``).</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     ``sessions`` — session-registry records (``status`` · ``lane`` · ``project_id``</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>                    · ``label`` · ``updated_at``/``created_at``).</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>     ``health``   — ``(report_date, status)`` from the latest health report or None.</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     ``projects`` — ``home_rows.project_facts`` dicts (W1a, High Seat 2026-09-26): a project whose</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>                    steward record waits on John raises a needs-you row; its open dated steps raise</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>                    overdue / due-today / due-soon rows (soonest first, within five weeks).</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     ``today``    — date; ``now`` — datetime (both default to the wall clock only</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>                    when omitted, so tests pass them explicitly).</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     today = today or date.today()</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>     now = now or datetime.now()</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>     names = project_names or {}</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     rows = []</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> </span>
+<span class="source-line" id="L99"><a href="#L99">99</a>     # 1. health — the daily self-test found issues (the red banner&#x27;s fact)</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>     try:</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>         if health:</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>             report_date, status = health[0], str(health[1] or &quot;&quot;)</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>             if any(w in status.upper() for w in (&quot;ISSUE&quot;, &quot;FAIL&quot;, &quot;ERROR&quot;)):</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>                 rows.append(_row(</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>                     &quot;health&quot;, &quot;Health check found issues&quot;,</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>                     &quot;%s — Doctor can diagnose it&quot; % report_date,</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>                     &quot;/doctor?issueId=ZH_HEALTH_CHECK_ISSUES&amp;diagnose=1&quot;, &quot;system&quot;))</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>     except Exception:</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>         pass</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> </span>
+<span class="source-line" id="L111"><a href="#L111">111</a>     # 2. needs-you — a managed session parked in needs-attention</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>     needs, failed = [], []</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     for rec in sessions or ():</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>         try:</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>             if not isinstance(rec, dict):</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>                 continue</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>             pid = str(rec.get(&quot;project_id&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>             lane = str(rec.get(&quot;lane&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>             if not pid or (lane and lane not in ACTIONABLE_LANES):</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>                 continue</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>             st = str(rec.get(&quot;status&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>             when = _ts(rec.get(&quot;updated_at&quot;)) or _ts(rec.get(&quot;created_at&quot;))</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>             if st == &quot;needs-attention&quot;:</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>                 needs.append((when or datetime.min, rec, pid))</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>             elif st == &quot;failed&quot; and when and now - when &lt;= FAILED_WINDOW:</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>                 failed.append((when, rec, pid))</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>         except Exception:</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>             continue</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>     needs.sort(key=lambda t: t[0], reverse=True)</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     # one needs-you row per project (W1a): the project&#x27;s own steward record — the strip&#x27;s human</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     # wait, else the last status&#x27;s &quot;waiting on you&quot; — is the fact when it exists, and the row says</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>     # so; a managed session parked in needs-attention raises the row otherwise, and says that</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     record_wait = {}</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     for f in projects or ():</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>         try:</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>             if isinstance(f, dict) and f.get(&quot;id&quot;) and f.get(&quot;needs_you&quot;):</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>                 why = &quot; &quot;.join(str(f[&quot;needs_you&quot;]).split())</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>                 why = (why[:88].rstrip() + &quot;…&quot;) if len(why) &gt; 90 else why</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>                 record_wait[str(f[&quot;id&quot;])] = (str(f.get(&quot;name&quot;) or str(f[&quot;id&quot;])[:8]), why)</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>         except Exception:</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>             continue</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     seen = set()</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     for when, rec, pid in needs:</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>         if pid in seen:</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>             continue</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>         seen.add(pid)</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>         if pid in record_wait:</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>             nm, why = record_wait[pid]</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>             rows.append(_row(&quot;needs-you&quot;, &quot;%s is waiting on you&quot; % nm, why, &quot;/project/%s&quot; % pid,</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>                              &quot;project&quot;, pid, label=&quot;the steward&#x27;s record waits on you&quot;))</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>         else:</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>             nm = names.get(pid) or rec.get(&quot;label&quot;) or pid[:8]</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>             rows.append(_row(&quot;needs-you&quot;, &quot;%s is waiting on you&quot; % nm,</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>                              &quot;%s session needs an answer&quot; % (rec.get(&quot;lane&quot;) or &quot;a&quot;),</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>                              &quot;/project/%s&quot; % pid, &quot;project&quot;, pid))</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     for pid, (nm, why) in record_wait.items():</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>         if pid in seen:</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>             continue</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>         seen.add(pid)</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>         rows.append(_row(&quot;needs-you&quot;, &quot;%s is waiting on you&quot; % nm, why, &quot;/project/%s&quot; % pid,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>                          &quot;project&quot;, pid, label=&quot;the steward&#x27;s record waits on you&quot;))</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> </span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     # 3./4. tasks — overdue (oldest first, P1 first), then due today (P1 first)</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     overdue, due_today = [], []</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     for t in tasks or ():</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>         try:</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>             if not isinstance(t, dict) or t.get(&quot;done&quot;):</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>                 continue</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>             d = _iso_date(t.get(&quot;due&quot;))</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>             if d is None:</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>                 continue</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>             pr = int(t.get(&quot;priority&quot;) or 3)</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>             if d &lt; today:</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>                 overdue.append((d, pr, t))</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>             elif d == today:</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>                 due_today.append((pr, t))</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>         except Exception:</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>             continue</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     overdue.sort(key=lambda x: (x[0], x[1], x[2].get(&quot;text&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     due_today.sort(key=lambda x: (x[0], x[1].get(&quot;text&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     for d, pr, t in overdue:</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>         days = (today - d).days</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>         rows.append(_row(&quot;overdue&quot;, t.get(&quot;text&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>                          &quot;P%d · due %s (%d day%s ago)&quot; % (pr, d.isoformat(), days, &quot;&quot; if days == 1 else &quot;s&quot;),</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>                          &quot;#tile-tasks&quot;, &quot;task&quot;))</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     for pr, t in due_today:</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>         rows.append(_row(&quot;due-today&quot;, t.get(&quot;text&quot;, &quot;&quot;), &quot;P%d · due today&quot; % pr,</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>                          &quot;#tile-tasks&quot;, &quot;task&quot;))</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>     # 3b./4b./4c. dated steps — a project&#x27;s open steps that carry a due (W1a): overdue, due today,</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>     #     and due within five weeks (the ruler&#x27;s reach), soonest first; each links to its plan</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     late, todays, soon = [], [], []</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     horizon = today + timedelta(days=35)</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     for f in projects or ():</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>         if not isinstance(f, dict):</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>             continue</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>         for st in f.get(&quot;dated&quot;) or ():</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>             try:</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>                 d = _iso_date(st.get(&quot;due&quot;))</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>                 if d is None:</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>                     continue</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>                 if d &lt; today:</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>                     late.append((d, st))</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>                 elif d == today:</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>                     todays.append((d, st))</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>                 elif d &lt;= horizon:</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>                     soon.append((d, st))</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>             except Exception:</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>                 continue</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     for bucket in (late, todays, soon):</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>         bucket.sort(key=lambda x: (x[0], x[1].get(&quot;name&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     for d, st in late:</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>         days = (today - d).days</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>         rows.append(_row(&quot;overdue&quot;, st.get(&quot;name&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>                          &quot;due %s (%d day%s ago) · %s&quot; % (_short(d), days, &quot;&quot; if days == 1 else &quot;s&quot;, st.get(&quot;project_name&quot;, &quot;&quot;)),</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>                          &quot;/project/%s&quot; % st.get(&quot;project_id&quot;, &quot;&quot;), &quot;step&quot;, st.get(&quot;project_id&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     for d, st in todays:</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>         rows.append(_row(&quot;due-today&quot;, st.get(&quot;name&quot;, &quot;&quot;), &quot;due today · %s&quot; % st.get(&quot;project_name&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>                          &quot;/project/%s&quot; % st.get(&quot;project_id&quot;, &quot;&quot;), &quot;step&quot;, st.get(&quot;project_id&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>     for d, st in soon:</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>         rows.append(_row(&quot;due-soon&quot;, st.get(&quot;name&quot;, &quot;&quot;), &quot;due %s · %s&quot; % (_short(d), st.get(&quot;project_name&quot;, &quot;&quot;)),</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>                          &quot;/project/%s&quot; % st.get(&quot;project_id&quot;, &quot;&quot;), &quot;step&quot;, st.get(&quot;project_id&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L222"><a href="#L222">222</a> </span>
+<span class="source-line" id="L223"><a href="#L223">223</a>     # 5. failed — recent failed sessions, newest first</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     failed.sort(key=lambda t: t[0], reverse=True)</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     for when, rec, pid in failed:</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>         nm = names.get(pid) or rec.get(&quot;label&quot;) or pid[:8]</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>         rows.append(_row(&quot;failed&quot;, &quot;%s: a %s session failed&quot; % (nm, rec.get(&quot;lane&quot;) or &quot;work&quot;),</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>                          when.strftime(&quot;%a %d %b %H:%M&quot;), &quot;/project/%s&quot; % pid, &quot;project&quot;, pid))</span>
+<span class="source-line" id="L229"><a href="#L229">229</a> </span>
+<span class="source-line" id="L230"><a href="#L230">230</a>     rows.sort(key=lambda r: _RANK[r[&quot;rule&quot;]])  # stable: keeps each rule&#x27;s own order</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>     return rows[: max(0, int(limit or 0))] if limit else rows</span>
+<span class="source-line" id="L232"><a href="#L232">232</a> </span>
+<span class="source-line" id="L233"><a href="#L233">233</a> </span>
+<span class="source-line" id="L234"><a href="#L234">234</a> def _short(d):</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>     &quot;&quot;&quot;date → &#x27;Oct 8&#x27;.&quot;&quot;&quot;</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>     d = _iso_date(d)</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     return (&quot;%s %d&quot; % (d.strftime(&quot;%b&quot;), d.day)) if d else &quot;&quot;</span>
+<span class="source-line" id="L238"><a href="#L238">238</a> </span>
+<span class="source-line" id="L239"><a href="#L239">239</a> </span>
+<span class="source-line" id="L240"><a href="#L240">240</a> def brief_bullets(rows, projects=(), today=None, seat_name=&quot;High Seat&quot;):</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     &quot;&quot;&quot;The rail&#x27;s brief as bullets (W1a, High Seat 2026-09-26): the move, who waits on him, what the</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     week holds (or the nearest date), and the standing line. Facts only; never more than four.&quot;&quot;&quot;</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>     today = today or date.today()</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>     bullets = []</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>     top = rows[0] if rows else None</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>     if top:</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>         bullets.append(&quot;%s%s.&quot; % (top[&quot;text&quot;], (&quot; — &quot; + top[&quot;why&quot;]) if top.get(&quot;why&quot;) else &quot;&quot;))</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     else:</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>         bullets.append(&quot;Nothing is waiting on you.&quot;)</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>     # who waits: counted from the facts (every project whose record waits), never from the capped rows</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>     waiting = [str(f.get(&quot;name&quot;) or &quot;&quot;) for f in projects or () if isinstance(f, dict) and f.get(&quot;needs_you&quot;)]</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>     for r in rows or ():</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>         if r.get(&quot;rule&quot;) == &quot;needs-you&quot;:</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>             nm = r[&quot;text&quot;].replace(&quot; is waiting on you&quot;, &quot;&quot;)</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>             if nm not in waiting:</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>                 waiting.append(nm)</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>     if len(waiting) &gt; 1:</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>         bullets.append(&quot;%d wait on you: %s.&quot; % (len(waiting), &quot;, &quot;.join(waiting[:4]) + (&quot; and more&quot; if len(waiting) &gt; 4 else &quot;&quot;)))</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     # the week is the header&#x27;s: Monday to Sunday; a date already past inside it is named overdue</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     week_start = today - timedelta(days=today.weekday())</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>     week_end = week_start + timedelta(days=6)</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     dated = []</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>     for f in projects or ():</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>         if isinstance(f, dict):</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>             for st in f.get(&quot;dated&quot;) or ():</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>                 d = _iso_date(st.get(&quot;due&quot;))</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>                 if d is not None:</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>                     dated.append((d, st))</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     dated.sort(key=lambda x: (x[0], x[1].get(&quot;name&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     this_week = [(d, st) for d, st in dated if week_start &lt;= d &lt;= week_end]</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     if this_week:</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>         def _say(d, st):</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>             tag = &quot;overdue since %s&quot; % _short(d) if d &lt; today else (&quot;today&quot; if d == today else _short(d))</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>             return &quot;%s (%s, %s)&quot; % (st.get(&quot;name&quot;, &quot;&quot;), tag, st.get(&quot;project_name&quot;, &quot;&quot;))</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>         bullets.append(&quot;This week: &quot; + &quot;; &quot;.join(_say(d, st) for d, st in this_week[:3]) + &quot;.&quot;)</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>     else:</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>         ahead = next(((d, st) for d, st in dated if d &gt;= today), None)</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>         if ahead:</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>             bullets.append(&quot;Nothing is due this week; the nearest date is %s (%s, %s).&quot; % (</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>                 _short(ahead[0]), ahead[1].get(&quot;name&quot;, &quot;&quot;), ahead[1].get(&quot;project_name&quot;, &quot;&quot;)))</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>         else:</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>             bullets.append(&quot;Nothing carries a date yet.&quot;)</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>     bullets.append(&quot;You can act from here. Opening the %s is optional.&quot; % seat_name)</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     return bullets[:4]</span>
+<span class="source-line" id="L285"><a href="#L285">285</a> </span>
+<span class="source-line" id="L286"><a href="#L286">286</a> </span>
+<span class="source-line" id="L287"><a href="#L287">287</a> def the_move(rows, seat_name=&quot;High Seat&quot;):</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>     &quot;&quot;&quot;The rail&#x27;s one sentence: the top row, or an honest quiet line.&quot;&quot;&quot;</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     if not rows:</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>         return (&quot;Nothing is waiting on you.&quot;,</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>                 &quot;The steward will raise the next thing here.&quot;)</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     top = rows[0]</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     lead = top[&quot;text&quot;]</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     if top[&quot;why&quot;]:</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>         lead = &quot;%s — %s.&quot; % (lead, top[&quot;why&quot;])</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     return (lead, &quot;You can act from here. Opening the %s is optional.&quot; % seat_name)</span>
+<span class="source-line" id="L297"><a href="#L297">297</a> </span>
+<span class="source-line" id="L298"><a href="#L298">298</a> </span>
+<span class="source-line" id="L299"><a href="#L299">299</a> _PART_CLOSED = (&quot;done&quot;, &quot;cancelled&quot;, &quot;dropped&quot;, &quot;parked&quot;)</span>
+<span class="source-line" id="L300"><a href="#L300">300</a> </span>
+<span class="source-line" id="L301"><a href="#L301">301</a> </span>
+<span class="source-line" id="L302"><a href="#L302">302</a> def _part_open(p):</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>     return (isinstance(p, dict) and not p.get(&quot;broken&quot;) and p.get(&quot;status&quot;) not in (&quot;done&quot;, &quot;parked&quot;)</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>             and p.get(&quot;target_status&quot;) not in _PART_CLOSED)</span>
+<span class="source-line" id="L305"><a href="#L305">305</a> </span>
+<span class="source-line" id="L306"><a href="#L306">306</a> </span>
+<span class="source-line" id="L307"><a href="#L307">307</a> def _wait_reason(p):</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     &quot;&quot;&quot;What a seated initiative waits for: the reason the tile line already reads (&quot;waiting on you: &lt;reason&gt;&quot;); empty</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     when the state is not a wait, when the reason only repeats the part&#x27;s name, or when it only names him (Grok&#x27;s</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     read of W2b: the sentence never restates its own head).&quot;&quot;&quot;</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     st = str(p.get(&quot;state&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     if not st.lower().startswith(&quot;waiting on you&quot;):</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>         return &quot;&quot;</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     reason = re.sub(r&quot;^waiting on you[:\s]*&quot;, &quot;&quot;, st, flags=re.I).strip(&quot; .&quot;)</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     name = &quot; &quot;.join(str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;&quot;).lower().split())</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     if not reason or &quot; &quot;.join(reason.lower().split()) == name or reason.lower() in (&quot;john&quot;, &quot;you&quot;, &quot;me&quot;):</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>         return &quot;&quot;</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>     return reason</span>
+<span class="source-line" id="L319"><a href="#L319">319</a> </span>
+<span class="source-line" id="L320"><a href="#L320">320</a> </span>
+<span class="source-line" id="L321"><a href="#L321">321</a> def head_act(initiatives, facts, today=None):</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>     &quot;&quot;&quot;THE HEAD — one act, never a list (W2 of the steward revision, 2026-09-28; the synthesis R2; his answer Q3).</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>     The SEATS read first (2026-09-30, his three levels): an ACTIVE initiative — a cockpit, an effort or a desk item</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>     he pulled out of its goal — that needs him leads, in his order; then one ON DECK that needs him; the sentence</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>     says the date when there is one. Then his tiers: the first Tier-1 part that needs him, in his</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>     order (a Tier-1 part that needs him AND is due comes first among them); the one exception, his word (narrowed on</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     Grok&#x27;s W2 read): a Tier-2/3 part that NEEDS him and is due today or overdue — marked as the exception, with its</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     date — earliest date first, then his tier and order; it yields to a Tier-1 part that needs him and is due, and to</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     anything inside the set (an outside deadline while he is deep in the set is W3&#x27;s nudge, not the head). Else the</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>     oldest wait across the projects, with its age from the record. ``None`` when nothing needs him and nothing is</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     due.&quot;&quot;&quot;</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>     today = today or date.today()</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>     inits = sorted([i for i in initiatives or () if isinstance(i, dict)],</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>                    key=lambda i: (i.get(&quot;tier&quot;) or 9, int(i.get(&quot;order&quot;) or 0), str(i.get(&quot;name&quot;) or &quot;&quot;)))</span>
+<span class="source-line" id="L335"><a href="#L335">335</a> </span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     def _act(i, p, kind, **more):</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>         parts = [x for x in i.get(&quot;parts&quot;) or () if isinstance(x, dict)]</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>         after = next((x for x in parts[parts.index(p) + 1:] if _part_open(x)), None) if p in parts else None</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>         a = {&quot;kind&quot;: kind, &quot;tier&quot;: i.get(&quot;tier&quot;), &quot;initiative&quot;: str(i.get(&quot;name&quot;) or &quot;&quot;), &quot;text&quot;: str(p.get(&quot;text&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>              &quot;target&quot;: str(p.get(&quot;target&quot;) or &quot;&quot;), &quot;pid&quot;: str(p.get(&quot;pid&quot;) or &quot;&quot;), &quot;href&quot;: str(p.get(&quot;href&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>              &quot;date&quot;: str(p.get(&quot;date&quot;) or &quot;&quot;), &quot;then&quot;: str(after.get(&quot;text&quot;) or &quot;&quot;) if after else &quot;&quot;, &quot;age_days&quot;: None,</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>              &quot;effort&quot;: &quot;&quot;, &quot;dir&quot;: None,</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>              # the seated act (2026-09-30): the initiative&#x27;s own name and what it waits for, said as the sentence says them</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>              &quot;part&quot;: str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>              &quot;what&quot;: _wait_reason(p)}</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>         a.update(more)</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>         return a</span>
+<span class="source-line" id="L348"><a href="#L348">348</a> </span>
+<span class="source-line" id="L349"><a href="#L349">349</a>     def _due(p):</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>         d = _iso_date(p.get(&quot;date&quot;)) if p.get(&quot;date&quot;) else None</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>         return d if (d is not None and d &lt;= today) else None</span>
+<span class="source-line" id="L352"><a href="#L352">352</a> </span>
+<span class="source-line" id="L353"><a href="#L353">353</a>     def _needs(p):</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>         return _part_open(p) and bool(p.get(&quot;needs_you&quot;))</span>
+<span class="source-line" id="L355"><a href="#L355">355</a> </span>
+<span class="source-line" id="L356"><a href="#L356">356</a>     # the seats read FIRST (2026-09-30): an active initiative that needs him, in his order; then one on deck</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>     from high_seat_page import seated</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>     for kind in (&quot;active&quot;, &quot;deck&quot;):</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>         for g, p in seated(inits, kind):</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>             if _needs(p):</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>                 d = _due(p)</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>                 return _act(g, p, kind, due=d.isoformat() if d else &quot;&quot;, overdue=bool(d and d &lt; today))</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>     # a Tier-1 part that needs him and is due leads everything</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>     t1_due = sorted(((_due(p), int(i.get(&quot;order&quot;) or 0), n, i, p) for i in inits if i.get(&quot;tier&quot;) == 1</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>                      for n, p in enumerate(i.get(&quot;parts&quot;) or ()) if _needs(p) and _due(p)), key=lambda t: t[:3])</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>     if t1_due:</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>         _d, _o, _n, i, p = t1_due[0]</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>         return _act(i, p, &quot;tier1&quot;)</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>     # the exception: a lower-tier part that needs him, due today or overdue — earliest date, then tier and order</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>     low = sorted(((_due(p), int(i.get(&quot;tier&quot;)), int(i.get(&quot;order&quot;) or 0), n, i, p)</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>                   for i in inits if i.get(&quot;tier&quot;) in (2, 3)</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>                   for n, p in enumerate(i.get(&quot;parts&quot;) or ()) if _needs(p) and _due(p)), key=lambda t: t[:4])</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>     if low:</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>         d, _t, _o, _n, i, p = low[0]</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>         return _act(i, p, &quot;exception&quot;, due=d.isoformat(), overdue=d &lt; today)</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>     for i in inits:</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>         if i.get(&quot;tier&quot;) == 1:</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>             for p in i.get(&quot;parts&quot;) or ():</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>                 if _needs(p):</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>                     return _act(i, p, &quot;tier1&quot;)</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>     waits = [f for f in facts or () if isinstance(f, dict) and f.get(&quot;needs_you&quot;)]</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>     if waits:</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>         f = max(waits, key=lambda f: (f.get(&quot;wait_age_days&quot;) if isinstance(f.get(&quot;wait_age_days&quot;), (int, float)) else -1))</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>         return {&quot;kind&quot;: &quot;oldest-wait&quot;, &quot;tier&quot;: None, &quot;initiative&quot;: &quot;&quot;, &quot;text&quot;: str(f.get(&quot;needs_you&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>                 &quot;target&quot;: str(f.get(&quot;name&quot;) or &quot;&quot;), &quot;pid&quot;: str(f.get(&quot;id&quot;) or &quot;&quot;), &quot;href&quot;: str(f.get(&quot;href&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>                 &quot;date&quot;: &quot;&quot;, &quot;then&quot;: str(f.get(&quot;next&quot;) or &quot;&quot;), &quot;age_days&quot;: f.get(&quot;wait_age_days&quot;),</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>                 &quot;effort&quot;: str(f.get(&quot;needs_you_effort&quot;) or f.get(&quot;effort&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>                 &quot;dir&quot;: str(f.get(&quot;needs_you_effort&quot;) or f.get(&quot;effort&quot;) or &quot;&quot;)}</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>     return None</span>
+<span class="source-line" id="L390"><a href="#L390">390</a> </span>
+<span class="source-line" id="L391"><a href="#L391">391</a> </span>
+<span class="source-line" id="L392"><a href="#L392">392</a> def pick_up(initiatives, facts=None, working=None, today=None):</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>     &quot;&quot;&quot;What to take up while Active runs (2026-09-30, his three levels): when Active is not empty, nothing in it needs</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>     him and every active initiative is RUNNING (a live session on its project) or WAITING on someone else, the top</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>     of ON DECK — his own pick-up list, in his order. None otherwise: an active initiative with a free hand is his</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>     next act, not a pick-up; an empty Active has nothing to be &quot;while&quot; of; an empty deck offers nothing. The answer</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>     says which active initiatives run and which wait, so the sentence can too.&quot;&quot;&quot;</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>     from high_seat_page import seated, part_name</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>     working = working or set()</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>     inits = [i for i in initiatives or () if isinstance(i, dict)]</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>     active = seated(inits, &quot;active&quot;)</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>     if not active:</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>         return None</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>     running, waiting = [], []</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     for g, p in active:</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>         if _part_open(p) and p.get(&quot;needs_you&quot;):</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>             return None</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>         if p.get(&quot;pid&quot;) and p[&quot;pid&quot;] in working:</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>             running.append(part_name(p))</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>         elif str(p.get(&quot;state&quot;) or &quot;&quot;).lower().startswith(&quot;waiting&quot;) or p.get(&quot;status&quot;) == &quot;waiting&quot;:</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>             waiting.append(part_name(p))</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>         else:</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>             return None      # a free hand: that is his next act, not a pick-up</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>     deck = seated(inits, &quot;deck&quot;)</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>     if not deck:</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>         return None</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>     g, p = deck[0]</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>     st = str(p.get(&quot;state&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>     what = re.sub(r&quot;^waiting on you:\s*&quot;, &quot;&quot;, st, flags=re.I).strip() if st.lower().startswith(&quot;waiting on you&quot;) else &quot;&quot;</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>     return {&quot;initiative&quot;: part_name(p), &quot;goal&quot;: str(g.get(&quot;name&quot;) or &quot;&quot;), &quot;id&quot;: str(p.get(&quot;id&quot;) or &quot;&quot;), &quot;why&quot;: &quot;on deck&quot;, &quot;text&quot;: what,</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>             &quot;pid&quot;: str(p.get(&quot;pid&quot;) or &quot;&quot;), &quot;active&quot;: [part_name(x) for _g, x in active], &quot;running&quot;: running, &quot;waiting&quot;: waiting}</span>
+<span class="source-line" id="L422"><a href="#L422">422</a> </span>
+<span class="source-line" id="L423"><a href="#L423">423</a> </span>
+<span class="source-line" id="L424"><a href="#L424">424</a> def head_sentence(act, overnight=(), pickup=None):</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>     &quot;&quot;&quot;The head as one sentence he can act on: the pick, why now, the exact record (its effort when named), what</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>     follows — and, only when a step closed since he last opened the page, what finished (gated on the real</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>     instant of his last open: a quiet day and a second open repeat nothing).&quot;&quot;&quot;</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>     s = _head_core(act)</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>     if act is None and isinstance(pickup, dict) and pickup.get(&quot;initiative&quot;):</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>         run = list(pickup.get(&quot;running&quot;) or ()) if (&quot;running&quot; in pickup or &quot;waiting&quot; in pickup) else list(pickup.get(&quot;active&quot;) or ())</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>         wait = list(pickup.get(&quot;waiting&quot;) or ())</span>
+<span class="source-line" id="L432"><a href="#L432">432</a> </span>
+<span class="source-line" id="L433"><a href="#L433">433</a>         def _who(names):</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>             return (&quot; and &quot;.join(names) if len(names) &lt;= 2 else &quot;, &quot;.join(names[:-1]) + &quot; and &quot; + names[-1]), (&quot;is&quot; if len(names) == 1 else &quot;are&quot;)</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>         state = []</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>         if run:</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>             state.append(&quot;%s %s running&quot; % _who(run))</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>         if wait:</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>             state.append(&quot;%s %s waiting on someone else&quot; % _who(wait))      # said as the light says it (Grok W1): never &quot;running&quot; for a wait</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>         clause = (&quot;While %s run%s&quot; % ((&quot;it&quot;, &quot;s&quot;) if len(run) == 1 else (&quot;they&quot;, &quot;&quot;))) if run and not wait else (</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>             (&quot;While %s wait%s&quot; % ((&quot;it&quot;, &quot;s&quot;) if len(wait) == 1 else (&quot;they&quot;, &quot;&quot;))) if wait and not run else &quot;Meanwhile&quot;)</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>         s = &quot;Active: %s. %s: pick up %s%s%s (%s).&quot; % (</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>             &quot;; &quot;.join(state) or &quot;the set&quot;, clause, pickup[&quot;initiative&quot;], (&quot; (%s)&quot; % pickup[&quot;goal&quot;]) if pickup.get(&quot;goal&quot;) else &quot;&quot;,</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>             (&quot; — &quot; + pickup[&quot;text&quot;][:80]) if pickup.get(&quot;text&quot;) else &quot;&quot;, pickup.get(&quot;why&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>     closed = [x for x in overnight or () if isinstance(x, dict) and x.get(&quot;name&quot;)]</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>     if closed:</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>         names = &quot;, &quot;.join(str(x[&quot;name&quot;]) for x in closed[:3]) + (&quot; and %d more&quot; % (len(closed) - 3) if len(closed) &gt; 3 else &quot;&quot;)</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>         s += &quot; Since you last opened: %d step%s closed — %s.&quot; % (len(closed), &quot;&quot; if len(closed) == 1 else &quot;s&quot;, names)</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>     return s</span>
+<span class="source-line" id="L450"><a href="#L450">450</a> </span>
+<span class="source-line" id="L451"><a href="#L451">451</a> </span>
+<span class="source-line" id="L452"><a href="#L452">452</a> def _head_core(act):</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>     if not act:</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>         return &quot;Nothing is waiting on you.&quot;</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>     age = act.get(&quot;age_days&quot;)</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>     age_s = (&quot; · waiting %d day%s&quot; % (int(age), &quot;&quot; if int(age) == 1 else &quot;s&quot;)) if isinstance(age, (int, float)) and age &gt;= 1 else &quot;&quot;</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>     then = (&quot; Then: %s.&quot; % act[&quot;then&quot;][:100]) if act.get(&quot;then&quot;) else &quot;&quot;</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     if act[&quot;kind&quot;] == &quot;exception&quot;:</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>         when = (&quot;overdue since %s&quot; % _short(act.get(&quot;due&quot;))) if act.get(&quot;overdue&quot;) else &quot;due today&quot;</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>         return &quot;Exception, %s: %s (%s, tier %s).%s&quot; % (when, act[&quot;text&quot;], act[&quot;initiative&quot;], act.get(&quot;tier&quot;) or &quot;?&quot;, then)</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>     if act[&quot;kind&quot;] == &quot;tier1&quot;:</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>         where = (&quot; (%s%s)&quot; % (act[&quot;target&quot;], (&quot; · &quot; + act[&quot;effort&quot;]) if act.get(&quot;effort&quot;) else &quot;&quot;)) if act.get(&quot;target&quot;) else &quot;&quot;</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>         return &quot;Tier 1 · %s: %s%s — waiting on you%s.%s&quot; % (act[&quot;initiative&quot;], act[&quot;text&quot;], where, age_s, then)</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>     if act[&quot;kind&quot;] in (&quot;active&quot;, &quot;deck&quot;):</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>         # a seated initiative (2026-09-30): &quot;Active · Family Trusts (The trusts): &lt;what it waits for&gt; — waiting on you.&quot;</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>         when = (&quot;, overdue since %s&quot; % _short(act.get(&quot;due&quot;))) if act.get(&quot;overdue&quot;) else (&quot;, due today&quot; if act.get(&quot;due&quot;) else &quot;&quot;)</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>         head = &quot;Active&quot; if act[&quot;kind&quot;] == &quot;active&quot; else &quot;On deck&quot;</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>         what = str(act.get(&quot;what&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>         return &quot;%s · %s (%s)%s — waiting on you%s%s.%s&quot; % (head, act.get(&quot;part&quot;) or act[&quot;text&quot;], act[&quot;initiative&quot;], (&quot;: &quot; + what) if what else &quot;&quot;, when, age_s, then)</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>     where = &quot;%s%s&quot; % (act.get(&quot;target&quot;) or &quot;A project&quot;, (&quot; · &quot; + act[&quot;effort&quot;]) if act.get(&quot;effort&quot;) else &quot;&quot;)</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>     return &quot;%s: %s%s.%s&quot; % (where, act[&quot;text&quot;], age_s, then)</span>
+<span class="source-line" id="L472"><a href="#L472">472</a> </span>
+<span class="source-line" id="L473"><a href="#L473">473</a> </span>
+<span class="source-line" id="L474"><a href="#L474">474</a> def rail_counts(sessions=(), rows=(), folders=0, open_projects=0):</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>     &quot;&quot;&quot;The rail&#x27;s 2×2: open · running · need you · folders.&quot;&quot;&quot;</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>     running = 0</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>     for rec in sessions or ():</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>         try:</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>             if isinstance(rec, dict) and rec.get(&quot;status&quot;) == &quot;running&quot;:</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>                 running += 1</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>         except Exception:</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>             continue</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>     need_you = sum(1 for r in rows or () if r.get(&quot;kind&quot;) == &quot;project&quot;)</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>     return {&quot;open&quot;: int(open_projects or 0), &quot;running&quot;: running,</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>             &quot;need_you&quot;: need_you, &quot;folders&quot;: int(folders or 0)}</span>
+<span class="source-line" id="L486"><a href="#L486">486</a> </span>
+<span class="source-line" id="L487"><a href="#L487">487</a> </span>
+<span class="source-line" id="L488"><a href="#L488">488</a> def due_rows(tasks=(), today=None, limit=5, projects=()):</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>     &quot;&quot;&quot;The rail&#x27;s &#x27;Due today&#x27; list — overdue and today, P1 first, as (text, priority, overdue?);</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>     a project&#x27;s overdue or due-today roadmap steps sit beside the tasks (W1a), so the card never</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>     says nothing is due while a step is.&quot;&quot;&quot;</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>     today = today or date.today()</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>     out = []</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>     for f in projects or ():</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>         if not isinstance(f, dict):</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>             continue</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>         for st in f.get(&quot;dated&quot;) or ():</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>             try:</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>                 d = _iso_date(st.get(&quot;due&quot;))</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>                 if d is None or d &gt; today:</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>                     continue</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>                 out.append((d, 1, &quot;%s · %s&quot; % (st.get(&quot;name&quot;, &quot;&quot;), st.get(&quot;project_name&quot;, &quot;&quot;)), d &lt; today))</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>             except Exception:</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>                 continue</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>     for t in tasks or ():</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>         try:</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>             if not isinstance(t, dict) or t.get(&quot;done&quot;):</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>                 continue</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>             d = _iso_date(t.get(&quot;due&quot;))</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>             if d is None or d &gt; today:</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>                 continue</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>             out.append((d, int(t.get(&quot;priority&quot;) or 3), t.get(&quot;text&quot;, &quot;&quot;), d &lt; today))</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>         except Exception:</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>             continue</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>     out.sort(key=lambda x: (x[1], x[0], x[2]))</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>     rows = [{&quot;text&quot;: x[2], &quot;priority&quot;: x[1], &quot;overdue&quot;: x[3]} for x in out]</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>     return rows[:limit], max(0, len(rows) - limit)</span>
+<span class="source-line" id="L518"><a href="#L518">518</a> </span>
+<span class="source-line" id="L519"><a href="#L519">519</a> </span>
+<span class="source-line" id="L520"><a href="#L520">520</a> def live_rows(sessions=(), project_names=None, limit=3):</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>     &quot;&quot;&quot;The rail&#x27;s &#x27;Workbench&#x27; list — running sessions, newest first.&quot;&quot;&quot;</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>     names = project_names or {}</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>     live = []</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>     for rec in sessions or ():</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>         try:</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>             if not isinstance(rec, dict) or rec.get(&quot;status&quot;) != &quot;running&quot;:</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>                 continue</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>             pid = str(rec.get(&quot;project_id&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>             when = _ts(rec.get(&quot;updated_at&quot;)) or _ts(rec.get(&quot;created_at&quot;)) or datetime.min</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>             label = rec.get(&quot;label&quot;) or names.get(pid) or (rec.get(&quot;lane&quot;) or &quot;session&quot;)</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>             live.append((when, {&quot;text&quot;: str(label), &quot;project_id&quot;: pid,</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>                                 &quot;lane&quot;: str(rec.get(&quot;lane&quot;) or &quot;&quot;)}))</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>         except Exception:</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>             continue</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>     live.sort(key=lambda x: x[0], reverse=True)</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>     rows = [x[1] for x in live]</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>     return rows[:limit], max(0, len(rows) - limit)</span></pre></main></body></html>

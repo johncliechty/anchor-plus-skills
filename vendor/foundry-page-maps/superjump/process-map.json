@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Superjump execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Superjump)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Superjump context.",
+      "code": {
+        "path": "bin/superjump-run.mjs",
+        "symbol": "function parseArgs(argv) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "superjump-mat-skill-md",
+        "superjump-tool-bin-superjump-run-mjs"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Superjump never repeats cold-start discovery.",
+      "code": {
+        "path": "index.js",
+        "symbol": "export function superjumpPartial(result, extra = {}) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Superjump \u2014 structured ideation against a Fit Contract"
+      },
+      "resource_ids": [
+        "superjump-ref-lessons",
+        "superjump-ref-changelog",
+        "superjump-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Superjump)",
+      "kind": "model",
+      "role": "Primary Superjump Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Superjump, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "fit.mjs",
+        "symbol": "export function mergeContract(parsed, derived) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## How to run \u2014 the engine, never an improvised pipeline"
+      },
+      "resource_ids": [
+        "superjump-tool-bin-superjump-run-mjs",
+        "superjump-tool-index-js",
+        "superjump-peer-jumper"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "planning/crucible-2026-09-14/gen-page.mjs",
+        "symbol": "function mdToHtml(src) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## Hops"
+      },
+      "resource_ids": [
+        "superjump-peer-jumper",
+        "superjump-peer-gandalf",
+        "superjump-ref-lessons"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Superjump deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "progress.mjs",
+        "symbol": "export function readControl(file) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## When to use"
+      },
+      "resource_ids": [
+        "superjump-mat-north-star-md",
+        "superjump-kb-portfolio-triage-and-band-eval"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Superjump primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Superjump work product + machine run receipt."
+}

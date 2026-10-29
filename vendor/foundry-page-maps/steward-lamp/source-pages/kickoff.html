@@ -1,0 +1,553 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>kickoff · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>kickoff</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Ecgberht\engine\kickoff-conversation.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 d9912e79d657dccd5ca4f87d756fc4f1c86bff2366801c29fe4fc7b5ffe5d6c4</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630422+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/kickoff-conversation.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: d9912e79d657dccd5ca4f87d756fc4f1c86bff2366801c29fe4fc7b5ffe5d6c4</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * Gate 5 / Wave 3 - the CONVERSATION&#x27;s kickoff law: what the existing free-talk flow</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  * (engine/steward-conversation.mjs converse()) needs to synthesize, refine, show and</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * confirm ONE complete kickoff_proposal_v0 bundle on the one store</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  * (&lt;folder&gt;/.ecgberht/kickoff/events.jsonl) without a form, a precondition prompt, or an</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  * execution leak. The flow stays the flow John already has - free talk, quiet synthesis,</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  * conversational refinement, one confirmation; what changes is what it synthesizes and</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  * where that lands.</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>  *</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>  * WHAT LIVES HERE - pure rules first, then the verbs the flow and the bridge call:</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>  *</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>  *   THE QUESTION CAP. At most KICKOFF_QUESTION_CAP (= 1) natural question per turn - the</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>  *   North Star&#x27;s letter. The seat may write more; the engine delivers one and reports the</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>  *   rest as held, so a sparse opening never turns into a questionnaire.</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>  *</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>  *   ADAPTIVE DISCOVERY. One question per turn, with durable earlier answers.</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>  *   No exchange count forces a plan. An explicitly requested compact provisional</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>  *   proposal still uses the thin-bundle lane; ordinary discovery continues until</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>  *   the user&#x27;s intent is sufficiently clear.</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>  *</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>  *   THE SILENT BOOTSTRAP. A new effort has no Face, no session envelope, no budget. None</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>  *   is a precondition for brainstorming and none is asked for: the Face is created ON</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>  *   confirmation, the envelope is materialized INSIDE the confirmation receipt (Wave 2),</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>  *   and until then the turn&#x27;s spend rides the turn result. settleKickoffBootstrap names</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>  *   what is missing and that nothing was prompted.</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>  *</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>  *   THE LANE. A stood-up campaign (a Face already on disk) keeps the pre-Gate-5</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>  *   roadmap-ledger kickoff path the WH4 lane proves, BESIDE the store; a NEW effort (no</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>  *   Face) writes only the store, so during proposal and refinement the execution-leak</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>  *   sentinel sees nothing but .ecgberht/kickoff/ and the conversation log.</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>  *</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>  *   CONFIRM, SPOKEN. One hash-bound confirmation lands the receipt on the store (record</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>  *   hash AND rendered-prose hash), then the Wave 4 projection writer re-derives the</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>  *   read-model of record (.ecgberht/kickoff/projection.json + face.md) from that receipt,</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>  *   and the confirmed bundle is mirrored into the pre-Gate-5 projections the chamber</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>  *   paints today (roadmap plan entries, Face, Strip) - a mirror of the receipt, kept</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>  *   beside the store until the Wave 5 precedence work retires it.</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>  *</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>  * Failure states carry a status code AND user-visible text; missing, empty, ambiguous and</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>  * unknown are SEPARATE rows (kickoffConversationFailureTable). Stdlib only; nothing here</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>  * imports child_process. Source is ASCII on purpose (the repo&#x27;s mojibake sweep).</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>  */</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> </span>
+<span class="source-line" id="L46"><a href="#L46">46</a> import { CONVERSATION_LOG_REL } from &#x27;./conversation-log.mjs&#x27;;</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> import {</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   KICKOFF_STATE,</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   confirmKickoffProposal,</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   openKickoffProposal,</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   readKickoffLineage,</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   reproposeKickoff,</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> } from &#x27;./kickoff-lifecycle.mjs&#x27;;</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> import { writeKickoffProjection } from &#x27;./kickoff-projection.mjs&#x27;;</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> import { KICKOFF_CODE, KICKOFF_TEXT, compileKickoffProposal } from &#x27;./kickoff-record.mjs&#x27;;</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> import { confirmKickoff, proposeKickoff, showKickoff } from &#x27;./kickoff.mjs&#x27;;</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58">58</a> // -- the named bounds ----------------------------------------------------------------</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> </span>
+<span class="source-line" id="L60"><a href="#L60">60</a> /** At most this many natural questions per turn. The North Star&#x27;s letter. */</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> export const KICKOFF_QUESTION_CAP = 1;</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63">63</a> /** Legacy exported value for recorded clients; no longer an automatic planning deadline. */</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> export const KICKOFF_THIN_PROPOSAL_BY_TURN = 2;</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66">66</a> /**</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>  * What a kickoff CONVERSATION may write before confirmation: the store, and the durable,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>  * non-authoritative conversation log (E5 as amended). Everything else written while a</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>  * new effort is being proposed or refined is a leak, by name - this is the allow-list the</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>  * one sentinel (engine/execution-leak-sentinel.mjs) is armed with for conversational</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>  * no-execution assertions.</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>  */</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> export const KICKOFF_CONVERSATION_ALLOW = Object.freeze([</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>   &#x27;.ecgberht/kickoff/&#x27;,</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>   CONVERSATION_LOG_REL.split(path.sep).join(&#x27;/&#x27;),</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> ]);</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> </span>
+<span class="source-line" id="L78"><a href="#L78">78</a> /** Where the two silent-bootstrap absences are settled. Named once, asserted by tests. */</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> export const KICKOFF_FACE_CREATED_ON = &#x27;kickoff_confirm&#x27;;</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> export const KICKOFF_ENVELOPE_MATERIALIZED_IN = &#x27;kickoff_confirm&#x27;;</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> </span>
+<span class="source-line" id="L82"><a href="#L82">82</a> // -- failure states (conversational inputs) ------------------------------------------</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> </span>
+<span class="source-line" id="L84"><a href="#L84">84</a> export const KICKOFF_TALK_CODE = Object.freeze({</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   MISSING: &#x27;KICKOFF_TALK_MISSING&#x27;,</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   EMPTY: &#x27;KICKOFF_TALK_EMPTY&#x27;,</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   AMBIGUOUS: &#x27;KICKOFF_TALK_AMBIGUOUS&#x27;,</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> });</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90">90</a> export const KICKOFF_TALK_TEXT = Object.freeze({</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   [KICKOFF_TALK_CODE.MISSING]:</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     &#x27;Nothing came through - there is no utterance to synthesize. Nothing written.&#x27;,</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   [KICKOFF_TALK_CODE.EMPTY]:</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     &#x27;That came through empty. Say what the effort should produce and I will frame it. Nothing written.&#x27;,</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   [KICKOFF_TALK_CODE.AMBIGUOUS]:</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>     &#x27;I could not frame the requested compact proposal from the information available. &#x27;</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     + &#x27;The unresolved choices remain open; no plan was written.&#x27;,</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> });</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a> /**</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>  * A conversational-input failure, shaped like the flow&#x27;s other failures (say / text /</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>  * user_text carry the same sentence; nothing written, nothing persisted).</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>  *</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>  * @param {string} code</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>  * @param {object} [extra]</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>  */</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> export function kickoffTalkFailure(code, extra = {}) {</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   const known = Object.hasOwn(KICKOFF_TALK_TEXT, code);</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   let text = known ? KICKOFF_TALK_TEXT[code] : KICKOFF_TEXT[KICKOFF_CODE.STATE_UNKNOWN];</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   const resolvedCode = known ? code : KICKOFF_CODE.STATE_UNKNOWN;</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>   text = text.replace(/&lt;turn&gt;/g, String(extra.turn ?? &#x27;?&#x27;));</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   return {</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     ok: false,</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>     code: resolvedCode,</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>     status_code: resolvedCode,</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>     error: extra.error ?? String(resolvedCode).toLowerCase(),</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     say: text,</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     text,</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>     user_text: text,</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>     lane: &#x27;converse&#x27;,</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>     conversational: true,</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     proposal: null,</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>     asks: [],</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     authoritative: false,</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>     ledger_write: false,</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     dialogue_persisted: false,</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>     ...extra,</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   };</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> }</span>
+<span class="source-line" id="L130"><a href="#L130">130</a> </span>
+<span class="source-line" id="L131"><a href="#L131">131</a> /**</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>  * Machine-readable failure-state table for the conversational surface. `missing`,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>  * `empty-but-valid`, `ambiguous` and `unknown` are SEPARATE rows; every row is a state</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>  * converse() can actually end in (the unknown / store rows surface the store&#x27;s own</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>  * codes through the flow). Seat rows (unreachable, garbage, empty reply) stay with the</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>  * flow&#x27;s CONVERSE_TEXT, which already owns them.</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>  *</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>  * @returns {ReadonlyArray&lt;{state: string, surface: string, status_code: string, user_text: string}&gt;}</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>  */</span>
+<span class="source-line" id="L140"><a href="#L140">140</a> export function kickoffConversationFailureTable() {</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>   const row = (state, code, text) =&gt; Object.freeze({</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     state,</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     surface: &#x27;conversation&#x27;,</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>     status_code: code,</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     user_text: text,</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>   });</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   return Object.freeze([</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     row(&#x27;missing&#x27;, KICKOFF_TALK_CODE.MISSING, KICKOFF_TALK_TEXT[KICKOFF_TALK_CODE.MISSING]),</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     row(&#x27;empty-but-valid&#x27;, KICKOFF_TALK_CODE.EMPTY, KICKOFF_TALK_TEXT[KICKOFF_TALK_CODE.EMPTY]),</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     row(&#x27;ambiguous&#x27;, KICKOFF_TALK_CODE.AMBIGUOUS, KICKOFF_TALK_TEXT[KICKOFF_TALK_CODE.AMBIGUOUS]),</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     row(&#x27;unknown&#x27;, KICKOFF_CODE.STATE_UNKNOWN, KICKOFF_TEXT[KICKOFF_CODE.STATE_UNKNOWN]),</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>     row(&#x27;backing-store-unreadable&#x27;, KICKOFF_CODE.EVENTS_UNREADABLE, KICKOFF_TEXT[KICKOFF_CODE.EVENTS_UNREADABLE]),</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     row(&#x27;backing-store-corrupt&#x27;, KICKOFF_CODE.CORRUPT, KICKOFF_TEXT[KICKOFF_CODE.CORRUPT]),</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>   ]);</span>
+<span class="source-line" id="L155"><a href="#L155">155</a> }</span>
+<span class="source-line" id="L156"><a href="#L156">156</a> </span>
+<span class="source-line" id="L157"><a href="#L157">157</a> // -- the pure rules ------------------------------------------------------------------</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159">159</a> /**</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>  * Which turn this is, from the EPHEMERAL turns the caller holds (the browser page or the</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>  * test): one more than the number of John&#x27;s turns so far. Deterministic; no clock, no</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>  * disk. A fresh session with an open draft never needs the count (the draft is shown).</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>  *</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>  * @param {Array&lt;{role?: string}&gt;} [turns]</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>  * @returns {number}</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>  */</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> export function kickoffTurnNumber(turns) {</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   const list = Array.isArray(turns) ? turns : [];</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>   return 1 + list.filter((turn) =&gt; turn &amp;&amp; String(turn.role ?? &#x27;&#x27;).trim().toLowerCase() === &#x27;john&#x27;).length;</span>
+<span class="source-line" id="L170"><a href="#L170">170</a> }</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> </span>
+<span class="source-line" id="L172"><a href="#L172">172</a> /**</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>  * Deliver at most `cap` questions; report the rest as held. Pure.</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>  *</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>  * @param {Array&lt;string&gt;} [asks]</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>  * @param {number} [cap]</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>  * @returns {{asks: string[], held: string[], cap: number}}</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>  */</span>
+<span class="source-line" id="L179"><a href="#L179">179</a> export function capKickoffQuestions(asks, cap = KICKOFF_QUESTION_CAP) {</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   const list = (Array.isArray(asks) ? asks : [])</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     .map((ask) =&gt; String(ask ?? &#x27;&#x27;).trim())</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     .filter(Boolean);</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>   const bound = Number.isInteger(cap) &amp;&amp; cap &gt;= 0 ? cap : KICKOFF_QUESTION_CAP;</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   return { asks: list.slice(0, bound), held: list.slice(bound), cap: bound };</span>
+<span class="source-line" id="L185"><a href="#L185">185</a> }</span>
+<span class="source-line" id="L186"><a href="#L186">186</a> </span>
+<span class="source-line" id="L187"><a href="#L187">187</a> /**</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>  * Does this turn request a THIN proposal? Only by explicit opt-in when the</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>  * effort is still unframed: no kickoff confirmed, no proposal of any kind open, no</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>  * confirmed roadmap step (an established campaign is never re-kicked-off by a count).</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>  *</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>  * @param {{turn_number: number, open_proposal?: object|null, confirmed_kickoff?: object|null,</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>  *   step_count?: number}} input</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>  * @returns {boolean}</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>  */</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> export function kickoffNeedsThinProposal(input = {}) {</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>   // A count of exchanges cannot establish shared understanding. The compact</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   // proposal lane remains available only when explicitly requested by its caller.</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   return input.explicit_thin_proposal === true</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>     &amp;&amp; input.open_proposal == null</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     &amp;&amp; input.confirmed_kickoff == null</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>     &amp;&amp; !(Number(input.step_count) &gt; 0);</span>
+<span class="source-line" id="L203"><a href="#L203">203</a> }</span>
+<span class="source-line" id="L204"><a href="#L204">204</a> </span>
+<span class="source-line" id="L205"><a href="#L205">205</a> /**</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>  * The block the planning tier receives on a thin turn. Deliberately a SEPARATE block:</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>  * the standing instructions are bound to recorded tapes and stay byte-identical.</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>  */</span>
+<span class="source-line" id="L209"><a href="#L209">209</a> export const THIN_BUNDLE_INSTRUCTION = [</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>   &#x27;--- EXPLICITLY REQUESTED THIN BUNDLE (turn &lt;turn&gt;) ---&#x27;,</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   &#x27;The caller requested a compact provisional proposal. Preserve unresolved choices.&#x27;,</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   &#x27;Return the SMALLEST honest kickoff bundle from what he actually said: one goal, one&#x27;,</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   &#x27;component, one plan entry marked end_to_end_slice (first_slice_id names it),&#x27;,</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>   &#x27;integration null. Leave success_signals empty and done_when out unless he stated&#x27;,</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>   &#x27;them. Use only words he supplied or plainly implied; invent nothing to fill a field.&#x27;,</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>   &#x27;If one question would still help, it may ride in &quot;asks&quot; beside the bundle - never&#x27;,</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   &#x27;instead of it.&#x27;,</span>
+<span class="source-line" id="L218"><a href="#L218">218</a> ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L219"><a href="#L219">219</a> </span>
+<span class="source-line" id="L220"><a href="#L220">220</a> /** @param {number} turnNumber @returns {string} */</span>
+<span class="source-line" id="L221"><a href="#L221">221</a> export function thinBundleInstruction(turnNumber) {</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   return THIN_BUNDLE_INSTRUCTION.replace(/&lt;turn&gt;/g, String(turnNumber));</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> }</span>
+<span class="source-line" id="L224"><a href="#L224">224</a> </span>
+<span class="source-line" id="L225"><a href="#L225">225</a> /**</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>  * Settle the session-open bootstrap SILENTLY. Nothing here prompts and nothing here</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>  * writes: it names what a new effort lacks and where each absence is settled later.</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>  * The turn&#x27;s spend is deferred (rides the result) exactly when there is no session</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>  * envelope at all; an envelope that exists keeps its own law (debit, stop at the cap).</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>  *</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>  * @param {{face?: object|null, envelope_state?: object|null}} [input]</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>  */</span>
+<span class="source-line" id="L233"><a href="#L233">233</a> export function settleKickoffBootstrap(input = {}) {</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   const missing = [];</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   if (input.face == null) missing.push(&#x27;face&#x27;);</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   const env = input.envelope_state;</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   const envelopeAbsent = env == null || env.empty === true;</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   if (envelopeAbsent) missing.push(&#x27;envelope&#x27;, &#x27;budget&#x27;);</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   else if (env.live !== true) missing.push(&#x27;budget&#x27;);</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>   return Object.freeze({</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     silent: true,</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     prompted: false,</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>     missing: Object.freeze(missing),</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>     envelope_absent: envelopeAbsent,</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>     spend_deferred: envelopeAbsent,</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>     face_created_on: KICKOFF_FACE_CREATED_ON,</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     envelope_materialized_in: KICKOFF_ENVELOPE_MATERIALIZED_IN,</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>   });</span>
+<span class="source-line" id="L249"><a href="#L249">249</a> }</span>
+<span class="source-line" id="L250"><a href="#L250">250</a> </span>
+<span class="source-line" id="L251"><a href="#L251">251</a> /**</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>  * The pre-Gate-5 lane: a stood-up campaign (a parsed Face on disk) keeps the roadmap-ledger</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>  * kickoff path beside the store. A NEW effort has no Face by definition (it is created on</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>  * confirmation) and writes only the store.</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>  *</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>  * @param {{narrative?: object|null}} [context] a loadStewardContext() result</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>  * @returns {boolean}</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>  */</span>
+<span class="source-line" id="L259"><a href="#L259">259</a> export function usesLegacyRoadmapLane(context) {</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>   return context?.narrative != null;</span>
+<span class="source-line" id="L261"><a href="#L261">261</a> }</span>
+<span class="source-line" id="L262"><a href="#L262">262</a> </span>
+<span class="source-line" id="L263"><a href="#L263">263</a> // -- the verbs -----------------------------------------------------------------------</span>
+<span class="source-line" id="L264"><a href="#L264">264</a> </span>
+<span class="source-line" id="L265"><a href="#L265">265</a> /**</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>  * Open the WHOLE bundle the seat authored on the store: v1 on an empty lineage, a</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>  * superseding proposal at the same version before a confirmation, v(n+1) after one -</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>  * the Wave 2 verbs, chosen by the lineage&#x27;s state. The host asserts the seat lineage.</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>  *</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>  * @param {{bundle: object, seat_family?: string, driver?: string, client_event_id?: string,</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>  *   source_turn_id?: string|null, source_turn_at?: string|null, at?: string, timeoutMs?: number}} opts</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>  */</span>
+<span class="source-line" id="L274"><a href="#L274">274</a> export function openKickoffBundle(projectPath, opts = {}) {</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>   const lineage = readKickoffLineage(projectPath);</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   if (!lineage.ok) return lineage;</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   const verb = lineage.state === KICKOFF_STATE.EMPTY ? openKickoffProposal : reproposeKickoff;</span>
+<span class="source-line" id="L278"><a href="#L278">278</a> </span>
+<span class="source-line" id="L279"><a href="#L279">279</a>   // Repeat-idempotence, by CONTENT. The record hash carries its source turn, so the same</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>   // bundle re-authored on a later turn compiles to a new hash and would supersede itself</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>   // on the store. Compile the candidate under the OPEN record&#x27;s own source turn: when it</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>   // IS that record, re-open under that source turn and the store&#x27;s own idempotent branch</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>   // answers with the open proposal - the same bundle again IS the open proposal, and</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>   // nothing is appended. Anything else (new content, a new seat) stays a real re-proposal.</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>   let sourceTurnId = opts.source_turn_id ?? null;</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>   let sourceTurnAt = opts.source_turn_at;</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>   const openTurnId = lineage.open?.source_turn?.client_event_id;</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>   if (openTurnId) {</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     const candidate = compileKickoffProposal(opts.bundle, {</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>       seat_family: opts.seat_family,</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>       driver: opts.driver,</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>       version: lineage.open.version,</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>       prior_confirmed_hash: lineage.open.prior_confirmed_hash ?? null,</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>       source_turn_id: openTurnId,</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>       source_turn_at: lineage.open.source_turn?.at,</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     });</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>     if (candidate.ok &amp;&amp; candidate.proposal_hash === lineage.open.proposal_hash) {</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>       sourceTurnId = openTurnId;</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>       sourceTurnAt = lineage.open.source_turn?.at;</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>     }</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>   }</span>
+<span class="source-line" id="L302"><a href="#L302">302</a> </span>
+<span class="source-line" id="L303"><a href="#L303">303</a>   const opened = verb(projectPath, {</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>     proposal: opts.bundle,</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>     seat_family: opts.seat_family,</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>     driver: opts.driver,</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>     client_event_id: opts.client_event_id,</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     source_turn_id: sourceTurnId,</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     source_turn_at: sourceTurnAt,</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     at: opts.at,</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     timeoutMs: opts.timeoutMs,</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>   });</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>   if (!opened.ok) return opened;</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>   return {</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     ...opened,</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     lineage_state_before: lineage.state,</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>     confirmed_version_before: lineage.confirmed?.version ?? null,</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>   };</span>
+<span class="source-line" id="L319"><a href="#L319">319</a> }</span>
+<span class="source-line" id="L320"><a href="#L320">320</a> </span>
+<span class="source-line" id="L321"><a href="#L321">321</a> /** The bundle CONTENT of a stored record - what the seat authored, nothing of the envelope. */</span>
+<span class="source-line" id="L322"><a href="#L322">322</a> function bundleContentOf(record) {</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>   return {</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>     goal: record.goal,</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>     success_signals: [...(record.success_signals ?? [])],</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>     work_product: {</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>       id: record.work_product.id,</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>       name: record.work_product.name,</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>       components: (record.work_product.components ?? []).map((component) =&gt; ({ ...component })),</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>     },</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     integration: record.integration == null</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>       ? null</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>       : {</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>         summary: record.integration.summary,</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>         relationships: (record.integration.relationships ?? []).map((relationship) =&gt; ({</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>           kind: relationship.kind,</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>           component_ids: [...(relationship.component_ids ?? [])],</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>           description: relationship.description,</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>         })),</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>         proof: { ...record.integration.proof },</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>       },</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>     plan_entries: (record.plan_entries ?? []).map((entry) =&gt; ({</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>       ...entry,</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>       component_ids: [...(entry.component_ids ?? [])],</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>     })),</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     first_slice_id: record.first_slice_id,</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>   };</span>
+<span class="source-line" id="L348"><a href="#L348">348</a> }</span>
+<span class="source-line" id="L349"><a href="#L349">349</a> </span>
+<span class="source-line" id="L350"><a href="#L350">350</a> /**</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>  * Mirror a store-confirmed bundle into the pre-Gate-5 projections (roadmap plan entries,</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>  * Face, Strip) through the existing roadmap verbs. A mirror, never a source of truth: the</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>  * receipt on the store is what was confirmed. When the roadmap already carries the same</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>  * open hash (the legacy lane wrote both), only the confirm is appended; when it carries a</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>  * different lineage, the mirror confirms the roadmap&#x27;s own hash and says `diverged`.</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>  */</span>
+<span class="source-line" id="L357"><a href="#L357">357</a> function mirrorConfirmedKickoffToRoadmap(root, record, opts = {}) {</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>   const shown = showKickoff(root);</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>   if (!shown.ok) {</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>     return { ok: false, written: false, code: shown.code, error: shown.error, detail: shown };</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>   }</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>   if (shown.confirmed?.proposal_hash === record.proposal_hash) {</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>     return {</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>       ok: true,</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>       written: false,</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>       already: true,</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>       diverged: false,</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>       roadmap_proposal_hash: record.proposal_hash,</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>       plan_entries_written: 0,</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>       projection: null,</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>     };</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>   }</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>   let roadmapHash = shown.open?.proposal_hash === record.proposal_hash ? record.proposal_hash : null;</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>   if (!roadmapHash) {</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>     // The roadmap lacks this bundle (a new effort wrote only the store): append it there</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>     // with the record&#x27;s own seat lineage and source turn, so a fresh roadmap re-derives</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>     // the same hash.</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>     const proposed = proposeKickoff(root, {</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>       proposal: bundleContentOf(record),</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>       seat_family: record.provenance?.seat_family,</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>       driver: record.provenance?.driver,</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>       source_turn_id: record.source_turn?.client_event_id ?? &#x27;&#x27;,</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>       source_turn_at: record.source_turn?.at ?? &#x27;&#x27;,</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>       client_event_id: `${opts.client_event_id}#mirror-propose`,</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>       project_id: opts.project_id,</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>       at: opts.at,</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>     });</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>     if (!proposed.ok) {</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>       return { ok: false, written: false, code: proposed.code, error: proposed.error, detail: proposed };</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>     }</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>     roadmapHash = proposed.proposal_hash;</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>   }</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>   const confirmed = confirmKickoff(root, {</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>     proposal_hash: roadmapHash,</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>     who: opts.who,</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>     client_event_id: opts.client_event_id,</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>     project_id: opts.project_id,</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>     at: opts.at,</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>   });</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>   if (!confirmed.ok) {</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>     return { ok: false, written: false, code: confirmed.code, error: confirmed.error, detail: confirmed };</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>   }</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>   return {</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>     ok: true,</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     written: confirmed.ledger_write === true,</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>     already: confirmed.idempotent === true,</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>     diverged: roadmapHash !== record.proposal_hash,</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>     roadmap_proposal_hash: roadmapHash,</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>     plan_entries_written: confirmed.plan_entries_written ?? 0,</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>     projection: confirmed.projection ?? null,</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>     projection_pending: confirmed.projection_pending === true,</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>   };</span>
+<span class="source-line" id="L413"><a href="#L413">413</a> }</span>
+<span class="source-line" id="L414"><a href="#L414">414</a> </span>
+<span class="source-line" id="L415"><a href="#L415">415</a> /**</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>  * THE SPOKEN CONFIRMATION - the bridge&#x27;s `--kickoff-confirm` and the chamber&#x27;s one &quot;yes&quot;.</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>  *</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>  * The record hash names a proposal on the store: the receipt is appended there, bound to</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>  * BOTH hashes John saw. When the caller did not send the rendered-prose hash (the pre-Gate-5</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>  * chamber sends the record hash alone), it is resolved from the stored record whose hash</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>  * matched - the fidelity law already pins that prose to that record - and the result says</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>  * so by name. A hash the store does not know falls through to the roadmap-only lane (a</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>  * project whose kickoff pre-dates the store). Then the confirmed bundle is mirrored into</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>  * the pre-Gate-5 projections (roadmap plan entries, Face, Strip) unless `mirror: false`.</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>  *</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>  * Idempotent by content (a repeated matching confirmation appends nothing anywhere) and</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>  * stale-safe (a superseded hash refuses with the store&#x27;s named row and writes nothing).</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>  *</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>  * @param {{who: string|object, proposal_hash: string, rendered_prose_hash?: string,</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>  *   prior_confirmed_hash?: string|null, client_event_id?: string, project_id?: string|null,</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>  *   at?: string, mirror?: boolean, timeoutMs?: number}} opts</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>  */</span>
+<span class="source-line" id="L434"><a href="#L434">434</a> export function confirmKickoffSpoken(projectPath, opts = {}) {</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>   const providedHash = String(opts.proposal_hash ?? &#x27;&#x27;).trim();</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>   const lineage = readKickoffLineage(root);</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>   if (!lineage.ok) return { ...lineage, lane: &#x27;store&#x27;, mirror: null };</span>
+<span class="source-line" id="L439"><a href="#L439">439</a> </span>
+<span class="source-line" id="L440"><a href="#L440">440</a>   const named = lineage.proposals.find((proposal) =&gt; proposal.proposal_hash === providedHash) ?? null;</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>   if (!named) {</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>     const legacy = confirmKickoff(root, {</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>       proposal_hash: providedHash,</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>       prior_confirmed_hash: opts.prior_confirmed_hash,</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>       who: opts.who,</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>       client_event_id: opts.client_event_id,</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>       project_id: opts.project_id,</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>       at: opts.at,</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>     });</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>     return { ...legacy, lane: &#x27;roadmap&#x27;, store_state: lineage.state, mirror: null };</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>   }</span>
+<span class="source-line" id="L452"><a href="#L452">452</a> </span>
+<span class="source-line" id="L453"><a href="#L453">453</a>   let proseHash = String(opts.rendered_prose_hash ?? &#x27;&#x27;).trim();</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>   const resolved = !proseHash;</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>   if (resolved) proseHash = named.rendered_prose_hash;</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>   const receipt = confirmKickoffProposal(root, {</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>     who: opts.who,</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     proposal_hash: providedHash,</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>     rendered_prose_hash: proseHash,</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>     client_event_id: opts.client_event_id,</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>     at: opts.at,</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>     timeoutMs: opts.timeoutMs,</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>   });</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>   if (!receipt.ok) return { ...receipt, lane: &#x27;store&#x27;, mirror: null };</span>
+<span class="source-line" id="L465"><a href="#L465">465</a> </span>
+<span class="source-line" id="L466"><a href="#L466">466</a>   // The Wave 4 writer: the Face and projection.json are re-derived from the receipt at</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>   // every matching confirmation - byte-identical on a repeat, so double-confirm is</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>   // harmless downstream. A refused receipt above never reaches this line, which is what</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>   // keeps the Face absent on open, rejected, and stale paths.</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>   const storeProjection = writeKickoffProjection(root, { timeoutMs: opts.timeoutMs });</span>
+<span class="source-line" id="L471"><a href="#L471">471</a> </span>
+<span class="source-line" id="L472"><a href="#L472">472</a>   const mirror = opts.mirror === false</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>     ? null</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>     : mirrorConfirmedKickoffToRoadmap(root, receipt.proposal, {</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>       who: opts.who,</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>       client_event_id: receipt.receipt?.client_event_id ?? opts.client_event_id,</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>       project_id: opts.project_id,</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>       at: opts.at,</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>     });</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>   return {</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>     ...receipt,</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>     lane: &#x27;store&#x27;,</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>     rendered_prose_hash_resolved_from_store: resolved,</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>     mirror,</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>     face_created_on: KICKOFF_FACE_CREATED_ON,</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>     store_projection: storeProjection,</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>     projection_written: storeProjection.ok === true &amp;&amp; storeProjection.projection_written === true,</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>     face_written: storeProjection.ok === true &amp;&amp; storeProjection.face_written === true,</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>     projection: mirror?.projection ?? null,</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>     projection_pending: mirror ? mirror.ok !== true || mirror.projection_pending === true : false,</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>     plan_entries_written: mirror?.plan_entries_written ?? 0,</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>   };</span>
+<span class="source-line" id="L493"><a href="#L493">493</a> }</span>
+<span class="source-line" id="L494"><a href="#L494">494</a> </span>
+<span class="source-line" id="L495"><a href="#L495">495</a> /** A record as the chamber shows it: the prose John reads and the two hashes he confirms. */</span>
+<span class="source-line" id="L496"><a href="#L496">496</a> function shownRecord(record) {</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>   if (!record) return null;</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>   return {</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>     version: record.version,</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>     proposal_id: record.proposal_id,</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>     proposal_hash: record.proposal_hash,</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>     rendered_prose: record.rendered_prose,</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>     rendered_prose_hash: record.rendered_prose_hash,</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>     prior_confirmed_hash: record.prior_confirmed_hash ?? null,</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>     goal: record.goal,</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>     supersedes: record.supersedes ?? null,</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>     appended_at: record.appended_at ?? null,</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>   };</span>
+<span class="source-line" id="L509"><a href="#L509">509</a> }</span>
+<span class="source-line" id="L510"><a href="#L510">510</a> </span>
+<span class="source-line" id="L511"><a href="#L511">511</a> /**</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>  * Read-only: what a session paints from the store alone - the confirmed kickoff and any</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>  * open (draft, not applied) proposal, each with its prose and hashes, plus the pre-Gate-5</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>  * roadmap view beside it for the chamber that still reads it.</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>  *</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>  */</span>
+<span class="source-line" id="L518"><a href="#L518">518</a> export function showKickoffSpoken(projectPath) {</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>   const lineage = readKickoffLineage(root);</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>   if (!lineage.ok) return lineage;</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>   const legacy = showKickoff(root);</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>   return {</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>     ok: true,</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>     project_path: root,</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>     state: lineage.state,</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>     status_code: lineage.status_code,</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>     user_text: lineage.user_text,</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>     authoritative: lineage.authoritative,</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>     confirmed: shownRecord(lineage.confirmed),</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>     open: shownRecord(lineage.open),</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>     receipt: lineage.receipt</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>       ? { receipt_hash: lineage.receipt.receipt_hash, who: lineage.receipt.who, at: lineage.receipt.at }</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>       : null,</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>     receipt_count: lineage.receipt_count,</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>     proposal_count: lineage.proposal_count,</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>     superseded: lineage.superseded,</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>     next_version: lineage.next_version,</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>     legacy_roadmap: legacy.ok</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>       ? {</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>         ok: true,</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>         confirmed_hash: legacy.confirmed?.proposal_hash ?? null,</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>         open_hash: legacy.open?.proposal_hash ?? null,</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>         roadmap_exists: legacy.roadmap_exists === true,</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>       }</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>       : { ok: false, code: legacy.code, error: legacy.error },</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>   };</span>
+<span class="source-line" id="L548"><a href="#L548">548</a> }</span></pre></main></body></html>

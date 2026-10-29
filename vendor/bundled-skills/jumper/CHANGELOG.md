@@ -4,6 +4,16 @@
 > loop. Versions are git-tagged so a regressed promotion can be rolled back to the prior
 > version (NS2). Newest first.
 
+## 2026-09-18 — shared Gate-3 ping retry; unjudged ideas if review is still down (John-approved)
+
+- Ping bound 90s → 180s with one retry (ledger max two logical attempts). Closes the
+  0063 empty halt where a live Grok seat aborted the 90s hello before any idea existed.
+- After both hellos fail: generate anyway and stamp UNJUDGED, never survivors. Same
+  seating/halt objects Superjump imports — no fork. Self-review seating still HALTs
+  before spend. `JUMPER_GATE3_PING_TIMEOUT_MS` / `JUMPER_GATE3_PING_ATTEMPTS` override.
+- Tests: `test/gate3-ping-repair.test.mjs` plus the existing ping abort-join contract
+  (explicit `attempts: 1`).
+
 ## 2026-09-13 — repair card R1–R5 + lean mode (John-approved formal improvement; journals 0055–0057)
 
 - R1 swarm look-in supervisor unwired from candidate builds; heartbeat/look-in prompt fragment

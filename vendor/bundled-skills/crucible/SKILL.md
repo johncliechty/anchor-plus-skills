@@ -155,11 +155,29 @@ drifting** from the project's locked objective.
    **after** the lock.
 2. **Stage 1 — Master Plan** → 🚦 the user **approves**. Oranges brainstorm
    (assumption-map → premortem → ideate), batch triage, a phased plan, then the
-   Shark-Tank loop to convergence.
+   Shark-Tank loop to convergence — OR, in **Multi-Level Adversarial Matrix Mode (`--matrix-fast-track`, journal 0108)**, parallel $K$-dimension study decomposition (`researchPrime` + `Gandalf` per orthogonal dimension) synthesized into an explicit **6-Layer Adversarial Review Matrix (`L0–L5`)** with single-pass convergence (`first-dry / matrix-converged`) and delta-only re-review (`120s` per-seat timeout).
 3. **Stage 2 — Implementation Plan** → 🚦 the user **approves** → the well-formedness
-   gate → **Foreman handoff**. Wave decomposition with per-wave acceptance criteria
+   gate → **Foreman handoff**. Wave decomposition (including orthogonal sub-waves `W.1`..`W.k` with disjoint file write-sets for parallel Foreman execution) with per-wave acceptance criteria
    (a one-line *done-when* + Given/When/Then for non-trivial waves), the Shark-Tank
-   loop, then the emitted doc-trio + `foreman.config.json`.
+   loop (or direct `L0–L5` matrix compilation in `--matrix-fast-track`), then the emitted doc-trio + `foreman.config.json` validated deterministically by `locate-plan.mjs`.
+
+### Multi-Level Adversarial Matrix Mode (`--matrix-fast-track` — Sleep-Cycle Promotion 2026-10-22, journal 0108)
+
+Sequential multi-round 5-subprocess Shark swarms (`3 Sharks + Synthesizer + Judge` $\times$ 3–5 rounds across Stages 1 and 2 = 20–30 cold CLI spawns) stall or time out on complex multi-subsystem architectures. **Multi-Level Adversarial Matrix Mode (`--matrix-fast-track`)** is the canonical high-velocity architecture for complex systems and multi-wave plans:
+
+1. **Stage 0 (Explicit North Star Lock):** Display the exact text of the candidate North Star in full on screen and lock immediately upon human approval.
+2. **Stage 1 (Parallel Dimension Decomposition + Multi-Level Adversarial Matrix `L0–L5`):**
+   - Decompose the architecture into $K$ orthogonal dimensions in parallel (`researchPrime` empirical study + `Gandalf` critique per dimension) instead of sequential monolithic prose rounds.
+   - Synthesize all dimensions into a unified Master Plan containing an explicit **Multi-Level Adversarial Review Table (`L0` through `L5`: Failure Mode, Severity, Concrete Mitigation, Verification Oracle)**:
+     - **`L0` (Physical / Transport / OS / Process Boundary):** NAT/socket lifecycle, process spawning, file-lock/handle contention.
+     - **`L1` (Data / State / Concurrency / Storage Integrity):** Atomic writes (`temp + fsync + rename`), CRDT/DAG merge invariants, idempotent replay.
+     - **`L2` (Protocol / API / Schema Contract):** Wire framing, schema evolution, backwards compatibility, delimiter guards.
+     - **`L3` (Security / Auth / Capability / Taint Isolation):** Least-privilege RBAC, cryptographic identity, `Aegis` CWE taint/sink invariants.
+     - **`L4` (Orchestration / Fault Recovery / Partition Resilience):** Reconnect backoff, split-brain resolution, timeout and failover bounds.
+     - **`L5` (Human Surface / UX Ergonomics / Reachability):** User-visible error states (`unknown` $\ne$ `empty`), cognitive load (`Anvil`), live screen reachability.
+   - **Bounded Single-Pass Convergence (`first-dry / matrix-converged`):** Convergence completes in **1 pass** once every `L0–L5` failure mode has a concrete mechanical mitigation and mapped test oracle, unless $\ge 2$ reviewers demonstrate an unmitigated `BLOCKER` — in which case re-review runs **only on the delta section** with a hard per-seat timeout (`120s`).
+3. **Stage 2 (Foreman-Ready Orthogonal Sub-Wave Plan + Deterministic `locate-plan.mjs` Gate):**
+   - Compile the `L0–L5` matrix directly into test-gated waves and orthogonal sub-waves (`W.1`..`W.k`) with explicit file write-sets and machine-countable test gates, verified deterministically by spawning `foreman/bin/locate-plan.mjs` (exit `0`).
 
 ### The hardening law (Stage 2 — MANDATORY; `bin/hardening-gate.mjs`, journal 0080)
 
@@ -281,13 +299,14 @@ user is the final convergence authority**.
    — decompose → loop → approval → emit + well-formedness gate → Foreman handoff. A cap HALT emits the
    unapproved doc-trio to `<outputDir>/_unapproved-cap-draft` (gated, clearly not the handoff).
 5. **Dogfood deterministically** (no model, no billing): `node bin/self-run.mjs [outputDir]`.
-6. **LITE / SPIKE / FULL bands (cf-slick 2026-07-22):** locked Stage-0 depth is resolved by
+6. **LITE / SPIKE / FULL / MATRIX-FAST-TRACK bands (cf-slick 2026-07-22; matrix sleep-cycle 2026-10-22, journal 0108):** locked Stage-0 depth is resolved by
    `bin/band-profile.mjs` into a real ceremony profile — **not** label-only.
    - **LITE:** single-pass brainstorm (no full assumption→premortem→wide ideation), roundCap 1,
      2 concurrent Sharks, research-upfront off by default, low call budget. Still NS-embedded +
      inclusion test + user approval + locate-plan.
    - **SPIKE-FIRST:** probe required (`spikeProbe=`) before Stage-1 plan ceremony; then re-band.
    - **FULL:** full Oranges order, roundCap 5, 3 concurrent Sharks, effort-scoped caps + human-lockable.
+   - **MATRIX-FAST-TRACK (`--matrix-fast-track`):** canonical high-velocity mode for complex multi-subsystem architectures — parallel $K$-dimension studies (`researchPrime` + `Gandalf`), explicit `L0–L5` Adversarial Review Matrix (Failure Mode, Severity, Concrete Mitigation), 1-pass `first-dry / matrix-converged` stop, delta-only re-review (`120s` per-seat timeout) on $\ge 2$-agreed unmitigated `BLOCKER`s, and direct Stage-2 compilation into orthogonal sub-waves (`W.1`..`W.k`) gated by `locate-plan.mjs`.
    Explicit `roundCap` still wins over the profile default.
 
 > **⏱ STATUS UPDATES TO CHAT — the launch pattern (2026-07-11 fix).** A Shark-Tank stage loop runs

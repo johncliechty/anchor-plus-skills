@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Read the goal&#x27;s guide · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="guides" data-anchor-id="a-campaign-read_guide">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Operator material</p><h1>Read the goal&#x27;s guide</h1>
+<p class="intro">A goal guide records the high-level plan. It is written or revised only on John&#x27;s word; the Campaign page reads it. Cave-turn automatic guide loading is not proven.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.536317+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_campaign.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 280f2bd226fee868a7934edcb742cb20f69ee43b12b6d6627cd3ddb9fb566eba</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/steward_campaign.py · lines 2485–2498</p><pre>def read_guide(campaign_dir, goal_id):
+    &quot;&quot;&quot;{exists, text, updated, history, rel}; a missing guide is exists False, never an error.&quot;&quot;&quot;
+    rel = guide_rel(goal_id)
+    out = {&quot;exists&quot;: False, &quot;text&quot;: &quot;&quot;, &quot;updated&quot;: &quot;&quot;, &quot;history&quot;: [], &quot;rel&quot;: rel or &quot;&quot;}
+    if not rel:
+        return out
+    path = Path(campaign_dir) / rel
+    try:
+        text = path.read_text(encoding=&quot;utf-8&quot;)
+        st = path.stat()
+    except OSError:
+        return out
+    out.update(exists=True, text=text.replace(&quot;\r\n&quot;, &quot;\n&quot;), updated=time.strftime(&quot;%Y-%m-%d %H:%M&quot;, time.localtime(st.st_mtime)), history=_guide_history(text))
+    return out</pre>
+<p><a class="button" href="../source-pages/campaign.html#L2485">Open numbered source</a>
+<a href="../sources/campaign.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/guides">Read guides before acting: a qualified duty</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">280f2bd226fee868a7934edcb742cb20f69ee43b12b6d6627cd3ddb9fb566eba</span></p><p>Excerpt hash: <span class="path">16f61dbd7649c854b56c60679975ab74e6420f483345a139d8a1ce7d7067c43c</span></p></details></article></main></body></html>

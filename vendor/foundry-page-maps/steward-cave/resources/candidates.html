@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Candidates and relevance · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="candidates" data-anchor-id="a-page-candidates">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Candidates and relevance</h1>
+<p class="intro">Unseated cockpits can be candidates. Relevance uses declared heuristics or saved overrides; it is not access frequency or learned knowledge geometry.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.530391+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/high_seat_page.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: a6aba507b6c8638ad03c09804987bcdee53cfaa5cb06484f1fc026b031023d95</p></aside>
+<p class="path">C:/dev/Anchor/high_seat_page.py · lines 910–968</p><pre>def candidates(ctx):
+    &quot;&quot;&quot;Everything he could put on deck or make active (his word, 2026-10-02: &quot;a tile that can be expanded, right below
+    the on deck that shows all of the candidates -- those would be anything with an AI Cockpit as well as any open
+    tasks/efforts, e.g. of an admin nature in the desk&quot;): (1) the open components inside a goal with no seat yet - a
+    cockpit, an effort, a desk item; (2) every AI cockpit (a project, or one of its efforts, with a steward record)
+    that is not on the Campaign at all. Read from the page&#x27;s own context; nothing new is read from disk.&quot;&quot;&quot;
+    inits = [i for i in ctx.get(&quot;initiatives&quot;) or () if i.get(&quot;status&quot;) not in (&quot;done&quot;, &quot;parked&quot;)]
+    in_goal = []
+    on_map = set()
+    for i in ctx.get(&quot;initiatives&quot;) or ():
+        for p in i.get(&quot;parts&quot;) or ():
+            if p.get(&quot;kind&quot;) in (&quot;project&quot;, &quot;effort&quot;) and p.get(&quot;pid&quot;):
+                on_map.add((p[&quot;pid&quot;], p.get(&quot;dir&quot;) or &quot;&quot;))
+                if p.get(&quot;kind&quot;) == &quot;project&quot;:
+                    on_map.add((p[&quot;pid&quot;], &quot;*&quot;))
+    facts = ctx.get(&quot;facts&quot;) or {}
+    today = ctx.get(&quot;today&quot;)
+    if today is None:
+        from datetime import date as _date
+        today = _date.today()
+    ev = ctx.get(&quot;campaign_step_dates&quot;) or {}
+    over = ctx.get(&quot;relevance_override&quot;) or {}
+    for i in goals_only(inits):
+        for p in i.get(&quot;parts&quot;) or ():
+            if p.get(&quot;kind&quot;) in KIND_LABEL and not p.get(&quot;seat&quot;) and not p.get(&quot;closed&quot;) and not p.get(&quot;broken&quot;):
+                made, touched = (ev.get(p.get(&quot;id&quot;)) or (&quot;&quot;, &quot;&quot;))
+                if p.get(&quot;pid&quot;) and facts.get(p[&quot;pid&quot;], {}).get(&quot;folder&quot;):
+                    import os as _os
+                    b, l = cockpit_dates(_os.path.join(facts[p[&quot;pid&quot;]][&quot;folder&quot;], p.get(&quot;dir&quot;) or &quot;&quot;))
+                    touched = max(touched or &quot;&quot;, l or &quot;&quot;)
+                p[&quot;c_created&quot;], p[&quot;c_worked&quot;] = made, touched
+                p[&quot;c_score&quot;], p[&quot;c_why&quot;] = relevance({&quot;needs&quot;: p.get(&quot;needs_you&quot;), &quot;due&quot;: p.get(&quot;date&quot;), &quot;tier&quot;: i.get(&quot;tier&quot;), &quot;worked&quot;: touched},
+                                                     today, over.get(p.get(&quot;id&quot;)))
+                in_goal.append((i, p))
+    camp = (ctx.get(&quot;campaign&quot;) or {}).get(&quot;pid&quot;)
+    loose = []
+    for e in ctx.get(&quot;entries&quot;) or ():
+        pid = e.get(&quot;id&quot;)
+        f = facts.get(pid) or {}
+        if not pid or pid == camp or not f.get(&quot;has_record&quot;) or (pid, &quot;*&quot;) in on_map:
+            continue
+        effs = [x for x in (f.get(&quot;efforts&quot;) or []) if isinstance(x, dict)]
+        if not effs:
+            if (pid, &quot;&quot;) not in on_map:
+                loose.append({&quot;ref&quot;: &quot;project:%s&quot; % pid, &quot;name&quot;: f.get(&quot;name&quot;) or e.get(&quot;name&quot;) or pid[:8], &quot;where&quot;: &quot;a project&quot;, &quot;needs&quot;: bool(f.get(&quot;needs_you&quot;)), &quot;folder&quot;: f.get(&quot;folder&quot;) or &quot;&quot;})
+            continue
+        for x in effs:
+            rel = str(x.get(&quot;rel&quot;) or &quot;&quot;)
+            if (pid, rel) in on_map:
+                continue
+            nm = f.get(&quot;name&quot;) or e.get(&quot;name&quot;) or pid[:8]
+            loose.append({&quot;ref&quot;: (&quot;effort:%s/%s&quot; % (pid, _quote(rel))) if rel else (&quot;project:%s&quot; % pid),
+                          &quot;name&quot;: (&quot;%s · %s&quot; % (nm, x.get(&quot;name&quot;) or rel)) if rel else nm,
+                          &quot;where&quot;: (&quot;an effort of %s&quot; % nm) if rel else &quot;a project&quot;, &quot;needs&quot;: bool(x.get(&quot;needs_you&quot;)),
+                          &quot;folder&quot;: (f.get(&quot;folder&quot;) or &quot;&quot;) + ((&quot;/&quot; + rel) if rel else &quot;&quot;)})
+    for c in loose:
+        c[&quot;created&quot;], c[&quot;worked&quot;] = cockpit_dates(c[&quot;folder&quot;]) if c.get(&quot;folder&quot;) else (&quot;&quot;, &quot;&quot;)
+        c[&quot;score&quot;], c[&quot;why&quot;] = relevance({&quot;needs&quot;: c[&quot;needs&quot;], &quot;worked&quot;: c[&quot;worked&quot;]}, today, over.get(c[&quot;ref&quot;]))
+    return in_goal, loose</pre>
+<p><a class="button" href="../source-pages/page.html#L910">Open numbered source</a>
+<a href="../sources/page.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/seats">Read Active and On deck in John&#x27;s order</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">a6aba507b6c8638ad03c09804987bcdee53cfaa5cb06484f1fc026b031023d95</span></p><p>Excerpt hash: <span class="path">fcac6b62a4fc9cf1a3af1ec9ac570fe913f04ba3e77c5783ce05362a6fd3b4c4</span></p></details></article></main></body></html>

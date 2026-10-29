@@ -141,6 +141,16 @@ export async function runSuperjump(brief, opts = {}) {
       if (skipReview) {
         // NG-1: skipReview is ignored. The judge seat still runs.
       }
+      if (opts.gate3ChannelDead) {
+        c.status = 'unjudged';
+        c.error = `independent review channel dead after ping retries: ${opts.gate3ChannelDead.reason || 'no response'}`;
+        result.landed.push(`judge:c${c.k}:skipped`);
+        result.honesty_stamp = 'NOT VETTED — independent review channel unreachable after ping retries';
+        result.gate3_ping = { live: false, ...opts.gate3ChannelDead };
+        save();
+        log(`judge:c${c.k}: unjudged (review channel dead)`);
+        return;
+      }
       log(`judge:c${c.k}: start`);
       const id = `gate3:judge:c${c.k}`;
       monitor.start(id, { family: seating.gate3Family, effort: reviewEffort, call: 'judge' });
@@ -211,7 +221,7 @@ export async function runSuperjump(brief, opts = {}) {
     const items = result.candidates.filter((c) => c.leap?.mechanism).map((c) => ({
       k: c.k, title: c.leap.domain, mechanism: c.leap.mechanism,
     }));
-    if (items.length >= 2) {
+    if (items.length >= 2 && !opts.gate3ChannelDead) {
       log('dedupe: start');
       monitor.start('gate3:dedupe', { family: seating.gate3Family, effort: reviewEffort, call: 'dedupe' });
       try {

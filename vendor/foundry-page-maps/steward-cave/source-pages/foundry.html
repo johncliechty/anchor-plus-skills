@@ -1,0 +1,211 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>foundry · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>foundry</h1>
+<p>instructions · exact captured bytes</p><p class="path">Original: AGENTS.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 9ce37401032dca449eaf0a5d902daaa1bdfec802a8e0ca20d3f6cf7b320ba793</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.525287+00:00</time></p><p class="path">Captured from: AGENTS.md</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 9ce37401032dca449eaf0a5d902daaa1bdfec802a8e0ca20d3f6cf7b320ba793</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> # Skill Foundry</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> R&amp;D project managed by Anchor — research/plan/build via the trio.</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> </span>
+<span class="source-line" id="L5"><a href="#L5">5</a> ## Operating mode (standing, set 2026-06-28)</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> </span>
+<span class="source-line" id="L7"><a href="#L7">7</a> - **Human-summaries only.** Replies are conclusions, not command/output transcripts.</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   Grunt work is routed through background sub-agents (isolated context → summary</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   only) so John&#x27;s main view stays clean.</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> - **Control model (set 2026-06-28): Claude orchestrates + verifies; Gemini bulk-builds</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>   under Claude&#x27;s bounded dispatch.** Claude is the single controller — it owns the work</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>   order, dispatches **discrete, capped** build tasks to Gemini via the `agy` CLI (one-shot</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>   per call; never a free-running autonomous Gemini session), supervises concurrency so</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>   there is **no uncapped swarm**, and does the **verification with Claude** tokens. Rationale:</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>   Gemini does the heavy/voluminous building (cheaper tokens); Claude spends its tokens on</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>   the lighter orchestration + cross-verification. Either side&#x27;s GREEN still requires the</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>   OTHER model to reproduce the gate (PLAN.md §6); verdicts logged to §7.</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> - **Swarm safety (hard rule).** Before/after dispatching workers, Claude checks for</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   orphaned `claude -p` / `agy` / stuck `pytest` process trees and reaps them. No spawn path</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   runs uncapped. (The 2026-06-27 crash and a 9h/14-zombie stuck-pytest on 2026-06-28 were</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>   both this failure mode.)</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> - **No background process pops a console window** (claude or gemini): `windowsHide`,</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>   `shell:false`, `CREATE_NO_WINDOW`. Enforced in every spawn.</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> - **Either model can drive; the other verifies — see [`HANDOFF.md`](./HANDOFF.md).**</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   It carries the role-swap mechanics (transports: `agy` for Gemini, `claude` for Claude)</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>   so John can hand the wheel to Gemini when the Claude window gets full. **Whoever is</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>   driving keeps HANDOFF.md §5 (current focus) + §6 (next steps) current** at the end of</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>   every chunk, alongside PLAN.md §3/§7.</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30">30</a> ## Skill tiers — Heavy vs regular, and always-cross-model (CANONICAL source of truth; consolidated by John 2026-07-08; family prefs 2026-07-21)</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> &gt; This is the AUTHORITATIVE definition of the foundry skill tiers. It lives WITH the skills so that ANY agent</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> &gt; invoking a foundry skill from ANY host — Anchor&#x27;s `job_runner`, a Claude Code terminal, Cowork, Grok Build,</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> &gt; the `agy` CLI, VS Code — obeys the SAME definition. Each foundry `SKILL.md` points here. Do NOT re-define</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> &gt; tiers in an engine&#x27;s global file (`~/.claude/CLAUDE.md` etc.); edit THIS block. Governs the advisory skills</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> &gt; (Gandalf / Jumper / Superjump / Ramanujan / Legal-Beagle / Financial-Analyst / Literature-Review) and the trio build tier.</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38">38</a> **Family resolution (host-agnostic, 2026-07-21; UNIVERSAL SEATING LAW 2026-07-22).** Seats are filled from</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> **Anchor prefs only** — not hardcoded Claude/Gemini/Grok IDs. Canonical operator text:</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> user-global `~/.claude/AGENTS.md` → **&quot;UNIVERSAL SEATING LAW&quot;**. Summary:</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42">42</a> - **`coding_family`** — code / reason / orchestrate / synthesize seats</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> - **`review_family`** — adversarial review / judge / Shark / check seats</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45">45</a> &gt; **Reviewer seats (John, 2026-09-05):** Claude, **Grok** and **ChatGPT** all serve review / judge / Shark / refuter seats. A verification seat must prove its FAMILY; when the CLI cannot name the served MODEL (Codex today) the verdict is accepted and stamped `model_attested:false` — said on the log, never blind. Grok attests its model through `--output-format json`. Gemini stays off (subscription dropped 2026-08-31).</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> - **`default_cli`** — which interactive terminal Anchor opens (orthogonal to skill seats)</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> </span>
+<span class="source-line" id="L48"><a href="#L48">48</a> Resolve from the complete, valid primary Anchor data-dir `settings.json`; only an absent primary permits the well-known mirror `~/.anchor/model_prefs.json`. An existing invalid primary blocks launch. Mirror `primary_path` is metadata, never a redirect. Stale environment family/model pins are not authority. Same family is allowed with `cross_model:false`.</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> </span>
+<span class="source-line" id="L50"><a href="#L50">50</a> **Subscription transports (production path — no API keys for skill seats on this host):**</span>
+<span class="source-line" id="L51"><a href="#L51">51</a> | Family | Driver / binary |</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> |--------|-----------------|</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> | claude | trio `claude` → `claude.exe` |</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> | gemini | trio `gemini-cli` / `agy-dispatch` → `agy.exe` |</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> | grok | trio **`grok-cli`** → **`grok.exe -p`** (Grok Build login) — **never** raw `XAI_API_KEY` HTTP for prefs seats |</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> | chatgpt | trio **`chatgpt-cli`** → **`codex.exe exec`** (ChatGPT subscription login) — **never** raw `OPENAI_API_KEY` HTTP for prefs seats |</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58">58</a> Mechanism: `C:\dev\trio\drivers\index.mjs` (`familyToDriverName`, `runAgent`, …). Prefs beat stale</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> `TRIO_DRIVER_*` setx. Foundry skills MUST use those seams for live seats. Never hardcode product model IDs</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> in skill prose. (Default when prefs are absent — no Anchor settings and no mirror — is coding=claude/review=claude,</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> single-family, stamped `cross_model:false`; changed from review=gemini by John 2026-09-04. It never fires where a</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> dashboard exists: the dashboard&#x27;s selection is the seat, universally.)</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64">64</a> **Latest/highest model policy (John-approved 2026-09-08; formal Foundry improvement).**</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> All production seats, regular and Heavy, request `latest_supported` / `highest_supported` from the installed subscription CLI&#x27;s current capability catalog or verified moving frontier alias. This supersedes one-notch-below defaults and per-project model pins. Exact IDs belong in discovery caches and run receipts, not durable preferences or tier tables. Highest effort is provider-specific; use Ultra when supported by the selected ChatGPT model, never pass that spelling blindly to another provider.</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> </span>
+<span class="source-line" id="L67"><a href="#L67">67</a> Heavy remains a depth/stakes signal and triggers the existing independent-check policy; it does not license an older model for ordinary calls. Task depth, tool permissions and review independence remain separate from model quality. A base session cannot change its own model: use the resolved subscription seat for required delegated work and stamp actual service honestly. Explicit subagent defaults must match the resolved model/effort unless the isolation contract disables delegation, which must be disclosed.</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69">69</a> **Cross-model is a foundry-skill property — always AVAILABLE, fired by the STAKES GATE (amended 2026-07-11,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> John-approved; family-prefs 2026-07-21).** Every foundry skill carries the true cross-model swarm</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> (**coding_family generates/codes, review_family independently checks**), and WHEN it fires is pre-decided —</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> never deliberated per run:</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> - **Fires:** stakes ≥ medium (the skill&#x27;s own triage), ANY `-Heavy` run, or on John&#x27;s request — **and**</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>   coding_family ≠ review_family.</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> - **Skipped / single-family:** light regular-tier asks, **or** coding_family == review_family — honestly stamped</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   `cross_model:false` / degraded — the stamps exist precisely so a skipped or same-family check is VISIBLE,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>   never hidden.</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> Rationale: the always-on rule taxed every quick ask with cross-family latency the skills&#x27; own internal gates</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> would have skipped (2026-07-11 portfolio review, finding F4). The tier only swaps WHICH notch of the coding</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> family fills the coding seat. A single-family result is never passed off as cross-model, and a first `-Heavy`</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> run per skill must FORCE the cross-model seams when families differ (don&#x27;t accept a host&#x27;s default</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> single-family pick that contradicts prefs).</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> </span>
+<span class="source-line" id="L84"><a href="#L84">84</a> **Trio BUILD tier (HEAVY vs STANDARD).** Preserve workflow depth and verification controls, but both use the shared latest/highest policy. `TRIO_TIER`, old `TRIO_MODEL_*` variables and per-project model names cannot override saved family choices or model policy. Capability discovery failure is explicit. Failover is bounded to configured families, journaled before launch, never silently replays ambiguous actions, and never turns verification into unmarked self-review.</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> </span>
+<span class="source-line" id="L86"><a href="#L86">86</a> Per-skill seat mapping (Heavy → frontier of CODING_FAMILY on coding seats, frontier/available REVIEW_FAMILY on</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> check seats — historical prose said &quot;Claude&quot;/&quot;Gemini&quot;; treat those as the default families, not fixed IDs):</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> - **Gandalf** — map-reduce advisor: shard reads (review_family) + coding-family fusion/synthesis + host grade.</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> - **Jumper** — ideation engine that COMPOSES Gandalf: coding_family ideates (SCAMPER/TRIZ/analogical); the</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>   composed Gandalf runs at the MATCHING tier (Jumper-Heavy → Gandalf-Heavy); the 3-gate kill-filter + grounding</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   on review_family.</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> - **Superjump** — structured ideation (Read / Leap / Judge) that REUSES Jumper seating: coding_family reads and</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   leaps; review_family judges independently; Heavy = frontier of the coding family on read/leap, review family</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   at highest supported effort. Lean Jumper remains the fast path.</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> - **Ramanujan** — coding_family proposes/reasons; review_family runs the adversarial verify-router /</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   cross-family (Phase F) check; the z3/SMT/Lean certifier arm + Honesty-Law abstain are deterministic solvers,</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   identical in BOTH tiers.</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> - **Legal-Beagle** — coding_family analyzes/drafts over PROVIDED sources; review_family independently checks</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   every citation is grounded + jurisdiction/date established. The anti-hallucination rules are tier-invariant</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   hard discipline.</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> - **Financial-Analyst** — coding_family structures the deal/model + report narrative; review_family checks</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   assumptions + grounding; the exact-Decimal Excel/Python penny-exact tie-out is a deterministic engine,</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>   identical in BOTH tiers.</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> - **Literature-Review** — an augmented researchPrime (COMPOSES a trio skill): Heavy = `TRIO_TIER=heavy`,</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   regular = `TRIO_TIER=standard`. No new wiring — just the tier flag.</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> - **Tidy-Idy** — repository hygiene (HOLD LIFTED by John 2026-07-11 after the simplify-first completion:</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   git-is-the-archive removals, driver-catalogue model default, single-pass debate, 42/42): review_family fills</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   the analysis/attacker/judge seats via the trio driver; coding_family supervises and owns every human gate. The</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   deterministic protections (git-required refusal, protected-file classes, exact-path matching, RETAIN</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   fail-safe, &gt;10-removal confirmation) are tier-invariant. First run should be INTERACTIVE and watched.</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a> Lighter skills (Legal-Beagle, Financial-Analyst) may lack a</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> built-in cross-model verification loop, so their FIRST `-Heavy` run needs the review_family checking seat</span>
+<span class="source-line" id="L114"><a href="#L114">114</a> wired/verified once.</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> </span>
+<span class="source-line" id="L116"><a href="#L116">116</a> ### Research reports for John — findings before process (2026-09-08)</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118">118</a> Applies to researchPrime, Literature-Review, Ramanujan and Jumper human-facing plans and results. Lead the results with an accessible executive summary: the main findings, what is already known, what might be a contribution, and what proof or experiment would establish it. Use explanatory figures and references beside the claims. Follow with detailed coverage of the relevant areas; put reference-search/snowballing methods near the bottom, and agents, review rounds, model provenance and process details last. Keep qualifications next to affected scientific claims, without replacing the findings with a process-status preamble. A plan explains the research questions, why they matter, the approach and the expected result in ordinary language. Explicitly register and link the results; a plan or machine receipt is not the result. Verify the rendered report and finish recoverable independent-review work before closing; an unresolved tooling defect is work to resolve, not a reason to declare the requested research finished. This is John&#x27;s correction after his first serious review of the literature output, not optional styling.</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> </span>
+<span class="source-line" id="L120"><a href="#L120">120</a> **Apply corrections before dependent review (2026-09-08).** Read an independent review&#x27;s actual findings and apply the required changes before freezing or launching its downstream correction check. A completed output file alone is not a signal that the artifact is ready for final review. If a report changes after a review snapshot, verify the changed claims explicitly; never imply that the earlier receipt covers them. In structured model calls, put the human summary inside the requested JSON field and require one complete JSON object without a prose preface.</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> </span>
+<span class="source-line" id="L122"><a href="#L122">122</a> ### Invocation discipline — ZERO deliberation at start (added 2026-07-11; this is why John keeps having to remind)</span>
+<span class="source-line" id="L123"><a href="#L123">123</a> </span>
+<span class="source-line" id="L124"><a href="#L124">124</a> When a foundry skill is invoked, the operating parameters below are **ALREADY DECIDED**. Do NOT open an internal</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> discussion about whether/how to do them, do NOT ask John, do NOT re-derive them each run — just DO them. Spending</span>
+<span class="source-line" id="L126"><a href="#L126">126</a> the first moves of a run debating &quot;how do I do the 5:1 / Heavy&quot; is the exact failure mode this rule kills.</span>
+<span class="source-line" id="L127"><a href="#L127">127</a> </span>
+<span class="source-line" id="L128"><a href="#L128">128</a> 1. **Assess complexity/model use upfront.** Apply the existing depth/stakes rules, resolve current selected families and latest/highest capabilities, and record the actual seat. Do not recreate a second tier table or ask a ritual model-choice question.</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> 2. **Independent review is stakes-gated and family-aware.** Use the configured independent family when the gate fires, and stamp same-family/absent checks honestly. Gemini uses agy-dispatch only when selected and its capability contract is verified; no bare Gemini or API-key fallback.</span>
+<span class="source-line" id="L130"><a href="#L130">130</a> 3. **The ~10-minute status update is automatic** — emitted on your own initiative during any long foundry/trio</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>    run, WITHOUT John asking. The format is NOT defined here: use the **LOCKED Status-table format** in the</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>    user-global `AGENTS.md` (`C:\Users\example\.claude\AGENTS.md` → &quot;Long-run progress updates — the 10-minute</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>    rule&quot;, locked by John 2026-07-01: `[HH:MM]` header, bordered field block, Effort/Doing/Status/Tests/Blocker/</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>    Procs, ETA + To-do footer, chat window as primary channel, cadence armed AT LAUNCH). A 2026-07-11 session</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>    drafted a second format here unaware of the locked one; the global table WINS — one standard, defined once.</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>    A long-running skill that goes silent is a defect.</span>
+<span class="source-line" id="L137"><a href="#L137">137</a> </span>
+<span class="source-line" id="L138"><a href="#L138">138</a> ### Run capture for training — EVERY job leaves a machine-readable record (added 2026-07-11, John&#x27;s directive)</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140">140</a> Every foundry/trio skill run captures its work in TWO layers under the skill&#x27;s `journal/`:</span>
+<span class="source-line" id="L141"><a href="#L141">141</a> </span>
+<span class="source-line" id="L142"><a href="#L142">142</a> 1. **The human entry (unchanged):** the curated `NNNN-&lt;slug&gt;.md` — 7 fields, ≤15 lines, one per real run.</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>    Id = **max(existing NNNN)+1 over the WHOLE directory** — never read the low numbers as the frontier</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>    (gandalf accumulated 32 colliding ids that way; journal 0299).</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>    This layer stays HUMAN-ONLY: no machine dumps in the `NNNN` namespace, ever (the Gandalf journal drowned</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>    under 460 auto-dumped files and its sleep-loop signal died — that is the failure mode this split prevents).</span>
+<span class="source-line" id="L147"><a href="#L147">147</a> 2. **The training record (NEW, required):** `journal/runs/&lt;UTC-timestamp&gt;-&lt;runid&gt;.json` — machine-readable,</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>    committed, written by the ENGINE where one exists (Foreman run-live, Crucible, researchPrime rounds, Gandalf</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>    host, Jumper CLI) and by the operating agent for prompt-only skills. Schema (keep flat, keep small):</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>    `{ skill, tier, started, ended, input, params, output, result, cross_model, models, duration_s, journal_ref }`</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>    where `input` = the task/prompt (or a path pointer when large), `params` = the decisive knobs (stakes, fanOut,</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>    roundCap, wave range…), `output` = pointer(s) to the deliverable(s), `result` = the honest outcome</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>    (verdict/grade/GO-HALT/converged + one-line note), `journal_ref` = the NNNN entry it pairs with.</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>    Large payloads go NEXT TO the record as files in the same `runs/` dir, pointed to — never inlined.</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>    A crash storm collapses to ONE aggregated record. These records are the Foundry&#x27;s TRAINING FEED</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>    (sleep-loop distillation, few-shot exemplars, regression corpora) — they only have value if they are</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>    written EVERY run, so an engine that finishes a job without its run record is a defect.</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159">159</a> ### Skill-run read scope (added 2026-07-11)</span>
+<span class="source-line" id="L160"><a href="#L160">160</a> </span>
+<span class="source-line" id="L161"><a href="#L161">161</a> **RUNNING a foundry skill** requires reading only: the skill&#x27;s `SKILL.md` + THIS file&#x27;s &quot;Skill tiers&quot; +</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> &quot;Invocation discipline&quot; + &quot;Run capture&quot; blocks. `PLAN.md` / `HANDOFF.md` are surfaces for working **ON** the</span>
+<span class="source-line" id="L163"><a href="#L163">163</a> foundry (building/reviewing the skills themselves) — do NOT load them for an ordinary skill invocation; they</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> are ~700 lines of context tax that add nothing to a run.</span>
+<span class="source-line" id="L165"><a href="#L165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166">166</a> ### Construction freeze — usage before waves (added 2026-07-11, John-ratified via the 2026-07 portfolio review)</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> </span>
+<span class="source-line" id="L168"><a href="#L168">168</a> No new build waves / stages / engine construction on ANY foundry skill without a `journal/` entry showing the</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> CURRENT version was used on a real job and fell short in a named way. The portfolio&#x27;s recorded failure mode is</span>
+<span class="source-line" id="L170"><a href="#L170">170</a> engines outgrowing any demonstrated use (five skills reached 2026-07 with empty journals). Usage first, then</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> construction — the journal entry IS the ticket into a new wave.</span>
+<span class="source-line" id="L172"><a href="#L172">172</a> </span>
+<span class="source-line" id="L173"><a href="#L173">173</a> ## 📍 Active plan</span>
+<span class="source-line" id="L174"><a href="#L174">174</a> </span>
+<span class="source-line" id="L175"><a href="#L175">175</a> **Current short-term plan + verified status of every core skill, the trio, the GUI/Sleep-Engine,</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> and Anchor lives in [`PLAN.md`](./PLAN.md). Read it after this file.** It is the shared work</span>
+<span class="source-line" id="L177"><a href="#L177">177</a> surface for **all agents (Claude and Gemini)**; update its §3 status table and append to its §7</span>
+<span class="source-line" id="L178"><a href="#L178">178</a> review log whenever you complete or re-verify work. Do not trust a skill&#x27;s own `SKILL.md` STATUS</span>
+<span class="source-line" id="L179"><a href="#L179">179</a> line — trust `PLAN.md` (grounded review, 2026-06-27) and re-verify before acting.</span>
+<span class="source-line" id="L180"><a href="#L180">180</a> </span>
+<span class="source-line" id="L181"><a href="#L181">181</a> ---</span>
+<span class="source-line" id="L182"><a href="#L182">182</a> </span>
+<span class="source-line" id="L183"><a href="#L183">183</a> ## The Elegance Law — canonical pointer</span>
+<span class="source-line" id="L184"><a href="#L184">184</a> </span>
+<span class="source-line" id="L185"><a href="#L185">185</a> **Chekhov process-learning intake — 2026-09-10.** John requests lessons from the slow heading-based onboarding and the planning review that deferred manuscript coverage. [Evidence, causal limits and candidate acceptance checks](skills/chekhov/planning/foundry-20260910-readiness/PROCESS-REVIEW.md) and paired Chekhov journal0026 are the current formal improvement intake for Foundry commissioning, Crucible plan review and Foreman/root supervision. Preserve the full author outcome and show a readable, measured real-use example before expansion. Do not mistake an approved technical plan, local timing or a passing replay for proof of useful full-source coverage. This correction belongs in the existing review/commissioning path; shared engine changes require the separately scoped formal improvement/sleep cycle, not ad-hoc patches or automatic promotion into gated LESSONS.md.</span>
+<span class="source-line" id="L186"><a href="#L186">186</a> </span>
+<span class="source-line" id="L187"><a href="#L187">187</a> **Full text: [`ELEGANCE.md`](./ELEGANCE.md) (this folder).** Locked by John 2026-08-15 and</span>
+<span class="source-line" id="L188"><a href="#L188">188</a> injected verbatim into every canonical `SKILL.md` under `skills/*` plus the trio and</span>
+<span class="source-line" id="L189"><a href="#L189">189</a> Ecgberht, so any agent on any host carries it — this is deliberately NOT a file the skills</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> merely point at, because pointed-at rule files do not ship.</span>
+<span class="source-line" id="L191"><a href="#L191">191</a> </span>
+<span class="source-line" id="L192"><a href="#L192">192</a> Five rules: approvals ≤200 words · summaries ≤150 words · default to the lightest band</span>
+<span class="source-line" id="L193"><a href="#L193">193</a> without asking (a heavy tier must name its trigger in the first status line) · every</span>
+<span class="source-line" id="L194"><a href="#L194">194</a> unrequested element carries a &quot;needed because ___; dropping it costs ___&quot; line · one dry</span>
+<span class="source-line" id="L195"><a href="#L195">195</a> round ends a review loop and every plan names something it cut.</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> </span>
+<span class="source-line" id="L197"><a href="#L197">197</a> **Amended 2026-08-15 (v2 — the verification law).** `ELEGANCE.md` now carries four more</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> rules, after the same failure recurred a fourth time with a written correction already on</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> file: verify the claim you actually made on the surface he actually uses; a symptom reported</span>
+<span class="source-line" id="L200"><a href="#L200">200</a> twice retires the first explanation; prefer a mechanism to an instruction; and a correction</span>
+<span class="source-line" id="L201"><a href="#L201">201</a> that lives only in a journal has not been made. The block injected into every canonical</span>
+<span class="source-line" id="L202"><a href="#L202">202</a> `SKILL.md` is `&lt;!-- ELEGANCE-LAW v2 --&gt;`.</span>
+<span class="source-line" id="L203"><a href="#L203">203</a> </span>
+<span class="source-line" id="L204"><a href="#L204">204</a> </span>
+<span class="source-line" id="L205"><a href="#L205">205</a> ## Gandalf live provenance labels — September 30, 2026</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> A live CLI return can carry legacy Claude/Gemini commission labels even when the actual selected reviewers ran in Grok. Before claiming family independence, compare the actual subscription-seat/session receipts with the returned metadata. Preserve original output and source a separate correction from exact returned replies/model IDs; never invent a reviewer or treat the GROUNDED stamp as completed ResearchPrime verification. MBA Homework1 evidence: .ecgberht/homework1-20260930/gandalf-provenance-check.json. This records an observed runtime defect, not an installed engine repair.</span></pre></main></body></html>

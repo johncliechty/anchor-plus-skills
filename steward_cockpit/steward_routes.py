@@ -1024,11 +1024,13 @@ def _usage_rollup(cdir, estate=None):
 
 
 def _usage_rollup_fresh(cdir, estate=None):
-    numeric_fields = ("reported_spend", "unpriced_turns", "estimated_spend", "estimated_turns", "tokens", "secs")
+    numeric_fields = ("reported_spend", "unpriced_turns", "estimated_spend", "estimated_turns",
+                      "tokens", "secs", "turns", "cumulative_tokens", "cumulative_estimated_spend")
     coverage_fields = ("tracked_invocations", "reported_invocations", "partial_invocations",
                        "unavailable_invocations", "finalized_invocations")
     def zero():
-        return {"reported_spend": 0.0, "unpriced_turns": 0, "estimated_spend": 0.0, "estimated_turns": 0, "tokens": 0, "secs": 0,
+        return {"reported_spend": 0.0, "unpriced_turns": 0, "estimated_spend": 0.0, "estimated_turns": 0,
+                "tokens": 0, "secs": 0, "turns": 0, "cumulative_tokens": 0, "cumulative_estimated_spend": 0.0,
                 "checkpoint_coverage": {field: 0 for field in coverage_fields},
                 "usage_updated_at": None, "_cost_known": 0, "_cost_unknown": 0,
                 "_tokens_known": 0, "_tokens_unknown": 0, "_tokens_partial": 0,
@@ -1205,6 +1207,7 @@ def _usage_rollup_fresh(cdir, estate=None):
     for bucket in (stew, term, jobs, children, seats, total):
         bucket["reported_spend"] = round(bucket["reported_spend"], 4)
         bucket["estimated_spend"] = round(bucket["estimated_spend"], 4)
+        bucket["cumulative_estimated_spend"] = round(bucket.get("cumulative_estimated_spend", 0.0), 4)
         bucket["cost_status"] = "unavailable" if not bucket["_cost_known"] else (
             "partial" if bucket["_cost_unknown"] else "reported")
         bucket["cost_complete"] = bucket["cost_status"] == "reported"
@@ -3435,6 +3438,20 @@ def handle_post(cdir, verb, body):
             out = _sj.inspect(cdir, jid) if action == "inspect" else _sj.collect(cdir, jid, body.get("handoff_id"))
             return out, 200 if out.get("ok") else 409
         return {"ok": True, "jobs": list(_sj.read_jobs(cdir).values())[-20:]}, 200
+    if verb == "configure_session":
+        eng = get_engine(cdir, bool(body.get("general")), str(body.get("term") or "") or None)
+        if eng is None:
+            return {"ok": False, "error": "no such session"}, 404
+        out = eng.configure_session(
+            action=str(body.get("action") or "apply"),
+            permission_mode=str(body.get("permission_mode") or ""),
+            fence=str(body.get("fence") or ""),
+            model=str(body.get("model") or ""),
+            effort=str(body.get("effort") or ""),
+            reboot=bool(body.get("reboot", True)),
+            from_steward_tool=bool(body.get("from_steward_tool", False)),
+        )
+        return out, (200 if out.get("ok") else 400)
     if verb == "engine":
         if not body.get("general") and str(body.get("text") or "").strip():
             try:

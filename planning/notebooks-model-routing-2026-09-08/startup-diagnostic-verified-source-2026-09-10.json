@@ -1,9 +1,0 @@
-{
-  "at": "2026-09-10T07:02:55.796327+00:00",
-  "status": "passed",
-  "sha256": "25f0ff7c031e0f001bd33190cc473ef7c2330b46ebb6f6f47e12406366839c14",
-  "source_commit": "bdcb9721d4ba3292269519416bb06a25212f657b",
-  "gate": "installer-correction-tests-08-2026-09-09.json",
-  "native_checks": 15,
-  "live_elevated_validation": "pending"
-}

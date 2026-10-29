@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>journal-readme · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>journal-readme</h1>
+<p>historical instructions · frozen exact bytes</p><p class="path">Original: skills/gandalf/journal/README.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 4e9aed25f9e6fec6284cfbd6a213c1763bac337254ec28204abc35df39084106</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> # Gandalf v1 — journal/</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> &gt; Wave-7 scaffolding (the committed Gandalf v1 SHIP milestone). This directory is the per-run journal</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> &gt; for Gandalf advisor cycles. The North Star is `NORTH-STAR.md` (LOCKED); the anti-drift sleep gate is</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> &gt; documented in `../LESSONS.md`.</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> </span>
+<span class="source-line" id="L7"><a href="#L7">7</a> ## What gets journaled</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9">9</a> One entry per Gandalf cycle (a deep-think advisor pass over an artifact/effort), named</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> `NNNN-&lt;slug&gt;.md`. An entry records:</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> </span>
+<span class="source-line" id="L12"><a href="#L12">12</a> - **Effort** — what was diagnosed/situated/anticipated (the subject of the pass).</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> - **Legs run** — diagnose / situate / anticipate, and whether the SITUATE firing gate fired (a</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>   researchPrime commission) and whether any independent refuter fired (the refuter-firing threshold).</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> - **Output** — the committed advisor output (schema `gandalf-advisor-1`): findings, elevations</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>   (with tier + the dual-axis value×groundedness score), risk_labels, and any `degraded:true` the run</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>   surfaced.</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> - **Sleep gate** — the result of the anti-drift sleep gate for the cycle: `node --test test/*.test.mjs`</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   GREEN (the canary set passed) before the cycle concluded. A RED gate is recorded with the drift it</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   caught.</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> - **Advisory artifacts (PRINCIPLE-D, never gating)** — any elevation-oracle / cross-family judge</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>   verdict recorded for a human to read; explicitly NOT part of the sleep gate.</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24">24</a> ## Invariants this journal must not violate</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> - The journal is a RECORD, never a gate input. The deterministic done-floor is the test suite alone.</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> - Nothing here lifts the single-family ceiling (PROMISING) or launders a same-family commission into</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>   independent-origin credit — those honesty invariants live in the seams and their canaries.</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30">30</a> ---</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> (no cycle entries yet — seeded at the Gandalf v1 SHIP milestone)</span></pre></main></body></html>

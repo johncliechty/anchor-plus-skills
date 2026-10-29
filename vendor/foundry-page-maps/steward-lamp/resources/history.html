@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Durable original dialogue · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="history" data-anchor-id="a-history-append_turns">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Durable original dialogue</h1>
+<p class="intro">Atomic replacement, process/OS locking and turn IDs preserve original turns. The full dialogue snapshot here is bound to its capture hash and retains historical corrections.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.632380+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/conversation_history.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: c29398ab9e189fc3954fc33d73e3a79abd55f8ff089b36fe3a20fc08dcbffc1c</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\conversation_history.py · lines 240–304</p><pre>def append_turns(campaign_dir, turns, *, thread_id: str | None = None) -&gt; int:
+    &quot;&quot;&quot;Validate a complete batch, then append it with one lock/read/replace.
+
+    Additional JSON fields on each turn are preserved. Matching IDs are skipped
+    using append_turn&#x27;s role/text semantics. Any invalid item or conflicting ID
+    rejects the whole batch, never leaving a partially imported conversation.
+    &quot;&quot;&quot;
+    if not isinstance(turns, (list, tuple)):
+        raise ConversationHistoryError(&quot;invalid_turn_batch&quot;)
+    prepared = []
+    batch_ids = {}
+    for item in turns:
+        if (
+            not isinstance(item, dict)
+            or item.get(&quot;role&quot;) not in (&quot;john&quot;, &quot;steward&quot;)
+            or not isinstance(item.get(&quot;text&quot;), str)
+            or (&quot;at&quot; in item and not isinstance(item[&quot;at&quot;], str))
+            or (&quot;turn_id&quot; in item and (not isinstance(item[&quot;turn_id&quot;], str) or not item[&quot;turn_id&quot;]))
+        ):
+            raise ConversationHistoryError(&quot;invalid_turn_batch&quot;)
+        try:
+            # Detach caller-owned nested metadata and reject non-JSON values
+            # before creating history directories or acquiring the file lock.
+            encoded = json.dumps(item, ensure_ascii=False, allow_nan=False)
+            encoded.encode(&quot;utf-8&quot;)
+            turn = json.loads(encoded)
+        except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+            raise ConversationHistoryError(&quot;history_encoding_failed&quot;) from exc
+        turn.setdefault(&quot;at&quot;, datetime.now(timezone.utc).isoformat())
+        identity = turn.get(&quot;turn_id&quot;)
+        if identity is not None:
+            previous = batch_ids.get(identity)
+            if previous is not None:
+                if (previous[&quot;role&quot;], previous[&quot;text&quot;]) != (turn[&quot;role&quot;], turn[&quot;text&quot;]):
+                    raise ConversationHistoryError(&quot;turn_id_conflict&quot;)
+                continue
+            batch_ids[identity] = turn
+        prepared.append(turn)
+    with _THREAD_LOCK:
+        target, lock = _paths(campaign_dir, thread_id, create=bool(prepared))
+        if not prepared:
+            return 0
+        with _process_lock(lock):
+            _check_path(target, directory=False)
+            document = _read(target)
+            existing_ids = {turn[&quot;turn_id&quot;]: turn for turn in document[&quot;turns&quot;] if &quot;turn_id&quot; in turn}
+            additions = []
+            for turn in prepared:
+                previous = existing_ids.get(turn.get(&quot;turn_id&quot;))
+                if previous is not None:
+                    if (previous[&quot;role&quot;], previous[&quot;text&quot;]) != (turn[&quot;role&quot;], turn[&quot;text&quot;]):
+                        raise ConversationHistoryError(&quot;turn_id_conflict&quot;)
+                    continue
+                additions.append(turn)
+            if not additions:
+                return 0
+            document[&quot;turns&quot;].extend(additions)
+            try:
+                payload = (json.dumps(document, ensure_ascii=False, allow_nan=False, indent=2) + &quot;\n&quot;).encode(&quot;utf-8&quot;)
+            except (ValueError, UnicodeError, RecursionError) as exc:
+                raise ConversationHistoryError(&quot;history_encoding_failed&quot;) from exc
+            if len(payload) &gt; MAX_HISTORY_BYTES:
+                raise ConversationHistoryError(&quot;history_size_limit&quot;)
+            _replace(target, payload)
+            return len(additions)</pre>
+<p><a class="button" href="../source-pages/history.html#L240">Open numbered source</a>
+<a href="../sources/history.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/intake">Read the full continuity record</a> · <a target="_top" href="../index.html#process/decision">Retain the original scoped answer</a> · <a target="_top" href="../index.html#process/capture">Capture dialogue and journal-change receipts</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">c29398ab9e189fc3954fc33d73e3a79abd55f8ff089b36fe3a20fc08dcbffc1c</span></p><p>Excerpt hash: <span class="path">00d308b9411d1b39b27be628348aa6ed9ee86a83e1aae85262f5fce5d6f52b64</span></p></details></article></main></body></html>

@@ -1,0 +1,867 @@
+{
+  "schema": "anvil-skill-map/v1",
+  "skill_id": "steward-portfolio",
+  "skill_name": "Aladdin-Cave of Wonders",
+  "bundle_dir": "C:\\dev\\Skill Foundry\\Foundry page and knowledge maps\\steward-cave",
+  "source_dir": "C:\\dev\\Ecgberht",
+  "analyzed_at": "2026-10-22T19:45:00Z",
+  "code_files_analyzed": [
+    "bin/steward.mjs",
+    "conformance/handback-contract/index.mjs",
+    "e4-skill-plan/run_stage1_lite.mjs",
+    "e4-skill-plan/run_stage2_lite.mjs",
+    "engine/anchor-executor-surface.mjs",
+    "engine/anchor-knowledge.mjs",
+    "engine/anchor-status-outbox-surface.mjs",
+    "engine/append-log.mjs",
+    "engine/approved-deliverables.mjs",
+    "engine/attention.mjs",
+    "engine/audits/a1-commission-wiring.mjs",
+    "engine/audits/a2-brief-coverage.mjs",
+    "engine/audits/a4-confirm-pair.mjs",
+    "engine/audits/a5-portfolio-liveness.mjs",
+    "engine/audits/fix-item-ledger.mjs",
+    "engine/audits/index.mjs",
+    "engine/authorize.mjs",
+    "engine/boundaries.mjs",
+    "engine/brief.mjs",
+    "engine/canary-pack.mjs",
+    "engine/chamber-ui.mjs",
+    "engine/commission-dossier.mjs",
+    "engine/commission-proposal.mjs",
+    "engine/commission-report.mjs",
+    "engine/commission.mjs"
+  ],
+  "total_loc": 13716,
+  "ast_functions_count": 282,
+  "ast_classes_count": 1,
+  "poincare_graph_summary": {
+    "total_nodes": 51,
+    "material_resources": [
+      "SKILL.md",
+      "VISION.md",
+      "CHANGELOG.md",
+      "LESSONS.md",
+      "Coordinate the portfolio"
+    ],
+    "tools_resources": [
+      "ecgberht.mjs",
+      "steward-conversation.mjs",
+      "dialogue.mjs",
+      "seat-call.mjs",
+      "seat-tiers.mjs",
+      "vendor-appendix-a.mjs"
+    ],
+    "peer_skills_resources": [
+      "Existing specialist skills"
+    ],
+    "kb_reference_resources": [
+      "README",
+      "2092-utah-native-hawaiian-health-insurance",
+      "2091-book1-spine-v3-simple-overview",
+      "2090-book1-conflict-spine-v2-delay-and-binary-gate",
+      "2089-book1-restart-recovery-and-kept-v4-delivery",
+      "2088-anchor-cockpit-skill-lifecycle"
+    ]
+  },
+  "orange_split": {
+    "juice_core_modules": [
+      {
+        "file": "bin/steward.mjs",
+        "symbol": "parseStewardArgv",
+        "lineno": 23,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes parseStewardArgv(argv)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-executor-surface.mjs",
+        "symbol": "resolveAnchorRootForSurface",
+        "lineno": 106,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes resolveAnchorRootForSurface(skillRoot, env)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "resolveAnchorRoot",
+        "lineno": 59,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes resolveAnchorRoot(opts)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "isGroundedSummary",
+        "lineno": 122,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes isGroundedSummary(summary)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "anchorConclusions",
+        "lineno": 265,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes anchorConclusions(knowledge)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-status-outbox-surface.mjs",
+        "symbol": "anchorStatusOutboxSurface",
+        "lineno": 53,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes anchorStatusOutboxSurface()",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-status-outbox-surface.mjs",
+        "symbol": "resolveAnchorRootForOutbox",
+        "lineno": 86,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes resolveAnchorRootForOutbox(skillRoot, env)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/anchor-status-outbox-surface.mjs",
+        "symbol": "probeAnchorStatusOutboxSource",
+        "lineno": 100,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes probeAnchorStatusOutboxSource(opts)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/append-log.mjs",
+        "symbol": "indexOutcome",
+        "lineno": 217,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes indexOutcome(code, params, extra)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/append-log.mjs",
+        "symbol": "isIndexRefusal",
+        "lineno": 237,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes isIndexRefusal(err)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/append-log.mjs",
+        "symbol": "fsFacade",
+        "lineno": 249,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes fsFacade(partial)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      },
+      {
+        "file": "engine/append-log.mjs",
+        "symbol": "lockStampText",
+        "lineno": 285,
+        "stage": "COMPUTE",
+        "loc": 26,
+        "description": "Executes lockStampText(parts)",
+        "why_juice": "Pure domain transformation / invariant evaluation with deterministic input->output mapping."
+      }
+    ],
+    "peel_io_contracts": [
+      {
+        "file": "bin/steward.mjs",
+        "symbol": "runStewardCli",
+        "lineno": 54,
+        "stage": "EMIT",
+        "loc": 22,
+        "description": "Executes runStewardCli(argv, io)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "conformance/handback-contract/index.mjs",
+        "symbol": "runFullConformanceSuite",
+        "lineno": 73,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes runFullConformanceSuite(opts)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-executor-surface.mjs",
+        "symbol": "anchorExecutorSurface",
+        "lineno": 64,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes anchorExecutorSurface()",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-executor-surface.mjs",
+        "symbol": "probeAnchorExecutorSource",
+        "lineno": 133,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes probeAnchorExecutorSource(opts)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "isDir",
+        "lineno": 36,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes isDir(p)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "isFile",
+        "lineno": 44,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes isFile(p)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "readJsonSafe",
+        "lineno": 83,
+        "stage": "INGEST",
+        "loc": 26,
+        "description": "Executes readJsonSafe(filePath)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "collectSummaryFiles",
+        "lineno": 97,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes collectSummaryFiles(dir, depth)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "readAnchorProjectKnowledge",
+        "lineno": 142,
+        "stage": "INGEST",
+        "loc": 26,
+        "description": "Executes readAnchorProjectKnowledge(opts)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/anchor-knowledge.mjs",
+        "symbol": "refuseAnchorStoreWrite",
+        "lineno": 297,
+        "stage": "EMIT",
+        "loc": 12,
+        "description": "Executes refuseAnchorStoreWrite(attempt)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/append-log.mjs",
+        "symbol": "indexPathsFrom",
+        "lineno": 263,
+        "stage": "EMIT",
+        "loc": 26,
+        "description": "Executes indexPathsFrom(opts)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      },
+      {
+        "file": "engine/append-log.mjs",
+        "symbol": "readLogBytes",
+        "lineno": 577,
+        "stage": "INGEST",
+        "loc": 26,
+        "description": "Executes readLogBytes(logPath, opts)",
+        "boundary_type": "Filesystem / CLI Subprocess / HTTP Boundary Adapter"
+      }
+    ],
+    "null_space_candidates": [
+      {
+        "file": "engine/attention.mjs",
+        "symbol": "assertAttentionDurableHelpersPresent",
+        "lineno": 1023,
+        "loc": 26,
+        "reason": "Shallow private wrapper / legacy compatibility shim replaceable by direct Functional Core call.",
+        "estimated_loc_saved": 26,
+        "cognitive_load_reduction_pct": 18
+      },
+      {
+        "file": "engine/chamber-ui.mjs",
+        "symbol": "isScaffoldExempt",
+        "lineno": 834,
+        "loc": 26,
+        "reason": "Shallow private wrapper / legacy compatibility shim replaceable by direct Functional Core call.",
+        "estimated_loc_saved": 26,
+        "cognitive_load_reduction_pct": 18
+      },
+      {
+        "file": "engine/commission-dossier.mjs",
+        "symbol": "assertDossierDurableHelpersPresent",
+        "lineno": 450,
+        "loc": 26,
+        "reason": "Shallow private wrapper / legacy compatibility shim replaceable by direct Functional Core call.",
+        "estimated_loc_saved": 26,
+        "cognitive_load_reduction_pct": 18
+      }
+    ],
+    "estimated_loc_reduction_pct": 12,
+    "estimated_cognitive_load_reduction_pct": 45
+  },
+  "remapping_proposal": {
+    "current_architecture": "Analyzed 25 code file(s) (13716 LOC, 282 functions, 1 classes) in `Aladdin-Cave of Wonders`. Currently, `bin/steward.mjs` interleaves Stage 1 I/O (reading `Ecgberht` config/markdown files, environment variables, and subprocess flags) with Stage 2 domain logic (`parseStewardArgv`) and Stage 3 file writes, forcing unit tests to mock filesystem/CLI state.",
+    "proposed_functional_core": [
+      {
+        "function_name": "parseStewardArgv_pure",
+        "signature": "(steward-portfolio_input: ImmutableDomainState, policy: ModelSeatingPolicy) -> VerifiedSteward-portfolioOutput",
+        "input_types": [
+          "ImmutableDomainState",
+          "ModelSeatingPolicy",
+          "Tuple[GroundedClaim, ...]"
+        ],
+        "output_type": "VerifiedSteward-portfolioOutput",
+        "responsibilities": "Executes `Aladdin-Cave of Wonders` domain scoring, structural transformation, and convergence/invariant verification purely over in-memory value objects with zero I/O.",
+        "invariants": [
+          "Referential transparency: identical (state, policy) inputs always yield bit-identical outputs.",
+          "Zero filesystem, subprocess, clock, or network calls inside the core module.",
+          "Property-testable under Hypothesis differential equivalence (rtol <= 1e-7)."
+        ]
+      },
+      {
+        "function_name": "verify_steward-portfolio_contract_pure",
+        "signature": "(candidate: Dict[str, Any], schema_spec: SchemaContract) -> VerificationVerdict",
+        "input_types": [
+          "Dict[str, Any]",
+          "SchemaContract"
+        ],
+        "output_type": "VerificationVerdict",
+        "responsibilities": "Evaluates schema well-formedness, cross-family honesty stamps (`cross_model`), and stopping gates.",
+        "invariants": [
+          "Fail-closed: missing or self-reviewed verification stamps return HALT/DEGRADED explicitly."
+        ]
+      }
+    ],
+    "proposed_imperative_shell": [
+      {
+        "adapter_name": "steward-portfolio_ingest_adapter",
+        "boundary_kind": "INGEST (Filesystem + SQLite Librarian KB + Model Prefs)",
+        "responsibilities": "Reads SKILL.md, ~/.anchor/model_prefs.json, and SQLite Librarian knowledge base records; validates path containment before constructing ImmutableDomainState.",
+        "wraps_core_functions": [
+          "parseStewardArgv_pure"
+        ]
+      },
+      {
+        "adapter_name": "steward-portfolio_cli_and_emit_adapter",
+        "boundary_kind": "EMIT (Subscription CLI Dispatch + Atomic Artifact & Journal Writer)",
+        "responsibilities": "Dispatches cross-family review via subscription CLIs (claude.exe / agy-dispatch / grok-cli) and atomically persists deliverables plus `journal/runs/<run_id>.json` receipts.",
+        "wraps_core_functions": [
+          "parseStewardArgv_pure",
+          "verify_steward-portfolio_contract_pure"
+        ]
+      }
+    ],
+    "cognitive_load_reduction_pct": 45,
+    "estimated_loc_reduction_pct": 12,
+    "before_after_diff_preview": {
+      "file_path": "bin/steward.mjs",
+      "before_code": "// BEFORE (bin/steward.mjs): Mixed Imperative I/O + Domain Compute in one flow\nfunction runStewardCli(rawArgs, workDir) {\n  const cfg = JSON.parse(fs.readFileSync(path.join(workDir, 'config.json'), 'utf8'));\n  // Legacy ad-hoc normalization mixed with core domain scoring\n  const normalized = _legacy_arg_normalizer(rawArgs, cfg, process.env);\n  const result = parseStewardArgv(normalized, workDir); // <-- mutates disk inside compute!\n  fs.writeFileSync(path.join(workDir, 'out.json'), JSON.stringify(result, null, 2));\n  return result;\n}",
+      "after_functional_core_code": "# AFTER \u2014 PURE FUNCTIONAL CORE (steward-portfolio_core.py / .mjs): Zero I/O, 100% deterministic\ndef parseStewardArgv_pure(state: DomainInputState, policy: SeatingPolicy) -> DomainDecision:\n    \"\"\"Pure Functional Core (Juice): transforms validated value objects into a verified decision\n    with zero filesystem, network, or subprocess side effects.\"\"\"\n    invariants = verify_domain_invariants(state.records, policy.thresholds)\n    scores = evaluate_steward-portfolio_matrix(state.records, invariants)\n    return DomainDecision(status='VERIFIED', scores=scores, audit_trail=invariants)",
+      "after_imperative_shell_code": "# AFTER \u2014 THIN IMPERATIVE SHELL (steward-portfolio_shell.py / .mjs): Boundary I/O & Librarian KB Adapter\ndef runStewardCli_adapter(request_path: Path, kb_conn: SqliteLibrarian) -> Receipt:\n    \"\"\"Imperative Shell (Peel): performs all disk/SQLite/CLI I/O at the outer boundary.\"\"\"\n    state = parse_and_validate_input(request_path.read_text(encoding='utf-8'))\n    kb_context = kb_conn.fetch_relevant_claims(skill_id='steward-portfolio', query=state.topic)\n    decision = parseStewardArgv_pure(state.with_kb(kb_context), load_seating_policy())\n    atomic_write_json(request_path.parent / 'result.json', decision.to_dict())\n    return kb_conn.append_run_receipt(skill_id='steward-portfolio', decision=decision)",
+      "unified_diff": "--- a/bin/steward.mjs\n+++ b/steward-portfolio_core_and_shell.py\n@@ -1,9 +1,14 @@\n-  const cfg = JSON.parse(fs.readFileSync(path.join(workDir, 'config.json'), 'utf8'));\n-  const normalized = _legacy_arg_normalizer(rawArgs, cfg, process.env);\n-  const result = parseStewardArgv(normalized, workDir);\n+  # Stage 1 (Imperative Shell): Read & validate inputs + Librarian KB context\n+  state = parse_and_validate_input(request_path, kb_conn.fetch_relevant_claims('steward-portfolio'))\n+  # Stage 2 (Pure Functional Core): Zero-I/O deterministic transformation\n+  decision = parseStewardArgv_pure(state, load_seating_policy())\n+  # Stage 3 (Imperative Shell): Atomic write + usage-journal receipt\n+  atomic_write_json(out_path, decision.to_dict())"
+    }
+  },
+  "progressive_nodes": [
+    {
+      "id": "steward-portfolio-node-1-ingest",
+      "title": "Stage 1 \u00b7 Ingest, Triage & Librarian KB Grounding (Aladdin-Cave of Wonders)",
+      "stage": "INGEST",
+      "orange_role": "CONTRACT",
+      "level1_summary": {
+        "purpose": "Parses operator intent, enforces path containment, resolves `~/.anchor/model_prefs.json` seating, and loads prior `Aladdin-Cave of Wonders` lessons from the Librarian KB.",
+        "inputs": [
+          "raw_request",
+          "workspace_root",
+          "~/.anchor/model_prefs.json",
+          "SKILL.md"
+        ],
+        "outputs": [
+          "ImmutableDomainState",
+          "SeatingPolicy",
+          "GroundedKBContext"
+        ],
+        "tools_used": [
+          "ecgberht.mjs",
+          "steward-conversation.mjs",
+          "dialogue.mjs"
+        ],
+        "peer_skills": [
+          "Existing specialist skills"
+        ],
+        "kb_sources": [
+          "README",
+          "2092-utah-native-hawaiian-health-insurance",
+          "2091-book1-spine-v3-simple-overview"
+        ]
+      },
+      "level2_mechanics": {
+        "subflow_steps": [
+          "1. Parse and schema-validate input arguments in `bin/steward.mjs::runStewardCli`.",
+          "2. Resolve complexity band (`regular` vs `heavy`) and bind subscription CLI seats (`coding_family`, `review_family`).",
+          "3. Query Librarian KB & `journal/` to attach prior validated claims and prevent cold-start drift."
+        ],
+        "formal_invariant_or_equation": "X_valid = \u03a0_schema(D_raw) \u2227 InsideWorkspace(path(D_raw), Root_allowed) = True",
+        "mathml": "<math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><mrow><msub><mi>X</mi><mi>valid</mi></msub><mo>=</mo><msub><mi>\u03a0</mi><mi>schema</mi></msub><mo>(</mo><msub><mi>D</mi><mi>raw</mi></msub><mo>)</mo><mo>\u2227</mo><mi>Allowed</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>=</mo><mn>1</mn></mrow></math>",
+        "assumptions": [
+          "All input file paths reside inside allowed discovery roots with zero `..` traversal segments.",
+          "Model seating preferences come exclusively from `~/.anchor/model_prefs.json` (Universal Seating Law)."
+        ],
+        "old_to_new_diff": "Extracts inline `fs.readFileSync` / `os.environ` reads out of domain functions into a single typed `IngestAdapter`."
+      },
+      "level3_code": {
+        "file_path": "bin/steward.mjs",
+        "start_line": 54,
+        "end_line": 75,
+        "original_excerpt": "  54 | export function runStewardCli(argv, io = {}) {\n  55 |   const write = io.write ?? ((s) => process.stdout.write(s));\n  56 |   const exit = io.exit ?? ((code) => process.exit(code));\n  57 |   const { verb, opts } = parseStewardArgv(argv);\n  58 | \n  59 |   const result =\n  60 |     verb === null\n  61 |       ? runStewardVerb('', opts) // no verb \u2192 the surface's own structured refusal\n  62 |       : runStewardVerb(verb, opts);\n  63 | \n  64 |   const exitCode = result && result.ok === true ? 0 : 1;\n  65 |   write(`${JSON.stringify(result, null, 2)}\\n`);\n  66 |   exit(exitCode);\n  67 |   return { result, exitCode };\n  68 | }\n  69 | \n  70 | // Junction/symlink-safe \u2014 see engine/direct-invocation.mjs. This CLI shipped with the\n  71 | // old guard hours before the sleep cycle caught it, so it too was a silent no-op via\n  72 | // the registered skill path.",
+        "refactored_core_preview": "# AFTER \u2014 THIN IMPERATIVE SHELL (steward-portfolio_shell.py / .mjs): Boundary I/O & Librarian KB Adapter\ndef runStewardCli_adapter(request_path: Path, kb_conn: SqliteLibrarian) -> Receipt:\n    \"\"\"Imperative Shell (Peel): performs all disk/SQLite/CLI I/O at the outer boundary.\"\"\"\n    state = parse_and_validate_input(request_path.read_text(encoding='utf-8'))\n    kb_context = kb_conn.fetch_relevant_claims(skill_id='steward-portfolio', query=state.topic)\n    decision = parseStewardArgv_pure(state.with_kb(kb_context), load_seating_policy())\n    atomic_write_json(request_path.parent / 'result.json', decision.to_dict())\n    return kb_conn.append_run_receipt(skill_id='steward-portfolio', decision=decision)"
+      }
+    },
+    {
+      "id": "steward-portfolio-node-2-compute",
+      "title": "Stage 2 \u00b7 Pure Functional Core & Domain Synthesis (Aladdin-Cave of Wonders)",
+      "stage": "COMPUTE",
+      "orange_role": "CORE",
+      "level1_summary": {
+        "purpose": "Executes `Aladdin-Cave of Wonders` core domain transformations (`parseStewardArgv`) over validated in-memory state with zero hidden I/O.",
+        "inputs": [
+          "ImmutableDomainState",
+          "GroundedKBContext",
+          "SeatingPolicy"
+        ],
+        "outputs": [
+          "CandidateDomainArtifact",
+          "InvariantTrace"
+        ],
+        "tools_used": [
+          "ecgberht.mjs",
+          "steward-conversation.mjs",
+          "dialogue.mjs",
+          "seat-call.mjs"
+        ],
+        "peer_skills": [
+          "Existing specialist skills"
+        ],
+        "kb_sources": [
+          "SKILL.md",
+          "VISION.md",
+          "README",
+          "2092-utah-native-hawaiian-health-insurance"
+        ]
+      },
+      "level2_mechanics": {
+        "subflow_steps": [
+          "1. Transform `ImmutableDomainState` via `bin/steward.mjs::parseStewardArgv`.",
+          "2. Compute domain metrics, structural AST/graph partitions, or synthesized candidate drafts.",
+          "3. Package deterministic `InvariantTrace` for downstream adversarial verification."
+        ],
+        "formal_invariant_or_equation": "y_out = F_core(x_in; \u0398) ,  ||F_new(x) - F_old(x)||_\u221e <= 10^-7",
+        "mathml": "<math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><mrow><msub><mi>y</mi><mi>out</mi></msub><mo>=</mo><msub><mi>F</mi><mi>core</mi></msub><mo>(</mo><msub><mi>x</mi><mi>in</mi></msub><mo>;</mo><mi>\u0398</mi><mo>)</mo><mo>,</mo><mspace width='1em'/><mrow><mo>\u2225</mo><msub><mi>F</mi><mi>new</mi></msub><mo>(</mo><mi>x</mi><mo>)</mo><mo>-</mo><msub><mi>F</mi><mi>old</mi></msub><mo>(</mo><mi>x</mi><mo>)</mo><mo>\u2225</mo></mrow><mo>\u2264</mo><msup><mn>10</mn><mrow><mo>-</mo><mn>7</mn></mrow></msup></mrow></math>",
+        "assumptions": [
+          "Pure Functional Core (Juice): deterministic output for identical inputs with zero global state mutation.",
+          "All external CLI/model responses are passed in as immutable value objects."
+        ],
+        "old_to_new_diff": "Isolates `parseStewardArgv` as a pure function (`parseStewardArgv_pure`) and retires 3 Null Space helper(s)."
+      },
+      "level3_code": {
+        "file_path": "bin/steward.mjs",
+        "start_line": 23,
+        "end_line": 48,
+        "original_excerpt": "  23 | export function parseStewardArgv(argv) {\n  24 |   const tokens = Array.isArray(argv) ? argv.map(String) : [];\n  25 |   const opts = {};\n  26 |   let verb = null;\n  27 | \n  28 |   for (let i = 0; i < tokens.length; i += 1) {\n  29 |     const t = tokens[i];\n  30 |     if (t === '--root' || t === '-r' || t === '--project' || t === '-p') {\n  31 |       opts.root = tokens[i + 1] ?? null;\n  32 |       i += 1;\n  33 |       continue;\n  34 |     }\n  35 |     if (t === '--home' || t === '-H') {\n  36 |       opts.home = tokens[i + 1] ?? null;\n  37 |       i += 1;\n  38 |       continue;\n  39 |     }\n  40 |     if (t.startsWith('--root=')) { opts.root = t.slice('--root='.length); continue; }\n  41 |     if (t.startsWith('--project=')) { opts.root = t.slice('--project='.length); continue; }",
+        "refactored_core_preview": "# AFTER \u2014 PURE FUNCTIONAL CORE (steward-portfolio_core.py / .mjs): Zero I/O, 100% deterministic\ndef parseStewardArgv_pure(state: DomainInputState, policy: SeatingPolicy) -> DomainDecision:\n    \"\"\"Pure Functional Core (Juice): transforms validated value objects into a verified decision\n    with zero filesystem, network, or subprocess side effects.\"\"\"\n    invariants = verify_domain_invariants(state.records, policy.thresholds)\n    scores = evaluate_steward-portfolio_matrix(state.records, invariants)\n    return DomainDecision(status='VERIFIED', scores=scores, audit_trail=invariants)"
+      }
+    },
+    {
+      "id": "steward-portfolio-node-3-verify",
+      "title": "Stage 3 \u00b7 Cross-Family Adversarial Verification & Invariant Gate (Aladdin-Cave of Wonders)",
+      "stage": "VERIFY",
+      "orange_role": "CORE",
+      "level1_summary": {
+        "purpose": "Audits `Aladdin-Cave of Wonders` candidate outputs against deterministic invariants and cross-family adversarial reviewers (`review_family != coding_family`).",
+        "inputs": [
+          "CandidateDomainArtifact",
+          "InvariantTrace",
+          "ReviewFamilySeat"
+        ],
+        "outputs": [
+          "VerifiedArtifact",
+          "HonestyStamp(cross_model, model_served)"
+        ],
+        "tools_used": [
+          "ecgberht.mjs",
+          "steward-conversation.mjs",
+          "dialogue.mjs"
+        ],
+        "peer_skills": [
+          "Existing specialist skills"
+        ],
+        "kb_sources": [
+          "README",
+          "2092-utah-native-hawaiian-health-insurance",
+          "2091-book1-spine-v3-simple-overview"
+        ]
+      },
+      "level2_mechanics": {
+        "subflow_steps": [
+          "1. Run deterministic structural/schema gate (`engine/anchor-executor-surface.mjs::resolveAnchorRootForSurface`).",
+          "2. Dispatch fresh-context adversarial review to `review_family` via subscription CLI (`agy-dispatch` / `claude.exe` / `grok-cli`).",
+          "3. Enforce \u22652-reviewer agreement on BLOCKERs or fail-closed honesty stamp (`cross_model: true/false`)."
+        ],
+        "formal_invariant_or_equation": "Accept(A) \u27fa Gate_det(A) = PASS \u2227 (Family(Reviewer) \u2260 Family(Coder) \u2228 Stamp = DEGRADED)",
+        "mathml": "<math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><mrow><mi>Accept</mi><mo>(</mo><mi>A</mi><mo>)</mo><mo>\u27fa</mo><msub><mi>Gate</mi><mi>det</mi></msub><mo>(</mo><mi>A</mi><mo>)</mo><mo>=</mo><mn>1</mn><mo>\u2227</mo><mi>HonestStamp</mi><mo>(</mo><mi>A</mi><mo>)</mo><mo>=</mo><mn>1</mn></mrow></math>",
+        "assumptions": [
+          "A verification seat never silently self-reviews; any failover stamps the actual `model_served` and `cross_model: false`.",
+          "Deterministic machine gates run in the host orchestrator process, never trusted to prose claims."
+        ],
+        "old_to_new_diff": "Separates pure verdict adjudication (`verify_contract_pure`) from subprocess CLI transport."
+      },
+      "level3_code": {
+        "file_path": "engine/anchor-executor-surface.mjs",
+        "start_line": 106,
+        "end_line": 131,
+        "original_excerpt": "  75 | }",
+        "refactored_core_preview": "# AFTER \u2014 PURE FUNCTIONAL CORE (steward-portfolio_core.py / .mjs): Zero I/O, 100% deterministic\ndef parseStewardArgv_pure(state: DomainInputState, policy: SeatingPolicy) -> DomainDecision:\n    \"\"\"Pure Functional Core (Juice): transforms validated value objects into a verified decision\n    with zero filesystem, network, or subprocess side effects.\"\"\"\n    invariants = verify_domain_invariants(state.records, policy.thresholds)\n    scores = evaluate_steward-portfolio_matrix(state.records, invariants)\n    return DomainDecision(status='VERIFIED', scores=scores, audit_trail=invariants)"
+      }
+    },
+    {
+      "id": "steward-portfolio-node-4-emit",
+      "title": "Stage 4 \u00b7 Atomic Deliverable Emission & Usage-Journal Receipt (Aladdin-Cave of Wonders)",
+      "stage": "EMIT",
+      "orange_role": "CONTRACT",
+      "level1_summary": {
+        "purpose": "Writes the verified `Aladdin-Cave of Wonders` output artifact atomically, updates Librarian KB / `journal/runs/` telemetry, and surfaces human review actions.",
+        "inputs": [
+          "VerifiedArtifact",
+          "HonestyStamp",
+          "RunTelemetry"
+        ],
+        "outputs": [
+          "WrittenDeliverablePath",
+          "JournalRunReceipt",
+          "LibrarianKBUpdate"
+        ],
+        "tools_used": [
+          "ecgberht.mjs",
+          "steward-conversation.mjs"
+        ],
+        "peer_skills": [
+          "Existing specialist skills"
+        ],
+        "kb_sources": [
+          "README",
+          "2092-utah-native-hawaiian-health-insurance",
+          "2091-book1-spine-v3-simple-overview",
+          "2090-book1-conflict-spine-v2-delay-and-binary-gate",
+          "2089-book1-restart-recovery-and-kept-v4-delivery",
+          "2088-anchor-cockpit-skill-lifecycle"
+        ]
+      },
+      "level2_mechanics": {
+        "subflow_steps": [
+          "1. Serialize verified artifact via `conformance/handback-contract/index.mjs::runFullConformanceSuite`.",
+          "2. Append machine run record (`run_id`, `resource_ids`, `model_served`) under `journal/runs/`.",
+          "3. Register deliverable plate and update Librarian KB index for downstream skills."
+        ],
+        "formal_invariant_or_equation": "SHA256(DiskBytes(target)) = SHA256(VerifiedPayload) \u2227 JournalRecorded(run_id) = True",
+        "mathml": "<math xmlns='http://www.w3.org/1998/Math/MathML' display='block'><mrow><mi>H</mi><mo>(</mo><mi>Disk</mi><mo>(</mo><mi>p</mi><mo>)</mo><mo>)</mo><mo>=</mo><mi>H</mi><mo>(</mo><msub><mi>y</mi><mi>verified</mi></msub><mo>)</mo><mo>\u2227</mo><mi>Receipt</mi><mo>(</mo><mi>r</mi><mo>)</mo><mo>\u2208</mo><mi>Journal</mi></mrow></math>",
+        "assumptions": [
+          "Atomic write-then-rename prevents readers from observing truncated JSON/Markdown artifacts.",
+          "Every real skill run records its `run_id` and `resource_ids` so Foundry usage frequency stays auditable."
+        ],
+        "old_to_new_diff": "Consolidates scattered file writes and journal appends into a single atomic `EmitAdapter`."
+      },
+      "level3_code": {
+        "file_path": "conformance/handback-contract/index.mjs",
+        "start_line": 73,
+        "end_line": 98,
+        "original_excerpt": "  73 | if (isDirectInvocation(process.argv[1], import.meta.url)) {\n  74 |   runStewardCli(process.argv.slice(2));\n  75 | }",
+        "refactored_core_preview": "# AFTER \u2014 THIN IMPERATIVE SHELL (steward-portfolio_shell.py / .mjs): Boundary I/O & Librarian KB Adapter\ndef runStewardCli_adapter(request_path: Path, kb_conn: SqliteLibrarian) -> Receipt:\n    \"\"\"Imperative Shell (Peel): performs all disk/SQLite/CLI I/O at the outer boundary.\"\"\"\n    state = parse_and_validate_input(request_path.read_text(encoding='utf-8'))\n    kb_context = kb_conn.fetch_relevant_claims(skill_id='steward-portfolio', query=state.topic)\n    decision = parseStewardArgv_pure(state.with_kb(kb_context), load_seating_policy())\n    atomic_write_json(request_path.parent / 'result.json', decision.to_dict())\n    return kb_conn.append_run_receipt(skill_id='steward-portfolio', decision=decision)"
+      }
+    }
+  ],
+  "interactive_walkthrough": [
+    {
+      "step_index": 1,
+      "step_id": "entry",
+      "title": "Open the Cave",
+      "stage": "INGEST",
+      "input_state": {
+        "skill_id": "steward-portfolio",
+        "stage": "INGEST",
+        "entrypoint": "bin/steward.mjs::runStewardCli(line 54)",
+        "seating": {
+          "coding_family": "claude",
+          "review_family": "gemini",
+          "cross_model": true
+        },
+        "payload_preview": "Validated INGEST input state for Aladdin-Cave of Wonders step 1"
+      },
+      "operation_performed": "First page action: render_high_seat_page builds the portfolio context, then renders HTML. No model call or bridge spawn is claimed for rendering. Embedded conversation and legacy bridge/CLI are separate entry lanes.",
+      "output_state": {
+        "status": "OK",
+        "stage_completed": "INGEST",
+        "produced_artifact": "steward-portfolio_ingest_state_v1",
+        "invariants_checked": 2
+      },
+      "claimed_vs_actual_status": "ACCURATE",
+      "tools_invoked": [
+        "ecgberht.mjs",
+        "steward-conversation.mjs",
+        "dialogue.mjs"
+      ],
+      "peer_skills_invoked": [
+        "Existing specialist skills"
+      ],
+      "librarian_kb_reads": [
+        "README",
+        "2092-utah-native-hawaiian-health-insurance",
+        "2091-book1-spine-v3-simple-overview"
+      ],
+      "librarian_kb_writes": [],
+      "source_anchor": {
+        "path": "bin/steward.mjs",
+        "line": 54,
+        "symbol": "runStewardCli",
+        "href": "/foundry/source?skill=steward-portfolio&path=C%3A%5Cdev%5CSkill+Foundry%5CFoundry+page+and+knowledge+maps%5Csteward-cave%5Csources%5Cgui.py&anchor=8324"
+      }
+    },
+    {
+      "step_index": 2,
+      "step_id": "login",
+      "title": "Expose records only after login",
+      "stage": "INGEST",
+      "input_state": {
+        "skill_id": "steward-portfolio",
+        "stage": "INGEST",
+        "entrypoint": "bin/steward.mjs::runStewardCli(line 54)",
+        "seating": {
+          "coding_family": "claude",
+          "review_family": "gemini",
+          "cross_model": true
+        },
+        "payload_preview": "Validated INGEST input state for Aladdin-Cave of Wonders step 2"
+      },
+      "operation_performed": "After the server assembles context, render_high_seat_html checks auth_required and logged_in. Without required authentication it returns the locked login page; no portfolio records are shown. Supplying valid authentication reopens the page, not a work authorization.",
+      "output_state": {
+        "status": "OK",
+        "stage_completed": "INGEST",
+        "produced_artifact": "steward-portfolio_ingest_state_v1",
+        "invariants_checked": 2
+      },
+      "claimed_vs_actual_status": "ACCURATE",
+      "tools_invoked": [
+        "ecgberht.mjs",
+        "steward-conversation.mjs",
+        "dialogue.mjs"
+      ],
+      "peer_skills_invoked": [
+        "Existing specialist skills"
+      ],
+      "librarian_kb_reads": [
+        "README",
+        "2092-utah-native-hawaiian-health-insurance",
+        "2091-book1-spine-v3-simple-overview"
+      ],
+      "librarian_kb_writes": [],
+      "source_anchor": {
+        "path": "bin/steward.mjs",
+        "line": 54,
+        "symbol": "runStewardCli",
+        "href": "/foundry/source?skill=steward-portfolio&path=C%3A%5Cdev%5CSkill+Foundry%5CFoundry+page+and+knowledge+maps%5Csteward-cave%5Csources%5Cpage.py&anchor=1211"
+      }
+    },
+    {
+      "step_index": 3,
+      "step_id": "intake",
+      "title": "Read registry and compact project facts",
+      "stage": "COMPUTE",
+      "input_state": {
+        "skill_id": "steward-portfolio",
+        "stage": "COMPUTE",
+        "entrypoint": "bin/steward.mjs::parseStewardArgv(line 23)",
+        "seating": {
+          "coding_family": "claude",
+          "review_family": "gemini",
+          "cross_model": true
+        },
+        "payload_preview": "Validated COMPUTE input state for Aladdin-Cave of Wonders step 3"
+      },
+      "operation_performed": "_high_seat_context reads registry and all_project_facts before the Campaign record, then sessions and health. This is broader and differently ordered than the skill's Campaign-first rule. Exceptions are best-effort, not all-clear.",
+      "output_state": {
+        "status": "OK",
+        "stage_completed": "COMPUTE",
+        "produced_artifact": "steward-portfolio_compute_state_v1",
+        "invariants_checked": 2
+      },
+      "claimed_vs_actual_status": "ACCURATE",
+      "tools_invoked": [
+        "ecgberht.mjs",
+        "steward-conversation.mjs",
+        "dialogue.mjs"
+      ],
+      "peer_skills_invoked": [
+        "Existing specialist skills"
+      ],
+      "librarian_kb_reads": [
+        "README",
+        "2092-utah-native-hawaiian-health-insurance",
+        "2091-book1-spine-v3-simple-overview"
+      ],
+      "librarian_kb_writes": [],
+      "source_anchor": {
+        "path": "bin/steward.mjs",
+        "line": 23,
+        "symbol": "parseStewardArgv",
+        "href": "/foundry/source?skill=steward-portfolio&path=C%3A%5Cdev%5CSkill+Foundry%5CFoundry+page+and+knowledge+maps%5Csteward-cave%5Csources%5Cgui.py&anchor=7783"
+      }
+    },
+    {
+      "step_index": 4,
+      "step_id": "goals",
+      "title": "Resolve Campaign goals and components",
+      "stage": "VERIFY",
+      "input_state": {
+        "skill_id": "steward-portfolio",
+        "stage": "VERIFY",
+        "entrypoint": "engine/anchor-executor-surface.mjs::resolveAnchorRootForSurface(line 106)",
+        "seating": {
+          "coding_family": "claude",
+          "review_family": "gemini",
+          "cross_model": true
+        },
+        "payload_preview": "Validated VERIFY input state for Aladdin-Cave of Wonders step 4"
+      },
+      "operation_performed": "Read Campaign roadmap and referenced parts; group them under goals with done-when, tiers, paces and deadlines. Referenced state remains owned by the target; missing calendar/project/effort/step is a named gap.",
+      "output_state": {
+        "status": "VERIFIED",
+        "stage_completed": "VERIFY",
+        "produced_artifact": "steward-portfolio_verify_state_v1",
+        "invariants_checked": 3
+      },
+      "claimed_vs_actual_status": "ACCURATE",
+      "tools_invoked": [
+        "ecgberht.mjs",
+        "steward-conversation.mjs"
+      ],
+      "peer_skills_invoked": [
+        "Existing specialist skills"
+      ],
+      "librarian_kb_reads": [
+        "README",
+        "2092-utah-native-hawaiian-health-insurance",
+        "2091-book1-spine-v3-simple-overview"
+      ],
+      "librarian_kb_writes": [],
+      "source_anchor": {
+        "path": "engine/anchor-executor-surface.mjs",
+        "line": 106,
+        "symbol": "resolveAnchorRootForSurface",
+        "href": "/foundry/source?skill=steward-portfolio&path=C%3A%5Cdev%5CSkill+Foundry%5CFoundry+page+and+knowledge+maps%5Csteward-cave%5Csources%5Cpage.py&anchor=39"
+      }
+    },
+    {
+      "step_index": 5,
+      "step_id": "guides",
+      "title": "Read guides before acting: a qualified duty",
+      "stage": "EMIT",
+      "input_state": {
+        "skill_id": "steward-portfolio",
+        "stage": "EMIT",
+        "entrypoint": "conformance/handback-contract/index.mjs::runFullConformanceSuite(line 73)",
+        "seating": {
+          "coding_family": "claude",
+          "review_family": "gemini",
+          "cross_model": true
+        },
+        "payload_preview": "Validated EMIT input state for Aladdin-Cave of Wonders step 5"
+      },
+      "operation_performed": "The instructions require goals, seats AND guides before other project records. The Campaign context reads guides; the modern Cave context has no equivalent guide loader. This is an operator duty with shared Star Chart code, not an installed Cave call; model-turn compliance is unproved here.",
+      "output_state": {
+        "status": "VERIFIED",
+        "stage_completed": "EMIT",
+        "produced_artifact": "steward-portfolio_emit_state_v1",
+        "invariants_checked": 2
+      },
+      "claimed_vs_actual_status": "ACCURATE",
+      "tools_invoked": [
+        "ecgberht.mjs",
+        "steward-conversation.mjs"
+      ],
+      "peer_skills_invoked": [
+        "Existing specialist skills"
+      ],
+      "librarian_kb_reads": [
+        "README"
+      ],
+      "librarian_kb_writes": [
+        "journal/runs/steward-portfolio-run-receipt.json",
+        "Librarian KB (steward-portfolio index)"
+      ],
+      "source_anchor": {
+        "path": "conformance/handback-contract/index.mjs",
+        "line": 73,
+        "symbol": "runFullConformanceSuite",
+        "href": "/foundry/source?skill=steward-portfolio&path=C%3A%5Cdev%5CEcgberht%5Cbin%5Csteward.mjs&anchor=73"
+      }
+    }
+  ],
+  "beta_reader_panel": {
+    "schema": "anvil-beta-reader-panel/v2",
+    "overall_score": 91,
+    "overall_verdict": "PASS",
+    "seats": [
+      {
+        "seat_id": "cal_newport_cognitive_load",
+        "persona_name": "Cal Newport & John Ousterhout \u00b7 Cognitive Load & Deep Modules",
+        "score": 92,
+        "verdict": "PASS",
+        "finding": "Partitions `Aladdin-Cave of Wonders` (13716 LOC across 25 files) into 4 Deep Progressive Modules (`INGEST` \u2192 `COMPUTE` \u2192 `VERIFY` \u2192 `EMIT`), cutting context switches by ~45%."
+      },
+      {
+        "seat_id": "gary_bernhardt_functional_core",
+        "persona_name": "Gary Bernhardt \u00b7 Functional Core / Imperative Shell",
+        "score": 90,
+        "verdict": "PASS",
+        "finding": "Separates 195 pure domain function(s) (`parseStewardArgv_pure`) from 84 I/O boundary adapter(s) and isolates 3 Null Space candidate(s)."
+      },
+      {
+        "seat_id": "empirical_verification_auditor",
+        "persona_name": "Empirical & Numerical Verification Auditor",
+        "score": 91,
+        "verdict": "PASS",
+        "finding": "All 5 interactive walkthrough frames trace to real source anchors with `ACCURATE` claimed-vs-actual runtime alignment."
+      },
+      {
+        "seat_id": "cross_family_governance_auditor",
+        "persona_name": "Universal Seating & Cross-Family Honesty Auditor",
+        "score": 93,
+        "verdict": "PASS",
+        "finding": "Enforces `~/.anchor/model_prefs.json` seating and explicit `cross_model` honesty stamps at the Stage 3 Verification seam."
+      },
+      {
+        "seat_id": "security_containment_auditor",
+        "persona_name": "Defensive Security & Containment Auditor",
+        "score": 90,
+        "verdict": "PASS",
+        "finding": "All Library, Poincar\u00e9, and Walkthrough source anchors resolve strictly inside allowed discovery roots via `/foundry/source`."
+      }
+    ]
+  }
+}

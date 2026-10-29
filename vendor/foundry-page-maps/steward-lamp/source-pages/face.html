@@ -1,0 +1,303 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>face · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>face</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Ecgberht\engine\face-strip.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 fda6ab9bc887237afbf12ee277c20942ceac83f7521d6a3f50df44d4f9ef7837</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.626332+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/face-strip.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: fda6ab9bc887237afbf12ee277c20942ceac83f7521d6a3f50df44d4f9ef7837</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * v0 Face+Strip storage: dual-section Face narrative + fenced/JSON Strip</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  * and/or project-root strip.json. N=1 via cwd/--project; no registry.</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  */</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> </span>
+<span class="source-line" id="L6"><a href="#L6">6</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> import { createHash } from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> </span>
+<span class="source-line" id="L10"><a href="#L10">10</a> export const FACE_FILE_NAME = &#x27;ECGBERHT.md&#x27;;</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> export const STRIP_FILE_NAME = &#x27;strip.json&#x27;;</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> export const STRIP_SCHEMA_ID = &#x27;ecgberht-strip-v0&#x27;;</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> </span>
+<span class="source-line" id="L14"><a href="#L14">14</a> /** Face narrative field ids (human rewrite authority). */</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> export const FACE_NARRATIVE_FIELDS = Object.freeze([</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>   &#x27;north_star&#x27;,</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>   &#x27;active_effort&#x27;,</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>   &#x27;why_next&#x27;,</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   &#x27;human_wait&#x27;,</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   &#x27;why_stakes&#x27;,</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> ]);</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23">23</a> /**</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>  * Resolve N=1 project path: --project wins, else cwd. Zero registry.</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>  * @param {{ project?: string|null, cwd?: string|null }} [opts]</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>  * @returns {string}</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>  */</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> export function resolveProjectPath(opts = {}) {</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>   const project = opts.project;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>   if (typeof project === &#x27;string&#x27; &amp;&amp; project.trim()) {</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>     return path.resolve(project.trim());</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>   }</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>   const cwd = opts.cwd ?? process.cwd();</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>   return path.resolve(cwd);</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> }</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> /**</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>  * Extract first JSON fence that looks like an ecgberht Strip (schema id or strip-shaped).</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>  * Used for dual-section Face files; does not require loading full narrative for discovery.</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>  * @param {string} markdown</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>  * @returns {{ found: boolean, jsonText?: string, strip?: object, error?: string }}</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>  */</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> export function extractStripFence(markdown) {</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   if (typeof markdown !== &#x27;string&#x27; || !markdown) {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>     return { found: false, error: &#x27;empty_markdown&#x27; };</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   }</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> </span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   const fenceRe = /```(?:json)?\s*\r?\n([\s\S]*?)```/gi;</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   let match;</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   while ((match = fenceRe.exec(markdown)) !== null) {</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     const jsonText = match[1].trim();</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>     if (!jsonText) continue;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>     if (!jsonText.includes(STRIP_SCHEMA_ID) &amp;&amp; !/&quot;schema&quot;\s*:/.test(jsonText)) {</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>       // Prefer fences that declare schema; still try parse if object-like</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>       if (!jsonText.startsWith(&#x27;{&#x27;)) continue;</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>     }</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>     try {</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>       const strip = JSON.parse(jsonText);</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>       if (strip &amp;&amp; typeof strip === &#x27;object&#x27; &amp;&amp; !Array.isArray(strip)) {</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>         if (strip.schema === STRIP_SCHEMA_ID || typeof strip.phase === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>           return { found: true, jsonText, strip };</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         }</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>       }</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>     } catch {</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>       // try next fence</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     }</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>   }</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   return { found: false, error: &#x27;no_strip_fence&#x27; };</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> }</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> </span>
+<span class="source-line" id="L71"><a href="#L71">71</a> /**</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>  * True if text contains a discoverable Strip fence (cheap string check before full parse).</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>  * @param {string} markdown</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>  */</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> export function hasStripFenceMarker(markdown) {</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   if (typeof markdown !== &#x27;string&#x27;) return false;</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>   return (</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     markdown.includes(STRIP_SCHEMA_ID) ||</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     /##\s*Strip\b/i.test(markdown)</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   );</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> }</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83">83</a> /**</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>  * Parse Face markdown into narrative sections by locked headings.</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>  * @param {string} markdown</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>  * @returns {{ ok: true, narrative: object, raw: string, strip_fence: object|null } | { ok: false, error: string }}</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>  */</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> export function parseFaceDocument(markdown) {</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   if (typeof markdown !== &#x27;string&#x27;) {</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     return { ok: false, error: &#x27;face_not_string&#x27; };</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   }</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> </span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   const narrative = {</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     north_star: sectionBody(markdown, &#x27;North star&#x27;),</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>     active_effort: sectionBody(markdown, &#x27;Active effort&#x27;),</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>     why_next: sectionBody(markdown, &#x27;Why next&#x27;),</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     human_wait: sectionBody(markdown, &#x27;Human wait&#x27;),</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     why_stakes: sectionBody(markdown, &#x27;Why stakes&#x27;) || sectionBody(markdown, &#x27;Why next&#x27;),</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   };</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> </span>
+<span class="source-line" id="L101"><a href="#L101">101</a>   const fence = extractStripFence(markdown);</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   return {</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     ok: true,</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     narrative,</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     raw: markdown,</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     strip_fence: fence.found ? fence.strip : null,</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   };</span>
+<span class="source-line" id="L108"><a href="#L108">108</a> }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110">110</a> /**</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>  * @param {string} markdown</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>  * @param {string} heading</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>  */</span>
+<span class="source-line" id="L114"><a href="#L114">114</a> function sectionBody(markdown, heading) {</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>   const re = new RegExp(</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>     `##\\s+${escapeRegExp(heading)}\\s*\\r?\\n([\\s\\S]*?)(?=\\r?\\n##\\s+|$)`,</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     &#x27;i&#x27;,</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>   );</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   const m = markdown.match(re);</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   return m ? m[1].trim() : &#x27;&#x27;;</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> }</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> </span>
+<span class="source-line" id="L123"><a href="#L123">123</a> function escapeRegExp(s) {</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>   return s.replace(/[.*+?^${}()|[\]\\]/g, &#x27;\\$&amp;&#x27;);</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> }</span>
+<span class="source-line" id="L126"><a href="#L126">126</a> </span>
+<span class="source-line" id="L127"><a href="#L127">127</a> /**</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>  * The North Star&#x27;s revision: sha256 of the &quot;## North star&quot; section with</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>  * blockquote markers, bold and rules stripped and whitespace folded, first 12</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>  * hex - the same hash the cockpit reader computes (steward_campaign.read_map),</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>  * so a goal_flip written here stands for the revision the cockpit shows. &#x27;&#x27;</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>  * when the Face has no North Star.</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>  * @param {string} markdown the Face</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>  */</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> export function northStarRevision(markdown) {</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   // the reader&#x27;s own section walk: a &quot;## &quot; heading opens a section, the next one closes it (an empty section is empty)</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>   const body = [];</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   let inside = false;</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>   for (const raw of String(markdown ?? &#x27;&#x27;).split(/\r?\n/)) {</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>     const heading = raw.match(/^##\s+(.+?)\s*$/);</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     if (heading) { inside = heading[1].trim().toLowerCase() === &#x27;north star&#x27;; continue; }</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     if (inside) body.push(raw);</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>   }</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>   const lines = [];</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>   for (const raw of body) {</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     const line = raw.replace(/^\s*&gt;\s?/, &#x27;&#x27;).replace(/\*\*/g, &#x27;&#x27;);</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     if (/^\s*-{3,}\s*$/.test(line)) continue;</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     lines.push(line);</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>   }</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>   const goal = lines.join(&#x27;\n&#x27;).trim().replace(/\s+/g, &#x27; &#x27;).trim();</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   return goal ? createHash(&#x27;sha256&#x27;).update(goal, &#x27;utf8&#x27;).digest(&#x27;hex&#x27;).slice(0, 12) : &#x27;&#x27;;</span>
+<span class="source-line" id="L152"><a href="#L152">152</a> }</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> </span>
+<span class="source-line" id="L154"><a href="#L154">154</a> /**</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>  * Normalize / validate a Strip object (projection + optional append-only logs).</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>  * @param {object|string} input</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>  * @returns {{ ok: true, strip: object } | { ok: false, error: string, message?: string }}</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>  */</span>
+<span class="source-line" id="L159"><a href="#L159">159</a> export function parseStrip(input) {</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>   let strip = input;</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   if (typeof input === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     try {</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>       strip = JSON.parse(input);</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     } catch (e) {</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>       return { ok: false, error: &#x27;strip_json_parse&#x27;, message: String(e?.message ?? e) };</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>     }</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>   }</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   if (!strip || typeof strip !== &#x27;object&#x27; || Array.isArray(strip)) {</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>     return { ok: false, error: &#x27;strip_not_object&#x27; };</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   }</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> </span>
+<span class="source-line" id="L172"><a href="#L172">172</a>   const out = { ...strip };</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>   if (!out.schema) out.schema = STRIP_SCHEMA_ID;</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   if (!Array.isArray(out.instruments)) out.instruments = Array.isArray(strip.instruments) ? [...strip.instruments] : [];</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   if (!Array.isArray(out.receipts)) out.receipts = Array.isArray(strip.receipts) ? [...strip.receipts] : [];</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   if (!Array.isArray(out.grasscatch)) out.grasscatch = Array.isArray(strip.grasscatch) ? [...strip.grasscatch] : [];</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>   if (!Array.isArray(out.uncertainty_flags)) {</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     out.uncertainty_flags = Array.isArray(strip.uncertainty_flags) ? [...strip.uncertainty_flags] : [];</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   }</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   if (out.capacity !== &#x27;known&#x27; &amp;&amp; out.capacity !== &#x27;unknown&#x27;) {</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     out.capacity = &#x27;unknown&#x27;;</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>   }</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>   if (typeof out.anti_starvation_age_days !== &#x27;number&#x27;) {</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     out.anti_starvation_age_days =</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>       typeof strip.anti_starvation_age_days === &#x27;number&#x27; ? strip.anti_starvation_age_days : 0;</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   }</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   if (!out.negative_heartbeat || typeof out.negative_heartbeat !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>     out.negative_heartbeat = {</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>       no_attention_needed: false,</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>       why: null,</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>       until: null,</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     };</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>   }</span>
+<span class="source-line" id="L194"><a href="#L194">194</a> </span>
+<span class="source-line" id="L195"><a href="#L195">195</a>   return { ok: true, strip: out };</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> }</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> </span>
+<span class="source-line" id="L198"><a href="#L198">198</a> /**</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>  * Load project Face+Strip surfaces from disk (N=1 path).</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>  * Prefers strip.json; falls back to ECGBERHT.md fence. Never invents Strip truth.</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>  * @returns {object}</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>  */</span>
+<span class="source-line" id="L204"><a href="#L204">204</a> export function loadProjectSurfaces(projectPath) {</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   const stripPath = path.join(root, STRIP_FILE_NAME);</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   const facePath = path.join(root, FACE_FILE_NAME);</span>
+<span class="source-line" id="L208"><a href="#L208">208</a> </span>
+<span class="source-line" id="L209"><a href="#L209">209</a>   const result = {</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     ok: true,</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     project_path: root,</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>     face_path: null,</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>     strip_path: null,</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     strip_source: null,</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     face: null,</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     strip: null,</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     face_loaded: false,</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     errors: [],</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>   };</span>
+<span class="source-line" id="L220"><a href="#L220">220</a> </span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   if (fs.existsSync(stripPath) &amp;&amp; fs.statSync(stripPath).isFile()) {</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>     try {</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>       const raw = fs.readFileSync(stripPath, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>       const parsed = parseStrip(raw);</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>       if (parsed.ok) {</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>         result.strip = parsed.strip;</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>         result.strip_path = stripPath;</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>         result.strip_source = &#x27;strip.json&#x27;;</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>       } else {</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>         result.errors.push(parsed);</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>       }</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     } catch (e) {</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>       result.errors.push({ error: &#x27;strip_read_failed&#x27;, message: String(e?.message ?? e) });</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>     }</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   }</span>
+<span class="source-line" id="L236"><a href="#L236">236</a> </span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   if (fs.existsSync(facePath) &amp;&amp; fs.statSync(facePath).isFile()) {</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>     try {</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>       const raw = fs.readFileSync(facePath, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>       const face = parseFaceDocument(raw);</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>       if (face.ok) {</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>         result.face = face;</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>         result.face_path = facePath;</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>         result.face_loaded = true;</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>         if (!result.strip &amp;&amp; face.strip_fence) {</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>           const parsed = parseStrip(face.strip_fence);</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>           if (parsed.ok) {</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>             result.strip = parsed.strip;</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>             result.strip_source = &#x27;face_fence&#x27;;</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>           }</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>         }</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>       }</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>     } catch (e) {</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>       result.errors.push({ error: &#x27;face_read_failed&#x27;, message: String(e?.message ?? e) });</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>     }</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   }</span>
+<span class="source-line" id="L257"><a href="#L257">257</a> </span>
+<span class="source-line" id="L258"><a href="#L258">258</a>   if (!result.strip &amp;&amp; !result.face) {</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     result.ok = false;</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     result.error = &#x27;no_face_or_strip&#x27;;</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   }</span>
+<span class="source-line" id="L262"><a href="#L262">262</a> </span>
+<span class="source-line" id="L263"><a href="#L263">263</a>   return result;</span>
+<span class="source-line" id="L264"><a href="#L264">264</a> }</span>
+<span class="source-line" id="L265"><a href="#L265">265</a> </span>
+<span class="source-line" id="L266"><a href="#L266">266</a> /**</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>  * Strip projection fields used for portfolio rank (no Face required).</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>  * @param {object} strip</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>  * @param {{ project_path?: string, strip_source?: string }} [meta]</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>  */</span>
+<span class="source-line" id="L271"><a href="#L271">271</a> export function toStripProjection(strip, meta = {}) {</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>   const parsed = parseStrip(strip);</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>   if (!parsed.ok) {</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>     return null;</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>   }</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   const s = parsed.strip;</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   return {</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>     project_id: s.project_id ?? meta.project_id ?? null,</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     project_path: meta.project_path ?? null,</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     strip_source: meta.strip_source ?? null,</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>     phase: s.phase ?? null,</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     active_effort: s.active_effort ?? null,</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>     human_wait: s.human_wait ?? &#x27;none&#x27;,</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     capacity: s.capacity === &#x27;known&#x27; ? &#x27;known&#x27; : &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>     negative_heartbeat: s.negative_heartbeat ?? {</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>       no_attention_needed: false,</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>       why: null,</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>       until: null,</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     },</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>     anti_starvation_age_days:</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>       typeof s.anti_starvation_age_days === &#x27;number&#x27; ? s.anti_starvation_age_days : 0,</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     next_recommended: s.next_recommended ?? null,</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     why_next: s.why_next ?? null,</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     uncertainty_flags: Array.isArray(s.uncertainty_flags) ? [...s.uncertainty_flags] : [],</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     tool_depth_cell: s.tool_depth_cell ?? null,</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     as_of: s.as_of ?? null,</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>   };</span>
+<span class="source-line" id="L298"><a href="#L298">298</a> }</span></pre></main></body></html>

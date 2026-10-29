@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Depth from signals and stakes · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="depth" data-anchor-id="a-depth-suggestDepthFromStrip">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Depth from signals and stakes</h1>
+<p class="intro">Strip/table signals select LITE, FULL, SPIKE, commission or refuse. Unknown capacity adds LITE bias. Workflow depth is separate from model quality.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.628271+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/dispatch-table.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 646e390636ea7898c6136ae6dbc98df4db31a8ef0a2927a9eeb8d63d9a89a4c1</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\dispatch-table.mjs · lines 416–436</p><pre>export function suggestDepthFromStrip(stripOrSignals, opts = {}) {
+  const signals = extractDispatchSignals(stripOrSignals);
+  const result = lookupDispatch(signals, opts);
+  const uncertainty_flags = [...signals.uncertainty_flags];
+  if (
+    result.flags.capacity_unknown &amp;&amp;
+    !uncertainty_flags.includes(&#x27;capacity_unknown&#x27;)
+  ) {
+    uncertainty_flags.push(&#x27;capacity_unknown&#x27;);
+  }
+  if (result.flags.lite_bias &amp;&amp; !uncertainty_flags.includes(&#x27;LITE_bias&#x27;)) {
+    uncertainty_flags.push(&#x27;LITE_bias&#x27;);
+  }
+
+  return {
+    ...result,
+    signals,
+    uncertainty_flags,
+    capacity: signals.capacity,
+  };
+}</pre>
+<p><a class="button" href="../source-pages/depth.html#L416">Open numbered source</a>
+<a href="../sources/depth.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/depth">Workflow depth is separate from model quality</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">646e390636ea7898c6136ae6dbc98df4db31a8ef0a2927a9eeb8d63d9a89a4c1</span></p><p>Excerpt hash: <span class="path">b537ae7ae2757c585aba2af3a911038f110ddbcc3ac3c4662ee8f06d31eead60</span></p></details></article></main></body></html>

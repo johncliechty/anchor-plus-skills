@@ -675,26 +675,27 @@ def sync_applicant_signup_to_gwl_hub(
     # If running on a remote machine that connects to Puter as coordination_hub, also push over Tailscale HTTP
     coord_hub = str(topo.get("coordination_hub") or topo.get("remote_mothership_url") or "").strip().rstrip("/")
     local_host = str(os.environ.get("COMPUTERNAME") or "").strip().lower()
-    if (
-        not sandbox
-        and base_dir is None
-        and coord_hub.startswith(("http://", "https://"))
-        and "127.0.0.1" not in coord_hub
-        and "localhost" not in coord_hub
-        and not (local_host == "puter" and "puter" in coord_hub.lower())
-    ):
-        try:
-            import urllib.request as _ureq
-            req = _ureq.Request(
-                f"{coord_hub}/api/onboard-wizard/action",
-                data=json.dumps({"action": "register_gwl_applicant", "applicant": res.get("applicant") or record}).encode("utf-8"),
-                headers={"Content-Type": "application/json", "User-Agent": "Anchor-Onboard-ApplicantSync/1.0"},
-                method="POST",
-            )
-            with _ureq.urlopen(req, timeout=2.0):
-                pass
-        except Exception:
-            pass
+    if not sandbox and base_dir is None and local_host not in ("puter", "gwl-server"):
+        candidate_hubs = []
+        if coord_hub.startswith(("http://", "https://")) and "127.0.0.1" not in coord_hub and "localhost" not in coord_hub:
+            candidate_hubs.append(coord_hub)
+        for default_hub in ("https://gwl-server.tailb49f65.ts.net", "http://puter:8777"):
+            if default_hub not in candidate_hubs:
+                candidate_hubs.append(default_hub)
+        import urllib.request as _ureq
+        payload = json.dumps({"action": "register_gwl_applicant", "applicant": res.get("applicant") or record}).encode("utf-8")
+        for hub_url in candidate_hubs:
+            try:
+                req = _ureq.Request(
+                    f"{hub_url}/api/onboard-wizard/action",
+                    data=payload,
+                    headers={"Content-Type": "application/json", "User-Agent": "Anchor-Onboard-ApplicantSync/1.0"},
+                    method="POST",
+                )
+                with _ureq.urlopen(req, timeout=2.5):
+                    break
+            except Exception:
+                continue
     return res
 
 

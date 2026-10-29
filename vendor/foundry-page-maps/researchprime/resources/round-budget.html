@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Select a locked round budget · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="round-budget" data-anchor-id="a014">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Select a locked round budget</h1>
+<p class="intro">Formal rounds require the triage lock before CLI or environment overrides are considered.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\intake.mjs</span><br>Lines 118–217 · frozen source snapshot</p>
+<pre class="excerpt">export function resolveBandRoundBudget({
+  runDir = null,
+  maxRounds = null,
+  env = process.env,
+  fallback = 8,
+  headless,
+  failClosed,
+} = {}) {
+  const loaded = runDir ? loadTriageExtensionFromRunDir(runDir) : null;
+  const knobs = loaded?.extension?.knobs &amp;&amp; typeof loaded.extension.knobs === &#x27;object&#x27;
+    ? loaded.extension.knobs
+    : null;
+  const locked = !!(loaded &amp;&amp; (loaded.locked === true || loaded.extension?.locked === true));
+
+  // Fail-closed: headless (or RP formal headless) OR explicit failClosed (run-rounds).
+  const formalClosed =
+    failClosed === true || isHeadlessFormal({ headless, env });
+
+  if (formalClosed &amp;&amp; (!loaded || locked !== true)) {
+    throw new HaltError(
+      &#x27;run-rounds band budget HALT: headless/formal path requires a locked triage extension &#x27; +
+        &#x27;(missing extension or locked!==true). Refusing source=default FULL knobs &#x27; +
+        `(cap=${fallback}, includeAdjudication=true). CLI/env maxRounds is not a lock substitute. ` +
+        &#x27;Gate-1 must emit triage-extension-*.json with locked:true before formal rounds.&#x27;,
+      {
+        code: &#x27;BAND_UNLOCKED_HEADLESS&#x27;,
+        runDir,
+        hasExtension: !!loaded,
+        locked,
+      },
+    );
+  }
+
+  // includeAdjudication: extension knobs ONLY — never --include-adjudication or env.
+  let includeAdjudication;
+  if (knobs &amp;&amp; Object.prototype.hasOwnProperty.call(knobs, &#x27;includeAdjudication&#x27;)) {
+    includeAdjudication = !!knobs.includeAdjudication;
+  } else if (formalClosed) {
+    throw new HaltError(
+      &#x27;run-rounds band budget HALT: locked extension missing knobs.includeAdjudication — &#x27; +
+        &#x27;refuse invented FULL adjudication default&#x27;,
+      { code: &#x27;BAND_MISSING_ADJUDICATION_KNOB&#x27;, runDir },
+    );
+  } else {
+    // Interactive / non-formal soft path only (never under headless unlocked).
+    includeAdjudication = true;
+  }
+
+  // Cap precedence: explicit maxRounds arg &gt; RESEARCHPRIME_MAX_ROUNDS env &gt; locked knobs &gt; fallback.
+  // (CLI/env only apply after lock gate when formalClosed — already enforced above.)
+  if (maxRounds != null &amp;&amp; Number.isFinite(Number(maxRounds)) &amp;&amp; Number(maxRounds) &gt; 0) {
+    return {
+      cap: Math.floor(Number(maxRounds)),
+      source: &#x27;explicit&#x27;,
+      knobs,
+      includeAdjudication,
+      locked,
+    };
+  }
+  const envRaw = env?.RESEARCHPRIME_MAX_ROUNDS;
+  if (envRaw != null &amp;&amp; String(envRaw).trim() !== &#x27;&#x27; &amp;&amp; Number.isFinite(Number(envRaw)) &amp;&amp; Number(envRaw) &gt; 0) {
+    return {
+      cap: Math.floor(Number(envRaw)),
+      source: &#x27;env&#x27;,
+      knobs,
+      includeAdjudication,
+      locked,
+    };
+  }
+  if (knobs &amp;&amp; typeof knobs.maxRounds === &#x27;number&#x27; &amp;&amp; knobs.maxRounds &gt; 0) {
+    return {
+      cap: Math.floor(knobs.maxRounds),
+      source: locked ? &#x27;triage-lock&#x27; : &#x27;triage-advisory&#x27;,
+      knobs,
+      includeAdjudication,
+      locked,
+    };
+  }
+
+  // Would invent source=default FULL knobs (cap=fallback, includeAdjudication often true).
+  if (formalClosed) {
+    throw new HaltError(
+      `run-rounds band budget HALT: refuse source=default FULL knobs (cap=${fallback}, ` +
+        &#x27;includeAdjudication=true) under headless/formal — locked extension lacks knobs.maxRounds&#x27;,
+      { code: &#x27;BAND_DEFAULT_REFUSED&#x27;, runDir, locked },
+    );
+  }
+
+  return {
+    cap: fallback,
+    source: &#x27;default&#x27;,
+    knobs,
+    includeAdjudication,
+    locked,
+  };
+}
+
+export async function runIntake(inputs, {
+  runDir,
+  promptHuman,</pre>
+<div class="actions"><a class="button" href="../source-pages/intake.html#L118">Open numbered source at line 118</a>
+<a class="button secondary" href="../sources/intake.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/budget">Resolve the locked round budget</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">bbb2cdcaaa86838cc239c28c82f89ae1ecb0fc1fbe414b45c2d1946d58f05fa2</span></p>
+<p>Excerpt SHA-256 <span class="path">bf00ea346ed773394ca6ee9e2f8ff7b4717feab33bae40c2c1405d0ae7a140dc</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

@@ -1,0 +1,151 @@
+{
+  "resources": [
+    {
+      "id": "zombiehunter-mat-skill-md",
+      "title": "Zombie-Hunter Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "zombiehunter-mat-human-md",
+      "title": "Zombie-Hunter Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "zombiehunter-mat-north-star-md",
+      "title": "Zombie-Hunter Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "zombiehunter-mat-description-md",
+      "title": "Zombie-Hunter Detailed Specification (DESCRIPTION.md)",
+      "category": "material",
+      "path": "DESCRIPTION.md",
+      "description": "Detailed capability specification and module breakdown."
+    },
+    {
+      "id": "zombiehunter-mat-operator-runbook-md",
+      "title": "Zombie-Hunter Operator Runbook (OPERATOR-RUNBOOK.md)",
+      "category": "material",
+      "path": "OPERATOR-RUNBOOK.md",
+      "description": "Operational troubleshooting and safety procedures."
+    },
+    {
+      "id": "zombiehunter-mat-triage-block",
+      "title": "Zombie-Hunter Universal Triage & Seating Block",
+      "category": "material",
+      "path": "foundry/triage/generated/zombie-hunter.triage-block.md",
+      "description": "Generated Universal Seating Law & complexity triage protocol block."
+    },
+    {
+      "id": "zombiehunter-tool-src-classify-js",
+      "title": "classify.js (src/classify.js)",
+      "category": "tools",
+      "path": "src/classify.js",
+      "description": "Executable .js module (706 LOC; key symbols: sanitizeId, enumerateAll, productionHostWalk, productionEngineLeg)."
+    },
+    {
+      "id": "zombiehunter-tool-src-daemon-js",
+      "title": "daemon.js (src/daemon.js)",
+      "category": "tools",
+      "path": "src/daemon.js",
+      "description": "Executable .js module (119 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "zombiehunter-tool-src-engine-leg-js",
+      "title": "engine-leg.js (src/engine-leg.js)",
+      "category": "tools",
+      "path": "src/engine-leg.js",
+      "description": "Executable .js module (267 LOC; key symbols: lookupProc, matchEngineE1, isSupportRuntimeBasename, supportAncestryHasE1)."
+    },
+    {
+      "id": "zombiehunter-tool-src-bulk-approvals-js",
+      "title": "bulk-approvals.js (src/bulk-approvals.js)",
+      "category": "tools",
+      "path": "src/bulk-approvals.js",
+      "description": "Executable .js module (57 LOC; key symbols: getContextExplanation)."
+    },
+    {
+      "id": "zombiehunter-tool-src-ceremony-emit-mjs",
+      "title": "ceremony-emit.mjs (src/ceremony-emit.mjs)",
+      "category": "tools",
+      "path": "src/ceremony-emit.mjs",
+      "description": "Executable .mjs module (115 LOC; key symbols: listCeremonyEmitters, resolveCeremonyLevel, shouldEmitCeremony, emitCeremony)."
+    },
+    {
+      "id": "zombiehunter-tool-src-discovery-js",
+      "title": "discovery.js (src/discovery.js)",
+      "category": "tools",
+      "path": "src/discovery.js",
+      "description": "Executable .js module (78 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "zombiehunter-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "zombiehunter-peer-foreman",
+      "title": "Foreman Process Lease Registry",
+      "category": "skills",
+      "skill": "foreman",
+      "description": "Reads Foreman wave leases and run heartbeats to prove positive orphan status"
+    },
+    {
+      "id": "zombiehunter-peer-steward-portfolio",
+      "title": "Portfolio Steward (Cave / High Seat)",
+      "category": "skills",
+      "skill": "steward-portfolio",
+      "description": "Surfaces system-wide multi-engine token burn and orphan alerts in the High Seat"
+    },
+    {
+      "id": "zombiehunter-peer-gandalf",
+      "title": "Gandalf Safety-Gate Auditor",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Verifies the abstain-by-default proof-of-death invariant before any process termination"
+    },
+    {
+      "id": "zombiehunter-ref-lessons",
+      "title": "Zombie-Hunter LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "zombiehunter-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "zombiehunter-journal-0010-investigate-slim-self-",
+      "title": "Journal: 0010-investigate-slim-self-observe",
+      "category": "references",
+      "path": "journal/0010-investigate-slim-self-observe.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0010-investigate-slim-self-observe.md)."
+    },
+    {
+      "id": "zombiehunter-journal-0009-investigate-slim-keep-",
+      "title": "Journal: 0009-investigate-slim-keep-supervised-claude",
+      "category": "references",
+      "path": "journal/0009-investigate-slim-keep-supervised-claude.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0009-investigate-slim-keep-supervised-claude.md)."
+    },
+    {
+      "id": "zombiehunter-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

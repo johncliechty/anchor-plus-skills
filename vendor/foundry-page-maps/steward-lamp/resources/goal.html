@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Reread the goal and name the next act · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="goal" data-anchor-id="a-spine-demandClose">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Reread the goal and name the next act</h1>
+<p class="intro">demandClose checks a recorded goal-reread verdict and fresh next-step facts when work remains. It cannot prove the model understood the goal.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.627834+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/ledger-spine.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 935cbe7fee7610bf2e1171237b9549cac97dabd1096e4507edf685d4a7427298</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\ledger-spine.mjs · lines 504–517</p><pre>export function demandClose(root, base, step_id, goal_reread) {
+  const closing = closeOf({ kind: &#x27;status_flip&#x27;, to: &#x27;done&#x27;, step_id, goal_reread }, base);
+  if (!closing) return { ok: true, demanded: false };
+  const demand = demandSpineForClose(root, base, step_id);
+  if (!demand.ok) return demand;
+  if (!GOAL_REREAD.includes(goal_reread)) {
+    return {
+      ok: false, error: &#x27;goal_reread_required&#x27;, closing: step_id,
+      message: &#x27;Close refused: re-read the North Star and say so - --goal-reread reaffirmed|rewritten &#x27;
+        + &#x27;(or goal_reread on the refinement close operation); the engine records the goal_flip.&#x27;,
+    };
+  }
+  return { ok: true, demanded: true };
+}</pre>
+<p><a class="button" href="../source-pages/spine.html#L504">Open numbered source</a>
+<a href="../sources/spine.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/goal">Pin next act and record the goal reread</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">935cbe7fee7610bf2e1171237b9549cac97dabd1096e4507edf685d4a7427298</span></p><p>Excerpt hash: <span class="path">04e70aa2daf0952edf15a635fc1f142d879b6643417a9a70cfd952b5e690c841</span></p></details></article></main></body></html>

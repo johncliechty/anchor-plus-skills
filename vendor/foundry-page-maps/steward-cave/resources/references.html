@@ -1,0 +1,121 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Resolve a project&#x27;s part · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="references" data-anchor-id="a-parts-resolve_ref">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Resolve a project&#x27;s part</h1>
+<p class="intro">Read project, one contained effort, step or deliverable references. Broken paths remain named; calendar is explicitly not connected. Referenced state belongs to its target.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.534809+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/campaign_parts.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: dcbb09da3b5c44dd2a6c36c2a82d7a5f208de8c221836dc0edb365e5bcc51ada</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/campaign_parts.py · lines 103–211</p><pre>def resolve_ref(ref, cache=None, lookup=None, with_lead=False):
+    &quot;&quot;&quot;One part → ``{&quot;ref&quot;,&quot;kind&quot;,&quot;pid&quot;,&quot;name&quot;,&quot;what&quot;,&quot;state&quot;,&quot;date&quot;,&quot;href&quot;,&quot;lead&quot;,&quot;broken&quot;,&quot;gap&quot;}``.&quot;&quot;&quot;
+    cache = cache if isinstance(cache, dict) else {}
+    lookup = lookup or _default_lookup
+    out = {&quot;ref&quot;: str(ref or &quot;&quot;), &quot;kind&quot;: &quot;&quot;, &quot;pid&quot;: &quot;&quot;, &quot;name&quot;: &quot;&quot;, &quot;what&quot;: &quot;&quot;, &quot;state&quot;: &quot;&quot;,
+           &quot;date&quot;: &quot;&quot;, &quot;href&quot;: &quot;&quot;, &quot;lead&quot;: &quot;&quot;, &quot;broken&quot;: True, &quot;gap&quot;: &quot;&quot;}
+    p = parse_ref(ref)
+    if not p:
+        out[&quot;gap&quot;] = &quot;not a reference the Campaign knows (project: · step: · deliverable: · calendar: · effort:)&quot;
+        return out
+    out[&quot;kind&quot;] = p[&quot;kind&quot;]
+    if p[&quot;kind&quot;] == &quot;calendar&quot;:
+        out[&quot;gap&quot;] = &quot;calendar not connected&quot;
+        return out
+    entry = _cached(cache, (&quot;entry&quot;, p[&quot;pid&quot;]), lambda: lookup(p[&quot;pid&quot;]))
+    if not entry or not entry.get(&quot;folder_path&quot;):
+        out[&quot;pid&quot;] = p[&quot;pid&quot;]
+        out[&quot;gap&quot;] = &quot;no project with id %s&quot; % p[&quot;pid&quot;]
+        return out
+    folder = entry[&quot;folder_path&quot;]
+    out[&quot;pid&quot;] = str(entry.get(&quot;id&quot;) or p[&quot;pid&quot;])
+    out[&quot;name&quot;] = str(entry.get(&quot;name&quot;) or out[&quot;pid&quot;][:8])
+    steps = _projection(folder, cache)
+    if p[&quot;kind&quot;] == &quot;project&quot;:
+        out[&quot;href&quot;] = &quot;/project/%s&quot; % out[&quot;pid&quot;]
+        # the same fact the home&#x27;s rows use: the strip&#x27;s human wait, else the last status&#x27;s &quot;waiting on you&quot;
+        wait = _strip_wait(folder, cache)
+        if not wait:
+            plan = _summary(folder, cache).get(&quot;plan&quot;)
+            wait = &quot; &quot;.join(str((plan or {}).get(&quot;waiting_on_you&quot;) or &quot;&quot;).split()) if isinstance(plan, dict) else &quot;&quot;
+            wait = (wait[:88].rstrip() + &quot;…&quot;) if len(wait) &gt; 90 else wait
+        out[&quot;state&quot;] = (&quot;waiting on you: &quot; + wait) if wait else &quot;&quot;
+        out[&quot;date&quot;] = _nearest_due(steps)
+        out[&quot;broken&quot;] = False
+    elif p[&quot;kind&quot;] == &quot;effort&quot;:
+        # one cockpit within the project (2026-09-30): the effort directory with its own Face; its light is the
+        # ONE attention flag the steward writes; its date the nearest due of its own roadmap
+        from pathlib import Path as _P
+        from urllib.parse import quote as _q
+        eff = _P(folder) / p[&quot;sub&quot;]
+        sub_ = str(p[&quot;sub&quot;])
+        try:
+            inside = eff.resolve().parent == _P(folder).resolve()
+        except OSError:
+            inside = False
+        if sub_ in (&quot;.&quot;, &quot;..&quot;) or &quot;\\&quot; in sub_ or &quot;/&quot; in sub_ or not inside:
+            out[&quot;gap&quot;] = &quot;an effort is one directory inside %s, not &#x27;%s&#x27;&quot; % (out[&quot;name&quot;], sub_)      # Grok&#x27;s read of W2b: never a path out of the project
+            return out
+        if not (eff / &quot;ECGBERHT.md&quot;).is_file():
+            out[&quot;gap&quot;] = &quot;no effort &#x27;%s&#x27; in %s&quot; % (p[&quot;sub&quot;], out[&quot;name&quot;])
+            return out
+        title = p[&quot;sub&quot;]
+        try:
+            for ln in (eff / &quot;ECGBERHT.md&quot;).read_text(encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;).splitlines()[:40]:
+                if ln.startswith(&quot;# &quot;):
+                    heading = ln[2:].strip()
+                    if heading and not heading.lower().startswith(&quot;ecgberht&quot;):
+                        title = heading
+                    break
+        except OSError:
+            pass
+        out[&quot;what&quot;] = title
+        out[&quot;dir&quot;] = sub_
+        out[&quot;name&quot;] = &quot;%s · %s&quot; % (out[&quot;name&quot;], title)
+        out[&quot;href&quot;] = &quot;/project/%s?dir=%s&quot; % (out[&quot;pid&quot;], _q(p[&quot;sub&quot;]))
+        try:
+            import json as _json
+            att = _json.loads((eff / &quot;.ecgberht&quot; / &quot;attention.json&quot;).read_text(encoding=&quot;utf-8&quot;))
+        except Exception:
+            att = {}
+        state = str((att or {}).get(&quot;state&quot;) or &quot;&quot;).lower() if isinstance(att, dict) else &quot;&quot;
+        reason = &quot; &quot;.join(str((att or {}).get(&quot;reason&quot;) or &quot;&quot;).split()) if isinstance(att, dict) else &quot;&quot;
+        reason = (reason[:88].rstrip() + &quot;…&quot;) if len(reason) &gt; 90 else reason
+        out[&quot;state&quot;] = (&quot;waiting on you: &quot; + reason) if state == &quot;needs_you&quot; else ((state.replace(&quot;_&quot;, &quot; &quot;) + ((&quot;: &quot; + reason) if reason else &quot;&quot;)) if state else &quot;&quot;)
+        out[&quot;date&quot;] = _nearest_due(_projection(str(eff), cache))
+        out[&quot;broken&quot;] = False
+    elif p[&quot;kind&quot;] == &quot;step&quot;:
+        st = next((s for s in steps or () if isinstance(s, dict) and s.get(&quot;id&quot;) == p[&quot;sub&quot;]), None)
+        if st is None:
+            out[&quot;gap&quot;] = (&quot;no step &#x27;%s&#x27; in %s&quot; % (p[&quot;sub&quot;], out[&quot;name&quot;])) if steps is not None \
+                else (&quot;%s has no readable plan&quot; % out[&quot;name&quot;])
+            return out
+        out[&quot;href&quot;] = &quot;/project/%s&quot; % out[&quot;pid&quot;]
+        out[&quot;what&quot;] = str(st.get(&quot;name&quot;) or p[&quot;sub&quot;])
+        out[&quot;state&quot;] = str(st.get(&quot;status&quot;) or &quot;&quot;)
+        # W1 (2026-09-28): the TARGET&#x27;s own status, typed, so the Campaign&#x27;s open/next reads the referenced step&#x27;s
+        # truth and never the wrapper&#x27;s status alone (Grok&#x27;s live replay: a done target stayed &quot;next&quot;)
+        out[&quot;target_status&quot;] = str(st.get(&quot;status&quot;) or &quot;&quot;)
+        if st.get(&quot;waiting_on&quot;) and st.get(&quot;status&quot;) in (&quot;waiting&quot;, &quot;parked&quot;):
+            out[&quot;state&quot;] += &quot; · &quot; + str(st.get(&quot;waiting_on&quot;))
+        out[&quot;date&quot;] = str(st.get(&quot;due&quot;) or &quot;&quot;)
+        out[&quot;broken&quot;] = False
+    elif p[&quot;kind&quot;] == &quot;deliverable&quot;:
+        items = _register(folder, cache)
+        if not p[&quot;sub&quot;].isdigit():
+            out[&quot;gap&quot;] = &quot;a deliverable part names a row number (deliverable:&lt;pid&gt;/&lt;n&gt;); &#x27;%s&#x27; is not one&quot; % p[&quot;sub&quot;]
+            return out
+        n = int(p[&quot;sub&quot;])
+        it = items[n - 1] if 1 &lt;= n &lt;= len(items) else None
+        if it is None:
+            out[&quot;gap&quot;] = &quot;no row %d in %s&#x27;s register (%d rows)&quot; % (n, out[&quot;name&quot;], len(items))
+            return out
+        out[&quot;what&quot;] = str(it.get(&quot;what&quot;) or &quot;&quot;)
+        out[&quot;href&quot;] = str(it.get(&quot;route&quot;) or &quot;&quot;) or &quot;/project/%s&quot; % out[&quot;pid&quot;]
+        out[&quot;state&quot;] = &quot;current&quot; if it.get(&quot;is_current&quot;) else &quot;&quot;
+        out[&quot;broken&quot;] = False
+    if with_lead and not out[&quot;broken&quot;]:
+        out[&quot;lead&quot;] = str(_summary(folder, cache).get(&quot;lead_line&quot;) or &quot;&quot;)
+    return out</pre>
+<p><a class="button" href="../source-pages/parts.html#L103">Open numbered source</a>
+<a href="../sources/parts.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/goals">Resolve Campaign goals and components</a> · <a target="_top" href="../index.html#process/project">Open the owning project steward</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">dcbb09da3b5c44dd2a6c36c2a82d7a5f208de8c221836dc0edb365e5bcc51ada</span></p><p>Excerpt hash: <span class="path">d60b2d6438fd1f44e51f57ba06f89bf6c623857cdfa75aa9dc7102cc7965b363</span></p></details></article></main></body></html>

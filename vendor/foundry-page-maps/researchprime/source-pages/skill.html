@@ -1,0 +1,247 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>skill · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>skill</h1>
+<p class="note">Frozen instructions source · <span class="path">C:\dev\trio\researchPrime\SKILL.md</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 33897bf9008f7c54e4f9bc5e3545fe8837b1d8dbcf36f403c67d56f00327c2a8</p></details>
+<p><a href="../sources/skill.md" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> ---</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> name: researchPrime</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> description: Universal best-in-class research skill with an engine-backed, stakes-scaled adversarial verification loop. Runs a distinct PLANNING phase and a FRESH plan-only EXECUTION phase (true context isolation on sub-agent hosts; honest degraded mode elsewhere), then a Phase-3 that — on hosts with Node — drives a multi-round adversarial loop (heterogeneous &gt;=2-agree reviewers, a separate context-free Judge, an active Deep-Think Synthesizer, convergence-until-dry, cross-lineage origin fusion) via a Node engine that IMPORTS, never forks, the trio&#x27;s Crucible+Foreman machinery. Weights evidence on the OBSERVED&gt;CORROBORATED&gt;CLAIMED&gt;UNVERIFIED&gt;REFUTED ladder, reports correlated-blind-spot recall honestly, resists the bandwagon effect, refuses to flatter or hallucinate, and returns three summary levels (full report / executive / agent-implementation). Hosts without Node get a schema-conformant prose run stamped &quot;adversarial verification did NOT run&quot;. Use for /researchPrime, &quot;deep research with validation&quot;, or any high-stakes investigation.</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> ---</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> </span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> ## North Star (LOCKED — John, 2026-08-25)</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> </span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> Given any high-stakes question, researchPrime returns a decision-ready, source-graded answer at three summary levels whose every consequential claim survived stakes-scaled adversarial verification — honestly stamped when verification could not run — and never spends heavy rounds on a low-stakes ask.</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> </span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> </span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> &lt;!-- ELEGANCE-LAW v2 --&gt;</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> ## The Elegance Law (locked by John — binding on this skill)</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> </span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> Canonical text: `Skill Foundry/ELEGANCE.md`. Applies to ANY agent running this</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> skill on ANY host. If this block and a longer procedure below disagree, this</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> block wins.</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> </span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> 1. **Approvals are ≤200 words** — what changes in his world, the recommendation,</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a>    the one thing that gets worse. The artifact stays on disk and is named, not</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a>    pasted. An approval obtained with a longer block is VOID.</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> 2. **Summaries are ≤150 words** — goal in one line, done / not done, ≤3 findings</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a>    ranked by consequence, the single next decision. Never rounds, waves, seats,</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a>    stamps, gate counts, or file inventories.</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> 3. **Default to the lightest band, without asking.** A heavier tier requires the</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>    first status line to NAME its trigger: irreversible or externally visible,</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a>    inputs unconverged, a prior failure in this exact area, or he asked for it.</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> 4. **Needed-because line.** Any element he did not request carries one line:</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a>    &quot;Needed because ___; dropping it costs ___.&quot; No line, no element.</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> 5. **Show a cut.** ONE dry round ends a review loop — never a streak. Every plan</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a>    names something it removed; &quot;nothing cut&quot; is said aloud.</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> **THE VERIFICATION LAW** (added 2026-08-15 after its FOURTH recurrence — each of</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> the first three was written into a journal and recurred anyway):</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> </span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> 6. **Verify the claim you actually made, on the surface he actually uses.**</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>    &quot;It&#x27;s live / fixed / renders&quot; is a claim about HIS screen. That the server</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>    emits new bytes, that a build exited zero, or that assertions passed are</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>    claims about something else. Render it and look at it.</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> 7. **A symptom reported twice retires the first explanation.** Test the</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>    hypothesis; never repeat it. An explanation that makes his report false</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>    (&quot;it&#x27;s your cache&quot;, &quot;it&#x27;s a data issue&quot;) needs MORE evidence, not less.</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> 8. **Prefer a mechanism to an instruction.** If the same instruction is given</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>    every session, the instruction is the defect — build what removes it.</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> 9. **A correction that lives only in a journal or a memory has not been made.**</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>    Promote it to where it is loaded BEFORE the work starts.</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> **Two laws these serve.** A gate that cannot see what the user sees is not a gate</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> — structure diffs are lints, and must be labelled as lints. And a guardrail is</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> never the whole product of a turn — if enforcement withholds output he already</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> paid for, show it anyway.</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> &lt;!-- ELEGANCE-V2.1 addendum --&gt;</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a> **What elegance IS (researchPrime-vetted, 2026-08-15):** the largest result</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> carried by the least machinery its user can actually hold — every element</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> forced by an INDEPENDENT citable need, nothing present the objective does not</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> pay for. Earned by iteration, never by skipping work: as simple as the task</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> allows, no simpler than a single datum permits.</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> **The Rabbit-Catcher (canonical battery: `ELEGANCE.md` Part II, ships with</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> the bundle):** the steering seat runs the full RC battery at PLAN APPROVAL</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> and on any NEW mid-run element; round boundaries ask only RC-6 (&quot;still on the</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> critical path?&quot;). Uncertain ⇒ PARK the element (zero further spend) + one</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> batched line in the next block the user already reads — never silent pursuit,</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> never ad-hoc interruption. Needs and hazards must be independent of their</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> proposer (no self-authored justification records); malleability work is</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> never cut as &quot;unused capability&quot;; guards are judged by RC-G, never by</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> retirement. Verdicts: KEEP / HOLD (with written trigger or budget) / CUT</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> (logged).</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> **THE SPEAKING LAW (John, 2026-08-16 — ELEGANCE.md Part III):** every ask,</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a> HALT, or summary this skill puts to the user describes the DECISION, never</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a> the machinery (a gate ask took FOUR attempts because it kept narrating waves</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> and gates); a few plain sentences carrying the two-three details that matter</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> + where the full detail lives; genuinely complicated content goes in NUMBERED</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a> BATCHES, one at a time, each ending &quot;OK so far?&quot;; no seat/stamp/gate</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> vocabulary in the sentence the user must read; every ask ends with a question</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> answerable in one word AND carries a recommendation (what you would choose +</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> one line of why + alternatives when the choice has them + &quot;or tell me</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a> something else&quot; — options are a convenience, never a cage).</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> **Engine-enforced since 2026-09-05 (John):** at every round boundary the governor asks RC-6 only — &quot;does the North Star FAIL without this new blocker, or merely feel less complete?&quot; — a &#x27;merely&#x27; blocker is PARKED (dropped from the carried set, zero further spend) and said as one line (`possible rabbit hole: … — pursue or drop?`); record: `parkedByRc6` in `round-N-result.json` (`bin/run-rounds.mjs`, `drivers/elegance-pass.mjs` `runCriticalPathCheck`).</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> &lt;!-- /ELEGANCE-V2.1 --&gt;</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> &lt;!-- /ELEGANCE-LAW --&gt;</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> </span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> &gt; **Humans:** read `HUMAN.md` first. This file is the agent/engine protocol.</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a> </span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a> # researchPrime — Universal Best-in-Class Research Skill (engine-backed)</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a> </span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> This skill runs a distinct planning phase, a fresh plan-only execution phase, and an adversarial validation phase. It reports the true state of the world, weights evidence by verification quality, and does not tell the requester what they hope to hear. Popularity is not treated as truth.</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a> researchPrime OWNS the evidence ledger, the verification ladder (OBSERVED &gt; CORROBORATED &gt; CLAIMED &gt; UNVERIFIED &gt; REFUTED), GATE-1 independent-origins, the stakes governor, and the three report shapes. On a host with `node`, Phase-3 escalates to a real, stakes-scaled, multi-round adversarial loop in the Node engine in `bin/` — which IMPORTS (never forks) the trio&#x27;s Crucible+Foreman modules. On a host without Node, Phase-3 runs an honest degraded prose pass and says so.</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a> This file is self-contained for the prose protocol; the engine is in `bin/` alongside it.</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a> </span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a> &gt; **Tier definition (Heavy vs regular · always-cross-model · seat mapping):** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → &quot;Skill tiers&quot;. A `-Heavy` run uses top-frontier models on EVERY seat regardless of the base session (delegate the frontier seat to a frontier-pinned sub-agent if the base session isn&#x27;t frontier); foundry skills are ALWAYS true cross-model. Do not re-define tiers locally.</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a> </span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a> ---</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a> </span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a> ## Step 0 — Mode + capability binding + run-dir (FIRST, every run)</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a> You cannot reliably enumerate your own host&#x27;s tool list mid-turn. Bind by try-and-observe.</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a> </span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a> 1. **Sub-agent axis.** Default to single-context (sequential role-play). Switch to parallel-swarm only if the host explicitly signals sub-agent support. When unsure, stay single-context.</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a> </span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a> 2. **Engine capability (import probe — NOT direct CLI).** From this skill&#x27;s directory run:</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>    `node -e &quot;import(&#x27;./bin/contract.mjs&#x27;).then(m=&gt;m.runImportSpike()).then(v=&gt;{process.stdout.write(JSON.stringify(v));process.exit(v.go?0:1)})&quot;`</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>    If it exits 0 / prints `&quot;go&quot;:true`, bind ENGINE mode for Phase-3. If `node` is absent or it exits non-zero, bind DEGRADED prose mode.</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>    Do NOT use `node bin/contract.mjs` for this probe: when the skill is installed via the onboard junction, that command prints nothing and exits 0 (its CLI guard compares the junction path to the symlink-resolved real path), which would falsely look like NO-GO.</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> </span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> 3. **Other capabilities** (web-fetch, code-exec, file-write, sub-agent, search): bind each by a low-cost attempt, never by introspection.</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a> </span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a> 4. **Run-dir.** Create a working dir for the ledger and the engine&#x27;s crash-durable checkpoints.</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a> </span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a> ---</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a> </span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a> ## Phase 1 — PLAN (deliberate; gather nothing) + stakes vector + foresight</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a> </span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> Produce only a written plan: the AXIS (the load-bearing win-condition and what would FALSIFY a candidate); a stakes VECTOR (impact / reversibility / blast-radius — irreversibility forces tier &gt;= medium); the candidate branches; the best-in-class baselines to beat. Name no expected winner.</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a> </span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a> Oranges foresight receipt (required): name &gt;=1 dropped or reordered branch AND its counterfactual cost. If you cannot, stamp &quot;no foresight value added.&quot;</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> </span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a> Emit the stakes vector + foresight receipt as the Phase-1 hand-off; the governor projects the vector to a tier that scales Phase-3. Freeze the plan and STOP.</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a> </span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a> ---</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> </span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a> ## PLAN REVIEW GATE — report the plan ONE-SHOT to the user (approve / edit / abort)</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a> </span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a> Before crossing the context boundary, present the frozen Phase-1 plan to the user **in one</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a> shot** and get an explicit decision. This is the load-bearing checkpoint: execution does not</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> begin until the user APPROVEs. **The ask obeys Elegance rule 1** (reworded 2026-08-25 — the</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a> old &quot;surface the whole plan in the body&quot; instruction collided with rule 1&#x27;s ≤200-word VOID</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a> clause, making every approval at this gate formally void): the frozen plan artifact stays ON</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a> DISK and is NAMED BY PATH; the message body carries a **≤200-word decision block** — the AXIS</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a> in one line, the branch count + tier with its trigger, the recommendation, and the one thing</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a> that gets worse — plus the offer to print any section on request. Never clip the ask into a</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> dialog preview; never paste the whole plan unasked.</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a> Accept exactly one of: **APPROVE** (proceed to execution), **EDIT** (revise the plan per the user&#x27;s change and re-present — bounded to 3 cycles), **ABORT** (halt the run). On EDIT, the revised plan is re-frozen and re-reported before any approval counts.</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a> </span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a> **On a host with Node**, record the decision durably (hash-bound governance record, EDIT re-hash, replay binding) by driving the real engine gate:</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a> `node bin/plan-gate.mjs &lt;planInputs.json&gt; [runDir]` — **TTY hosts only** (journal 0031,</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a> hit twice on 2026-08-15: the CLI&#x27;s readline reads EOF on piped/non-interactive stdin and</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a> exits 0 having written NOTHING — gate1-record without governance.json). **On a</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a> non-interactive host use the programmatic seam** — import `runPlanReviewGate` from</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a> `bin/plan-gate.mjs` and drive it with `promptGate1`/`promptGate2` callbacks returning the</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a> user&#x27;s recorded decision (same hash-bound `governance.json`; the engine&#x27;s</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a> execution-blocked guard requires it either way). `planInputs.json` is `{ objective, axis, branches:[…], baselines:[…], stakes:{ declared_stakes:&#x27;low|medium|high&#x27;, reversibility:&#x27;reversible|hard-to-reverse|irreversible&#x27;, blast_radius:&#x27;narrow|moderate|wide&#x27;, magnitude:&#x27;minor|moderate|major&#x27; } }` (the `adjudicateStakes` axes; `irreversible` floors the tier at `medium`). Gate 2 renders and approves the ACTUAL Phase-1 plan (AXIS/branches/baselines + stakes/tier/foresight from `runPhase1`), NOT the generic `planMatrix`. APPROVE writes `governance.json` + `gate2-record.json` bound to the plan hash; EDIT re-hashes; ABORT/EDIT-overflow HALTs before execution. The plan artifact is a pure function of the inputs, so the same plan always yields the same `planHash`.</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a> </span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a> **On a host without Node**, run the same gate as prose: report the plan, capture APPROVE/EDIT/ABORT in the transcript, and only cross the boundary on APPROVE (stamp &quot;plan-gate: prose, not hash-bound&quot;).</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a> </span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a> Only after APPROVE do you cross into fresh execution.</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> </span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a> ---</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a> </span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a> ## CONTEXT BOUNDARY — FRESH EXECUTION (plan-only)</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a> </span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a> Execution reads ONLY the frozen plan. On sub-agent hosts this is a real forget (stamp ISOLATION: real only with a recorded nonce check); on single-context hosts it is approximated — quote the plan and derive every step from the quote (stamp ISOLATION: approximated).</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a> </span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a> ---</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a> </span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a> ## Phase 2 — EXECUTE</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a> </span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a> Gather evidence; record each item in the evidence ledger with its origin(s) and place it on the ladder. Empirical (OBSERVED) requires real code execution; cap at CLAIMED with a NO-EXEC stamp where the host cannot run code. A claim supported only by &quot;everyone says so / most popular&quot; with no primary origin is BANDWAGON-ONLY and never exceeds UNVERIFIED without fresh independent verification. Count origins ONLY through the shared independence module — never re-implement origin counting.</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a> </span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a> ---</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a> ## Phase 3 — VALIDATE: the stakes-scaled adversarial loop</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a> </span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a> ### ENGINE mode (Node available)</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a> **Operator recipe (T9, 2026-07-11; panel spawn 2026-08-27 — THE canonical way to run rounds; no per-run harness authoring):**</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a> 1. Make a run dir; write `round-1-input.json`. **Live (the real path):** `{ round, northStar, stakes,</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>    artifact: &quot;&lt;ABSOLUTE path to the thing under review&gt;&quot;, reviews: [] }`. The engine SPAWNS the G3</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>    panel (Skeptic / Contrarian / Analyst, concurrent, review-family seats) and writes</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>    `round-N-spawned-reviews.json`. Do **not** paste reviewer findings — that was journal 0057&#x27;s hole.</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>    **Replay / resume:** supply a non-vacant `reviews:[{reviewer, angle, lineage, findings:[…]}]` and</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>    the panel is not re-fired (sidecar also skips re-spend). When the reviewed artifact carries claim</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>    ids, reviewers MUST set `claim_id` (agreement keys on it — G6).</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>    FIELD LAWS (each burned a real round — **ENGINE-ENFORCED since 2026-08-25**: run-rounds</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>    HALTs loudly at input load on any violation, one line naming the exact field; these lines</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>    remain as the WHY): `traces_to_north_star` is the STRING `&#x27;yes&#x27;`/`&#x27;no&#x27;`, never a boolean —</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>    booleans silently demote EVERY finding (2026-08-15; live panel coerces booleans then HALTs on</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>    anything else). Reviewer prompts hand agy ABSOLUTE artifact paths (0002); a ```-fenced agy reply</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>    pasted as data is a transcription defect — strip the fence (0052). agy takes `--model &quot;&lt;label</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>    form&gt;&quot;` and no permission flags (0048).</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a> 2. `node bin/run-rounds.mjs &lt;runDir&gt; [--max-rounds N]` — replay mode by default (recorded adjudications);</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>    `RESEARCHPRIME_LIVE_ROUND=1` routes reviewer/debate/judge LIVE via family prefs and, when</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>    `reviews` are vacant, **spawns the panel** on the dashboard&#x27;s `review_family` seat (seat down ⇒ honest HALT, never self-review).</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>    Hung/thrown seats ABSTAIN (the other two keep going). The orchestrator LOOKS IN</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>    (heartbeat trail + RC-6 + elegance) — a talking seat is not killed for wall-clock.</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>    Silence is death: spawned seats MUST heartbeat; a silent seat is looked into, then</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>    killed and respawned once; a second silence is fatal. Zero survivors HALT — that is</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>    not a dry round.</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>    `--max-rounds` (default 8) is a HARD budget — the cap stops honestly with open blockers in</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>    `RUN-STATE.json`, never an unbounded loop.</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a> 3. Fix blockers, add `round-&lt;N+1&gt;-input.json`, re-run. Convergence = dry streak N, OR N+1 consecutive</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>    genuinely-empty rounds = **CLEAN convergence** (explicit stamp, distinct from DRY — a defect-free</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>    artifact converges honestly instead of pressuring reviewers into filler nits).</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a> 4. Deliverable lands as `DELIVERABLE-ENGINE.json`; a training record auto-writes to `journal/runs/`.</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a> </span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a> Drive the REAL engine loop. The assembled orchestrator is `bin/governor.mjs` + `bin/round.mjs`, presented by `bin/deliverable.mjs`; `bin/dogfood.mjs` is the canonical worked example. Do NOT call `bin/engine.mjs runEngine` — that module is a skeleton with no-op gate slots.</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a> </span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a> Per governed round (`runGovernedRound({ agent, stakes, reviews, round, northStar })` -&gt; `orchestrateRound(...)`):</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a> - **Governor (stakes scaling).** Tier `low` fires ZERO Synthesizer/Judge/debate sub-agents; `medium`/`high` include them. A zero-AXIS-finding round is skipped at every tier.</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a> - **G3 heterogeneous &gt;=2-agree reviewers** + **G6 stable finding identity** via the trio `tallyFindings`/`SHARK_ROLES`/`angleForShark` (a finding counts only with &gt;=2 agreeing reviewers).</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a> - **GATE-1 independent origins** through the single shared independence module (same-lineage agreement adds 0 origins).</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a> - **G9 conditional debate** — fires only on a conflicting independent-origin pair.</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a> - **G8 cross-lineage origin fusion** — Enhanced-only; INERT by default behind the human-gated lineage enum (claims zero cross-lineage origins, wears the inert stamp).</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a> - **G4 separate context-free Judge** (`makeJudge`) — DECIDES.</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a> - **Active Deep-Think Synthesizer** (`makeSynthesizer`) — STEERS and files a separate brief; never decides.</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a> - **G5 convergence-until-dry, or CLEAN** with the honest tracker: an EMPTY round never counts toward DRY convergence (I7 — you cannot fake adversarial dryness by declining to look), but N+1 CONSECUTIVE empty rounds converge CLEAN with the explicit distinct stamp (T8 — a defect-free artifact terminates honestly). The suspiciously-dry guard is unchanged (a high-stakes run going dry too fast with unresolved high-severity findings fires probe-or-dissent; on a single-family substrate it emits the shared-blind-spot UN-MITIGABLE stamp — it FLAGS, it does not claim to mitigate).</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a> - **Durability (honest statement, corrected 2026-07-11):** the governed round loop is resumable via the ON-DISK round protocol — `bin/run-rounds.mjs` persists every round&#x27;s input/result JSON plus `RUN-STATE.json`, and re-running continues from the files (Foreman-style in-process checkpointing exists only in the forbidden `runEngine` skeleton; do not rely on it). A mid-round agy HALT costs at most the in-flight round, never the run.</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a> </span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a> Assemble the run with `assembleDeliverable({ mode:&#x27;engine&#x27;, rounds, convergence, calibration, substrateFamilies, northStar })`: it carries the round history, the Judge verdict, the convergence proof, the rho-hat/learned-quorum state, and the separate Synthesizer Brief (decides:false). The engine resolves the trio&#x27;s Crucible/Foreman via its in-repo siblings — no configuration; leave RP_TRIO_ROOT unset. If the import probe is NO-GO (a trio symbol was renamed), do not fork — fall back to degraded mode.</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a> </span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a> ### DEGRADED prose mode (no Node)</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a> </span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a> Run a best-effort sequential audit: a reviewer pass, an independent second reviewer, a separate judge pass, repeat until no new AXIS finding. Stamp the deliverable with the engine&#x27;s literal honesty stamp: &quot;schema conforms; adversarial verification did NOT run&quot;; force cross_model:false; the word &quot;parity&quot; is FORBIDDEN in any prose-mode surface.</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a> </span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a> ---</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a> </span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a> ## Deliverables — three summary levels (one ledger)</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a> </span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a> Build the findings + sources ledger first; render full report / executive / agent-implementation as parallel projections. In ENGINE mode each carries the round history, Judge verdict, convergence proof, calibration state, and the separate Synthesizer Brief. In DEGRADED mode those are null and the honesty stamp leads every surface. Every deliverable carries the ISOLATION and mode (engine|degraded) stamps.</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a> </span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a> Never flatter, never hallucinate a source, never count popularity as truth, never claim a mitigation the run did not perform.</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a> </span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a> ## Reserved / HALT-worthy</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a> </span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a> The attested-lineage enum membership, the pre-registered thresholds (G / X% / C_min / N / K / M / T / N_min), and any change to the locked North Star / invariants are human calls — HALT for a human.</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a> &gt; **⏱ STATUS UPDATES TO CHAT:** When running a long research phase in the background, you MUST arm a 10-minute cadence (`ScheduleWakeup` ~600s, AT LAUNCH) and post scheduled updates in the LOCKED Status-table format — canonical definition in ONE place: the canonical `AGENTS.md` → &quot;Long-run progress updates&quot; (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer). The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick — the SESSION composes it from this skill&#x27;s `journal/`.</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a> </span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a> ## Usage journal (sleep-loop feed — append after every REAL run)</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a> </span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a> At the end of any real (non-test) run of this skill, append ONE entry to</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a> `journal/` in this skill folder as `NNNN-&lt;slug&gt;.md` (next number; APPEND-ONLY —</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a> a correction is a new entry, never an edit). Keep it under ~15 lines, honest over</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a> polished, with the 7 canonical fields (see the Skill Foundry&#x27;s</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a> `planning/portfolio-program/src/journal.mjs`): id, skill, situation, context,</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a> observation, outcome (worked | friction | failed | refused), provenance</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a> (genuine-execution | seeded — only genuine-execution corroborates).</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a> No journal entries → the sleep loop has nothing to learn from.</span></pre></main></body></html>

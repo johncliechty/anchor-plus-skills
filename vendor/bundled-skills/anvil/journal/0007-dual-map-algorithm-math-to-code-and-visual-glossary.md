@@ -1,0 +1,17 @@
+# 0007 — Permanent Anvil Report Standard: Up-Front Visual Glossary, Graphical Plots Over Text Boxes, Block-Parallel Forward/Backward Calculus, and Dual Paper/Algorithm-to-Code Maps
+
+When reviewing the v2 Anvil and Srinivas reports on `Paper 1` (`HierarchicalNormalizingFlows`), John pointed out four high-leverage improvements that apply to every scientific codebase and paper-to-code audit: (1) figures must be real visual graphs, geometric contours, matrix grids, directed flow diagrams, and quantitative charts rather than text-heavy boxes; (2) technical reports need an up-front plain-English definitions primer with simple examples and visual illustrations; (3) complexity analyses for variational/ML algorithms must trace both the **forward pass** (e.g., parallel reparameterized sampling + block transformations) and the **backward pass** (block-parallel gradient backpropagation `.backward()`) to prove $\mathcal{O}(p)$ per-step scaling; and (4) every paper-to-code report must feature **Two Canonical Maps**—**Map 1 (Paper Sections/Equations/Tables $\leftrightarrow$ Software Modules)** (including explicit verification/correction of automated token-overlap equation matchers) and **Map 2 (Step-by-Step Formal Algorithm Math $\leftrightarrow$ Verbatim Code Expressions)**. We codified all four rules permanently in `skills/anvil/SKILL.md`.
+
+---
+
+## 1. The Four Permanent Rules Added to `skills/anvil/SKILL.md`
+
+1. **Up-Front Plain-English Glossary & Visual Concept Primer**:
+   Every Anvil report opens with a plain-English summary followed by a concise **Key Definitions & Visual Primer** defining each domain and algorithmic concept in 1–2 clear sentences, paired with a miniature numerical example and a multi-panel visual diagram.
+2. **Real Graphical Plots & Diagrams (`figure-designer` Enforcement — No Text-Wall Boxes)**:
+   SVG figures must use genuine graphical encodings—plotted density contours/curves, coordinate axes, block-sparsity matrix grids, directed forward/backward computation graphs, and quantitative bar/line charts—with short in-figure labels (`<= 6 words` per label) and full narrative explanations placed in the caption and prose.
+3. **Forward Pass + Backward Pass (Backpropagation) Complexity Trace**:
+   Whenever a paper or codebase claims $\mathcal{O}(p)$ or block-parallel scaling for an optimization-based method (such as normalizing-flow variational inference or state-space filtering/smoothing), the report must explicitly trace and diagram **both** the **Forward Pass** (parallel sampling / forward block conditioning / log-determinant evaluation) and the **Backward Pass** (block-parallel gradient backpropagation $\nabla_\phi \mathcal{L}$ across decoupled local blocks + parent sum-reduction).
+4. **The Two Canonical Maps (Map 1: Paper-to-Software & Map 2: Algorithm Math $\leftrightarrow$ Code)**:
+   - **Map 1 — Paper-to-Software Structural Map**: Connects every section, equation, and empirical table in the manuscript to the exact software file, class/function symbol, and line range, explicitly auditing and correcting any heuristic token-overlap matches in `.anvil/session.json`.
+   - **Map 2 — Step-by-Step Formal Algorithm Math $\leftrightarrow$ Verbatim Code Map**: Shows each execution step of the algorithm in order (Step 1 $\to$ Step $K$) with the **Formal Mathematical Formula** side-by-side against the **Exact Code Expression / Tensor Operation** and its per-step complexity.

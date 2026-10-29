@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Look ahead before gathering · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="foresight" data-anchor-id="a005">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Reusable material</p><h1>Look ahead before gathering</h1>
+<p class="intro">Name a dropped or reordered branch and its counterfactual cost.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\phase1.mjs</span><br>Lines 31–58 · frozen source snapshot</p>
+<pre class="excerpt">export function runPhase1(item) {
+  if (!item || typeof item !== &#x27;object&#x27;) {
+    throw new TypeError(&#x27;runPhase1 requires an item { stakes, plan }&#x27;);
+  }
+  const stakes = adjudicateStakes(item.stakes ?? {});
+  const foresight = runForesight(item.plan ?? { branches: [] });
+  return {
+    schema_version: PHASE1_SCHEMA_VERSION,
+    tier: stakes.tier, // the governor tier the loop scales by (projection of the stakes vector)
+    stakes, // carries `raw` (the verbatim declared vector) + axis_tiers + overrides
+    foresight, // the Oranges receipt (dropped/reordered + stamp + crit3_satisfied)
+  };
+}
+
+/**
+ * Persist a Phase-1 receipt durably (atomic temp-file + rename).
+ * @param {object} receipt a value from runPhase1
+ * @param {URL|string} file destination
+ */
+export function persistPhase1(receipt, file) {
+  const dest = file instanceof URL ? fileURLToPath(file) : file;
+  const tmp = `${dest}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(receipt, null, 2) + &#x27;\n&#x27;);
+  fs.renameSync(tmp, dest); // atomic publish — readers never see a torn file
+}
+
+/**
+ * Load a persisted Phase-1 receipt.</pre>
+<div class="actions"><a class="button" href="../source-pages/phase1.html#L31">Open numbered source at line 31</a>
+<a class="button secondary" href="../sources/phase1.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/plan-build">Build the plan artifact</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">d9d535bfbf2dce32656f80a8642a60d507507ae8a043f13997b787b67a3c4448</span></p>
+<p>Excerpt SHA-256 <span class="path">d778fc660af808f12a2d04d217ad1d635b620c2b01211a4c8d40cd1fb14a4e39</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

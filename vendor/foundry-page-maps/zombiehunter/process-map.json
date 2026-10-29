@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Zombie-Hunter execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Zombie-Hunter)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Zombie-Hunter context.",
+      "code": {
+        "path": "src/classify.js",
+        "symbol": "function sanitizeId(s) { return String(s).replace(/[^a-zA-Z0"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## North Star (LOCKED \u2014 John, 2026-08-25)"
+      },
+      "resource_ids": [
+        "zombiehunter-mat-skill-md",
+        "zombiehunter-tool-src-classify-js"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Zombie-Hunter never repeats cold-start discovery.",
+      "code": {
+        "path": "src/daemon.js",
+        "symbol": "const { DatabaseSync } = require('node:sqlite');"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "zombiehunter-ref-lessons",
+        "zombiehunter-journal-readme",
+        "zombiehunter-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Zombie-Hunter)",
+      "kind": "model",
+      "role": "Primary Zombie-Hunter Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Zombie-Hunter, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "src/engine-leg.js",
+        "symbol": "function isSupportRuntimeBasename(imagePathOrName) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Zombie Hunter \u2014 The Lifecycle Sentinel (safe-to-arm reaper)"
+      },
+      "resource_ids": [
+        "zombiehunter-tool-src-classify-js",
+        "zombiehunter-tool-src-daemon-js",
+        "zombiehunter-peer-foreman"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "src/bulk-approvals.js",
+        "symbol": "function getContextExplanation(swarm) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Icon"
+      },
+      "resource_ids": [
+        "zombiehunter-peer-foreman",
+        "zombiehunter-peer-steward-portfolio",
+        "zombiehunter-ref-lessons"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Zombie-Hunter deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "src/ceremony-emit.mjs",
+        "symbol": "export function emitAllCeremony(payload = {}, opts = {}) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Core Philosophy \u2014 ownership, not identity-matching"
+      },
+      "resource_ids": [
+        "zombiehunter-mat-triage-block",
+        "zombiehunter-kb-portfolio-triage-and-band-eval"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Zombie-Hunter primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Zombie-Hunter work product + machine run receipt."
+}

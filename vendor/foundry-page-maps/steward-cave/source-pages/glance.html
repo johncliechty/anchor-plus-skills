@@ -1,0 +1,1622 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>glance · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>glance</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Ecgberht/engine/high-seat-glance.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 4a6c96be8d0fc55a1abbcd6d7915b981416ab9c710ccbbeeda615e614bfa32dd</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.542934+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/high-seat-glance.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 4a6c96be8d0fc55a1abbcd6d7915b981416ab9c710ccbbeeda615e614bfa32dd</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * Wave 17 — High Seat fold + THE BADGE PATH BOUNDED — portfolio at a glance.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  *</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * Folds N typed projections (portfolio index + Wave-16 attention cells) into</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  * the raise queue and ⚑ badge. Answers criterion-13 fields from the EXISTING</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  * no-walk index — never a project-root walk. write_authority:&#x27;none&#x27; is</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  * ENFORCED by an indexOnlyFs-style read/write trap (not the string field).</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  *</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>  * Badge path retired: --badge answers from the index badge cache / attention</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>  * cells behind the trap. discoverStrips / verbStatus walk is unreachable from</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>  * the badge route. Ingest (attention push) updates the cached badge cell so</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>  * each poll opens a bounded number of index-home files and at most one short-</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>  * lived bridge process per MIN_MS interval.</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>  *</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>  * Stdlib only. No host-absolute paths.</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>  */</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> </span>
+<span class="source-line" id="L18"><a href="#L18">18</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> import crypto from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> import {</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>   indexPathsFrom,</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>   openIndexForRead,</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   replayEvents,</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> } from &#x27;./append-log.mjs&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> import {</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>   indexOnlyFs,</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>   newReadJournal,</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>   QueryRefusal,</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> } from &#x27;./portfolio/query.mjs&#x27;;</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> import { materializeRegistry } from &#x27;./portfolio/registry.mjs&#x27;;</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> import {</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>   ATTENTION_STATES,</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>   ATTENTION_READ_UNKNOWN,</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>   ATTENTION_CODE,</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>   ATTENTION_TEXT,</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> } from &#x27;./attention.mjs&#x27;;</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> import { buildRaiseQueue } from &#x27;./high-seat.mjs&#x27;;</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> import { CRITERION_13_FIELDS } from &#x27;./audits/a5-portfolio-liveness.mjs&#x27;;</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> import {</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>   BADGE_CACHE_REL,</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>   BADGE_CACHE_SCHEMA,</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   badgeCachePath,</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>   badgeCachePayload,</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   writeBadgeCache,</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   listAttentionCells,</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   recomputeBadgeCacheFromHome,</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> } from &#x27;./portfolio/badge-cache.mjs&#x27;;</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> import { COMPOSITE, PRESENCE } from &#x27;./portfolio/status.mjs&#x27;;</span>
+<span class="source-line" id="L51"><a href="#L51">51</a> </span>
+<span class="source-line" id="L52"><a href="#L52">52</a> // ── Named bounds ───────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54">54</a> /** Portfolio row ceiling — refuse by name, never silently truncate. */</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> export const PORTFOLIO_MAX_ROWS = 500;</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> /**</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>  * Files-opened bound on the badge path when the cache cell is present.</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>  * Cache hit: badge-cache.json (+ optional existsSync path probes under home).</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>  */</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> export const BADGE_FILES_OPENED_BOUND_CACHED = 8;</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63">63</a> /**</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>  * Files-opened bound when recomputing badge from attention cells under home.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>  * readdir + one cell per project + cache write metadata, capped by MAX_ROWS.</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>  */</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> export const BADGE_FILES_OPENED_BOUND_RECOMPUTE = PORTFOLIO_MAX_ROWS + 32;</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69">69</a> /** Same delimiter Anchor uses when joining roots into bridge argv. */</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> export const ROOT_DELIM = &#x27;;&#x27;;</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> export const _ECGBERHT_ROOT_DELIM = ROOT_DELIM;</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73">73</a> export { BADGE_CACHE_REL, BADGE_CACHE_SCHEMA, badgeCachePath, badgeCachePayload, writeBadgeCache };</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a> export const GLANCE_SCHEMA = &#x27;ecgberht-portfolio-glance-v0&#x27;;</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> export const GLANCE_ROW_SCHEMA = &#x27;ecgberht-portfolio-glance-row-v0&#x27;;</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> </span>
+<span class="source-line" id="L78"><a href="#L78">78</a> /** Criterion-13 fields + attention (Wave-16 read API). */</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> export const GLANCE_FIELD_KEYS = Object.freeze([</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   ...CRITERION_13_FIELDS,</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>   &#x27;attention&#x27;,</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> ]);</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> </span>
+<span class="source-line" id="L84"><a href="#L84">84</a> export { CRITERION_13_FIELDS };</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> </span>
+<span class="source-line" id="L86"><a href="#L86">86</a> // ── Failure-state table (High Seat surface — Master-Plan P9 + Wave 17) ─────</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> </span>
+<span class="source-line" id="L88"><a href="#L88">88</a> export const GLANCE_CODE = Object.freeze({</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   GLANCE_INDEX_MISSING: &#x27;GLANCE_INDEX_MISSING&#x27;,</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>   GLANCE_QUERY_REFUSED: &#x27;GLANCE_QUERY_REFUSED&#x27;,</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   GLANCE_INDEX_UNPARSEABLE: &#x27;GLANCE_INDEX_UNPARSEABLE&#x27;,</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>   GLANCE_PROJECT_UNKNOWN: &#x27;GLANCE_PROJECT_UNKNOWN&#x27;,</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   GLANCE_ROOT_SKIPPED: &#x27;GLANCE_ROOT_SKIPPED&#x27;,</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   GLANCE_BOUND_EXCEEDED: &#x27;GLANCE_BOUND_EXCEEDED&#x27;,</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   GLANCE_PORTFOLIO_EMPTY: &#x27;GLANCE_PORTFOLIO_EMPTY&#x27;,</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   ATTENTION_UNKNOWN: &#x27;ATTENTION_UNKNOWN&#x27;,</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> });</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> </span>
+<span class="source-line" id="L99"><a href="#L99">99</a> export const GLANCE_TEXT = Object.freeze({</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   [GLANCE_CODE.GLANCE_INDEX_MISSING]:</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>     &#x27;Portfolio index not found — no project list is shown; run the index audit fix.&#x27;,</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   [GLANCE_CODE.GLANCE_QUERY_REFUSED]:</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     &#x27;Portfolio query exceeded its bound — refused, not truncated-as-complete.&#x27;,</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   [GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE]:</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     &#x27;Index snapshot or bridge output unreadable — nothing is guessed.&#x27;,</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   [GLANCE_CODE.GLANCE_PROJECT_UNKNOWN]:</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     &#x27;&lt;project&gt;: state unknown (store unreadable) — row kept, marked unknown.&#x27;,</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   [GLANCE_CODE.GLANCE_ROOT_SKIPPED]:</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>     &#x27;&lt;project&gt;: root name unsupported by the transport — row kept, marked unknown.&#x27;,</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   [GLANCE_CODE.GLANCE_BOUND_EXCEEDED]:</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>     &#x27;More than 500 active projects — list refused by name, never silently truncated.&#x27;,</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   [GLANCE_CODE.GLANCE_PORTFOLIO_EMPTY]:</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     &#x27;No active projects registered.&#x27;,</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   [GLANCE_CODE.ATTENTION_UNKNOWN]:</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>     &#x27;&lt;project&gt;: attention state unknown — never rendered as idle.&#x27;,</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> });</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118">118</a> /**</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>  * Full failure table for the High Seat glance surface.</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>  * @returns {ReadonlyArray&lt;object&gt;}</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>  */</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> export function glanceFailureTable() {</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>   return Object.freeze(</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     Object.keys(GLANCE_CODE).map((k) =&gt;</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>       Object.freeze({</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>         state: k,</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>         status_code: GLANCE_CODE[k],</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>         user_text: GLANCE_TEXT[GLANCE_CODE[k]],</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>       }),</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     ),</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   );</span>
+<span class="source-line" id="L132"><a href="#L132">132</a> }</span>
+<span class="source-line" id="L133"><a href="#L133">133</a> </span>
+<span class="source-line" id="L134"><a href="#L134">134</a> /**</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>  * Map bridge/stdout garbage into the dependency-returns-garbage row.</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>  * @param {string|null|undefined} error</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>  * @returns {{ code: string, text: string, bridge_bad_json: boolean }}</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>  */</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> export function mapBridgeGarbage(error) {</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>   const err = String(error ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>   const isBad =</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     err === &#x27;bridge_bad_json&#x27; ||</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     err === &#x27;bridge_no_output&#x27; ||</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>     err.includes(&#x27;bad_json&#x27;) ||</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     err.includes(&#x27;JSON&#x27;);</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>   return Object.freeze({</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     code: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     text: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE],</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     bridge_bad_json: isBad || err === &#x27;bridge_bad_json&#x27;,</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     mapped_from: err || null,</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   });</span>
+<span class="source-line" id="L152"><a href="#L152">152</a> }</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> </span>
+<span class="source-line" id="L154"><a href="#L154">154</a> // ── Write trap (write_authority none enforcement) ──────────────────────────</span>
+<span class="source-line" id="L155"><a href="#L155">155</a> </span>
+<span class="source-line" id="L156"><a href="#L156">156</a> /** Calls that would mutate the filesystem. */</span>
+<span class="source-line" id="L157"><a href="#L157">157</a> export const GUARDED_WRITE_CALLS = Object.freeze([</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>   &#x27;writeFileSync&#x27;,</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>   &#x27;writeFile&#x27;,</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>   &#x27;appendFileSync&#x27;,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   &#x27;appendFile&#x27;,</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>   &#x27;mkdirSync&#x27;,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>   &#x27;mkdir&#x27;,</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>   &#x27;rmSync&#x27;,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   &#x27;rm&#x27;,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>   &#x27;unlinkSync&#x27;,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>   &#x27;unlink&#x27;,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   &#x27;renameSync&#x27;,</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>   &#x27;rename&#x27;,</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   &#x27;copyFileSync&#x27;,</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>   &#x27;copyFile&#x27;,</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>   &#x27;openSync&#x27;, // open for write is blocked via flag check in wrapper when possible</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>   &#x27;createWriteStream&#x27;,</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   &#x27;truncateSync&#x27;,</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   &#x27;rmdirSync&#x27;,</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> ]);</span>
+<span class="source-line" id="L177"><a href="#L177">177</a> </span>
+<span class="source-line" id="L178"><a href="#L178">178</a> export class WriteAuthorityRefusal extends Error {</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   /** @param {string} call @param {string} detail */</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   constructor(call, detail) {</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     super(`WRITE_AUTHORITY_NONE: ${call}() refused — ${detail}`);</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     this.name = &#x27;WriteAuthorityRefusal&#x27;;</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     this.code = &#x27;WRITE_AUTHORITY_NONE&#x27;;</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     this.call = call;</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>     this.detail = detail;</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   }</span>
+<span class="source-line" id="L187"><a href="#L187">187</a> }</span>
+<span class="source-line" id="L188"><a href="#L188">188</a> </span>
+<span class="source-line" id="L189"><a href="#L189">189</a> /**</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>  * An fs facade that throws on any write-shaped call.</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>  * Enforces write_authority:&#x27;none&#x27; (the string on the VM is a declaration only).</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>  *</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>  * @param {object|undefined} base</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>  * @param {{ writes?: Array&lt;object&gt; }} [journal]</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>  * @returns {object}</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>  */</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> export function writeAuthorityNoneFs(base, journal = { writes: [] }) {</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   const facade = { ...(base ?? fs) };</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   for (const call of GUARDED_WRITE_CALLS) {</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>     const original = facade[call];</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     facade[call] = (...args) =&gt; {</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>       const entry = Object.freeze({ call, args0: args[0] != null ? String(args[0]) : null });</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>       journal.writes.push(entry);</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>       throw new WriteAuthorityRefusal(</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>         call,</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>         &#x27;High Seat fold has write_authority none; project trees must stay byte-identical&#x27;,</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>       );</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     };</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     // Keep typeof original for callers that probe; original unused by design.</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     void original;</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   }</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   return facade;</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> }</span>
+<span class="source-line" id="L214"><a href="#L214">214</a> </span>
+<span class="source-line" id="L215"><a href="#L215">215</a> /**</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>  * Combined index-home-only read + write-authority-none trap.</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>  * Reads outside home throw (query.mjs pattern); any write throws.</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>  *</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>  * @param {object|undefined} base</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>  * @param {string} home</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>  * @param {{reads: Array, outside: Array, total: number, writes: Array}} journal</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>  * @returns {object}</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>  */</span>
+<span class="source-line" id="L224"><a href="#L224">224</a> export function glanceIndexOnlyFs(base, home, journal) {</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>   if (!journal.writes) journal.writes = [];</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>   const readGuarded = indexOnlyFs(base, home, journal);</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>   return writeAuthorityNoneFs(readGuarded, journal);</span>
+<span class="source-line" id="L228"><a href="#L228">228</a> }</span>
+<span class="source-line" id="L229"><a href="#L229">229</a> </span>
+<span class="source-line" id="L230"><a href="#L230">230</a> /**</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>  * Run `fn` under the write trap. Any write throws WriteAuthorityRefusal.</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>  * @template T</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>  * @param {() =&gt; T} fn</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>  * @param {{ fsx?: object, journal?: object }} [opts]</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>  * @returns {{ result: T, journal: object }}</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>  */</span>
+<span class="source-line" id="L237"><a href="#L237">237</a> export function withWriteAuthorityNone(fn, opts = {}) {</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   const journal = opts.journal ?? { writes: [] };</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   const trap = writeAuthorityNoneFs(opts.fsx ?? fs, journal);</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>   // fn may close over trap via opts — also expose on a property for tests.</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>   const result = fn({ fsx: trap, journal });</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>   return { result, journal };</span>
+<span class="source-line" id="L243"><a href="#L243">243</a> }</span>
+<span class="source-line" id="L244"><a href="#L244">244</a> </span>
+<span class="source-line" id="L245"><a href="#L245">245</a> // ── Delimiter guard ────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L246"><a href="#L246">246</a> </span>
+<span class="source-line" id="L247"><a href="#L247">247</a> /**</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>  * Partition roots that can cross the process boundary as a &#x27;;&#x27;-joined argv</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>  * string. Roots containing the delimiter are SKIPPED for transport and must</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>  * render as unknown rows (row count never shrinks).</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>  *</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>  * @param {string[]|string} roots</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>  * @returns {Readonly&lt;{ transportable: string[], skipped: string[], joined: string }&gt;}</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>  */</span>
+<span class="source-line" id="L255"><a href="#L255">255</a> export function partitionRootsByDelimiter(roots = []) {</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   const list = Array.isArray(roots)</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>     ? roots</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     : typeof roots === &#x27;string&#x27;</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>       ? roots.split(ROOT_DELIM).map((r) =&gt; r.trim()).filter(Boolean)</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>       : [];</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   const transportable = [];</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>   const skipped = [];</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>   for (const r of list) {</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     const s = String(r ?? &#x27;&#x27;).trim();</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>     if (!s) continue;</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>     if (s.includes(ROOT_DELIM)) skipped.push(s);</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>     else transportable.push(s);</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>   }</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>   return Object.freeze({</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     transportable: Object.freeze([...transportable]),</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     skipped: Object.freeze([...skipped]),</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>     joined: transportable.join(ROOT_DELIM),</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>   });</span>
+<span class="source-line" id="L274"><a href="#L274">274</a> }</span>
+<span class="source-line" id="L275"><a href="#L275">275</a> </span>
+<span class="source-line" id="L276"><a href="#L276">276</a> /**</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>  * Round-trip: join transportable roots, split, assert identity — skipped</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>  * roots never appear in the joined string and are carried separately.</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>  * @param {string[]} roots</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>  * @returns {Readonly&lt;object&gt;}</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>  */</span>
+<span class="source-line" id="L282"><a href="#L282">282</a> export function delimiterRoundTrip(roots = []) {</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>   const part = partitionRootsByDelimiter(roots);</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>   const resplit = part.joined.length</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>     ? part.joined.split(ROOT_DELIM).map((r) =&gt; r.trim()).filter(Boolean)</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     : [];</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>   const ok =</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>     resplit.length === part.transportable.length &amp;&amp;</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     resplit.every((r, i) =&gt; r === part.transportable[i]);</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   return Object.freeze({</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     ok,</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     transportable: part.transportable,</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     skipped: part.skipped,</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     joined: part.joined,</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     resplit: Object.freeze(resplit),</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     // Skipped roots are NOT in the joined transport — they ride as unknown rows.</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>     skipped_absent_from_join: part.skipped.every((s) =&gt; !part.joined.includes(s)</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>       || s.includes(ROOT_DELIM)),</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>   });</span>
+<span class="source-line" id="L300"><a href="#L300">300</a> }</span>
+<span class="source-line" id="L301"><a href="#L301">301</a> </span>
+<span class="source-line" id="L302"><a href="#L302">302</a> // ── Field binding (criterion 13 + attention) ───────────────────────────────</span>
+<span class="source-line" id="L303"><a href="#L303">303</a> </span>
+<span class="source-line" id="L304"><a href="#L304">304</a> /**</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>  * Bind one criterion-13 / attention field from index data.</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>  * ANSWERED from index or named per-field `unknown` — never quietly omitted.</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>  *</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>  * @param {string} field</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>  * @param {{</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>  *   project_id?: string,</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>  *   fresh?: object|null,</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>  *   attention?: object|null,</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>  *   derived_rows?: object[],</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>  *   unreadable?: boolean,</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>  *   skipped?: boolean,</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>  * }} ctx</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>  * @returns {Readonly&lt;{ field: string, value: unknown, known: boolean, source: string|null, mark: string }&gt;}</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>  */</span>
+<span class="source-line" id="L319"><a href="#L319">319</a> export function bindGlanceField(field, ctx = {}) {</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   if (ctx.unreadable === true || ctx.skipped === true) {</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>     return Object.freeze({</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>       field,</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>       value: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>       known: false,</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>       source: null,</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>       mark: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     });</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>   }</span>
+<span class="source-line" id="L329"><a href="#L329">329</a> </span>
+<span class="source-line" id="L330"><a href="#L330">330</a>   if (field === &#x27;last_movement&#x27;) {</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     const last = ctx.fresh?.last_seen ?? null;</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>     if (last) {</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>       return Object.freeze({</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>         field,</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>         value: last,</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>         known: true,</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>         source: &#x27;freshness.per_project[project_id].last_seen&#x27;,</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>         mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>       });</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>     }</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>     return Object.freeze({</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>       field,</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>       value: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>       known: false,</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>       source: &#x27;freshness.per_project[project_id].last_seen&#x27;,</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>       mark: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>     });</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>   }</span>
+<span class="source-line" id="L349"><a href="#L349">349</a> </span>
+<span class="source-line" id="L350"><a href="#L350">350</a>   if (field === &#x27;stage&#x27;) {</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>     // Prefer attention reason / active effort projection; else named unknown.</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>     const att = ctx.attention;</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>     if (att?.state &amp;&amp; ATTENTION_STATES.includes(att.state)) {</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>       // stage is not a first-class attention field — try derived roadmap proj.</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>       const rows = Array.isArray(ctx.derived_rows) ? ctx.derived_rows : [];</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>       for (const r of rows) {</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>         const proj = r?.proj;</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>         if (proj &amp;&amp; typeof proj === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>           const stage =</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>             proj.stage ?? proj.phase ?? proj.active_stage ?? proj.current_stage;</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>           if (stage != null &amp;&amp; String(stage).length &gt; 0) {</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>             return Object.freeze({</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>               field,</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>               value: stage,</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>               known: true,</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>               source: &#x27;body DERIVED proj.stage&#x27;,</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>               mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>             });</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>           }</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>         }</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>       }</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>     }</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>     // Honest unknown when index has no stage cell (A5 ABSENT path).</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>     return Object.freeze({</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>       field,</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>       value: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>       known: false,</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>       source: null,</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>       mark: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>     });</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>   }</span>
+<span class="source-line" id="L382"><a href="#L382">382</a> </span>
+<span class="source-line" id="L383"><a href="#L383">383</a>   if (field === &#x27;runs.live&#x27; || field === &#x27;runs.waiting&#x27; || field === &#x27;runs.blocked&#x27;) {</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>     const att = ctx.attention;</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>     if (att &amp;&amp; typeof att === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>       // Map attention state onto run buckets when no first-class run cells exist.</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>       if (field === &#x27;runs.live&#x27; &amp;&amp; att.state === &#x27;working&#x27;) {</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>         return Object.freeze({</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>           field,</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>           value: 1,</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>           known: true,</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>           source: &#x27;attention.state=working&#x27;,</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>           mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>         });</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>       }</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>       if (field === &#x27;runs.waiting&#x27; &amp;&amp; (att.state === &#x27;needs_you&#x27; || att.state === &#x27;deliverable_ready&#x27;)) {</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>         return Object.freeze({</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>           field,</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>           value: Math.max(1, Number(att.waiting_steps) || 1),</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>           known: true,</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>           source: &#x27;attention.state needs_you|deliverable_ready&#x27;,</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>           mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>         });</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>       }</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>       if (field === &#x27;runs.blocked&#x27; &amp;&amp; att.state === &#x27;blocked&#x27;) {</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>         return Object.freeze({</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>           field,</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>           value: 1,</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>           known: true,</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>           source: &#x27;attention.state=blocked&#x27;,</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>           mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>         });</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>       }</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>       if (att.state &amp;&amp; ATTENTION_STATES.includes(att.state)) {</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>         // Known zero for this bucket.</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>         return Object.freeze({</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>           field,</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>           value: 0,</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>           known: true,</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>           source: &#x27;attention.state&#x27;,</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>           mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>         });</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>       }</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>     }</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>     return Object.freeze({</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>       field,</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>       value: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>       known: false,</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>       source: null,</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>       mark: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>     });</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>   }</span>
+<span class="source-line" id="L433"><a href="#L433">433</a> </span>
+<span class="source-line" id="L434"><a href="#L434">434</a>   if (field === &#x27;attention&#x27;) {</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>     const att = ctx.attention;</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>     if (att?.state &amp;&amp; ATTENTION_STATES.includes(att.state)) {</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>       return Object.freeze({</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>         field,</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>         value: att.state,</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>         known: true,</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>         source: &#x27;attention index cell&#x27;,</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>         mark: &#x27;ANSWERED&#x27;,</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>       });</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>     }</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>     return Object.freeze({</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>       field,</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>       value: ATTENTION_READ_UNKNOWN,</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>       known: false,</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>       source: &#x27;attention index cell&#x27;,</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>       mark: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>       failure_code: GLANCE_CODE.ATTENTION_UNKNOWN,</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>     });</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>   }</span>
+<span class="source-line" id="L454"><a href="#L454">454</a> </span>
+<span class="source-line" id="L455"><a href="#L455">455</a>   return Object.freeze({</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>     field,</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>     value: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     known: false,</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>     source: null,</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>     mark: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>   });</span>
+<span class="source-line" id="L462"><a href="#L462">462</a> }</span>
+<span class="source-line" id="L463"><a href="#L463">463</a> </span>
+<span class="source-line" id="L464"><a href="#L464">464</a> /**</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>  * Build one glance row with EVERY criterion-13 field present.</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>  * @param {object} opts</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>  * @returns {Readonly&lt;object&gt;}</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>  */</span>
+<span class="source-line" id="L469"><a href="#L469">469</a> export function buildGlanceRow(opts = {}) {</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>   const project_id = opts.project_id ?? null;</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>   const project_path = opts.project_path ?? opts.root ?? null;</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>   const label = opts.label ?? project_id ?? project_path ?? &#x27;unknown&#x27;;</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>   const skipped = opts.skipped === true;</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>   const unreadable = opts.unreadable === true;</span>
+<span class="source-line" id="L475"><a href="#L475">475</a> </span>
+<span class="source-line" id="L476"><a href="#L476">476</a>   const fields = {};</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>   const field_list = [];</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>   for (const key of GLANCE_FIELD_KEYS) {</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>     const bound = bindGlanceField(key, {</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>       project_id,</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>       fresh: opts.fresh ?? null,</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>       attention: opts.attention ?? null,</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>       derived_rows: opts.derived_rows ?? [],</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>       unreadable,</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>       skipped,</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>     });</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>     fields[key] = bound;</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>     field_list.push(bound);</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>   }</span>
+<span class="source-line" id="L490"><a href="#L490">490</a> </span>
+<span class="source-line" id="L491"><a href="#L491">491</a>   let status_code = null;</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>   let user_text = null;</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>   if (skipped) {</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>     status_code = GLANCE_CODE.GLANCE_ROOT_SKIPPED;</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>     user_text = GLANCE_TEXT[status_code].replace(&#x27;&lt;project&gt;&#x27;, String(label));</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>   } else if (unreadable) {</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>     status_code = GLANCE_CODE.GLANCE_PROJECT_UNKNOWN;</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>     user_text = GLANCE_TEXT[status_code].replace(&#x27;&lt;project&gt;&#x27;, String(label));</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>   } else if (fields.attention?.known === false) {</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>     status_code = GLANCE_CODE.ATTENTION_UNKNOWN;</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>     user_text = GLANCE_TEXT[status_code].replace(&#x27;&lt;project&gt;&#x27;, String(label));</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>   }</span>
+<span class="source-line" id="L503"><a href="#L503">503</a> </span>
+<span class="source-line" id="L504"><a href="#L504">504</a>   // Flatten convenience accessors for the fold / raise queue.</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>   const attentionState =</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>     fields.attention?.known === true</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>       ? fields.attention.value</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>       : ATTENTION_READ_UNKNOWN;</span>
+<span class="source-line" id="L509"><a href="#L509">509</a> </span>
+<span class="source-line" id="L510"><a href="#L510">510</a>   return Object.freeze({</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>     schema: GLANCE_ROW_SCHEMA,</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>     project_id,</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>     project_path,</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>     label,</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>     skipped,</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>     unreadable,</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>     unknown: skipped || unreadable || fields.attention?.known === false,</span>
+<span class="source-line" id="L518"><a href="#L518">518</a>     status_code,</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>     user_text,</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>     fields: Object.freeze(fields),</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>     field_list: Object.freeze(field_list),</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>     // Every GLANCE_FIELD_KEYS key is present — never quietly omitted.</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>     field_coverage_complete:</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>       field_list.length === GLANCE_FIELD_KEYS.length &amp;&amp;</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>       GLANCE_FIELD_KEYS.every((k) =&gt; fields[k] != null),</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>     attention: attentionState,</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>     // The cell&#x27;s own words, carried whole to the fold: the raise shows the</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>     // QUESTION the run stopped on, not a state slug (see foldRowToRaiseItem).</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>     attention_reason: opts.attention?.reason ?? null,</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>     attention_briefing: opts.attention?.briefing ?? null,</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>     stage: fields.stage?.value,</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>     runs: Object.freeze({</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>       live: fields[&#x27;runs.live&#x27;]?.value,</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>       waiting: fields[&#x27;runs.waiting&#x27;]?.value,</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>       blocked: fields[&#x27;runs.blocked&#x27;]?.value,</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>     }),</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>     last_movement: fields.last_movement?.value,</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>   });</span>
+<span class="source-line" id="L539"><a href="#L539">539</a> }</span>
+<span class="source-line" id="L540"><a href="#L540">540</a> </span>
+<span class="source-line" id="L541"><a href="#L541">541</a> // ── Fold projections → raise-queue items ───────────────────────────────────</span>
+<span class="source-line" id="L542"><a href="#L542">542</a> </span>
+<span class="source-line" id="L543"><a href="#L543">543</a> /**</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>  * Map a glance row / attention cell into a raise-queue item shape.</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>  * @param {object} row buildGlanceRow result or synthetic</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>  * @returns {object}</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>  */</span>
+<span class="source-line" id="L548"><a href="#L548">548</a> export function foldRowToRaiseItem(row = {}) {</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>   const attention =</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>     row.attention ??</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>     row.fields?.attention?.value ??</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>     ATTENTION_READ_UNKNOWN;</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>   const needsYou =</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>     attention === &#x27;needs_you&#x27; || attention === &#x27;deliverable_ready&#x27;;</span>
+<span class="source-line" id="L555"><a href="#L555">555</a>   const blocked = attention === &#x27;blocked&#x27;;</span>
+<span class="source-line" id="L556"><a href="#L556">556</a>   const working = attention === &#x27;working&#x27;;</span>
+<span class="source-line" id="L557"><a href="#L557">557</a> </span>
+<span class="source-line" id="L558"><a href="#L558">558</a>   let human_wait = &#x27;none&#x27;;</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>   if (needsYou) {</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>     human_wait =</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>       row.fields?.attention?.source === &#x27;attention index cell&#x27; &amp;&amp;</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>       row.attention_reason</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>         ? row.attention_reason</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>         : attention === &#x27;deliverable_ready&#x27;</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>           ? &#x27;deliverable_ready&#x27;</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>           : &#x27;needs_you&#x27;;</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>   } else if (blocked) {</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>     human_wait = &#x27;blocked&#x27;;</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>   }</span>
+<span class="source-line" id="L570"><a href="#L570">570</a> </span>
+<span class="source-line" id="L571"><a href="#L571">571</a>   const waiting_steps =</span>
+<span class="source-line" id="L572"><a href="#L572">572</a>     typeof row.runs?.waiting === &#x27;number&#x27;</span>
+<span class="source-line" id="L573"><a href="#L573">573</a>       ? row.runs.waiting</span>
+<span class="source-line" id="L574"><a href="#L574">574</a>       : needsYou</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>         ? 1</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>         : 0;</span>
+<span class="source-line" id="L577"><a href="#L577">577</a> </span>
+<span class="source-line" id="L578"><a href="#L578">578</a>   // THE BRIEFING (2026-08-06). When the cell carries a commissioned-run</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>   // briefing, the raise item answers John&#x27;s questions before he asks them:</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>   // human_wait becomes the QUESTION the run stopped on, last_done what it did,</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>   // next_recommended what it would do next. buildRaiseBlock already renders</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>   // exactly these fields — nothing there changes.</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>   const briefing =</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>     row.attention_briefing &amp;&amp; typeof row.attention_briefing === &#x27;object&#x27;</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>       ? row.attention_briefing</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>       : null;</span>
+<span class="source-line" id="L587"><a href="#L587">587</a> </span>
+<span class="source-line" id="L588"><a href="#L588">588</a>   return {</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>     project_id: row.project_id ?? null,</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>     project_path: row.project_path ?? null,</span>
+<span class="source-line" id="L591"><a href="#L591">591</a>     active_effort:</span>
+<span class="source-line" id="L592"><a href="#L592">592</a>       working &amp;&amp; row.stage != null &amp;&amp; row.stage !== &#x27;unknown&#x27;</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>         ? String(row.stage)</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>         : null,</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>     goal_phrase: null,</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>     human_wait:</span>
+<span class="source-line" id="L597"><a href="#L597">597</a>       needsYou &amp;&amp; briefing?.question ? String(briefing.question) : human_wait,</span>
+<span class="source-line" id="L598"><a href="#L598">598</a>     last_done: briefing?.did ? String(briefing.did) : undefined,</span>
+<span class="source-line" id="L599"><a href="#L599">599</a>     next_recommended: briefing?.next ? String(briefing.next) : undefined,</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>     session_id: briefing?.session_id ?? null,</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>     capacity: row.unknown ? &#x27;unknown&#x27; : &#x27;known&#x27;,</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>     anti_starvation_age_days: 0,</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>     packet_ready: attention === &#x27;deliverable_ready&#x27;,</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>     waiting_steps,</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>     attention,</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>     glance_row: row,</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>     // Raise-tier helpers</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>     capacity_conflict: false,</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>   };</span>
+<span class="source-line" id="L610"><a href="#L610">610</a> }</span>
+<span class="source-line" id="L611"><a href="#L611">611</a> </span>
+<span class="source-line" id="L612"><a href="#L612">612</a> /**</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>  * Fold N glance rows into raise-queue items + badge.</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>  * @param {object[]} rows</span>
+<span class="source-line" id="L615"><a href="#L615">615</a>  * @param {{ starve_threshold_days?: number }} [opts]</span>
+<span class="source-line" id="L616"><a href="#L616">616</a>  * @returns {Readonly&lt;object&gt;}</span>
+<span class="source-line" id="L617"><a href="#L617">617</a>  */</span>
+<span class="source-line" id="L618"><a href="#L618">618</a> export function foldProjections(rows = [], opts = {}) {</span>
+<span class="source-line" id="L619"><a href="#L619">619</a>   const items = (Array.isArray(rows) ? rows : []).map(foldRowToRaiseItem);</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>   const raiseQueue = buildRaiseQueue(items, opts);</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>   return Object.freeze({</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>     items: Object.freeze(items),</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>     raise_queue: raiseQueue,</span>
+<span class="source-line" id="L624"><a href="#L624">624</a>     badge: raiseQueue.badge,</span>
+<span class="source-line" id="L625"><a href="#L625">625</a>     queue_length: raiseQueue.queue_length,</span>
+<span class="source-line" id="L626"><a href="#L626">626</a>     row_count: items.length,</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>   });</span>
+<span class="source-line" id="L628"><a href="#L628">628</a> }</span>
+<span class="source-line" id="L629"><a href="#L629">629</a> </span>
+<span class="source-line" id="L630"><a href="#L630">630</a> // ── Badge cache (ingest path updates; poll path reads) ─────────────────────</span>
+<span class="source-line" id="L631"><a href="#L631">631</a> </span>
+<span class="source-line" id="L632"><a href="#L632">632</a> /**</span>
+<span class="source-line" id="L633"><a href="#L633">633</a>  * Read badge cache under the index-only trap.</span>
+<span class="source-line" id="L634"><a href="#L634">634</a>  * @param {{ home: string, fsx?: object, journal?: object }} req</span>
+<span class="source-line" id="L635"><a href="#L635">635</a>  */</span>
+<span class="source-line" id="L636"><a href="#L636">636</a> export function readBadgeCache(req = {}) {</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>   const home = req.home;</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>   if (!home) {</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>     return Object.freeze({</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>       ok: false,</span>
+<span class="source-line" id="L641"><a href="#L641">641</a>       exists: false,</span>
+<span class="source-line" id="L642"><a href="#L642">642</a>       cell: null,</span>
+<span class="source-line" id="L643"><a href="#L643">643</a>       reason: &#x27;home_required&#x27;,</span>
+<span class="source-line" id="L644"><a href="#L644">644</a>     });</span>
+<span class="source-line" id="L645"><a href="#L645">645</a>   }</span>
+<span class="source-line" id="L646"><a href="#L646">646</a>   const journal = req.journal ?? newReadJournal();</span>
+<span class="source-line" id="L647"><a href="#L647">647</a>   if (!journal.writes) journal.writes = [];</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>   const fsx = req.fsx</span>
+<span class="source-line" id="L649"><a href="#L649">649</a>     ? req.fsx</span>
+<span class="source-line" id="L650"><a href="#L650">650</a>     : glanceIndexOnlyFs(fs, home, journal);</span>
+<span class="source-line" id="L651"><a href="#L651">651</a>   const cellPath = badgeCachePath(home);</span>
+<span class="source-line" id="L652"><a href="#L652">652</a>   try {</span>
+<span class="source-line" id="L653"><a href="#L653">653</a>     if (typeof fsx.existsSync === &#x27;function&#x27; &amp;&amp; !fsx.existsSync(cellPath)) {</span>
+<span class="source-line" id="L654"><a href="#L654">654</a>       journal.total += 1;</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>       journal.reads.push(Object.freeze({ call: &#x27;existsSync&#x27;, path: cellPath }));</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>       return Object.freeze({</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>         ok: true,</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>         exists: false,</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>         cell: null,</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>         path: cellPath,</span>
+<span class="source-line" id="L661"><a href="#L661">661</a>         journal,</span>
+<span class="source-line" id="L662"><a href="#L662">662</a>       });</span>
+<span class="source-line" id="L663"><a href="#L663">663</a>     }</span>
+<span class="source-line" id="L664"><a href="#L664">664</a>     journal.total += 1;</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>     journal.reads.push(Object.freeze({ call: &#x27;existsSync&#x27;, path: cellPath }));</span>
+<span class="source-line" id="L666"><a href="#L666">666</a>     const raw = fsx.readFileSync(cellPath, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L667"><a href="#L667">667</a>     const cell = JSON.parse(raw);</span>
+<span class="source-line" id="L668"><a href="#L668">668</a>     if (!cell || cell.schema !== BADGE_CACHE_SCHEMA) {</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>       return Object.freeze({</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>         ok: false,</span>
+<span class="source-line" id="L671"><a href="#L671">671</a>         exists: true,</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>         cell: null,</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>         path: cellPath,</span>
+<span class="source-line" id="L674"><a href="#L674">674</a>         reason: &#x27;schema_mismatch&#x27;,</span>
+<span class="source-line" id="L675"><a href="#L675">675</a>         code: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L676"><a href="#L676">676</a>         journal,</span>
+<span class="source-line" id="L677"><a href="#L677">677</a>       });</span>
+<span class="source-line" id="L678"><a href="#L678">678</a>     }</span>
+<span class="source-line" id="L679"><a href="#L679">679</a>     return Object.freeze({</span>
+<span class="source-line" id="L680"><a href="#L680">680</a>       ok: true,</span>
+<span class="source-line" id="L681"><a href="#L681">681</a>       exists: true,</span>
+<span class="source-line" id="L682"><a href="#L682">682</a>       cell,</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>       path: cellPath,</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>       journal,</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>       files_opened: journal.total,</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>     });</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>   } catch (e) {</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>     if (e instanceof QueryRefusal || e instanceof WriteAuthorityRefusal) throw e;</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>     return Object.freeze({</span>
+<span class="source-line" id="L690"><a href="#L690">690</a>       ok: false,</span>
+<span class="source-line" id="L691"><a href="#L691">691</a>       exists: false,</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>       cell: null,</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>       path: cellPath,</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>       reason: String(e?.message ?? e),</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>       code: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>       journal,</span>
+<span class="source-line" id="L697"><a href="#L697">697</a>     });</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>   }</span>
+<span class="source-line" id="L699"><a href="#L699">699</a> }</span>
+<span class="source-line" id="L700"><a href="#L700">700</a> </span>
+<span class="source-line" id="L701"><a href="#L701">701</a> /**</span>
+<span class="source-line" id="L702"><a href="#L702">702</a>  * List attention cells under the index home (no project-root walk).</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>  * @param {{ home: string, fsx?: object, journal?: object }} req</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>  * @returns {ReadonlyArray&lt;object&gt;}</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>  */</span>
+<span class="source-line" id="L706"><a href="#L706">706</a> export function listAttentionCellsFromIndex(req = {}) {</span>
+<span class="source-line" id="L707"><a href="#L707">707</a>   const home = req.home;</span>
+<span class="source-line" id="L708"><a href="#L708">708</a>   if (!home) return Object.freeze([]);</span>
+<span class="source-line" id="L709"><a href="#L709">709</a>   const journal = req.journal ?? newReadJournal();</span>
+<span class="source-line" id="L710"><a href="#L710">710</a>   if (!journal.writes) journal.writes = [];</span>
+<span class="source-line" id="L711"><a href="#L711">711</a>   const fsx = req.fsx ?? glanceIndexOnlyFs(fs, home, journal);</span>
+<span class="source-line" id="L712"><a href="#L712">712</a>   const cells = listAttentionCells({ home, fsx });</span>
+<span class="source-line" id="L713"><a href="#L713">713</a>   // Journal the readdir-equivalent volume for the files-opened bound.</span>
+<span class="source-line" id="L714"><a href="#L714">714</a>   journal.total += 1 + cells.length;</span>
+<span class="source-line" id="L715"><a href="#L715">715</a>   journal.reads.push(</span>
+<span class="source-line" id="L716"><a href="#L716">716</a>     Object.freeze({ call: &#x27;readdirSync+readFileSync&#x27;, path: path.join(home, &#x27;attention&#x27;) }),</span>
+<span class="source-line" id="L717"><a href="#L717">717</a>   );</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>   return Object.freeze(cells);</span>
+<span class="source-line" id="L719"><a href="#L719">719</a> }</span>
+<span class="source-line" id="L720"><a href="#L720">720</a> </span>
+<span class="source-line" id="L721"><a href="#L721">721</a> /**</span>
+<span class="source-line" id="L722"><a href="#L722">722</a>  * Recompute badge from attention cells and write the cache (ingest path).</span>
+<span class="source-line" id="L723"><a href="#L723">723</a>  * @param {{ home: string, env?: object, paths?: object }} req</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>  */</span>
+<span class="source-line" id="L725"><a href="#L725">725</a> export function recomputeBadgeCache(req = {}) {</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>   let home = req.home;</span>
+<span class="source-line" id="L727"><a href="#L727">727</a>   if (!home) {</span>
+<span class="source-line" id="L728"><a href="#L728">728</a>     try {</span>
+<span class="source-line" id="L729"><a href="#L729">729</a>       home = indexPathsFrom({ home: req.home, env: req.env, paths: req.paths }).home;</span>
+<span class="source-line" id="L730"><a href="#L730">730</a>     } catch {</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>       return Object.freeze({ ok: false, reason: &#x27;home_unresolved&#x27; });</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>     }</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>   }</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>   const journal = newReadJournal();</span>
+<span class="source-line" id="L735"><a href="#L735">735</a>   journal.writes = [];</span>
+<span class="source-line" id="L736"><a href="#L736">736</a>   const readFs = indexOnlyFs(fs, home, journal);</span>
+<span class="source-line" id="L737"><a href="#L737">737</a>   const cells = listAttentionCellsFromIndex({ home, fsx: readFs, journal });</span>
+<span class="source-line" id="L738"><a href="#L738">738</a>   const raiseItems = cells.map((c) =&gt;</span>
+<span class="source-line" id="L739"><a href="#L739">739</a>     foldRowToRaiseItem({</span>
+<span class="source-line" id="L740"><a href="#L740">740</a>       project_id: c.project_id,</span>
+<span class="source-line" id="L741"><a href="#L741">741</a>       project_path: c.project_path,</span>
+<span class="source-line" id="L742"><a href="#L742">742</a>       attention: c.state,</span>
+<span class="source-line" id="L743"><a href="#L743">743</a>       attention_reason: c.reason,</span>
+<span class="source-line" id="L744"><a href="#L744">744</a>       runs: {</span>
+<span class="source-line" id="L745"><a href="#L745">745</a>         waiting:</span>
+<span class="source-line" id="L746"><a href="#L746">746</a>           c.state === &#x27;needs_you&#x27; || c.state === &#x27;deliverable_ready&#x27;</span>
+<span class="source-line" id="L747"><a href="#L747">747</a>             ? Math.max(1, Number(c.waiting_steps) || 1)</span>
+<span class="source-line" id="L748"><a href="#L748">748</a>             : 0,</span>
+<span class="source-line" id="L749"><a href="#L749">749</a>       },</span>
+<span class="source-line" id="L750"><a href="#L750">750</a>       fields: {</span>
+<span class="source-line" id="L751"><a href="#L751">751</a>         attention: {</span>
+<span class="source-line" id="L752"><a href="#L752">752</a>           value: c.state,</span>
+<span class="source-line" id="L753"><a href="#L753">753</a>           known: ATTENTION_STATES.includes(c.state),</span>
+<span class="source-line" id="L754"><a href="#L754">754</a>           source: &#x27;attention index cell&#x27;,</span>
+<span class="source-line" id="L755"><a href="#L755">755</a>         },</span>
+<span class="source-line" id="L756"><a href="#L756">756</a>       },</span>
+<span class="source-line" id="L757"><a href="#L757">757</a>     }),</span>
+<span class="source-line" id="L758"><a href="#L758">758</a>   );</span>
+<span class="source-line" id="L759"><a href="#L759">759</a>   const rq = buildRaiseQueue(raiseItems);</span>
+<span class="source-line" id="L760"><a href="#L760">760</a>   const written = writeBadgeCache({</span>
+<span class="source-line" id="L761"><a href="#L761">761</a>     home,</span>
+<span class="source-line" id="L762"><a href="#L762">762</a>     count: rq.queue_length,</span>
+<span class="source-line" id="L763"><a href="#L763">763</a>     queue_length: rq.queue_length,</span>
+<span class="source-line" id="L764"><a href="#L764">764</a>     projects: rq.queue.map((q) =&gt; q.project_id).filter(Boolean),</span>
+<span class="source-line" id="L765"><a href="#L765">765</a>     updated_via: &#x27;recomputeBadgeCache&#x27;,</span>
+<span class="source-line" id="L766"><a href="#L766">766</a>   });</span>
+<span class="source-line" id="L767"><a href="#L767">767</a>   return Object.freeze({</span>
+<span class="source-line" id="L768"><a href="#L768">768</a>     ok: written.ok === true,</span>
+<span class="source-line" id="L769"><a href="#L769">769</a>     count: rq.queue_length,</span>
+<span class="source-line" id="L770"><a href="#L770">770</a>     badge: rq.badge,</span>
+<span class="source-line" id="L771"><a href="#L771">771</a>     cache: written,</span>
+<span class="source-line" id="L772"><a href="#L772">772</a>     cells_read: cells.length,</span>
+<span class="source-line" id="L773"><a href="#L773">773</a>     files_opened: journal.total,</span>
+<span class="source-line" id="L774"><a href="#L774">774</a>     journal,</span>
+<span class="source-line" id="L775"><a href="#L775">775</a>     // Also available via the leaf recompute helper used by attention push.</span>
+<span class="source-line" id="L776"><a href="#L776">776</a>     leaf: recomputeBadgeCacheFromHome({ home }),</span>
+<span class="source-line" id="L777"><a href="#L777">777</a>   });</span>
+<span class="source-line" id="L778"><a href="#L778">778</a> }</span>
+<span class="source-line" id="L779"><a href="#L779">779</a> </span>
+<span class="source-line" id="L780"><a href="#L780">780</a> /**</span>
+<span class="source-line" id="L781"><a href="#L781">781</a>  * Build badge payload from index only — discoverStrips is never reached.</span>
+<span class="source-line" id="L782"><a href="#L782">782</a>  * Prefers the cached cell; recomputes under trap if missing.</span>
+<span class="source-line" id="L783"><a href="#L783">783</a>  *</span>
+<span class="source-line" id="L784"><a href="#L784">784</a>  * @param {{</span>
+<span class="source-line" id="L785"><a href="#L785">785</a>  *   home?: string,</span>
+<span class="source-line" id="L786"><a href="#L786">786</a>  *   env?: object,</span>
+<span class="source-line" id="L787"><a href="#L787">787</a>  *   paths?: object,</span>
+<span class="source-line" id="L788"><a href="#L788">788</a>  *   inject?: object,</span>
+<span class="source-line" id="L789"><a href="#L789">789</a>  *   roots?: string[],</span>
+<span class="source-line" id="L790"><a href="#L790">790</a>  * }} opts</span>
+<span class="source-line" id="L791"><a href="#L791">791</a>  * @returns {Readonly&lt;object&gt;}</span>
+<span class="source-line" id="L792"><a href="#L792">792</a>  */</span>
+<span class="source-line" id="L793"><a href="#L793">793</a> export function buildBadgeFromIndex(opts = {}) {</span>
+<span class="source-line" id="L794"><a href="#L794">794</a>   const inject = opts.inject ?? {};</span>
+<span class="source-line" id="L795"><a href="#L795">795</a> </span>
+<span class="source-line" id="L796"><a href="#L796">796</a>   // Test inject: items short-circuit without index (still no discoverStrips).</span>
+<span class="source-line" id="L797"><a href="#L797">797</a>   if (Array.isArray(inject.items)) {</span>
+<span class="source-line" id="L798"><a href="#L798">798</a>     const rq = buildRaiseQueue(inject.items, inject);</span>
+<span class="source-line" id="L799"><a href="#L799">799</a>     return Object.freeze({</span>
+<span class="source-line" id="L800"><a href="#L800">800</a>       ok: true,</span>
+<span class="source-line" id="L801"><a href="#L801">801</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L802"><a href="#L802">802</a>       badge: rq.badge,</span>
+<span class="source-line" id="L803"><a href="#L803">803</a>       queue_length: rq.queue_length,</span>
+<span class="source-line" id="L804"><a href="#L804">804</a>       source: &#x27;inject.items&#x27;,</span>
+<span class="source-line" id="L805"><a href="#L805">805</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L806"><a href="#L806">806</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L807"><a href="#L807">807</a>       files_opened: 0,</span>
+<span class="source-line" id="L808"><a href="#L808">808</a>       files_opened_bound: BADGE_FILES_OPENED_BOUND_CACHED,</span>
+<span class="source-line" id="L809"><a href="#L809">809</a>       files_opened_within_bound: true,</span>
+<span class="source-line" id="L810"><a href="#L810">810</a>       process_spawns_per_interval: 1,</span>
+<span class="source-line" id="L811"><a href="#L811">811</a>     });</span>
+<span class="source-line" id="L812"><a href="#L812">812</a>   }</span>
+<span class="source-line" id="L813"><a href="#L813">813</a> </span>
+<span class="source-line" id="L814"><a href="#L814">814</a>   let home = opts.home ?? inject.home ?? null;</span>
+<span class="source-line" id="L815"><a href="#L815">815</a>   let paths = opts.paths ?? inject.paths ?? null;</span>
+<span class="source-line" id="L816"><a href="#L816">816</a>   try {</span>
+<span class="source-line" id="L817"><a href="#L817">817</a>     if (!home) {</span>
+<span class="source-line" id="L818"><a href="#L818">818</a>       paths = paths ?? indexPathsFrom({ home: opts.home, env: opts.env ?? inject.env, paths });</span>
+<span class="source-line" id="L819"><a href="#L819">819</a>       home = paths.home;</span>
+<span class="source-line" id="L820"><a href="#L820">820</a>     }</span>
+<span class="source-line" id="L821"><a href="#L821">821</a>   } catch (e) {</span>
+<span class="source-line" id="L822"><a href="#L822">822</a>     return Object.freeze({</span>
+<span class="source-line" id="L823"><a href="#L823">823</a>       ok: false,</span>
+<span class="source-line" id="L824"><a href="#L824">824</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L825"><a href="#L825">825</a>       error: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L826"><a href="#L826">826</a>       code: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L827"><a href="#L827">827</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],</span>
+<span class="source-line" id="L828"><a href="#L828">828</a>       badge: { glyph: &#x27;⚑&#x27;, count: null },</span>
+<span class="source-line" id="L829"><a href="#L829">829</a>       queue_length: null,</span>
+<span class="source-line" id="L830"><a href="#L830">830</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L831"><a href="#L831">831</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L832"><a href="#L832">832</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L833"><a href="#L833">833</a>     });</span>
+<span class="source-line" id="L834"><a href="#L834">834</a>   }</span>
+<span class="source-line" id="L835"><a href="#L835">835</a> </span>
+<span class="source-line" id="L836"><a href="#L836">836</a>   if (!home || typeof home !== &#x27;string&#x27;) {</span>
+<span class="source-line" id="L837"><a href="#L837">837</a>     return Object.freeze({</span>
+<span class="source-line" id="L838"><a href="#L838">838</a>       ok: false,</span>
+<span class="source-line" id="L839"><a href="#L839">839</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L840"><a href="#L840">840</a>       error: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L841"><a href="#L841">841</a>       code: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L842"><a href="#L842">842</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],</span>
+<span class="source-line" id="L843"><a href="#L843">843</a>       badge: { glyph: &#x27;⚑&#x27;, count: null },</span>
+<span class="source-line" id="L844"><a href="#L844">844</a>       queue_length: null,</span>
+<span class="source-line" id="L845"><a href="#L845">845</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L846"><a href="#L846">846</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L847"><a href="#L847">847</a>     });</span>
+<span class="source-line" id="L848"><a href="#L848">848</a>   }</span>
+<span class="source-line" id="L849"><a href="#L849">849</a> </span>
+<span class="source-line" id="L850"><a href="#L850">850</a>   // Existence of index home (directory) — missing → named failure.</span>
+<span class="source-line" id="L851"><a href="#L851">851</a>   if (!fs.existsSync(home)) {</span>
+<span class="source-line" id="L852"><a href="#L852">852</a>     return Object.freeze({</span>
+<span class="source-line" id="L853"><a href="#L853">853</a>       ok: false,</span>
+<span class="source-line" id="L854"><a href="#L854">854</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L855"><a href="#L855">855</a>       error: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L856"><a href="#L856">856</a>       code: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L857"><a href="#L857">857</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],</span>
+<span class="source-line" id="L858"><a href="#L858">858</a>       badge: { glyph: &#x27;⚑&#x27;, count: null },</span>
+<span class="source-line" id="L859"><a href="#L859">859</a>       queue_length: null,</span>
+<span class="source-line" id="L860"><a href="#L860">860</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L861"><a href="#L861">861</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L862"><a href="#L862">862</a>     });</span>
+<span class="source-line" id="L863"><a href="#L863">863</a>   }</span>
+<span class="source-line" id="L864"><a href="#L864">864</a> </span>
+<span class="source-line" id="L865"><a href="#L865">865</a>   const journal = newReadJournal();</span>
+<span class="source-line" id="L866"><a href="#L866">866</a>   journal.writes = [];</span>
+<span class="source-line" id="L867"><a href="#L867">867</a>   const guarded = glanceIndexOnlyFs(fs, home, journal);</span>
+<span class="source-line" id="L868"><a href="#L868">868</a> </span>
+<span class="source-line" id="L869"><a href="#L869">869</a>   // Prefer cache</span>
+<span class="source-line" id="L870"><a href="#L870">870</a>   const cached = readBadgeCache({ home, fsx: guarded, journal });</span>
+<span class="source-line" id="L871"><a href="#L871">871</a>   if (cached.ok &amp;&amp; cached.exists &amp;&amp; cached.cell) {</span>
+<span class="source-line" id="L872"><a href="#L872">872</a>     const count = Number(cached.cell.count ?? cached.cell.queue_length ?? 0) || 0;</span>
+<span class="source-line" id="L873"><a href="#L873">873</a>     const within = journal.total &lt;= BADGE_FILES_OPENED_BOUND_CACHED;</span>
+<span class="source-line" id="L874"><a href="#L874">874</a>     return Object.freeze({</span>
+<span class="source-line" id="L875"><a href="#L875">875</a>       ok: true,</span>
+<span class="source-line" id="L876"><a href="#L876">876</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L877"><a href="#L877">877</a>       badge: Object.freeze({</span>
+<span class="source-line" id="L878"><a href="#L878">878</a>         glyph: cached.cell.glyph ?? &#x27;⚑&#x27;,</span>
+<span class="source-line" id="L879"><a href="#L879">879</a>         count,</span>
+<span class="source-line" id="L880"><a href="#L880">880</a>         only_ambient_signal: true,</span>
+<span class="source-line" id="L881"><a href="#L881">881</a>         law: &#x27;⚑ count equals raise queue length; no other ambient notification surfaces anywhere in Anchor&#x27;,</span>
+<span class="source-line" id="L882"><a href="#L882">882</a>       }),</span>
+<span class="source-line" id="L883"><a href="#L883">883</a>       queue_length: count,</span>
+<span class="source-line" id="L884"><a href="#L884">884</a>       source: &#x27;badge-cache&#x27;,</span>
+<span class="source-line" id="L885"><a href="#L885">885</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L886"><a href="#L886">886</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L887"><a href="#L887">887</a>       files_opened: journal.total,</span>
+<span class="source-line" id="L888"><a href="#L888">888</a>       files_opened_bound: BADGE_FILES_OPENED_BOUND_CACHED,</span>
+<span class="source-line" id="L889"><a href="#L889">889</a>       files_opened_within_bound: within,</span>
+<span class="source-line" id="L890"><a href="#L890">890</a>       process_spawns_per_interval: 1,</span>
+<span class="source-line" id="L891"><a href="#L891">891</a>       no_walk: Object.freeze({</span>
+<span class="source-line" id="L892"><a href="#L892">892</a>         roots_opened: journal.outside.length,</span>
+<span class="source-line" id="L893"><a href="#L893">893</a>         index_home_only: journal.outside.length === 0,</span>
+<span class="source-line" id="L894"><a href="#L894">894</a>         total_reads: journal.total,</span>
+<span class="source-line" id="L895"><a href="#L895">895</a>       }),</span>
+<span class="source-line" id="L896"><a href="#L896">896</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L897"><a href="#L897">897</a>       writes_attempted: journal.writes.length,</span>
+<span class="source-line" id="L898"><a href="#L898">898</a>     });</span>
+<span class="source-line" id="L899"><a href="#L899">899</a>   }</span>
+<span class="source-line" id="L900"><a href="#L900">900</a> </span>
+<span class="source-line" id="L901"><a href="#L901">901</a>   // Cache miss: recompute from attention cells under trap (read), write cache with real fs.</span>
+<span class="source-line" id="L902"><a href="#L902">902</a>   try {</span>
+<span class="source-line" id="L903"><a href="#L903">903</a>     const cells = listAttentionCellsFromIndex({ home, fsx: guarded, journal });</span>
+<span class="source-line" id="L904"><a href="#L904">904</a>     const raiseItems = cells.map((c) =&gt;</span>
+<span class="source-line" id="L905"><a href="#L905">905</a>       foldRowToRaiseItem({</span>
+<span class="source-line" id="L906"><a href="#L906">906</a>         project_id: c.project_id,</span>
+<span class="source-line" id="L907"><a href="#L907">907</a>         project_path: c.project_path,</span>
+<span class="source-line" id="L908"><a href="#L908">908</a>         attention: c.state,</span>
+<span class="source-line" id="L909"><a href="#L909">909</a>         attention_reason: c.reason,</span>
+<span class="source-line" id="L910"><a href="#L910">910</a>         runs: {</span>
+<span class="source-line" id="L911"><a href="#L911">911</a>           waiting:</span>
+<span class="source-line" id="L912"><a href="#L912">912</a>             c.state === &#x27;needs_you&#x27; || c.state === &#x27;deliverable_ready&#x27;</span>
+<span class="source-line" id="L913"><a href="#L913">913</a>               ? Math.max(1, Number(c.waiting_steps) || 1)</span>
+<span class="source-line" id="L914"><a href="#L914">914</a>               : 0,</span>
+<span class="source-line" id="L915"><a href="#L915">915</a>         },</span>
+<span class="source-line" id="L916"><a href="#L916">916</a>         fields: {</span>
+<span class="source-line" id="L917"><a href="#L917">917</a>           attention: {</span>
+<span class="source-line" id="L918"><a href="#L918">918</a>             value: c.state,</span>
+<span class="source-line" id="L919"><a href="#L919">919</a>             known: ATTENTION_STATES.includes(c.state),</span>
+<span class="source-line" id="L920"><a href="#L920">920</a>             source: &#x27;attention index cell&#x27;,</span>
+<span class="source-line" id="L921"><a href="#L921">921</a>           },</span>
+<span class="source-line" id="L922"><a href="#L922">922</a>         },</span>
+<span class="source-line" id="L923"><a href="#L923">923</a>       }),</span>
+<span class="source-line" id="L924"><a href="#L924">924</a>     );</span>
+<span class="source-line" id="L925"><a href="#L925">925</a>     const rq = buildRaiseQueue(raiseItems);</span>
+<span class="source-line" id="L926"><a href="#L926">926</a>     // Update cache for next poll (ingest-style write on index home — not a project tree).</span>
+<span class="source-line" id="L927"><a href="#L927">927</a>     writeBadgeCache({</span>
+<span class="source-line" id="L928"><a href="#L928">928</a>       home,</span>
+<span class="source-line" id="L929"><a href="#L929">929</a>       count: rq.queue_length,</span>
+<span class="source-line" id="L930"><a href="#L930">930</a>       projects: rq.queue.map((q) =&gt; q.project_id).filter(Boolean),</span>
+<span class="source-line" id="L931"><a href="#L931">931</a>       updated_via: &#x27;buildBadgeFromIndex-cache-miss&#x27;,</span>
+<span class="source-line" id="L932"><a href="#L932">932</a>       fsx: fs,</span>
+<span class="source-line" id="L933"><a href="#L933">933</a>     });</span>
+<span class="source-line" id="L934"><a href="#L934">934</a>     const within = journal.total &lt;= BADGE_FILES_OPENED_BOUND_RECOMPUTE;</span>
+<span class="source-line" id="L935"><a href="#L935">935</a>     return Object.freeze({</span>
+<span class="source-line" id="L936"><a href="#L936">936</a>       ok: true,</span>
+<span class="source-line" id="L937"><a href="#L937">937</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L938"><a href="#L938">938</a>       badge: rq.badge,</span>
+<span class="source-line" id="L939"><a href="#L939">939</a>       queue_length: rq.queue_length,</span>
+<span class="source-line" id="L940"><a href="#L940">940</a>       source: &#x27;attention-cells&#x27;,</span>
+<span class="source-line" id="L941"><a href="#L941">941</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L942"><a href="#L942">942</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L943"><a href="#L943">943</a>       files_opened: journal.total,</span>
+<span class="source-line" id="L944"><a href="#L944">944</a>       files_opened_bound: BADGE_FILES_OPENED_BOUND_RECOMPUTE,</span>
+<span class="source-line" id="L945"><a href="#L945">945</a>       files_opened_within_bound: within,</span>
+<span class="source-line" id="L946"><a href="#L946">946</a>       process_spawns_per_interval: 1,</span>
+<span class="source-line" id="L947"><a href="#L947">947</a>       no_walk: Object.freeze({</span>
+<span class="source-line" id="L948"><a href="#L948">948</a>         roots_opened: journal.outside.length,</span>
+<span class="source-line" id="L949"><a href="#L949">949</a>         index_home_only: journal.outside.length === 0,</span>
+<span class="source-line" id="L950"><a href="#L950">950</a>         total_reads: journal.total,</span>
+<span class="source-line" id="L951"><a href="#L951">951</a>       }),</span>
+<span class="source-line" id="L952"><a href="#L952">952</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L953"><a href="#L953">953</a>       writes_attempted: journal.writes.length,</span>
+<span class="source-line" id="L954"><a href="#L954">954</a>     });</span>
+<span class="source-line" id="L955"><a href="#L955">955</a>   } catch (e) {</span>
+<span class="source-line" id="L956"><a href="#L956">956</a>     if (e instanceof QueryRefusal) {</span>
+<span class="source-line" id="L957"><a href="#L957">957</a>       return Object.freeze({</span>
+<span class="source-line" id="L958"><a href="#L958">958</a>         ok: false,</span>
+<span class="source-line" id="L959"><a href="#L959">959</a>         mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L960"><a href="#L960">960</a>         error: GLANCE_CODE.GLANCE_QUERY_REFUSED,</span>
+<span class="source-line" id="L961"><a href="#L961">961</a>         code: GLANCE_CODE.GLANCE_QUERY_REFUSED,</span>
+<span class="source-line" id="L962"><a href="#L962">962</a>         message: GLANCE_TEXT[GLANCE_CODE.GLANCE_QUERY_REFUSED],</span>
+<span class="source-line" id="L963"><a href="#L963">963</a>         detail: e.message,</span>
+<span class="source-line" id="L964"><a href="#L964">964</a>         discoverStrips_reached: false,</span>
+<span class="source-line" id="L965"><a href="#L965">965</a>         walk_path_unreachable: true,</span>
+<span class="source-line" id="L966"><a href="#L966">966</a>         files_opened: journal.total,</span>
+<span class="source-line" id="L967"><a href="#L967">967</a>       });</span>
+<span class="source-line" id="L968"><a href="#L968">968</a>     }</span>
+<span class="source-line" id="L969"><a href="#L969">969</a>     return Object.freeze({</span>
+<span class="source-line" id="L970"><a href="#L970">970</a>       ok: false,</span>
+<span class="source-line" id="L971"><a href="#L971">971</a>       mode: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L972"><a href="#L972">972</a>       error: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L973"><a href="#L973">973</a>       code: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L974"><a href="#L974">974</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE],</span>
+<span class="source-line" id="L975"><a href="#L975">975</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L976"><a href="#L976">976</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L977"><a href="#L977">977</a>       walk_path_unreachable: true,</span>
+<span class="source-line" id="L978"><a href="#L978">978</a>     });</span>
+<span class="source-line" id="L979"><a href="#L979">979</a>   }</span>
+<span class="source-line" id="L980"><a href="#L980">980</a> }</span>
+<span class="source-line" id="L981"><a href="#L981">981</a> </span>
+<span class="source-line" id="L982"><a href="#L982">982</a> // ── Portfolio glance assembly ──────────────────────────────────────────────</span>
+<span class="source-line" id="L983"><a href="#L983">983</a> </span>
+<span class="source-line" id="L984"><a href="#L984">984</a> /**</span>
+<span class="source-line" id="L985"><a href="#L985">985</a>  * Assemble portfolio-at-a-glance from the index (no root walk).</span>
+<span class="source-line" id="L986"><a href="#L986">986</a>  *</span>
+<span class="source-line" id="L987"><a href="#L987">987</a>  * @param {{</span>
+<span class="source-line" id="L988"><a href="#L988">988</a>  *   home?: string,</span>
+<span class="source-line" id="L989"><a href="#L989">989</a>  *   env?: object,</span>
+<span class="source-line" id="L990"><a href="#L990">990</a>  *   paths?: object,</span>
+<span class="source-line" id="L991"><a href="#L991">991</a>  *   skipped_roots?: string[],</span>
+<span class="source-line" id="L992"><a href="#L992">992</a>  *   unreadable_projects?: Array&lt;{project_id?:string, project_path?:string, label?:string}&gt;,</span>
+<span class="source-line" id="L993"><a href="#L993">993</a>  *   inject?: object,</span>
+<span class="source-line" id="L994"><a href="#L994">994</a>  *   fsx?: object,</span>
+<span class="source-line" id="L995"><a href="#L995">995</a>  * }} opts</span>
+<span class="source-line" id="L996"><a href="#L996">996</a>  * @returns {Readonly&lt;object&gt;}</span>
+<span class="source-line" id="L997"><a href="#L997">997</a>  */</span>
+<span class="source-line" id="L998"><a href="#L998">998</a> export function assemblePortfolioGlance(opts = {}) {</span>
+<span class="source-line" id="L999"><a href="#L999">999</a>   const inject = opts.inject ?? {};</span>
+<span class="source-line" id="L1000"><a href="#L1000">1000</a>   const degraded = [];</span>
+<span class="source-line" id="L1001"><a href="#L1001">1001</a> </span>
+<span class="source-line" id="L1002"><a href="#L1002">1002</a>   // Injected rows (tests / pure fold)</span>
+<span class="source-line" id="L1003"><a href="#L1003">1003</a>   if (Array.isArray(inject.rows)) {</span>
+<span class="source-line" id="L1004"><a href="#L1004">1004</a>     const rows = [...inject.rows];</span>
+<span class="source-line" id="L1005"><a href="#L1005">1005</a>     for (const s of opts.skipped_roots ?? inject.skipped_roots ?? []) {</span>
+<span class="source-line" id="L1006"><a href="#L1006">1006</a>       const pathStr = typeof s === &#x27;string&#x27; ? s : s?.project_path ?? s?.root ?? &#x27;&#x27;;</span>
+<span class="source-line" id="L1007"><a href="#L1007">1007</a>       if (!pathStr) continue;</span>
+<span class="source-line" id="L1008"><a href="#L1008">1008</a>       rows.push(</span>
+<span class="source-line" id="L1009"><a href="#L1009">1009</a>         buildGlanceRow({</span>
+<span class="source-line" id="L1010"><a href="#L1010">1010</a>           project_id: typeof s === &#x27;object&#x27; ? s.project_id ?? null : null,</span>
+<span class="source-line" id="L1011"><a href="#L1011">1011</a>           project_path: pathStr,</span>
+<span class="source-line" id="L1012"><a href="#L1012">1012</a>           label: typeof s === &#x27;object&#x27; ? s.label ?? pathStr : pathStr,</span>
+<span class="source-line" id="L1013"><a href="#L1013">1013</a>           skipped: true,</span>
+<span class="source-line" id="L1014"><a href="#L1014">1014</a>         }),</span>
+<span class="source-line" id="L1015"><a href="#L1015">1015</a>       );</span>
+<span class="source-line" id="L1016"><a href="#L1016">1016</a>     }</span>
+<span class="source-line" id="L1017"><a href="#L1017">1017</a>     for (const u of opts.unreadable_projects ?? inject.unreadable_projects ?? []) {</span>
+<span class="source-line" id="L1018"><a href="#L1018">1018</a>       const already = rows.some(</span>
+<span class="source-line" id="L1019"><a href="#L1019">1019</a>         (r) =&gt;</span>
+<span class="source-line" id="L1020"><a href="#L1020">1020</a>           (u.project_id &amp;&amp; r.project_id === u.project_id) ||</span>
+<span class="source-line" id="L1021"><a href="#L1021">1021</a>           (u.project_path &amp;&amp; r.project_path === u.project_path),</span>
+<span class="source-line" id="L1022"><a href="#L1022">1022</a>       );</span>
+<span class="source-line" id="L1023"><a href="#L1023">1023</a>       if (already) continue;</span>
+<span class="source-line" id="L1024"><a href="#L1024">1024</a>       rows.push(</span>
+<span class="source-line" id="L1025"><a href="#L1025">1025</a>         buildGlanceRow({</span>
+<span class="source-line" id="L1026"><a href="#L1026">1026</a>           project_id: u.project_id ?? null,</span>
+<span class="source-line" id="L1027"><a href="#L1027">1027</a>           project_path: u.project_path ?? null,</span>
+<span class="source-line" id="L1028"><a href="#L1028">1028</a>           label: u.label ?? u.project_id ?? u.project_path,</span>
+<span class="source-line" id="L1029"><a href="#L1029">1029</a>           unreadable: true,</span>
+<span class="source-line" id="L1030"><a href="#L1030">1030</a>         }),</span>
+<span class="source-line" id="L1031"><a href="#L1031">1031</a>       );</span>
+<span class="source-line" id="L1032"><a href="#L1032">1032</a>     }</span>
+<span class="source-line" id="L1033"><a href="#L1033">1033</a>     if (rows.length &gt; PORTFOLIO_MAX_ROWS) {</span>
+<span class="source-line" id="L1034"><a href="#L1034">1034</a>       return boundExceededResult(rows.length);</span>
+<span class="source-line" id="L1035"><a href="#L1035">1035</a>     }</span>
+<span class="source-line" id="L1036"><a href="#L1036">1036</a>     const folded = foldProjections(rows, inject);</span>
+<span class="source-line" id="L1037"><a href="#L1037">1037</a>     for (const row of rows) {</span>
+<span class="source-line" id="L1038"><a href="#L1038">1038</a>       for (const f of CRITERION_13_FIELDS) {</span>
+<span class="source-line" id="L1039"><a href="#L1039">1039</a>         if (row.fields?.[f]?.known === false) {</span>
+<span class="source-line" id="L1040"><a href="#L1040">1040</a>           degraded.push(</span>
+<span class="source-line" id="L1041"><a href="#L1041">1041</a>             Object.freeze({</span>
+<span class="source-line" id="L1042"><a href="#L1042">1042</a>               project_id: row.project_id,</span>
+<span class="source-line" id="L1043"><a href="#L1043">1043</a>               field: f,</span>
+<span class="source-line" id="L1044"><a href="#L1044">1044</a>               mark: COMPOSITE.DEGRADED,</span>
+<span class="source-line" id="L1045"><a href="#L1045">1045</a>               note: &#x27;A5 field beyond cap / absent in index — named unknown; Wave 19 kill gate cannot green criterion 13 on DEGRADED without signed decision&#x27;,</span>
+<span class="source-line" id="L1046"><a href="#L1046">1046</a>             }),</span>
+<span class="source-line" id="L1047"><a href="#L1047">1047</a>           );</span>
+<span class="source-line" id="L1048"><a href="#L1048">1048</a>         }</span>
+<span class="source-line" id="L1049"><a href="#L1049">1049</a>       }</span>
+<span class="source-line" id="L1050"><a href="#L1050">1050</a>     }</span>
+<span class="source-line" id="L1051"><a href="#L1051">1051</a>     return Object.freeze({</span>
+<span class="source-line" id="L1052"><a href="#L1052">1052</a>       ok: true,</span>
+<span class="source-line" id="L1053"><a href="#L1053">1053</a>       schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1054"><a href="#L1054">1054</a>       rows: Object.freeze(rows),</span>
+<span class="source-line" id="L1055"><a href="#L1055">1055</a>       row_count: rows.length,</span>
+<span class="source-line" id="L1056"><a href="#L1056">1056</a>       ...folded,</span>
+<span class="source-line" id="L1057"><a href="#L1057">1057</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1058"><a href="#L1058">1058</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L1059"><a href="#L1059">1059</a>       degraded: Object.freeze(degraded),</span>
+<span class="source-line" id="L1060"><a href="#L1060">1060</a>       ambient: ambientSignals(folded.badge),</span>
+<span class="source-line" id="L1061"><a href="#L1061">1061</a>       field_coverage: Object.freeze({</span>
+<span class="source-line" id="L1062"><a href="#L1062">1062</a>         keys: GLANCE_FIELD_KEYS,</span>
+<span class="source-line" id="L1063"><a href="#L1063">1063</a>         every_row_complete: rows.every((r) =&gt; r.field_coverage_complete === true),</span>
+<span class="source-line" id="L1064"><a href="#L1064">1064</a>       }),</span>
+<span class="source-line" id="L1065"><a href="#L1065">1065</a>     });</span>
+<span class="source-line" id="L1066"><a href="#L1066">1066</a>   }</span>
+<span class="source-line" id="L1067"><a href="#L1067">1067</a> </span>
+<span class="source-line" id="L1068"><a href="#L1068">1068</a>   let home = opts.home ?? inject.home ?? null;</span>
+<span class="source-line" id="L1069"><a href="#L1069">1069</a>   let paths;</span>
+<span class="source-line" id="L1070"><a href="#L1070">1070</a>   try {</span>
+<span class="source-line" id="L1071"><a href="#L1071">1071</a>     paths = opts.paths ?? inject.paths ?? indexPathsFrom({</span>
+<span class="source-line" id="L1072"><a href="#L1072">1072</a>       home: opts.home,</span>
+<span class="source-line" id="L1073"><a href="#L1073">1073</a>       env: opts.env ?? inject.env,</span>
+<span class="source-line" id="L1074"><a href="#L1074">1074</a>       paths: opts.paths,</span>
+<span class="source-line" id="L1075"><a href="#L1075">1075</a>     });</span>
+<span class="source-line" id="L1076"><a href="#L1076">1076</a>     home = paths.home;</span>
+<span class="source-line" id="L1077"><a href="#L1077">1077</a>   } catch (e) {</span>
+<span class="source-line" id="L1078"><a href="#L1078">1078</a>     return Object.freeze({</span>
+<span class="source-line" id="L1079"><a href="#L1079">1079</a>       ok: false,</span>
+<span class="source-line" id="L1080"><a href="#L1080">1080</a>       schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1081"><a href="#L1081">1081</a>       error: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L1082"><a href="#L1082">1082</a>       code: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L1083"><a href="#L1083">1083</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],</span>
+<span class="source-line" id="L1084"><a href="#L1084">1084</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L1085"><a href="#L1085">1085</a>       rows: Object.freeze([]),</span>
+<span class="source-line" id="L1086"><a href="#L1086">1086</a>       row_count: 0,</span>
+<span class="source-line" id="L1087"><a href="#L1087">1087</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L1088"><a href="#L1088">1088</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1089"><a href="#L1089">1089</a>     });</span>
+<span class="source-line" id="L1090"><a href="#L1090">1090</a>   }</span>
+<span class="source-line" id="L1091"><a href="#L1091">1091</a> </span>
+<span class="source-line" id="L1092"><a href="#L1092">1092</a>   if (!home || !fs.existsSync(home)) {</span>
+<span class="source-line" id="L1093"><a href="#L1093">1093</a>     return Object.freeze({</span>
+<span class="source-line" id="L1094"><a href="#L1094">1094</a>       ok: false,</span>
+<span class="source-line" id="L1095"><a href="#L1095">1095</a>       schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1096"><a href="#L1096">1096</a>       error: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L1097"><a href="#L1097">1097</a>       code: GLANCE_CODE.GLANCE_INDEX_MISSING,</span>
+<span class="source-line" id="L1098"><a href="#L1098">1098</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],</span>
+<span class="source-line" id="L1099"><a href="#L1099">1099</a>       rows: Object.freeze([]),</span>
+<span class="source-line" id="L1100"><a href="#L1100">1100</a>       row_count: 0,</span>
+<span class="source-line" id="L1101"><a href="#L1101">1101</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L1102"><a href="#L1102">1102</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1103"><a href="#L1103">1103</a>     });</span>
+<span class="source-line" id="L1104"><a href="#L1104">1104</a>   }</span>
+<span class="source-line" id="L1105"><a href="#L1105">1105</a> </span>
+<span class="source-line" id="L1106"><a href="#L1106">1106</a>   const journal = newReadJournal();</span>
+<span class="source-line" id="L1107"><a href="#L1107">1107</a>   journal.writes = [];</span>
+<span class="source-line" id="L1108"><a href="#L1108">1108</a>   const guarded = glanceIndexOnlyFs(opts.fsx ?? fs, home, journal);</span>
+<span class="source-line" id="L1109"><a href="#L1109">1109</a> </span>
+<span class="source-line" id="L1110"><a href="#L1110">1110</a>   let read;</span>
+<span class="source-line" id="L1111"><a href="#L1111">1111</a>   try {</span>
+<span class="source-line" id="L1112"><a href="#L1112">1112</a>     read = openIndexForRead({ ...opts, paths, home, fsx: guarded, env: opts.env ?? inject.env });</span>
+<span class="source-line" id="L1113"><a href="#L1113">1113</a>   } catch (e) {</span>
+<span class="source-line" id="L1114"><a href="#L1114">1114</a>     if (e instanceof QueryRefusal) {</span>
+<span class="source-line" id="L1115"><a href="#L1115">1115</a>       return Object.freeze({</span>
+<span class="source-line" id="L1116"><a href="#L1116">1116</a>         ok: false,</span>
+<span class="source-line" id="L1117"><a href="#L1117">1117</a>         schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1118"><a href="#L1118">1118</a>         error: GLANCE_CODE.GLANCE_QUERY_REFUSED,</span>
+<span class="source-line" id="L1119"><a href="#L1119">1119</a>         code: GLANCE_CODE.GLANCE_QUERY_REFUSED,</span>
+<span class="source-line" id="L1120"><a href="#L1120">1120</a>         message: GLANCE_TEXT[GLANCE_CODE.GLANCE_QUERY_REFUSED],</span>
+<span class="source-line" id="L1121"><a href="#L1121">1121</a>         detail: e.message,</span>
+<span class="source-line" id="L1122"><a href="#L1122">1122</a>         rows: Object.freeze([]),</span>
+<span class="source-line" id="L1123"><a href="#L1123">1123</a>         row_count: 0,</span>
+<span class="source-line" id="L1124"><a href="#L1124">1124</a>         discoverStrips_reached: false,</span>
+<span class="source-line" id="L1125"><a href="#L1125">1125</a>         no_walk: noWalkReceipt(journal),</span>
+<span class="source-line" id="L1126"><a href="#L1126">1126</a>         write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1127"><a href="#L1127">1127</a>       });</span>
+<span class="source-line" id="L1128"><a href="#L1128">1128</a>     }</span>
+<span class="source-line" id="L1129"><a href="#L1129">1129</a>     return Object.freeze({</span>
+<span class="source-line" id="L1130"><a href="#L1130">1130</a>       ok: false,</span>
+<span class="source-line" id="L1131"><a href="#L1131">1131</a>       schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1132"><a href="#L1132">1132</a>       error: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L1133"><a href="#L1133">1133</a>       code: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,</span>
+<span class="source-line" id="L1134"><a href="#L1134">1134</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE],</span>
+<span class="source-line" id="L1135"><a href="#L1135">1135</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L1136"><a href="#L1136">1136</a>       rows: Object.freeze([]),</span>
+<span class="source-line" id="L1137"><a href="#L1137">1137</a>       row_count: 0,</span>
+<span class="source-line" id="L1138"><a href="#L1138">1138</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L1139"><a href="#L1139">1139</a>       no_walk: noWalkReceipt(journal),</span>
+<span class="source-line" id="L1140"><a href="#L1140">1140</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1141"><a href="#L1141">1141</a>     });</span>
+<span class="source-line" id="L1142"><a href="#L1142">1142</a>   }</span>
+<span class="source-line" id="L1143"><a href="#L1143">1143</a> </span>
+<span class="source-line" id="L1144"><a href="#L1144">1144</a>   if (read.ok !== true) {</span>
+<span class="source-line" id="L1145"><a href="#L1145">1145</a>     // Distinguish missing vs unparseable</span>
+<span class="source-line" id="L1146"><a href="#L1146">1146</a>     const code =</span>
+<span class="source-line" id="L1147"><a href="#L1147">1147</a>       read.code === &#x27;INDEX_ABSENT&#x27; || read.reason === &#x27;absent&#x27;</span>
+<span class="source-line" id="L1148"><a href="#L1148">1148</a>         ? GLANCE_CODE.GLANCE_INDEX_MISSING</span>
+<span class="source-line" id="L1149"><a href="#L1149">1149</a>         : GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE;</span>
+<span class="source-line" id="L1150"><a href="#L1150">1150</a>     return Object.freeze({</span>
+<span class="source-line" id="L1151"><a href="#L1151">1151</a>       ok: false,</span>
+<span class="source-line" id="L1152"><a href="#L1152">1152</a>       schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1153"><a href="#L1153">1153</a>       error: code,</span>
+<span class="source-line" id="L1154"><a href="#L1154">1154</a>       code,</span>
+<span class="source-line" id="L1155"><a href="#L1155">1155</a>       message: GLANCE_TEXT[code],</span>
+<span class="source-line" id="L1156"><a href="#L1156">1156</a>       detail: read.reason ?? read.text ?? null,</span>
+<span class="source-line" id="L1157"><a href="#L1157">1157</a>       rows: Object.freeze([]),</span>
+<span class="source-line" id="L1158"><a href="#L1158">1158</a>       row_count: 0,</span>
+<span class="source-line" id="L1159"><a href="#L1159">1159</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L1160"><a href="#L1160">1160</a>       no_walk: noWalkReceipt(journal),</span>
+<span class="source-line" id="L1161"><a href="#L1161">1161</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1162"><a href="#L1162">1162</a>     });</span>
+<span class="source-line" id="L1163"><a href="#L1163">1163</a>   }</span>
+<span class="source-line" id="L1164"><a href="#L1164">1164</a> </span>
+<span class="source-line" id="L1165"><a href="#L1165">1165</a>   const events = replayEvents(read.events ?? []);</span>
+<span class="source-line" id="L1166"><a href="#L1166">1166</a>   const registry = materializeRegistry(events);</span>
+<span class="source-line" id="L1167"><a href="#L1167">1167</a>   const snapshot = read.snapshot_value &amp;&amp; typeof read.snapshot_value === &#x27;object&#x27;</span>
+<span class="source-line" id="L1168"><a href="#L1168">1168</a>     ? read.snapshot_value</span>
+<span class="source-line" id="L1169"><a href="#L1169">1169</a>     : null;</span>
+<span class="source-line" id="L1170"><a href="#L1170">1170</a>   const freshness = snapshot?.freshness &amp;&amp; typeof snapshot.freshness === &#x27;object&#x27;</span>
+<span class="source-line" id="L1171"><a href="#L1171">1171</a>     ? snapshot.freshness</span>
+<span class="source-line" id="L1172"><a href="#L1172">1172</a>     : { per_project: {} };</span>
+<span class="source-line" id="L1173"><a href="#L1173">1173</a>   const perProject = freshness.per_project &amp;&amp; typeof freshness.per_project === &#x27;object&#x27;</span>
+<span class="source-line" id="L1174"><a href="#L1174">1174</a>     ? freshness.per_project</span>
+<span class="source-line" id="L1175"><a href="#L1175">1175</a>     : {};</span>
+<span class="source-line" id="L1176"><a href="#L1176">1176</a> </span>
+<span class="source-line" id="L1177"><a href="#L1177">1177</a>   // Body rows by project for stage binding</span>
+<span class="source-line" id="L1178"><a href="#L1178">1178</a>   const bodyRows = [];</span>
+<span class="source-line" id="L1179"><a href="#L1179">1179</a>   if (snapshot?.body &amp;&amp; typeof snapshot.body === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L1180"><a href="#L1180">1180</a>     const projects = snapshot.body.projects ?? snapshot.body;</span>
+<span class="source-line" id="L1181"><a href="#L1181">1181</a>     // body shape varies — collect derived-like arrays if present</span>
+<span class="source-line" id="L1182"><a href="#L1182">1182</a>     if (Array.isArray(snapshot.body.rows)) bodyRows.push(...snapshot.body.rows);</span>
+<span class="source-line" id="L1183"><a href="#L1183">1183</a>   }</span>
+<span class="source-line" id="L1184"><a href="#L1184">1184</a> </span>
+<span class="source-line" id="L1185"><a href="#L1185">1185</a>   const attentionCells = listAttentionCellsFromIndex({ home, fsx: guarded, journal });</span>
+<span class="source-line" id="L1186"><a href="#L1186">1186</a>   const attentionById = new Map();</span>
+<span class="source-line" id="L1187"><a href="#L1187">1187</a>   const attentionByPath = new Map();</span>
+<span class="source-line" id="L1188"><a href="#L1188">1188</a>   for (const c of attentionCells) {</span>
+<span class="source-line" id="L1189"><a href="#L1189">1189</a>     if (c.project_id) attentionById.set(String(c.project_id), c);</span>
+<span class="source-line" id="L1190"><a href="#L1190">1190</a>     if (c.key) attentionById.set(String(c.key), c);</span>
+<span class="source-line" id="L1191"><a href="#L1191">1191</a>     // Option-P path passport: a cell pushed by the HOST carries the host&#x27;s</span>
+<span class="source-line" id="L1192"><a href="#L1192">1192</a>     // project id (Anchor&#x27;s), which is not the steward registry&#x27;s id — found</span>
+<span class="source-line" id="L1193"><a href="#L1193">1193</a>     // live 2026-08-06: a real needs_you cell folded to queue 0. The resolved</span>
+<span class="source-line" id="L1194"><a href="#L1194">1194</a>     // project path is the identity both sides share. NEWEST WINS when several</span>
+<span class="source-line" id="L1195"><a href="#L1195">1195</a>     // ids pushed cells for one path (1 folder : N host projects is legal) —</span>
+<span class="source-line" id="L1196"><a href="#L1196">1196</a>     // otherwise a stale cell can shadow a live raise.</span>
+<span class="source-line" id="L1197"><a href="#L1197">1197</a>     if (c.project_path) {</span>
+<span class="source-line" id="L1198"><a href="#L1198">1198</a>       const key = path.resolve(String(c.project_path));</span>
+<span class="source-line" id="L1199"><a href="#L1199">1199</a>       const prev = attentionByPath.get(key);</span>
+<span class="source-line" id="L1200"><a href="#L1200">1200</a>       if (!prev || String(c.at ?? &#x27;&#x27;) &gt;= String(prev.at ?? &#x27;&#x27;)) {</span>
+<span class="source-line" id="L1201"><a href="#L1201">1201</a>         attentionByPath.set(key, c);</span>
+<span class="source-line" id="L1202"><a href="#L1202">1202</a>       }</span>
+<span class="source-line" id="L1203"><a href="#L1203">1203</a>     }</span>
+<span class="source-line" id="L1204"><a href="#L1204">1204</a>   }</span>
+<span class="source-line" id="L1205"><a href="#L1205">1205</a> </span>
+<span class="source-line" id="L1206"><a href="#L1206">1206</a>   const rows = [];</span>
+<span class="source-line" id="L1207"><a href="#L1207">1207</a>   const projects = Array.isArray(registry.projects) ? registry.projects : [];</span>
+<span class="source-line" id="L1208"><a href="#L1208">1208</a> </span>
+<span class="source-line" id="L1209"><a href="#L1209">1209</a>   for (const p of projects) {</span>
+<span class="source-line" id="L1210"><a href="#L1210">1210</a>     const pid = p.project_id;</span>
+<span class="source-line" id="L1211"><a href="#L1211">1211</a>     const fresh = perProject[pid] ?? null;</span>
+<span class="source-line" id="L1212"><a href="#L1212">1212</a>     const rowPath = p.current_path ?? p.root ?? null;</span>
+<span class="source-line" id="L1213"><a href="#L1213">1213</a>     const att =</span>
+<span class="source-line" id="L1214"><a href="#L1214">1214</a>       attentionById.get(String(pid)) ??</span>
+<span class="source-line" id="L1215"><a href="#L1215">1215</a>       (rowPath ? attentionByPath.get(path.resolve(String(rowPath))) : null) ??</span>
+<span class="source-line" id="L1216"><a href="#L1216">1216</a>       null;</span>
+<span class="source-line" id="L1217"><a href="#L1217">1217</a>     // Presence UNREACHABLE / unreadable store → unknown row kept.</span>
+<span class="source-line" id="L1218"><a href="#L1218">1218</a>     //</span>
+<span class="source-line" id="L1219"><a href="#L1219">1219</a>     // EXCEPT (2026-08-06, found live): UNREACHABLE means &quot;nobody has checked</span>
+<span class="source-line" id="L1220"><a href="#L1220">1220</a>     // the filesystem yet&quot;, not &quot;the root is gone&quot; — and a LIVE attention cell</span>
+<span class="source-line" id="L1221"><a href="#L1221">1221</a>     // pushed by the project moments ago is itself evidence. Zeroing the row</span>
+<span class="source-line" id="L1222"><a href="#L1222">1222</a>     // threw away a real needs_you: the ⚑ badge (which reads cells directly)</span>
+<span class="source-line" id="L1223"><a href="#L1223">1223</a>     // said 1 while the raise queue said 0 — the two surfaces disagreeing about</span>
+<span class="source-line" id="L1224"><a href="#L1224">1224</a>     // the same fact. ABSENT (checked and gone) still marks the row unreadable.</span>
+<span class="source-line" id="L1225"><a href="#L1225">1225</a>     const presence = fresh?.presence ?? p.presence ?? null;</span>
+<span class="source-line" id="L1226"><a href="#L1226">1226</a>     const unreadable =</span>
+<span class="source-line" id="L1227"><a href="#L1227">1227</a>       (presence === PRESENCE.UNREACHABLE &amp;&amp; att == null) ||</span>
+<span class="source-line" id="L1228"><a href="#L1228">1228</a>       presence === PRESENCE.ABSENT ||</span>
+<span class="source-line" id="L1229"><a href="#L1229">1229</a>       presence === &#x27;unreadable&#x27; ||</span>
+<span class="source-line" id="L1230"><a href="#L1230">1230</a>       p.unreadable === true;</span>
+<span class="source-line" id="L1231"><a href="#L1231">1231</a> </span>
+<span class="source-line" id="L1232"><a href="#L1232">1232</a>     const derivedForProject = bodyRows.filter(</span>
+<span class="source-line" id="L1233"><a href="#L1233">1233</a>       (r) =&gt; r &amp;&amp; String(r.project_id) === String(pid),</span>
+<span class="source-line" id="L1234"><a href="#L1234">1234</a>     );</span>
+<span class="source-line" id="L1235"><a href="#L1235">1235</a> </span>
+<span class="source-line" id="L1236"><a href="#L1236">1236</a>     const row = buildGlanceRow({</span>
+<span class="source-line" id="L1237"><a href="#L1237">1237</a>       project_id: pid,</span>
+<span class="source-line" id="L1238"><a href="#L1238">1238</a>       project_path: p.current_path ?? p.root ?? null,</span>
+<span class="source-line" id="L1239"><a href="#L1239">1239</a>       label: p.label ?? pid,</span>
+<span class="source-line" id="L1240"><a href="#L1240">1240</a>       fresh,</span>
+<span class="source-line" id="L1241"><a href="#L1241">1241</a>       attention: att</span>
+<span class="source-line" id="L1242"><a href="#L1242">1242</a>         ? {</span>
+<span class="source-line" id="L1243"><a href="#L1243">1243</a>             state: att.state,</span>
+<span class="source-line" id="L1244"><a href="#L1244">1244</a>             reason: att.reason,</span>
+<span class="source-line" id="L1245"><a href="#L1245">1245</a>             waiting_steps: att.waiting_steps,</span>
+<span class="source-line" id="L1246"><a href="#L1246">1246</a>             briefing: att.briefing ?? null,</span>
+<span class="source-line" id="L1247"><a href="#L1247">1247</a>           }</span>
+<span class="source-line" id="L1248"><a href="#L1248">1248</a>         : null,</span>
+<span class="source-line" id="L1249"><a href="#L1249">1249</a>       derived_rows: derivedForProject,</span>
+<span class="source-line" id="L1250"><a href="#L1250">1250</a>       unreadable,</span>
+<span class="source-line" id="L1251"><a href="#L1251">1251</a>     });</span>
+<span class="source-line" id="L1252"><a href="#L1252">1252</a> </span>
+<span class="source-line" id="L1253"><a href="#L1253">1253</a>     // DEGRADED: any A5 field still unknown ships named + gate-report entry</span>
+<span class="source-line" id="L1254"><a href="#L1254">1254</a>     for (const f of CRITERION_13_FIELDS) {</span>
+<span class="source-line" id="L1255"><a href="#L1255">1255</a>       if (row.fields[f]?.known === false) {</span>
+<span class="source-line" id="L1256"><a href="#L1256">1256</a>         degraded.push(</span>
+<span class="source-line" id="L1257"><a href="#L1257">1257</a>           Object.freeze({</span>
+<span class="source-line" id="L1258"><a href="#L1258">1258</a>             project_id: pid,</span>
+<span class="source-line" id="L1259"><a href="#L1259">1259</a>             field: f,</span>
+<span class="source-line" id="L1260"><a href="#L1260">1260</a>             mark: COMPOSITE.DEGRADED,</span>
+<span class="source-line" id="L1261"><a href="#L1261">1261</a>             note: &#x27;A5 field beyond cap / absent in index — named unknown; Wave 19 kill gate cannot green criterion 13 on DEGRADED without signed decision&#x27;,</span>
+<span class="source-line" id="L1262"><a href="#L1262">1262</a>           }),</span>
+<span class="source-line" id="L1263"><a href="#L1263">1263</a>         );</span>
+<span class="source-line" id="L1264"><a href="#L1264">1264</a>       }</span>
+<span class="source-line" id="L1265"><a href="#L1265">1265</a>     }</span>
+<span class="source-line" id="L1266"><a href="#L1266">1266</a>     rows.push(row);</span>
+<span class="source-line" id="L1267"><a href="#L1267">1267</a>   }</span>
+<span class="source-line" id="L1268"><a href="#L1268">1268</a> </span>
+<span class="source-line" id="L1269"><a href="#L1269">1269</a>   // Unreadable projects supplied explicitly (not in registry)</span>
+<span class="source-line" id="L1270"><a href="#L1270">1270</a>   for (const u of opts.unreadable_projects ?? inject.unreadable_projects ?? []) {</span>
+<span class="source-line" id="L1271"><a href="#L1271">1271</a>     const already = rows.some(</span>
+<span class="source-line" id="L1272"><a href="#L1272">1272</a>       (r) =&gt;</span>
+<span class="source-line" id="L1273"><a href="#L1273">1273</a>         (u.project_id &amp;&amp; r.project_id === u.project_id) ||</span>
+<span class="source-line" id="L1274"><a href="#L1274">1274</a>         (u.project_path &amp;&amp; r.project_path === u.project_path),</span>
+<span class="source-line" id="L1275"><a href="#L1275">1275</a>     );</span>
+<span class="source-line" id="L1276"><a href="#L1276">1276</a>     if (already) continue;</span>
+<span class="source-line" id="L1277"><a href="#L1277">1277</a>     rows.push(</span>
+<span class="source-line" id="L1278"><a href="#L1278">1278</a>       buildGlanceRow({</span>
+<span class="source-line" id="L1279"><a href="#L1279">1279</a>         project_id: u.project_id ?? null,</span>
+<span class="source-line" id="L1280"><a href="#L1280">1280</a>         project_path: u.project_path ?? null,</span>
+<span class="source-line" id="L1281"><a href="#L1281">1281</a>         label: u.label ?? u.project_id ?? u.project_path,</span>
+<span class="source-line" id="L1282"><a href="#L1282">1282</a>         unreadable: true,</span>
+<span class="source-line" id="L1283"><a href="#L1283">1283</a>       }),</span>
+<span class="source-line" id="L1284"><a href="#L1284">1284</a>     );</span>
+<span class="source-line" id="L1285"><a href="#L1285">1285</a>   }</span>
+<span class="source-line" id="L1286"><a href="#L1286">1286</a> </span>
+<span class="source-line" id="L1287"><a href="#L1287">1287</a>   // Semicolon-skipped roots → unknown rows (row count never shrinks)</span>
+<span class="source-line" id="L1288"><a href="#L1288">1288</a>   const skipped = [</span>
+<span class="source-line" id="L1289"><a href="#L1289">1289</a>     ...(opts.skipped_roots ?? []),</span>
+<span class="source-line" id="L1290"><a href="#L1290">1290</a>     ...(inject.skipped_roots ?? []),</span>
+<span class="source-line" id="L1291"><a href="#L1291">1291</a>   ];</span>
+<span class="source-line" id="L1292"><a href="#L1292">1292</a>   for (const s of skipped) {</span>
+<span class="source-line" id="L1293"><a href="#L1293">1293</a>     const pathStr = typeof s === &#x27;string&#x27; ? s : s?.project_path ?? s?.root ?? &#x27;&#x27;;</span>
+<span class="source-line" id="L1294"><a href="#L1294">1294</a>     if (!pathStr) continue;</span>
+<span class="source-line" id="L1295"><a href="#L1295">1295</a>     rows.push(</span>
+<span class="source-line" id="L1296"><a href="#L1296">1296</a>       buildGlanceRow({</span>
+<span class="source-line" id="L1297"><a href="#L1297">1297</a>         project_id: typeof s === &#x27;object&#x27; ? s.project_id ?? null : null,</span>
+<span class="source-line" id="L1298"><a href="#L1298">1298</a>         project_path: pathStr,</span>
+<span class="source-line" id="L1299"><a href="#L1299">1299</a>         label: typeof s === &#x27;object&#x27; ? s.label ?? pathStr : pathStr,</span>
+<span class="source-line" id="L1300"><a href="#L1300">1300</a>         skipped: true,</span>
+<span class="source-line" id="L1301"><a href="#L1301">1301</a>       }),</span>
+<span class="source-line" id="L1302"><a href="#L1302">1302</a>     );</span>
+<span class="source-line" id="L1303"><a href="#L1303">1303</a>   }</span>
+<span class="source-line" id="L1304"><a href="#L1304">1304</a> </span>
+<span class="source-line" id="L1305"><a href="#L1305">1305</a>   if (rows.length &gt; PORTFOLIO_MAX_ROWS) {</span>
+<span class="source-line" id="L1306"><a href="#L1306">1306</a>     return boundExceededResult(rows.length, journal);</span>
+<span class="source-line" id="L1307"><a href="#L1307">1307</a>   }</span>
+<span class="source-line" id="L1308"><a href="#L1308">1308</a> </span>
+<span class="source-line" id="L1309"><a href="#L1309">1309</a>   if (rows.length === 0) {</span>
+<span class="source-line" id="L1310"><a href="#L1310">1310</a>     return Object.freeze({</span>
+<span class="source-line" id="L1311"><a href="#L1311">1311</a>       ok: true,</span>
+<span class="source-line" id="L1312"><a href="#L1312">1312</a>       schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1313"><a href="#L1313">1313</a>       code: GLANCE_CODE.GLANCE_PORTFOLIO_EMPTY,</span>
+<span class="source-line" id="L1314"><a href="#L1314">1314</a>       message: GLANCE_TEXT[GLANCE_CODE.GLANCE_PORTFOLIO_EMPTY],</span>
+<span class="source-line" id="L1315"><a href="#L1315">1315</a>       rows: Object.freeze([]),</span>
+<span class="source-line" id="L1316"><a href="#L1316">1316</a>       row_count: 0,</span>
+<span class="source-line" id="L1317"><a href="#L1317">1317</a>       items: Object.freeze([]),</span>
+<span class="source-line" id="L1318"><a href="#L1318">1318</a>       badge: Object.freeze({</span>
+<span class="source-line" id="L1319"><a href="#L1319">1319</a>         glyph: &#x27;⚑&#x27;,</span>
+<span class="source-line" id="L1320"><a href="#L1320">1320</a>         count: 0,</span>
+<span class="source-line" id="L1321"><a href="#L1321">1321</a>         only_ambient_signal: true,</span>
+<span class="source-line" id="L1322"><a href="#L1322">1322</a>       }),</span>
+<span class="source-line" id="L1323"><a href="#L1323">1323</a>       queue_length: 0,</span>
+<span class="source-line" id="L1324"><a href="#L1324">1324</a>       empty: true,</span>
+<span class="source-line" id="L1325"><a href="#L1325">1325</a>       discoverStrips_reached: false,</span>
+<span class="source-line" id="L1326"><a href="#L1326">1326</a>       no_walk: noWalkReceipt(journal),</span>
+<span class="source-line" id="L1327"><a href="#L1327">1327</a>       write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1328"><a href="#L1328">1328</a>       writes_attempted: journal.writes.length,</span>
+<span class="source-line" id="L1329"><a href="#L1329">1329</a>       degraded: Object.freeze(degraded),</span>
+<span class="source-line" id="L1330"><a href="#L1330">1330</a>       ambient: ambientSignals({ count: 0 }),</span>
+<span class="source-line" id="L1331"><a href="#L1331">1331</a>       files_opened: journal.total,</span>
+<span class="source-line" id="L1332"><a href="#L1332">1332</a>     });</span>
+<span class="source-line" id="L1333"><a href="#L1333">1333</a>   }</span>
+<span class="source-line" id="L1334"><a href="#L1334">1334</a> </span>
+<span class="source-line" id="L1335"><a href="#L1335">1335</a>   const folded = foldProjections(rows, inject);</span>
+<span class="source-line" id="L1336"><a href="#L1336">1336</a> </span>
+<span class="source-line" id="L1337"><a href="#L1337">1337</a>   // Refresh badge cache so the next poll is cache-hit cheap</span>
+<span class="source-line" id="L1338"><a href="#L1338">1338</a>   try {</span>
+<span class="source-line" id="L1339"><a href="#L1339">1339</a>     writeBadgeCache({</span>
+<span class="source-line" id="L1340"><a href="#L1340">1340</a>       home,</span>
+<span class="source-line" id="L1341"><a href="#L1341">1341</a>       count: folded.queue_length,</span>
+<span class="source-line" id="L1342"><a href="#L1342">1342</a>       projects: folded.raise_queue.queue</span>
+<span class="source-line" id="L1343"><a href="#L1343">1343</a>         .map((q) =&gt; q.project_id)</span>
+<span class="source-line" id="L1344"><a href="#L1344">1344</a>         .filter(Boolean),</span>
+<span class="source-line" id="L1345"><a href="#L1345">1345</a>       updated_via: &#x27;assemblePortfolioGlance&#x27;,</span>
+<span class="source-line" id="L1346"><a href="#L1346">1346</a>       fsx: fs,</span>
+<span class="source-line" id="L1347"><a href="#L1347">1347</a>     });</span>
+<span class="source-line" id="L1348"><a href="#L1348">1348</a>   } catch {</span>
+<span class="source-line" id="L1349"><a href="#L1349">1349</a>     // Cache refresh failure does not fail the glance read.</span>
+<span class="source-line" id="L1350"><a href="#L1350">1350</a>   }</span>
+<span class="source-line" id="L1351"><a href="#L1351">1351</a> </span>
+<span class="source-line" id="L1352"><a href="#L1352">1352</a>   return Object.freeze({</span>
+<span class="source-line" id="L1353"><a href="#L1353">1353</a>     ok: true,</span>
+<span class="source-line" id="L1354"><a href="#L1354">1354</a>     schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1355"><a href="#L1355">1355</a>     home,</span>
+<span class="source-line" id="L1356"><a href="#L1356">1356</a>     rows: Object.freeze(rows),</span>
+<span class="source-line" id="L1357"><a href="#L1357">1357</a>     row_count: rows.length,</span>
+<span class="source-line" id="L1358"><a href="#L1358">1358</a>     items: folded.items,</span>
+<span class="source-line" id="L1359"><a href="#L1359">1359</a>     raise_queue: folded.raise_queue,</span>
+<span class="source-line" id="L1360"><a href="#L1360">1360</a>     badge: folded.badge,</span>
+<span class="source-line" id="L1361"><a href="#L1361">1361</a>     queue_length: folded.queue_length,</span>
+<span class="source-line" id="L1362"><a href="#L1362">1362</a>     discoverStrips_reached: false,</span>
+<span class="source-line" id="L1363"><a href="#L1363">1363</a>     walk_path_unreachable: true,</span>
+<span class="source-line" id="L1364"><a href="#L1364">1364</a>     no_walk: noWalkReceipt(journal),</span>
+<span class="source-line" id="L1365"><a href="#L1365">1365</a>     write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1366"><a href="#L1366">1366</a>     writes_attempted: journal.writes.length,</span>
+<span class="source-line" id="L1367"><a href="#L1367">1367</a>     degraded: Object.freeze(degraded),</span>
+<span class="source-line" id="L1368"><a href="#L1368">1368</a>     ambient: ambientSignals(folded.badge),</span>
+<span class="source-line" id="L1369"><a href="#L1369">1369</a>     files_opened: journal.total,</span>
+<span class="source-line" id="L1370"><a href="#L1370">1370</a>     field_coverage: Object.freeze({</span>
+<span class="source-line" id="L1371"><a href="#L1371">1371</a>       keys: GLANCE_FIELD_KEYS,</span>
+<span class="source-line" id="L1372"><a href="#L1372">1372</a>       every_row_complete: rows.every((r) =&gt; r.field_coverage_complete === true),</span>
+<span class="source-line" id="L1373"><a href="#L1373">1373</a>     }),</span>
+<span class="source-line" id="L1374"><a href="#L1374">1374</a>   });</span>
+<span class="source-line" id="L1375"><a href="#L1375">1375</a> }</span>
+<span class="source-line" id="L1376"><a href="#L1376">1376</a> </span>
+<span class="source-line" id="L1377"><a href="#L1377">1377</a> function boundExceededResult(count, journal) {</span>
+<span class="source-line" id="L1378"><a href="#L1378">1378</a>   return Object.freeze({</span>
+<span class="source-line" id="L1379"><a href="#L1379">1379</a>     ok: false,</span>
+<span class="source-line" id="L1380"><a href="#L1380">1380</a>     schema: GLANCE_SCHEMA,</span>
+<span class="source-line" id="L1381"><a href="#L1381">1381</a>     error: GLANCE_CODE.GLANCE_BOUND_EXCEEDED,</span>
+<span class="source-line" id="L1382"><a href="#L1382">1382</a>     code: GLANCE_CODE.GLANCE_BOUND_EXCEEDED,</span>
+<span class="source-line" id="L1383"><a href="#L1383">1383</a>     message: GLANCE_TEXT[GLANCE_CODE.GLANCE_BOUND_EXCEEDED],</span>
+<span class="source-line" id="L1384"><a href="#L1384">1384</a>     refused: true,</span>
+<span class="source-line" id="L1385"><a href="#L1385">1385</a>     portfolio_bound: PORTFOLIO_MAX_ROWS,</span>
+<span class="source-line" id="L1386"><a href="#L1386">1386</a>     attempted_rows: count,</span>
+<span class="source-line" id="L1387"><a href="#L1387">1387</a>     rows: Object.freeze([]),</span>
+<span class="source-line" id="L1388"><a href="#L1388">1388</a>     row_count: 0,</span>
+<span class="source-line" id="L1389"><a href="#L1389">1389</a>     discoverStrips_reached: false,</span>
+<span class="source-line" id="L1390"><a href="#L1390">1390</a>     no_walk: journal ? noWalkReceipt(journal) : null,</span>
+<span class="source-line" id="L1391"><a href="#L1391">1391</a>     write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1392"><a href="#L1392">1392</a>   });</span>
+<span class="source-line" id="L1393"><a href="#L1393">1393</a> }</span>
+<span class="source-line" id="L1394"><a href="#L1394">1394</a> </span>
+<span class="source-line" id="L1395"><a href="#L1395">1395</a> /** @param {object} journal */</span>
+<span class="source-line" id="L1396"><a href="#L1396">1396</a> function noWalkReceipt(journal) {</span>
+<span class="source-line" id="L1397"><a href="#L1397">1397</a>   return Object.freeze({</span>
+<span class="source-line" id="L1398"><a href="#L1398">1398</a>     roots_opened: journal.outside?.length ?? 0,</span>
+<span class="source-line" id="L1399"><a href="#L1399">1399</a>     refused: Object.freeze([...(journal.outside ?? [])]),</span>
+<span class="source-line" id="L1400"><a href="#L1400">1400</a>     reads: Object.freeze([...(journal.reads ?? [])]),</span>
+<span class="source-line" id="L1401"><a href="#L1401">1401</a>     total_reads: journal.total ?? 0,</span>
+<span class="source-line" id="L1402"><a href="#L1402">1402</a>     index_home_only: (journal.outside?.length ?? 0) === 0,</span>
+<span class="source-line" id="L1403"><a href="#L1403">1403</a>   });</span>
+<span class="source-line" id="L1404"><a href="#L1404">1404</a> }</span>
+<span class="source-line" id="L1405"><a href="#L1405">1405</a> </span>
+<span class="source-line" id="L1406"><a href="#L1406">1406</a> /**</span>
+<span class="source-line" id="L1407"><a href="#L1407">1407</a>  * Ambient-signal containment: only the badge count; zero ambient beyond it.</span>
+<span class="source-line" id="L1408"><a href="#L1408">1408</a>  * @param {{ count?: number }|null} badge</span>
+<span class="source-line" id="L1409"><a href="#L1409">1409</a>  */</span>
+<span class="source-line" id="L1410"><a href="#L1410">1410</a> export function ambientSignals(badge = null) {</span>
+<span class="source-line" id="L1411"><a href="#L1411">1411</a>   const count = Number(badge?.count ?? 0) || 0;</span>
+<span class="source-line" id="L1412"><a href="#L1412">1412</a>   return Object.freeze({</span>
+<span class="source-line" id="L1413"><a href="#L1413">1413</a>     only_signal: &#x27;badge&#x27;,</span>
+<span class="source-line" id="L1414"><a href="#L1414">1414</a>     badge_count: count,</span>
+<span class="source-line" id="L1415"><a href="#L1415">1415</a>     ambient_beyond_badge: 0,</span>
+<span class="source-line" id="L1416"><a href="#L1416">1416</a>     signals: Object.freeze([{ kind: &#x27;badge&#x27;, count }]),</span>
+<span class="source-line" id="L1417"><a href="#L1417">1417</a>   });</span>
+<span class="source-line" id="L1418"><a href="#L1418">1418</a> }</span>
+<span class="source-line" id="L1419"><a href="#L1419">1419</a> </span>
+<span class="source-line" id="L1420"><a href="#L1420">1420</a> // ── Stdout purity (both bridges) ───────────────────────────────────────────</span>
+<span class="source-line" id="L1421"><a href="#L1421">1421</a> </span>
+<span class="source-line" id="L1422"><a href="#L1422">1422</a> /**</span>
+<span class="source-line" id="L1423"><a href="#L1423">1423</a>  * Assert a bridge stdout is exactly one JSON line (nothing else).</span>
+<span class="source-line" id="L1424"><a href="#L1424">1424</a>  * @param {string} stdout</span>
+<span class="source-line" id="L1425"><a href="#L1425">1425</a>  * @param {string} bridgeName</span>
+<span class="source-line" id="L1426"><a href="#L1426">1426</a>  * @returns {Readonly&lt;{ ok: boolean, bridge: string, error?: string, parsed?: object }&gt;}</span>
+<span class="source-line" id="L1427"><a href="#L1427">1427</a>  */</span>
+<span class="source-line" id="L1428"><a href="#L1428">1428</a> export function assertBridgeStdoutPurity(stdout, bridgeName = &#x27;bridge&#x27;) {</span>
+<span class="source-line" id="L1429"><a href="#L1429">1429</a>   const raw = String(stdout ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L1430"><a href="#L1430">1430</a>   // Allow a single trailing newline; nothing else.</span>
+<span class="source-line" id="L1431"><a href="#L1431">1431</a>   const trimmed = raw.replace(/\r\n/g, &#x27;\n&#x27;);</span>
+<span class="source-line" id="L1432"><a href="#L1432">1432</a>   const lines = trimmed.endsWith(&#x27;\n&#x27;)</span>
+<span class="source-line" id="L1433"><a href="#L1433">1433</a>     ? trimmed.slice(0, -1).split(&#x27;\n&#x27;)</span>
+<span class="source-line" id="L1434"><a href="#L1434">1434</a>     : trimmed.split(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L1435"><a href="#L1435">1435</a>   if (lines.length !== 1 || lines[0].trim() === &#x27;&#x27;) {</span>
+<span class="source-line" id="L1436"><a href="#L1436">1436</a>     return Object.freeze({</span>
+<span class="source-line" id="L1437"><a href="#L1437">1437</a>       ok: false,</span>
+<span class="source-line" id="L1438"><a href="#L1438">1438</a>       bridge: bridgeName,</span>
+<span class="source-line" id="L1439"><a href="#L1439">1439</a>       error: &#x27;bridge_bad_json&#x27;,</span>
+<span class="source-line" id="L1440"><a href="#L1440">1440</a>       message: `${bridgeName}: stdout must be exactly one JSON line; got ${lines.length} line(s)`,</span>
+<span class="source-line" id="L1441"><a href="#L1441">1441</a>       mapped: mapBridgeGarbage(&#x27;bridge_bad_json&#x27;),</span>
+<span class="source-line" id="L1442"><a href="#L1442">1442</a>     });</span>
+<span class="source-line" id="L1443"><a href="#L1443">1443</a>   }</span>
+<span class="source-line" id="L1444"><a href="#L1444">1444</a>   try {</span>
+<span class="source-line" id="L1445"><a href="#L1445">1445</a>     const parsed = JSON.parse(lines[0]);</span>
+<span class="source-line" id="L1446"><a href="#L1446">1446</a>     return Object.freeze({</span>
+<span class="source-line" id="L1447"><a href="#L1447">1447</a>       ok: true,</span>
+<span class="source-line" id="L1448"><a href="#L1448">1448</a>       bridge: bridgeName,</span>
+<span class="source-line" id="L1449"><a href="#L1449">1449</a>       parsed,</span>
+<span class="source-line" id="L1450"><a href="#L1450">1450</a>     });</span>
+<span class="source-line" id="L1451"><a href="#L1451">1451</a>   } catch (e) {</span>
+<span class="source-line" id="L1452"><a href="#L1452">1452</a>     return Object.freeze({</span>
+<span class="source-line" id="L1453"><a href="#L1453">1453</a>       ok: false,</span>
+<span class="source-line" id="L1454"><a href="#L1454">1454</a>       bridge: bridgeName,</span>
+<span class="source-line" id="L1455"><a href="#L1455">1455</a>       error: &#x27;bridge_bad_json&#x27;,</span>
+<span class="source-line" id="L1456"><a href="#L1456">1456</a>       message: `${bridgeName}: stdout is not JSON — ${e.message}`,</span>
+<span class="source-line" id="L1457"><a href="#L1457">1457</a>       mapped: mapBridgeGarbage(&#x27;bridge_bad_json&#x27;),</span>
+<span class="source-line" id="L1458"><a href="#L1458">1458</a>     });</span>
+<span class="source-line" id="L1459"><a href="#L1459">1459</a>   }</span>
+<span class="source-line" id="L1460"><a href="#L1460">1460</a> }</span>
+<span class="source-line" id="L1461"><a href="#L1461">1461</a> </span>
+<span class="source-line" id="L1462"><a href="#L1462">1462</a> /**</span>
+<span class="source-line" id="L1463"><a href="#L1463">1463</a>  * Hash a project tree (files only) for byte-identity write_authority proof.</span>
+<span class="source-line" id="L1464"><a href="#L1464">1464</a>  * @param {string} root</span>
+<span class="source-line" id="L1465"><a href="#L1465">1465</a>  * @param {object} [fsx]</span>
+<span class="source-line" id="L1466"><a href="#L1466">1466</a>  * @returns {string} sha256 hex</span>
+<span class="source-line" id="L1467"><a href="#L1467">1467</a>  */</span>
+<span class="source-line" id="L1468"><a href="#L1468">1468</a> export function hashProjectTree(root, fsx = fs) {</span>
+<span class="source-line" id="L1469"><a href="#L1469">1469</a>   const files = [];</span>
+<span class="source-line" id="L1470"><a href="#L1470">1470</a>   function walk(dir) {</span>
+<span class="source-line" id="L1471"><a href="#L1471">1471</a>     let entries;</span>
+<span class="source-line" id="L1472"><a href="#L1472">1472</a>     try {</span>
+<span class="source-line" id="L1473"><a href="#L1473">1473</a>       entries = fsx.readdirSync(dir, { withFileTypes: true });</span>
+<span class="source-line" id="L1474"><a href="#L1474">1474</a>     } catch {</span>
+<span class="source-line" id="L1475"><a href="#L1475">1475</a>       return;</span>
+<span class="source-line" id="L1476"><a href="#L1476">1476</a>     }</span>
+<span class="source-line" id="L1477"><a href="#L1477">1477</a>     for (const ent of entries) {</span>
+<span class="source-line" id="L1478"><a href="#L1478">1478</a>       const abs = path.join(dir, ent.name);</span>
+<span class="source-line" id="L1479"><a href="#L1479">1479</a>       if (ent.isDirectory()) walk(abs);</span>
+<span class="source-line" id="L1480"><a href="#L1480">1480</a>       else if (ent.isFile()) files.push(abs);</span>
+<span class="source-line" id="L1481"><a href="#L1481">1481</a>     }</span>
+<span class="source-line" id="L1482"><a href="#L1482">1482</a>   }</span>
+<span class="source-line" id="L1483"><a href="#L1483">1483</a>   walk(root);</span>
+<span class="source-line" id="L1484"><a href="#L1484">1484</a>   files.sort();</span>
+<span class="source-line" id="L1485"><a href="#L1485">1485</a>   const h = crypto.createHash(&#x27;sha256&#x27;);</span>
+<span class="source-line" id="L1486"><a href="#L1486">1486</a>   for (const f of files) {</span>
+<span class="source-line" id="L1487"><a href="#L1487">1487</a>     h.update(path.relative(root, f).split(path.sep).join(&#x27;/&#x27;));</span>
+<span class="source-line" id="L1488"><a href="#L1488">1488</a>     h.update(&#x27;\0&#x27;);</span>
+<span class="source-line" id="L1489"><a href="#L1489">1489</a>     // encoding-lint: raw-bytes — tree hash fingerprints on-disk bytes, not decoded text</span>
+<span class="source-line" id="L1490"><a href="#L1490">1490</a>     h.update(fsx.readFileSync(f));</span>
+<span class="source-line" id="L1491"><a href="#L1491">1491</a>     h.update(&#x27;\0&#x27;);</span>
+<span class="source-line" id="L1492"><a href="#L1492">1492</a>   }</span>
+<span class="source-line" id="L1493"><a href="#L1493">1493</a>   return h.digest(&#x27;hex&#x27;);</span>
+<span class="source-line" id="L1494"><a href="#L1494">1494</a> }</span>
+<span class="source-line" id="L1495"><a href="#L1495">1495</a> </span>
+<span class="source-line" id="L1496"><a href="#L1496">1496</a> /**</span>
+<span class="source-line" id="L1497"><a href="#L1497">1497</a>  * Prove write_authority none: hash trees before/after fold+badge+tile path.</span>
+<span class="source-line" id="L1498"><a href="#L1498">1498</a>  * @param {string[]} projectRoots</span>
+<span class="source-line" id="L1499"><a href="#L1499">1499</a>  * @param {() =&gt; void} run</span>
+<span class="source-line" id="L1500"><a href="#L1500">1500</a>  * @returns {Readonly&lt;{ ok: boolean, before: object, after: object, identical: boolean }&gt;}</span>
+<span class="source-line" id="L1501"><a href="#L1501">1501</a>  */</span>
+<span class="source-line" id="L1502"><a href="#L1502">1502</a> export function assertTreesByteIdentical(projectRoots, run) {</span>
+<span class="source-line" id="L1503"><a href="#L1503">1503</a>   const before = {};</span>
+<span class="source-line" id="L1504"><a href="#L1504">1504</a>   for (const r of projectRoots) before[r] = hashProjectTree(r);</span>
+<span class="source-line" id="L1505"><a href="#L1505">1505</a>   run();</span>
+<span class="source-line" id="L1506"><a href="#L1506">1506</a>   const after = {};</span>
+<span class="source-line" id="L1507"><a href="#L1507">1507</a>   for (const r of projectRoots) after[r] = hashProjectTree(r);</span>
+<span class="source-line" id="L1508"><a href="#L1508">1508</a>   const identical = projectRoots.every((r) =&gt; before[r] === after[r]);</span>
+<span class="source-line" id="L1509"><a href="#L1509">1509</a>   return Object.freeze({</span>
+<span class="source-line" id="L1510"><a href="#L1510">1510</a>     ok: identical,</span>
+<span class="source-line" id="L1511"><a href="#L1511">1511</a>     before: Object.freeze(before),</span>
+<span class="source-line" id="L1512"><a href="#L1512">1512</a>     after: Object.freeze(after),</span>
+<span class="source-line" id="L1513"><a href="#L1513">1513</a>     identical,</span>
+<span class="source-line" id="L1514"><a href="#L1514">1514</a>     write_authority: &#x27;none&#x27;,</span>
+<span class="source-line" id="L1515"><a href="#L1515">1515</a>   });</span>
+<span class="source-line" id="L1516"><a href="#L1516">1516</a> }</span>
+<span class="source-line" id="L1517"><a href="#L1517">1517</a> </span>
+<span class="source-line" id="L1518"><a href="#L1518">1518</a> /**</span>
+<span class="source-line" id="L1519"><a href="#L1519">1519</a>  * Client poll contract — parse MIN_MS / MAX_MS from static/high-seat.js source.</span>
+<span class="source-line" id="L1520"><a href="#L1520">1520</a>  * &quot;One poll&quot; = one healthy visible-tab interval (MIN_MS). Failure backoff may</span>
+<span class="source-line" id="L1521"><a href="#L1521">1521</a>  * reach MAX_MS; hidden tabs skip entirely.</span>
+<span class="source-line" id="L1522"><a href="#L1522">1522</a>  *</span>
+<span class="source-line" id="L1523"><a href="#L1523">1523</a>  * @param {string} sourceText contents of static/high-seat.js</span>
+<span class="source-line" id="L1524"><a href="#L1524">1524</a>  * @returns {Readonly&lt;{ MIN_MS: number, MAX_MS: number, ok: boolean }&gt;}</span>
+<span class="source-line" id="L1525"><a href="#L1525">1525</a>  */</span>
+<span class="source-line" id="L1526"><a href="#L1526">1526</a> /**</span>
+<span class="source-line" id="L1527"><a href="#L1527">1527</a>  * Parse a millisecond assignment from client JS source.</span>
+<span class="source-line" id="L1528"><a href="#L1528">1528</a>  * Accepts a bare integer (`90000`) or a pure product (`15 * 60 * 1000`) —</span>
+<span class="source-line" id="L1529"><a href="#L1529">1529</a>  * the form static/high-seat.js uses for the MAX_MS ceiling.</span>
+<span class="source-line" id="L1530"><a href="#L1530">1530</a>  *</span>
+<span class="source-line" id="L1531"><a href="#L1531">1531</a>  * @param {string} src</span>
+<span class="source-line" id="L1532"><a href="#L1532">1532</a>  * @param {string} name identifier on the left of `=`</span>
+<span class="source-line" id="L1533"><a href="#L1533">1533</a>  * @returns {number} finite ms, or NaN when the assignment is absent/unparseable</span>
+<span class="source-line" id="L1534"><a href="#L1534">1534</a>  */</span>
+<span class="source-line" id="L1535"><a href="#L1535">1535</a> function parseClientMsAssignment(src, name) {</span>
+<span class="source-line" id="L1536"><a href="#L1536">1536</a>   const re = new RegExp(</span>
+<span class="source-line" id="L1537"><a href="#L1537">1537</a>     String.raw`\b${name}\s*=\s*([0-9]+(?:\s*\*\s*[0-9]+)*)`,</span>
+<span class="source-line" id="L1538"><a href="#L1538">1538</a>   );</span>
+<span class="source-line" id="L1539"><a href="#L1539">1539</a>   const m = src.match(re);</span>
+<span class="source-line" id="L1540"><a href="#L1540">1540</a>   if (!m) return NaN;</span>
+<span class="source-line" id="L1541"><a href="#L1541">1541</a>   const factors = m[1].split(/\s*\*\s*/).map((p) =&gt; Number(p));</span>
+<span class="source-line" id="L1542"><a href="#L1542">1542</a>   if (factors.length === 0 || factors.some((n) =&gt; !Number.isFinite(n))) return NaN;</span>
+<span class="source-line" id="L1543"><a href="#L1543">1543</a>   return factors.reduce((acc, n) =&gt; acc * n, 1);</span>
+<span class="source-line" id="L1544"><a href="#L1544">1544</a> }</span>
+<span class="source-line" id="L1545"><a href="#L1545">1545</a> </span>
+<span class="source-line" id="L1546"><a href="#L1546">1546</a> export function importClientPollConstants(sourceText) {</span>
+<span class="source-line" id="L1547"><a href="#L1547">1547</a>   const src = String(sourceText ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L1548"><a href="#L1548">1548</a>   // Prefer Wave-17 named constants; fall back to local MIN_MS / MAX_MS aliases.</span>
+<span class="source-line" id="L1549"><a href="#L1549">1549</a>   // Product expressions (15 * 60 * 1000) must evaluate — capturing only the</span>
+<span class="source-line" id="L1550"><a href="#L1550">1550</a>   // leading 15 would silently shrink the backoff ceiling 60_000×.</span>
+<span class="source-line" id="L1551"><a href="#L1551">1551</a>   const MIN_MS = (() =&gt; {</span>
+<span class="source-line" id="L1552"><a href="#L1552">1552</a>     const named = parseClientMsAssignment(src, &#x27;ECG_HS_MIN_MS&#x27;);</span>
+<span class="source-line" id="L1553"><a href="#L1553">1553</a>     if (Number.isFinite(named)) return named;</span>
+<span class="source-line" id="L1554"><a href="#L1554">1554</a>     return parseClientMsAssignment(src, &#x27;MIN_MS&#x27;);</span>
+<span class="source-line" id="L1555"><a href="#L1555">1555</a>   })();</span>
+<span class="source-line" id="L1556"><a href="#L1556">1556</a>   const MAX_MS = (() =&gt; {</span>
+<span class="source-line" id="L1557"><a href="#L1557">1557</a>     const named = parseClientMsAssignment(src, &#x27;ECG_HS_MAX_MS&#x27;);</span>
+<span class="source-line" id="L1558"><a href="#L1558">1558</a>     if (Number.isFinite(named)) return named;</span>
+<span class="source-line" id="L1559"><a href="#L1559">1559</a>     return parseClientMsAssignment(src, &#x27;MAX_MS&#x27;);</span>
+<span class="source-line" id="L1560"><a href="#L1560">1560</a>   })();</span>
+<span class="source-line" id="L1561"><a href="#L1561">1561</a>   return Object.freeze({</span>
+<span class="source-line" id="L1562"><a href="#L1562">1562</a>     MIN_MS,</span>
+<span class="source-line" id="L1563"><a href="#L1563">1563</a>     MAX_MS,</span>
+<span class="source-line" id="L1564"><a href="#L1564">1564</a>     ok: Number.isFinite(MIN_MS) &amp;&amp; Number.isFinite(MAX_MS) &amp;&amp; MIN_MS &gt; 0,</span>
+<span class="source-line" id="L1565"><a href="#L1565">1565</a>     // Contract documentation (not silently violated):</span>
+<span class="source-line" id="L1566"><a href="#L1566">1566</a>     one_poll_definition: &#x27;one healthy visible-tab interval (MIN_MS)&#x27;,</span>
+<span class="source-line" id="L1567"><a href="#L1567">1567</a>     failure_backoff_may_reach_MAX_MS: true,</span>
+<span class="source-line" id="L1568"><a href="#L1568">1568</a>     hidden_tab_polls_skip: true,</span>
+<span class="source-line" id="L1569"><a href="#L1569">1569</a>   });</span>
+<span class="source-line" id="L1570"><a href="#L1570">1570</a> }</span>
+<span class="source-line" id="L1571"><a href="#L1571">1571</a> </span>
+<span class="source-line" id="L1572"><a href="#L1572">1572</a> /**</span>
+<span class="source-line" id="L1573"><a href="#L1573">1573</a>  * Removal-proof: badge route source must not call discoverStrips / verbStatus.</span>
+<span class="source-line" id="L1574"><a href="#L1574">1574</a>  * @param {string} sourceText high-seat-bridge or glance module source</span>
+<span class="source-line" id="L1575"><a href="#L1575">1575</a>  * @returns {Readonly&lt;{ ok: boolean, discoverStrips_refs: number, verbStatus_on_badge: boolean }&gt;}</span>
+<span class="source-line" id="L1576"><a href="#L1576">1576</a>  */</span>
+<span class="source-line" id="L1577"><a href="#L1577">1577</a> export function assertBadgePathDoesNotWalk(sourceText) {</span>
+<span class="source-line" id="L1578"><a href="#L1578">1578</a>   const src = String(sourceText ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L1579"><a href="#L1579">1579</a>   // buildBadgeFromIndex body must not invoke discoverStrips</span>
+<span class="source-line" id="L1580"><a href="#L1580">1580</a>   const badgeFn = src.includes(&#x27;buildBadgeFromIndex&#x27;) || src.includes(&#x27;buildBadgePayload&#x27;);</span>
+<span class="source-line" id="L1581"><a href="#L1581">1581</a>   // Count discoverStrips invocations that are not comments</span>
+<span class="source-line" id="L1582"><a href="#L1582">1582</a>   const lines = src.split(&#x27;\n&#x27;).filter((l) =&gt; !/^\s*(\/\/|\*)/.test(l));</span>
+<span class="source-line" id="L1583"><a href="#L1583">1583</a>   const body = lines.join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L1584"><a href="#L1584">1584</a>   // For bridge: buildBadgePayload should call buildBadgeFromIndex, not verbStatus</span>
+<span class="source-line" id="L1585"><a href="#L1585">1585</a>   const badgeSection = extractFunctionBody(src, &#x27;buildBadgePayload&#x27;)</span>
+<span class="source-line" id="L1586"><a href="#L1586">1586</a>     ?? extractFunctionBody(src, &#x27;buildBadgeFromIndex&#x27;)</span>
+<span class="source-line" id="L1587"><a href="#L1587">1587</a>     ?? &#x27;&#x27;;</span>
+<span class="source-line" id="L1588"><a href="#L1588">1588</a>   const discoverInBadge = /discoverStrips\s*\(/.test(badgeSection);</span>
+<span class="source-line" id="L1589"><a href="#L1589">1589</a>   const verbStatusInBadge = /verbStatus\s*\(/.test(badgeSection);</span>
+<span class="source-line" id="L1590"><a href="#L1590">1590</a>   return Object.freeze({</span>
+<span class="source-line" id="L1591"><a href="#L1591">1591</a>     ok: badgeFn &amp;&amp; !discoverInBadge &amp;&amp; !verbStatusInBadge,</span>
+<span class="source-line" id="L1592"><a href="#L1592">1592</a>     discoverStrips_reached: discoverInBadge,</span>
+<span class="source-line" id="L1593"><a href="#L1593">1593</a>     verbStatus_on_badge: verbStatusInBadge,</span>
+<span class="source-line" id="L1594"><a href="#L1594">1594</a>     badge_function_present: badgeFn,</span>
+<span class="source-line" id="L1595"><a href="#L1595">1595</a>   });</span>
+<span class="source-line" id="L1596"><a href="#L1596">1596</a> }</span>
+<span class="source-line" id="L1597"><a href="#L1597">1597</a> </span>
+<span class="source-line" id="L1598"><a href="#L1598">1598</a> /** @param {string} src @param {string} name */</span>
+<span class="source-line" id="L1599"><a href="#L1599">1599</a> function extractFunctionBody(src, name) {</span>
+<span class="source-line" id="L1600"><a href="#L1600">1600</a>   const re = new RegExp(</span>
+<span class="source-line" id="L1601"><a href="#L1601">1601</a>     `(?:export\\s+)?function\\s+${name}\\s*\\([^)]*\\)\\s*\\{`,</span>
+<span class="source-line" id="L1602"><a href="#L1602">1602</a>   );</span>
+<span class="source-line" id="L1603"><a href="#L1603">1603</a>   const m = re.exec(src);</span>
+<span class="source-line" id="L1604"><a href="#L1604">1604</a>   if (!m) return null;</span>
+<span class="source-line" id="L1605"><a href="#L1605">1605</a>   let i = m.index + m[0].length;</span>
+<span class="source-line" id="L1606"><a href="#L1606">1606</a>   let depth = 1;</span>
+<span class="source-line" id="L1607"><a href="#L1607">1607</a>   const start = i;</span>
+<span class="source-line" id="L1608"><a href="#L1608">1608</a>   while (i &lt; src.length &amp;&amp; depth &gt; 0) {</span>
+<span class="source-line" id="L1609"><a href="#L1609">1609</a>     if (src[i] === &#x27;{&#x27;) depth += 1;</span>
+<span class="source-line" id="L1610"><a href="#L1610">1610</a>     else if (src[i] === &#x27;}&#x27;) depth -= 1;</span>
+<span class="source-line" id="L1611"><a href="#L1611">1611</a>     i += 1;</span>
+<span class="source-line" id="L1612"><a href="#L1612">1612</a>   }</span>
+<span class="source-line" id="L1613"><a href="#L1613">1613</a>   return src.slice(start, i - 1);</span>
+<span class="source-line" id="L1614"><a href="#L1614">1614</a> }</span>
+<span class="source-line" id="L1615"><a href="#L1615">1615</a> </span>
+<span class="source-line" id="L1616"><a href="#L1616">1616</a> // Re-export attention codes used on the glance surface</span>
+<span class="source-line" id="L1617"><a href="#L1617">1617</a> export { ATTENTION_CODE, ATTENTION_TEXT, ATTENTION_READ_UNKNOWN, ATTENTION_STATES };</span></pre></main></body></html>

@@ -1,0 +1,601 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>campaign-page · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>campaign-page</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/campaign_page.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 fb50d8d907d14b118a1381874d94829b88377e635aa87553dde091f681ac1ab7</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.532843+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/campaign_page.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: fb50d8d907d14b118a1381874d94829b88377e635aa87553dde091f681ac1ab7</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;campaign_page — the Campaign, version D: John&#x27;s initiatives in three priority tiers, and the same record</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> against the five-week ruler behind one button.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> </span>
+<span class="source-line" id="L4"><a href="#L4">4</a> W3c of the High Seat plan (2026-09-26). The approved design is the mockup</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> ``Skill Foundry/planning/high-seat-2026-09-24/ideation/mockups/campaign/campaign-D.html``; its stylesheet is</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> ``static/campaign-page.css`` ported as it is. This module renders that page from the Campaign record —</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> the initiatives (heading steps with tier, area, outcome, their root group&#x27;s order), their parts (steps whose</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> path starts with the initiative; a ``ref`` part read through the resolver), the strip&#x27;s seeds — plus the</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> steward livery and the effort&#x27;s own conversation. Pure: a context dict in, HTML out. Every count on the</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> page is counted from the record. The acts on the page go through ``steward_cockpit/campaign_acts``.</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> from __future__ import annotations</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> </span>
+<span class="source-line" id="L14"><a href="#L14">14</a> from datetime import timedelta</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16">16</a> import home_rows as _hr</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> from high_seat_page import tab_icon_link, HIS_NAME, conversation_view</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> from high_seat_page import esc, _brand_img, _masthead, ruler_weeks, LIGHTS, initiative_light, initiative_line, initiative_status_html, is_initiative, nudge_html, mode_name</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> import home_attention as _ha</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21">21</a> TIER_WORDS = {1: &quot;do first&quot;, 2: &quot;next in line&quot;, 3: &quot;when there is room&quot;}</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> TIER_COLOURS = {1: &quot;#6c9cfc&quot;, 2: &quot;#8b93a6&quot;, 3: &quot;#5f6674&quot;}</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> AREA_COLOURS = {&quot;family&quot;: &quot;#e78aa6&quot;, &quot;professional&quot;: &quot;#6c9cfc&quot;, &quot;writing&quot;: &quot;#a78bfa&quot;, &quot;research&quot;: &quot;#4fc9c2&quot;,</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>                 &quot;tools&quot;: &quot;#94a3b8&quot;, &quot;personal&quot;: &quot;#d0975f&quot;}</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> AREAS = (&quot;family&quot;, &quot;professional&quot;, &quot;writing&quot;, &quot;research&quot;, &quot;tools&quot;, &quot;personal&quot;)</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28">28</a> def _short(d):</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>     return _hr.short_date(d) if d else &quot;&quot;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> </span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> def _needs(n, noun=&quot;part&quot;):</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>     &quot;&quot;&quot;&quot;⚑ 2 parts need you&quot; — the noun said (Grok R8: the board counts parts, a tier header counts initiatives).&quot;&quot;&quot;</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>     return &quot;&amp;#9873; %d %s%s need%s you&quot; % (n, noun, &quot;&quot; if n == 1 else &quot;s&quot;, &quot;s&quot; if n == 1 else &quot;&quot;)</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> def _part_state(p):</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>     # W1 (2026-09-28): a referenced part&#x27;s done/closed comes from the RESOLVED target too (campaign_initiatives&#x27;</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>     # `done` / `closed` flags), never the wrapper&#x27;s status alone</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>     if p[&quot;broken&quot;]:</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>         return &quot;broken reference&quot;</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>     if p.get(&quot;done&quot;, p[&quot;status&quot;] == &quot;done&quot;):</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>         return &quot;done&quot;</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>     if p[&quot;status&quot;] == &quot;parked&quot; or p.get(&quot;target_status&quot;) == &quot;parked&quot;:</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>         return &quot;parked&quot;</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     if p[&quot;needs_you&quot;]:</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>         return &quot;needs you&quot;</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     return p[&quot;state&quot;] or p[&quot;status&quot;] or &quot;open&quot;</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> </span>
+<span class="source-line" id="L50"><a href="#L50">50</a> </span>
+<span class="source-line" id="L51"><a href="#L51">51</a> # ── the board: grouped view ────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> </span>
+<span class="source-line" id="L53"><a href="#L53">53</a> KIND_WORDS = {&quot;task&quot;: &quot;desk item&quot;, &quot;project&quot;: &quot;cockpit&quot;, &quot;effort&quot;: &quot;effort (a cockpit within a project)&quot;, &quot;step&quot;: &quot;step of a project&quot;, &quot;deliverable&quot;: &quot;deliverable&quot;, &quot;calendar&quot;: &quot;date&quot;}</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> </span>
+<span class="source-line" id="L56"><a href="#L56">56</a> def _part_row(i, p, today, tick_allowed):</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>     pid = esc(p[&quot;id&quot;])</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>     done = bool(p.get(&quot;done&quot;, p[&quot;status&quot;] == &quot;done&quot;))</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     ref = p[&quot;kind&quot;] != &quot;task&quot;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     date_chip = ((&#x27;&lt;button class=&quot;mchip dated&quot; data-act=&quot;date&quot; data-part=&quot;%s&quot;&gt;%s&lt;/button&gt;&#x27; % (pid, esc(_short(p[&quot;date&quot;])))) if p[&quot;date&quot;] else</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>                  (&#x27;&lt;button class=&quot;mchip&quot; data-act=&quot;date&quot; data-part=&quot;%s&quot;&gt;no date&lt;/button&gt;&#x27; % pid)) if not ref else (</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         (&#x27;&lt;span class=&quot;mchip dated&quot; title=&quot;its date lives in its own record&quot;&gt;%s&lt;/span&gt;&#x27; % esc(_short(p[&quot;date&quot;]))) if p[&quot;date&quot;] else &#x27;&lt;span class=&quot;mchip&quot; title=&quot;its date lives in its own record&quot;&gt;no date&lt;/span&gt;&#x27;)</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     state = _part_state(p)</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>     state_chip = (&#x27;&lt;span class=&quot;mchip donew&quot;&gt;&amp;#10003; done&lt;/span&gt;&#x27; if done else</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>                   (&#x27;&lt;span class=&quot;mchip flagon&quot;&gt;&amp;#9873; needs you&lt;/span&gt;&#x27; if p[&quot;needs_you&quot;] else</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>                    (&#x27;&lt;span class=&quot;mchip state&quot; style=&quot;color:var(--amber-t)&quot;&gt;%s&lt;/span&gt;&#x27; % esc(&quot;broken reference: &quot; + p[&quot;gap&quot;]) if p[&quot;broken&quot;] else</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>                     &#x27;&lt;span class=&quot;mchip state&quot;&gt;%s&lt;/span&gt;&#x27; % esc(state))))</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     flag_chip = (&quot;&quot; if ref or done else (</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>         (&#x27;&lt;button class=&quot;mchip flagon&quot; data-act=&quot;unflag&quot; data-part=&quot;%s&quot;&gt;&amp;#9873; needs you &amp;middot; clear&lt;/button&gt;&#x27; % pid) if p[&quot;needs_you&quot;] else</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>         (&#x27;&lt;button class=&quot;mchip&quot; data-act=&quot;flag&quot; data-part=&quot;%s&quot;&gt;&amp;#9873; flag it&lt;/button&gt;&#x27; % pid)))</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>     link = (&#x27;&lt;a class=&quot;mchip proj&quot; href=&quot;%s&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;%s &amp;rarr; cockpit&lt;/a&gt;&#x27; % (esc(p[&quot;href&quot;]), esc(p[&quot;target&quot;] or p[&quot;kind&quot;]))) if p[&quot;href&quot;] else &quot;&quot;</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>     park = ((&#x27;&lt;button class=&quot;mchip&quot; data-act=&quot;unpark&quot; data-part=&quot;%s&quot;&gt;unpark&lt;/button&gt;&#x27; % pid) if p[&quot;status&quot;] == &quot;parked&quot; else</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>             (&#x27;&lt;button class=&quot;mchip&quot; data-act=&quot;park&quot; data-part=&quot;%s&quot;&gt;park&lt;/button&gt;&#x27; % pid)) if not ref else &quot;&quot;</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>     tick = ((&#x27;&lt;button class=&quot;tick%s&quot; data-act=&quot;tick&quot; data-part=&quot;%s&quot; aria-label=&quot;mark done&quot;%s&gt;&lt;/button&gt;&#x27; % (</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>         &quot; on&quot; if done else &quot;&quot;, pid, &quot;&quot; if (tick_allowed and not ref) else &#x27; disabled title=&quot;a tick waits on your word on the close law&quot;&#x27;))</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>             if not ref else ((&#x27;&lt;a class=&quot;tickpad%s&quot; href=&quot;%s&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; title=&quot;done or parked in its own record &amp;mdash; open it&quot;&gt;&lt;/a&gt;&#x27; % (&quot; on&quot; if done else &quot;&quot;, esc(p[&quot;href&quot;])))</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>                              if p[&quot;href&quot;] else &#x27;&lt;span class=&quot;tickpad&quot; title=&quot;a referenced part is closed in its own record&quot;&gt;&lt;/span&gt;&#x27;))</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     name = (&#x27;&lt;span class=&quot;rt&quot; data-act=&quot;name&quot; data-part=&quot;%s&quot;&gt;%s&lt;/span&gt;&#x27; % (pid, esc(p[&quot;text&quot;]))) if not ref else (&#x27;&lt;span class=&quot;rt&quot;&gt;%s&lt;/span&gt;&#x27; % esc(p[&quot;text&quot;]))</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     return (&#x27;&lt;li class=&quot;row%s%s&quot; data-part=&quot;%s&quot;&gt;%s&lt;div class=&quot;rb&quot;&gt;%s&lt;div class=&quot;rm&quot;&gt;&#x27;</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>             &#x27;&lt;span class=&quot;mchip kind&quot;&gt;%s&lt;/span&gt;%s%s%s%s%s&#x27;</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>             &#x27;&lt;/div&gt;&lt;/div&gt;&lt;/li&gt;&#x27; % (</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>                 &quot; done&quot; if done else &quot;&quot;, &quot; pparked&quot; if p[&quot;status&quot;] == &quot;parked&quot; else &quot;&quot;, pid, tick, name,</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>                 esc(KIND_WORDS.get(p[&quot;kind&quot;], p[&quot;kind&quot;])), date_chip, flag_chip, state_chip, link, park))</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85">85</a> </span>
+<span class="source-line" id="L86"><a href="#L86">86</a> def _part_light(p, working):</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>     &quot;&quot;&quot;A project part&#x27;s own light: needs him · working (a live session on it) · waiting · done · idle.&quot;&quot;&quot;</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     if p.get(&quot;done&quot;):</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>         return &quot;done&quot;</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     if p.get(&quot;needs_you&quot;):</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>         return &quot;needs&quot;</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     if p.get(&quot;pid&quot;) and p[&quot;pid&quot;] in (working or set()):</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>         return &quot;working&quot;</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     if str(p.get(&quot;state&quot;) or &quot;&quot;).lower().startswith(&quot;waiting&quot;) or p.get(&quot;status&quot;) == &quot;waiting&quot;:</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>         return &quot;waiting&quot;</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>     return &quot;idle&quot;</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> </span>
+<span class="source-line" id="L98"><a href="#L98">98</a> </span>
+<span class="source-line" id="L99"><a href="#L99">99</a> def _cockpits(i, ctx):</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>     &quot;&quot;&quot;The goal&#x27;s cockpits on the tile&#x27;s face (his 13:5x word: a goal holds one, several, or no project yet): each</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>     project part by name with its own light; &quot;at the desk&quot; when the goal has no project.&quot;&quot;&quot;</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>     working = ctx.get(&quot;working&quot;) or set()</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     projs = [p for p in i[&quot;parts&quot;] if p[&quot;kind&quot;] in (&quot;project&quot;, &quot;effort&quot;) and not p[&quot;broken&quot;]]</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     if not projs:</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>         return &#x27;&lt;div class=&quot;gcock&quot;&gt;&lt;span class=&quot;dim&quot;&gt;at the desk &amp;mdash; no project yet&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     glyphs = {&quot;needs&quot;: &quot;&amp;#9873;&quot;, &quot;working&quot;: &quot;&amp;#9679;&quot;, &quot;waiting&quot;: &quot;&amp;#9679;&quot;, &quot;idle&quot;: &quot;&amp;#9675;&quot;, &quot;done&quot;: &quot;&amp;#10003;&quot;}</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     return &#x27;&lt;div class=&quot;gcock&quot;&gt;%s&lt;/div&gt;&#x27; % &quot; &amp;middot; &quot;.join(</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>         &#x27;&lt;span class=&quot;gpc %s&quot; title=&quot;%s&quot;&gt;%s &lt;i&gt;%s&lt;/i&gt;%s&lt;/span&gt;&#x27; % (_part_light(p, working), esc(p[&quot;state&quot;] or p[&quot;status&quot;] or &quot;&quot;), esc(p[&quot;target&quot;] or p[&quot;text&quot;]), glyphs[_part_light(p, working)],</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>                                                                     (&#x27;&lt;b class=&quot;seat %s&quot;&gt;%s&lt;/b&gt;&#x27; % (p[&quot;seat&quot;], &quot;active&quot; if p[&quot;seat&quot;] == &quot;active&quot; else &quot;on deck&quot;)) if p.get(&quot;seat&quot;) else &quot;&quot;)</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>         for p in projs[:4]) + ((&#x27; &lt;span class=&quot;dim&quot;&gt;+%d&lt;/span&gt;&#x27; % (len(projs) - 4)) if len(projs) &gt; 4 else &quot;&quot;)</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a> </span>
+<span class="source-line" id="L113"><a href="#L113">113</a> def _gtile(i, ctx, band, draggable=True):</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>     &quot;&quot;&quot;One goal on the board (W2 v2, his lock of 11:0x): its number, its name (opens its place), its tier and light,</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>     the goal in a line, its cockpits with their lights (or &quot;at the desk&quot;), and the facts — progress, pace, next</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>     deadline, what waits on him. It drags.&quot;&quot;&quot;</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     today = ctx[&quot;today&quot;]</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     glyph, word = LIGHTS[initiative_light(i, ctx.get(&quot;working&quot;) or set())]</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>     n, done = len(i[&quot;parts&quot;]), int(i.get(&quot;done_count&quot;) or 0)</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>     pct = int(round(100.0 * done / n)) if n else 0</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>     nd = i.get(&quot;next_deadline&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     nd_d = _hr._iso(nd) if nd else None</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>     dcls = (&quot;over&quot; if nd_d and nd_d &lt; today else (&quot;soon&quot; if nd_d and (nd_d - today).days &lt;= 7 else &quot;&quot;))</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     return (</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>         &#x27;&lt;article class=&quot;gtile%s%s&quot; draggable=&quot;%s&quot; data-lane=&quot;%s&quot; data-band=&quot;%s&quot; style=&quot;--areac:%s&quot;&gt;&#x27;</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>         &#x27;&lt;div class=&quot;ihead&quot;&gt;&lt;button class=&quot;iname&quot; data-open=&quot;%s&quot; title=&quot;open its place&quot;&gt;%s&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>         &#x27;&lt;span class=&quot;gtier&quot;&gt;tier %s&lt;/span&gt;&lt;span class=&quot;ilight %s&quot; title=&quot;the light: needs you · working · waiting · idle, read from its parts&quot;&gt;%s %s&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>         &#x27;&lt;div class=&quot;ggoal&quot; title=&quot;%s&quot;&gt;%s&lt;/div&gt;%s%s&#x27;</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>         &#x27;&lt;div class=&quot;gfacts&quot;&gt;&lt;span class=&quot;gprog&quot;&gt;&lt;span class=&quot;bar&quot;&gt;&lt;i style=&quot;width:%d%%&quot;&gt;&lt;/i&gt;&lt;/span&gt;%d of %d&lt;/span&gt;&lt;span class=&quot;%s&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;gdl %s&quot;&gt;%s&lt;/span&gt;%s&lt;/div&gt;&lt;/article&gt;&#x27;</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     ) % (&quot; needs&quot; if i[&quot;needs&quot;] else &quot;&quot;, &quot; bone&quot; if i[&quot;status&quot;] in (&quot;done&quot;, &quot;parked&quot;) else &quot;&quot;, &quot;true&quot; if draggable else &quot;false&quot;, esc(i[&quot;id&quot;]), band, AREA_COLOURS.get(i[&quot;area&quot;], &quot;#8b93a6&quot;),</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>          esc(i[&quot;id&quot;]), esc(i[&quot;name&quot;]), i[&quot;tier&quot;] or &quot;?&quot;,</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>          initiative_light(i, ctx.get(&quot;working&quot;) or set()), glyph, word,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>          esc(i[&quot;done_when&quot;]), esc(i[&quot;done_when&quot;]) or &#x27;&lt;span class=&quot;dim&quot;&gt;no goal written yet&lt;/span&gt;&#x27;,</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>          _cockpits(i, ctx), _ifthen(i) + _premortem(i, ctx),</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>          pct, done, n, &quot;&quot; if i.get(&quot;pace&quot;) else &quot;dim&quot;, (&quot;pace &quot; + esc(_short(i[&quot;pace&quot;]))) if i.get(&quot;pace&quot;) else &quot;no pace&quot;,</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>          dcls, ((&quot;overdue &quot; if dcls == &quot;over&quot; else &quot;next &quot;) + esc(_short(nd))) if nd else &quot;no deadline&quot;,</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>          (&#x27; &lt;span class=&quot;am&quot;&gt;&amp;#9873; %s&lt;/span&gt;&#x27; % _needs(len(i[&quot;needs&quot;]))) if i[&quot;needs&quot;] else &quot;&quot;)</span>
+<span class="source-line" id="L138"><a href="#L138">138</a> </span>
+<span class="source-line" id="L139"><a href="#L139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140">140</a> def _not_dated(n):</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     &quot;&quot;&quot;One lane per item (2026-10-03): a dated nudge is the Cave&#x27;s interrupt lane, never a goal place&#x27;s here.&quot;&quot;&quot;</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     return n if isinstance(n, dict) and n.get(&quot;kind&quot;) != &quot;dated&quot; else None</span>
+<span class="source-line" id="L143"><a href="#L143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144">144</a> </span>
+<span class="source-line" id="L145"><a href="#L145">145</a> PREMORTEM_Q = &quot;It is three months on and this goal fell short: what went wrong?&quot;</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> </span>
+<span class="source-line" id="L147"><a href="#L147">147</a> </span>
+<span class="source-line" id="L148"><a href="#L148">148</a> def _ifthen(i):</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     &quot;&quot;&quot;The Star Chart (2026-10-03, the research&#x27;s Adopt): a Tier-1 goal carries ONE if-then next step in his words</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     (&quot;If it is Monday 9:00, then I send the trust questions&quot;); unwritten, the line asks for it. Click to write or revise.&quot;&quot;&quot;</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     if i.get(&quot;tier&quot;) != 1 or i.get(&quot;status&quot;) in (&quot;done&quot;, &quot;parked&quot;):</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>         return &quot;&quot;</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     t = str(i.get(&quot;if_then&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     return (&#x27;&lt;div class=&quot;gift%s&quot; data-ifthen=&quot;%s&quot; data-text=&quot;%s&quot; title=&quot;the next step as an if-then, in your words - click to %s&quot;&gt;&amp;#8627; %s&lt;/div&gt;&#x27;) % (</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>         &quot;&quot; if t else &quot; empty&quot;, esc(i[&quot;id&quot;]), esc(t), &quot;revise&quot; if t else &quot;write it&quot;,</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>         esc(t) if t else &quot;If-then step not written yet &amp;middot; add one in your words&quot;)</span>
+<span class="source-line" id="L157"><a href="#L157">157</a> </span>
+<span class="source-line" id="L158"><a href="#L158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159">159</a> def _premortem(i, ctx):</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     &quot;&quot;&quot;The premortem ask (2026-10-03, the research&#x27;s Try): asked once when a goal is made or its pace slips later; the</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     answer goes into the goal&#x27;s guide; &#x27;not now&#x27; sets it aside.&quot;&quot;&quot;</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     pm = (ctx.get(&quot;premortems&quot;) or {}).get(i[&quot;id&quot;])</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     if not isinstance(pm, dict) or i.get(&quot;status&quot;) in (&quot;done&quot;, &quot;parked&quot;):</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>         return &quot;&quot;</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     return (&#x27;&lt;div class=&quot;gpm&quot; data-pm=&quot;%s&quot;&gt;&lt;b&gt;Premortem&lt;/b&gt; &amp;middot; %s. &amp;ldquo;%s&amp;rdquo; Your answer goes into the goal&amp;rsquo;s guide. &#x27;</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>             &#x27;&lt;button class=&quot;mini&quot; data-pm-answer=&quot;%s&quot;&gt;Answer&lt;/button&gt; &lt;button class=&quot;mini&quot; data-pm-skip=&quot;%s&quot;&gt;Not now&lt;/button&gt;&lt;/div&gt;&#x27;) % (</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>         esc(i[&quot;id&quot;]), esc(pm.get(&quot;reason&quot;) or &quot;asked&quot;), esc(PREMORTEM_Q), esc(i[&quot;id&quot;]), esc(i[&quot;id&quot;]))</span>
+<span class="source-line" id="L168"><a href="#L168">168</a> </span>
+<span class="source-line" id="L169"><a href="#L169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170">170</a> def _band(key, label, note, items, ctx, cls=&quot;&quot;, extra=&quot;&quot;, quiet_empty=False):</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>     tiles = &quot;&quot;.join(_gtile(i, ctx, key) for i in items)</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>     empty = {&quot;1&quot;: &quot;nothing in tier 1&quot;, &quot;2&quot;: &quot;nothing in tier 2&quot;, &quot;3&quot;: &quot;no seed goal yet&quot;}.get(key, &quot;nothing here&quot;)</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>     return (&#x27;&lt;section class=&quot;band%s&quot; data-band=&quot;%s&quot;&gt;&lt;h4 class=&quot;band-h&quot;&gt;%s &lt;span class=&quot;c&quot;&gt;%s&lt;/span&gt;&lt;/h4&gt;&#x27;</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>             &#x27;&lt;div class=&quot;tiles&quot;&gt;%s&lt;/div&gt;%s&lt;/section&gt;&#x27; % ((&quot; &quot; + cls) if cls else &quot;&quot;, key, label, note,</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>                                                        tiles or (&quot;&quot; if quiet_empty else &#x27;&lt;div class=&quot;empty&quot;&gt;%s&lt;/div&gt;&#x27; % empty), extra))</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> </span>
+<span class="source-line" id="L177"><a href="#L177">177</a> </span>
+<span class="source-line" id="L178"><a href="#L178">178</a> def _bands(ctx):</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     &quot;&quot;&quot;The goal board (PLAN v1.3): Tier 1 · Tier 2 · Seed goals (the tier-3 and untiered goals, and the seeds) · the</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     Boneyard (done or parked goals, folded, never deleted). No Active band: seats live at the High Seat. No order</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     inside a tier (his word, 09-29 18:4x).&quot;&quot;&quot;</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     inits = ctx[&quot;initiatives&quot;]</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     live = [i for i in inits if i[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     bone = [i for i in inits if i[&quot;status&quot;] in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>     out = []</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     for t in (1, 2):</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>         mine = [i for i in live if i[&quot;tier&quot;] == t]</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>         needs = sum(1 for i in mine if i[&quot;needs&quot;])</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>         out.append(_band(str(t), &quot;Tier %d&quot; % t, &quot;%s &amp;middot; %d goal%s%s&quot; % (TIER_WORDS[t], len(mine), &quot;&quot; if len(mine) == 1 else &quot;s&quot;,</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>                          (&#x27; &amp;middot; &lt;span class=&quot;am&quot;&gt;%s&lt;/span&gt;&#x27; % _needs(needs, &quot;goal&quot;)) if needs else &quot;&quot;), mine, ctx))</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     seedy = [i for i in live if i[&quot;tier&quot;] not in (1, 2)]</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     out.append(_band(&quot;3&quot;, &quot;Seed goals&quot;, &quot;for the future &amp;middot; a tier-3 goal sits here until you say tier 2; a goal with no tier yet is marked tier ? until you pick one; a seed becomes a goal on its card&quot;, seedy, ctx, &quot;seeds&quot;, extra=_seedband(ctx), quiet_empty=bool(ctx.get(&quot;seeds&quot;))))</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     out.append(&#x27;&lt;section class=&quot;band bone&quot; data-band=&quot;bone&quot;&gt;&lt;h4 class=&quot;band-h&quot;&gt;The boneyard &lt;span class=&quot;c&quot;&gt;done or abandoned goals &amp;mdash; folded, never deleted&lt;/span&gt;&lt;button class=&quot;mini&quot; id=&quot;boneTog&quot; aria-expanded=&quot;false&quot;&gt;show (%d)&lt;/button&gt;&lt;/h4&gt;&#x27;</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>                &#x27;&lt;div class=&quot;bonefold&quot; id=&quot;boneFold&quot; hidden&gt;%s&lt;/div&gt;&lt;/section&gt;&#x27; % (len(bone), &quot;&quot;.join(_gtile(i, ctx, &quot;bone&quot;, draggable=False) for i in bone) or &#x27;&lt;div class=&quot;empty&quot;&gt;nothing here yet &amp;mdash; a goal marked done or abandoned lands here&lt;/div&gt;&#x27;))</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>     return &#x27;&lt;div class=&quot;bands&quot; id=&quot;viewGrouped&quot;&gt;%s&lt;/div&gt;&#x27; % &quot;&quot;.join(out)</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> </span>
+<span class="source-line" id="L197"><a href="#L197">197</a> </span>
+<span class="source-line" id="L198"><a href="#L198">198</a> def _thread(i, ctx):</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>     turns = (ctx.get(&quot;goal_turns&quot;) or {}).get(i[&quot;id&quot;]) or []</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>     if not turns:</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>         return &#x27;&lt;li class=&quot;exfade&quot;&gt;Nothing said about this goal yet.&lt;/li&gt;&#x27;</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>     return &quot;&quot;.join(&#x27;&lt;li class=&quot;exrow %s&quot;&gt;&lt;div class=&quot;exw %s&quot;&gt;%s&lt;span class=&quot;t&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;ext&quot;&gt;%s&lt;/div&gt;&lt;/li&gt;&#x27; % (</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>         &quot;you&quot; if t[&quot;you&quot;] else &quot;st&quot;, &quot;you&quot; if t[&quot;you&quot;] else &quot;st&quot;, HIS_NAME if t[&quot;you&quot;] else esc(ctx[&quot;steward&quot;][&quot;label&quot;]), esc(t[&quot;at&quot;]), esc(t[&quot;text&quot;])) for t in turns[-12:])</span>
+<span class="source-line" id="L204"><a href="#L204">204</a> </span>
+<span class="source-line" id="L205"><a href="#L205">205</a> </span>
+<span class="source-line" id="L206"><a href="#L206">206</a> def _guide_block(i, ctx):</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>     &quot;&quot;&quot;W2d: the goal&#x27;s guide in its place - the steward&#x27;s writing rendered, when it is revised, the History folded, a</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     revise button (the raw markdown in a box; Save writes it whole with a dated History line); absent = one line saying</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     how it gets written (on his word, in the conversation below).&quot;&quot;&quot;</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     g = (ctx.get(&quot;guides&quot;) or {}).get(i[&quot;id&quot;]) or {}</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     gid = esc(i[&quot;id&quot;])</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>     if not g.get(&quot;exists&quot;):</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>         return (&#x27;&lt;div class=&quot;guide empty&quot; data-guide=&quot;%s&quot;&gt;&lt;span class=&quot;dim&quot;&gt;No guide yet &amp;mdash; say &amp;ldquo;write the guide&amp;rdquo; below and the steward writes it from this conversation and the record.&lt;/span&gt;&lt;/div&gt;&#x27; % gid)</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     from report_viewer import markdown_to_html</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     from steward_cockpit.steward_campaign import guide_body</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     hist = g.get(&quot;history&quot;) or []</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     shown = hist[-12:]      # the history ONCE on the page, folded: the body is rendered without its History section (Grok&#x27;s read of W2d)</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     count = (&quot;%d&quot; % len(shown)) if len(shown) == len(hist) else (&quot;the last %d of %d&quot; % (len(shown), len(hist)))</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>     return (&#x27;&lt;div class=&quot;guide&quot; data-guide=&quot;%s&quot; data-updated=&quot;%s&quot;&gt;&lt;div class=&quot;gbody&quot;&gt;%s&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>             &#x27;&lt;div class=&quot;gfoot&quot;&gt;&lt;span class=&quot;gwhen&quot;&gt;updated %s&lt;/span&gt;&lt;button class=&quot;linkish&quot; data-guide-edit=&quot;%s&quot;&gt;revise&lt;/button&gt;%s&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>             &#x27;&lt;textarea class=&quot;gsrc&quot; hidden&gt;%s&lt;/textarea&gt;&lt;/div&gt;&#x27;) % (</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>         gid, esc(g.get(&quot;updated&quot;) or &quot;&quot;), markdown_to_html(guide_body(g.get(&quot;text&quot;) or &quot;&quot;)), esc(g.get(&quot;updated&quot;) or &quot;&quot;), gid,</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>         (&#x27;&lt;details class=&quot;ghist&quot;&gt;&lt;summary&gt;history &amp;middot; %s&lt;/summary&gt;&lt;ul&gt;%s&lt;/ul&gt;&lt;/details&gt;&#x27; % (count, &quot;&quot;.join(&#x27;&lt;li&gt;%s&lt;/li&gt;&#x27; % esc(h) for h in shown))) if hist else &quot;&quot;,</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>         esc(g.get(&quot;text&quot;) or &quot;&quot;))</span>
+<span class="source-line" id="L225"><a href="#L225">225</a> </span>
+<span class="source-line" id="L226"><a href="#L226">226</a> </span>
+<span class="source-line" id="L227"><a href="#L227">227</a> def _place(i, ctx):</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>     &quot;&quot;&quot;The goal&#x27;s place (fit 10): the goal to revise, where it stands, the pace and the deadlines, the workflow</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>     (the parts with their acts, as the tile&#x27;s body had them), the projects and cockpits, and the goal&#x27;s own</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>     conversation. Rendered for every goal, shown for the one he opens — UNDER the bands, which stay at the top</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>     with their tiles shortened to a name (his 13:2x word: the list of goals first, the large details on a click).&quot;&quot;&quot;</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     today = ctx[&quot;today&quot;]</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>     glyph, word = LIGHTS[initiative_light(i, ctx.get(&quot;working&quot;) or set())]</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>     tier_opts = &quot;&quot;.join(&#x27;&lt;option value=&quot;%d&quot;%s&gt;%d &amp;middot; %s&lt;/option&gt;&#x27; % (t, &quot; selected&quot; if i[&quot;tier&quot;] == t else &quot;&quot;, t, TIER_WORDS[t]) for t in (1, 2, 3))</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>     rows = &quot;&quot;.join(_part_row(i, p, today, ctx.get(&quot;tick_allowed&quot;, False)) for p in i[&quot;parts&quot;])</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>     projects = &quot;&quot;.join(&#x27;&lt;option value=&quot;%s&quot;&gt;%s&lt;/option&gt;&#x27; % (esc(e.get(&quot;id&quot;)), esc(e.get(&quot;name&quot;))) for e in ctx.get(&quot;projects&quot;) or [])</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     n, done = len(i[&quot;parts&quot;]), int(i.get(&quot;done_count&quot;) or 0)</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>     waits = [p for p in i[&quot;needs&quot;]]</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>     nxt = i[&quot;next&quot;]</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>     dated = sorted([p for p in i[&quot;parts&quot;] if p[&quot;date&quot;] and not p[&quot;broken&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)], key=lambda p: p[&quot;date&quot;])</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     stands = &quot;%s%s%s%s%s.&quot; % (</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>         (&quot;%d of %d part%s done&quot; % (done, n, &quot;&quot; if n == 1 else &quot;s&quot;)) if n else &quot;no parts yet&quot;,</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>         (&#x27;; &lt;span class=&quot;am&quot;&gt;%d wait%s on you &amp;mdash; %s&lt;/span&gt;&#x27; % (len(waits), &quot;s&quot; if len(waits) == 1 else &quot;&quot;, esc(waits[0][&quot;text&quot;]))) if waits else &quot;&quot;,</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>         (&quot;; the next deadline is &lt;b&gt;%s&lt;/b&gt;&quot; % esc(_short(i[&quot;next_deadline&quot;]))) if i[&quot;next_deadline&quot;] else &quot;; nothing dated&quot;,</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>         (&quot;; the pace is &lt;b&gt;%s&lt;/b&gt;&quot; % esc(_short(i[&quot;pace&quot;]))) if i.get(&quot;pace&quot;) else &quot;; no pace set&quot;,</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>         (&quot;. Next: &lt;b&gt;%s&lt;/b&gt;&quot; % esc(nxt[&quot;text&quot;])) if nxt else &quot;&quot;)</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     comps = [p for p in i[&quot;parts&quot;] if not p[&quot;done&quot;]]</span>
+<span class="source-line" id="L248"><a href="#L248">248</a> </span>
+<span class="source-line" id="L249"><a href="#L249">249</a>     def _seat_ctl(p):</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>         if not is_initiative(p):</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>             return &quot;&quot;</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>         pid_ = esc(p[&quot;id&quot;])</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>         if p.get(&quot;seat&quot;):</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>             return (&#x27;&lt;span class=&quot;seat %s&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;sacts&quot;&gt;%s&lt;button class=&quot;linkish&quot; data-home=&quot;%s&quot;&gt;back to the goal&lt;/button&gt;&lt;/span&gt;&#x27; % (</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>                 p[&quot;seat&quot;], &quot;active&quot; if p[&quot;seat&quot;] == &quot;active&quot; else &quot;on deck&quot;,</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>                 (&#x27;&lt;button class=&quot;linkish&quot; data-seat=&quot;deck&quot; data-step=&quot;%s&quot;&gt;&amp;rarr; on deck&lt;/button&gt;&#x27; % pid_) if p[&quot;seat&quot;] == &quot;active&quot; else (&#x27;&lt;button class=&quot;linkish&quot; data-seat=&quot;active&quot; data-step=&quot;%s&quot;&gt;&amp;rarr; active&lt;/button&gt;&#x27; % pid_), pid_))</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>         return &#x27;&lt;span class=&quot;sacts&quot;&gt;&lt;button class=&quot;linkish&quot; data-seat=&quot;deck&quot; data-step=&quot;%s&quot;&gt;&amp;rarr; on deck&lt;/button&gt;&lt;button class=&quot;linkish&quot; data-seat=&quot;active&quot; data-step=&quot;%s&quot;&gt;&amp;rarr; active&lt;/button&gt;&lt;/span&gt;&#x27; % (pid_, pid_)</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     proj_html = &quot;&quot;.join(&#x27;&lt;div class=&quot;proj&quot;&gt;&lt;span class=&quot;ck&quot;&gt;%s&lt;/span&gt; %s%s&lt;span class=&quot;st&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>         KIND_WORDS.get(p[&quot;kind&quot;], p[&quot;kind&quot;]),</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>         (&#x27;&lt;a href=&quot;%s&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;%s &amp;#8599;&lt;/a&gt;&#x27; % (esc(p[&quot;href&quot;]), esc(p[&quot;target&quot;] or p[&quot;text&quot;]))) if p.get(&quot;href&quot;) else esc(p[&quot;text&quot;] if p[&quot;kind&quot;] not in (&quot;project&quot;, &quot;effort&quot;) else (p[&quot;target&quot;] or p[&quot;text&quot;])),</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>         _seat_ctl(p), esc(p[&quot;state&quot;] or p[&quot;status&quot;] or &quot;&quot;)) for p in comps) or &#x27;&lt;div class=&quot;proj dim&quot;&gt;no open component &amp;mdash; add one as a part&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     return (</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>         &#x27;&lt;article class=&quot;place&quot; id=&quot;place-%s&quot; data-goal=&quot;%s&quot; hidden style=&quot;--areac:%s&quot;&gt;&lt;div class=&quot;ptop&quot;&gt;&lt;span class=&quot;pname&quot;&gt;%s&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>         &#x27;&lt;span class=&quot;ilight %s&quot;&gt;%s %s&lt;/span&gt;&lt;div class=&quot;imore&quot;&gt;&lt;span class=&quot;larea&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;tierpick&quot;&gt;Tier &lt;select class=&quot;tsel&quot; data-tiersel=&quot;%s&quot;&gt;%s&lt;/select&gt;&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>         &#x27;&lt;button class=&quot;mini&quot; data-close=&quot;1&quot;&gt;close&lt;/button&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>         &#x27;&lt;div class=&quot;pcols&quot;&gt;&lt;div&gt;&#x27;</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>         &#x27;&lt;div class=&quot;k&quot;&gt;The objective &amp;middot; done when &lt;span class=&quot;h&quot;&gt;(click to revise &amp;mdash; one line with undo)&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;g&quot; data-goal-text=&quot;%s&quot;&gt;%s&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>         &#x27;&lt;div class=&quot;k&quot;&gt;Where it stands&lt;/div&gt;&lt;div class=&quot;stand&quot;&gt;%s&lt;/div&gt;%s&#x27;</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>         &#x27;&lt;div class=&quot;facts3&quot;&gt;&lt;div class=&quot;fact&quot;&gt;&lt;div class=&quot;k&quot;&gt;Pace&lt;/div&gt;&lt;span class=&quot;v click&quot; data-pace=&quot;%s&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>         &#x27;&lt;div class=&quot;fact&quot;&gt;&lt;div class=&quot;k&quot;&gt;Deadlines&lt;/div&gt;&lt;span class=&quot;v&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>         &#x27;&lt;div class=&quot;pfold&quot;&gt;%s&lt;/div&gt;&lt;div class=&quot;k&quot;&gt;The guide &lt;span class=&quot;h&quot;&gt;(the steward writes it on your word &amp;mdash; &amp;ldquo;write the guide&amp;rdquo; in the conversation &amp;mdash; from what you dictate there and the record; revise it here; its history keeps every change)&lt;/span&gt;&lt;/div&gt;%s&#x27;</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>         &#x27;&lt;div class=&quot;obody&quot;&gt;&lt;div class=&quot;plist&quot;&gt;&lt;div class=&quot;pl-h&quot;&gt;&lt;h4&gt;The plan &amp;middot; the parts in order&lt;/h4&gt;&lt;span class=&quot;c&quot;&gt;%d &amp;middot; %d dated%s&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>         &#x27;&lt;span class=&quot;hint&quot;&gt;Click a name to rename, a date to move it. A project or a step of one is read from its own record.&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>         &#x27;&lt;ul class=&quot;rows&quot;&gt;%s&lt;/ul&gt;&#x27;</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>         &#x27;&lt;div class=&quot;addline&quot;&gt;&lt;select data-add=&quot;kind&quot;&gt;&lt;option value=&quot;task&quot;&gt;desk item&lt;/option&gt;&lt;option value=&quot;project&quot;&gt;cockpit&lt;/option&gt;&lt;/select&gt;&#x27;</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>         &#x27;&lt;input class=&quot;at&quot; data-add=&quot;text&quot; data-lane=&quot;%s&quot; type=&quot;text&quot; autocomplete=&quot;off&quot; placeholder=&quot;Add a part&quot;&gt;&#x27;</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>         &#x27;&lt;select data-add=&quot;project&quot; style=&quot;display:none&quot;&gt;&lt;option value=&quot;&quot;&gt;which project&lt;/option&gt;%s&lt;/select&gt;&#x27;</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>         &#x27;&lt;input class=&quot;ad&quot; data-add=&quot;date&quot; type=&quot;text&quot; autocomplete=&quot;off&quot; placeholder=&quot;2026-10-27 &amp;middot; blank&quot;&gt;&#x27;</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>         &#x27;&lt;button class=&quot;mk&quot; data-act=&quot;add&quot; data-lane=&quot;%s&quot;&gt;Add&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>         &#x27;&lt;span class=&quot;ah&quot;&gt;Enter adds it. No date and it sits in the &lt;b&gt;no date&lt;/b&gt; column of the calendar view.&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>         &#x27;&lt;div class=&quot;k&quot;&gt;Its components &lt;span class=&quot;h&quot;&gt;(a cockpit, a desk item, a step of a project, a deliverable, a date; a cockpit or a desk item can be put on deck or made active &amp;mdash; then it sits on the High Seat)&lt;/span&gt;&lt;/div&gt;%s&#x27;</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>         &#x27;&lt;/div&gt;&lt;div&gt;&#x27;</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>         &#x27;&lt;div class=&quot;k&quot; style=&quot;margin-top:0&quot;&gt;Brainstorm with the steward &lt;span class=&quot;h&quot;&gt;(dictate here &amp;mdash; it is logged to this goal; a verb acts on the goal; the steward answers here as it writes)&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>         &#x27;&lt;div class=&quot;gconv&quot;&gt;%s&lt;ul class=&quot;ex gthread&quot; data-thread=&quot;%s&quot;&gt;%s&lt;/ul&gt;&#x27;</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>         &#x27;&lt;div class=&quot;composer gcomp&quot;&gt;&lt;label class=&quot;sr&quot; for=&quot;gsay-%s&quot;&gt;Tell the steward about this goal&lt;/label&gt;&#x27;</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>         &#x27;&lt;textarea id=&quot;gsay-%s&quot; class=&quot;gsay&quot; data-goal=&quot;%s&quot; rows=&quot;2&quot; placeholder=&quot;add a part: &amp;hellip; &amp;middot; pace by Oct 10 &amp;middot; tier 2 &amp;middot; goal: &amp;hellip; &amp;middot; summarize &amp;middot; or just talk&quot;&gt;&lt;/textarea&gt;&#x27;</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>         &#x27;&lt;div class=&quot;comp-row&quot;&gt;&lt;span class=&quot;hint&quot;&gt;Ctrl+Enter sends &amp;middot; inside this goal nothing needs its name &amp;middot; the steward answers here as it writes&lt;/span&gt;&lt;button class=&quot;send gsend&quot; data-goal=&quot;%s&quot;&gt;Send&lt;/button&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>         &#x27;&lt;div class=&quot;chips&quot;&gt;&lt;button data-say=&quot;write the guide&quot;&gt;write the guide&lt;/button&gt;&lt;button data-say=&quot;update the guide&quot;&gt;update the guide&lt;/button&gt;&lt;button data-say=&quot;summarize where this goal stands&quot;&gt;summarize&lt;/button&gt;&lt;button data-say=&quot;what is the next step?&quot;&gt;what is the next step?&lt;/button&gt;&lt;button data-say=&quot;what is starving here?&quot;&gt;what is starving?&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>         &#x27;&lt;/div&gt;&lt;/div&gt;&lt;/article&gt;&#x27;</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>     ) % (esc(i[&quot;id&quot;]), esc(i[&quot;id&quot;]), AREA_COLOURS.get(i[&quot;area&quot;], &quot;#8b93a6&quot;), esc(i[&quot;name&quot;]),</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>          initiative_light(i, ctx.get(&quot;working&quot;) or set()), glyph, word, esc(i[&quot;area&quot;].title() or &quot;no area&quot;), esc(i[&quot;id&quot;]), tier_opts,</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>          esc(i[&quot;id&quot;]), esc(i[&quot;done_when&quot;]) or &#x27;&lt;span class=&quot;dim&quot;&gt;not written yet &amp;mdash; say what done looks like&lt;/span&gt;&#x27;,</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>          stands, initiative_status_html(i),</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>          esc(i[&quot;id&quot;]), (&quot;by &quot; + esc(_short(i[&quot;pace&quot;]))) if i.get(&quot;pace&quot;) else &quot;set a pace&quot;,</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>          &quot;&lt;br&gt;&quot;.join(&#x27;&lt;span class=&quot;%s&quot;&gt;%s&lt;/span&gt; %s&#x27; % (&quot;over&quot; if (_hr._iso(p[&quot;date&quot;]) or today) &lt; today else (&quot;soon&quot; if (_hr._iso(p[&quot;date&quot;]) - today).days &lt;= 7 else &quot;&quot;), esc(_short(p[&quot;date&quot;])), esc(p[&quot;text&quot;][:36]) + (&quot;&amp;hellip;&quot; if len(p[&quot;text&quot;]) &gt; 36 else &quot;&quot;)) for p in dated[:4]) or &quot;none dated&quot;,</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>          _ifthen(i) + _premortem(i, ctx), _guide_block(i, ctx),</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>          n, len(dated), (&#x27; &amp;middot; &lt;span class=&quot;am&quot;&gt;%s&lt;/span&gt;&#x27; % _needs(len(i[&quot;needs&quot;]))) if i[&quot;needs&quot;] else &quot;&quot;,</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>          rows or &#x27;&lt;li class=&quot;row&quot;&gt;&lt;div class=&quot;rb&quot;&gt;&lt;span class=&quot;rt dim&quot;&gt;no parts yet&lt;/span&gt;&lt;/div&gt;&lt;/li&gt;&#x27;, esc(i[&quot;id&quot;]), projects, esc(i[&quot;id&quot;]),</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>          proj_html,</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>          nudge_html(_not_dated((ctx.get(&quot;nudges&quot;) or {}).get(i[&quot;id&quot;])), &quot;goal&quot;), esc(i[&quot;id&quot;]), _thread(i, ctx), esc(i[&quot;id&quot;]), esc(i[&quot;id&quot;]), esc(i[&quot;id&quot;]), esc(i[&quot;id&quot;]))</span>
+<span class="source-line" id="L301"><a href="#L301">301</a> </span>
+<span class="source-line" id="L302"><a href="#L302">302</a> </span>
+<span class="source-line" id="L303"><a href="#L303">303</a> def _places(ctx):</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>     return &#x27;&lt;div id=&quot;placeSlot&quot;&gt;&lt;/div&gt;&#x27; + &quot;&quot;.join(_place(i, ctx) for i in ctx[&quot;initiatives&quot;])</span>
+<span class="source-line" id="L305"><a href="#L305">305</a> </span>
+<span class="source-line" id="L306"><a href="#L306">306</a> </span>
+<span class="source-line" id="L307"><a href="#L307">307</a> # ── the board: calendar view (the same record, re-bucketed) ────────────────────────────────────</span>
+<span class="source-line" id="L308"><a href="#L308">308</a> </span>
+<span class="source-line" id="L309"><a href="#L309">309</a> def _calendar(ctx):</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     today = ctx[&quot;today&quot;]</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     weeks = ruler_weeks(today)</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     inits = ctx[&quot;initiatives&quot;]</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>     monday = weeks[0][&quot;start&quot;]</span>
+<span class="source-line" id="L314"><a href="#L314">314</a> </span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     # cells: 0 = no date (undated, and parked — a parked part is never on the ruler); 7 = before this week (a past</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     # date: overdue while open, done with its date otherwise); 1–5 = the weeks; 6 = beyond the ruler</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>     def bucket(p):</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>         d = _hr._iso(p[&quot;date&quot;]) if p[&quot;date&quot;] else None</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>         if d is None or p[&quot;status&quot;] == &quot;parked&quot;:</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>             return 0</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>         if d &lt; monday:</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>             return 7</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>         for k, w in enumerate(weeks):</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>             if w[&quot;start&quot;] &lt;= d &lt;= w[&quot;end&quot;]:</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>                 return k + 1</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>         return 6</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     counts = [0] * 8</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     overdue = parked_dated = 0</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     for i in [x for x in inits if x[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)]:</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>         for p in i[&quot;parts&quot;]:</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>             b = bucket(p)</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>             counts[b] += 1</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>             if b == 7 and p[&quot;status&quot;] != &quot;done&quot; and not p[&quot;broken&quot;]:</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>                 overdue += 1</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>             if b == 0 and p[&quot;date&quot;] and p[&quot;status&quot;] == &quot;parked&quot;:</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>                 parked_dated += 1</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>     has_over = counts[7] &gt; 0</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>     order = [0] + ([7] if has_over else []) + [1, 2, 3, 4, 5, 6]</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>     head = [&#x27;&lt;div class=&quot; nod&quot;&gt;&lt;b&gt;No date&lt;/b&gt;&lt;span class=&quot;sm&quot;&gt;undated and parked parts&lt;/span&gt;&lt;span class=&quot;cn&quot;&gt;%d undated%s&lt;/span&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>         counts[0] - parked_dated, (&quot; &amp;middot; %d parked&quot; % parked_dated) if parked_dated else &quot;&quot;)]</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>     if has_over:</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>         head.append(&#x27;&lt;div class=&quot; over&quot;&gt;&lt;b&gt;Before this week&lt;/b&gt;&lt;span class=&quot;sm&quot;&gt;past dates&lt;/span&gt;&lt;span class=&quot;cn&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>             (&quot;%d overdue&quot; % overdue) if overdue else (&quot;%d done&quot; % counts[7])))</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>     for k, w in enumerate(weeks):</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>         head.append(&#x27;&lt;div class=&quot;%s&quot;&gt;&lt;b&gt;%s&lt;/b&gt;&lt;span class=&quot;sm&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;cn&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>             &quot;now&quot; if k == 0 else &quot;&quot;, esc(w[&quot;label&quot;]), esc(w[&quot;name&quot;]), (&quot;%d dated&quot; % counts[k + 1]) if counts[k + 1] else &quot;nothing dated&quot;))</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>     head.append(&#x27;&lt;div class=&quot; beyond&quot;&gt;&lt;b&gt;%s &amp;rarr;&lt;/b&gt;&lt;span class=&quot;sm&quot;&gt;beyond the ruler&lt;/span&gt;&lt;span class=&quot;cn&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>         esc(_hr.short_date((weeks[-1][&quot;end&quot;] + timedelta(days=1)).isoformat())), (&quot;%d dated&quot; % counts[6]) if counts[6] else &quot;nothing dated&quot;))</span>
+<span class="source-line" id="L349"><a href="#L349">349</a> </span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     def chip(i, p, past):</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>         pdone = bool(p.get(&quot;done&quot;, p[&quot;status&quot;] == &quot;done&quot;))</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>         pclosed = bool(p.get(&quot;closed&quot;, p[&quot;status&quot;] in (&quot;done&quot;, &quot;parked&quot;)))</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>         late = past and not pclosed and not p[&quot;broken&quot;]</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>         cls = &quot; need&quot; if p[&quot;needs_you&quot;] else (&quot; done&quot; if pdone else (&quot; over&quot; if late else &quot;&quot;))</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>         tail = (&#x27;&lt;span class=&quot;pc-f&quot;&gt;&amp;#9873; needs you&lt;/span&gt;&#x27; if p[&quot;needs_you&quot;] else</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>                 (&#x27;&lt;span class=&quot;pc-s ok&quot;&gt;&amp;#10003; done&lt;/span&gt;&#x27; if pdone else</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>                  (&#x27;&lt;span class=&quot;pc-f&quot;&gt;overdue&lt;/span&gt;&#x27; if late else (&#x27;&lt;span class=&quot;pc-c&quot;&gt;parked&lt;/span&gt;&#x27; if (pclosed and not pdone) else &quot;&quot;))))</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>         return (&#x27;&lt;button class=&quot;pc%s&quot; data-act=&quot;chip&quot; data-lane=&quot;%s&quot; data-part=&quot;%s&quot;&gt;&lt;span class=&quot;pc-top&quot;&gt;&lt;span class=&quot;pc-d&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;pc-k&quot;&gt;%s&lt;/span&gt;&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>                 &#x27;&lt;span class=&quot;pc-n&quot;&gt;%s&lt;/span&gt;%s&lt;/button&gt;&#x27; % (cls, esc(i[&quot;id&quot;]), esc(p[&quot;id&quot;]), esc(_short(p[&quot;date&quot;])) if p[&quot;date&quot;] else &quot;no date&quot;, esc(p[&quot;kind&quot;]), esc(p[&quot;text&quot;]), tail))</span>
+<span class="source-line" id="L360"><a href="#L360">360</a> </span>
+<span class="source-line" id="L361"><a href="#L361">361</a>     def cell_class(k):</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>         return &quot; now&quot; if k == 1 else (&quot; beyond&quot; if k == 6 else (&quot; over&quot; if k == 7 else &quot;&quot;))</span>
+<span class="source-line" id="L363"><a href="#L363">363</a> </span>
+<span class="source-line" id="L364"><a href="#L364">364</a>     def lane(i):</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>         cells = [[] for _ in range(8)]</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>         for p in i[&quot;parts&quot;]:</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>             b = bucket(p)</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>             cells[b].append(chip(i, p, b == 7))</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>         track = &quot;&quot;.join(&#x27;&lt;div class=&quot;cell%s&quot;&gt;%s&lt;/div&gt;&#x27; % (cell_class(k), &quot;&quot;.join(cells[k])) for k in order)</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>         return (</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>             &#x27;&lt;section class=&quot;lane&quot; data-lane=&quot;%s&quot; style=&quot;--areac:%s&quot;&gt;&lt;div class=&quot;lane-h&quot;&gt;&#x27;</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>             &#x27;&lt;button class=&quot;lane-t&quot; data-act=&quot;toggle&quot; data-lane=&quot;%s&quot;&gt;&lt;span class=&quot;lrow1&quot;&gt;&lt;span class=&quot;ln&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;larea&quot; style=&quot;--areac:%s&quot;&gt;%s&lt;/span&gt;&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>             &#x27;&lt;span class=&quot;ldone&quot;&gt;&lt;span class=&quot;k&quot;&gt;Done looks like&lt;/span&gt;%s&lt;/span&gt;&lt;/button&gt;&lt;span class=&quot;lmeta&quot;&gt;%s%d parts &amp;middot; %d dated&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>             &#x27;&lt;div class=&quot;track&quot;&gt;%s&lt;/div&gt;&lt;/section&gt;&#x27; % (</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>                 esc(i[&quot;id&quot;]), AREA_COLOURS.get(i[&quot;area&quot;], &quot;#8b93a6&quot;), esc(i[&quot;id&quot;]), esc(i[&quot;name&quot;]), AREA_COLOURS.get(i[&quot;area&quot;], &quot;#8b93a6&quot;),</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>                 esc(i[&quot;area&quot;].title() or &quot;no area&quot;), esc(i[&quot;done_when&quot;]) or &quot;not written yet&quot;,</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>                 (&#x27;&lt;span class=&quot;fl&quot;&gt;%s&lt;/span&gt;&#x27; % _needs(len(i[&quot;needs&quot;]))) if i[&quot;needs&quot;] else &quot;&quot;,</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>                 len(i[&quot;parts&quot;]), sum(1 for p in i[&quot;parts&quot;] if p[&quot;date&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;) and not p[&quot;broken&quot;]), track))</span>
+<span class="source-line" id="L379"><a href="#L379">379</a> </span>
+<span class="source-line" id="L380"><a href="#L380">380</a>     def strip(label, word, colour, mine):</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>         needs = sum(1 for i in mine if i[&quot;needs&quot;])</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>         dated = sum(1 for i in mine for p in i[&quot;parts&quot;] if p[&quot;date&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;) and not p[&quot;broken&quot;])</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>         return &#x27;&lt;div class=&quot;tierstrip&quot; style=&quot;--tierc:%s&quot;&gt;&lt;span class=&quot;tn&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;tw&quot;&gt;%s&lt;/span&gt;&lt;span class=&quot;tm&quot;&gt;%d goal%s &amp;middot; %s &amp;middot; %d dated part%s&lt;/span&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>             colour, label, word, len(mine), &quot;&quot; if len(mine) == 1 else &quot;s&quot;, (&#x27;&lt;span class=&quot;am&quot;&gt;%s&lt;/span&gt;&#x27; % _needs(needs, &quot;goal&quot;)) if needs else &quot;no goal needs you&quot;, dated, &quot;&quot; if dated == 1 else &quot;s&quot;)</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>     # the board&#x27;s buckets (Grok, the W2 trim): the live tier 1, the live tier 2, the seed goals; done and parked goals stay out</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>     lanes = []</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>     live = [i for i in inits if i[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>     for t in (1, 2):</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>         mine = [i for i in live if i[&quot;tier&quot;] == t]</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>         lanes.append(strip(&quot;Tier %d&quot; % t, TIER_WORDS[t], TIER_COLOURS[t], mine))</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>         lanes.extend(lane(i) for i in mine)</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>     seedy = [i for i in live if i[&quot;tier&quot;] not in (1, 2)]</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>     lanes.append(strip(&quot;Seed goals&quot;, &quot;for the future&quot;, TIER_COLOURS[3], seedy))</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>     lanes.extend(lane(i) for i in seedy)</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>     return &#x27;&lt;div class=&quot;scroll%s&quot; id=&quot;viewCal&quot; style=&quot;flex:1;display:none&quot;&gt;&lt;div id=&quot;boardScroll&quot;&gt;&lt;div class=&quot;rl-head&quot;&gt;%s&lt;/div&gt;%s&lt;/div&gt;&lt;/div&gt;&#x27; % (</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>         &quot; has-over&quot; if has_over else &quot;&quot;, &quot;&quot;.join(head), &quot;&quot;.join(lanes))</span>
+<span class="source-line" id="L397"><a href="#L397">397</a> </span>
+<span class="source-line" id="L398"><a href="#L398">398</a> </span>
+<span class="source-line" id="L399"><a href="#L399">399</a> # ── seeds, areas, the panel ────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L400"><a href="#L400">400</a> </span>
+<span class="source-line" id="L401"><a href="#L401">401</a> def _seedband(ctx):</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>     &quot;&quot;&quot;The seeds as a tile (John, 2026-09-27): closed by default with the count in its head; the head toggles it open to</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>     the seed row as it was — each seed with Make it an initiative and its two questions on the card.&quot;&quot;&quot;</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>     seeds = ctx.get(&quot;seeds&quot;) or []</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     if not seeds:</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>         row = &#x27;&lt;div class=&quot;seed&quot;&gt;&lt;div class=&quot;st dim&quot;&gt;No seeds yet.&lt;/div&gt;&lt;div class=&quot;sw&quot;&gt;Tell the steward &amp;ldquo;seed: &amp;hellip;&amp;rdquo; on the home, or in the cockpit&amp;rsquo;s grasscatcher.&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>     else:</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>         tiers = &quot;&quot;.join(&#x27;&lt;button data-picktier=&quot;%d&quot;%s&gt;Tier %d%s&lt;/button&gt;&#x27; % (t, &#x27; class=&quot;on&quot;&#x27; if t == 3 else &quot;&quot;, t, &quot; &amp;middot; suggested&quot; if t == 3 else &quot;&quot;) for t in (1, 2, 3))</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>         areas = &quot;&quot;.join(&#x27;&lt;button data-pickarea=&quot;%s&quot;&gt;%s&lt;/button&gt;&#x27; % (a, a.title()) for a in AREAS) + &#x27;&lt;button data-pickarea=&quot;&quot; class=&quot;on&quot;&gt;none yet&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>         row = &quot;&quot;.join(&#x27;&lt;div class=&quot;seed&quot; data-seed=&quot;%s&quot;&gt;&lt;div class=&quot;st&quot;&gt;%s&lt;/div&gt;&lt;div class=&quot;sw&quot;&gt;would suit &lt;b&gt;tier 3&lt;/b&gt; &amp;mdash; you choose the tier and the life area&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>                       &#x27;&lt;button class=&quot;mk&quot; data-act=&quot;promote&quot; data-seed=&quot;%s&quot;&gt;Make it a goal&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>                       &#x27;&lt;div class=&quot;pick&quot; hidden&gt;&lt;div class=&quot;q&quot;&gt;Which tier?&lt;/div&gt;&lt;div class=&quot;prow&quot;&gt;%s&lt;/div&gt;&lt;div class=&quot;q&quot;&gt;Which life area?&lt;/div&gt;&lt;div class=&quot;prow&quot;&gt;%s&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>                       &#x27;&lt;div class=&quot;prow&quot;&gt;&lt;button class=&quot;go&quot; data-pickgo=&quot;%s&quot;&gt;Create it in tier 3&lt;/button&gt;&lt;button class=&quot;cancel&quot; data-pickcancel=&quot;1&quot;&gt;cancel&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>                       % (esc(s[&quot;id&quot;]), esc(s[&quot;text&quot;]), esc(s[&quot;id&quot;]), tiers, areas, esc(s[&quot;id&quot;])) for s in seeds)</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>     return (&#x27;&lt;section class=&quot;seedband&quot; id=&quot;seedband&quot; aria-label=&quot;Seeds&quot;&gt;&lt;button class=&quot;sb-h&quot; id=&quot;seedToggle&quot; aria-expanded=&quot;false&quot;&gt;&lt;span class=&quot;t&quot;&gt;Seeds&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>             &#x27;&lt;span class=&quot;c&quot; id=&quot;seedCount&quot;&gt;&lt;b&gt;%d&lt;/b&gt; idea%s, not yet goals&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>             &#x27;&lt;span class=&quot;note&quot;&gt;Making one a goal asks for its tier and its life area on the card &amp;mdash; nothing is created until Create it.&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>             &#x27;&lt;span class=&quot;tog&quot; id=&quot;seedTog&quot;&gt;Show&lt;/span&gt;&lt;/button&gt;&lt;div class=&quot;seedrow&quot; id=&quot;seedRow&quot;&gt;%s&lt;/div&gt;&lt;/section&gt;&#x27;</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>             % (len(seeds), &quot;&quot; if len(seeds) == 1 else &quot;s&quot;, row))</span>
+<span class="source-line" id="L420"><a href="#L420">420</a> </span>
+<span class="source-line" id="L421"><a href="#L421">421</a> </span>
+<span class="source-line" id="L422"><a href="#L422">422</a> def _areas(ctx):</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>     inits = ctx[&quot;initiatives&quot;]</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>     counts = {a: sum(1 for i in inits if i[&quot;area&quot;] == a) for a in AREAS}</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>     chips = &quot;&quot;.join(&#x27;&lt;button class=&quot;ac&quot; data-area=&quot;%s&quot; style=&quot;--c:%s&quot;&gt;&lt;i&gt;&lt;/i&gt;%s &lt;b&gt;%d&lt;/b&gt;&lt;/button&gt;&#x27; % (a, AREA_COLOURS[a], a.title(), counts[a]) for a in AREAS if counts[a])</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>     t = {k: sum(1 for i in inits if i[&quot;tier&quot;] == k) for k in (1, 2, 3)}</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>     top = max(AREAS, key=lambda a: counts[a]) if inits else None</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>     note = &quot;Click an area to hold the board to it.%s&quot; % (</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>         (&quot; &lt;b style=\&quot;color:%s\&quot;&gt;%s&lt;/b&gt; carries %d.&quot; % (AREA_COLOURS[top], top.title(), counts[top])) if top and counts[top] &gt; 1 else &quot;&quot;)</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>     return &#x27;&lt;div class=&quot;areas&quot; id=&quot;areas&quot;&gt;%s&lt;span class=&quot;note&quot;&gt;%s&lt;/span&gt;&lt;/div&gt;&#x27; % (chips or &#x27;&lt;span class=&quot;note&quot;&gt;no areas yet&lt;/span&gt;&#x27;, note)</span>
+<span class="source-line" id="L431"><a href="#L431">431</a> </span>
+<span class="source-line" id="L432"><a href="#L432">432</a> </span>
+<span class="source-line" id="L433"><a href="#L433">433</a> def brief_bullets(ctx):</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>     inits = [i for i in ctx[&quot;initiatives&quot;] if i[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)]      # the board&#x27;s live goals (Grok, the W2 trim)</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>     today = ctx[&quot;today&quot;]</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>     out = []</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>     t1 = [i for i in inits if i[&quot;tier&quot;] == 1]</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>     dated = sorted(((p[&quot;date&quot;], p, i) for i in inits for p in i[&quot;parts&quot;] if p[&quot;date&quot;] and not p[&quot;broken&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)), key=lambda x: x[0])</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>     ahead = next(((d, p, i) for d, p, i in dated if _hr._iso(d) and _hr._iso(d) &gt;= today), None)</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>     if t1:</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>         out.append(&quot;&lt;b&gt;Tier 1&lt;/b&gt; holds %s.%s&quot; % (&quot; &amp;middot; &quot;.join(esc(i[&quot;name&quot;]) for i in t1),</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>                    (&quot; The nearest hard date is &lt;b&gt;%s&lt;/b&gt;, on &lt;b&gt;%s&lt;/b&gt; in %s (tier %d).&quot; % (esc(_short(ahead[0])), esc(ahead[1][&quot;text&quot;]), esc(ahead[2][&quot;name&quot;]), ahead[2][&quot;tier&quot;])) if ahead else &quot; Nothing in the Campaign carries a date yet.&quot;))</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>     else:</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>         out.append(&quot;No Tier 1 goal yet &amp;mdash; give one a tier.&quot;)</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>     mon = today - timedelta(days=today.weekday()); sun = mon + timedelta(days=6)</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>     week = [(d, p, i) for d, p, i in dated if _hr._iso(d) and mon &lt;= _hr._iso(d) &lt;= sun]</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>     if week:</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>         out.append(&quot;This week, %s: %s.&quot; % (esc(_hr.week_in_words(today).replace(&quot;this week &quot;, &quot;&quot;)), &quot;; &quot;.join(&quot;%s (%s, %s)&quot; % (esc(p[&quot;text&quot;]), esc(_short(d)), esc(i[&quot;name&quot;])) for d, p, i in week[:3])))</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>     else:</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>         out.append(&quot;This week, %s: &lt;b&gt;nothing in the Campaign is dated inside it&lt;/b&gt;.%s&quot; % (</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>             esc(_hr.week_in_words(today).replace(&quot;this week &quot;, &quot;&quot;)), (&quot; The first mark is %s.&quot; % esc(_short(ahead[0]))) if ahead else &quot;&quot;))</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>     needs = [(p, i) for i in inits for p in i[&quot;needs&quot;]]</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>     if needs:</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>         out.append(&#x27;&lt;span class=&quot;amberword&quot;&gt;&amp;#9873; %d part%s need%s you&lt;/span&gt;, %d with no date. In tier order: %s%s.&#x27; % (</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>             len(needs), &quot;&quot; if len(needs) == 1 else &quot;s&quot;, &quot;s&quot; if len(needs) == 1 else &quot;&quot;, sum(1 for p, i in needs if not p[&quot;date&quot;]),</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>             &quot; &amp;middot; &quot;.join(&#x27;&lt;button class=&quot;goto&quot; data-goto=&quot;%s&quot;&gt;%s&lt;/button&gt; (tier %s)&#x27; % (esc(i[&quot;id&quot;]), esc(p[&quot;text&quot;]), i[&quot;tier&quot;] or &quot;?&quot;) for p, i in needs[:3]),</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>             (&quot; &amp;hellip; and %d more&quot; % (len(needs) - 3)) if len(needs) &gt; 3 else &quot;&quot;))</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     else:</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>         out.append(&quot;Nothing in the Campaign waits on your word.&quot;)</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>     counts = {a: sum(1 for i in inits if i[&quot;area&quot;] == a) for a in AREAS}</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>     out.append(&quot;Across your life: %s. &lt;span class=\&quot;n\&quot;&gt;%d&lt;/span&gt; seed%s sit%s in Seed goals.&quot; % (</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>         &quot; &amp;middot; &quot;.join(&quot;%s &lt;span class=\&quot;n\&quot;&gt;%d&lt;/span&gt;&quot; % (a.title(), counts[a]) for a in AREAS if counts[a]) or &quot;no areas yet&quot;,</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>         len(ctx.get(&quot;seeds&quot;) or []), &quot;&quot; if len(ctx.get(&quot;seeds&quot;) or []) == 1 else &quot;s&quot;, &quot;s&quot; if len(ctx.get(&quot;seeds&quot;) or []) == 1 else &quot;&quot;))</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>     return out</span>
+<span class="source-line" id="L465"><a href="#L465">465</a> </span>
+<span class="source-line" id="L466"><a href="#L466">466</a> </span>
+<span class="source-line" id="L467"><a href="#L467">467</a> def look_ahead(ctx):</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>     &quot;&quot;&quot;The look-ahead (the Star Chart, 2026-10-03; it took the brief&#x27;s place): what is coming up in the next seven days,</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>     the Tier-1/2 goals behind their pace, the goals starving (each with Open · Not now · Park), and one preparation -</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>     all read from the record. A dated item within three days is named here only; its alert is the Cave&#x27;s interrupt lane.&quot;&quot;&quot;</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>     inits = [i for i in ctx[&quot;initiatives&quot;] if i[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>     today = ctx[&quot;today&quot;]</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>     dated = sorted(((_hr._iso(p[&quot;date&quot;]), p, i) for i in inits for p in i[&quot;parts&quot;]</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>                     if p[&quot;date&quot;] and not p[&quot;broken&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;) and _hr._iso(p[&quot;date&quot;])), key=lambda x: x[0])</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>     soon = [(d, p, i) for d, p, i in dated if today &lt;= d &lt;= today + timedelta(days=7)]</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>     items = []</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>     if soon:</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>         items.append(&#x27;&lt;li&gt;&lt;b&gt;Coming up:&lt;/b&gt; %s.&lt;/li&gt;&#x27; % &quot; &amp;middot; &quot;.join(</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>             &#x27;%s %s (%s)%s&#x27; % (esc(_short(d.isoformat())), esc(p[&quot;text&quot;][:60]), esc(i[&quot;name&quot;]),</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>                               &#x27; &lt;span class=&quot;dim&quot;&gt;its alert is on the %s&lt;/span&gt;&#x27; % esc(ctx[&quot;steward&quot;][&quot;high_seat_name&quot;]) if (d - today).days &lt;= 3 else &quot;&quot;)</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>             for d, p, i in soon[:4]))</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>     else:</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>         nxt = next(((d, p, i) for d, p, i in dated if d &gt;= today), None)</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>         items.append(&#x27;&lt;li&gt;&lt;b&gt;Coming up:&lt;/b&gt; nothing dated in the next seven days%s.&lt;/li&gt;&#x27; % (</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>             (&quot; &amp;middot; the first is %s, %s (%s)&quot; % (esc(_short(nxt[0].isoformat())), esc(nxt[1][&quot;text&quot;][:60]), esc(nxt[2][&quot;name&quot;]))) if nxt else &quot;&quot;))</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>     behind = []</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>     for i in inits:</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>         if i[&quot;tier&quot;] not in (1, 2):</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>             continue</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>         pace = _hr._iso(i.get(&quot;pace&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>         n = int(i.get(&quot;part_count&quot;) or 0); done = int(i.get(&quot;done_count&quot;) or 0)</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>         if not pace:</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>             if i[&quot;tier&quot;] == 1:</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>                 behind.append(&#x27;%s has no pace set&#x27; % esc(i[&quot;name&quot;]))</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>             continue</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>         if pace &lt; today and done &lt; n:</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>             behind.append(&#x27;%s is past its pace (%s) with %d of %d parts done&#x27; % (esc(i[&quot;name&quot;]), esc(_short(pace.isoformat())), done, n))</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>         elif n and (pace - today).days &lt;= 14 and done &lt; n / 2:</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>             behind.append(&#x27;%s paces to %s with %d of %d parts done&#x27; % (esc(i[&quot;name&quot;]), esc(_short(pace.isoformat())), done, n))</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>     if behind:</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>         items.append(&#x27;&lt;li&gt;&lt;b&gt;Behind pace:&lt;/b&gt; %s.&lt;/li&gt;&#x27; % &quot;; &quot;.join(behind[:4]))</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>     starving = [(gid, n) for gid, n in (ctx.get(&quot;nudges&quot;) or {}).items() if isinstance(n, dict) and n.get(&quot;kind&quot;) == &quot;starving&quot;]</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>     names = {i[&quot;id&quot;]: i[&quot;name&quot;] for i in inits}</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>     for gid, n in starving[:3]:</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>         items.append(&#x27;&lt;li class=&quot;starve&quot;&gt;&lt;b&gt;Starving:&lt;/b&gt; %s &lt;span class=&quot;lacts&quot;&gt;&lt;button class=&quot;mini&quot; data-goto=&quot;%s&quot;&gt;Open&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>                      &#x27;&lt;button class=&quot;mini&quot; data-nudge-act=&quot;not_now&quot; data-key=&quot;%s&quot; data-fact=&quot;%s&quot; data-text=&quot;%s&quot;&gt;Not now&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>                      &#x27;&lt;button class=&quot;mini&quot; data-look-park=&quot;%s&quot; title=&quot;to the boneyard, with undo&quot;&gt;Park&lt;/button&gt;&lt;/span&gt;&lt;/li&gt;&#x27; % (</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>                          esc(n.get(&quot;text&quot;) or names.get(gid, gid)), esc(gid), esc(n.get(&quot;key&quot;) or &quot;&quot;), esc(n.get(&quot;fact&quot;) or &quot;&quot;), esc((n.get(&quot;text&quot;) or &quot;&quot;)[:200]), esc(gid)))</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>     first = next(((d, p, i) for d, p, i in dated if d &gt;= today), None)</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>     if first:</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>         items.append(&#x27;&lt;li&gt;&lt;b&gt;One preparation:&lt;/b&gt; the nearest date is %s (%s), due %s &amp;mdash; ready it before the week fills.&lt;/li&gt;&#x27; % (</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>             esc(first[1][&quot;text&quot;][:80]), esc(first[2][&quot;name&quot;]), esc(_short(first[0].isoformat()))))</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>     return (&#x27;&lt;section class=&quot;lookahead&quot; id=&quot;lookAhead&quot;&gt;&lt;div class=&quot;kicker&quot;&gt;The look-ahead &lt;span class=&quot;k-when&quot;&gt;the next seven days, from %s&lt;/span&gt;&lt;/div&gt;&lt;ul class=&quot;blist&quot;&gt;%s&lt;/ul&gt;&#x27;</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>             &#x27;&lt;div class=&quot;lane-note&quot;&gt;The nudges that are not urgent wait here instead of interrupting.&lt;/div&gt;&lt;/section&gt;&#x27;) % (</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>         esc(today.strftime(&quot;%A %d %B&quot;).replace(&quot; 0&quot;, &quot; &quot;)), &quot;&quot;.join(items))</span>
+<span class="source-line" id="L516"><a href="#L516">516</a> </span>
+<span class="source-line" id="L517"><a href="#L517">517</a> </span>
+<span class="source-line" id="L518"><a href="#L518">518</a> def _lead(ctx):</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>     &quot;&quot;&quot;The brief&#x27;s lead when a set exists: the head as the High Seat reads it - a part that needs him in an active</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>     initiative, else the tiers, else the pick-up while the set runs - with an open to its tile.&quot;&quot;&quot;</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>     return None      # Grok (the W2 trim): the set-first lead went with the Active band; the High Seat&#x27;s head keeps head_act</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>     inits = ctx[&quot;initiatives&quot;]</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>     working = ctx.get(&quot;working&quot;) or set()</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>     head = _ha.head_act(inits, [], today=ctx[&quot;today&quot;])</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>     pk = _ha.pick_up(inits, [], working=working, today=ctx[&quot;today&quot;])</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>     name = (head or {}).get(&quot;initiative&quot;) or (pk or {}).get(&quot;initiative&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>     hit = next((i for i in inits if i[&quot;name&quot;] == name), None)</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>     goto = (&#x27; &lt;button class=&quot;goto&quot; data-goto=&quot;%s&quot;&gt;open&lt;/button&gt;&#x27; % esc(hit[&quot;id&quot;])) if hit else &quot;&quot;</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>     return esc(_ha.head_sentence(head, pickup=pk)) + goto</span>
+<span class="source-line" id="L530"><a href="#L530">530</a> </span>
+<span class="source-line" id="L531"><a href="#L531">531</a> </span>
+<span class="source-line" id="L532"><a href="#L532">532</a> def _panel(ctx):</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>     &quot;&quot;&quot;The steward&#x27;s column (W2b-3, 2026-09-30, his word: the dialogue &quot;should open up and fill the whole open space on</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>     the right below the brief, it should be interactive and able for me to follow what is going on, ask, discuss&quot;;</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>     W2c-3: the cockpit&#x27;s shape): the brief, then the DIALOGUE filling the rest of the column - the one conversation log</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>     of the Campaign&#x27;s cockpit (the last 40 turns; a turn said from a goal&#x27;s place carries the goal&#x27;s chip, which opens</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>     the goal), live from the moment the page opens (the script polls the cockpit&#x27;s own stream), the steward&#x27;s state at</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>     its head - and the composer at the column&#x27;s foot. A login box, hidden until a read is refused (Grok&#x27;s read of</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>     W2c-3: the refusal is answered on the page he is looking at).&quot;&quot;&quot;</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>     st = ctx[&quot;steward&quot;]</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>     return (</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>         # the brief is gone (John, 2026-10-03: &quot;I don&#x27;t think that it helps&quot;); the look-ahead takes its place</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>         &#x27;&lt;aside class=&quot;panel&quot; aria-label=&quot;The steward&quot;&gt;%s&#x27;</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>         &#x27;%s&#x27;</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>         &#x27;&lt;div class=&quot;loginbox&quot; id=&quot;loginBox&quot; hidden&gt;&lt;span class=&quot;lb-t&quot;&gt;This browser is not logged in to Anchor.&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>         &#x27;&lt;input id=&quot;loginTok&quot; type=&quot;password&quot; placeholder=&quot;paste the token here&quot; autocomplete=&quot;off&quot; spellcheck=&quot;false&quot;&gt;&#x27;</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>         &#x27;&lt;button class=&quot;mini&quot; id=&quot;loginGo&quot;&gt;Log in&lt;/button&gt;&lt;span class=&quot;lb-msg&quot; id=&quot;loginMsg&quot;&gt;&lt;/span&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>         &#x27;&lt;section class=&quot;composer&quot;&gt;&lt;label class=&quot;sr&quot; for=&quot;say&quot;&gt;Tell the steward what to do&lt;/label&gt;&#x27;</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>         &#x27;&lt;textarea id=&quot;say&quot; rows=&quot;2&quot; placeholder=&quot;Ask %s, discuss, or tell it what to do &amp;mdash; it runs the %s: move &amp;hellip; to tier 2, add a part to &amp;hellip;, &amp;hellip; by Oct 10&quot;&gt;&lt;/textarea&gt;&#x27;</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>         &#x27;&lt;div class=&quot;comp-row&quot;&gt;&lt;span class=&quot;hint&quot;&gt;Ctrl+Enter sends &amp;middot; the steward answers above as it writes; when it changes the record the board reloads with the receipt&lt;/span&gt;&lt;button class=&quot;send&quot; id=&quot;sendBtn&quot;&gt;Send&lt;/button&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>         &#x27;&lt;div class=&quot;receipt&quot; id=&quot;receipt&quot; hidden&gt;&lt;span class=&quot;r-mark&quot;&gt;&amp;#10003;&lt;/span&gt;&lt;span id=&quot;receiptText&quot;&gt;&lt;/span&gt; &lt;button class=&quot;mini&quot; id=&quot;undoBtn&quot; hidden&gt;undo&lt;/button&gt;&lt;/div&gt;&lt;/section&gt;&#x27;</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>         &#x27;&lt;/aside&gt;&#x27;</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>     ) % (look_ahead(ctx), conversation_view(st[&quot;label&quot;], ctx.get(&quot;pid&quot;) or &quot;&quot;, &quot;campaign&quot;, &quot;&quot;, &quot;the &quot; + mode_name(st)), esc(st[&quot;label&quot;]), esc(mode_name(st)))</span>
+<span class="source-line" id="L554"><a href="#L554">554</a> </span>
+<span class="source-line" id="L555"><a href="#L555">555</a> </span>
+<span class="source-line" id="L556"><a href="#L556">556</a> # ── the page ───────────────────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L557"><a href="#L557">557</a> </span>
+<span class="source-line" id="L558"><a href="#L558">558</a> def render_campaign_html(ctx, open_id=None) -&gt; str:</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>     st = ctx[&quot;steward&quot;]</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>     inits = ctx[&quot;initiatives&quot;]</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>     ctx[&quot;n_total&quot;] = len(inits)</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>     tiers = {k: sum(1 for i in inits if i[&quot;tier&quot;] == k) for k in (1, 2, 3)}</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>     n_parts = sum(len(i[&quot;parts&quot;]) for i in inits)</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>     n_dated = sum(1 for i in inits for p in i[&quot;parts&quot;] if p[&quot;date&quot;] and not p[&quot;broken&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;))</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>     n_needs = sum(len(i[&quot;needs&quot;]) for i in inits)</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>     live = [i for i in inits if i[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>     n_bone = len(inits) - len(live)</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>     n_seedy = sum(1 for i in live if i[&quot;tier&quot;] not in (1, 2))      # Tier 1 + Tier 2 + seed goals = the goals; the seeds fold keeps its own idea count</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>     n_parts = sum(len(i[&quot;parts&quot;]) for i in live)</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>     n_dated = sum(1 for i in live for p in i[&quot;parts&quot;] if p[&quot;date&quot;] and not p[&quot;broken&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;))</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>     n_needs = sum(len(i[&quot;needs&quot;]) for i in live)</span>
+<span class="source-line" id="L572"><a href="#L572">572</a>     board = (</span>
+<span class="source-line" id="L573"><a href="#L573">573</a>         &#x27;&lt;section class=&quot;board&quot; aria-label=&quot;The %s&quot; data-place=&quot;%s&quot;&gt;&lt;div class=&quot;colk&quot;&gt;&lt;h3 id=&quot;viewTitle&quot;&gt;The goals&lt;/h3&gt;&#x27;</span>
+<span class="source-line" id="L574"><a href="#L574">574</a>         &#x27;&lt;span class=&quot;c&quot; id=&quot;boardCount&quot;&gt;%d goals &amp;middot; Tier 1 %d &amp;middot; Tier 2 %d &amp;middot; seed goals %d &amp;middot; the boneyard %d &amp;middot; %d parts &amp;middot; %d dated%s&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>         &#x27;&lt;span class=&quot;rule&quot;&gt;&lt;/span&gt;&lt;button class=&quot;viewbtn&quot; id=&quot;viewBtn&quot;&gt;&amp;#128197; Calendar view&lt;/button&gt;&lt;button class=&quot;mini&quot; id=&quot;closeAll&quot;&gt;Close the goal&lt;/button&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>         &#x27;%s%s%s%s&#x27;</span>
+<span class="source-line" id="L577"><a href="#L577">577</a>         &#x27;&lt;p class=&quot;boardfoot&quot; id=&quot;boardFoot&quot;&gt;Drag a goal into another tier or into Seed goals; there is no order inside a tier. Click a name for its place &amp;mdash; every change is one line with undo.&lt;/p&gt;&lt;/section&gt;&#x27;</span>
+<span class="source-line" id="L578"><a href="#L578">578</a>     ) % (esc(mode_name(st)), esc(open_id or &quot;&quot;), len(live), sum(1 for i in live if i[&quot;tier&quot;] == 1), sum(1 for i in live if i[&quot;tier&quot;] == 2), n_seedy, n_bone, n_parts, n_dated, (&#x27; &amp;middot; &lt;span style=&quot;color:var(--amber-t);font-weight:700&quot;&gt;%s&lt;/span&gt;&#x27; % _needs(n_needs)) if n_needs else &quot;&quot;,</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>          _areas(ctx), _bands(ctx), _places(ctx), _calendar(ctx))</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>     hdr = (</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>         &#x27;&lt;div class=&quot;hdr&quot;&gt;&lt;h2 class=&quot;modeh&quot;&gt;%s&lt;/h2&gt;&#x27;</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>         &#x27;&lt;button class=&quot;tool doctor&quot; data-tool=&quot;doctor&quot;&gt;&amp;#10010; Anchor Doctor&lt;/button&gt;&lt;button class=&quot;tool&quot; data-tool=&quot;zombie&quot;&gt;%sZombie Hunter&lt;/button&gt;&lt;button class=&quot;tool&quot; data-tool=&quot;foundry&quot;&gt;%sSkill Foundry&lt;/button&gt;&#x27;</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>         &#x27;&lt;a class=&quot;tool&quot; href=&quot;/steward/v1?pid=%s&amp;amp;dir=&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; title=&quot;this conversation in its cockpit, full size&quot;&gt;%s — AI Cockpit&lt;/a&gt;&lt;div class=&quot;date&quot;&gt;%s&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>     ) % (esc(mode_name(st)),</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>          _brand_img(ctx[&quot;build&quot;], &quot;zombie-hunter-radar.jpg&quot;), _brand_img(ctx[&quot;build&quot;], &quot;skill-foundry-icon.jpg&quot;), esc(ctx[&quot;pid&quot;]), esc(mode_name(st)), esc(ctx[&quot;today_str&quot;]))</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>     return (</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>         &#x27;&lt;!DOCTYPE html&gt;&lt;html lang=&quot;en&quot;&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width,initial-scale=1&quot;&gt;&#x27;</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>         &#x27;&lt;title&gt;%s&lt;/title&gt;%s&#x27;</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>         &#x27;&lt;link rel=&quot;stylesheet&quot; href=&quot;/static/steward-dialogue.css?v=%s&quot;&gt;&lt;link rel=&quot;stylesheet&quot; href=&quot;/static/campaign-page.css?v=%s&quot;&gt;&#x27;</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>         &#x27;&lt;script&gt;window.ANCHOR_BOOT = {build_id: &quot;%s&quot;, campaign_pid: &quot;%s&quot;, stamp: &quot;%s&quot;, steward: &quot;%s&quot;, you: &quot;%s&quot;};&lt;/script&gt;&lt;/head&gt;&#x27;</span>
+<span class="source-line" id="L591"><a href="#L591">591</a>         &#x27;&lt;body&gt;&lt;div class=&quot;page&quot;&gt;%s%s&lt;div class=&quot;prefs&quot;&gt;%s&lt;/div&gt;&lt;div class=&quot;canvas&quot;&gt;%s%s&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L592"><a href="#L592">592</a>         &#x27;&lt;div class=&quot;foot&quot;&gt;%s&lt;span&gt;A &lt;b class=&quot;gwl-accent&quot;&gt;Ghost World Labs&lt;/b&gt; tool &amp;middot; Powered by NextGen Nuclear &amp;middot; AI Cockpit &amp;middot; J.C. Liechty&lt;/span&gt;&#x27;</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>         &#x27;&lt;span&gt;&amp;mdash; every goal, part, date and count on this page is read from the Campaign record; a project part is read from its own record.&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&#x27;</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>         &#x27;&lt;script src=&quot;/steward-static/md.js?v=%s&quot;&gt;&lt;/script&gt;&lt;script src=&quot;/static/steward-dialogue.js?v=%s&quot;&gt;&lt;/script&gt;&lt;script src=&quot;/static/campaign-page.js?v=%s&quot;&gt;&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;&#x27;</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>     ) % (esc(mode_name(st)), tab_icon_link(st.get(&quot;high_seat&quot;) or st.get(&quot;seal&quot;), ctx[&quot;build&quot;], anchor=False), esc(ctx[&quot;build&quot;]), esc(ctx[&quot;build&quot;]), esc(ctx[&quot;build&quot;]), esc(ctx[&quot;pid&quot;]), esc(str(ctx.get(&quot;stamp&quot;) or &quot;&quot;)), esc(st[&quot;label&quot;]), esc(HIS_NAME), _masthead(ctx, mode=True), hdr, ctx.get(&quot;prefs_html&quot;) or &quot;&quot;, board, _panel(ctx),</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>          _brand_img(ctx[&quot;build&quot;], &quot;gwl-m-icon.svg&quot;), esc(ctx[&quot;build&quot;]), esc(ctx[&quot;build&quot;]), esc(ctx[&quot;build&quot;]))</span></pre></main></body></html>

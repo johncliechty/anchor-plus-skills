@@ -1,0 +1,151 @@
+{
+  "resources": [
+    {
+      "id": "steward-starchart-mat-skill-md",
+      "title": "Aladdin-Star Chart Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "steward-starchart-mat-vision-md",
+      "title": "Aladdin-Star Chart Vision & Architecture (VISION.md)",
+      "category": "material",
+      "path": "VISION.md",
+      "description": "Long-range architectural vision and role separation contract."
+    },
+    {
+      "id": "steward-starchart-mat-ecgberht-md",
+      "title": "Aladdin-Star Chart Campaign & Steward Ledger (ECGBERHT.md)",
+      "category": "material",
+      "path": "ECGBERHT.md",
+      "description": "Campaign acts, steward identity, and operational governance."
+    },
+    {
+      "id": "steward-starchart-mat-description-md",
+      "title": "Aladdin-Star Chart Detailed Specification (DESCRIPTION.md)",
+      "category": "material",
+      "path": "DESCRIPTION.md",
+      "description": "Detailed capability specification and module breakdown."
+    },
+    {
+      "id": "steward-starchart-mat-implementation-plan-md",
+      "title": "Aladdin-Star Chart Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "category": "material",
+      "path": "IMPLEMENTATION-PLAN.md",
+      "description": "Wave-by-wave engineering plan and verification gates."
+    },
+    {
+      "id": "steward-starchart-tool-bin-steward-mjs",
+      "title": "steward.mjs (bin/steward.mjs)",
+      "category": "tools",
+      "path": "bin/steward.mjs",
+      "description": "Executable .mjs module (75 LOC; key symbols: parseStewardArgv, runStewardCli)."
+    },
+    {
+      "id": "steward-starchart-tool-conformance-handback-cont",
+      "title": "index.mjs (conformance/handback-contract/index.mjs)",
+      "category": "tools",
+      "path": "conformance/handback-contract/index.mjs",
+      "description": "Executable .mjs module (141 LOC; key symbols: runFullConformanceSuite)."
+    },
+    {
+      "id": "steward-starchart-tool-e4-skill-plan-run-stage1-",
+      "title": "run_stage1_lite.mjs (e4-skill-plan/run_stage1_lite.mjs)",
+      "category": "tools",
+      "path": "e4-skill-plan/run_stage1_lite.mjs",
+      "description": "Executable .mjs module (86 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "steward-starchart-tool-e4-skill-plan-run-stage2-",
+      "title": "run_stage2_lite.mjs (e4-skill-plan/run_stage2_lite.mjs)",
+      "category": "tools",
+      "path": "e4-skill-plan/run_stage2_lite.mjs",
+      "description": "Executable .mjs module (56 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "steward-starchart-tool-engine-anchor-executor-su",
+      "title": "anchor-executor-surface.mjs (engine/anchor-executor-surface.mjs)",
+      "category": "tools",
+      "path": "engine/anchor-executor-surface.mjs",
+      "description": "Executable .mjs module (205 LOC; key symbols: anchorExecutorSurface, resolveAnchorRootForSurface, probeAnchorExecutorSource)."
+    },
+    {
+      "id": "steward-starchart-tool-engine-anchor-knowledge-m",
+      "title": "anchor-knowledge.mjs (engine/anchor-knowledge.mjs)",
+      "category": "tools",
+      "path": "engine/anchor-knowledge.mjs",
+      "description": "Executable .mjs module (308 LOC; key symbols: isDir, isFile, resolveAnchorRoot, readJsonSafe)."
+    },
+    {
+      "id": "steward-starchart-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "steward-starchart-peer-steward-portfolio",
+      "title": "Portfolio Steward (Cave / High Seat)",
+      "category": "skills",
+      "skill": "steward-portfolio",
+      "description": "Hands off approved Star Chart Acts and Goals to the Portfolio Steward for seating"
+    },
+    {
+      "id": "steward-starchart-peer-steward-project",
+      "title": "Project Steward (Lamp / Seal)",
+      "category": "skills",
+      "skill": "steward-project",
+      "description": "Tracks per-project strip.json and DELIVERABLES.md plates against campaign Acts"
+    },
+    {
+      "id": "steward-starchart-peer-superjump",
+      "title": "Superjump Strategic Foresight Engine",
+      "category": "skills",
+      "skill": "superjump",
+      "description": "Generates high-leverage campaign leaps and cross-project synergy proposals"
+    },
+    {
+      "id": "steward-starchart-ref-lessons",
+      "title": "Aladdin-Star Chart LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "steward-starchart-ref-changelog",
+      "title": "Aladdin-Star Chart CHANGELOG.md",
+      "category": "references",
+      "path": "CHANGELOG.md",
+      "description": "Accumulated operational lessons and historical evolution in CHANGELOG.md."
+    },
+    {
+      "id": "steward-starchart-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "steward-starchart-journal-2092-utah-native-hawai",
+      "title": "Journal: 2092-utah-native-hawaiian-health-insurance",
+      "category": "references",
+      "path": "journal/2092-utah-native-hawaiian-health-insurance.md",
+      "description": "Recorded operational run receipt and field lesson (journal/2092-utah-native-hawaiian-health-insurance.md)."
+    },
+    {
+      "id": "steward-starchart-journal-2091-book1-spine-v3-si",
+      "title": "Journal: 2091-book1-spine-v3-simple-overview",
+      "category": "references",
+      "path": "journal/2091-book1-spine-v3-simple-overview.md",
+      "description": "Recorded operational run receipt and field lesson (journal/2091-book1-spine-v3-simple-overview.md)."
+    },
+    {
+      "id": "steward-starchart-kb-portfolio-triage-and-band-e",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

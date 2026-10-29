@@ -1,0 +1,212 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>rank · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>rank</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Ecgberht/engine/rank.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 b2a60fe75c2bb0b6b2999d392424769ae57687a06faba511b7bf2a5d8ed339b8</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.542226+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/rank.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: b2a60fe75c2bb0b6b2999d392424769ae57687a06faba511b7bf2a5d8ed339b8</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * Strip-first portfolio rank.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  * Ranks Strip projections only — never N-full-reads Faces.</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * Full Face only for top-k drill-in or heal (callers pass drill separately).</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  *</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  * Unknown capacity floor: capacity=unknown → rank penalty + LITE bias flag;</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  * never silent green.</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  * Anti-starvation: negative_heartbeat + anti_starvation_age_days.</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>  */</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> </span>
+<span class="source-line" id="L11"><a href="#L11">11</a> import { toStripProjection } from &#x27;./face-strip.mjs&#x27;;</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> </span>
+<span class="source-line" id="L13"><a href="#L13">13</a> /** Rank score penalty when capacity is unknown (stricter than zero). */</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> export const CAPACITY_UNKNOWN_PENALTY = 50;</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16">16</a> /** Base weight per starvation day. */</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> export const STARVATION_DAY_WEIGHT = 3;</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19">19</a> /** Boost when human_wait is not none. */</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> export const HUMAN_WAIT_BOOST = 40;</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> /** Penalty when negative_heartbeat says no attention needed. */</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> export const NEGATIVE_HEARTBEAT_PENALTY = 80;</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> </span>
+<span class="source-line" id="L25"><a href="#L25">25</a> /**</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>  * Build a rank projection from a strip object or discovery hit.</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>  * Never requires Face.</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>  * @param {object} stripOrHit</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>  * @returns {object|null}</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>  */</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> export function stripProjectionForRank(stripOrHit) {</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>   if (!stripOrHit || typeof stripOrHit !== &#x27;object&#x27;) return null;</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> </span>
+<span class="source-line" id="L34"><a href="#L34">34</a>   // Discovery hit already has projection</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>   if (stripOrHit.projection &amp;&amp; stripOrHit.strip) {</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>     return {</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>       ...stripOrHit.projection,</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>       project_path: stripOrHit.project_path ?? stripOrHit.projection.project_path,</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>       strip_source: stripOrHit.strip_source ?? stripOrHit.projection.strip_source,</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>       face_loaded: false,</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>     };</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>   }</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   if (stripOrHit.projection &amp;&amp; !stripOrHit.strip) {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>     return { ...stripOrHit.projection, face_loaded: false };</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   }</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> </span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   const strip = stripOrHit.strip ?? stripOrHit;</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   const proj = toStripProjection(strip, {</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>     project_path: stripOrHit.project_path,</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     strip_source: stripOrHit.strip_source,</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   });</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>   if (!proj) return null;</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   return { ...proj, face_loaded: false };</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> }</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> /**</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>  * Score a single Strip projection (no Face fields consulted).</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>  * @param {object} projection</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>  * @returns {{ score: number, flags: object, reasons: string[] }}</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>  */</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> export function scoreStripProjection(projection) {</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>   const reasons = [];</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>   const flags = {</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>     lite_bias: false,</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     capacity_unknown: false,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>     silent_green: false,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     negative_heartbeat: false,</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>     anti_starvation: false,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>     human_wait: false,</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   };</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73">73</a>   let score = 100;</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a>   const capacity = projection?.capacity === &#x27;known&#x27; ? &#x27;known&#x27; : &#x27;unknown&#x27;;</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   if (capacity === &#x27;unknown&#x27;) {</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     score -= CAPACITY_UNKNOWN_PENALTY;</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     flags.capacity_unknown = true;</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     flags.lite_bias = true;</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>     flags.silent_green = false; // never silent green</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>     reasons.push(&#x27;capacity_unknown_penalty&#x27;);</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     reasons.push(&#x27;lite_bias&#x27;);</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>   }</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   const age =</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>     typeof projection?.anti_starvation_age_days === &#x27;number&#x27;</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>       ? projection.anti_starvation_age_days</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>       : 0;</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   if (age &gt; 0) {</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     score += age * STARVATION_DAY_WEIGHT;</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     flags.anti_starvation = true;</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     reasons.push(`anti_starvation_age_days=${age}`);</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   const wait = projection?.human_wait;</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   if (wait &amp;&amp; wait !== &#x27;none&#x27;) {</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     score += HUMAN_WAIT_BOOST;</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     flags.human_wait = true;</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>     reasons.push(&#x27;human_wait_boost&#x27;);</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   }</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> </span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   const nh = projection?.negative_heartbeat;</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>   if (nh &amp;&amp; nh.no_attention_needed === true) {</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     score -= NEGATIVE_HEARTBEAT_PENALTY;</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     flags.negative_heartbeat = true;</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     flags.silent_green = false;</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     reasons.push(&#x27;negative_heartbeat_downrank&#x27;);</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   // Explicit: unknown capacity must never present as green/all-clear</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>   let attention_color =</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>     capacity === &#x27;unknown&#x27;</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>       ? &#x27;amber&#x27;</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>       : nh?.no_attention_needed</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>         ? &#x27;dim&#x27;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>         : score &gt;= 100</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>           ? &#x27;attention&#x27;</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>           : &#x27;normal&#x27;;</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> </span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   // Hard floor: capacity=unknown can never surface as silent green</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   if (capacity === &#x27;unknown&#x27;) {</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     flags.silent_green = false;</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>     flags.lite_bias = true;</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     if (attention_color === &#x27;green&#x27; || attention_color === &#x27;normal&#x27;) {</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>       attention_color = &#x27;amber&#x27;;</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     }</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>   }</span>
+<span class="source-line" id="L128"><a href="#L128">128</a> </span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   return {</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     score,</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     flags,</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>     reasons,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     attention_color,</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     capacity,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>     /** Rank used Strip projection only — Face fields never consulted. */</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>     face_consulted: false,</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>   };</span>
+<span class="source-line" id="L138"><a href="#L138">138</a> }</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140">140</a> /**</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>  * Rank portfolio from Strip projections only.</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>  * @param {object[]} stripsOrHits discovery hits, strips, or projections</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>  * @param {{ top_k?: number }} [opts]</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>  * @returns {{ ok: true, ranked: object[], face_loads_for_rank: 0, top_k: number, drill_in_eligible: object[] }}</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>  */</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> export function rankPortfolioStripFirst(stripsOrHits = [], opts = {}) {</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   const top_k = typeof opts.top_k === &#x27;number&#x27; &amp;&amp; opts.top_k &gt; 0 ? opts.top_k : 3;</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>   const items = Array.isArray(stripsOrHits) ? stripsOrHits : [];</span>
+<span class="source-line" id="L149"><a href="#L149">149</a> </span>
+<span class="source-line" id="L150"><a href="#L150">150</a>   const ranked = [];</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   for (const item of items) {</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>     const projection = stripProjectionForRank(item);</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     if (!projection) continue;</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     const scored = scoreStripProjection(projection);</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     ranked.push({</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>       project_id: projection.project_id,</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>       project_path: projection.project_path,</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>       score: scored.score,</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>       flags: scored.flags,</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>       reasons: scored.reasons,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>       attention_color: scored.attention_color,</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>       capacity: scored.capacity,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>       negative_heartbeat: projection.negative_heartbeat,</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>       anti_starvation_age_days: projection.anti_starvation_age_days,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>       human_wait: projection.human_wait,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>       next_recommended: projection.next_recommended,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>       why_next: projection.why_next,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>       active_effort: projection.active_effort,</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>       phase: projection.phase,</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>       // Prove strip-first: rank path never marks Face as loaded</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>       face_loaded: false,</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>       face_required_for_rank: false,</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>       projection,</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>     });</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   }</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> </span>
+<span class="source-line" id="L177"><a href="#L177">177</a>   ranked.sort((a, b) =&gt; {</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     if (b.score !== a.score) return b.score - a.score;</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     const ap = a.project_id ?? a.project_path ?? &#x27;&#x27;;</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     const bp = b.project_id ?? b.project_path ?? &#x27;&#x27;;</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     return String(ap).localeCompare(String(bp));</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>   });</span>
+<span class="source-line" id="L183"><a href="#L183">183</a> </span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   const drill_in_eligible = ranked.slice(0, top_k);</span>
+<span class="source-line" id="L185"><a href="#L185">185</a> </span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   return {</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>     ok: true,</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>     ranked,</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>     face_loads_for_rank: 0,</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>     face_required_for_rank: false,</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     top_k,</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     drill_in_eligible,</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     message:</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>       &#x27;Portfolio rank used Strip projections only; full Face reserved for top-k drill-in or heal&#x27;,</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>   };</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> }</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> </span>
+<span class="source-line" id="L198"><a href="#L198">198</a> /**</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>  * Whether a rank result ever required full Face load (should always be false).</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>  * @param {object} rankResult</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>  */</span>
+<span class="source-line" id="L202"><a href="#L202">202</a> export function rankRequiredFullFace(rankResult) {</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   if (!rankResult || !Array.isArray(rankResult.ranked)) return false;</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   if (rankResult.face_loads_for_rank &gt; 0) return true;</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   if (rankResult.face_required_for_rank) return true;</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   return rankResult.ranked.some((r) =&gt; r.face_loaded === true || r.face_required_for_rank === true);</span>
+<span class="source-line" id="L207"><a href="#L207">207</a> }</span></pre></main></body></html>

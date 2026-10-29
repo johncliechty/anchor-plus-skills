@@ -1,0 +1,364 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>say · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>say</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/steward_cockpit/campaign_say.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 a093c9c7c9b60f2dd5857bf89fd8c23d391f0990fdd9d4b43dff12304f345984</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.535608+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/campaign_say.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: a093c9c7c9b60f2dd5857bf89fd8c23d391f0990fdd9d4b43dff12304f345984</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;campaign_say — the Campaign verbs spoken in a composer: the engine names the act, the Campaign&#x27;s own writer applies it.</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> W5 of the High Seat plan (2026-09-26). &quot;move &lt;initiative&gt; to tier n&quot; · &quot;add a part to &lt;initiative&gt;: &lt;text&gt; [due &lt;date&gt;]&quot;</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> · &quot;make &lt;seed&gt; an initiative [in tier n] [under &lt;area&gt;]&quot; · &quot;park &lt;part&gt; until &lt;trigger&gt;&quot; · &quot;unpark &lt;part&gt;&quot; · &quot;what needs</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> me [this week|today]&quot;. The engine&#x27;s dialogue act table compiles the words (the destructive guard first; nothing is</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> written there); this module resolves the names against the Campaign record — an exact name or id, else the one part</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> that contains the words, else a refusal that names the candidates — and applies the act through</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> ``steward_cockpit/campaign_acts`` (the same receipts with undo the pages use). Anything that is not a Campaign verb</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> answers None and the steward takes it as before. Only the Campaign record is ever written.</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> from __future__ import annotations</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> </span>
+<span class="source-line" id="L13"><a href="#L13">13</a> import calendar as _cal</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> import json</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> import os</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> import re</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> import subprocess</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> from datetime import date, timedelta</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> from pathlib import Path</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21">21</a> DIALOGUE = &quot;file:///C:/dev/Ecgberht/engine/dialogue.mjs&quot;</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> AREAS = (&quot;family&quot;, &quot;professional&quot;, &quot;writing&quot;, &quot;research&quot;, &quot;tools&quot;, &quot;personal&quot;)</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> _STOP = {&quot;the&quot;, &quot;a&quot;, &quot;an&quot;, &quot;to&quot;, &quot;of&quot;, &quot;for&quot;, &quot;and&quot;, &quot;my&quot;, &quot;our&quot;}</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> _JS = (&quot;import { compileUtterance, CAMPAIGN_ACT_IDS } from &#x27;%s&#x27;;&quot;</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>        &quot;const r = compileUtterance(process.argv[1] || &#x27;&#x27;);&quot;</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>        &quot;console.log(JSON.stringify({ok: !!r.compiled, act: r.act || null, args: r.args || {},&quot;</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>        &quot; campaign: !!(r.compiled &amp;&amp; CAMPAIGN_ACT_IDS.includes(r.act)), refused: r.utterance_kind || null}));&quot;)</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> </span>
+<span class="source-line" id="L29"><a href="#L29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30">30</a> def campaign_dir():</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>     import paths as _paths</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>     return Path(_paths.data_dir()).resolve().parent / &quot;Campaign&quot;</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> </span>
+<span class="source-line" id="L34"><a href="#L34">34</a> </span>
+<span class="source-line" id="L35"><a href="#L35">35</a> CAVE_EFFORT = &quot;Cave of Wonders&quot;   # the Cave&#x27;s own steward conversation (his word, 2026-10-02): an effort of the Campaign</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38">38</a> def is_cave_folder(folder):</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>     try:</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>         return Path(str(folder)).resolve() == (campaign_dir() / CAVE_EFFORT).resolve()</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>     except Exception:</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>         return False</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45">45</a> def is_campaign_folder(folder):</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     try:</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>         return Path(str(folder)).resolve() == campaign_dir()</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     except Exception:</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>         return False</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> </span>
+<span class="source-line" id="L51"><a href="#L51">51</a> </span>
+<span class="source-line" id="L52"><a href="#L52">52</a> def compile_utterance(text, dialogue=None):</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>     &quot;&quot;&quot;The engine&#x27;s word: ``{&quot;ok&quot;, &quot;act&quot;, &quot;args&quot;, &quot;campaign&quot;, &quot;refused&quot;}`` or None when the engine could not answer.&quot;&quot;&quot;</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>     text = &quot; &quot;.join(str(text or &quot;&quot;).split())</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>     if not text:</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>         return None</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>     try:</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>         r = subprocess.run([&quot;node&quot;, &quot;--input-type=module&quot;, &quot;-e&quot;, _JS % (dialogue or DIALOGUE), &quot;--&quot;, text],</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>                            capture_output=True, text=True, encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;, timeout=30)</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>         return json.loads(r.stdout.strip().splitlines()[-1])</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     except Exception:</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         return None</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64">64</a> </span>
+<span class="source-line" id="L65"><a href="#L65">65</a> # ── names ──────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> </span>
+<span class="source-line" id="L67"><a href="#L67">67</a> def _norm(s):</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     s = &quot; &quot;.join(str(s or &quot;&quot;).lower().split()).strip(&quot; .!?,\u2019&#x27;\&quot;&quot;)</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>     return re.sub(r&quot;^(?:the|an|a) &quot;, &quot;&quot;, s)</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> </span>
+<span class="source-line" id="L71"><a href="#L71">71</a> </span>
+<span class="source-line" id="L72"><a href="#L72">72</a> def _find(cands, phrase, what):</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>     &quot;&quot;&quot;``cands`` = [(id, name, ...)]; the exact name or id, else the one candidate containing the words either way.&quot;&quot;&quot;</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>     key = _norm(phrase)</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>     if not key:</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>         return None, &quot;which %s? say its name&quot; % what</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     exact = [c for c in cands if _norm(c[1]) == key or _norm(c[0]) == key]</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     if len(exact) == 1:</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>         return exact[0], None</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>     words = {w for w in re.split(r&quot;[^a-z0-9]+&quot;, key) if w and w not in _STOP}</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>     byword = [c for c in cands if words and words &lt;= {w for w in re.split(r&quot;[^a-z0-9]+&quot;, _norm(c[1])) if w}]</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     if len(byword) == 1:</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>         return byword[0], None</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>     # a looser match (the words inside a name) only NAMES a candidate; it never selects one, so it never writes</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     near = byword or [c for c in cands if key in _norm(c[1])]</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>     if len(near) == 1:</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>         return None, &quot;did you mean \u2018%s\u2019? say its name&quot; % near[0][1]</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     if near or exact:</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>         names = &quot; or &quot;.join(&quot;\u2018%s\u2019&quot; % c[1] for c in (exact or near)[:5])</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>         return None, &quot;\u2018%s\u2019 could be %s \u2014 say which&quot; % (phrase, names)</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     names = &quot;, &quot;.join(&quot;\u2018%s\u2019&quot; % c[1] for c in cands[:6])</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     return None, &quot;no %s named \u2018%s\u2019%s&quot; % (what, phrase, (&quot; \u2014 the record has &quot; + names) if names else &quot;&quot;)</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> </span>
+<span class="source-line" id="L94"><a href="#L94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95">95</a> _MONTHS = {m.lower(): k for k, m in enumerate(_cal.month_abbr) if m}</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> _MONTHS.update({m.lower(): k for k, m in enumerate(_cal.month_name) if m})</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> _DAYS = {d.lower(): k for k, d in enumerate(_cal.day_abbr)}</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> _DAYS.update({d.lower(): k for k, d in enumerate(_cal.day_name)})</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a> </span>
+<span class="source-line" id="L101"><a href="#L101">101</a> def parse_due(s, today=None):</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>     &quot;&quot;&quot;YYYY-MM-DD · today · tomorrow · Tuesday · Oct 27 · 27 Oct (this year, as typed) — or None when the calendar has</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     no such day (the same rule the Desk&#x27;s own editor keeps).&quot;&quot;&quot;</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     today = today or date.today()</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     s = &quot; &quot;.join(str(s or &quot;&quot;).lower().split()).strip(&quot; .!&quot;)</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     if not s:</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>         return None</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>     m = re.fullmatch(r&quot;(\d{4})-(\d{1,2})-(\d{1,2})&quot;, s)</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>     if m:</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>         try:</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>             return date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat()</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>         except ValueError:</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>             return None</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>     if s == &quot;today&quot;:</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>         return today.isoformat()</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>     if s == &quot;tomorrow&quot;:</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>         return (today + timedelta(days=1)).isoformat()</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     if s.isalpha() and (s in _DAYS or s[:3] in _DAYS):</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>         ahead = (_DAYS.get(s, _DAYS.get(s[:3])) - today.weekday()) % 7 or 7</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>         return (today + timedelta(days=ahead)).isoformat()</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>     m = re.fullmatch(r&quot;([a-z]+)\.? (\d{1,2})&quot;, s) or re.fullmatch(r&quot;(\d{1,2}) ([a-z]+)\.?&quot;, s)</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     if m:</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>         a, b = m.group(1), m.group(2)</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>         mon, day = (a, b) if a.isalpha() else (b, a)</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>         k = _MONTHS.get(mon) or _MONTHS.get(mon[:3])</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>         if k:</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>             try:</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>                 return date(today.year, k, int(day)).isoformat()</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>             except ValueError:</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>                 return None</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     return None</span>
+<span class="source-line" id="L132"><a href="#L132">132</a> </span>
+<span class="source-line" id="L133"><a href="#L133">133</a> </span>
+<span class="source-line" id="L134"><a href="#L134">134</a> # ── the answer ─────────────────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> </span>
+<span class="source-line" id="L136"><a href="#L136">136</a> def _answer(r, act):</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     out = {&quot;ok&quot;: bool(r.get(&quot;ok&quot;)), &quot;say&quot;: r.get(&quot;receipt&quot;) or &quot;&quot;, &quot;receipt&quot;: r.get(&quot;receipt&quot;) or &quot;&quot;, &quot;undo&quot;: r.get(&quot;undo&quot;),</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>            &quot;act&quot;: act, &quot;campaign_act&quot;: True, &quot;model_called&quot;: False}</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>     if r.get(&quot;step&quot;):</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>         out[&quot;step&quot;] = r[&quot;step&quot;]</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     return out</span>
+<span class="source-line" id="L142"><a href="#L142">142</a> </span>
+<span class="source-line" id="L143"><a href="#L143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144">144</a> def _refuse(text, act):</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     return {&quot;ok&quot;: False, &quot;say&quot;: text, &quot;receipt&quot;: text, &quot;undo&quot;: None, &quot;act&quot;: act, &quot;campaign_act&quot;: True, &quot;model_called&quot;: False}</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> </span>
+<span class="source-line" id="L147"><a href="#L147">147</a> </span>
+<span class="source-line" id="L148"><a href="#L148">148</a> def _needs(folder, span, today):</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     &quot;&quot;&quot;What needs him: the parts flagged needs-you, and the dated parts inside the span — read from the record.&quot;&quot;&quot;</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     try:</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>         import high_seat_page as _hsp</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>         from .campaign_parts import resolve_parts</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>         from .steward_campaign import read_map</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>         steps = (read_map(str(folder)) or {}).get(&quot;steps&quot;) or []</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>         inits = _hsp.campaign_initiatives(steps, resolve_parts(steps, cache={}, with_lead=False))</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     except Exception as e:</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>         return _refuse(&quot;the Campaign record could not be read: %s&quot; % e, &quot;campaign_needs&quot;)</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     needs = [(p, i) for i in inits for p in i[&quot;needs&quot;]]</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     monday = today - timedelta(days=today.weekday())</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     start = monday.isoformat() if span != &quot;today&quot; else &quot;&quot;</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     end = today if span == &quot;today&quot; else monday + timedelta(days=6)</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     dated = sorted(((p[&quot;date&quot;], p, i) for i in inits for p in i[&quot;parts&quot;]</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>                     if p[&quot;date&quot;] and not p[&quot;broken&quot;] and p[&quot;status&quot;] not in (&quot;done&quot;, &quot;parked&quot;) and start &lt;= p[&quot;date&quot;] &lt;= end.isoformat()), key=lambda x: x[0])</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> </span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     def more(n):</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>         return (&quot; \u2014 and %d more&quot; % (n - 5)) if n &gt; 5 else &quot;&quot;</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>     bits = []</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>     if needs:</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>         bits.append(&quot;%d need%s your word: %s%s&quot; % (len(needs), &quot;s&quot; if len(needs) == 1 else &quot;&quot;, &quot;; &quot;.join(&quot;%s (%s, tier %s)&quot; % (p[&quot;text&quot;], i[&quot;name&quot;], i[&quot;tier&quot;] or &quot;?&quot;) for p, i in needs[:5]), more(len(needs))))</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>     else:</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>         bits.append(&quot;nothing waits on your word&quot;)</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>     label = &quot;today&quot; if span == &quot;today&quot; else &quot;this week&quot;</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>     if dated:</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>         bits.append(&quot;dated %s: %s%s&quot; % (&quot;today or earlier&quot; if span == &quot;today&quot; else &quot;inside this week (Monday to Sunday)&quot;, &quot;; &quot;.join(&quot;%s (%s, %s)&quot; % (p[&quot;text&quot;], i[&quot;name&quot;], p[&quot;date&quot;]) for d, p, i in dated[:5]), more(len(dated))))</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>     else:</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>         bits.append(&quot;nothing on the Campaign is dated %s&quot; % (&quot;today or earlier&quot; if span == &quot;today&quot; else &quot;inside this week&quot;))</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     return {&quot;ok&quot;: True, &quot;say&quot;: &quot;; &quot;.join(bits) + &quot;.&quot;, &quot;receipt&quot;: &quot;&quot;, &quot;undo&quot;: None, &quot;act&quot;: &quot;campaign_needs&quot;, &quot;campaign_act&quot;: True, &quot;read_only&quot;: True, &quot;model_called&quot;: False}</span>
+<span class="source-line" id="L178"><a href="#L178">178</a> </span>
+<span class="source-line" id="L179"><a href="#L179">179</a> </span>
+<span class="source-line" id="L180"><a href="#L180">180</a> _BARE_BY = re.compile(r&quot;^(.+?) by (.+?)\s*[.!]?$&quot;, re.I)</span>
+<span class="source-line" id="L181"><a href="#L181">181</a> </span>
+<span class="source-line" id="L182"><a href="#L182">182</a> </span>
+<span class="source-line" id="L183"><a href="#L183">183</a> def _bare_pace(folder, text, today):</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     &quot;&quot;&quot;&quot;&lt;name&gt; by &lt;date&gt;&quot; (fit 5) is a pace only when the left side is exactly one initiative: the whole name, or the</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>     start of exactly one name (&quot;MBA&quot; for &quot;MBA Teaching, Fall 2026&quot;; &quot;the trusts&quot; for &quot;The trusts and the holding</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     company&quot;). An interior word (&quot;teaching by Monday&quot;) names nothing here and the words go to the steward. The</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>     engine&#x27;s grammar does not carry this form (Grok W1): the names live here, so the reading does too.&quot;&quot;&quot;</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>     m = _BARE_BY.match(&quot; &quot;.join(str(text or &quot;&quot;).split()))</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>     if not m:</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>         return None</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     from . import campaign_acts as acts</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     inits = [(s[&quot;id&quot;], s.get(&quot;name&quot;) or s[&quot;id&quot;]) for s, g in acts._initiatives(folder)]</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     key = _norm(m.group(1))</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     if not key:</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>         return None</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>     hits = [c for c in inits if _norm(c[1]) == key or _norm(c[0]) == key]</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     if not hits:</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>         hits = [c for c in inits if _norm(c[1]).startswith(key + &quot; &quot;) or _norm(c[1]).startswith(key + &quot;,&quot;)]</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>     if len(hits) != 1:</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>         return None</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     when = parse_due(m.group(2), today)</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>     if when is None:</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>         return None      # &quot;&lt;name&gt; by &lt;not a date&gt;&quot; is not a pace: the steward takes the words</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>     return _answer(acts.pace(folder, hits[0][0], when), &quot;campaign_pace&quot;)</span>
+<span class="source-line" id="L205"><a href="#L205">205</a> </span>
+<span class="source-line" id="L206"><a href="#L206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207">207</a> _SCOPED = [</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     (&quot;campaign_add_part&quot;, re.compile(r&quot;^add(?: (?:a |the |another )?(?:part|task|step))?:?\s+(.+?)(?:,? due (.+?))?\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     (&quot;campaign_pace&quot;, re.compile(r&quot;^(?:(?:set )?(?:the )?pace(?: (?:to|by|at|is|of))?|by|due|finish(?:ed)? by|done by)\s+(.+?)\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     (&quot;campaign_pace_clear&quot;, re.compile(r&quot;^(?:clear|drop|remove) the pace\s*[.!]?$|^no pace\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     (&quot;campaign_goal_seat&quot;, re.compile(r&quot;^(?:make (?:it|this) active|activate(?: it| this)?|put (?:it|this) on deck|bench(?: it| this)?|send (?:it|this) back)\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>     (&quot;campaign_activate&quot;, re.compile(r&quot;^(?:make|set) (.+?) active\s*[.!]?$|^activate (.+?)\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>     (&quot;campaign_deck&quot;, re.compile(r&quot;^put (.+?) on deck\s*[.!]?$|^deck (.+?)\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     (&quot;campaign_home&quot;, re.compile(r&quot;^send (.+?) (?:back|home)(?: to (?:its|the) goal)?\s*[.!]?$|^put (.+?) back(?: in (?:its|the) goal)?\s*[.!]?$|^bench (.+?)\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     (&quot;campaign_move_tier&quot;, re.compile(r&quot;^(?:(?:move|put) (?:it |this )?(?:to |in |into )?)?tier ([123])\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     (&quot;campaign_done_when&quot;, re.compile(r&quot;^(?:the )?(?:goal|done when|done looks like|done is|done means)(?: is)?:?\s+(.+?)\s*[.!]?$&quot;, re.I)),</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     # the Star Chart (2026-10-03): &quot;if-then: if it is Monday 9:00, then I send the trust questions&quot; - his words, kept whole</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     (&quot;campaign_if_then&quot;, re.compile(r&quot;^(?:the )?(?:if[- ]then|next step)(?: is)?:\s*(.+?)\s*$&quot;, re.I)),</span>
+<span class="source-line" id="L219"><a href="#L219">219</a> ]</span>
+<span class="source-line" id="L220"><a href="#L220">220</a> </span>
+<span class="source-line" id="L221"><a href="#L221">221</a> </span>
+<span class="source-line" id="L222"><a href="#L222">222</a> def _scoped(folder, goal, text, today):</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>     &quot;&quot;&quot;Inside a goal&#x27;s place (W2 v2) a verb needs no name: &quot;add a part: …&quot;, &quot;pace by Oct 10&quot;, &quot;make it active&quot;,</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     &quot;bench it&quot;, &quot;tier 2&quot;, &quot;goal: …&quot;. None when the words are none of these (the general grammar, then the steward,</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     take them — told which goal he is in).&quot;&quot;&quot;</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>     from . import campaign_acts as acts</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>     s = acts._step(folder, goal)</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>     if s is None or acts._own_group(s) is None:</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>         return None</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>     t = &quot; &quot;.join(str(text or &quot;&quot;).split())</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>     for act, rx in _SCOPED:</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>         m = rx.match(t)</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>         if not m:</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>             continue</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>         if act == &quot;campaign_add_part&quot;:</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>             due = None</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>             if m.group(2):</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>                 due = parse_due(m.group(2), today)</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>                 if due is None:</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>                     return _refuse(&quot;I could not read \u2018%s\u2019 as a date \u2014 Oct 10, Tuesday or 2026-10-10; nothing was added&quot; % m.group(2), act)</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>             return _answer(acts.add(folder, goal, &quot;task&quot;, m.group(1), due=due), act)</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>         if act == &quot;campaign_pace&quot;:</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>             when = parse_due(m.group(1), today)</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>             if when is None:</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>                 return None      # &quot;by the end of the world&quot;: not a date — the steward takes the words</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>             return _answer(acts.pace(folder, goal, when), act)</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>         if act == &quot;campaign_pace_clear&quot;:</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>             return _answer(acts.pace(folder, goal, &quot;none&quot;), &quot;campaign_pace&quot;)</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>         if act == &quot;campaign_goal_seat&quot;:</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>             return _answer(acts.seat(folder, goal, &quot;active&quot;), &quot;campaign_activate&quot;)      # refused by the writer: a goal has no seat — it names the components</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>         if act in (&quot;campaign_activate&quot;, &quot;campaign_deck&quot;, &quot;campaign_home&quot;):</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>             name = next((x for x in m.groups() if x), &quot;&quot;)</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>             mine = [(p[&quot;id&quot;], p.get(&quot;name&quot;) or p[&quot;id&quot;]) for p in acts._parts_of(folder, goal) if acts._kind_of(p) in acts.INITIATIVE_KINDS]</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>             hit, why = _find(mine, name, &quot;component&quot;)</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>             if hit is None:</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>                 return None      # not one of this goal&#x27;s components: the general grammar reads the name across the record</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>             return _answer(acts.home(folder, hit[0]) if act == &quot;campaign_home&quot; else acts.seat(folder, hit[0], &quot;active&quot; if act == &quot;campaign_activate&quot; else &quot;deck&quot;), act)</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>         if act == &quot;campaign_move_tier&quot;:</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>             return _answer(acts.move_tier(folder, goal, int(m.group(1))), act)</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>         if act == &quot;campaign_done_when&quot;:</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>             return _answer(acts.done_when(folder, goal, m.group(1)), act)</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>         if act == &quot;campaign_if_then&quot;:</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>             return _answer(acts.if_then(folder, goal, m.group(1)), act)</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     return None</span>
+<span class="source-line" id="L265"><a href="#L265">265</a> </span>
+<span class="source-line" id="L266"><a href="#L266">266</a> </span>
+<span class="source-line" id="L267"><a href="#L267">267</a> def say_campaign(folder, text, dialogue=None, today=None, goal=None):</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>     &quot;&quot;&quot;None when the words are not a Campaign verb (the steward takes them); else the act&#x27;s answer. With ``goal``</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     (an initiative id: the words were said inside that goal&#x27;s place) the scoped forms are read first.&quot;&quot;&quot;</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     if goal:</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>         scoped = _scoped(folder, str(goal), text, today or date.today())</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>         if scoped is not None:</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>             return scoped</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>     bare = _bare_pace(folder, text, today or date.today())</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>     if bare is not None:</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>         return bare</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>     c = compile_utterance(text, dialogue)</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>     if c is None:</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>         return _refuse(&quot;the Campaign\u2019s grammar could not be read (the engine did not answer) \u2014 nothing was done&quot;, &quot;campaign_compile&quot;)</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     if not c.get(&quot;campaign&quot;):</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>         return None</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     try:</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>         return _apply(folder, c, today or date.today())</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     except Exception as e:</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>         return _refuse(&quot;that did not go through: %s \u2014 look at the board before saying it again&quot; % e, str(c.get(&quot;act&quot;) or &quot;campaign_act&quot;))</span>
+<span class="source-line" id="L286"><a href="#L286">286</a> </span>
+<span class="source-line" id="L287"><a href="#L287">287</a> </span>
+<span class="source-line" id="L288"><a href="#L288">288</a> def _apply(folder, c, today):</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     from . import campaign_acts as acts</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>     act, a = c[&quot;act&quot;], c.get(&quot;args&quot;) or {}</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     inits = [(s[&quot;id&quot;], s.get(&quot;name&quot;) or s[&quot;id&quot;]) for s, g in acts._initiatives(folder)]</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     heads = {i for i, _ in inits}</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     parts = [(p[&quot;id&quot;], p.get(&quot;name&quot;) or p[&quot;id&quot;]) for p in acts._projection(folder)</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>              if p.get(&quot;id&quot;) not in heads and isinstance(p.get(&quot;navigation&quot;), dict) and (p[&quot;navigation&quot;].get(&quot;path&quot;) or [])]</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     if act == &quot;campaign_move_tier&quot;:</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>         hit, why = _find(inits, a.get(&quot;initiative&quot;), &quot;goal&quot;)</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>         return _refuse(why, act) if hit is None else _answer(acts.move_tier(folder, hit[0], a.get(&quot;tier&quot;)), act)</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>     if act == &quot;campaign_add_part&quot;:</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>         hit, why = _find(inits, a.get(&quot;initiative&quot;), &quot;goal&quot;)</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>         if hit is None:</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>             return _refuse(why, act)</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>         due = None</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>         if a.get(&quot;due&quot;):</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>             due = parse_due(a[&quot;due&quot;], today)</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>             if due is None:</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>                 return _refuse(&quot;I could not read \u2018%s\u2019 as a date \u2014 Oct 3, Tuesday, today or 2026-10-03; nothing was added&quot; % a[&quot;due&quot;], act)</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>         return _answer(acts.add(folder, hit[0], &quot;task&quot;, a.get(&quot;text&quot;), due), act)</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     if act == &quot;campaign_promote_seed&quot;:</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>         from .campaign_seeds import read_seeds</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>         seeds = [(s[&quot;id&quot;], s[&quot;text&quot;]) for s in read_seeds(folder)]</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>         hit, why = _find(seeds, a.get(&quot;seed&quot;), &quot;seed&quot;)</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>         if hit is None:</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>             if not str(why or &quot;&quot;).startswith(&quot;no seed&quot;):</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>                 return _refuse(why, act)      # a near seed (&quot;did you mean&quot;) or a tie is answered; nothing is written (Grok&#x27;s read of W2b)</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>             # no seed by that name: a goal from his words (2026-09-30), at the tier and area he said</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>             return _answer(acts.new_goal(folder, a.get(&quot;seed&quot;), a.get(&quot;tier&quot;), a.get(&quot;area&quot;)), act)</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>         area = str(a.get(&quot;area&quot;) or &quot;&quot;).lower() or None</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>         if area and area not in AREAS:</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>             return _refuse(&quot;the life areas are %s \u2014 which?&quot; % &quot;, &quot;.join(AREAS), act)</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>         return _answer(acts.promote(folder, hit[0], a.get(&quot;tier&quot;) or 3, area), act)</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>     if act == &quot;campaign_park&quot;:</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>         hit, why = _find(parts, a.get(&quot;part&quot;), &quot;part&quot;)</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>         if hit is None:</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>             return _refuse(why, act)</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>         if not a.get(&quot;trigger&quot;):</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>             return _refuse(&quot;a park carries its trigger \u2014 say \u2018park %s until January\u2019, or what it waits for&quot; % hit[1], act)</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>         return _answer(acts.park(folder, hit[0], a[&quot;trigger&quot;]), act)</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     if act == &quot;campaign_unpark&quot;:</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>         hit, why = _find(parts, a.get(&quot;part&quot;), &quot;part&quot;)</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>         return _refuse(why, act) if hit is None else _answer(acts.unpark(folder, hit[0]), act)</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     if act == &quot;campaign_needs&quot;:</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>         return _needs(folder, a.get(&quot;span&quot;) or &quot;week&quot;, today)</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>     # the seats (2026-09-30, his three levels): the verbs name a COMPONENT — a cockpit, an effort or a desk item</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>     comps = [(p[&quot;id&quot;], p.get(&quot;name&quot;) or p[&quot;id&quot;]) for p in acts._projection(folder)</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>              if p.get(&quot;id&quot;) not in heads and isinstance(p.get(&quot;navigation&quot;), dict) and (p[&quot;navigation&quot;].get(&quot;path&quot;) or []) and acts._kind_of(p) in acts.INITIATIVE_KINDS]</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     if act in (&quot;campaign_activate&quot;, &quot;campaign_deck&quot;, &quot;campaign_home&quot;):</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>         key = _norm(a.get(&quot;initiative&quot;))</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>         g = next((c for c in inits if key and (_norm(c[1]) == key or _norm(c[0]) == key)), None)</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>         if g is not None:      # he named a goal by its whole name: a goal has no seat — the writer&#x27;s refusal names its components</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>             return _answer(acts.seat(folder, g[0], &quot;active&quot;), act)</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>         if key and not any(_norm(c[1]) == key or _norm(c[0]) == key for c in comps):</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>             # the start of exactly one goal&#x27;s name (the pace rule: &quot;the trusts&quot;) is that goal, whatever its id — a</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>             # goal has no seat; words that are one component&#x27;s words still seat the component (Grok&#x27;s read of W2b)</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>             pre = [c for c in inits if _norm(c[1]).startswith(key + &quot; &quot;) or _norm(c[1]).startswith(key + &quot;,&quot;)]</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>             if len(pre) == 1:</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>                 return _answer(acts.seat(folder, pre[0][0], &quot;active&quot;), act)</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>         hit, why = _find(comps, a.get(&quot;initiative&quot;), &quot;initiative&quot;)</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>         if hit is None:</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>             return _refuse(why, act)</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>         return _answer(acts.home(folder, hit[0]) if act == &quot;campaign_home&quot; else acts.seat(folder, hit[0], &quot;active&quot; if act == &quot;campaign_activate&quot; else &quot;deck&quot;), act)</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>     if act == &quot;campaign_pace&quot;:</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>         hit, why = _find(inits, a.get(&quot;initiative&quot;), &quot;goal&quot;)</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>         if hit is None:</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>             return _refuse(why, act)      # an explicit pace verb that names no initiative is refused with the names</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>         when = parse_due(a.get(&quot;pace&quot;), today) if a.get(&quot;pace&quot;) not in (None, &quot;&quot;, &quot;none&quot;) else &quot;none&quot;</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>         if when is None:</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>             return _refuse(&quot;I could not read \u2018%s\u2019 as a date \u2014 Oct 10, Tuesday or 2026-10-10; the pace is unchanged&quot; % a.get(&quot;pace&quot;), act)</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>         return _answer(acts.pace(folder, hit[0], when), act)</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>     return None</span></pre></main></body></html>

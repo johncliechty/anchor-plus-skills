@@ -1,0 +1,327 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>seats · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>seats</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Ecgberht/engine/seating.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 73073c16afe49488dd54eef2a4e50524ad99e80b460c772a433b25e7403288b0</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.540994+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/seating.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 73073c16afe49488dd54eef2a4e50524ad99e80b460c772a433b25e7403288b0</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * Anchor prefs → subscription seat resolution (W5).</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  * Families map to subscription CLIs only (chatgpt-cli / claude / gemini-cli|agy / grok-cli).</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * Never hardcodes product model IDs; never uses XAI_API_KEY HTTP for production seats.</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  * Prefs load order: injected fixture → settings/model_prefs paths via env/home.</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  * Family-valued environment variables are compatibility outputs, never inputs.</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  * No host-absolute path string literals (home from USERPROFILE/HOME only).</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  */</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> </span>
+<span class="source-line" id="L10"><a href="#L10">10</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> import os from &#x27;node:os&#x27;;</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> </span>
+<span class="source-line" id="L14"><a href="#L14">14</a> /** Allowed family names (not product model IDs). */</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> export const SEAT_FAMILIES = Object.freeze([&#x27;chatgpt&#x27;, &#x27;claude&#x27;, &#x27;gemini&#x27;, &#x27;grok&#x27;]);</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> </span>
+<span class="source-line" id="L17"><a href="#L17">17</a> /**</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>  * Subscription driver names only.</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>  * gemini → gemini-cli (agy is an accepted alias for the same transport).</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>  * grok → grok-cli (never raw &quot;grok&quot; HTTP + XAI_API_KEY).</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>  */</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> export const SUBSCRIPTION_DRIVERS = Object.freeze([</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>   &#x27;chatgpt-cli&#x27;,</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>   &#x27;claude&#x27;,</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   &#x27;gemini-cli&#x27;,</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>   &#x27;agy&#x27;,</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>   &#x27;grok-cli&#x27;,</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> ]);</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30">30</a> /** Drivers allowed on production seats (agy aliases gemini-cli). */</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> export const PRODUCTION_SEAT_DRIVERS = Object.freeze([</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>   &#x27;chatgpt-cli&#x27;,</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>   &#x27;claude&#x27;,</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>   &#x27;gemini-cli&#x27;,</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>   &#x27;agy&#x27;,</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>   &#x27;grok-cli&#x27;,</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> ]);</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> </span>
+<span class="source-line" id="L39"><a href="#L39">39</a> /**</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>  * Map coding/review family → subscription driver name.</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>  * @param {string} family</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>  * @returns {string|null}</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>  */</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> export function familyToSubscriptionDriver(family) {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>   const f = String(family || &#x27;&#x27;)</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     .trim()</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>     .toLowerCase();</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   if (f === &#x27;chatgpt&#x27; || f === &#x27;codex&#x27;) return &#x27;chatgpt-cli&#x27;;</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   if (f === &#x27;claude&#x27;) return &#x27;claude&#x27;;</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   if (f === &#x27;gemini&#x27;) return &#x27;gemini-cli&#x27;;</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   // Subscription Grok CLI only — never raw xAI HTTP driver name &quot;grok&quot;</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   if (f === &#x27;grok&#x27;) return &#x27;grok-cli&#x27;;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>   return null;</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> }</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> </span>
+<span class="source-line" id="L56"><a href="#L56">56</a> /**</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>  * Normalize family string; unknown → null.</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>  * @param {*} value</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>  * @returns {string|null}</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>  */</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> export function normalizeFamily(value) {</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>   const f = String(value || &#x27;&#x27;)</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     .trim()</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>     .toLowerCase();</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>   if (SEAT_FAMILIES.includes(f)) return f;</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>   return null;</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> }</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69">69</a> /**</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>  * Resolve prefs file candidates without embedding host-absolute literals.</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>  * Uses env ANCHOR_PREFS_PATH / ANCHOR_DATA_DIR / ANCHOR_SETTINGS_PATH,</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>  * then home/.anchor/model_prefs.json and settings.json.</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>  * @param {NodeJS.ProcessEnv} [env]</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>  * @returns {string[]}</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>  */</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> export function resolvePrefsCandidatePaths(env = process.env) {</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>   const out = [];</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>   const e = env || {};</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>   if (e.ANCHOR_PREFS_PATH) out.push(String(e.ANCHOR_PREFS_PATH));</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   if (e.ANCHOR_SETTINGS_PATH) out.push(String(e.ANCHOR_SETTINGS_PATH));</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>   if (e.ANCHOR_DATA_DIR) {</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     out.push(path.join(String(e.ANCHOR_DATA_DIR), &#x27;model_prefs.json&#x27;));</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>     out.push(path.join(String(e.ANCHOR_DATA_DIR), &#x27;settings.json&#x27;));</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   }</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   // If the caller explicitly supplied HOME/USERPROFILE (even empty), honor that</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   // isolation and do NOT fall back to the real os.homedir — host-less / scrubbed</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   // envs pass empty strings so seats resolve as `defaults`, not machine disk.</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>   const homeExplicit = Object.prototype.hasOwnProperty.call(e, &#x27;USERPROFILE&#x27;)</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>     || Object.prototype.hasOwnProperty.call(e, &#x27;HOME&#x27;);</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>   const home = e.USERPROFILE || e.HOME || (homeExplicit ? &#x27;&#x27; : (os.homedir?.() || &#x27;&#x27;));</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   if (home) {</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     out.push(path.join(home, &#x27;.anchor&#x27;, &#x27;model_prefs.json&#x27;));</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     out.push(path.join(home, &#x27;.anchor&#x27;, &#x27;settings.json&#x27;));</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   }</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   return out;</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> }</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> </span>
+<span class="source-line" id="L98"><a href="#L98">98</a> /**</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>  * Read first existing prefs/settings JSON that carries family fields.</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>  * @param {{ env?: object, prefsPath?: string|null, readFile?: (p: string) =&gt; string, exists?: (p: string) =&gt; boolean }} [opts]</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>  * @returns {{ coding_family?: string, review_family?: string, default_cli?: string, source?: string }|null}</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>  */</span>
+<span class="source-line" id="L103"><a href="#L103">103</a> export function loadAnchorPrefsFromDisk(opts = {}) {</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   const env = opts.env ?? process.env;</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   const exists = opts.exists ?? ((p) =&gt; fs.existsSync(p));</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   const readFile = opts.readFile ?? ((p) =&gt; fs.readFileSync(p, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> </span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   const candidates = [];</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   if (opts.prefsPath) candidates.push(opts.prefsPath);</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   candidates.push(...resolvePrefsCandidatePaths(env));</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   for (const filePath of candidates) {</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     if (!filePath || !exists(filePath)) continue;</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>     try {</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>       const raw = JSON.parse(readFile(filePath));</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>       if (!raw || typeof raw !== &#x27;object&#x27;) continue;</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>       const coding =</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>         raw.coding_family ?? raw.codingFamily ?? raw.coding ?? null;</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>       const review =</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>         raw.review_family ?? raw.reviewFamily ?? raw.review ?? null;</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>       const default_cli =</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>         raw.default_cli ?? raw.defaultCli ?? raw.default_cli_name ?? null;</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>       if (coding || review || default_cli) {</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>         return {</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>           coding_family: coding != null ? String(coding) : undefined,</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>           review_family: review != null ? String(review) : undefined,</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>           default_cli: default_cli != null ? String(default_cli) : undefined,</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>           source: filePath,</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>         };</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>       }</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     } catch {</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>       // best-effort — never block seat resolution on prefs IO</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     }</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   }</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>   return null;</span>
+<span class="source-line" id="L136"><a href="#L136">136</a> }</span>
+<span class="source-line" id="L137"><a href="#L137">137</a> </span>
+<span class="source-line" id="L138"><a href="#L138">138</a> /**</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>  * Load Anchor model prefs (injectable for unit tests).</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>  * Resolve order: opts.prefs → disk prefs → historical defaults.</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>  * Family/default CLI environment values are deliberately ignored: Anchor</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>  * settings / mirror are the sole durable preference source.</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>  * @param {{ prefs?: object|null, env?: object, prefsPath?: string|null, readFile?: Function, exists?: Function }} [opts]</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>  * @returns {{ coding_family: string, review_family: string, default_cli: string|null, source: string, cross_model: boolean }}</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>  */</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> export function loadAnchorPrefs(opts = {}) {</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   const env = opts.env ?? process.env;</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>   let coding = null;</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>   let review = null;</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>   let default_cli = null;</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   // Honest source name when prefs/env/disk absent (Wave 22 T-HOST-0 / NS criterion 14).</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>   let source = &#x27;defaults&#x27;;</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> </span>
+<span class="source-line" id="L154"><a href="#L154">154</a>   if (opts.prefs &amp;&amp; typeof opts.prefs === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     coding = normalizeFamily(</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>       opts.prefs.coding_family ?? opts.prefs.codingFamily ?? opts.prefs.coding,</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>     );</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     review = normalizeFamily(</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>       opts.prefs.review_family ?? opts.prefs.reviewFamily ?? opts.prefs.review,</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     );</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     const dc =</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>       opts.prefs.default_cli ?? opts.prefs.defaultCli ?? opts.prefs.default_cli;</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     default_cli = dc != null &amp;&amp; dc !== &#x27;&#x27; ? String(dc) : null;</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     source = &#x27;inject&#x27;;</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   }</span>
+<span class="source-line" id="L166"><a href="#L166">166</a> </span>
+<span class="source-line" id="L167"><a href="#L167">167</a>   if (!coding || !review || default_cli == null) {</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>     const disk = loadAnchorPrefsFromDisk(opts);</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>     if (disk) {</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>       if (!coding &amp;&amp; disk.coding_family) {</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>         coding = normalizeFamily(disk.coding_family);</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>       }</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>       if (!review &amp;&amp; disk.review_family) {</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>         review = normalizeFamily(disk.review_family);</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>       }</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>       if (default_cli == null &amp;&amp; disk.default_cli != null) {</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>         default_cli = String(disk.default_cli);</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>       }</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>       if (source === &#x27;defaults&#x27; || source === &#x27;default&#x27;) {</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>         source = disk.source ? &#x27;disk&#x27; : source;</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>       }</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     }</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>   }</span>
+<span class="source-line" id="L184"><a href="#L184">184</a> </span>
+<span class="source-line" id="L185"><a href="#L185">185</a>   // Historical fallback DEFAULT when prefs absent (not a hard law)</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   if (!coding) coding = &#x27;claude&#x27;;</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   if (!review) review = &#x27;gemini&#x27;;</span>
+<span class="source-line" id="L188"><a href="#L188">188</a> </span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   const cross_model = coding !== review;</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>   return {</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     coding_family: coding,</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     review_family: review,</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     default_cli,</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     source,</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>     cross_model,</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>   };</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> }</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> </span>
+<span class="source-line" id="L199"><a href="#L199">199</a> /**</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>  * Patterns that look like vendor product model IDs (forbidden on seats).</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>  * Families (chatgpt/claude/gemini/grok) and their subscription drivers are NOT matches.</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>  */</span>
+<span class="source-line" id="L203"><a href="#L203">203</a> export const PRODUCT_MODEL_ID_PATTERNS = Object.freeze([</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   // `fable` added 2026-08-04: the conversational seat&#x27;s real reply carries</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   // `modelUsage: {&quot;claude-fable-5&quot;: …}`, and the list predated that family — so the</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   // guard had a hole for the exact model in production use. Families (&quot;claude&quot;) and</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   // drivers (&quot;claude&quot;) still do NOT match: a bare name has no `-&lt;product&gt;` suffix.</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>   /claude-(?:opus|sonnet|haiku|fable)[\w.-]*/i,</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>   /claude-3(?:\.\d)?[\w.-]*/i,</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>   /gemini-[\d.]+[\w.-]*/i,</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   /models\/gemini/i,</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   /grok-[234][\w.-]*/i,</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   /grok-beta/i,</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>   /gpt-\d[\w.-]*/i,</span>
+<span class="source-line" id="L215"><a href="#L215">215</a> ]);</span>
+<span class="source-line" id="L216"><a href="#L216">216</a> </span>
+<span class="source-line" id="L217"><a href="#L217">217</a> /**</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>  * @param {*} value</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>  * @returns {string[]}</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>  */</span>
+<span class="source-line" id="L221"><a href="#L221">221</a> export function findProductModelIds(value) {</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   const hits = [];</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   const walk = (v, trail) =&gt; {</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     if (v == null) return;</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     if (typeof v === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>       for (const re of PRODUCT_MODEL_ID_PATTERNS) {</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>         if (re.test(v)) {</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>           hits.push(trail ? `${trail}=${v}` : v);</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>           return;</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>         }</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>       }</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>       return;</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>     }</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>     if (Array.isArray(v)) {</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>       v.forEach((item, i) =&gt; walk(item, `${trail}[${i}]`));</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>       return;</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     }</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>     if (typeof v === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>       for (const [k, child] of Object.entries(v)) {</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>         walk(child, trail ? `${trail}.${k}` : k);</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>       }</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     }</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>   };</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>   walk(value, &#x27;&#x27;);</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>   return hits;</span>
+<span class="source-line" id="L246"><a href="#L246">246</a> }</span>
+<span class="source-line" id="L247"><a href="#L247">247</a> </span>
+<span class="source-line" id="L248"><a href="#L248">248</a> /**</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>  * Resolve production seats from Anchor prefs.</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>  * @param {{ prefs?: object|null, env?: object, prefsPath?: string|null }} [opts]</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>  * @returns {object} seat stamp — subscription drivers only, honest cross_model</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>  */</span>
+<span class="source-line" id="L253"><a href="#L253">253</a> export function resolveSeats(opts = {}) {</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   const prefs = loadAnchorPrefs(opts);</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>   const coding_driver = familyToSubscriptionDriver(prefs.coding_family);</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   const review_driver = familyToSubscriptionDriver(prefs.review_family);</span>
+<span class="source-line" id="L257"><a href="#L257">257</a> </span>
+<span class="source-line" id="L258"><a href="#L258">258</a>   const seat = {</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     coding_family: prefs.coding_family,</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     review_family: prefs.review_family,</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>     default_cli: prefs.default_cli,</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     coding_driver,</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>     review_driver,</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     /** Honest stamp: false when same-family; true when families differ. */</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>     cross_model: prefs.coding_family !== prefs.review_family,</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>     prefs_source: prefs.source,</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>     subscription_only: true,</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>     /** Production seats never use raw xAI HTTP + API key. */</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     xai_http_seat: false,</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     xai_api_key_path: false,</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     product_model_ids: [],</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>     drivers: {</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>       coding: coding_driver,</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>       review: review_driver,</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>     },</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   };</span>
+<span class="source-line" id="L277"><a href="#L277">277</a> </span>
+<span class="source-line" id="L278"><a href="#L278">278</a>   // Fail closed if a driver is missing or not a subscription CLI</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>   const drivers = [coding_driver, review_driver];</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>   for (const d of drivers) {</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>     if (!d || !PRODUCTION_SEAT_DRIVERS.includes(d)) {</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>       seat.ok = false;</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>       seat.error = &#x27;non_subscription_driver&#x27;;</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>       seat.message = `Seat driver must be subscription CLI only; got ${d}`;</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>       return seat;</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     }</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>   }</span>
+<span class="source-line" id="L288"><a href="#L288">288</a> </span>
+<span class="source-line" id="L289"><a href="#L289">289</a>   // Raw HTTP grok driver name is forbidden for production seats</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   if (coding_driver === &#x27;grok&#x27; || review_driver === &#x27;grok&#x27;) {</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     seat.ok = false;</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     seat.error = &#x27;xai_http_seat_forbidden&#x27;;</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     seat.message =</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>       &#x27;Production seats must use grok-cli subscription transport, not raw grok HTTP&#x27;;</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     return seat;</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>   }</span>
+<span class="source-line" id="L297"><a href="#L297">297</a> </span>
+<span class="source-line" id="L298"><a href="#L298">298</a>   const productHits = findProductModelIds(seat);</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>   if (productHits.length) {</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>     seat.ok = false;</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     seat.error = &#x27;product_model_id_forbidden&#x27;;</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>     seat.message = `Seat stamp must not carry product model IDs: ${productHits.join(&#x27;, &#x27;)}`;</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>     seat.product_model_ids = productHits;</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>     return seat;</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>   }</span>
+<span class="source-line" id="L306"><a href="#L306">306</a> </span>
+<span class="source-line" id="L307"><a href="#L307">307</a>   seat.ok = true;</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>   return seat;</span>
+<span class="source-line" id="L309"><a href="#L309">309</a> }</span>
+<span class="source-line" id="L310"><a href="#L310">310</a> </span>
+<span class="source-line" id="L311"><a href="#L311">311</a> /**</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>  * True when a seat object is safe for production (subscription only, no product IDs, no XAI HTTP).</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>  * @param {object} seat</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>  */</span>
+<span class="source-line" id="L315"><a href="#L315">315</a> export function isProductionSeatSafe(seat) {</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>   if (!seat || typeof seat !== &#x27;object&#x27;) return false;</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>   if (seat.xai_http_seat === true || seat.xai_api_key_path === true) return false;</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>   if (seat.coding_driver === &#x27;grok&#x27; || seat.review_driver === &#x27;grok&#x27;) return false;</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>   if (findProductModelIds(seat).length) return false;</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   const drivers = [seat.coding_driver, seat.review_driver].filter(Boolean);</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>   return drivers.every((d) =&gt; PRODUCTION_SEAT_DRIVERS.includes(d));</span>
+<span class="source-line" id="L322"><a href="#L322">322</a> }</span></pre></main></body></html>

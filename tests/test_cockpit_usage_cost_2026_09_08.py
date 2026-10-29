@@ -236,3 +236,48 @@ def test_global_usage_summary_decumulates_resumed_session_turns_and_prices_activ
     assert w7["by_family"]["claude"]["total_tokens"] == 1_100_000
     assert w7["by_family"]["claude"]["hypothetical_usd"] == 7.5
 
+def test_update_state_preserves_higher_persisted_usage_against_reset(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_mod, "STATE_FILE", tmp_path / "state.json")
+    skey = str(tmp_path)
+    engine_mod._update_state(skey, {"usage": {
+        "turns": 265, "unpriced_turns": 240, "estimated_turns": 240,
+        "reported_spend": 277.30, "estimated_spend": 838.60,
+        "tokens": 956_583_369, "cumulative_tokens": 20_389_522_476,
+        "cumulative_estimated_spend": 11241.28, "secs": 156238,
+    }})
+    # Simulate an Engine that booted during a transient read failure (turns=1 in memory)
+    engine_mod._update_state(skey, {"usage": {
+        "turns": 1, "unpriced_turns": 1, "estimated_turns": 1,
+        "reported_spend": 0.0, "estimated_spend": 12.50,
+        "tokens": 400_000, "cumulative_tokens": 400_000,
+        "cumulative_estimated_spend": 12.50, "secs": 30,
+    }})
+    saved = engine_mod._read_all_state()[skey]["usage"]
+    assert saved["turns"] == 265
+    assert saved["reported_spend"] == 277.30
+    assert saved["estimated_spend"] == 838.60
+    assert saved["tokens"] == 956_583_369
+    assert saved["cumulative_tokens"] == 20_389_522_476
+
+
+def test_engine_decumulates_resumed_session_turns_and_tracks_cumulative_context(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_mod, "STATE_FILE", tmp_path / "state.json")
+    cockpit = engine_mod.Engine(str(tmp_path))
+    cockpit.cli = "chatgpt"
+    cockpit.session_id = "01a0c682-4864-7e11-a1f4-4148ac7b0b48"
+    cockpit.model_selection = {"cli": "chatgpt", "model": "gpt-6-astra", "model_served": "gpt-6-astra"}
+    # Turn 1: 1.0M input (800k cached), 100k output -> 1.1M new tokens
+    cockpit._record_usage_result({
+        "total_cost_usd": None, "duration_ms": 1000,
+        "usage": {"input_tokens": 1_000_000, "cached_input_tokens": 800_000, "output_tokens": 100_000},
+    })
+    # Turn 2 (resumed same session): cumulative 2.0M input (1.6M cached), 200k output -> delta is 1.1M, cumulative is 3.3M
+    cockpit._record_usage_result({
+        "total_cost_usd": None, "duration_ms": 1000,
+        "usage": {"input_tokens": 2_000_000, "cached_input_tokens": 1_600_000, "output_tokens": 200_000},
+    })
+    assert cockpit.tokens == 2_200_000
+    assert cockpit.cumulative_tokens == 3_300_000
+    assert round(cockpit.estimated_spend, 2) == 15.60
+    assert round(cockpit.cumulative_estimated_spend, 2) == 23.40
+

@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>depth-table · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>depth-table</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Ecgberht/fixtures/dispatch-table-seed.json</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 95f4198fc29899f619eda529ebc70a5b83fd82e31a83b37843a25c67ffbf5f5b</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.525656+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/fixtures/dispatch-table-seed.json</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 95f4198fc29899f619eda529ebc70a5b83fd82e31a83b37843a25c67ffbf5f5b</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> {</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>   &quot;schema&quot;: &quot;ecgberht-dispatch-table-seed-v0&quot;,</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>   &quot;spelling&quot;: &quot;Ecgberht&quot;,</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>   &quot;description&quot;: &quot;W4 dispatch matrix: phase × uncertainty × human_wait × cost → LITE|FULL|SPIKE|commission|refuse. Defaults bias LITE. SPIKE for unknown data shape. FULL only when cell says so. refuse when human_wait blocks or out-of-scope. capacity=unknown → LITE bias flag (never silent FULL green).&quot;,</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>   &quot;dimensions&quot;: [&quot;phase&quot;, &quot;uncertainty&quot;, &quot;human_wait&quot;, &quot;cost&quot;],</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   &quot;outcomes&quot;: [&quot;LITE&quot;, &quot;FULL&quot;, &quot;SPIKE&quot;, &quot;commission&quot;, &quot;refuse&quot;],</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   &quot;bias&quot;: &quot;LITE&quot;,</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   &quot;capacity_rule&quot;: {</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>     &quot;when&quot;: &quot;unknown&quot;,</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>     &quot;effect&quot;: [&quot;rank_penalty&quot;, &quot;LITE_bias_flag&quot;],</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>     &quot;forbid&quot;: &quot;silent_green&quot;</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>   },</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>   &quot;cells&quot;: [</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>     {</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>       &quot;phase&quot;: &quot;planning&quot;,</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>       &quot;uncertainty&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>       &quot;cost&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>       &quot;outcome&quot;: &quot;LITE&quot;,</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>       &quot;why&quot;: &quot;planning + low uncertainty + known shape → LITE bias&quot;</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>     },</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>     {</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>       &quot;phase&quot;: &quot;build&quot;,</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>       &quot;uncertainty&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>       &quot;cost&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>       &quot;outcome&quot;: &quot;LITE&quot;,</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>       &quot;why&quot;: &quot;build + low uncertainty → LITE&quot;</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>     },</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>     {</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>       &quot;uncertainty&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>       &quot;cost&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>       &quot;outcome&quot;: &quot;LITE&quot;,</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>       &quot;why&quot;: &quot;default LITE-biased cell&quot;</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>     },</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>     {</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>       &quot;uncertainty&quot;: &quot;medium&quot;,</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>       &quot;cost&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>       &quot;outcome&quot;: &quot;LITE&quot;,</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>       &quot;why&quot;: &quot;medium uncertainty still LITE-biased&quot;</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>     },</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     {</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>       &quot;uncertainty&quot;: &quot;high&quot;,</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>       &quot;cost&quot;: &quot;unknown_shape&quot;,</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>       &quot;outcome&quot;: &quot;SPIKE&quot;,</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>       &quot;why&quot;: &quot;unknown data shape → SPIKE first&quot;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>     },</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>     {</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>       &quot;uncertainty&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>       &quot;cost&quot;: &quot;unknown_shape&quot;,</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>       &quot;outcome&quot;: &quot;SPIKE&quot;,</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>       &quot;why&quot;: &quot;unknown data shape → SPIKE&quot;</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     },</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>     {</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>       &quot;uncertainty&quot;: &quot;high&quot;,</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>       &quot;cost&quot;: &quot;high&quot;,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>       &quot;outcome&quot;: &quot;FULL&quot;,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>       &quot;why&quot;: &quot;high uncertainty + high cost → FULL (explicit cell only)&quot;</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>     },</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>     {</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>       &quot;phase&quot;: &quot;build&quot;,</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>       &quot;uncertainty&quot;: &quot;low&quot;,</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>       &quot;human_wait&quot;: &quot;none&quot;,</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>       &quot;cost&quot;: &quot;high&quot;,</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>       &quot;outcome&quot;: &quot;commission&quot;,</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>       &quot;why&quot;: &quot;known build shape with high cost may commission specialist&quot;</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     },</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     {</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>       &quot;uncertainty&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>       &quot;human_wait&quot;: &quot;blocked&quot;,</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>       &quot;cost&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>       &quot;outcome&quot;: &quot;refuse&quot;,</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>       &quot;why&quot;: &quot;human_wait blocks depth ceremony&quot;</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     },</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>     {</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>       &quot;phase&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>       &quot;uncertainty&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>       &quot;human_wait&quot;: &quot;any&quot;,</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>       &quot;cost&quot;: &quot;out_of_scope&quot;,</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>       &quot;outcome&quot;: &quot;refuse&quot;,</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>       &quot;why&quot;: &quot;out-of-scope refuses dispatch&quot;</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   ]</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> }</span></pre></main></body></html>

@@ -1,7 +1,0 @@
-# Shareable Anchor + Skills — CODEOWNERS (W8)
-# Required on protected paths; PR-only integrate into main.
-
-* @maintainer
-/share_*.py @maintainer
-/docs/ @maintainer
-/share_topology_pack/ @maintainer

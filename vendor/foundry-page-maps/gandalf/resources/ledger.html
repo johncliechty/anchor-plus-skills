@@ -1,0 +1,103 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Claim-bound commission ledger · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="ledger" data-anchor-id="a-ledger">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Claim-bound commission ledger</h1>
+<p class="intro">One per-run ledger binds the claim and refuter reply digest. It verifies its recorded tuple; it does not itself attest which provider served the seat.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/seam/commission-ledger.mjs · lines 100–190</p><pre>export function createCommissionLedger({ secret } = {}) {
+  let runSecret =
+    secret != null
+      ? Buffer.from(secret instanceof Buffer ? secret : String(secret), &#x27;utf8&#x27;)
+      : crypto.randomBytes(32);
+  const issued = new Set(); // ids minted by THIS ledger this run
+
+  /**
+   * Mint a commission-id CRYPTOGRAPHICALLY BOUND to (drafter_family, refuter_family, result_digest).
+   * The id = `gcl1.base64url(canonicalTuple).HMAC-SHA256(secret, canonicalTuple)` — it cannot be
+   * fabricated for a tuple without the mint&#x27;s secret. Throws on a malformed tuple (never mints a
+   * partial/forgeable id).
+   *
+   * @param {{drafter_family:string, refuter_family:string, result_digest:string}} tuple
+   * @returns {string} the minted commission-id
+   */
+  function mintCommission({ drafter_family, refuter_family, result_digest } = {}) {
+    const tuple = { drafter_family, refuter_family, result_digest };
+    if (!isWellFormedTuple(tuple)) {
+      throw new Error(
+        &#x27;commission-ledger: mintCommission requires non-empty drafter_family, refuter_family, and result_digest strings&#x27;
+      );
+    }
+    const payload = canonicalCommissionTuple(tuple);
+    const mac = hmacHex(runSecret, payload);
+    const id = `${COMMISSION_ID_PREFIX}${SEP}${b64urlEncode(payload)}${SEP}${mac}`;
+    issued.add(id);
+    return id;
+  }
+
+  /**
+   * Resolve a commission-id to the tuple it is bound to, or `null` for any id this ledger did not
+   * authentically mint. Returns null when the id is: not a string / wrong prefix / malformed; carries a
+   * signature that does not re-derive from its embedded tuple (a forged or TAMPERED id — e.g. a swapped
+   * result_digest); or was not minted by THIS ledger this run (a random or cross-run/cross-secret id).
+   *
+   * @param {string} id
+   * @returns {{drafter_family:string, refuter_family:string, result_digest:string} | null}
+   */
+  function resolveCommission(id) {
+    if (typeof id !== &#x27;string&#x27; || id.length === 0) return null;
+    const parts = id.split(SEP);
+    if (parts.length !== 3 || parts[0] !== COMMISSION_ID_PREFIX) return null;
+    let payload;
+    try {
+      payload = b64urlDecode(parts[1]);
+    } catch {
+      return null;
+    }
+    // (1) CONTENT-BINDING: re-derive the HMAC over the presented tuple bytes. A forged id or a tampered
+    //     tuple (any field changed) yields a different signature and fails here.
+    const expectedMac = hmacHex(runSecret, payload);
+    if (!timingSafeHexEqual(expectedMac, parts[2])) return null;
+    // (2) MINTED-THIS-RUN: it must have actually been minted by THIS ledger (orchestrator-minted,
+    //     resolvable). An id from another run/secret is rejected even if otherwise well-formed.
+    if (!issued.has(id)) return null;
+    let tuple;
+    try {
+      tuple = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+    if (!isWellFormedTuple(tuple)) return null;
+    return {
+      drafter_family: tuple.drafter_family,
+      refuter_family: tuple.refuter_family,
+      result_digest: tuple.result_digest,
+    };
+  }
+
+  /** Predicate: was `id` minted by THIS ledger this run? Pure; never throws. */
+  function isMinted(id) {
+    return typeof id === &#x27;string&#x27; &amp;&amp; issued.has(id);
+  }
+
+  /** The number of ids minted by this ledger this run. */
+  function size() {
+    return issued.size;
+  }
+
+  /** Reset the ledger for reuse across runs: clear the minted-this-run membership AND rotate the
+   *  per-run secret. After reset(), every previously-minted id resolves to null (its signature no
+   *  longer re-derives under the new secret AND it is no longer in `issued`) — a clean per-run state
+   *  with no leak from the prior run. Pure side-effect on this closure; returns nothing. */
+  function reset() {
+    issued.clear();
+    runSecret = crypto.randomBytes(32);
+  }
+
+  return { mintCommission, resolveCommission, isMinted, size, reset };
+}</pre>
+<p><a class="button" href="../source-pages/ledger.html#L100">Open numbered source</a>
+<a href="../sources/ledger.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/ledger">Mint on the same claim-bound ledger</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">fd70fdcdcf11ce5e5d02fa199a619c708852c2b78a5249a5e5eb7f15859e207b</span></p><p>Excerpt hash: <span class="path">d74af5d264b1e4b90e349ab0de5b5d73d9911a5ec9f273c9ec1cb6caf4650b53</span></p></details></article></main></body></html>

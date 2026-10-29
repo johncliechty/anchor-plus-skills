@@ -1,145 +1,0 @@
-[>0q ▐▛███▜▌ClaudeCodev2.1.175
-▝▜█████▛▘Opus4.8(1Mcontext)withhigheffort·ClaudeMax
- ▘▘▝▝C:\dev\Anchor
-
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-❯ Try"howdoes<filepath>work?"
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-⏵⏵automodeon (shift+tabtocycle)·←foragents●high·/effort
- ▎ Meet Fable 5, our newest model for complex, long-running work. Switch anytime with /model. ▎ Included in your plan limits until Jun 22, then switch to usage credits to continue.────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-❯ Try"howdoes<filepath>work?"
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-⏵⏵automodeon (shift+tabtocycle)·←foragents●high·/effort
-❯ Reply with exactly one word: PTYHELLO                                                                                 ✻ Grooving… 
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-❯ 
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-⏵⏵automodeon (shift+tabtocycle)·esctointerrupt●high·/effort
-✽G
-
-
-
-
-
-r
-
-
-
-
-
-o
-
-
-
-
-
-Go
-
-
-
-
-
-rovi
-
-
-
-
-
-on
-
-
-
-
-
-vg
-
-
-
-
-
-✻i…
-
-
-
-
-
-ng
-
-
-
-
-
-✶…
-
-
-
-
-
-*
-
-
-
-
-
-✢
-
-
-
-
-
-·
-
-
-
-
-
-✢
-
-
-
-
-
-G
-
-
-
-
-
-r
-
-
-
-
-
-*Goo
-
-
-
-
-
-roo
-
-
-
-
-
-✶
-
-
-
-
-
-✻
-
-
-
-
-
-●PTYHELLO✻ Grooving… ❯ 
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-⏵⏵automodeon (shift+tabtocycle)·esctointerrupt●high·/effort
-✻Crunched for 2s❯ ← for agents    
-
-(B(B[>4m[<u
-Resume this session with:
-claude --resume 4e620f5f-4ad5-4c4e-be12-69fd84a5172a

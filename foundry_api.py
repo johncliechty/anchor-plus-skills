@@ -118,13 +118,24 @@ def _read_dir_safe(dir_path):
 
 # ── real-data extraction (ports of server.mjs) ───────────────────────────────
 
+def _is_default_foundry_root():
+    return str(FOUNDRY_ROOT).replace("\\", "/").rstrip("/").lower() == "c:/dev/skill foundry"
+
+
 def _resolve_source(source):
     """Resolve a manifest ``source`` to an absolute directory."""
     if not source:
         return None
-    if re.match(r"^[A-Za-z]:[\\/]", source):
-        return source
-    return os.path.join(FOUNDRY_ROOT, source)
+    primary = source if re.match(r"^[A-Za-z]:[\\/]", source) else os.path.join(FOUNDRY_ROOT, source)
+    if os.path.isdir(primary):
+        return primary
+    if _is_default_foundry_root():
+        leaf = Path(source.replace("\\", "/")).name
+        for root in (ANCHOR_DIR.parent / "skills", ANCHOR_DIR / "vendor" / "bundled-skills"):
+            cand = root / leaf
+            if cand.is_dir():
+                return str(cand)
+    return primary
 
 
 def _extract_yaml_description(frontmatter):
@@ -385,6 +396,8 @@ def build_skills():
 
 def load_north_star():
     text = _read_text_safe(NORTH_STAR_PATH)
+    if not text and str(NORTH_STAR_PATH).replace("\\", "/").lower() == "c:/dev/plans/2026-07-foundry-v2/north-star.md":
+        text = _read_text_safe(ANCHOR_DIR / "vendor" / "foundry-page-maps" / "NORTH-STAR.md")
     return text.strip() if text else ("North Star file not found — expected at " + NORTH_STAR_PATH)
 
 

@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>lessons · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>lessons</h1>
+<p>instructions · frozen exact bytes</p><p class="path">Original: skills/gandalf/LESSONS.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 788a88ca2820e7c6ac1f02f1d4053e2c7e4e4a3586323b0c8f6473afc3399e53</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> # Gandalf v1 — LESSONS (anti-drift ledger)</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> &gt; Wave-7 scaffolding (the committed Gandalf v1 SHIP milestone). The running ledger of what the build</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> &gt; learned and — load-bearing — the **anti-drift sleep gate** every Gandalf cycle passes through</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> &gt; before it is allowed to conclude. The North Star is `NORTH-STAR.md` (LOCKED); this file records how</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> &gt; the implementation is kept from drifting away from it.</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> </span>
+<span class="source-line" id="L8"><a href="#L8">8</a> ## The anti-drift sleep gate (the rule that keeps Gandalf on its North Star)</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> </span>
+<span class="source-line" id="L10"><a href="#L10">10</a> **Canary set = the test suite.** The deterministic done-floor IS `node --test test/*.test.mjs test/mapreduce/*.test.mjs` (the mapreduce dir holds real --analyze-path canaries; a non-recursive glob silently excluded them until 2026-07-25). There</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> is no second, hidden gate.</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> </span>
+<span class="source-line" id="L13"><a href="#L13">13</a> **The sleep gate:** before any Gandalf cycle is considered DONE — before the skill &quot;sleeps&quot; / ships /</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> hands back — the FULL canary set MUST be GREEN. A RED canary set BLOCKS the cycle from sleeping: a</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> failing canary is a drift signal (the implementation has moved away from the LOCKED North Star), and</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> the cycle may not conclude until it is GREEN again or the drift is escalated to a human re-lock.</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> </span>
+<span class="source-line" id="L18"><a href="#L18">18</a> The canary set the sleep gate runs (the Increment-1 deterministic done-floor):</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20">20</a> - **B1** zero ideation (ideation is Jumper&#x27;s, not Gandalf&#x27;s) · **B3** premortem ≠ Crucible&#x27;s</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>   Oranges-engine (cardinality-1, no regret/counterfactual fields) · **B5** diagnose exclusive to the</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>   vetted core · **B6** no silent degradation · **B8** honest synthesis (every leg labelled, rung ≤</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>   envelope) · **B9** anticipate = not-yet-present future-state + enabling assumption · **B-honesty**</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>   named-defeater + refutation_provenance (or stamped SPECULATIVE) · **B-ceiling** single-family ⇒ max</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>   tier PROMISING.</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> - Each canary has a DISCRIMINATING NEGATIVE (a planted violation that MUST fail) — that is how the</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>   canary proves it tests a real invariant, not a tautology.</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> - The umbrella `assertIncrement1Conformant` runs the whole set over one output (the integration).</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30">30</a> **PRINCIPLE-D (what the sleep gate must NEVER become):** the LLM / cross-family judge and the</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> elevation oracle are **ADVISORY** — recorded as artifacts a human reads, NEVER part of the sleep</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> gate. The PRINCIPLE-D meta-isolation test proves this: with the judge endpoint made UNREACHABLE the</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> gate still exits 0, and the gate&#x27;s static import closure provably excludes `seam/oracle.mjs`. If a</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> change ever routes oracle/judge output into the gate, that test fails — the drift is caught.</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36">36</a> **WITHOUT-ledger honesty (B2′/B7′):** the anti-laundering content-binding canaries are</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> BLOCKED-this-cycle and NON-GATING (no Phase-0 ledger yet). The honor-system checklist</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> (`seam/anti-laundering.mjs`) surfaces that gap rather than hiding it; a forged commission-id rides</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> free through the gate until the ledger lands (Increment 2). The sleep gate does not pretend</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> otherwise.</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42">42</a> ## Lessons</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44">44</a> - _(2026-06-22, runtime host — journal/0002)_ **The missing seam-pass wiring is now BUILT (Tier-1).**</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>   The journal/0001 follow-up — &quot;build a thin Gandalf runtime entry (model raw output → seam stamping →</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   conformant output)&quot; — shipped as `runtime/seam-pass.applySeamPass` (the pure composer) +</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   `runtime/gandalf-run.mjs` (the real CLI) + `runtime/RAW-DRAFT-CONTRACT.md` (the model now emits ONLY</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   the raw draft and does NOT self-assign tiers/stamps — the host applies them). The host REUSES the</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   shipped seams and reimplements NO grading logic; a malformed draft fails HONESTLY (`SeamPassInputError`</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   → non-zero exit, no forged output). This directly closes the three over-claim failure modes from the</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   first real run: the tiers + the &quot;no independent refutation ran&quot; stamp are now applied deterministically</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   by `vetElevationRefutation` + `labelTier`, so the output is canary-conformant by construction.</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>   **SCOPE = Tier-1 deterministic:** ONE model run, NO live independent named-defeater refuters and NO</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   researchPrime SITUATE commission (those need the `agent()` seam the gate never runs), so every elevation</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>   honestly lands at SPECULATIVE + the stamp and `risk_labels` cap at the single-family PROMISING ceiling.</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>   **The live-refuter PROMISING tier is the SEQUENCED FOLLOW-ON** — it needs the `agent()` seam, consistent</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>   with the Gandalf program&#x27;s own dependency sequencing, and is NOT in this effort. Lesson reinforced: a</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   skill plan must build the runtime that COMPOSES the model with its seams, not just the seams + canaries.</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> - _(2026-06-21, Wave 7)_ The integration wave&#x27;s value was negative-space: proving the eight canaries</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>   hold TOGETHER on one real v1 output, and proving — structurally, via the import closure — that the</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>   advisory layer cannot leak into the gate. Asserting isolation is cheap; proving it is the point.</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> - _(2026-06-21, first real run — journal/0001)_ **The honesty stamps are the SEAM&#x27;s job, not the</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>   model&#x27;s — and the v1 runtime wiring is missing.** Dogfooding v1 on a webhook-idempotency note (3 passes)</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>   showed the model produces excellent DIAGNOSE/SITUATE/ANTICIPATE content but, run as pure SKILL.md prose</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>   with no seam pass, keeps hand-approximating tier stamps and failing B-honesty three different ways</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>   (named-defeater not a structured field → a below-threshold elevation stamped above SPECULATIVE → a</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>   SPECULATIVE elevation missing the literal &quot;no independent refutation ran&quot; stamp). Root cause: the honest</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   tiers + stamps are meant to be APPLIED DETERMINISTICALLY by `seam/score-label.labelTier` +</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   `seam/refute.{firesRefuter,composeRefutationProvenance,NO_INDEPENDENT_REFUTATION_STAMP}`, but the build</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>   shipped seams + canaries + SKILL.md with **no thin runtime entry** chaining model-content → seam-stamping →</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   `assertIncrement1Conformant`. The canaries did their job (each caught a real over-claim); the fix is the</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>   missing seam-pass wiring, NOT more SKILL.md prose. SKILL.md §RUNTIME now documents the intended chain; the</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>   runtime entry is an open build follow-up. Same class as the SKILL.md-authoring gap → a skill plan must build</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>   the runtime that composes the model with its seams, not just the seams + canaries (PROGRAM-SEQUENCE lesson).</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> - _(2026-08-04, SLEEP CYCLE — promoted from journal 0001+0002+0209+0210, four DISTINCT</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   pytest-fixture contexts)_ **An empty or bootstrap target is a REAL read with a</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>   DIFFERENT SUBJECT — never a thin one to pad.** When a deep-read target turns out to be</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>   an empty scaffold or a pytest fixture, the load-bearing signal is the CONTAINING PATH</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>   (`test_project_files_traversal_r0`, `test_no_floating_window_markup0`), not any file</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   content, and `discovery.json total:0` confirms zero substance. The correct move, taken</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>   in all four runs, is to NAME the emptiness and re-identify the real subject — the</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>   feature under test, or the `.anchor` store — and refuse to manufacture project-level</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>   findings that do not exist. SITUATE correctly does not fire (no central claim / stakes</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   below threshold); ANTICIPATE carries the forward value. The transferable defects found</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   this way were in the MACHINERY, not the folder: an up-front `status:&quot;running&quot;` index</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   pointer with null artifact links and no reconciler (orphan-record lifecycle risk), and</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   a tracked `discovery.json` embedding an absolute `root` containing the username while</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>   its sibling correctly uses `*_rel` fields (portability + privacy on clone). Both are</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   exactly what a padded read would have buried.</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> - _(2026-08-04, SLEEP CYCLE — promoted from journal 0274+0275, the cluster&#x27;s named fix)_</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   **A `main()` guard that compares `resolve(argv[1])` to the module&#x27;s own path is a</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>   SILENT NO-OP through a junction.** They are two spellings of one file, never equal, so</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   `main()` does not run and the process exits 0 with empty stdout — success and silence,</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   the worst pair. Journal 0275 hit this as `node &lt;junction&gt;/runtime/gandalf-run.mjs`</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   writing no report. The fix is to realpath BOTH sides. This cycle promoted that fix into</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   Ecgberht (`engine/direct-invocation.mjs` + `test/wh2-junction-invocation.test.mjs`),</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   where it was live and unnoticed: skills are REGISTERED as junctions, so</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>   `~/.claude/skills/&lt;skill&gt;/bin/...` — the canonical host path — is precisely the</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   spelling that triggers it, and BOTH Ecgberht CLIs were dead that way, one of them</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   shipped hours earlier with the defective guard copied in. **Any skill with a</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>   `bin/`/`runtime/` entry should be checked through its registered junction path, not</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   only its real path.**</span>
+<span class="source-line" id="L103"><a href="#L103">103</a> - _(seed)_ Append one bullet per cycle: what drifted, which canary caught it (or should have), and</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   whether the North Star or a constant had to be re-locked by a human.</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106">106</a> ## Promoted 2026-08-15 (the post-08-04 backlog — journals 0292-0301)</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> </span>
+<span class="source-line" id="L108"><a href="#L108">108</a> 6. **Read `err.message`, not the error prefix.** `gandalf-run.mjs` prints one</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>    fixed prefix for ANY live-path failure; a refuter-budget HALT was reported</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>    as &quot;agy down&quot; twice in one day while agy was up throughout (0300 correcting</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>    0298/0299). Fix the prefix; until then, the message text is the truth.</span>
+<span class="source-line" id="L112"><a href="#L112">112</a> 7. **Derive `--budget` from the firing-elevation count BEFORE launching** —</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>    R=3 trips on most real artifact reads (5-7 firing elevations is normal);</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>    the budget HALT is the common case, not the exception (0299, jumper 0024).</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> 8. **A cap must HALT or stamp — never silently drop.** The elevation cap at</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>    FULL silently discarded the FIRST/highest-value elevation ungraded (0292,</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>    0295); refuted elevations lose their reasoning entirely (0301). Until the</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>    engine keeps a `refuted[]` with reasoning, paste refuter verdicts into the</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>    run notes by hand.</span>
+<span class="source-line" id="L120"><a href="#L120">120</a> 9. **The journal namespace is append-only AND monotone**: next id =</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>    max(existing NNNN)+1 — 0299 found 190 entries with 32 colliding numbers</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>    because sessions read the low numbers as the frontier. Machine dumps never</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>    land in the curated namespace (0285&#x27;s disarm holds).</span></pre></main></body></html>

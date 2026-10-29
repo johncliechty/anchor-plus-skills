@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Independent origins · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="origins" data-anchor-id="a009">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Independent origins</h1>
+<p class="intro">Use the shared independence machinery; agreement and independent provenance are different measures.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\verify-core.mjs</span><br>Lines 36–75 · frozen source snapshot</p>
+<pre class="excerpt">import { loadFixture, loadBaselineByHash } from &#x27;./baseline.mjs&#x27;;
+import { RECALL_CLASSES } from &#x27;./fixture.mjs&#x27;;
+// The SOLE origin/quorum counter (Wave 2), resolved via the package `imports` map (#trio-core/*) — the
+// single canonical path (crit 6), the same route the engine uses, NOT a `../../` reach or a re-impl.
+import { meetsQuorum, STATIC_QUORUM_FLOOR } from &#x27;#trio-core/independence-accounting.mjs&#x27;;
+
+// ── Gate taxonomy: which gates are ACCURACY (move crit-1) vs PRECISION (do not) ──────────────────────
+/** Accuracy gates: fresh external evidence. Their recall IS the crit-1 trustworthiness number. */
+export const ACCURACY_GATES = Object.freeze([&#x27;G1&#x27;]);
+/** Precision gates: variance reduction only. Their recall is precision, NEVER crit-1 accuracy (I5). */
+export const PRECISION_GATES = Object.freeze([&#x27;G2&#x27;]);
+/** The evidenced core&#x27;s gates, in C-1 scope. */
+export const CORE_GATES = Object.freeze([&#x27;G1&#x27;, &#x27;G2&#x27;, &#x27;G7&#x27;]);
+
+/** The correlated-blind-spot class — reported as a measured ceiling by default (I1/I2). */
+export const CBS_CLASS = &#x27;correlated-blind-spot&#x27;;
+
+/** The two run modes the I4 audit guard must hold in (MASTER-PLAN I4: &quot;engine AND degraded&quot;). */
+export const MODES = Object.freeze([&#x27;engine&#x27;, &#x27;degraded&#x27;]);
+
+/**
+ * The single same-lineage reviewer family the DEFAULT evidenced core runs as: CoVe (G1) and
+ * self-consistency (G2) are the same model, so the core contributes exactly ONE independent origin.
+ * Reaching the ≥2 quorum needs the heterogeneous reviewers / cross-lineage origin of Wave 7.
+ */
+export const CORE_LINEAGE = &#x27;rp-default&#x27;;
+
+/** The literal stamp the default mode puts on CBS recall (I1: a measured ceiling, never a closure). */
+export const CBS_CEILING_STAMP =
+  &#x27;measured ceiling — default (single-lineage) mode cannot close a correlated blind spot (I1)&#x27;;
+
+// ── G1 — CoVe fresh-fetch independence (ACCURACY) ───────────────────────────────────────────────────
+/**
+ * Run the G1 CoVe check over one defect.
+ *
+ * A Chain-of-Verification fresh re-fetch keyed to the claim&#x27;s location. It catches an ORDINARY
+ * (single-origin) defect that a fresh independent fetch (G1) resolves — at ANY severity, because a
+ * dedicated verification question surfaces even the low-salience errors a single salience-gated pass
+ * overlooks (that is the accuracy gain over the single-pass baseline). It does NOT catch a
+ * correlated-blind-spot (I1: a same-lineage fetch reproduces the shared wrong consensus) and is not</pre>
+<div class="actions"><a class="button" href="../source-pages/origins.html#L36">Open numbered source at line 36</a>
+<a class="button secondary" href="../sources/origins.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/tally">Agreement, origins and conflicts</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">7277be84cccad18788a012e3e4b40a0e5ee2f2de333d883ff263e3c738e56e85</span></p>
+<p>Excerpt SHA-256 <span class="path">c89b451ad226f9127c8d6f68d0838fa8fa0ec5af3a593851a8e8b97580268622</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

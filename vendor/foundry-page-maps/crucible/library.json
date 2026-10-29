@@ -1,0 +1,144 @@
+{
+  "resources": [
+    {
+      "id": "crucible-mat-skill-md",
+      "title": "Crucible Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "crucible-mat-human-md",
+      "title": "Crucible Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "crucible-mat-description-md",
+      "title": "Crucible Detailed Specification (DESCRIPTION.md)",
+      "category": "material",
+      "path": "DESCRIPTION.md",
+      "description": "Detailed capability specification and module breakdown."
+    },
+    {
+      "id": "crucible-mat-implementation-plan-md",
+      "title": "Crucible Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "category": "material",
+      "path": "IMPLEMENTATION-PLAN.md",
+      "description": "Wave-by-wave engineering plan and verification gates."
+    },
+    {
+      "id": "crucible-mat-master-plan-md",
+      "title": "Crucible Master Plan (MASTER-PLAN.md)",
+      "category": "material",
+      "path": "MASTER-PLAN.md",
+      "description": "System architecture and cross-module design contract."
+    },
+    {
+      "id": "crucible-tool-bin-steward-redesign-stage1-mjs",
+      "title": "_steward_redesign_stage1.mjs (bin/_steward_redesign_stage1.mjs)",
+      "category": "tools",
+      "path": "bin/_steward_redesign_stage1.mjs",
+      "description": "Executable .mjs module (89 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "crucible-tool-bin-steward-redesign-stage2-mjs",
+      "title": "_steward_redesign_stage2.mjs (bin/_steward_redesign_stage2.mjs)",
+      "category": "tools",
+      "path": "bin/_steward_redesign_stage2.mjs",
+      "description": "Executable .mjs module (69 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "crucible-tool-bin-steward-stage1-mjs",
+      "title": "_steward_stage1.mjs (bin/_steward_stage1.mjs)",
+      "category": "tools",
+      "path": "bin/_steward_stage1.mjs",
+      "description": "Executable .mjs module (77 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "crucible-tool-bin-steward-stage2-mjs",
+      "title": "_steward_stage2.mjs (bin/_steward_stage2.mjs)",
+      "category": "tools",
+      "path": "bin/_steward_stage2.mjs",
+      "description": "Executable .mjs module (99 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "crucible-tool-bin-self-run-mjs",
+      "title": "self-run.mjs (bin/self-run.mjs)",
+      "category": "tools",
+      "path": "bin/self-run.mjs",
+      "description": "Executable .mjs module (398 LOC; key symbols: makeScriptedSelfRunAgent, agent, convergenceFromLoop, main)."
+    },
+    {
+      "id": "crucible-tool-bin-gate5-stage0-mjs",
+      "title": "_gate5_stage0.mjs (bin/_gate5_stage0.mjs)",
+      "category": "tools",
+      "path": "bin/_gate5_stage0.mjs",
+      "description": "Executable .mjs module (105 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "crucible-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "crucible-peer-foreman",
+      "title": "Foreman Multi-Wave Build Engine",
+      "category": "skills",
+      "skill": "foreman",
+      "description": "Imports Foreman durability/git/driver modules and compiles L0-L5 Matrix plans into orthogonal sub-waves validated by locate-plan.mjs"
+    },
+    {
+      "id": "crucible-peer-researchprime",
+      "title": "researchPrime Upstream Research Engine",
+      "category": "skills",
+      "skill": "researchprime",
+      "description": "Executes parallel orthogonal dimension studies in Stage-1 Matrix Fast-Track Mode and grounds Stage-0 North Star"
+    },
+    {
+      "id": "crucible-peer-gandalf",
+      "title": "Gandalf Deep-Think Synthesizer",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Drives parallel dimension critiques and single-pass L0-L5 Adversarial Review Matrix synthesis"
+    },
+    {
+      "id": "crucible-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "crucible-journal-0108-parallel-study-matrix-and-",
+      "title": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
+      "category": "references",
+      "path": "journal/0108-parallel-study-matrix-and-bounded-single-pass-convergence.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0108-parallel-study-matrix-and-bounded-single-pass-convergence.md)."
+    },
+    {
+      "id": "crucible-journal-0107-calculator-history-slim-de",
+      "title": "Journal: 0107-calculator-history-slim-delay",
+      "category": "references",
+      "path": "journal/0107-calculator-history-slim-delay.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0107-calculator-history-slim-delay.md)."
+    },
+    {
+      "id": "crucible-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    },
+    {
+      "id": "crucible-kb-researchprime-code-rewriting-tools",
+      "title": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "category": "references",
+      "path": "skills/anvil/references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "description": "Reference synthesis on LibCST, parso, ast-grep, Hypothesis equivalence, and Parable of the Oranges."
+    }
+  ]
+}

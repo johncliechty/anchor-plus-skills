@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Approve, edit or abort · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="approval" data-anchor-id="a006">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Reusable material</p><h1>Approve, edit or abort</h1>
+<p class="intro">Scope and plan are separately approved and hash bound; editing callbacks belong to the caller.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\two-gate.mjs</span><br>Lines 50–115 · frozen source snapshot</p>
+<pre class="excerpt">export async function runTwoGateMachine(inputs, { runDir, promptGate1, promptGate2, maxEdits = MAX_EDITS, lockedGovernorOutput = { hash: &#x27;mock-hash&#x27; }, skill = &#x27;researchPrime&#x27;, onEditedScope, onEditedPlan, approvalProvider, buildPlan } = {}) {
+  let providerIdentity = &#x27;TTY&#x27;;
+  if (approvalProvider) {
+    providerIdentity = approvalProvider.authorize();
+  }
+
+  // If non-interactive provider, auto-approve
+  if (providerIdentity !== &#x27;TTY&#x27;) {
+    promptGate1 = async () =&gt; &#x27;APPROVE&#x27;;
+    promptGate2 = async () =&gt; &#x27;APPROVE&#x27;;
+  }
+
+  try {
+    let triageResult;
+    let gate1Edits = 0;
+    
+    // GATE 1
+    while (true) {
+      triageResult = await runIntake(inputs, { runDir, promptHuman: promptGate1 });
+      if (triageResult.decision === &#x27;APPROVE&#x27;) {
+        break;
+      } else if (triageResult.decision === &#x27;EDIT&#x27;) {
+        gate1Edits++;
+        if (gate1Edits &gt; maxEdits) throw new HaltError(`Run halted at Gate 1: exceeded max EDIT cycles (${maxEdits})`);
+        if (onEditedScope) inputs = await onEditedScope(inputs);
+        continue;
+      } else {
+        // Should not be reached because runIntake throws on ABORT, but added for safety
+        throw new HaltError(`Run halted at Gate 1 with decision ${triageResult.decision}`);
+      }
+    }
+
+    // GATE 2
+    let gate2Edits = 0;
+    let planHash;
+    let gate2Decision;
+    
+    while (true) {
+      // The artifact the human approves at Gate 2. Default = the generic deterministic
+      // scope/evidence/adversarial/synthesis matrix (back-compat). A real researchPrime run
+      // injects `buildPlan` (see bin/plan-gate.mjs) so Gate 2 approves the ACTUAL Phase-1
+      // research plan — AXIS / candidate branches / stakes vector / foresight receipt — not
+      // the boilerplate matrix. `buildPlan` MUST be a pure function of `inputs` so the same
+      // inputs serialize to the same bytes and therefore the same planHash (EDIT re-hash + replay).
+      const plan = buildPlan
+        ? buildPlan({ inputs })
+        : planMatrix({ objective: inputs.query || inputs.objective || &#x27;default objective&#x27; });
+      const planStr = JSON.stringify(plan, null, 2);
+      planHash = crypto.createHash(&#x27;sha256&#x27;).update(planStr).digest(&#x27;hex&#x27;);
+      const planPath = path.join(runDir, `plan-${planHash}.json`);
+      
+      fs.writeFileSync(planPath, planStr, &#x27;utf8&#x27;);
+
+      if (promptGate2) {
+        gate2Decision = await promptGate2({ planPath, planHash, plan });
+      } else {
+        gate2Decision = &#x27;APPROVE&#x27;;
+      }
+
+      fs.writeFileSync(path.join(runDir, &#x27;gate2-record.json&#x27;), JSON.stringify({
+        planHash,
+        gate2Decision
+      }, null, 2), &#x27;utf8&#x27;);
+
+      if (gate2Decision === &#x27;APPROVE&#x27;) {
+        break;</pre>
+<div class="actions"><a class="button" href="../source-pages/two-gate.html#L50">Open numbered source at line 50</a>
+<a class="button secondary" href="../sources/two-gate.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/scope-gate">Scope: approve, edit or abort</a> · <a target="_top" href="../index.html#process/scope-edit">Revise scope</a> · <a target="_top" href="../index.html#process/plan-gate">Plan: approve, edit or abort</a> · <a target="_top" href="../index.html#process/plan-edit">Revise and rehash the plan</a> · <a target="_top" href="../index.html#process/provider">Noninteractive approval path</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">69af75f6feb58254135083dc40dc552a54711eb6967a5b89840a67dac0745ebb</span></p>
+<p>Excerpt SHA-256 <span class="path">fb16de176b7b47d38527a345bf6bc7ee0810816787fd73a503b2237733d1f6f5</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

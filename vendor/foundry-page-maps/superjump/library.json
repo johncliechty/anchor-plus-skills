@@ -1,0 +1,151 @@
+{
+  "resources": [
+    {
+      "id": "superjump-mat-skill-md",
+      "title": "Superjump Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "superjump-mat-human-md",
+      "title": "Superjump Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "superjump-mat-north-star-md",
+      "title": "Superjump Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "superjump-tool-bin-superjump-run-mjs",
+      "title": "superjump-run.mjs (bin/superjump-run.mjs)",
+      "category": "tools",
+      "path": "bin/superjump-run.mjs",
+      "description": "Executable .mjs module (169 LOC; key symbols: parseArgs, skillDir, main)."
+    },
+    {
+      "id": "superjump-tool-index-js",
+      "title": "index.js (index.js)",
+      "category": "tools",
+      "path": "index.js",
+      "description": "Executable .js module (272 LOC; key symbols: extractJson, superjumpPartial, callJson, runSuperjump)."
+    },
+    {
+      "id": "superjump-tool-fit-mjs",
+      "title": "fit.mjs (fit.mjs)",
+      "category": "tools",
+      "path": "fit.mjs",
+      "description": "Executable .mjs module (130 LOC; key symbols: splitItems, parseBriefContract, mergeContract, pick)."
+    },
+    {
+      "id": "superjump-tool-planning-crucible-2026-09-14-gen-",
+      "title": "gen-page.mjs (planning/crucible-2026-09-14/gen-page.mjs)",
+      "category": "tools",
+      "path": "planning/crucible-2026-09-14/gen-page.mjs",
+      "description": "Executable .mjs module (123 LOC; key symbols: esc, b64, md, mdToHtml)."
+    },
+    {
+      "id": "superjump-tool-progress-mjs",
+      "title": "progress.mjs (progress.mjs)",
+      "category": "tools",
+      "path": "progress.mjs",
+      "description": "Executable .mjs module (121 LOC; key symbols: loadExpectations, expectationKey, lookupExpectation, verdict)."
+    },
+    {
+      "id": "superjump-tool-prompts-mjs",
+      "title": "prompts.mjs (prompts.mjs)",
+      "category": "tools",
+      "path": "prompts.mjs",
+      "description": "Executable .mjs module (129 LOC; key symbols: readPrompt, leapPrompt, judgePrompt, dedupePrompt)."
+    },
+    {
+      "id": "superjump-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "superjump-peer-jumper",
+      "title": "Jumper Fast Ideation Engine",
+      "category": "skills",
+      "skill": "jumper",
+      "description": "Extends Jumper's SCAMPER/TRIZ leaps with inspectable transfer traces and a Fit Contract"
+    },
+    {
+      "id": "superjump-peer-gandalf",
+      "title": "Gandalf Cross-Family Judge",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Serves as the independent cross-family judge scoring candidates against the Fit Contract"
+    },
+    {
+      "id": "superjump-peer-crucible",
+      "title": "Crucible Execution Planner",
+      "category": "skills",
+      "skill": "crucible",
+      "description": "Translates winning Fit-Contract architectures into Foreman-ready implementation plans"
+    },
+    {
+      "id": "superjump-ref-lessons",
+      "title": "Superjump LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "superjump-ref-changelog",
+      "title": "Superjump CHANGELOG.md",
+      "category": "references",
+      "path": "CHANGELOG.md",
+      "description": "Accumulated operational lessons and historical evolution in CHANGELOG.md."
+    },
+    {
+      "id": "superjump-ref-improvement",
+      "title": "Reference: improvement.md",
+      "category": "references",
+      "path": "references/improvement.md",
+      "description": "Domain reference and knowledge-base specification (references/improvement.md)."
+    },
+    {
+      "id": "superjump-ref-journal-schema",
+      "title": "Reference: journal-schema.md",
+      "category": "references",
+      "path": "references/journal-schema.md",
+      "description": "Domain reference and knowledge-base specification (references/journal-schema.md)."
+    },
+    {
+      "id": "superjump-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "superjump-journal-0018-book1-conflict-spine-v2",
+      "title": "Journal: 0018-book1-conflict-spine-v2",
+      "category": "references",
+      "path": "journal/0018-book1-conflict-spine-v2.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0018-book1-conflict-spine-v2.md)."
+    },
+    {
+      "id": "superjump-journal-0017-chapter3-refinement4-prov",
+      "title": "Journal: 0017-chapter3-refinement4-provider-outcome",
+      "category": "references",
+      "path": "journal/0017-chapter3-refinement4-provider-outcome.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0017-chapter3-refinement4-provider-outcome.md)."
+    },
+    {
+      "id": "superjump-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

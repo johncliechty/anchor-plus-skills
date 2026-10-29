@@ -1,0 +1,59 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Engine output and report shapes · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="deliverable" data-anchor-id="a023">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Reusable material</p><h1>Engine output and report shapes</h1>
+<p class="intro">The engine JSON is distinct from the full, executive and agent reports the session must produce.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\deliverable.mjs</span><br>Lines 128–172 · frozen source snapshot</p>
+<pre class="excerpt">export function assembleDeliverable({
+  mode,
+  rounds = [],
+  convergence = null,
+  calibration = null,
+  substrateFamilies = [],
+  northStar = null,
+} = {}) {
+  if (!MODES.includes(mode)) {
+    throw new HaltError(`assembleDeliverable: mode must be one of ${MODES.join(&#x27; | &#x27;)}, got ${JSON.stringify(mode)}`);
+  }
+  const cross_model = crossModelFor(mode, substrateFamilies);
+  const base = {
+    mode,
+    north_star: northStar ?? null,
+    cross_model,
+    // ρ̂ + learned-quorum state — carried in BOTH modes (default-mode calibration is pure-of-inputs).
+    calibration: calibration ?? null,
+    rho_hat: calibration?.rho_hat ?? null,
+  };
+
+  if (mode !== &#x27;engine&#x27;) {
+    // Non-engine / prose / degraded: the adversarial loop did NOT run on this host. Say so, honestly.
+    return {
+      ...base,
+      verified: false,
+      honesty_stamp: HONESTY_STAMP,
+      round_history: [],
+      judge_verdict: null,
+      convergence_proof: null,
+      synthesizer_brief: null,
+    };
+  }
+
+  // Engine mode: the full, adversarially-verified deliverable.
+  const finalRound = rounds.length ? rounds[rounds.length - 1] : null;
+  return {
+    ...base,
+    verified: true,
+    honesty_stamp: null,
+    round_history: deriveRoundHistory(rounds),
+    judge_verdict: engineJudgeVerdict(finalRound),
+    convergence_proof: convergence ?? null,
+    synthesizer_brief: buildSynthesizerBrief(rounds),
+  };</pre>
+<div class="actions"><a class="button" href="../source-pages/deliverable.html#L128">Open numbered source at line 128</a>
+<a class="button secondary" href="../sources/deliverable.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/deliver">Assemble and check engine JSON</a> · <a target="_top" href="../index.html#process/reports">Write the research reports</a> · <a target="_top" href="../index.html#process/done">Report ready for human review</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">9c6b345878eca35cf724fd94a50ce57563bf018a058fe0bb588f8350af41c2de</span></p>
+<p>Excerpt SHA-256 <span class="path">efab524d98c60bd9fc0dbfc5c7b6ecc60f109944ce62b27935467e93350af6aa</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

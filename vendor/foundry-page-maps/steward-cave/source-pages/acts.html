@@ -1,0 +1,828 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>acts · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>acts</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/steward_cockpit/campaign_acts.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 ed472373bdca74e2fb45408acdfa1b2f9cf1a6aef3fc8e2c192c4f0213eb7161</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.535196+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/campaign_acts.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: ed472373bdca74e2fb45408acdfa1b2f9cf1a6aef3fc8e2c192c4f0213eb7161</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;campaign_acts — what John does on the Campaign page, written into the Campaign&#x27;s own record through the</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> engine&#x27;s writer (the CLI and its spine), each act a receipt with its inverse.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> </span>
+<span class="source-line" id="L4"><a href="#L4">4</a> W3c of the High Seat plan (2026-09-26), trimmed by its Rabbit read. Acts: move_tier · rank (up/down within a</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> tier) · rename · date · park (with its trigger) · unpark · flag / unflag (a native part&#x27;s &quot;needs you&quot;) · add (a</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> task, or a project part by reference) · promote (a seed, by id → an initiative, with the tier and the area he</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> picked) · withdraw / restore (the inverse of add and promote: the record is append-only, so a step is never</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> deleted — its navigation is cleared, which takes it off the board while the ordinary cockpit still shows it;</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> restore puts the navigation back). A tick on a native part waits on John&#x27;s word on the close law (PLAN §9.6)</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> and is refused here with that sentence. The Campaign never writes another record: a date or a flip on a</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> referenced part is refused by the engine and the refusal is the receipt.</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> from __future__ import annotations</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> </span>
+<span class="source-line" id="L15"><a href="#L15">15</a> import json</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> import re</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> import subprocess</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> from pathlib import Path</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20">20</a> from .campaign_seeds import seed_by_id</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> ECG = Path(r&quot;C:\dev\Ecgberht\bin\ecgberht.mjs&quot;)</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> SPINE = &quot;file:///C:/dev/Ecgberht/engine/ledger-spine.mjs&quot;</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> WHO = &quot;john&quot;</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27">27</a> def _cli(project, *args):</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>     r = subprocess.run([&quot;node&quot;, str(ECG), *args, &quot;--project&quot;, str(project)], capture_output=True, text=True, encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;, timeout=60)</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>     try:</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>         return json.loads(r.stdout or &quot;{}&quot;)</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>     except Exception:</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;engine answered no json&quot;, &quot;raw&quot;: (r.stdout or r.stderr)[:200]}</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> </span>
+<span class="source-line" id="L34"><a href="#L34">34</a> </span>
+<span class="source-line" id="L35"><a href="#L35">35</a> def _spine_set(project, step_id, fields):</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>     js = (&quot;import { appendRoadmapEventThroughSpine } from &#x27;%s&#x27;;&quot;</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>           &quot;const r = appendRoadmapEventThroughSpine(%s, {kind:&#x27;step_set&#x27;, step_id:%s, fields:%s});&quot;</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>           &quot;console.log(JSON.stringify({ok:r.ok, error:r.error||null}));&quot;) % (</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>         SPINE, json.dumps(str(project).replace(&quot;\\&quot;, &quot;/&quot;)), json.dumps(step_id), json.dumps(fields))</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>     r = subprocess.run([&quot;node&quot;, &quot;--input-type=module&quot;, &quot;-e&quot;, js], capture_output=True, text=True, encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;, timeout=60)</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>     try:</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>         return json.loads(r.stdout.strip().splitlines()[-1])</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>     except Exception:</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>         return {&quot;ok&quot;: False, &quot;error&quot;: (r.stderr or r.stdout)[:200] or &quot;the spine answered nothing&quot;}</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> </span>
+<span class="source-line" id="L46"><a href="#L46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47">47</a> def _projection(project):</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     try:</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>         d = json.loads((Path(project) / &quot;roadmap.json&quot;).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>         return d.get(&quot;roadmap_projection&quot;) or []</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     except Exception:</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>         return []</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> def _step(project, sid):</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>     return next((s for s in _projection(project) if s.get(&quot;id&quot;) == sid), None)</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58">58</a> </span>
+<span class="source-line" id="L59"><a href="#L59">59</a> def _own_group(s):</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     nav = s.get(&quot;navigation&quot;) if isinstance(s.get(&quot;navigation&quot;), dict) else {}</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     return next((g for g in nav.get(&quot;groups&quot;) or [] if isinstance(g, dict) and g.get(&quot;id&quot;) == s.get(&quot;id&quot;) and g.get(&quot;parent_id&quot;) is None), None)</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64">64</a> def _initiatives(project):</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>     out = []</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     for s in _projection(project):</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>         g = _own_group(s)</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>         if g is not None:</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>             out.append((s, g))</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>     return out</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> </span>
+<span class="source-line" id="L72"><a href="#L72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73">73</a> def _parts_of(project, sid):</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>     out = []</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>     for p in _projection(project):</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>         nav = p.get(&quot;navigation&quot;) if isinstance(p.get(&quot;navigation&quot;), dict) else {}</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>         path = nav.get(&quot;path&quot;) or []</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>         if p.get(&quot;id&quot;) != sid and path and path[0] == sid:</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>             out.append(p)</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>     return out</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> </span>
+<span class="source-line" id="L82"><a href="#L82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83">83</a> def _slug(text, prefix=&quot;&quot;):</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>     s = re.sub(r&quot;[^a-z0-9]+&quot;, &quot;-&quot;, str(text).lower()).strip(&quot;-&quot;)[:48].strip(&quot;-&quot;) or &quot;part&quot;</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     return (prefix[:12] + &quot;-&quot; + s) if prefix else s</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> </span>
+<span class="source-line" id="L87"><a href="#L87">87</a> </span>
+<span class="source-line" id="L88"><a href="#L88">88</a> def _ok(receipt, undo=None, **extra):</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>     return {&quot;ok&quot;: True, &quot;receipt&quot;: receipt, &quot;undo&quot;: undo, **extra}</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> </span>
+<span class="source-line" id="L91"><a href="#L91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92">92</a> def _no(text, **extra):</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     return {&quot;ok&quot;: False, &quot;receipt&quot;: text, **extra}</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95">95</a> </span>
+<span class="source-line" id="L96"><a href="#L96">96</a> def _write_nav(project, s, order=None):</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     &quot;&quot;&quot;Write the heading step&#x27;s navigation back whole, with only its own group&#x27;s order changed.&quot;&quot;&quot;</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     nav = dict(s.get(&quot;navigation&quot;) or {})</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>     groups = [dict(g) for g in nav.get(&quot;groups&quot;) or []]</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>     for g in groups:</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>         if g.get(&quot;id&quot;) == s.get(&quot;id&quot;) and order is not None:</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>             g[&quot;order&quot;] = int(order)</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     nav[&quot;groups&quot;] = groups</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     nav.setdefault(&quot;path&quot;, [s.get(&quot;id&quot;)])</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     return _spine_set(project, s[&quot;id&quot;], {&quot;navigation&quot;: nav})</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> </span>
+<span class="source-line" id="L107"><a href="#L107">107</a> </span>
+<span class="source-line" id="L108"><a href="#L108">108</a> def _foot(project, tier, except_id=None):</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>     return max([int(g.get(&quot;order&quot;) or 0) for x, g in _initiatives(project) if x.get(&quot;tier&quot;) == tier and x.get(&quot;id&quot;) != except_id] or [-1]) + 1</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> </span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a> # ── the acts ───────────────────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> </span>
+<span class="source-line" id="L114"><a href="#L114">114</a> def move_tier(project, step, tier, order=None):</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>     &quot;&quot;&quot;Move an initiative to a tier: one step_set of its tier, then its place — the foot of that tier, or the</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>     order the undo carries (so a head of a tier comes back as its head, not at the bottom with a new number).&quot;&quot;&quot;</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     s = _step(project, step)</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>     try:</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>         tier = int(tier)</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     except Exception:</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>         return _no(&quot;a tier is 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     if tier not in (1, 2, 3):</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>         return _no(&quot;a tier is 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     old = s.get(&quot;tier&quot;)</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>     old_order = int(_own_group(s).get(&quot;order&quot;) or 0)</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>     if old == tier:</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>         return _no(&quot;%s is already in tier %d&quot; % (s.get(&quot;name&quot;), tier))</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--tier&quot;, str(tier))</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     place = int(order) if order is not None else _foot(project, tier, except_id=step)</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     r2 = _write_nav(project, _step(project, step), order=place)</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>     if not r2.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>         return _no(&quot;%s moved to tier %d, but its place there was refused: %s — it keeps its old order number&quot; % (s.get(&quot;name&quot;), tier, r2.get(&quot;error&quot;)))</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     return _ok(&quot;%s moved to tier %d (from %s), %s&quot; % (s.get(&quot;name&quot;), tier, (&quot;tier %d&quot; % old) if old else &quot;no tier&quot;,</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>                                                       (&quot;at its foot&quot; if order is None else &quot;back in its place&quot;)),</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>                undo={&quot;act&quot;: &quot;move_tier&quot;, &quot;step&quot;: step, &quot;tier&quot;: old, &quot;order&quot;: old_order} if old else None)</span>
+<span class="source-line" id="L140"><a href="#L140">140</a> </span>
+<span class="source-line" id="L141"><a href="#L141">141</a> </span>
+<span class="source-line" id="L142"><a href="#L142">142</a> def rank(project, step, direction):</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     &quot;&quot;&quot;Move an initiative up or down within its tier. The tier is first renumbered to its sorted positions</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>     (a write only where an order differs — equal orders would otherwise make Up sort later), then the two</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     neighbours swap; a refused second write puts the first back.&quot;&quot;&quot;</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     s = _step(project, step)</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     same = sorted([(int(g.get(&quot;order&quot;) or 0), x) for x, g in _initiatives(project) if x.get(&quot;tier&quot;) == s.get(&quot;tier&quot;)], key=lambda t: (t[0], t[1].get(&quot;name&quot;) or &quot;&quot;))</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     idx = next((k for k, (o, x) in enumerate(same) if x.get(&quot;id&quot;) == step), None)</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     if idx is None:</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>         return _no(&quot;not in a tier&quot;)</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     j = idx - 1 if direction == &quot;up&quot; else idx + 1</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     if j &lt; 0 or j &gt;= len(same):</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>         return _no(&quot;%s is already at the %s of its tier — the Tier menu moves it between tiers&quot; % (s.get(&quot;name&quot;), &quot;top&quot; if direction == &quot;up&quot; else &quot;foot&quot;))</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     for k, (o, x) in enumerate(same):</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>         if o != k:</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>             r0 = _write_nav(project, x, order=k)</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>             if not r0.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>                 return _no(&quot;the tier could not be renumbered: %s&quot; % r0.get(&quot;error&quot;))</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     mover, other = same[idx][1], same[j][1]</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     r1 = _write_nav(project, other, order=idx)</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     if not r1.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>         return _no(&quot;the engine refused: %s&quot; % r1.get(&quot;error&quot;))</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     r2 = _write_nav(project, mover, order=j)</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>     if not r2.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>         _write_nav(project, other, order=j)</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>         return _no(&quot;the engine refused: %s — nothing moved&quot; % r2.get(&quot;error&quot;))</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>     return _ok(&quot;%s moved %s within tier %s, past %s&quot; % (s.get(&quot;name&quot;), direction, s.get(&quot;tier&quot;), other.get(&quot;name&quot;)),</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>                undo={&quot;act&quot;: &quot;rank&quot;, &quot;step&quot;: step, &quot;direction&quot;: &quot;down&quot; if direction == &quot;up&quot; else &quot;up&quot;})</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> </span>
+<span class="source-line" id="L172"><a href="#L172">172</a> </span>
+<span class="source-line" id="L173"><a href="#L173">173</a> def rename(project, step, name):</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>     s = _step(project, step)</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>     name = &quot; &quot;.join(str(name or &quot;&quot;).split())</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>     if s is None:</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     if not name:</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>         return _no(&quot;a name is needed&quot;)</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--name&quot;, name)</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     return _ok(&quot;renamed \u2018%s\u2019 to \u2018%s\u2019&quot; % (s.get(&quot;name&quot;), name), undo={&quot;act&quot;: &quot;rename&quot;, &quot;step&quot;: step, &quot;name&quot;: s.get(&quot;name&quot;)})</span>
+<span class="source-line" id="L184"><a href="#L184">184</a> </span>
+<span class="source-line" id="L185"><a href="#L185">185</a> </span>
+<span class="source-line" id="L186"><a href="#L186">186</a> def date(project, step, due):</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>     s = _step(project, step)</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>     if s is None:</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>     if s.get(&quot;ref&quot;):</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>         return _no(&quot;a referenced part takes its date from its own record — set it in that cockpit&quot;)</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     due = str(due or &quot;&quot;).strip() or &quot;none&quot;</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--due&quot;, due)</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>         return _no(&quot;the engine refused: %s (a date is YYYY-MM-DD)&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>     old = s.get(&quot;due&quot;) or &quot;none&quot;</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     return _ok(&quot;%s now %s&quot; % (s.get(&quot;name&quot;), (&quot;due &quot; + due) if due != &quot;none&quot; else &quot;carries no date&quot;), undo={&quot;act&quot;: &quot;date&quot;, &quot;step&quot;: step, &quot;due&quot;: old})</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> </span>
+<span class="source-line" id="L199"><a href="#L199">199</a> </span>
+<span class="source-line" id="L200"><a href="#L200">200</a> def _flip(project, step, status, why, waiting_on=None):</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     if waiting_on is not None:</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>         r0 = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--waiting-on&quot;, waiting_on)</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>         if not r0.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>             return r0</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>     return _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--status&quot;, status, &quot;--who&quot;, WHO, &quot;--reason&quot;, why)</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207">207</a> </span>
+<span class="source-line" id="L208"><a href="#L208">208</a> def park(project, step, waiting_on):</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     s = _step(project, step)</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     if s is None:</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>     if s.get(&quot;ref&quot;):</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>         return _no(&quot;a referenced part is parked in its own record — open that cockpit&quot;)</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     trigger = &quot; &quot;.join(str(waiting_on or &quot;&quot;).split())</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     if not trigger:</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>         return _no(&quot;a park carries its trigger — say until when, or what&quot;)</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     r = _flip(project, step, &quot;parked&quot;, &quot;parked by John on the Campaign until &quot; + trigger, waiting_on=trigger)</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>     return _ok(&quot;%s parked until %s&quot; % (s.get(&quot;name&quot;), trigger), undo={&quot;act&quot;: &quot;unpark&quot;, &quot;step&quot;: step})</span>
+<span class="source-line" id="L221"><a href="#L221">221</a> </span>
+<span class="source-line" id="L222"><a href="#L222">222</a> </span>
+<span class="source-line" id="L223"><a href="#L223">223</a> def unpark(project, step):</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     s = _step(project, step)</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     if s is None:</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>     if s.get(&quot;ref&quot;):</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>         return _no(&quot;a referenced part is flipped in its own record&quot;)</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>     r = _flip(project, step, &quot;planned&quot;, &quot;unparked by John on the Campaign&quot;)</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     return _ok(&quot;%s is back in play&quot; % s.get(&quot;name&quot;), undo={&quot;act&quot;: &quot;park&quot;, &quot;step&quot;: step, &quot;waiting_on&quot;: s.get(&quot;waiting_on&quot;) or &quot;later&quot;})</span>
+<span class="source-line" id="L233"><a href="#L233">233</a> </span>
+<span class="source-line" id="L234"><a href="#L234">234</a> </span>
+<span class="source-line" id="L235"><a href="#L235">235</a> def flag(project, step, on=True):</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>     s = _step(project, step)</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     if s is None:</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>     if s.get(&quot;ref&quot;):</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>         return _no(&quot;a referenced part&#x27;s wait lives in its own record&quot;)</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     if on:</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>         r = _flip(project, step, &quot;waiting&quot;, &quot;flagged by John on the Campaign: it needs him&quot;, waiting_on=&quot;John&quot;)</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>         text = &quot;%s now needs you&quot; % s.get(&quot;name&quot;)</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>     else:</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>         r = _flip(project, step, &quot;planned&quot;, &quot;unflagged by John on the Campaign&quot;)</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>         text = &quot;%s no longer waits on you&quot; % s.get(&quot;name&quot;)</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>     return _ok(text, undo={&quot;act&quot;: &quot;unflag&quot; if on else &quot;flag&quot;, &quot;step&quot;: step})</span>
+<span class="source-line" id="L250"><a href="#L250">250</a> </span>
+<span class="source-line" id="L251"><a href="#L251">251</a> </span>
+<span class="source-line" id="L252"><a href="#L252">252</a> def tick(project, step):</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>     return _no(&quot;a tick on a native part waits on your word on the close law — the question in the approval; say it and the tick lands&quot;)</span>
+<span class="source-line" id="L254"><a href="#L254">254</a> </span>
+<span class="source-line" id="L255"><a href="#L255">255</a> </span>
+<span class="source-line" id="L256"><a href="#L256">256</a> def add(project, initiative, kind, text, due=None, project_id=None):</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>     head = _step(project, initiative)</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     if head is None or _own_group(head) is None:</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     kind = str(kind or &quot;task&quot;)</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>     text = &quot; &quot;.join(str(text or &quot;&quot;).split())</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     if kind == &quot;project&quot;:</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>         if not project_id:</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>             return _no(&quot;which project?&quot;)</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>         ref = &quot;project:%s&quot; % project_id</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>         text = text or (&quot;%s (the project)&quot; % project_id[:8])</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>         sid = _slug(text, initiative)</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>         r = _cli(project, &quot;roadmap-propose&quot;, &quot;--step&quot;, sid, &quot;--name&quot;, text, &quot;--ref&quot;, ref)</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     else:</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>         if not text:</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>             return _no(&quot;say what the part is&quot;)</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>         sid = _slug(text, initiative)</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>         args = [&quot;roadmap-propose&quot;, &quot;--step&quot;, sid, &quot;--name&quot;, text]</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>         if due:</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>             args += [&quot;--due&quot;, str(due).strip()]</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>         r = _cli(project, *args)</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     r2 = _spine_set(project, sid, {&quot;navigation&quot;: {&quot;path&quot;: [initiative]}})</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     if not r2.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>         return _no(&quot;the part was written but not placed: %s&quot; % r2.get(&quot;error&quot;))</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     return _ok(&quot;added \u2018%s\u2019 to %s%s&quot; % (text, head.get(&quot;name&quot;), (&quot; · due &quot; + str(due)) if due else &quot;&quot;), undo={&quot;act&quot;: &quot;withdraw&quot;, &quot;step&quot;: sid}, step=sid)</span>
+<span class="source-line" id="L283"><a href="#L283">283</a> </span>
+<span class="source-line" id="L284"><a href="#L284">284</a> </span>
+<span class="source-line" id="L285"><a href="#L285">285</a> def promote(project, seed_id, tier, area, done_when=None):</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     &quot;&quot;&quot;A seed (by its id on the strip) becomes an initiative: the heading step with the tier and area he picked,</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     its root group at the foot of that tier, and the seed spent by one later receipt that cites its id.&quot;&quot;&quot;</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>     seed = seed_by_id(project, seed_id)</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     if seed is None:</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>         return _no(&quot;no such seed — the row above the board is the list&quot;)</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     text = seed[&quot;text&quot;]</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     try:</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>         tier = int(tier) if str(tier or &quot;&quot;).strip() else 3</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>     except Exception:</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>         return _no(&quot;a tier is 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     if tier not in (1, 2, 3):</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>         return _no(&quot;a tier is 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>     sid = _slug(text)</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>     if _step(project, sid) is not None:</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>         return _no(&quot;a goal with that name exists already&quot;)</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     args = [&quot;roadmap-propose&quot;, &quot;--step&quot;, sid, &quot;--name&quot;, text, &quot;--tier&quot;, str(tier), &quot;--done-when&quot;, done_when or &quot;not written yet — say what done looks like&quot;]</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>     if area:</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>         args += [&quot;--area&quot;, str(area)]</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>     r = _cli(project, *args)</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>     r2 = _spine_set(project, sid, {&quot;navigation&quot;: {&quot;path&quot;: [sid], &quot;groups&quot;: [{&quot;id&quot;: sid, &quot;label&quot;: text, &quot;order&quot;: _foot(project, tier), &quot;parent_id&quot;: None}], &quot;role&quot;: &quot;primary&quot;}})</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     if not r2.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>         return _no(&quot;the heading was written but not grouped: %s&quot; % r2.get(&quot;error&quot;))</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     r3 = _cli(project, &quot;grasscatch&quot;, &quot;--deferred&quot;, text, &quot;--reason&quot;, &quot;promoted seed %s → the initiative %s, by John on the Campaign&quot; % (seed[&quot;id&quot;], sid))</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     spent = &quot; — but the seed could not be spent on the strip: %s&quot; % r3.get(&quot;error&quot;) if not r3.get(&quot;ok&quot;) else &quot;&quot;</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     try:   # a goal made from a seed asks its premortem too (2026-10-03, Grok code R1 F3)</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>         from . import nudges as _n</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>         _n.ask_premortem(project, sid, &quot;a new goal&quot;)</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     except Exception:</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>         pass</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>     return _ok(&quot;%s is now a goal in tier %d%s%s&quot; % (text, tier, (&quot; · &quot; + str(area)) if area else &quot;&quot;, spent),</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>                undo={&quot;act&quot;: &quot;withdraw&quot;, &quot;step&quot;: sid, &quot;seed&quot;: seed[&quot;id&quot;]}, step=sid)</span>
+<span class="source-line" id="L319"><a href="#L319">319</a> </span>
+<span class="source-line" id="L320"><a href="#L320">320</a> </span>
+<span class="source-line" id="L321"><a href="#L321">321</a> def retag(project, step, initiative):</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>     &quot;&quot;&quot;A part moves to another initiative: one step_set of its navigation path. A heading is refused.&quot;&quot;&quot;</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>     s = _step(project, step)</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>     if s is None:</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>     if _own_group(s) is not None:</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>         return _no(&quot;%s is a goal, not a part — the Tier menu moves it&quot; % s.get(&quot;name&quot;))</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     head = _step(project, initiative)</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     if head is None or _own_group(head) is None:</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     nav = dict(s.get(&quot;navigation&quot;) or {})</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>     old = list(nav.get(&quot;path&quot;) or [])</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>     if old and old[0] == initiative:</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>         return _no(&quot;%s is already under %s&quot; % (s.get(&quot;name&quot;), head.get(&quot;name&quot;)))</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>     nav[&quot;path&quot;] = [initiative]</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     r = _spine_set(project, step, {&quot;navigation&quot;: nav})</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>     return _ok(&quot;%s moved to %s&quot; % (s.get(&quot;name&quot;), head.get(&quot;name&quot;)), undo={&quot;act&quot;: &quot;retag&quot;, &quot;step&quot;: step, &quot;initiative&quot;: old[0]} if old else None)</span>
+<span class="source-line" id="L340"><a href="#L340">340</a> </span>
+<span class="source-line" id="L341"><a href="#L341">341</a> </span>
+<span class="source-line" id="L342"><a href="#L342">342</a> def withdraw(project, step, seed=None):</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>     &quot;&quot;&quot;The inverse of add and promote. The record is append-only, so nothing is deleted: the step&#x27;s navigation</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>     is cleared (one step_set), which takes it off the board; the ordinary cockpit still shows it. A heading that</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>     has parts is refused (the engine would refuse their paths). With a seed id, the seed is given back.&quot;&quot;&quot;</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     s = _step(project, step)</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>     if s is None:</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>     old_nav = s.get(&quot;navigation&quot;)</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     if not old_nav:</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>         return _no(&quot;%s is already off the board&quot; % s.get(&quot;name&quot;))</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>     if _own_group(s) is not None and _parts_of(project, step):</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>         return _no(&quot;%s has parts now — move them first, then withdraw it&quot; % s.get(&quot;name&quot;))</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>     r = _spine_set(project, step, {&quot;navigation&quot;: None})</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>     back = &quot;&quot;</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>     if seed:</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>         r2 = _cli(project, &quot;grasscatch&quot;, &quot;--deferred&quot;, s.get(&quot;name&quot;) or &quot;&quot;, &quot;--reason&quot;, &quot;restored seed %s — the initiative %s was undone by John on the Campaign&quot; % (seed, step))</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>         back = &quot; and the seed is back above the board&quot; if r2.get(&quot;ok&quot;) else &quot; — but the seed could not be restored on the strip: %s&quot; % r2.get(&quot;error&quot;)</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>     return _ok(&quot;%s withdrawn — off the board; the record keeps it (the cockpit shows it)%s&quot; % (s.get(&quot;name&quot;), back),</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>                undo={&quot;act&quot;: &quot;restore&quot;, &quot;step&quot;: step, &quot;navigation&quot;: old_nav, &quot;seed&quot;: seed})</span>
+<span class="source-line" id="L363"><a href="#L363">363</a> </span>
+<span class="source-line" id="L364"><a href="#L364">364</a> </span>
+<span class="source-line" id="L365"><a href="#L365">365</a> def restore(project, step, navigation, seed=None):</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>     s = _step(project, step)</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>     if s is None:</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>         return _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>     if not isinstance(navigation, dict):</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>         return _no(&quot;nothing to restore it to&quot;)</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>     r = _spine_set(project, step, {&quot;navigation&quot;: navigation})</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>     spent = &quot;&quot;</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>     if seed:</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>         r2 = _cli(project, &quot;grasscatch&quot;, &quot;--deferred&quot;, s.get(&quot;name&quot;) or &quot;&quot;, &quot;--reason&quot;, &quot;promoted seed %s → the initiative %s, by John on the Campaign (restored)&quot; % (seed, step))</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>         spent = &quot;&quot; if r2.get(&quot;ok&quot;) else &quot; — but the seed could not be spent on the strip: %s&quot; % r2.get(&quot;error&quot;)</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>     return _ok(&quot;%s is back on the board%s&quot; % (s.get(&quot;name&quot;), spent), undo={&quot;act&quot;: &quot;withdraw&quot;, &quot;step&quot;: step, &quot;seed&quot;: seed})</span>
+<span class="source-line" id="L379"><a href="#L379">379</a> </span>
+<span class="source-line" id="L380"><a href="#L380">380</a> </span>
+<span class="source-line" id="L381"><a href="#L381">381</a> ACTS = {&quot;move_tier&quot;, &quot;rank&quot;, &quot;rename&quot;, &quot;date&quot;, &quot;park&quot;, &quot;unpark&quot;, &quot;flag&quot;, &quot;unflag&quot;, &quot;tick&quot;, &quot;add&quot;, &quot;promote&quot;, &quot;withdraw&quot;, &quot;restore&quot;, &quot;retag&quot;,</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>         &quot;pace&quot;, &quot;done_when&quot;, &quot;place&quot;, &quot;seat&quot;, &quot;home&quot;, &quot;new_goal&quot;, &quot;guide&quot;, &quot;not_now&quot;, &quot;nudge_again&quot;, &quot;seat_new&quot;,</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>         &quot;resume&quot;, &quot;resume_done&quot;, &quot;if_then&quot;, &quot;premortem&quot;, &quot;premortem_skip&quot;, &quot;premortem_ask&quot;}</span>
+<span class="source-line" id="L384"><a href="#L384">384</a> </span>
+<span class="source-line" id="L385"><a href="#L385">385</a> </span>
+<span class="source-line" id="L386"><a href="#L386">386</a> # ── the seats (2026-09-30, John&#x27;s three levels): a goal&#x27;s component on the desk ─────────────────────────────────────</span>
+<span class="source-line" id="L387"><a href="#L387">387</a> </span>
+<span class="source-line" id="L388"><a href="#L388">388</a> SEATS = (&quot;active&quot;, &quot;deck&quot;)</span>
+<span class="source-line" id="L389"><a href="#L389">389</a> INITIATIVE_KINDS = (&quot;project&quot;, &quot;effort&quot;, &quot;task&quot;)</span>
+<span class="source-line" id="L390"><a href="#L390">390</a> </span>
+<span class="source-line" id="L391"><a href="#L391">391</a> </span>
+<span class="source-line" id="L392"><a href="#L392">392</a> def _kind_of(step):</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>     ref = str(step.get(&quot;ref&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>     return ref.split(&quot;:&quot;, 1)[0] if ref else &quot;task&quot;</span>
+<span class="source-line" id="L395"><a href="#L395">395</a> </span>
+<span class="source-line" id="L396"><a href="#L396">396</a> </span>
+<span class="source-line" id="L397"><a href="#L397">397</a> def _goal_of(project, step):</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>     &quot;&quot;&quot;The heading a part sits under (its navigation path&#x27;s root), or None.&quot;&quot;&quot;</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>     nav = step.get(&quot;navigation&quot;) if isinstance(step.get(&quot;navigation&quot;), dict) else {}</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>     path = nav.get(&quot;path&quot;) or []</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>     return _step(project, path[0]) if path else None</span>
+<span class="source-line" id="L402"><a href="#L402">402</a> </span>
+<span class="source-line" id="L403"><a href="#L403">403</a> </span>
+<span class="source-line" id="L404"><a href="#L404">404</a> def _seat_ids(project, seat, except_id=None):</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     &quot;&quot;&quot;The components in a seat, in his order.&quot;&quot;&quot;</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>     rows = [(x.get(&quot;seat_order&quot;) if isinstance(x.get(&quot;seat_order&quot;), int) else 999, x.get(&quot;name&quot;) or &quot;&quot;, x[&quot;id&quot;])</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>             for x in _projection(project) if x.get(&quot;seat&quot;) == seat and x[&quot;id&quot;] != except_id and x.get(&quot;status&quot;) not in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>     return [sid for _o, _n, sid in sorted(rows)]</span>
+<span class="source-line" id="L409"><a href="#L409">409</a> </span>
+<span class="source-line" id="L410"><a href="#L410">410</a> </span>
+<span class="source-line" id="L411"><a href="#L411">411</a> def _seat_line(project, seat):</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>     names = []</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>     for sid in _seat_ids(project, seat):</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>         x = _step(project, sid) or {}</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>         names.append(x.get(&quot;name&quot;) or sid)</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>     line = (&quot;active: &quot; if seat == &quot;active&quot; else &quot;on deck: &quot;) + (&quot;, &quot;.join(names) if names else &quot;nothing&quot;)</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>     if seat == &quot;active&quot; and len(names) &gt; 3:</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>         line += &quot; %s %d active is wider than three; the steward would keep to three&quot; % (&quot;\u2014&quot;, len(names))     # said, never refused (his word: no cap)</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>     return line</span>
+<span class="source-line" id="L420"><a href="#L420">420</a> </span>
+<span class="source-line" id="L421"><a href="#L421">421</a> </span>
+<span class="source-line" id="L422"><a href="#L422">422</a> def _place_seat(project, step, seat, position):</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>     &quot;&quot;&quot;Put a component at a position in a seat&#x27;s order; the others close up. The first refused write is the error.&quot;&quot;&quot;</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>     ids = _seat_ids(project, seat, except_id=step)</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>     position = max(0, min(int(position), len(ids)))</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>     ids.insert(position, step)</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>     for k, sid in enumerate(ids):</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>         cur = _step(project, sid)</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>         if cur.get(&quot;seat_order&quot;) != k:</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>             r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, sid, &quot;--seat-order&quot;, str(k))</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>             if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>                 return &quot;the engine refused: %s&quot; % r.get(&quot;error&quot;)</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>     return None</span>
+<span class="source-line" id="L434"><a href="#L434">434</a> </span>
+<span class="source-line" id="L435"><a href="#L435">435</a> </span>
+<span class="source-line" id="L436"><a href="#L436">436</a> def _component(project, step):</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>     &quot;&quot;&quot;The step as a seatable component, or a refusal.&quot;&quot;&quot;</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>     s = _step(project, step)</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>     if s is None:</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>         return None, _no(&quot;no such part&quot;)</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>     if _own_group(s) is not None:</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>         names = &quot;, &quot;.join((x.get(&quot;name&quot;) or x[&quot;id&quot;]) for x in _parts_of(project, step) if _kind_of(x) in INITIATIVE_KINDS)[:200]</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>         return None, _no(&quot;%s is a goal \u2014 a goal has no seat; name one of its components%s&quot; % (s.get(&quot;name&quot;), (&quot;: &quot; + names) if names else &quot;&quot;))</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>     if _kind_of(s) not in INITIATIVE_KINDS:</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>         return None, _no(&quot;%s is a %s \u2014 it rides inside its goal; a cockpit, an effort or a desk item takes a seat&quot; % (s.get(&quot;name&quot;), _kind_of(s)))</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>     return s, None</span>
+<span class="source-line" id="L447"><a href="#L447">447</a> </span>
+<span class="source-line" id="L448"><a href="#L448">448</a> </span>
+<span class="source-line" id="L449"><a href="#L449">449</a> def seat(project, step, seat, position=None):</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>     &quot;&quot;&quot;Put a component on the desk: ACTIVE or ON DECK, at a position (the foot when none); one receipt naming the</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>     seat as it now is; the undo puts it back where it sat (its old seat and place, or its goal).&quot;&quot;&quot;</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>     s, refusal = _component(project, step)</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>     if refusal:</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>         return refusal</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>     seat = str(seat or &quot;&quot;).strip().lower()</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>     if seat not in SEATS:</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>         return _no(&quot;a seat is active or deck&quot;)</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     old_seat = s.get(&quot;seat&quot;) if s.get(&quot;seat&quot;) in SEATS else None</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>     old_pos = _seat_ids(project, old_seat).index(step) if old_seat and step in _seat_ids(project, old_seat) else None</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>     if old_seat == seat and position is None:</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>         return _no(&quot;%s is already %s&quot; % (s.get(&quot;name&quot;), &quot;active&quot; if seat == &quot;active&quot; else &quot;on deck&quot;))</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>     place = int(position) if position is not None else len(_seat_ids(project, seat, except_id=step))</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--seat-in&quot;, seat, &quot;--seat-order&quot;, str(place))</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>     undo = {&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: step, &quot;seat&quot;: old_seat, &quot;position&quot;: old_pos or 0} if old_seat else {&quot;act&quot;: &quot;home&quot;, &quot;step&quot;: step}</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>     err = _place_seat(project, step, seat, place)</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>     if not err and old_seat and old_seat != seat:</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>         err = _renumber_seat(project, old_seat)</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>     if err:</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>         return _no(&quot;%s is %s, but the order could not close up: %s \u2014 undo puts it back&quot; % (s.get(&quot;name&quot;), &quot;active&quot; if seat == &quot;active&quot; else &quot;on deck&quot;, err), undo=undo)</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>     g = _goal_of(project, s)</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>     where = (&quot;%s (%s)&quot; % (s.get(&quot;name&quot;), g.get(&quot;name&quot;))) if g else s.get(&quot;name&quot;)</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>     return _ok(&quot;%s is %s \u2014 %s&quot; % (where, &quot;active&quot; if seat == &quot;active&quot; else &quot;on deck&quot;, _seat_line(project, seat)), undo=undo)</span>
+<span class="source-line" id="L475"><a href="#L475">475</a> </span>
+<span class="source-line" id="L476"><a href="#L476">476</a> </span>
+<span class="source-line" id="L477"><a href="#L477">477</a> def _renumber_seat(project, seat):</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>     for k, sid in enumerate(_seat_ids(project, seat)):</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>         cur = _step(project, sid)</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>         if cur.get(&quot;seat_order&quot;) != k:</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>             r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, sid, &quot;--seat-order&quot;, str(k))</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>             if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>                 return &quot;the engine refused: %s&quot; % r.get(&quot;error&quot;)</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>     return None</span>
+<span class="source-line" id="L485"><a href="#L485">485</a> </span>
+<span class="source-line" id="L486"><a href="#L486">486</a> </span>
+<span class="source-line" id="L487"><a href="#L487">487</a> def home(project, step):</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>     &quot;&quot;&quot;Send a component back into its goal (no seat); the seat it left closes up; the undo re-seats it where it was.&quot;&quot;&quot;</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>     s, refusal = _component(project, step)</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>     if refusal:</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>         return refusal</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>     old_seat = s.get(&quot;seat&quot;) if s.get(&quot;seat&quot;) in SEATS else None</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>     if not old_seat:</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>         return _no(&quot;%s is in its goal already&quot; % s.get(&quot;name&quot;))</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>     old_pos = _seat_ids(project, old_seat).index(step) if step in _seat_ids(project, old_seat) else 0</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--seat-in&quot;, &quot;none&quot;)</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>     undo = {&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: step, &quot;seat&quot;: old_seat, &quot;position&quot;: old_pos}</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>     err = _renumber_seat(project, old_seat)</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>     if err:</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>         return _no(&quot;%s is back in its goal, but %s could not close up: %s \u2014 undo puts it back&quot; % (s.get(&quot;name&quot;), &quot;Active&quot; if old_seat == &quot;active&quot; else &quot;On deck&quot;, err), undo=undo)</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>     g = _goal_of(project, s)</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>     return _ok(&quot;%s back in %s \u2014 %s&quot; % (s.get(&quot;name&quot;), g.get(&quot;name&quot;) if g else &quot;its goal&quot;, _seat_line(project, old_seat)), undo=undo)</span>
+<span class="source-line" id="L505"><a href="#L505">505</a> </span>
+<span class="source-line" id="L506"><a href="#L506">506</a> </span>
+<span class="source-line" id="L507"><a href="#L507">507</a> def new_goal(project, text, tier=None, area=None, done_when=None):</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>     &quot;&quot;&quot;A goal from his words (no seed): the heading step with its tier and its root group at the foot of that tier.&quot;&quot;&quot;</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>     text = &quot; &quot;.join(str(text or &quot;&quot;).split())</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>     if not text:</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>         return _no(&quot;a goal needs a name&quot;)</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>     try:</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>         tier = int(tier) if str(tier or &quot;&quot;).strip() else 3</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>     except Exception:</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>         return _no(&quot;a tier is 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>     if tier not in (1, 2, 3):</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>         return _no(&quot;a tier is 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L518"><a href="#L518">518</a>     sid = _slug(text)</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>     if _step(project, sid) is not None:</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>         return _no(&quot;a goal with that name exists already&quot;)</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>     args = [&quot;roadmap-propose&quot;, &quot;--step&quot;, sid, &quot;--name&quot;, text, &quot;--tier&quot;, str(tier), &quot;--done-when&quot;, done_when or &quot;not written yet \u2014 say what done looks like&quot;]</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>     if area:</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>         args += [&quot;--area&quot;, str(area)]</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>     r = _cli(project, *args)</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>     r2 = _spine_set(project, sid, {&quot;navigation&quot;: {&quot;path&quot;: [sid], &quot;groups&quot;: [{&quot;id&quot;: sid, &quot;label&quot;: text, &quot;order&quot;: _foot(project, tier), &quot;parent_id&quot;: None}], &quot;role&quot;: &quot;primary&quot;}})</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>     if not r2.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>         return _no(&quot;the heading was written but not grouped: %s&quot; % r2.get(&quot;error&quot;))</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>     try:   # the Star Chart asks its premortem once on a new goal (2026-10-03)</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>         from . import nudges as _n</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>         _n.ask_premortem(project, sid, &quot;a new goal&quot;)</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>     except Exception:</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>         pass</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>     return _ok(&quot;%s is now a goal in tier %d%s&quot; % (text, tier, (&quot; \u00b7 &quot; + str(area)) if area else &quot;&quot;), undo={&quot;act&quot;: &quot;withdraw&quot;, &quot;step&quot;: sid}, step=sid)</span>
+<span class="source-line" id="L536"><a href="#L536">536</a> </span>
+<span class="source-line" id="L537"><a href="#L537">537</a> </span>
+<span class="source-line" id="L538"><a href="#L538">538</a> def pace(project, step, when):</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>     &quot;&quot;&quot;The date he drives an initiative toward (YYYY-MM-DD, or none).&quot;&quot;&quot;</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>     s = _step(project, step)</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>     when = str(when or &quot;&quot;).strip() or &quot;none&quot;</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--pace&quot;, when)</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>         return _no(&quot;the engine refused: %s (a pace is YYYY-MM-DD, or none)&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>     old = s.get(&quot;pace&quot;) or &quot;none&quot;</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>     if old != &quot;none&quot; and when != &quot;none&quot; and when &gt; old:   # the pace slipped later: the Star Chart asks its premortem (2026-10-03)</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>         try:</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>             from . import nudges as _n</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>             _n.ask_premortem(project, step, &quot;its pace moved from %s to %s&quot; % (old, when))</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>         except Exception:</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>             pass</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>     return _ok(&quot;%s: the pace is %s&quot; % (s.get(&quot;name&quot;), (&quot;now &quot; + when) if when != &quot;none&quot; else &quot;cleared&quot;), undo={&quot;act&quot;: &quot;pace&quot;, &quot;step&quot;: step, &quot;when&quot;: old})</span>
+<span class="source-line" id="L555"><a href="#L555">555</a> </span>
+<span class="source-line" id="L556"><a href="#L556">556</a> </span>
+<span class="source-line" id="L557"><a href="#L557">557</a> def done_when(project, step, text):</span>
+<span class="source-line" id="L558"><a href="#L558">558</a>     &quot;&quot;&quot;Revise a goal — what done looks like — on its initiative (the goal&#x27;s place, W2 v2).&quot;&quot;&quot;</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>     s = _step(project, step)</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>     text = &quot; &quot;.join(str(text or &quot;&quot;).split())</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>     if not text:</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>         return _no(&quot;a goal is a sentence — say what done looks like&quot;)</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>     old = s.get(&quot;done_when&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>     if text == old:</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>         return _no(&quot;the goal of %s already reads so&quot; % s.get(&quot;name&quot;))</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>     r = _cli(project, &quot;roadmap-set&quot;, &quot;--step&quot;, step, &quot;--done-when&quot;, text)</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>     return _ok(&quot;Goal of %s revised&quot; % s.get(&quot;name&quot;), undo={&quot;act&quot;: &quot;done_when&quot;, &quot;step&quot;: step, &quot;text&quot;: old} if old else None)</span>
+<span class="source-line" id="L572"><a href="#L572">572</a> </span>
+<span class="source-line" id="L573"><a href="#L573">573</a> </span>
+<span class="source-line" id="L574"><a href="#L574">574</a> def _tier_ids(project, tier, except_id=None):</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>     same = sorted([(int(g.get(&quot;order&quot;) or 0), x.get(&quot;name&quot;) or &quot;&quot;, x[&quot;id&quot;]) for x, g in _initiatives(project) if x.get(&quot;tier&quot;) == tier and x[&quot;id&quot;] != except_id])</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>     return [sid for _o, _n, sid in same]</span>
+<span class="source-line" id="L577"><a href="#L577">577</a> </span>
+<span class="source-line" id="L578"><a href="#L578">578</a> </span>
+<span class="source-line" id="L579"><a href="#L579">579</a> def _place_tier(project, step, tier, position):</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>     &quot;&quot;&quot;Put an initiative at a position in its tier&#x27;s order; the others close up. The first refused write is the error.&quot;&quot;&quot;</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>     ids = _tier_ids(project, tier, except_id=step)</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>     position = max(0, min(int(position), len(ids)))</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>     ids.insert(position, step)</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>     for k, sid in enumerate(ids):</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>         cur = _step(project, sid)</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>         if int((_own_group(cur) or {}).get(&quot;order&quot;) or 0) != k:</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>             r = _write_nav(project, cur, order=k)</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>             if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>                 return &quot;the engine refused: %s&quot; % r.get(&quot;error&quot;)</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>     return None</span>
+<span class="source-line" id="L591"><a href="#L591">591</a> </span>
+<span class="source-line" id="L592"><a href="#L592">592</a> </span>
+<span class="source-line" id="L593"><a href="#L593">593</a> def place(project, step, band, position=0, tier=None, tier_position=None):</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>     &quot;&quot;&quot;ONE act for a drop of a goal on the board: into a tier&#x27;s band (1 · 2 · 3, the last being the seed goals). The</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>     tier only \u2014 his word: no ranking inside a tier. One receipt; the undo is the old tier.&quot;&quot;&quot;</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>     s = _step(project, step)</span>
+<span class="source-line" id="L597"><a href="#L597">597</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L598"><a href="#L598">598</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L599"><a href="#L599">599</a>     band = str(band or &quot;&quot;).strip().lower()</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>     if band not in (&quot;1&quot;, &quot;2&quot;, &quot;3&quot;):</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>         return _no(&quot;a band is a tier 1, 2 or 3&quot;)</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>     tier = int(band)</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>     old_tier = s.get(&quot;tier&quot;) if s.get(&quot;tier&quot;) in (1, 2, 3) else None</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>     if old_tier == tier:</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>         return _no(&quot;%s is already in tier %d \u2014 there is no order inside a tier&quot; % (s.get(&quot;name&quot;), tier))</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>     r = move_tier(project, step, tier)</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>         return r</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>     return _ok(&quot;%s moved to tier %d&quot; % (s.get(&quot;name&quot;), tier), undo={&quot;act&quot;: &quot;place&quot;, &quot;step&quot;: step, &quot;band&quot;: str(old_tier), &quot;position&quot;: 0} if old_tier else None)</span>
+<span class="source-line" id="L610"><a href="#L610">610</a> </span>
+<span class="source-line" id="L611"><a href="#L611">611</a> </span>
+<span class="source-line" id="L612"><a href="#L612">612</a> def guide(project, step, text):</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>     &quot;&quot;&quot;W2d (2026-09-30): his revision of a goal&#x27;s guide from its place. The steward writes the guide on his word in the</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>     conversation; this is his own hand on the file - written whole with a dated History line, committed. No undo: the</span>
+<span class="source-line" id="L615"><a href="#L615">615</a>     History line and the Campaign&#x27;s commits keep every version.&quot;&quot;&quot;</span>
+<span class="source-line" id="L616"><a href="#L616">616</a>     s = _step(project, step)</span>
+<span class="source-line" id="L617"><a href="#L617">617</a>     if not s or not _own_group(s):</span>
+<span class="source-line" id="L618"><a href="#L618">618</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L619"><a href="#L619">619</a>     from .steward_campaign import write_guide</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>     r = write_guide(project, step, text, who=&quot;John&quot;)</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>         return _no(str(r.get(&quot;error&quot;) or &quot;the guide was not written&quot;))</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>     return _ok(&quot;the guide of %s revised \u2014 %s&quot; % (s.get(&quot;name&quot;), r.get(&quot;note&quot;) or &quot;written&quot;), undo=None, updated=r.get(&quot;updated&quot;))</span>
+<span class="source-line" id="L624"><a href="#L624">624</a> </span>
+<span class="source-line" id="L625"><a href="#L625">625</a> </span>
+<span class="source-line" id="L626"><a href="#L626">626</a> def not_now(project, key, fact=&quot;&quot;, text=&quot;&quot;):</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>     &quot;&quot;&quot;W3 (2026-10-01): his &#x27;not now&#x27; on a nudge - a receipt in the Campaign&#x27;s folder that silences THAT nudge until its</span>
+<span class="source-line" id="L628"><a href="#L628">628</a>     fact changes; the undo drops the receipt. Nothing on the record moves.&quot;&quot;&quot;</span>
+<span class="source-line" id="L629"><a href="#L629">629</a>     from . import nudges as _n</span>
+<span class="source-line" id="L630"><a href="#L630">630</a>     r = _n.dismiss(project, key, fact, text)</span>
+<span class="source-line" id="L631"><a href="#L631">631</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L632"><a href="#L632">632</a>         return _no(str(r.get(&quot;error&quot;) or &quot;that did not go through&quot;))</span>
+<span class="source-line" id="L633"><a href="#L633">633</a>     return _ok(&quot;not now \u2014 that nudge stays quiet until its fact changes&quot;, undo={&quot;act&quot;: &quot;nudge_again&quot;, &quot;key&quot;: key})</span>
+<span class="source-line" id="L634"><a href="#L634">634</a> </span>
+<span class="source-line" id="L635"><a href="#L635">635</a> </span>
+<span class="source-line" id="L636"><a href="#L636">636</a> def nudge_again(project, key):</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>     from . import nudges as _n</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>     was = (_n.read_dismissed(project) or {}).get(str(key)) or {}     # the receipt as it stood, so its undo puts it back whole (Grok W3)</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>     r = _n.undismiss(project, key)</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L641"><a href="#L641">641</a>         return _no(str(r.get(&quot;error&quot;) or &quot;that did not go through&quot;))</span>
+<span class="source-line" id="L642"><a href="#L642">642</a>     return _ok(&quot;the nudge may speak again&quot;, undo={&quot;act&quot;: &quot;not_now&quot;, &quot;key&quot;: key, &quot;fact&quot;: str(was.get(&quot;fact&quot;) or &quot;&quot;), &quot;text&quot;: str(was.get(&quot;text&quot;) or &quot;&quot;)})</span>
+<span class="source-line" id="L643"><a href="#L643">643</a> </span>
+<span class="source-line" id="L644"><a href="#L644">644</a> </span>
+<span class="source-line" id="L645"><a href="#L645">645</a> def resume(project, note, switched_to=&quot;&quot;):</span>
+<span class="source-line" id="L646"><a href="#L646">646</a>     &quot;&quot;&quot;The interrupt lane (2026-10-03): opening a dated item keeps one line of what he was on; undo clears it.&quot;&quot;&quot;</span>
+<span class="source-line" id="L647"><a href="#L647">647</a>     from . import nudges as _n</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>     r = _n.write_resume(project, note, switched_to)</span>
+<span class="source-line" id="L649"><a href="#L649">649</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L650"><a href="#L650">650</a>         return _no(str(r.get(&quot;error&quot;) or &quot;that did not go through&quot;))</span>
+<span class="source-line" id="L651"><a href="#L651">651</a>     return _ok(&quot;kept: you were on %s&quot; % r[&quot;note&quot;], undo={&quot;act&quot;: &quot;resume_done&quot;})</span>
+<span class="source-line" id="L652"><a href="#L652">652</a> </span>
+<span class="source-line" id="L653"><a href="#L653">653</a> </span>
+<span class="source-line" id="L654"><a href="#L654">654</a> def resume_done(project):</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>     from . import nudges as _n</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>     r = _n.clear_resume(project)</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>         return _no(str(r.get(&quot;error&quot;) or &quot;that did not go through&quot;))</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>     was = r.get(&quot;was&quot;) or {}</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>     return _ok(&quot;the note is cleared&quot;, undo=({&quot;act&quot;: &quot;resume&quot;, &quot;note&quot;: was.get(&quot;note&quot;), &quot;switched_to&quot;: was.get(&quot;switched_to&quot;) or &quot;&quot;} if was.get(&quot;note&quot;) else None))</span>
+<span class="source-line" id="L661"><a href="#L661">661</a> </span>
+<span class="source-line" id="L662"><a href="#L662">662</a> </span>
+<span class="source-line" id="L663"><a href="#L663">663</a> def if_then(project, step, text):</span>
+<span class="source-line" id="L664"><a href="#L664">664</a>     &quot;&quot;&quot;The Star Chart (2026-10-03): a goal&#x27;s one if-then next step, in his words, on the record (receipted step_set).&quot;&quot;&quot;</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>     s = _step(project, step)</span>
+<span class="source-line" id="L666"><a href="#L666">666</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L667"><a href="#L667">667</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L668"><a href="#L668">668</a>     text = &quot; &quot;.join(str(text or &quot;&quot;).split())[:300]</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>     old = s.get(&quot;if_then&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>     if text == old:</span>
+<span class="source-line" id="L671"><a href="#L671">671</a>         return _no(&quot;the if-then of %s already reads so&quot; % s.get(&quot;name&quot;))</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>     r = _spine_set(project, step, {&quot;if_then&quot;: text or None})</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L674"><a href="#L674">674</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L675"><a href="#L675">675</a>     return _ok(&quot;%s: %s&quot; % (s.get(&quot;name&quot;), (&quot;the next step is \u201c%s\u201d&quot; % text) if text else &quot;the if-then is cleared&quot;),</span>
+<span class="source-line" id="L676"><a href="#L676">676</a>                undo={&quot;act&quot;: &quot;if_then&quot;, &quot;step&quot;: step, &quot;text&quot;: old})</span>
+<span class="source-line" id="L677"><a href="#L677">677</a> </span>
+<span class="source-line" id="L678"><a href="#L678">678</a> </span>
+<span class="source-line" id="L679"><a href="#L679">679</a> PREMORTEM_Q = &quot;It is three months on and this goal fell short: what went wrong?&quot;</span>
+<span class="source-line" id="L680"><a href="#L680">680</a> </span>
+<span class="source-line" id="L681"><a href="#L681">681</a> </span>
+<span class="source-line" id="L682"><a href="#L682">682</a> def premortem(project, step, text):</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>     &quot;&quot;&quot;His answer to the premortem goes into the goal&#x27;s guide under &#x27;## Premortem&#x27;, then the ask is closed.&quot;&quot;&quot;</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>     s = _step(project, step)</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>     if s is None or _own_group(s) is None:</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>         return _no(&quot;no such goal&quot;)</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>     answer = &quot; &quot;.join(str(text or &quot;&quot;).split())</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>     if not answer:</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>         return _no(&quot;say what went wrong, in a sentence&quot;)</span>
+<span class="source-line" id="L690"><a href="#L690">690</a>     import time as _time</span>
+<span class="source-line" id="L691"><a href="#L691">691</a>     from .steward_campaign import read_guide, write_guide</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>     from . import nudges as _n</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>     g = read_guide(project, step)</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>     body = (g.get(&quot;text&quot;) or (&quot;# %s\n&quot; % (s.get(&quot;name&quot;) or step))).rstrip(&quot;\n&quot;)</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>     block = &quot;## Premortem, %s\n%s\n%s&quot; % (_time.strftime(&quot;%Y-%m-%d&quot;), PREMORTEM_Q, answer)</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>     lines = body.split(&quot;\n&quot;)</span>
+<span class="source-line" id="L697"><a href="#L697">697</a>     h = next((k for k, ln in enumerate(lines) if ln.strip().lower() == &quot;## history&quot;), None)</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>     if h is not None:</span>
+<span class="source-line" id="L699"><a href="#L699">699</a>         body = &quot;\n&quot;.join(lines[:h]).rstrip(&quot;\n&quot;) + &quot;\n\n&quot; + block + &quot;\n\n&quot; + &quot;\n&quot;.join(lines[h:])</span>
+<span class="source-line" id="L700"><a href="#L700">700</a>     else:</span>
+<span class="source-line" id="L701"><a href="#L701">701</a>         body = body + &quot;\n\n&quot; + block + &quot;\n&quot;</span>
+<span class="source-line" id="L702"><a href="#L702">702</a>     r = write_guide(project, step, body, who=&quot;John&quot;)</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>         return _no(str(r.get(&quot;error&quot;) or &quot;the guide was not written&quot;))</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>     _n.close_premortem(project, step)</span>
+<span class="source-line" id="L706"><a href="#L706">706</a>     return _ok(&quot;the premortem of %s is in its guide&quot; % s.get(&quot;name&quot;), undo=None, updated=r.get(&quot;updated&quot;))</span>
+<span class="source-line" id="L707"><a href="#L707">707</a> </span>
+<span class="source-line" id="L708"><a href="#L708">708</a> </span>
+<span class="source-line" id="L709"><a href="#L709">709</a> def premortem_skip(project, step):</span>
+<span class="source-line" id="L710"><a href="#L710">710</a>     from . import nudges as _n</span>
+<span class="source-line" id="L711"><a href="#L711">711</a>     was = _n.close_premortem(project, step)</span>
+<span class="source-line" id="L712"><a href="#L712">712</a>     return _ok(&quot;not now \u2014 the premortem is set aside&quot;,</span>
+<span class="source-line" id="L713"><a href="#L713">713</a>                undo=({&quot;act&quot;: &quot;premortem_ask&quot;, &quot;step&quot;: step, &quot;reason&quot;: (was or {}).get(&quot;reason&quot;) or &quot;&quot;} if was else None))</span>
+<span class="source-line" id="L714"><a href="#L714">714</a> </span>
+<span class="source-line" id="L715"><a href="#L715">715</a> </span>
+<span class="source-line" id="L716"><a href="#L716">716</a> def premortem_ask(project, step, reason=&quot;&quot;):</span>
+<span class="source-line" id="L717"><a href="#L717">717</a>     from . import nudges as _n</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>     if not _n.ask_premortem(project, step, reason or &quot;asked again&quot;):</span>
+<span class="source-line" id="L719"><a href="#L719">719</a>         return _no(&quot;that did not go through&quot;)</span>
+<span class="source-line" id="L720"><a href="#L720">720</a>     return _ok(&quot;the premortem is asked again&quot;, undo={&quot;act&quot;: &quot;premortem_skip&quot;, &quot;step&quot;: step})</span>
+<span class="source-line" id="L721"><a href="#L721">721</a> </span>
+<span class="source-line" id="L722"><a href="#L722">722</a> </span>
+<span class="source-line" id="L723"><a href="#L723">723</a> def seat_new(project, ref, name, seat_to):</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>     &quot;&quot;&quot;A candidate not yet on the Campaign - a cockpit (project:&lt;pid&gt;) or a cockpit within a project</span>
+<span class="source-line" id="L725"><a href="#L725">725</a>     (effort:&lt;pid&gt;/&lt;dir&gt;) - put on the desk in one act (his word, 2026-10-02: &quot;a tile ... right below the on deck that</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>     shows all of the candidates ... anything with an AI Cockpit&quot;): it becomes a component in no goal, then takes the</span>
+<span class="source-line" id="L727"><a href="#L727">727</a>     seat. One receipt; the undo withdraws it. A ref already on the map is seated as it is (never a second card).&quot;&quot;&quot;</span>
+<span class="source-line" id="L728"><a href="#L728">728</a>     from steward_cockpit.campaign_parts import parse_ref</span>
+<span class="source-line" id="L729"><a href="#L729">729</a>     ref = str(ref or &quot;&quot;).strip()</span>
+<span class="source-line" id="L730"><a href="#L730">730</a>     p = parse_ref(ref)</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>     if p is None or p.get(&quot;kind&quot;) not in (&quot;project&quot;, &quot;effort&quot;):</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>         return _no(&quot;a candidate is a cockpit (project:) or a cockpit within a project (effort:)&quot;)</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>     seat_to = str(seat_to or &quot;&quot;).strip().lower()</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>     if seat_to not in SEATS:</span>
+<span class="source-line" id="L735"><a href="#L735">735</a>         return _no(&quot;a seat is active or deck&quot;)</span>
+<span class="source-line" id="L736"><a href="#L736">736</a>     there = next((x for x in _projection(project) if str(x.get(&quot;ref&quot;) or &quot;&quot;) == ref and x.get(&quot;status&quot;) not in (&quot;done&quot;,)), None)</span>
+<span class="source-line" id="L737"><a href="#L737">737</a>     if there is not None:</span>
+<span class="source-line" id="L738"><a href="#L738">738</a>         return seat(project, there[&quot;id&quot;], seat_to)</span>
+<span class="source-line" id="L739"><a href="#L739">739</a>     name = &quot; &quot;.join(str(name or &quot;&quot;).split())[:120] or ref</span>
+<span class="source-line" id="L740"><a href="#L740">740</a>     sid, n = _slug(name, &quot;cand&quot;), 2</span>
+<span class="source-line" id="L741"><a href="#L741">741</a>     while _step(project, sid) is not None:</span>
+<span class="source-line" id="L742"><a href="#L742">742</a>         sid, n = &quot;%s-%d&quot; % (_slug(name, &quot;cand&quot;), n), n + 1</span>
+<span class="source-line" id="L743"><a href="#L743">743</a>     r = _cli(project, &quot;roadmap-propose&quot;, &quot;--step&quot;, sid, &quot;--name&quot;, name, &quot;--ref&quot;, ref)</span>
+<span class="source-line" id="L744"><a href="#L744">744</a>     if not r.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L745"><a href="#L745">745</a>         return _no(&quot;the engine refused: %s&quot; % r.get(&quot;error&quot;))</span>
+<span class="source-line" id="L746"><a href="#L746">746</a>     out = seat(project, sid, seat_to)</span>
+<span class="source-line" id="L747"><a href="#L747">747</a>     if not out.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L748"><a href="#L748">748</a>         withdraw(project, sid)</span>
+<span class="source-line" id="L749"><a href="#L749">749</a>         return out</span>
+<span class="source-line" id="L750"><a href="#L750">750</a>     out[&quot;undo&quot;] = {&quot;act&quot;: &quot;withdraw&quot;, &quot;step&quot;: sid}</span>
+<span class="source-line" id="L751"><a href="#L751">751</a>     return out</span>
+<span class="source-line" id="L752"><a href="#L752">752</a> </span>
+<span class="source-line" id="L753"><a href="#L753">753</a> </span>
+<span class="source-line" id="L754"><a href="#L754">754</a> def act(project, body):</span>
+<span class="source-line" id="L755"><a href="#L755">755</a>     &quot;&quot;&quot;Dispatch one act from the page; every answer is a receipt sentence, ok or refused.&quot;&quot;&quot;</span>
+<span class="source-line" id="L756"><a href="#L756">756</a>     body = body if isinstance(body, dict) else {}</span>
+<span class="source-line" id="L757"><a href="#L757">757</a>     a = str(body.get(&quot;act&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L758"><a href="#L758">758</a>     if a not in ACTS:</span>
+<span class="source-line" id="L759"><a href="#L759">759</a>         return _no(&quot;no such act&quot;)</span>
+<span class="source-line" id="L760"><a href="#L760">760</a>     try:</span>
+<span class="source-line" id="L761"><a href="#L761">761</a>         if a == &quot;move_tier&quot;:</span>
+<span class="source-line" id="L762"><a href="#L762">762</a>             return move_tier(project, body.get(&quot;step&quot;), body.get(&quot;tier&quot;), body.get(&quot;order&quot;))</span>
+<span class="source-line" id="L763"><a href="#L763">763</a>         if a == &quot;rank&quot;:</span>
+<span class="source-line" id="L764"><a href="#L764">764</a>             return rank(project, body.get(&quot;step&quot;), &quot;up&quot; if body.get(&quot;direction&quot;) == &quot;up&quot; else &quot;down&quot;)</span>
+<span class="source-line" id="L765"><a href="#L765">765</a>         if a == &quot;rename&quot;:</span>
+<span class="source-line" id="L766"><a href="#L766">766</a>             return rename(project, body.get(&quot;step&quot;), body.get(&quot;name&quot;))</span>
+<span class="source-line" id="L767"><a href="#L767">767</a>         if a == &quot;date&quot;:</span>
+<span class="source-line" id="L768"><a href="#L768">768</a>             return date(project, body.get(&quot;step&quot;), body.get(&quot;due&quot;))</span>
+<span class="source-line" id="L769"><a href="#L769">769</a>         if a == &quot;park&quot;:</span>
+<span class="source-line" id="L770"><a href="#L770">770</a>             return park(project, body.get(&quot;step&quot;), body.get(&quot;waiting_on&quot;))</span>
+<span class="source-line" id="L771"><a href="#L771">771</a>         if a == &quot;unpark&quot;:</span>
+<span class="source-line" id="L772"><a href="#L772">772</a>             return unpark(project, body.get(&quot;step&quot;))</span>
+<span class="source-line" id="L773"><a href="#L773">773</a>         if a == &quot;flag&quot;:</span>
+<span class="source-line" id="L774"><a href="#L774">774</a>             return flag(project, body.get(&quot;step&quot;), True)</span>
+<span class="source-line" id="L775"><a href="#L775">775</a>         if a == &quot;unflag&quot;:</span>
+<span class="source-line" id="L776"><a href="#L776">776</a>             return flag(project, body.get(&quot;step&quot;), False)</span>
+<span class="source-line" id="L777"><a href="#L777">777</a>         if a == &quot;tick&quot;:</span>
+<span class="source-line" id="L778"><a href="#L778">778</a>             return tick(project, body.get(&quot;step&quot;))</span>
+<span class="source-line" id="L779"><a href="#L779">779</a>         if a == &quot;add&quot;:</span>
+<span class="source-line" id="L780"><a href="#L780">780</a>             return add(project, body.get(&quot;initiative&quot;), body.get(&quot;kind&quot;), body.get(&quot;text&quot;), body.get(&quot;due&quot;), body.get(&quot;project_id&quot;))</span>
+<span class="source-line" id="L781"><a href="#L781">781</a>         if a == &quot;promote&quot;:</span>
+<span class="source-line" id="L782"><a href="#L782">782</a>             return promote(project, body.get(&quot;seed&quot;), body.get(&quot;tier&quot;), body.get(&quot;area&quot;), body.get(&quot;done_when&quot;))</span>
+<span class="source-line" id="L783"><a href="#L783">783</a>         if a == &quot;retag&quot;:</span>
+<span class="source-line" id="L784"><a href="#L784">784</a>             return retag(project, body.get(&quot;step&quot;), body.get(&quot;initiative&quot;))</span>
+<span class="source-line" id="L785"><a href="#L785">785</a>         if a == &quot;seat&quot;:</span>
+<span class="source-line" id="L786"><a href="#L786">786</a>             return seat(project, body.get(&quot;step&quot;), body.get(&quot;seat&quot;), body.get(&quot;position&quot;))</span>
+<span class="source-line" id="L787"><a href="#L787">787</a>         if a == &quot;home&quot;:</span>
+<span class="source-line" id="L788"><a href="#L788">788</a>             return home(project, body.get(&quot;step&quot;))</span>
+<span class="source-line" id="L789"><a href="#L789">789</a>         if a == &quot;new_goal&quot;:</span>
+<span class="source-line" id="L790"><a href="#L790">790</a>             return new_goal(project, body.get(&quot;text&quot;), body.get(&quot;tier&quot;), body.get(&quot;area&quot;), body.get(&quot;done_when&quot;))</span>
+<span class="source-line" id="L791"><a href="#L791">791</a>         if a == &quot;done_when&quot;:</span>
+<span class="source-line" id="L792"><a href="#L792">792</a>             return done_when(project, body.get(&quot;step&quot;), body.get(&quot;text&quot;))</span>
+<span class="source-line" id="L793"><a href="#L793">793</a>         if a == &quot;place&quot;:</span>
+<span class="source-line" id="L794"><a href="#L794">794</a>             return place(project, body.get(&quot;step&quot;), body.get(&quot;band&quot;), body.get(&quot;position&quot;) or 0)</span>
+<span class="source-line" id="L795"><a href="#L795">795</a>         if a == &quot;pace&quot;:</span>
+<span class="source-line" id="L796"><a href="#L796">796</a>             return pace(project, body.get(&quot;step&quot;), body.get(&quot;when&quot;))</span>
+<span class="source-line" id="L797"><a href="#L797">797</a>         if a == &quot;withdraw&quot;:</span>
+<span class="source-line" id="L798"><a href="#L798">798</a>             return withdraw(project, body.get(&quot;step&quot;), body.get(&quot;seed&quot;))</span>
+<span class="source-line" id="L799"><a href="#L799">799</a>         if a == &quot;restore&quot;:</span>
+<span class="source-line" id="L800"><a href="#L800">800</a>             return restore(project, body.get(&quot;step&quot;), body.get(&quot;navigation&quot;), body.get(&quot;seed&quot;))</span>
+<span class="source-line" id="L801"><a href="#L801">801</a>         if a == &quot;guide&quot;:</span>
+<span class="source-line" id="L802"><a href="#L802">802</a>             return guide(project, body.get(&quot;step&quot;), body.get(&quot;text&quot;))</span>
+<span class="source-line" id="L803"><a href="#L803">803</a>         if a == &quot;not_now&quot;:</span>
+<span class="source-line" id="L804"><a href="#L804">804</a>             return not_now(project, body.get(&quot;key&quot;), body.get(&quot;fact&quot;), body.get(&quot;text&quot;))</span>
+<span class="source-line" id="L805"><a href="#L805">805</a>         if a == &quot;nudge_again&quot;:</span>
+<span class="source-line" id="L806"><a href="#L806">806</a>             return nudge_again(project, body.get(&quot;key&quot;))</span>
+<span class="source-line" id="L807"><a href="#L807">807</a>         if a == &quot;seat_new&quot;:</span>
+<span class="source-line" id="L808"><a href="#L808">808</a>             return seat_new(project, body.get(&quot;ref&quot;), body.get(&quot;name&quot;), body.get(&quot;seat&quot;))</span>
+<span class="source-line" id="L809"><a href="#L809">809</a>         if a == &quot;resume&quot;:</span>
+<span class="source-line" id="L810"><a href="#L810">810</a>             return resume(project, body.get(&quot;note&quot;), body.get(&quot;switched_to&quot;))</span>
+<span class="source-line" id="L811"><a href="#L811">811</a>         if a == &quot;resume_done&quot;:</span>
+<span class="source-line" id="L812"><a href="#L812">812</a>             return resume_done(project)</span>
+<span class="source-line" id="L813"><a href="#L813">813</a>         if a == &quot;if_then&quot;:</span>
+<span class="source-line" id="L814"><a href="#L814">814</a>             return if_then(project, body.get(&quot;step&quot;), body.get(&quot;text&quot;))</span>
+<span class="source-line" id="L815"><a href="#L815">815</a>         if a == &quot;premortem&quot;:</span>
+<span class="source-line" id="L816"><a href="#L816">816</a>             return premortem(project, body.get(&quot;step&quot;), body.get(&quot;text&quot;))</span>
+<span class="source-line" id="L817"><a href="#L817">817</a>         if a == &quot;premortem_skip&quot;:</span>
+<span class="source-line" id="L818"><a href="#L818">818</a>             return premortem_skip(project, body.get(&quot;step&quot;))</span>
+<span class="source-line" id="L819"><a href="#L819">819</a>         if a == &quot;premortem_ask&quot;:</span>
+<span class="source-line" id="L820"><a href="#L820">820</a>             return premortem_ask(project, body.get(&quot;step&quot;), body.get(&quot;reason&quot;))</span>
+<span class="source-line" id="L821"><a href="#L821">821</a>     except Exception as e:</span>
+<span class="source-line" id="L822"><a href="#L822">822</a>         return _no(&quot;that did not go through: %s&quot; % e)</span>
+<span class="source-line" id="L823"><a href="#L823">823</a>     return _no(&quot;no such act&quot;)</span></pre></main></body></html>

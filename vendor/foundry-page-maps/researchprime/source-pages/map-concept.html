@@ -1,0 +1,49 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>map-concept · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>map-concept</h1>
+<p class="note">Frozen reference source · <span class="path">planning/foundry-page-2026-10-02/poincare-maps/CONCEPT.md</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 31360248808efb671ee93ecaa970362f55538099ff65c569b9ceeb9aacc33944</p></details>
+<p><a href="../sources/map-concept.md" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> # Poincaré knowledge maps for Foundry skills (concept, corrected 2026-10-03)</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> **Correction (John, 2026-10-03):** the &quot;Piaget hierarchy&quot; he remembered is the **Poincaré** (hyperbolic) geometry of</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> Nickel &amp; Kiela 2017 (&quot;Poincaré Embeddings for Learning Hierarchical Representations&quot;: 2–5 hyperbolic dimensions</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> matched or beat 200 Euclidean dimensions on hierarchical data); the **Lorentz** model is their 2018 follow-up for</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> stable training on deeper hierarchies. Piaget keeps a role later: the sleep loop&#x27;s assimilate / accommodate cycle.</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> Everything this effort called the &quot;Piaget sphere&quot; is renamed the **Poincaré knowledge map**.</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> ## What it is</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> - **One map per skill** (later, per cognitive cell), of the knowledge, methods, tools, skills it commissions and</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a>   places to look that the skill actually uses when it executes tasks.</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> - **Derived, not drawn:** built up and calibrated from real data: the skill&#x27;s run records (which steps ran, which</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a>   sources and files were read, which prompts and references were used), its journal and its outcomes. It grows</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a>   with use; it is not authored by John.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> - **Geometry:** each node is a point in hyperbolic space. Distance from the origin = generality (general,</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a>   heavily-used, highly-connected knowledge near the center; specific material toward the rim); siblings sit close;</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a>   distant branches sit far apart. Trees embed in hyperbolic space with low distortion in very few dimensions, which</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a>   is why it is efficient. Train and store in the **Lorentz** model (numerically stable); project to the **Poincaré</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a>   disk/ball** for display.</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> - **What it is for: context management.** When the skill takes a task, a router (mixture-of-experts style) picks</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a>   the relevant branches and pulls only that part of the knowledge base into the context window, leaving the rest</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a>   untouched. A more general node brings a summary; descending a branch brings specifics. Over time the map makes</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a>   the skill cheaper and more accurate because it loads less and loads the right things.</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> - **How it learns (Piaget&#x27;s later role):** each run is assimilated (usage counts, co-use edges, outcome credit on the</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>   nodes used); the sleep cycle accommodates (re-embeds, splits an overloaded node, merges duplicates, moves a node</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a>   that keeps being used with another branch), proposing structural changes for John&#x27;s approval.</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> ## Relation to John&#x27;s existing work</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> - BASE-BRAIN-SPEC v2.0.2: per-cell knowledge store; &quot;Knowledge-Linear vs Knowledge-Lorentz&quot;; apex = general.</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> - Geometric Memory report (Report 4): hyperbolic ontology + product-space facets + analogy graph; Symbolic-MoE</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>   routing with skill cards and a routing ledger; GEO worker re-embeds after consolidation.</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> - PLAN-Alpha-Agent-Brain-v2 §P13: Tournament 1, Linear cell vs Poincaré cell at matched compute (the empirical test).</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> - T2R design D3: start flat; defer Lorentz until the ontology is deeper than 3 levels.</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> - His Variable Selection work (not on this machine): Poincaré-ball covariance with a calibrated link; the Bell-number</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   limit of a fixed-curvature ball and the product-simplex / variable-curvature fix.</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> ## What the Foundry page shows (replaces the hand-drawn &quot;sphere&quot;)</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> - The map drawn in the Poincaré disk: center = the skill&#x27;s most general, most-used knowledge; zoom by moving the</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>   focus (the hyperbolic &quot;fisheye&quot;: the region you look at expands, the rest compresses to the rim), click a node for</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>   its source card (what it is, which files/prompts/sources it stands for, how often it is used, by which steps).</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> - Lenses: usage, recency, outcome credit, source type; and what the router loaded on the last run.</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> - Until enough run data exists, the map is seeded from the traced process map and the skill&#x27;s files, and labelled</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   &quot;seeded, not yet calibrated&quot;.</span></pre></main></body></html>

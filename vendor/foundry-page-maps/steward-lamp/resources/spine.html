@@ -1,0 +1,254 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>One durable roadmap spine · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="spine" data-anchor-id="a-spine-appendRoadmapEventThroughSpine">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>One durable roadmap spine</h1>
+<p class="intro">Validate events and derived projections, reconcile operation identity, and record goal flips at a guarded close. A file write is not acceptance.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.627834+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/ledger-spine.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 935cbe7fee7610bf2e1171237b9549cac97dabd1096e4507edf685d4a7427298</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\ledger-spine.mjs · lines 548–789</p><pre>export function appendRoadmapEventThroughSpine(projectPath, event, opts = {}) {
+  const storeGate = assertStoreDeclared(&#x27;roadmap_events&#x27;);
+  if (!storeGate.ok) return storeGate;
+
+  if (!event || typeof event !== &#x27;object&#x27; || Array.isArray(event)) {
+    return spineFailure(SPINE_CODE.STATE_UNKNOWN, { error: &#x27;event_not_object&#x27; });
+  }
+
+  // Kind gate: keep SPINE_KIND_REFUSED + allow-list text, but preserve the pure
+  // law&#x27;s error identity (`unknown_roadmap_event_kind`) so durable callers
+  // (appendRoadmapEventDurable / single-writer law) still see the authority
+  // refusal they always refused — Wave 6 must not rename pure-law refusals.
+  const kindGate = assertEventKindAllowed(event.kind);
+  if (!kindGate.ok) {
+    return {
+      ...kindGate,
+      error: &#x27;unknown_roadmap_event_kind&#x27;,
+      event_kinds: [...SPINE_EVENT_KINDS],
+    };
+  }
+
+  const root = path.resolve(projectPath);
+  const ledgerPath = roadmapLedgerPath(root);
+  const flushIndex = shouldFlushPortfolioIndex(opts);
+
+  const timeoutMs = opts.timeoutMs ?? LOCK_TIMEOUT_MS;
+
+  let lockedResult;
+  try {
+    lockedResult = withFileLock(
+      ledgerPath,
+      () =&gt; {
+        // LOAD under the lock (whole-file RMW serialisation). Always prefer the
+        // on-disk ledger when present so concurrent OS processes serialise
+        // correctly; seed is only used to initialise a missing file.
+        const loaded = loadProjectRoadmap(root);
+        if (!loaded.ok &amp;&amp; loaded.exists) {
+          return spineFailure(SPINE_CODE.LEDGER_UNREADABLE, {
+            error: &#x27;backing-store-unreadable&#x27;,
+            detail: loaded.message ?? loaded.error,
+          });
+        }
+        let base;
+        if (loaded.exists) {
+          base = loaded.roadmap;
+        } else if (opts.seed != null &amp;&amp; opts.seed !== undefined) {
+          base = opts.seed;
+        } else {
+          base = emptyRoadmap(opts.project_id ?? null);
+        }
+
+        if (event.kind === &#x27;refinement_update&#x27;) {
+          const prior = findEventByClientId(base,event.client_event_id);
+          if (!prior) {
+            if (event.operation?.expected_seq !== base.roadmap_events.length) return {ok:false,error:&#x27;sequence-conflict&#x27;,expected_seq:event.operation?.expected_seq,actual_seq:base.roadmap_events.length};
+            const prepared=prepareRefinementEvent(root,base,event);
+            if(!prepared.ok) return prepared;
+            event=prepared.event;
+          }
+        } else if (event.kind === &#x27;status_flip&#x27; &amp;&amp; event.to === &#x27;done&#x27; &amp;&amp; foldRefinements(base.roadmap_events).slices?.[event.step_id]) {
+          return {ok:false,error:&#x27;managed-slice-requires-explicit-close&#x27;};
+        }
+        let law = appendRoadmapEventSpineLaw(base, event, { at: opts.at });
+        if (!law.ok) return law;
+        // an accepted close that carries its goal re-read gets its goal_flip from the one writer
+        const closing = closeOf(event, base);
+        let goalFlip = null;
+        if (closing &amp;&amp; GOAL_REREAD.includes(closing.goal_reread) &amp;&amp; !law.idempotent) {
+          let face = &#x27;&#x27;;
+          try { face = fs.readFileSync(path.join(root, FACE_FILE_NAME), &#x27;utf8&#x27;); } catch { face = &#x27;&#x27;; }
+          goalFlip = {
+            kind: &#x27;goal_flip&#x27;, step_id: closing.step_id, verdict: closing.goal_reread,
+            goal_revision: northStarRevision(face), scope: closing.step_id,
+            receipt: { who: event.receipt?.who ?? event.operation?.human?.who ?? &#x27;steward&#x27;, why: &#x27;close of &#x27; + closing.step_id },
+            ...(opts.at ? { at: opts.at } : {}),
+          };
+          const flipLaw = appendRoadmapEventSpineLaw(law.roadmap, goalFlip, { at: opts.at });
+          if (!flipLaw.ok) return flipLaw;
+          law = { ...law, roadmap: flipLaw.roadmap, projection: flipLaw.projection, goal_flip: flipLaw.event };
+        }
+        if (law.idempotent) {
+          const publication=event.kind===&#x27;refinement_update&#x27; ? publishRefinementProjections(root,law.roadmap) : null;
+          if(publication &amp;&amp; !publication.ok) return {...publication,committed:true,operation_id:event.client_event_id};
+          return {
+            ...law,
+            projection_status:publication,
+            project_path: root,
+            roadmap_path: ledgerPath,
+            persisted: false,
+            sot_written: false,
+            locked: true,
+          };
+        }
+
+        // Persist under the same lock
+        fs.mkdirSync(root, { recursive: true });
+        writeFileAtomicSync(ledgerPath, projectRoadmapBytes(law.roadmap));
+        let publication=null;
+        if(event.kind===&#x27;refinement_update&#x27;) {
+          try { publication=publishRefinementProjections(root,law.roadmap); }
+          catch(e) { return {ok:false,error:&#x27;projection-lag&#x27;,committed:true,operation_id:event.client_event_id,detail:e.message}; }
+          if(!publication.ok) return {...publication,committed:true,operation_id:event.client_event_id};
+        }
+
+        let carrier = null;
+        let carrierRel = null;
+        let carrierBytes = null;
+        if (flushIndex) {
+          carrier = roadmapEventCarrierRecord(law.roadmap, law.event, opts);
+          carrierRel = relPathFor(CLASS.ROADMAP_EVENT, carrier.event_id);
+          carrierBytes = roadmapEventBytes(carrier);
+          const carrierAbs = path.join(root, ...carrierRel.split(&#x27;/&#x27;));
+          fs.mkdirSync(path.dirname(carrierAbs), { recursive: true });
+          writeFileAtomicSync(carrierAbs, carrierBytes);
+        }
+
+        return {
+          ok: true,
+          projection_status:publication,
+          spelling: law.spelling,
+          authority: law.authority,
+          event: law.event,
+          roadmap: law.roadmap,
+          projection: law.projection,
+          issues: law.issues,
+          events_only: true,
+          spine: true,
+          idempotent: false,
+          seq: law.event.seq,
+          client_event_id: law.event.client_event_id ?? null,
+          project_path: root,
+          roadmap_path: ledgerPath,
+          persisted: true,
+          sot_written: true,
+          locked: true,
+          single_writer: SPINE_SINGLE_WRITER,
+          carrier,
+          carrier_rel: carrierRel,
+          carrier_bytes: carrierBytes,
+          container_bytes: projectRoadmapBytes(law.roadmap),
+        };
+      },
+      {
+        timeoutMs,
+        onTimeout: (info) =&gt; {
+          const err = new Error(SPINE_TEXT[SPINE_CODE.LOCK_TIMEOUT]);
+          err.code = SPINE_CODE.LOCK_TIMEOUT;
+          err.spine_info = info;
+          return err;
+        },
+      },
+    );
+  } catch (e) {
+    if (e &amp;&amp; e.code === SPINE_CODE.LOCK_TIMEOUT) {
+      return spineFailure(SPINE_CODE.LOCK_TIMEOUT, {
+        error: &#x27;lock-contended&#x27;,
+      });
+    }
+    if (e &amp;&amp; e.code === &#x27;ELOCKTIMEOUT&#x27;) {
+      return spineFailure(SPINE_CODE.LOCK_TIMEOUT, {
+        error: &#x27;lock-contended&#x27;,
+      });
+    }
+    return spineFailure(SPINE_CODE.STATE_UNKNOWN, {
+      error: &#x27;unknown&#x27;,
+      detail: String(e?.message ?? e),
+    });
+  }
+
+  if (!lockedResult || !lockedResult.ok) return lockedResult;
+  if (lockedResult.idempotent) return lockedResult;
+
+  // Optional portfolio index flush OUTSIDE the roadmap lock (lock-order law:
+  // never hold project + portfolio locks together). Carrier bytes were written
+  // under the roadmap lock; ingestWrite re-writes the carrier (idempotent
+  // atomic replace) and flushes the derived row. Only minted project_ids index.
+  if (flushIndex &amp;&amp; lockedResult.carrier &amp;&amp; lockedResult.carrier_rel) {
+    const containerBytes = lockedResult.container_bytes;
+    let ingest;
+    try {
+      ingest = ingestWrite({
+        class: CLASS.ROADMAP_EVENT,
+        project_id: opts.project_id,
+        root,
+        rel: lockedResult.carrier_rel,
+        bytes: lockedResult.carrier_bytes,
+        intent_paths: [pathEntryFor(ROADMAP_FILE_NAME, containerBytes)],
+        home: opts.home,
+        paths: opts.paths,
+        env: opts.env,
+        appendOpts: opts.appendOpts,
+        beforeFlush: opts.beforeFlush,
+        // Carrier already durable under the spine lock; re-assert atomically.
+        write: (target) =&gt; {
+          fs.mkdirSync(path.dirname(target.abs), { recursive: true });
+          writeFileAtomicSync(target.abs, target.bytes.toString(&#x27;utf8&#x27;));
+        },
+      });
+    } catch (e) {
+      // SoT already stands; never throw past the durable path.
+      return {
+        ...lockedResult,
+        ok: true,
+        indexed: false,
+        sot_written: true,
+        index_error: e?.code ?? &#x27;ingest_threw&#x27;,
+        message:
+          `Spine append seq=${lockedResult.seq} durable; index flush refused: ${e?.message ?? e}`,
+      };
+    }
+
+    return {
+      ...lockedResult,
+      ok: ingest.ok === true,
+      code: ingest.code ?? null,
+      status: ingest.status ?? null,
+      text: ingest.text ?? &#x27;&#x27;,
+      ingest,
+      indexed: ingest.ok === true,
+      row: ingest.row ?? null,
+      seq_indexed: ingest.seq ?? null,
+      intent: ingest.intent ?? null,
+      intent_seq: ingest.intent_seq ?? null,
+      intent_emitted: ingest.intent_emitted === true,
+      freshness: ingest.freshness,
+      path: ingest.path ?? null,
+      trace: ingest.trace ?? [],
+      // SoT stands even when index fails
+      sot_written: true,
+      message:
+        ingest.ok === true
+          ? `Spine append seq=${lockedResult.seq} durable + indexed.`
+          : `Spine append seq=${lockedResult.seq} durable; index flush: ${ingest.text || ingest.code}`,
+    };
+  }
+
+  return {
+    ...lockedResult,
+    indexed: false,
+    message: `Spine append seq=${lockedResult.seq} durable under ${SPINE_LOCK_HELPER}+${SPINE_ATOMIC_WRITE}.`,
+  };
+}</pre>
+<p><a class="button" href="../source-pages/spine.html#L548">Open numbered source</a>
+<a href="../sources/spine.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/cli">Alternate entry: closed Node CLI</a> · <a target="_top" href="../index.html#process/writers">Write through the existing doors</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">935cbe7fee7610bf2e1171237b9549cac97dabd1096e4507edf685d4a7427298</span></p><p>Excerpt hash: <span class="path">61a223b42a8d9031f706f72f6ba1f217d05c2da1948dee730175ddc4f6c2f315</span></p></details></article></main></body></html>

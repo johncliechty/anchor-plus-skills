@@ -1,0 +1,1714 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>roadmap · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>roadmap</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Ecgberht\engine\roadmap.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 a9b54dc3c65091a602f1083fa29dcf5671bc5a2081b5f54fe0dbeb373473a5d2</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.627268+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/roadmap.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: a9b54dc3c65091a602f1083fa29dcf5671bc5a2081b5f54fe0dbeb373473a5d2</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * TW1 — Campaign Roadmap: append-only roadmap_events[] + derived roadmap_projection.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  *</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * The Roadmap is engine truth. Face prose is never the only step list: when a</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  * project has only prose, the projection is EMPTY with an honest gap — steps</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  * are never invented from narrative.</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  *</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  * SINGLE WRITER PATH (TW3 hook — do not dual-write):</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>  * - The only writer is appendRoadmapEvent (via roadmap-propose / roadmap-set).</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>  * - roadmap_projection is derived-only: rebuilt from the full event list on</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>  *   every append; direct projection writes are rejected</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>  *   (mutateRoadmapProjectionInPlace always refuses).</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>  * - TW3 job lifecycle (commission propose/confirm, queued→running→done|failed|</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>  *   orphaned|reaped) must bind through this same writer: commission_bind to</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>  *   attach a step to a commissioned job, status_flip (receipt required) for</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>  *   step status changes. No second store, no UI-only state, no direct</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>  *   projection writes. See ROADMAP_SINGLE_WRITER.tw3_hook.</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>  *</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>  * Silent-rewrite law (mirrors Strip heal law):</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>  * - status flip without a receipt → refuse write (append) / reject (rebuild).</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>  * - stored projection that disagrees with the event fold → reject</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>  *   (roadmap_silent_rewrite); heal = rebuild projection from events.</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>  * - roadmap_events history is never rewritten — heal touches projection only.</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>  */</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> import { validNavigation, navigationIssues } from &#x27;./navigation.mjs&#x27;;</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> import { foldRefinements } from &#x27;./refinement-state.mjs&#x27;;</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> import { writeFileAtomicSync, withFileLock } from &#x27;./durable-write.mjs&#x27;;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> import { SPELLING } from &#x27;./verbs.mjs&#x27;;</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> import { resolveProjectPath, loadProjectSurfaces } from &#x27;./face-strip.mjs&#x27;;</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> // Wave 6 spine — circular with ledger-spine (it imports pure law from here).</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> // Safe: both sides only call the other&#x27;s exports from function bodies.</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> import { appendRoadmapEventThroughSpine } from &#x27;./ledger-spine.mjs&#x27;;</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> import { demandClose } from &#x27;./ledger-spine.mjs&#x27;;</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> </span>
+<span class="source-line" id="L39"><a href="#L39">39</a> export const ROADMAP_FILE_NAME = &#x27;roadmap.json&#x27;;</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> export const ROADMAP_SCHEMA_ID = &#x27;ecgberht-roadmap-v0&#x27;;</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42">42</a> /**</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>  * Append-only event kinds (versioned allow-list — Wave 6 / Master-Plan P2).</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>  * New kinds (reflection_receipt, next_stage_proposal, attention_*) require an</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>  * explicit allow-list VERSION BUMP in ledger-spine.mjs + a test. A chat-turn</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>  * kind is structurally impossible.</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>  *</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>  * Wave 10 (v2): face_assert / face_retract / face_refine / face_compile —</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>  * Face compile projection (Master-Plan P4). Project-level events (no step fold).</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>  * Wave 12 (v3): elaboration_probe / elaboration_answer / elaboration_decline /</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>  * elaboration_offer_refused — progressive elaboration at stage START (joined to</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>  * a step via step_id; no projection fold — detail reconstructed from events).</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>  * Wave 14 (v4): reflection_receipt / next_stage_proposal — gate decision 4</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>  * zero-model emit at validated handback (project-level; no step fold).</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>  * Wave 16 (v5): attention_projection_published — altitude contract (project-level).</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>  * Wave 17 (v6): goal_flip — re-read the North Star when a step closes</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>  * (steward slice loop, 2026-08-28). part/gate ride on steps, not a new file.</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>  * Wave 18 (v7): kickoff_proposal / kickoff_confirm — one versioned,</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>  * hash-confirmed kickoff lineage. Both are project-level; confirmed plan</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>  * entries project onto ordinary roadmap steps with component references.</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>  */</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> export const ROADMAP_EVENT_KINDS = Object.freeze([</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>   &#x27;step_create&#x27;,</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>   &#x27;step_set&#x27;,</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>   &#x27;status_flip&#x27;,</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>   &#x27;commission_bind&#x27;,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>   &#x27;scaffold_proposal&#x27;,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   &#x27;face_assert&#x27;,</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   &#x27;face_retract&#x27;,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>   &#x27;face_refine&#x27;,</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   &#x27;face_compile&#x27;,</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>   &#x27;elaboration_probe&#x27;,</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>   &#x27;elaboration_answer&#x27;,</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>   &#x27;elaboration_decline&#x27;,</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>   &#x27;elaboration_offer_refused&#x27;,</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   &#x27;reflection_receipt&#x27;,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>   &#x27;next_stage_proposal&#x27;,</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>   &#x27;attention_projection_published&#x27;,</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>   &#x27;goal_flip&#x27;,</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   &#x27;kickoff_proposal&#x27;,</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>   &#x27;kickoff_confirm&#x27;,</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>   &#x27;refinement_update&#x27;,</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>   // W4 of the steward revision (2026-09-28, v9): a repair PROPOSED after an acceptance and its resolution on his</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   // word (project-level ledger events); a step moved in the plan&#x27;s order on his word (folded)</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   &#x27;repair_proposal&#x27;,</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   &#x27;repair_resolve&#x27;,</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   &#x27;reorder&#x27;,</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> ]);</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90">90</a> /** Project-level kinds that do not fold into roadmap_projection steps. */</span>
+<span class="source-line" id="L91"><a href="#L91">91</a> export const ROADMAP_PROJECT_LEVEL_KINDS = Object.freeze([</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>   &#x27;scaffold_proposal&#x27;,</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   &#x27;face_assert&#x27;,</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   &#x27;face_retract&#x27;,</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   &#x27;face_refine&#x27;,</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   &#x27;face_compile&#x27;,</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   &#x27;elaboration_probe&#x27;,</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>   &#x27;elaboration_answer&#x27;,</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   &#x27;elaboration_decline&#x27;,</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   &#x27;elaboration_offer_refused&#x27;,</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>   &#x27;reflection_receipt&#x27;,</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   &#x27;next_stage_proposal&#x27;,</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>   &#x27;attention_projection_published&#x27;,</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   &#x27;goal_flip&#x27;,</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   &#x27;kickoff_proposal&#x27;,</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   &#x27;kickoff_confirm&#x27;,</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   &#x27;refinement_update&#x27;,</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   &#x27;repair_proposal&#x27;,</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   &#x27;repair_resolve&#x27;,</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> ]);</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a> /** Named bound — appends beyond this refuse with events-bound-exceeded. */</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> export const ROADMAP_EVENTS_MAX = 50_000;</span>
+<span class="source-line" id="L114"><a href="#L114">114</a> </span>
+<span class="source-line" id="L115"><a href="#L115">115</a> /** Step statuses in the derived projection. */</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> export const ROADMAP_STEP_STATUSES = Object.freeze([</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>   &#x27;proposed&#x27;,</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>   &#x27;planned&#x27;,</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   &#x27;active&#x27;,</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   &#x27;waiting&#x27;,</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   &#x27;done&#x27;,</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>   &#x27;parked&#x27;,</span>
+<span class="source-line" id="L123"><a href="#L123">123</a> ]);</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> </span>
+<span class="source-line" id="L125"><a href="#L125">125</a> /** Derived projection fields per step. */</span>
+<span class="source-line" id="L126"><a href="#L126">126</a> export const ROADMAP_PROJECTION_FIELDS = Object.freeze([</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>   &#x27;id&#x27;,</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   &#x27;name&#x27;,</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   &#x27;status&#x27;,</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>   &#x27;done_when&#x27;,</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   &#x27;waiting_on&#x27;,</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   &#x27;due&#x27;,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   &#x27;ref&#x27;,</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   &#x27;tier&#x27;,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>   &#x27;area&#x27;,</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   &#x27;commissioned_as&#x27;,</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>   &#x27;part&#x27;,</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   &#x27;gate&#x27;,</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>   &#x27;component_ids&#x27;,</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>   &#x27;end_to_end_slice&#x27;,</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>   &#x27;kickoff_version&#x27;,</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>   &#x27;kickoff_proposal_hash&#x27;,</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>   &#x27;refinement&#x27;,</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>   &#x27;navigation&#x27;,</span>
+<span class="source-line" id="L145"><a href="#L145">145</a> ]);</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> </span>
+<span class="source-line" id="L147"><a href="#L147">147</a> /** Execution-phase tags. They are not the work-product component map. */</span>
+<span class="source-line" id="L148"><a href="#L148">148</a> export const ROADMAP_PART_TAGS = Object.freeze([</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>   &#x27;research&#x27;,</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>   &#x27;slice&#x27;,</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   &#x27;rigor&#x27;,</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>   &#x27;integrate&#x27;,</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>   &#x27;harden&#x27;,</span>
+<span class="source-line" id="L154"><a href="#L154">154</a> ]);</span>
+<span class="source-line" id="L155"><a href="#L155">155</a> </span>
+<span class="source-line" id="L156"><a href="#L156">156</a> /**</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>  * Fields step_set may change. status requires status_flip (+ receipt);</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>  * commissioned_as requires commission_bind (TW3 single-writer hook).</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>  */</span>
+<span class="source-line" id="L160"><a href="#L160">160</a> export const ROADMAP_SET_FIELDS = Object.freeze([</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   &#x27;navigation&#x27;,</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>   &#x27;name&#x27;,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>   &#x27;done_when&#x27;,</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>   &#x27;waiting_on&#x27;,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   &#x27;due&#x27;,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>   &#x27;ref&#x27;,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>   &#x27;tier&#x27;,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   &#x27;area&#x27;,</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>   &#x27;part&#x27;,</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   &#x27;gate&#x27;,</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>   &#x27;component_ids&#x27;,</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>   &#x27;end_to_end_slice&#x27;,</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>   &#x27;kickoff_version&#x27;,</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   &#x27;kickoff_proposal_hash&#x27;,</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   // the active set (2026-09-29, John: &quot;the active group&quot;): an initiative he works on now, its place in the set,</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   // and the pace — the date he drives the effort toward. Set only by his act (receipted step_set); read by the</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>   // High Seat&#x27;s head and tile. A part&#x27;s own date stays `due`.</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>   &#x27;active&#x27;,</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   &#x27;active_order&#x27;,</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   &#x27;pace&#x27;,</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>   // the seats (2026-09-30, John&#x27;s three levels): a goal&#x27;s component he works interactively — a project&#x27;s cockpit,</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>   // one cockpit within a project (effort:), or a desk task — sits in its goal (no seat), ON DECK, or ACTIVE, in his</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>   // order. Set only by his act or his word (receipted step_set); read by the High Seat&#x27;s head and shelves.</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   &#x27;seat&#x27;,</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>   &#x27;seat_order&#x27;,</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>   // the Star Chart (the Campaign mode, 2026-10-03): a Tier-1 goal&#x27;s one if-then next step, in his words (&quot;If it is</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   // Monday 9:00, then I send the trust questions&quot;). Set only by his act or his word (receipted step_set).</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>   &#x27;if_then&#x27;,</span>
+<span class="source-line" id="L189"><a href="#L189">189</a> ]);</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> </span>
+<span class="source-line" id="L191"><a href="#L191">191</a> /** Receipt fields a status_flip event must carry (when defaults to event.at). */</span>
+<span class="source-line" id="L192"><a href="#L192">192</a> export const FLIP_RECEIPT_FIELDS = Object.freeze([&#x27;who&#x27;, &#x27;why&#x27;]);</span>
+<span class="source-line" id="L193"><a href="#L193">193</a> </span>
+<span class="source-line" id="L194"><a href="#L194">194</a> /**</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>  * Single-writer contract, exported for later waves and docs.</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>  * Wave 6: production persist is the ledger spine (locked durable path);</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>  * pure appendRoadmapEvent remains the in-memory law the spine applies under lock.</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>  */</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> export const ROADMAP_SINGLE_WRITER = Object.freeze({</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   writer: &#x27;appendRoadmapEventThroughSpine&#x27;,</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   pure_law: &#x27;appendRoadmapEvent&#x27;,</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   durable: &#x27;appendRoadmapEventDurable&#x27;,</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   module: &#x27;engine/ledger-spine.mjs&#x27;,</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   verbs: Object.freeze([&#x27;roadmap-propose&#x27;, &#x27;roadmap-set&#x27;]),</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   projection: &#x27;derived_only&#x27;,</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   dual_write_forbidden: true,</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   tw3_hook: Object.freeze({</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     wave: &#x27;TW3&#x27;,</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     contract:</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>       &#x27;Job lifecycle (commission propose/confirm; queued→running→done|failed|orphaned|reaped) must append Roadmap events via the spine (appendRoadmapEvent law under lock): commission_bind to bind a step to a commissioned job, status_flip (with receipt) for step status changes. No second store, no direct roadmap_projection writes, no UI-only state.&#x27;,</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     event_kinds: Object.freeze([&#x27;commission_bind&#x27;, &#x27;status_flip&#x27;]),</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   }),</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> });</span>
+<span class="source-line" id="L214"><a href="#L214">214</a> </span>
+<span class="source-line" id="L215"><a href="#L215">215</a> /** ISO date (YYYY-MM-DD) for event stamps. */</span>
+<span class="source-line" id="L216"><a href="#L216">216</a> function todayIso() {</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   return new Date().toISOString().slice(0, 10);</span>
+<span class="source-line" id="L218"><a href="#L218">218</a> }</span>
+<span class="source-line" id="L219"><a href="#L219">219</a> </span>
+<span class="source-line" id="L220"><a href="#L220">220</a> function nonEmpty(v) {</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   return typeof v === &#x27;string&#x27; &amp;&amp; v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L222"><a href="#L222">222</a> }</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> </span>
+<span class="source-line" id="L224"><a href="#L224">224</a> /**</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>  * Normalize / validate a roadmap container (object or JSON string).</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>  * @param {object|string|null} input</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>  * @returns {{ ok: true, roadmap: object } | { ok: false, error: string, message?: string }}</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>  */</span>
+<span class="source-line" id="L229"><a href="#L229">229</a> export function parseRoadmap(input) {</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   let roadmap = input;</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>   if (typeof input === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     try {</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>       roadmap = JSON.parse(input);</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>     } catch (e) {</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>       return { ok: false, error: &#x27;roadmap_json_parse&#x27;, message: String(e?.message ?? e) };</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>     }</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   }</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   if (!roadmap || typeof roadmap !== &#x27;object&#x27; || Array.isArray(roadmap)) {</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>     return { ok: false, error: &#x27;roadmap_not_object&#x27; };</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>   }</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>   const out = { ...roadmap };</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>   if (!out.schema) out.schema = ROADMAP_SCHEMA_ID;</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>   out.roadmap_events = Array.isArray(out.roadmap_events)</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>     ? out.roadmap_events.map((e) =&gt; ({ ...e }))</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>     : [];</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>   out.roadmap_projection = Array.isArray(out.roadmap_projection)</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     ? out.roadmap_projection.map((s) =&gt; ({ ...s }))</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     : [];</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>   return { ok: true, roadmap: out };</span>
+<span class="source-line" id="L250"><a href="#L250">250</a> }</span>
+<span class="source-line" id="L251"><a href="#L251">251</a> </span>
+<span class="source-line" id="L252"><a href="#L252">252</a> /** Empty roadmap container for a project without one yet. */</span>
+<span class="source-line" id="L253"><a href="#L253">253</a> export function emptyRoadmap(project_id = null) {</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   return {</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>     schema: ROADMAP_SCHEMA_ID,</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>     project_id: project_id ?? null,</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>     as_of: null,</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     roadmap_events: [],</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     roadmap_projection: [],</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>   };</span>
+<span class="source-line" id="L261"><a href="#L261">261</a> }</span>
+<span class="source-line" id="L262"><a href="#L262">262</a> </span>
+<span class="source-line" id="L263"><a href="#L263">263</a> /**</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>  * Normalize a projection step to the locked field set (stable order).</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>  * @param {object} step</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>  */</span>
+<span class="source-line" id="L267"><a href="#L267">267</a> /** W0 (High Seat, 2026-09-26): an optional calendar date on a step — ISO YYYY-MM-DD only, nothing else. */</span>
+<span class="source-line" id="L268"><a href="#L268">268</a> export const ROADMAP_DUE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;</span>
+<span class="source-line" id="L269"><a href="#L269">269</a> export function normalizeDue(v) {</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>   if (typeof v !== &#x27;string&#x27;) return null;</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>   const s = v.trim();</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>   if (!ROADMAP_DUE_PATTERN.test(s)) return null;</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>   const d = new Date(`${s}T00:00:00Z`);</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>   return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : s;</span>
+<span class="source-line" id="L275"><a href="#L275">275</a> }</span>
+<span class="source-line" id="L276"><a href="#L276">276</a> </span>
+<span class="source-line" id="L277"><a href="#L277">277</a> /**</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>  * W0b (High Seat, 2026-09-26): three more optional step fields, validated by value like `part`.</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>  *  ref  — a part that points at another record: project:&lt;pid&gt; · step:&lt;pid&gt;/&lt;sid&gt; · deliverable:&lt;pid&gt;/&lt;row&gt; · calendar:&lt;id&gt;.</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>  *         A step with a ref carries no due and is never flipped here (its own record owns date and state).</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>  *  tier — an initiative&#x27;s priority tier, 1 · 2 · 3, on its heading step.</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>  *  area — an initiative&#x27;s life area, one of six tags, on its heading step.</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>  */</span>
+<span class="source-line" id="L284"><a href="#L284">284</a> export const ROADMAP_REF_PREFIXES = Object.freeze([&#x27;project&#x27;, &#x27;step&#x27;, &#x27;deliverable&#x27;, &#x27;calendar&#x27;, &#x27;effort&#x27;]);   // effort:&lt;pid&gt;/&lt;dir&gt; — one cockpit within a project (2026-09-30)</span>
+<span class="source-line" id="L285"><a href="#L285">285</a> export const ROADMAP_AREA_TAGS = Object.freeze([&#x27;family&#x27;, &#x27;professional&#x27;, &#x27;writing&#x27;, &#x27;research&#x27;, &#x27;tools&#x27;, &#x27;personal&#x27;]);</span>
+<span class="source-line" id="L286"><a href="#L286">286</a> export function normalizeRef(v) {</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>   if (typeof v !== &#x27;string&#x27;) return null;</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>   const s = v.trim();</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>   const m = /^([a-z]+):(\S+)$/.exec(s);</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   if (!m || !ROADMAP_REF_PREFIXES.includes(m[1])) return null;</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>   if ((m[1] === &#x27;step&#x27; || m[1] === &#x27;deliverable&#x27; || m[1] === &#x27;effort&#x27;) &amp;&amp; !/^[^/]+\/[^/]+$/.test(m[2])) return null;</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>   if (m[1] === &#x27;effort&#x27;) { const dir = m[2].split(&#x27;/&#x27;)[1]; if (dir === &#x27;.&#x27; || dir === &#x27;..&#x27; || /\\/.test(dir)) return null; }   // one directory inside the project, never a step out (Grok, W2b)</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>   return s;</span>
+<span class="source-line" id="L294"><a href="#L294">294</a> }</span>
+<span class="source-line" id="L295"><a href="#L295">295</a> export function normalizeTier(v) {</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>   const n = typeof v === &#x27;string&#x27; &amp;&amp; /^\s*[123]\s*$/.test(v) ? Number(v) : v;</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>   return Number.isInteger(n) &amp;&amp; n &gt;= 1 &amp;&amp; n &lt;= 3 ? n : null;</span>
+<span class="source-line" id="L298"><a href="#L298">298</a> }</span>
+<span class="source-line" id="L299"><a href="#L299">299</a> export function normalizeArea(v) {</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>   if (typeof v !== &#x27;string&#x27;) return null;</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>   const s = v.trim().toLowerCase();</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>   return ROADMAP_AREA_TAGS.includes(s) ? s : null;</span>
+<span class="source-line" id="L303"><a href="#L303">303</a> }</span>
+<span class="source-line" id="L304"><a href="#L304">304</a> const REF_FIELD_NORMALIZERS = Object.freeze({</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>   ref: [normalizeRef, &#x27;invalid_ref&#x27;],</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>   tier: [normalizeTier, &#x27;invalid_tier&#x27;],</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>   area: [normalizeArea, &#x27;unknown_area_tag&#x27;],</span>
+<span class="source-line" id="L308"><a href="#L308">308</a> });</span>
+<span class="source-line" id="L309"><a href="#L309">309</a> function otherStepWithRef(steps, id, ref) {</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>   for (const [oid, os] of steps) if (oid !== id &amp;&amp; os &amp;&amp; os.ref === ref) return oid;</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>   return null;</span>
+<span class="source-line" id="L312"><a href="#L312">312</a> }</span>
+<span class="source-line" id="L313"><a href="#L313">313</a> </span>
+<span class="source-line" id="L314"><a href="#L314">314</a> export function normalizePartTag(raw) {</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>   const v = String(raw || &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>   return ROADMAP_PART_TAGS.includes(v) ? v : null;</span>
+<span class="source-line" id="L317"><a href="#L317">317</a> }</span>
+<span class="source-line" id="L318"><a href="#L318">318</a> </span>
+<span class="source-line" id="L319"><a href="#L319">319</a> export function normalizeProjectionStep(step = {}) {</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   const gate = step.gate;</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>   const hasKickoffProjection = Array.isArray(step.component_ids)</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>     || step.end_to_end_slice != null</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>     || step.kickoff_version != null</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>     || step.kickoff_proposal_hash != null;</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>   const componentIds = Array.isArray(step.component_ids)</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>     ? [...new Set(step.component_ids.map(String).filter(Boolean))]</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     : [];</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>   const normalized = {</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     id: step.id ?? null,</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>     name: step.name ?? null,</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     status: step.status ?? null,</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>     done_when: step.done_when ?? null,</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>     waiting_on: step.waiting_on ?? null,</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>     commissioned_as: step.commissioned_as ?? null,</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>     part: normalizePartTag(step.part),</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     gate: typeof gate === &#x27;string&#x27; &amp;&amp; gate.trim() ? gate.trim() : null,</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>   };</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>   if (hasKickoffProjection) {</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>     normalized.component_ids = componentIds;</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>     normalized.end_to_end_slice = step.end_to_end_slice === true;</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>     normalized.kickoff_version = Number.isInteger(step.kickoff_version)</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>       ? step.kickoff_version : null;</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>     normalized.kickoff_proposal_hash = typeof step.kickoff_proposal_hash === &#x27;string&#x27;</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>       &amp;&amp; step.kickoff_proposal_hash.trim()</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>       ? step.kickoff_proposal_hash.trim()</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>       : null;</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>   }</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>   if (step.due != null) normalized.due = step.due;</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>   if (step.ref != null) normalized.ref = step.ref;</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>   if (step.tier != null) normalized.tier = step.tier;</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>   if (step.area != null) normalized.area = step.area;</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>   if (step.active === true) normalized.active = true;</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>   if (Number.isInteger(step.active_order)) normalized.active_order = step.active_order;</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>   if (step.pace != null) normalized.pace = step.pace;</span>
+<span class="source-line" id="L355"><a href="#L355">355</a>   if (step.seat === &#x27;active&#x27; || step.seat === &#x27;deck&#x27;) normalized.seat = step.seat;</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>   if (Number.isInteger(step.seat_order)) normalized.seat_order = step.seat_order;</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>   // the Star Chart (2026-10-03): a goal&#x27;s if-then step survives the projection; null or blank clears it (Grok code R1 F1)</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>   if (typeof step.if_then === &#x27;string&#x27; &amp;&amp; step.if_then.trim()) normalized.if_then = step.if_then.trim();</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>   if (step.navigation != null) normalized.navigation = structuredClone(step.navigation);</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>   if (step.refinement) normalized.refinement = step.refinement;</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>   return normalized;</span>
+<span class="source-line" id="L362"><a href="#L362">362</a> }</span>
+<span class="source-line" id="L363"><a href="#L363">363</a> </span>
+<span class="source-line" id="L364"><a href="#L364">364</a> /**</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>  * Fold the append-only event list into the derived projection.</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>  * A status_flip without a valid receipt is NOT applied (issue recorded) —</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>  * silent flips cannot enter the step list even from a hand-authored file.</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>  * @param {object[]} events</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>  * @returns {{ ok: true, projection: object[], issues: object[], clean: boolean }}</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>  */</span>
+<span class="source-line" id="L371"><a href="#L371">371</a> export function buildRoadmapProjection(events = []) {</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>   const list = Array.isArray(events) ? events : [];</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>   const steps = new Map();</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>   const issues = [];</span>
+<span class="source-line" id="L375"><a href="#L375">375</a> </span>
+<span class="source-line" id="L376"><a href="#L376">376</a>   list.forEach((ev, idx) =&gt; {</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>     if (!ev || typeof ev !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>       issues.push({ code: &#x27;event_not_object&#x27;, at_index: idx });</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>       return;</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>     }</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>     if (typeof ev.seq === &#x27;number&#x27; &amp;&amp; ev.seq !== idx + 1) {</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>       issues.push({</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>         code: &#x27;event_seq_break&#x27;,</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>         at_index: idx,</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>         seq: ev.seq,</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>         expected: idx + 1,</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>         message: &#x27;roadmap_events must be contiguous append-only history&#x27;,</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>       });</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>     }</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>     const kind = ev.kind;</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>     const id = ev.step_id ?? ev.id ?? null;</span>
+<span class="source-line" id="L392"><a href="#L392">392</a> </span>
+<span class="source-line" id="L393"><a href="#L393">393</a>     if (kind === &#x27;step_create&#x27;) {</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>       if (!nonEmpty(id) || !nonEmpty(ev.name)) {</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>         issues.push({ code: &#x27;step_create_missing_fields&#x27;, at_index: idx, step_id: id });</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>         return;</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>       }</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>       if (steps.has(id)) {</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>         issues.push({ code: &#x27;duplicate_step_create&#x27;, at_index: idx, step_id: id });</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>         return;</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>       }</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>       const status = ROADMAP_STEP_STATUSES.includes(ev.status) ? ev.status : &#x27;planned&#x27;;</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>       if (ev.part != null &amp;&amp; !normalizePartTag(ev.part)) {</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>         issues.push({ code: &#x27;unknown_part_tag&#x27;, at_index: idx, step_id: id, part: ev.part });</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>       }</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>       const created = {</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>         id,</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>         name: ev.name,</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>         status,</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>         done_when: ev.done_when ?? null,</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>         waiting_on: ev.waiting_on ?? null,</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>         commissioned_as: null,</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>         part: normalizePartTag(ev.part),</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>         gate: typeof ev.gate === &#x27;string&#x27; &amp;&amp; ev.gate.trim() ? ev.gate.trim() : null,</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>       };</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>       if (ev.due != null) {</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>         const due = normalizeDue(ev.due);</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>         if (due) created.due = due;</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>         else issues.push({ code: &#x27;invalid_due&#x27;, at_index: idx, step_id: id, due: ev.due });</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>       }</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>       for (const [key, [norm, bad]] of Object.entries(REF_FIELD_NORMALIZERS)) {</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>         if (ev[key] == null) continue;</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>         const val = norm(ev[key]);</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>         if (val == null) { issues.push({ code: bad, at_index: idx, step_id: id, [key]: ev[key] }); continue; }</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>         if (key === &#x27;ref&#x27;) {</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>           const dup = otherStepWithRef(steps, id, val);</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>           if (dup) { issues.push({ code: &#x27;duplicate_ref&#x27;, at_index: idx, step_id: id, ref: val, other_step_id: dup }); continue; }</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>           if (created.due != null) { issues.push({ code: &#x27;due_on_ref_step&#x27;, at_index: idx, step_id: id, ref: val }); delete created.due; }</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>         }</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>         created[key] = val;</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>       }</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>       if (Array.isArray(ev.component_ids)</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>           || ev.end_to_end_slice != null</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>           || ev.kickoff_version != null</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>           || ev.kickoff_proposal_hash != null) {</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>         created.component_ids = Array.isArray(ev.component_ids)</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>           ? [...new Set(ev.component_ids.map(String).filter(Boolean))]</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>           : [];</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>         created.end_to_end_slice = ev.end_to_end_slice === true;</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>         created.kickoff_version = Number.isInteger(ev.kickoff_version)</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>           ? ev.kickoff_version : null;</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>         created.kickoff_proposal_hash = typeof ev.kickoff_proposal_hash === &#x27;string&#x27;</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>           &amp;&amp; ev.kickoff_proposal_hash.trim()</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>           ? ev.kickoff_proposal_hash.trim()</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>           : null;</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>       }</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>       steps.set(id, created);</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>       return;</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>     }</span>
+<span class="source-line" id="L450"><a href="#L450">450</a> </span>
+<span class="source-line" id="L451"><a href="#L451">451</a>     if (kind === &#x27;step_set&#x27;) {</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>       const step = steps.get(id);</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>       if (!step) {</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>         issues.push({ code: &#x27;step_set_unknown_step&#x27;, at_index: idx, step_id: id });</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>         return;</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>       }</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>       const fields =</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>         ev.fields &amp;&amp; typeof ev.fields === &#x27;object&#x27; ? ev.fields : {};</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>       for (const key of Object.keys(fields)) {</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>         if (!ROADMAP_SET_FIELDS.includes(key)) {</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>           issues.push({</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>             code: &#x27;step_set_forbidden_field&#x27;,</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>             at_index: idx,</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>             step_id: id,</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>             field: key,</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>             message:</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>               &#x27;status requires status_flip (+ receipt); commissioned_as requires commission_bind&#x27;,</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>           });</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>           continue;</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>         }</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>         if (key === &#x27;navigation&#x27;) {</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>           if (!validNavigation(fields.navigation)) { issues.push({code:&#x27;invalid_navigation&#x27;,at_index:idx,step_id:id}); continue; }</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>           if (fields.navigation == null) delete step.navigation;</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>           else step.navigation = structuredClone(fields.navigation);</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>           continue;</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>         }</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>         if (key === &#x27;due&#x27;) {</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>           if (fields.due == null) { delete step.due; continue; }</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>           if (step.ref != null) { issues.push({ code: &#x27;due_on_ref_step&#x27;, at_index: idx, step_id: id, ref: step.ref }); continue; }</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>           const due = normalizeDue(fields.due);</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>           if (due) step.due = due;</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>           else issues.push({ code: &#x27;invalid_due&#x27;, at_index: idx, step_id: id, due: fields.due });</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>           continue;</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>         }</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>         if (key in REF_FIELD_NORMALIZERS) {</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>           if (fields[key] == null) { delete step[key]; continue; }</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>           const [norm, bad] = REF_FIELD_NORMALIZERS[key];</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>           const val = norm(fields[key]);</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>           if (val == null) { issues.push({ code: bad, at_index: idx, step_id: id, [key]: fields[key] }); continue; }</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>           if (key === &#x27;ref&#x27;) {</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>             const dup = otherStepWithRef(steps, id, val);</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>             if (dup) { issues.push({ code: &#x27;duplicate_ref&#x27;, at_index: idx, step_id: id, ref: val, other_step_id: dup }); continue; }</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>             if (step.due != null) { issues.push({ code: &#x27;ref_on_dated_step&#x27;, at_index: idx, step_id: id, ref: val }); continue; }</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>           }</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>           step[key] = val;</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>           continue;</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>         }</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>         if (key === &#x27;part&#x27;) {</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>           if (fields.part != null &amp;&amp; !normalizePartTag(fields.part)) {</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>             issues.push({ code: &#x27;unknown_part_tag&#x27;, at_index: idx, step_id: id, part: fields.part });</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>           }</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>           step.part = normalizePartTag(fields.part);</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>           continue;</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>         }</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>         if (key === &#x27;gate&#x27;) {</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>           const g = fields.gate;</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>           step.gate = typeof g === &#x27;string&#x27; &amp;&amp; g.trim() ? g.trim() : null;</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>           continue;</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>         }</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>         if (key === &#x27;component_ids&#x27;) {</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>           step.component_ids = Array.isArray(fields.component_ids)</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>             ? [...new Set(fields.component_ids.map(String).filter(Boolean))]</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>             : [];</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>           continue;</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>         }</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>         if (key === &#x27;end_to_end_slice&#x27;) {</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>           step.end_to_end_slice = fields.end_to_end_slice === true;</span>
+<span class="source-line" id="L518"><a href="#L518">518</a>           continue;</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>         }</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>         if (key === &#x27;active&#x27;) {</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>           // the active set: on or off, never a third state; off drops the order with it</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>           const on = fields.active === true || fields.active === &#x27;on&#x27; || fields.active === &#x27;true&#x27;;</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>           if (on) step.active = true; else { delete step.active; delete step.active_order; }</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>           continue;</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>         }</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>         if (key === &#x27;active_order&#x27;) {</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>           const n = fields.active_order;</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>           if (n == null || n === &#x27;&#x27;) { delete step.active_order; continue; }</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>           const v = typeof n === &#x27;number&#x27; ? n : parseInt(String(n), 10);</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>           if (Number.isInteger(v) &amp;&amp; v &gt;= 0) step.active_order = v;</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>           else issues.push({ code: &#x27;invalid_active_order&#x27;, at_index: idx, step_id: id, active_order: n });</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>           continue;</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>         }</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>         if (key === &#x27;pace&#x27;) {</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>           if (fields.pace == null || fields.pace === &#x27;&#x27;) { delete step.pace; continue; }</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>           const d = normalizeDue(fields.pace);</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>           if (d) step.pace = d;</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>           else issues.push({ code: &#x27;invalid_pace&#x27;, at_index: idx, step_id: id, pace: fields.pace });</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>           continue;</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>         }</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>         if (key === &#x27;seat&#x27;) {</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>           // the seat: active, deck, or none (back in its goal) — none drops the order with it</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>           const v = fields.seat;</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>           if (v == null || v === &#x27;&#x27; || v === &#x27;none&#x27; || v === &#x27;off&#x27;) { delete step.seat; delete step.seat_order; continue; }</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>           if (v === &#x27;active&#x27; || v === &#x27;deck&#x27;) { step.seat = v; continue; }</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>           issues.push({ code: &#x27;invalid_seat&#x27;, at_index: idx, step_id: id, seat: v });</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>           continue;</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>         }</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>         if (key === &#x27;seat_order&#x27;) {</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>           const n = fields.seat_order;</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>           if (n == null || n === &#x27;&#x27;) { delete step.seat_order; continue; }</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>           const v = typeof n === &#x27;number&#x27; ? n : parseInt(String(n), 10);</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>           if (Number.isInteger(v) &amp;&amp; v &gt;= 0) step.seat_order = v;</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>           else issues.push({ code: &#x27;invalid_seat_order&#x27;, at_index: idx, step_id: id, seat_order: n });</span>
+<span class="source-line" id="L555"><a href="#L555">555</a>           continue;</span>
+<span class="source-line" id="L556"><a href="#L556">556</a>         }</span>
+<span class="source-line" id="L557"><a href="#L557">557</a>         if (key === &#x27;kickoff_version&#x27;) {</span>
+<span class="source-line" id="L558"><a href="#L558">558</a>           step.kickoff_version = Number.isInteger(fields.kickoff_version)</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>             ? fields.kickoff_version : null;</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>           continue;</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>         }</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>         if (key === &#x27;kickoff_proposal_hash&#x27;) {</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>           step.kickoff_proposal_hash = typeof fields.kickoff_proposal_hash === &#x27;string&#x27;</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>             &amp;&amp; fields.kickoff_proposal_hash.trim()</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>             ? fields.kickoff_proposal_hash.trim() : null;</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>           continue;</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>         }</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>         step[key] = fields[key];</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>       }</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>       return;</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>     }</span>
+<span class="source-line" id="L572"><a href="#L572">572</a> </span>
+<span class="source-line" id="L573"><a href="#L573">573</a>     if (kind === &#x27;status_flip&#x27;) {</span>
+<span class="source-line" id="L574"><a href="#L574">574</a>       const step = steps.get(id);</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>       if (!step) {</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>         issues.push({ code: &#x27;status_flip_unknown_step&#x27;, at_index: idx, step_id: id });</span>
+<span class="source-line" id="L577"><a href="#L577">577</a>         return;</span>
+<span class="source-line" id="L578"><a href="#L578">578</a>       }</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>       if (!isValidFlipReceipt(ev.receipt)) {</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>         issues.push({</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>           code: &#x27;status_flip_missing_receipt&#x27;,</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>           at_index: idx,</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>           step_id: id,</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>           message: &#x27;status flip without receipt is rejected (not applied)&#x27;,</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>         });</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>         return;</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>       }</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>       if (!ROADMAP_STEP_STATUSES.includes(ev.to)) {</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>         issues.push({ code: &#x27;status_flip_invalid_to&#x27;, at_index: idx, step_id: id, to: ev.to ?? null });</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>         return;</span>
+<span class="source-line" id="L591"><a href="#L591">591</a>       }</span>
+<span class="source-line" id="L592"><a href="#L592">592</a>       if (ev.from != null &amp;&amp; ev.from !== step.status) {</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>         issues.push({</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>           code: &#x27;status_flip_from_mismatch&#x27;,</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>           at_index: idx,</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>           step_id: id,</span>
+<span class="source-line" id="L597"><a href="#L597">597</a>           from: ev.from,</span>
+<span class="source-line" id="L598"><a href="#L598">598</a>           current: step.status,</span>
+<span class="source-line" id="L599"><a href="#L599">599</a>         });</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>         return;</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>       }</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>       if (step.ref != null) {</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>         issues.push({ code: &#x27;status_flip_on_ref_step&#x27;, at_index: idx, step_id: id, ref: step.ref,</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>           message: &#x27;a referenced part is flipped in its own record, never here (not applied)&#x27; });</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>         return;</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>       }</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>       step.status = ev.to;</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>       return;</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>     }</span>
+<span class="source-line" id="L610"><a href="#L610">610</a> </span>
+<span class="source-line" id="L611"><a href="#L611">611</a>     if (kind === &#x27;commission_bind&#x27;) {</span>
+<span class="source-line" id="L612"><a href="#L612">612</a>       const step = steps.get(id);</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>       if (!step) {</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>         issues.push({ code: &#x27;commission_bind_unknown_step&#x27;, at_index: idx, step_id: id });</span>
+<span class="source-line" id="L615"><a href="#L615">615</a>         return;</span>
+<span class="source-line" id="L616"><a href="#L616">616</a>       }</span>
+<span class="source-line" id="L617"><a href="#L617">617</a>       if (!nonEmpty(ev.commissioned_as)) {</span>
+<span class="source-line" id="L618"><a href="#L618">618</a>         issues.push({ code: &#x27;commission_bind_missing_target&#x27;, at_index: idx, step_id: id });</span>
+<span class="source-line" id="L619"><a href="#L619">619</a>         return;</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>       }</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>       step.commissioned_as = ev.commissioned_as;</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>       return;</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>     }</span>
+<span class="source-line" id="L624"><a href="#L624">624</a> </span>
+<span class="source-line" id="L625"><a href="#L625">625</a>     // Project-level kinds (scaffold/kickoff proposal and confirm, face_*,</span>
+<span class="source-line" id="L626"><a href="#L626">626</a>     // elaboration_*): ledger</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>     // history only — no roadmap_projection fold. Detail is reconstructed by</span>
+<span class="source-line" id="L628"><a href="#L628">628</a>     // the owning surface (Face compile / progressive elaboration).</span>
+<span class="source-line" id="L629"><a href="#L629">629</a>     if (kind === &#x27;reorder&#x27;) {</span>
+<span class="source-line" id="L630"><a href="#L630">630</a>       // W4 (2026-09-28): his own act — a step moved before or after another in the plan&#x27;s order; the projection</span>
+<span class="source-line" id="L631"><a href="#L631">631</a>       // is the Map&#x27;s insertion order, so the move is a re-insertion</span>
+<span class="source-line" id="L632"><a href="#L632">632</a>       const step = steps.get(id);</span>
+<span class="source-line" id="L633"><a href="#L633">633</a>       if (!step) { issues.push({ code: &#x27;reorder_unknown_step&#x27;, at_index: idx, step_id: id }); return; }</span>
+<span class="source-line" id="L634"><a href="#L634">634</a>       const anchor = ev.before != null ? String(ev.before) : (ev.after != null ? String(ev.after) : null);</span>
+<span class="source-line" id="L635"><a href="#L635">635</a>       if (!anchor || anchor === String(id) || !steps.has(anchor)) { issues.push({ code: &#x27;reorder_bad_anchor&#x27;, at_index: idx, step_id: id, anchor }); return; }</span>
+<span class="source-line" id="L636"><a href="#L636">636</a>       const entries = [...steps.entries()].filter(([k]) =&gt; k !== id);</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>       const at = entries.findIndex(([k]) =&gt; k === anchor);</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>       entries.splice(ev.before != null ? at : at + 1, 0, [id, step]);</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>       steps.clear();</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>       for (const [k, v] of entries) steps.set(k, v);</span>
+<span class="source-line" id="L641"><a href="#L641">641</a>       return;</span>
+<span class="source-line" id="L642"><a href="#L642">642</a>     }</span>
+<span class="source-line" id="L643"><a href="#L643">643</a>     if (ROADMAP_PROJECT_LEVEL_KINDS.includes(kind)) {</span>
+<span class="source-line" id="L644"><a href="#L644">644</a>       return;</span>
+<span class="source-line" id="L645"><a href="#L645">645</a>     }</span>
+<span class="source-line" id="L646"><a href="#L646">646</a> </span>
+<span class="source-line" id="L647"><a href="#L647">647</a>     issues.push({ code: &#x27;unknown_event_kind&#x27;, at_index: idx, kind: kind ?? null });</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>   });</span>
+<span class="source-line" id="L649"><a href="#L649">649</a> </span>
+<span class="source-line" id="L650"><a href="#L650">650</a>   try {</span>
+<span class="source-line" id="L651"><a href="#L651">651</a>     const refinement=foldRefinements(list);</span>
+<span class="source-line" id="L652"><a href="#L652">652</a>     for(const [id,slice] of Object.entries(refinement.slices || {})) {</span>
+<span class="source-line" id="L653"><a href="#L653">653</a>       const step=steps.get(id);</span>
+<span class="source-line" id="L654"><a href="#L654">654</a>       if(!step) { issues.push({code:&#x27;refinement_unknown_step&#x27;,step_id:id}); continue; }</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>       step.refinement=slice;</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>       step.status=slice.phase===&#x27;done&#x27;?&#x27;done&#x27;:[&#x27;awaiting_review&#x27;,&#x27;waiting_foundation&#x27;,&#x27;needs_reconciliation&#x27;].includes(slice.phase)?&#x27;waiting&#x27;:&#x27;active&#x27;;</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>       step.waiting_on=slice.phase===&#x27;awaiting_review&#x27;?&#x27;Your review of the current presentation&#x27;:slice.phase===&#x27;needs_reconciliation&#x27;?&#x27;Foundation changes need reconciliation&#x27;:slice.phase===&#x27;waiting_foundation&#x27;?&#x27;Foundation acceptance&#x27;:null;</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>     }</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>   } catch(e) { issues.push({code:e.code || &#x27;invalid-refinement-operation&#x27;,message:e.message}); }</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>   return {</span>
+<span class="source-line" id="L661"><a href="#L661">661</a>     ok: true,</span>
+<span class="source-line" id="L662"><a href="#L662">662</a>     projection: [...steps.values()].map(normalizeProjectionStep),</span>
+<span class="source-line" id="L663"><a href="#L663">663</a>     issues,</span>
+<span class="source-line" id="L664"><a href="#L664">664</a>     clean: issues.length === 0,</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>   };</span>
+<span class="source-line" id="L666"><a href="#L666">666</a> }</span>
+<span class="source-line" id="L667"><a href="#L667">667</a> </span>
+<span class="source-line" id="L668"><a href="#L668">668</a> /**</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>  * @param {*} receipt</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>  */</span>
+<span class="source-line" id="L671"><a href="#L671">671</a> export function isValidFlipReceipt(receipt) {</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>   if (!receipt || typeof receipt !== &#x27;object&#x27; || Array.isArray(receipt)) return false;</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>   return FLIP_RECEIPT_FIELDS.every((k) =&gt; nonEmpty(receipt[k]));</span>
+<span class="source-line" id="L674"><a href="#L674">674</a> }</span>
+<span class="source-line" id="L675"><a href="#L675">675</a> </span>
+<span class="source-line" id="L676"><a href="#L676">676</a> function projectionsEqual(a, b) {</span>
+<span class="source-line" id="L677"><a href="#L677">677</a>   const na = (Array.isArray(a) ? a : []).map(normalizeProjectionStep);</span>
+<span class="source-line" id="L678"><a href="#L678">678</a>   const nb = (Array.isArray(b) ? b : []).map(normalizeProjectionStep);</span>
+<span class="source-line" id="L679"><a href="#L679">679</a>   return JSON.stringify(na) === JSON.stringify(nb);</span>
+<span class="source-line" id="L680"><a href="#L680">680</a> }</span>
+<span class="source-line" id="L681"><a href="#L681">681</a> </span>
+<span class="source-line" id="L682"><a href="#L682">682</a> /**</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>  * Validate a roadmap: rebuild projection from events and compare with stored.</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>  * A stored projection that disagrees with the event fold is a silent rewrite</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>  * (e.g. a status flip with no receipt event) → reject.</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>  *</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>  * Read-path allowance (`allow_unevented_steps`): a stored step whose id no</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>  * event ever mentions rewrites no receipted history — the event fold stays</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>  * authoritative for every evented step, and the stored-only steps ride along</span>
+<span class="source-line" id="L690"><a href="#L690">690</a>  * flagged (never silently dropped from the rail). Any drift on an evented</span>
+<span class="source-line" id="L691"><a href="#L691">691</a>  * step (field_drift / step_missing_from_stored / reorder) still rejects.</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>  * Writers never pass the flag — appends onto a drifted roadmap heal first.</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>  * @param {object|string} input</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>  * @param {{ allow_unevented_steps?: boolean }} [opts]</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>  * @returns {object}</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>  */</span>
+<span class="source-line" id="L697"><a href="#L697">697</a> export function validateRoadmap(input, opts = {}) {</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>   const parsed = parseRoadmap(input);</span>
+<span class="source-line" id="L699"><a href="#L699">699</a>   if (!parsed.ok) return parsed;</span>
+<span class="source-line" id="L700"><a href="#L700">700</a>   const roadmap = parsed.roadmap;</span>
+<span class="source-line" id="L701"><a href="#L701">701</a> </span>
+<span class="source-line" id="L702"><a href="#L702">702</a>   const built = buildRoadmapProjection(roadmap.roadmap_events);</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>   const stored = roadmap.roadmap_projection;</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>   const navIssues = navigationIssues(built.projection);</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>   if (navIssues.length) return {ok:false,error:navIssues[0].code,issues:navIssues};</span>
+<span class="source-line" id="L706"><a href="#L706">706</a> </span>
+<span class="source-line" id="L707"><a href="#L707">707</a>   if (stored.length &gt; 0 &amp;&amp; !projectionsEqual(stored, built.projection)) {</span>
+<span class="source-line" id="L708"><a href="#L708">708</a>     const drift = diffProjections(stored, built.projection);</span>
+<span class="source-line" id="L709"><a href="#L709">709</a>     const onlyUnevented =</span>
+<span class="source-line" id="L710"><a href="#L710">710</a>       drift.length &gt; 0 &amp;&amp; drift.every((d) =&gt; d.kind === &#x27;step_without_events&#x27;);</span>
+<span class="source-line" id="L711"><a href="#L711">711</a> </span>
+<span class="source-line" id="L712"><a href="#L712">712</a>     if (!(onlyUnevented &amp;&amp; opts.allow_unevented_steps === true)) {</span>
+<span class="source-line" id="L713"><a href="#L713">713</a>       return {</span>
+<span class="source-line" id="L714"><a href="#L714">714</a>         ok: false,</span>
+<span class="source-line" id="L715"><a href="#L715">715</a>         error: &#x27;roadmap_silent_rewrite&#x27;,</span>
+<span class="source-line" id="L716"><a href="#L716">716</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L717"><a href="#L717">717</a>         message:</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>           &#x27;Stored roadmap_projection disagrees with the append-only event fold (e.g. a status flip without a receipt event). Write refused; heal rebuilds the projection from events.&#x27;,</span>
+<span class="source-line" id="L719"><a href="#L719">719</a>         drift,</span>
+<span class="source-line" id="L720"><a href="#L720">720</a>         projection_from_events: built.projection,</span>
+<span class="source-line" id="L721"><a href="#L721">721</a>         stored_projection: stored,</span>
+<span class="source-line" id="L722"><a href="#L722">722</a>         issues: built.issues,</span>
+<span class="source-line" id="L723"><a href="#L723">723</a>         heal: &#x27;healRoadmap&#x27;,</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>         single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L725"><a href="#L725">725</a>       };</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>     }</span>
+<span class="source-line" id="L727"><a href="#L727">727</a> </span>
+<span class="source-line" id="L728"><a href="#L728">728</a>     const evented = new Set(built.projection.map((s) =&gt; s.id));</span>
+<span class="source-line" id="L729"><a href="#L729">729</a>     const extra = stored</span>
+<span class="source-line" id="L730"><a href="#L730">730</a>       .map(normalizeProjectionStep)</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>       .filter((s) =&gt; !evented.has(s.id));</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>     const projection = [...built.projection, ...extra];</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>     return {</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>       ok: true,</span>
+<span class="source-line" id="L735"><a href="#L735">735</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L736"><a href="#L736">736</a>       projection,</span>
+<span class="source-line" id="L737"><a href="#L737">737</a>       issues: [...built.issues, ...drift],</span>
+<span class="source-line" id="L738"><a href="#L738">738</a>       clean: false,</span>
+<span class="source-line" id="L739"><a href="#L739">739</a>       unevented_steps: extra.map((s) =&gt; s.id),</span>
+<span class="source-line" id="L740"><a href="#L740">740</a>       events_count: roadmap.roadmap_events.length,</span>
+<span class="source-line" id="L741"><a href="#L741">741</a>       steps_count: projection.length,</span>
+<span class="source-line" id="L742"><a href="#L742">742</a>     };</span>
+<span class="source-line" id="L743"><a href="#L743">743</a>   }</span>
+<span class="source-line" id="L744"><a href="#L744">744</a> </span>
+<span class="source-line" id="L745"><a href="#L745">745</a>   return {</span>
+<span class="source-line" id="L746"><a href="#L746">746</a>     ok: true,</span>
+<span class="source-line" id="L747"><a href="#L747">747</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L748"><a href="#L748">748</a>     projection: built.projection,</span>
+<span class="source-line" id="L749"><a href="#L749">749</a>     issues: built.issues,</span>
+<span class="source-line" id="L750"><a href="#L750">750</a>     clean: built.clean,</span>
+<span class="source-line" id="L751"><a href="#L751">751</a>     events_count: roadmap.roadmap_events.length,</span>
+<span class="source-line" id="L752"><a href="#L752">752</a>     steps_count: built.projection.length,</span>
+<span class="source-line" id="L753"><a href="#L753">753</a>   };</span>
+<span class="source-line" id="L754"><a href="#L754">754</a> }</span>
+<span class="source-line" id="L755"><a href="#L755">755</a> </span>
+<span class="source-line" id="L756"><a href="#L756">756</a> function diffProjections(stored, rebuilt) {</span>
+<span class="source-line" id="L757"><a href="#L757">757</a>   const drift = [];</span>
+<span class="source-line" id="L758"><a href="#L758">758</a>   const byId = new Map(rebuilt.map((s) =&gt; [s.id, s]));</span>
+<span class="source-line" id="L759"><a href="#L759">759</a>   for (const raw of stored) {</span>
+<span class="source-line" id="L760"><a href="#L760">760</a>     const s = normalizeProjectionStep(raw);</span>
+<span class="source-line" id="L761"><a href="#L761">761</a>     const truth = byId.get(s.id);</span>
+<span class="source-line" id="L762"><a href="#L762">762</a>     if (!truth) {</span>
+<span class="source-line" id="L763"><a href="#L763">763</a>       drift.push({ step_id: s.id, kind: &#x27;step_without_events&#x27; });</span>
+<span class="source-line" id="L764"><a href="#L764">764</a>       continue;</span>
+<span class="source-line" id="L765"><a href="#L765">765</a>     }</span>
+<span class="source-line" id="L766"><a href="#L766">766</a>     for (const field of ROADMAP_PROJECTION_FIELDS) {</span>
+<span class="source-line" id="L767"><a href="#L767">767</a>       if (JSON.stringify(s[field]) !== JSON.stringify(truth[field])) {</span>
+<span class="source-line" id="L768"><a href="#L768">768</a>         drift.push({</span>
+<span class="source-line" id="L769"><a href="#L769">769</a>           step_id: s.id,</span>
+<span class="source-line" id="L770"><a href="#L770">770</a>           kind: &#x27;field_drift&#x27;,</span>
+<span class="source-line" id="L771"><a href="#L771">771</a>           field,</span>
+<span class="source-line" id="L772"><a href="#L772">772</a>           stored: s[field],</span>
+<span class="source-line" id="L773"><a href="#L773">773</a>           from_events: truth[field],</span>
+<span class="source-line" id="L774"><a href="#L774">774</a>         });</span>
+<span class="source-line" id="L775"><a href="#L775">775</a>       }</span>
+<span class="source-line" id="L776"><a href="#L776">776</a>     }</span>
+<span class="source-line" id="L777"><a href="#L777">777</a>   }</span>
+<span class="source-line" id="L778"><a href="#L778">778</a>   for (const truth of rebuilt) {</span>
+<span class="source-line" id="L779"><a href="#L779">779</a>     if (!stored.some((s) =&gt; normalizeProjectionStep(s).id === truth.id)) {</span>
+<span class="source-line" id="L780"><a href="#L780">780</a>       drift.push({ step_id: truth.id, kind: &#x27;step_missing_from_stored&#x27; });</span>
+<span class="source-line" id="L781"><a href="#L781">781</a>     }</span>
+<span class="source-line" id="L782"><a href="#L782">782</a>   }</span>
+<span class="source-line" id="L783"><a href="#L783">783</a>   return drift;</span>
+<span class="source-line" id="L784"><a href="#L784">784</a> }</span>
+<span class="source-line" id="L785"><a href="#L785">785</a> </span>
+<span class="source-line" id="L786"><a href="#L786">786</a> /**</span>
+<span class="source-line" id="L787"><a href="#L787">787</a>  * Heal: rebuild roadmap_projection from roadmap_events.</span>
+<span class="source-line" id="L788"><a href="#L788">788</a>  * Events are never rewritten — projection is derived-only.</span>
+<span class="source-line" id="L789"><a href="#L789">789</a>  * @param {object|string} input</span>
+<span class="source-line" id="L790"><a href="#L790">790</a>  */</span>
+<span class="source-line" id="L791"><a href="#L791">791</a> export function healRoadmap(input) {</span>
+<span class="source-line" id="L792"><a href="#L792">792</a>   const parsed = parseRoadmap(input);</span>
+<span class="source-line" id="L793"><a href="#L793">793</a>   if (!parsed.ok) return parsed;</span>
+<span class="source-line" id="L794"><a href="#L794">794</a>   const roadmap = parsed.roadmap;</span>
+<span class="source-line" id="L795"><a href="#L795">795</a> </span>
+<span class="source-line" id="L796"><a href="#L796">796</a>   const priorEvents = roadmap.roadmap_events.map((e) =&gt; ({ ...e }));</span>
+<span class="source-line" id="L797"><a href="#L797">797</a>   const built = buildRoadmapProjection(roadmap.roadmap_events);</span>
+<span class="source-line" id="L798"><a href="#L798">798</a> </span>
+<span class="source-line" id="L799"><a href="#L799">799</a>   const healed = {</span>
+<span class="source-line" id="L800"><a href="#L800">800</a>     ...roadmap,</span>
+<span class="source-line" id="L801"><a href="#L801">801</a>     roadmap_events: priorEvents,</span>
+<span class="source-line" id="L802"><a href="#L802">802</a>     roadmap_projection: built.projection,</span>
+<span class="source-line" id="L803"><a href="#L803">803</a>   };</span>
+<span class="source-line" id="L804"><a href="#L804">804</a> </span>
+<span class="source-line" id="L805"><a href="#L805">805</a>   return {</span>
+<span class="source-line" id="L806"><a href="#L806">806</a>     ok: true,</span>
+<span class="source-line" id="L807"><a href="#L807">807</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L808"><a href="#L808">808</a>     healed: true,</span>
+<span class="source-line" id="L809"><a href="#L809">809</a>     roadmap: healed,</span>
+<span class="source-line" id="L810"><a href="#L810">810</a>     projection: built.projection,</span>
+<span class="source-line" id="L811"><a href="#L811">811</a>     issues: built.issues,</span>
+<span class="source-line" id="L812"><a href="#L812">812</a>     events_rewritten: false,</span>
+<span class="source-line" id="L813"><a href="#L813">813</a>     message:</span>
+<span class="source-line" id="L814"><a href="#L814">814</a>       &#x27;roadmap_projection rebuilt from append-only roadmap_events; event history untouched&#x27;,</span>
+<span class="source-line" id="L815"><a href="#L815">815</a>   };</span>
+<span class="source-line" id="L816"><a href="#L816">816</a> }</span>
+<span class="source-line" id="L817"><a href="#L817">817</a> </span>
+<span class="source-line" id="L818"><a href="#L818">818</a> /**</span>
+<span class="source-line" id="L819"><a href="#L819">819</a>  * Append a roadmap event — THE single writer path.</span>
+<span class="source-line" id="L820"><a href="#L820">820</a>  * Refuses: unknown kinds, status_flip without receipt, step_set on</span>
+<span class="source-line" id="L821"><a href="#L821">821</a>  * status/commissioned_as, unknown/duplicate steps, and appends onto a</span>
+<span class="source-line" id="L822"><a href="#L822">822</a>  * roadmap whose stored projection already drifted (heal first).</span>
+<span class="source-line" id="L823"><a href="#L823">823</a>  * Never mutates the input roadmap; projection is rebuilt from the full list.</span>
+<span class="source-line" id="L824"><a href="#L824">824</a>  * @param {object|string} roadmapInput</span>
+<span class="source-line" id="L825"><a href="#L825">825</a>  * @param {object} event</span>
+<span class="source-line" id="L826"><a href="#L826">826</a>  * @param {{ at?: string }} [opts]</span>
+<span class="source-line" id="L827"><a href="#L827">827</a>  */</span>
+<span class="source-line" id="L828"><a href="#L828">828</a> export function appendRoadmapEvent(roadmapInput, event, opts = {}) {</span>
+<span class="source-line" id="L829"><a href="#L829">829</a>   const parsed = parseRoadmap(roadmapInput ?? emptyRoadmap());</span>
+<span class="source-line" id="L830"><a href="#L830">830</a>   if (!parsed.ok) return parsed;</span>
+<span class="source-line" id="L831"><a href="#L831">831</a>   const roadmap = parsed.roadmap;</span>
+<span class="source-line" id="L832"><a href="#L832">832</a> </span>
+<span class="source-line" id="L833"><a href="#L833">833</a>   if (!event || typeof event !== &#x27;object&#x27; || Array.isArray(event)) {</span>
+<span class="source-line" id="L834"><a href="#L834">834</a>     return { ok: false, error: &#x27;event_not_object&#x27;, spelling: SPELLING };</span>
+<span class="source-line" id="L835"><a href="#L835">835</a>   }</span>
+<span class="source-line" id="L836"><a href="#L836">836</a>   const kind = event.kind;</span>
+<span class="source-line" id="L837"><a href="#L837">837</a>   if (!ROADMAP_EVENT_KINDS.includes(kind)) {</span>
+<span class="source-line" id="L838"><a href="#L838">838</a>     return {</span>
+<span class="source-line" id="L839"><a href="#L839">839</a>       ok: false,</span>
+<span class="source-line" id="L840"><a href="#L840">840</a>       error: &#x27;unknown_roadmap_event_kind&#x27;,</span>
+<span class="source-line" id="L841"><a href="#L841">841</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L842"><a href="#L842">842</a>       kind: kind ?? null,</span>
+<span class="source-line" id="L843"><a href="#L843">843</a>       event_kinds: [...ROADMAP_EVENT_KINDS],</span>
+<span class="source-line" id="L844"><a href="#L844">844</a>     };</span>
+<span class="source-line" id="L845"><a href="#L845">845</a>   }</span>
+<span class="source-line" id="L846"><a href="#L846">846</a> </span>
+<span class="source-line" id="L847"><a href="#L847">847</a>   // T-IDEM-06: caller-supplied client_event_id — re-append is a no-op, original seq.</span>
+<span class="source-line" id="L848"><a href="#L848">848</a>   if (typeof event.client_event_id === &#x27;string&#x27; &amp;&amp; event.client_event_id.trim()) {</span>
+<span class="source-line" id="L849"><a href="#L849">849</a>     const prior = roadmap.roadmap_events.find(</span>
+<span class="source-line" id="L850"><a href="#L850">850</a>       (e) =&gt; e &amp;&amp; e.client_event_id === event.client_event_id,</span>
+<span class="source-line" id="L851"><a href="#L851">851</a>     );</span>
+<span class="source-line" id="L852"><a href="#L852">852</a>     if (prior) {</span>
+<span class="source-line" id="L853"><a href="#L853">853</a>       return {</span>
+<span class="source-line" id="L854"><a href="#L854">854</a>         ok: true,</span>
+<span class="source-line" id="L855"><a href="#L855">855</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L856"><a href="#L856">856</a>         authority: &#x27;roadmap_append_only&#x27;,</span>
+<span class="source-line" id="L857"><a href="#L857">857</a>         idempotent: true,</span>
+<span class="source-line" id="L858"><a href="#L858">858</a>         client_event_id: event.client_event_id,</span>
+<span class="source-line" id="L859"><a href="#L859">859</a>         seq: prior.seq,</span>
+<span class="source-line" id="L860"><a href="#L860">860</a>         event: prior,</span>
+<span class="source-line" id="L861"><a href="#L861">861</a>         roadmap,</span>
+<span class="source-line" id="L862"><a href="#L862">862</a>         projection: roadmap.roadmap_projection,</span>
+<span class="source-line" id="L863"><a href="#L863">863</a>         events_only: true,</span>
+<span class="source-line" id="L864"><a href="#L864">864</a>         single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L865"><a href="#L865">865</a>       };</span>
+<span class="source-line" id="L866"><a href="#L866">866</a>     }</span>
+<span class="source-line" id="L867"><a href="#L867">867</a>   }</span>
+<span class="source-line" id="L868"><a href="#L868">868</a> </span>
+<span class="source-line" id="L869"><a href="#L869">869</a>   // T-BND-06: refuse past the named bound — never truncate.</span>
+<span class="source-line" id="L870"><a href="#L870">870</a>   if (roadmap.roadmap_events.length &gt;= ROADMAP_EVENTS_MAX) {</span>
+<span class="source-line" id="L871"><a href="#L871">871</a>     return {</span>
+<span class="source-line" id="L872"><a href="#L872">872</a>       ok: false,</span>
+<span class="source-line" id="L873"><a href="#L873">873</a>       error: &#x27;events-bound-exceeded&#x27;,</span>
+<span class="source-line" id="L874"><a href="#L874">874</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L875"><a href="#L875">875</a>       bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L876"><a href="#L876">876</a>       count: roadmap.roadmap_events.length,</span>
+<span class="source-line" id="L877"><a href="#L877">877</a>       message:</span>
+<span class="source-line" id="L878"><a href="#L878">878</a>         &#x27;Ledger at its 50000-event bound — append refused by name, never truncated.&#x27;,</span>
+<span class="source-line" id="L879"><a href="#L879">879</a>     };</span>
+<span class="source-line" id="L880"><a href="#L880">880</a>   }</span>
+<span class="source-line" id="L881"><a href="#L881">881</a> </span>
+<span class="source-line" id="L882"><a href="#L882">882</a>   // Guard: a drifted stored projection means someone rewrote silently — refuse</span>
+<span class="source-line" id="L883"><a href="#L883">883</a>   // the write until an explicit heal rebuilds from events.</span>
+<span class="source-line" id="L884"><a href="#L884">884</a>   const validated = validateRoadmap(roadmap);</span>
+<span class="source-line" id="L885"><a href="#L885">885</a>   if (!validated.ok) {</span>
+<span class="source-line" id="L886"><a href="#L886">886</a>     return {</span>
+<span class="source-line" id="L887"><a href="#L887">887</a>       ...validated,</span>
+<span class="source-line" id="L888"><a href="#L888">888</a>       refused_write: true,</span>
+<span class="source-line" id="L889"><a href="#L889">889</a>       message: `${validated.message} Append refused until heal.`,</span>
+<span class="source-line" id="L890"><a href="#L890">890</a>     };</span>
+<span class="source-line" id="L891"><a href="#L891">891</a>   }</span>
+<span class="source-line" id="L892"><a href="#L892">892</a> </span>
+<span class="source-line" id="L893"><a href="#L893">893</a>   const current = new Map(</span>
+<span class="source-line" id="L894"><a href="#L894">894</a>     validated.projection.map((s) =&gt; [s.id, s]),</span>
+<span class="source-line" id="L895"><a href="#L895">895</a>   );</span>
+<span class="source-line" id="L896"><a href="#L896">896</a>   const step_id = event.step_id ?? event.id ?? null;</span>
+<span class="source-line" id="L897"><a href="#L897">897</a> </span>
+<span class="source-line" id="L898"><a href="#L898">898</a>   if (ROADMAP_PROJECT_LEVEL_KINDS.includes(kind)) {</span>
+<span class="source-line" id="L899"><a href="#L899">899</a>     // Project-level events (Wave 9 scaffold_proposal; Wave 10 face_*;</span>
+<span class="source-line" id="L900"><a href="#L900">900</a>     // Wave 12 elaboration_*). No step mutation — admitted so authoring /</span>
+<span class="source-line" id="L901"><a href="#L901">901</a>     // Face compile / progressive elaboration cannot invent a parallel sink</span>
+<span class="source-line" id="L902"><a href="#L902">902</a>     // outside the versioned allow-list. elaboration_* join a step via step_id</span>
+<span class="source-line" id="L903"><a href="#L903">903</a>     // in the event body; reconstructStepDetail folds answers.</span>
+<span class="source-line" id="L904"><a href="#L904">904</a>   } else if (kind === &#x27;step_create&#x27;) {</span>
+<span class="source-line" id="L905"><a href="#L905">905</a>     if (!nonEmpty(step_id) || !nonEmpty(event.name)) {</span>
+<span class="source-line" id="L906"><a href="#L906">906</a>       return {</span>
+<span class="source-line" id="L907"><a href="#L907">907</a>         ok: false,</span>
+<span class="source-line" id="L908"><a href="#L908">908</a>         error: &#x27;step_create_missing_fields&#x27;,</span>
+<span class="source-line" id="L909"><a href="#L909">909</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L910"><a href="#L910">910</a>         required: [&#x27;step_id&#x27;, &#x27;name&#x27;],</span>
+<span class="source-line" id="L911"><a href="#L911">911</a>       };</span>
+<span class="source-line" id="L912"><a href="#L912">912</a>     }</span>
+<span class="source-line" id="L913"><a href="#L913">913</a>     if (current.has(step_id)) {</span>
+<span class="source-line" id="L914"><a href="#L914">914</a>       return { ok: false, error: &#x27;duplicate_step_id&#x27;, spelling: SPELLING, step_id };</span>
+<span class="source-line" id="L915"><a href="#L915">915</a>     }</span>
+<span class="source-line" id="L916"><a href="#L916">916</a>     if (event.status != null &amp;&amp; !ROADMAP_STEP_STATUSES.includes(event.status)) {</span>
+<span class="source-line" id="L917"><a href="#L917">917</a>       return {</span>
+<span class="source-line" id="L918"><a href="#L918">918</a>         ok: false,</span>
+<span class="source-line" id="L919"><a href="#L919">919</a>         error: &#x27;invalid_step_status&#x27;,</span>
+<span class="source-line" id="L920"><a href="#L920">920</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L921"><a href="#L921">921</a>         status: event.status,</span>
+<span class="source-line" id="L922"><a href="#L922">922</a>         statuses: [...ROADMAP_STEP_STATUSES],</span>
+<span class="source-line" id="L923"><a href="#L923">923</a>       };</span>
+<span class="source-line" id="L924"><a href="#L924">924</a>     }</span>
+<span class="source-line" id="L925"><a href="#L925">925</a>     if (event.due != null &amp;&amp; !normalizeDue(event.due)) {</span>
+<span class="source-line" id="L926"><a href="#L926">926</a>       return { ok: false, error: &#x27;invalid_due&#x27;, spelling: SPELLING, step_id, due: event.due, expected: &#x27;YYYY-MM-DD&#x27; };</span>
+<span class="source-line" id="L927"><a href="#L927">927</a>     }</span>
+<span class="source-line" id="L928"><a href="#L928">928</a>     for (const [key, [norm, bad]] of Object.entries(REF_FIELD_NORMALIZERS)) {</span>
+<span class="source-line" id="L929"><a href="#L929">929</a>       if (event[key] != null &amp;&amp; norm(event[key]) == null) {</span>
+<span class="source-line" id="L930"><a href="#L930">930</a>         return { ok: false, error: bad, spelling: SPELLING, step_id, [key]: event[key] };</span>
+<span class="source-line" id="L931"><a href="#L931">931</a>       }</span>
+<span class="source-line" id="L932"><a href="#L932">932</a>     }</span>
+<span class="source-line" id="L933"><a href="#L933">933</a>     if (event.ref != null) {</span>
+<span class="source-line" id="L934"><a href="#L934">934</a>       const dup = otherStepWithRef(current, step_id, normalizeRef(event.ref));</span>
+<span class="source-line" id="L935"><a href="#L935">935</a>       if (dup) return { ok: false, error: &#x27;duplicate_ref&#x27;, spelling: SPELLING, step_id, ref: event.ref, other_step_id: dup };</span>
+<span class="source-line" id="L936"><a href="#L936">936</a>       if (event.due != null) return { ok: false, error: &#x27;due_on_ref_step&#x27;, spelling: SPELLING, step_id, ref: event.ref, message: &#x27;a referenced part takes its date from its own record&#x27; };</span>
+<span class="source-line" id="L937"><a href="#L937">937</a>     }</span>
+<span class="source-line" id="L938"><a href="#L938">938</a>   } else {</span>
+<span class="source-line" id="L939"><a href="#L939">939</a>     if (!nonEmpty(step_id) || !current.has(step_id)) {</span>
+<span class="source-line" id="L940"><a href="#L940">940</a>       return { ok: false, error: &#x27;unknown_step&#x27;, spelling: SPELLING, step_id: step_id ?? null };</span>
+<span class="source-line" id="L941"><a href="#L941">941</a>     }</span>
+<span class="source-line" id="L942"><a href="#L942">942</a>   }</span>
+<span class="source-line" id="L943"><a href="#L943">943</a> </span>
+<span class="source-line" id="L944"><a href="#L944">944</a>   if (kind === &#x27;status_flip&#x27;) {</span>
+<span class="source-line" id="L945"><a href="#L945">945</a>     if (!isValidFlipReceipt(event.receipt)) {</span>
+<span class="source-line" id="L946"><a href="#L946">946</a>       return {</span>
+<span class="source-line" id="L947"><a href="#L947">947</a>         ok: false,</span>
+<span class="source-line" id="L948"><a href="#L948">948</a>         error: &#x27;status_flip_requires_receipt&#x27;,</span>
+<span class="source-line" id="L949"><a href="#L949">949</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L950"><a href="#L950">950</a>         step_id,</span>
+<span class="source-line" id="L951"><a href="#L951">951</a>         required: [...FLIP_RECEIPT_FIELDS],</span>
+<span class="source-line" id="L952"><a href="#L952">952</a>         message:</span>
+<span class="source-line" id="L953"><a href="#L953">953</a>           &#x27;Status flip without a receipt event is refused. Provide receipt { who, why } (when defaults to the event date).&#x27;,</span>
+<span class="source-line" id="L954"><a href="#L954">954</a>         single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L955"><a href="#L955">955</a>       };</span>
+<span class="source-line" id="L956"><a href="#L956">956</a>     }</span>
+<span class="source-line" id="L957"><a href="#L957">957</a>     if (!ROADMAP_STEP_STATUSES.includes(event.to)) {</span>
+<span class="source-line" id="L958"><a href="#L958">958</a>       return {</span>
+<span class="source-line" id="L959"><a href="#L959">959</a>         ok: false,</span>
+<span class="source-line" id="L960"><a href="#L960">960</a>         error: &#x27;invalid_step_status&#x27;,</span>
+<span class="source-line" id="L961"><a href="#L961">961</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L962"><a href="#L962">962</a>         status: event.to ?? null,</span>
+<span class="source-line" id="L963"><a href="#L963">963</a>         statuses: [...ROADMAP_STEP_STATUSES],</span>
+<span class="source-line" id="L964"><a href="#L964">964</a>       };</span>
+<span class="source-line" id="L965"><a href="#L965">965</a>     }</span>
+<span class="source-line" id="L966"><a href="#L966">966</a>     const cur = current.get(step_id);</span>
+<span class="source-line" id="L967"><a href="#L967">967</a>     if (cur &amp;&amp; cur.ref != null) {</span>
+<span class="source-line" id="L968"><a href="#L968">968</a>       return { ok: false, error: &#x27;status_flip_on_ref_step&#x27;, spelling: SPELLING, step_id, ref: cur.ref,</span>
+<span class="source-line" id="L969"><a href="#L969">969</a>         message: &#x27;a referenced part is flipped in its own record, never here&#x27; };</span>
+<span class="source-line" id="L970"><a href="#L970">970</a>     }</span>
+<span class="source-line" id="L971"><a href="#L971">971</a>     if (event.from != null &amp;&amp; event.from !== cur.status) {</span>
+<span class="source-line" id="L972"><a href="#L972">972</a>       return {</span>
+<span class="source-line" id="L973"><a href="#L973">973</a>         ok: false,</span>
+<span class="source-line" id="L974"><a href="#L974">974</a>         error: &#x27;status_flip_from_mismatch&#x27;,</span>
+<span class="source-line" id="L975"><a href="#L975">975</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L976"><a href="#L976">976</a>         step_id,</span>
+<span class="source-line" id="L977"><a href="#L977">977</a>         from: event.from,</span>
+<span class="source-line" id="L978"><a href="#L978">978</a>         current: cur.status,</span>
+<span class="source-line" id="L979"><a href="#L979">979</a>       };</span>
+<span class="source-line" id="L980"><a href="#L980">980</a>     }</span>
+<span class="source-line" id="L981"><a href="#L981">981</a>   }</span>
+<span class="source-line" id="L982"><a href="#L982">982</a> </span>
+<span class="source-line" id="L983"><a href="#L983">983</a>   if (kind === &#x27;step_set&#x27;) {</span>
+<span class="source-line" id="L984"><a href="#L984">984</a>     const fields =</span>
+<span class="source-line" id="L985"><a href="#L985">985</a>       event.fields &amp;&amp; typeof event.fields === &#x27;object&#x27; ? event.fields : {};</span>
+<span class="source-line" id="L986"><a href="#L986">986</a>     if (&#x27;navigation&#x27; in fields &amp;&amp; !validNavigation(fields.navigation)) return {ok:false,error:&#x27;invalid_navigation&#x27;};</span>
+<span class="source-line" id="L987"><a href="#L987">987</a>     if (fields.due != null &amp;&amp; !normalizeDue(fields.due)) {</span>
+<span class="source-line" id="L988"><a href="#L988">988</a>       return { ok: false, error: &#x27;invalid_due&#x27;, spelling: SPELLING, step_id, due: fields.due, expected: &#x27;YYYY-MM-DD&#x27; };</span>
+<span class="source-line" id="L989"><a href="#L989">989</a>     }</span>
+<span class="source-line" id="L990"><a href="#L990">990</a>     if (fields.pace != null &amp;&amp; fields.pace !== &#x27;&#x27; &amp;&amp; !normalizeDue(fields.pace)) {</span>
+<span class="source-line" id="L991"><a href="#L991">991</a>       return { ok: false, error: &#x27;invalid_pace&#x27;, spelling: SPELLING, step_id, pace: fields.pace, expected: &#x27;YYYY-MM-DD or none&#x27; };</span>
+<span class="source-line" id="L992"><a href="#L992">992</a>     }</span>
+<span class="source-line" id="L993"><a href="#L993">993</a>     if (fields.active_order != null &amp;&amp; fields.active_order !== &#x27;&#x27;) {</span>
+<span class="source-line" id="L994"><a href="#L994">994</a>       const v = typeof fields.active_order === &#x27;number&#x27; ? fields.active_order : parseInt(String(fields.active_order), 10);</span>
+<span class="source-line" id="L995"><a href="#L995">995</a>       if (!Number.isInteger(v) || v &lt; 0) {</span>
+<span class="source-line" id="L996"><a href="#L996">996</a>         return { ok: false, error: &#x27;invalid_active_order&#x27;, spelling: SPELLING, step_id, active_order: fields.active_order, expected: &#x27;an integer from 0&#x27; };</span>
+<span class="source-line" id="L997"><a href="#L997">997</a>       }</span>
+<span class="source-line" id="L998"><a href="#L998">998</a>     }</span>
+<span class="source-line" id="L999"><a href="#L999">999</a>     if (fields.active != null &amp;&amp; ![true, false, &#x27;on&#x27;, &#x27;off&#x27;, &#x27;true&#x27;, &#x27;false&#x27;].includes(fields.active)) {</span>
+<span class="source-line" id="L1000"><a href="#L1000">1000</a>       return { ok: false, error: &#x27;invalid_active&#x27;, spelling: SPELLING, step_id, active: fields.active, expected: &#x27;on or off&#x27; };</span>
+<span class="source-line" id="L1001"><a href="#L1001">1001</a>     }</span>
+<span class="source-line" id="L1002"><a href="#L1002">1002</a>     if (fields.seat != null &amp;&amp; fields.seat !== &#x27;&#x27; &amp;&amp; ![&#x27;none&#x27;, &#x27;off&#x27;, &#x27;active&#x27;, &#x27;deck&#x27;].includes(fields.seat)) {</span>
+<span class="source-line" id="L1003"><a href="#L1003">1003</a>       return { ok: false, error: &#x27;invalid_seat&#x27;, spelling: SPELLING, step_id, seat: fields.seat, expected: &#x27;active, deck or none&#x27; };</span>
+<span class="source-line" id="L1004"><a href="#L1004">1004</a>     }</span>
+<span class="source-line" id="L1005"><a href="#L1005">1005</a>     if (fields.seat_order != null &amp;&amp; fields.seat_order !== &#x27;&#x27;) {</span>
+<span class="source-line" id="L1006"><a href="#L1006">1006</a>       const v = typeof fields.seat_order === &#x27;number&#x27; ? fields.seat_order : parseInt(String(fields.seat_order), 10);</span>
+<span class="source-line" id="L1007"><a href="#L1007">1007</a>       if (!Number.isInteger(v) || v &lt; 0) {</span>
+<span class="source-line" id="L1008"><a href="#L1008">1008</a>         return { ok: false, error: &#x27;invalid_seat_order&#x27;, spelling: SPELLING, step_id, seat_order: fields.seat_order, expected: &#x27;an integer from 0&#x27; };</span>
+<span class="source-line" id="L1009"><a href="#L1009">1009</a>       }</span>
+<span class="source-line" id="L1010"><a href="#L1010">1010</a>     }</span>
+<span class="source-line" id="L1011"><a href="#L1011">1011</a>     for (const [key, [norm, bad]] of Object.entries(REF_FIELD_NORMALIZERS)) {</span>
+<span class="source-line" id="L1012"><a href="#L1012">1012</a>       if (fields[key] != null &amp;&amp; norm(fields[key]) == null) {</span>
+<span class="source-line" id="L1013"><a href="#L1013">1013</a>         return { ok: false, error: bad, spelling: SPELLING, step_id, [key]: fields[key] };</span>
+<span class="source-line" id="L1014"><a href="#L1014">1014</a>       }</span>
+<span class="source-line" id="L1015"><a href="#L1015">1015</a>     }</span>
+<span class="source-line" id="L1016"><a href="#L1016">1016</a>     {</span>
+<span class="source-line" id="L1017"><a href="#L1017">1017</a>       const cur = current.get(step_id) || {};</span>
+<span class="source-line" id="L1018"><a href="#L1018">1018</a>       if (fields.ref != null) {</span>
+<span class="source-line" id="L1019"><a href="#L1019">1019</a>         const dup = otherStepWithRef(current, step_id, normalizeRef(fields.ref));</span>
+<span class="source-line" id="L1020"><a href="#L1020">1020</a>         if (dup) return { ok: false, error: &#x27;duplicate_ref&#x27;, spelling: SPELLING, step_id, ref: fields.ref, other_step_id: dup };</span>
+<span class="source-line" id="L1021"><a href="#L1021">1021</a>         if (cur.due != null || fields.due != null) return { ok: false, error: &#x27;ref_on_dated_step&#x27;, spelling: SPELLING, step_id, ref: fields.ref, message: &#x27;a referenced part takes its date from its own record&#x27; };</span>
+<span class="source-line" id="L1022"><a href="#L1022">1022</a>       }</span>
+<span class="source-line" id="L1023"><a href="#L1023">1023</a>       if (fields.due != null &amp;&amp; cur.ref != null &amp;&amp; !(&#x27;ref&#x27; in fields &amp;&amp; fields.ref == null)) {</span>
+<span class="source-line" id="L1024"><a href="#L1024">1024</a>         return { ok: false, error: &#x27;due_on_ref_step&#x27;, spelling: SPELLING, step_id, ref: cur.ref, message: &#x27;a referenced part takes its date from its own record&#x27; };</span>
+<span class="source-line" id="L1025"><a href="#L1025">1025</a>       }</span>
+<span class="source-line" id="L1026"><a href="#L1026">1026</a>     }</span>
+<span class="source-line" id="L1027"><a href="#L1027">1027</a>     const forbidden = Object.keys(fields).filter(</span>
+<span class="source-line" id="L1028"><a href="#L1028">1028</a>       (k) =&gt; !ROADMAP_SET_FIELDS.includes(k),</span>
+<span class="source-line" id="L1029"><a href="#L1029">1029</a>     );</span>
+<span class="source-line" id="L1030"><a href="#L1030">1030</a>     if (!Object.keys(fields).length) {</span>
+<span class="source-line" id="L1031"><a href="#L1031">1031</a>       return {</span>
+<span class="source-line" id="L1032"><a href="#L1032">1032</a>         ok: false,</span>
+<span class="source-line" id="L1033"><a href="#L1033">1033</a>         error: &#x27;step_set_requires_fields&#x27;,</span>
+<span class="source-line" id="L1034"><a href="#L1034">1034</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L1035"><a href="#L1035">1035</a>         allowed: [...ROADMAP_SET_FIELDS],</span>
+<span class="source-line" id="L1036"><a href="#L1036">1036</a>       };</span>
+<span class="source-line" id="L1037"><a href="#L1037">1037</a>     }</span>
+<span class="source-line" id="L1038"><a href="#L1038">1038</a>     if (forbidden.length) {</span>
+<span class="source-line" id="L1039"><a href="#L1039">1039</a>       return {</span>
+<span class="source-line" id="L1040"><a href="#L1040">1040</a>         ok: false,</span>
+<span class="source-line" id="L1041"><a href="#L1041">1041</a>         error: &#x27;step_set_forbidden_field&#x27;,</span>
+<span class="source-line" id="L1042"><a href="#L1042">1042</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L1043"><a href="#L1043">1043</a>         forbidden,</span>
+<span class="source-line" id="L1044"><a href="#L1044">1044</a>         allowed: [...ROADMAP_SET_FIELDS],</span>
+<span class="source-line" id="L1045"><a href="#L1045">1045</a>         message:</span>
+<span class="source-line" id="L1046"><a href="#L1046">1046</a>           &#x27;status requires status_flip (+ receipt); commissioned_as requires commission_bind (TW3 single-writer hook)&#x27;,</span>
+<span class="source-line" id="L1047"><a href="#L1047">1047</a>       };</span>
+<span class="source-line" id="L1048"><a href="#L1048">1048</a>     }</span>
+<span class="source-line" id="L1049"><a href="#L1049">1049</a>   }</span>
+<span class="source-line" id="L1050"><a href="#L1050">1050</a> </span>
+<span class="source-line" id="L1051"><a href="#L1051">1051</a>   if (kind === &#x27;reorder&#x27;) {</span>
+<span class="source-line" id="L1052"><a href="#L1052">1052</a>     const have = new Set(roadmap.roadmap_projection.map((s) =&gt; String(s.id)));</span>
+<span class="source-line" id="L1053"><a href="#L1053">1053</a>     const anchor = event.before != null ? String(event.before) : (event.after != null ? String(event.after) : null);</span>
+<span class="source-line" id="L1054"><a href="#L1054">1054</a>     if (!nonEmpty(step_id) || !have.has(String(step_id)) || !anchor || anchor === String(step_id) || !have.has(anchor)) {</span>
+<span class="source-line" id="L1055"><a href="#L1055">1055</a>       return { ok: false, error: &#x27;reorder_invalid&#x27;, spelling: SPELLING, step_id: step_id ?? null, anchor,</span>
+<span class="source-line" id="L1056"><a href="#L1056">1056</a>                message: &#x27;reorder needs an existing step_id and an existing before/after step that is not itself.&#x27; };</span>
+<span class="source-line" id="L1057"><a href="#L1057">1057</a>     }</span>
+<span class="source-line" id="L1058"><a href="#L1058">1058</a>     if (!(event.receipt &amp;&amp; typeof event.receipt === &#x27;object&#x27; &amp;&amp; nonEmpty(event.receipt.who))) {</span>
+<span class="source-line" id="L1059"><a href="#L1059">1059</a>       return { ok: false, error: &#x27;reorder_needs_receipt&#x27;, spelling: SPELLING, step_id, message: &#x27;reorder is his act: it carries a receipt (who, why).&#x27; };</span>
+<span class="source-line" id="L1060"><a href="#L1060">1060</a>     }</span>
+<span class="source-line" id="L1061"><a href="#L1061">1061</a>   }</span>
+<span class="source-line" id="L1062"><a href="#L1062">1062</a>   if (kind === &#x27;commission_bind&#x27; &amp;&amp; !nonEmpty(event.commissioned_as)) {</span>
+<span class="source-line" id="L1063"><a href="#L1063">1063</a>     return {</span>
+<span class="source-line" id="L1064"><a href="#L1064">1064</a>       ok: false,</span>
+<span class="source-line" id="L1065"><a href="#L1065">1065</a>       error: &#x27;commission_bind_missing_target&#x27;,</span>
+<span class="source-line" id="L1066"><a href="#L1066">1066</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1067"><a href="#L1067">1067</a>       step_id,</span>
+<span class="source-line" id="L1068"><a href="#L1068">1068</a>     };</span>
+<span class="source-line" id="L1069"><a href="#L1069">1069</a>   }</span>
+<span class="source-line" id="L1070"><a href="#L1070">1070</a> </span>
+<span class="source-line" id="L1071"><a href="#L1071">1071</a>   if (kind === &#x27;step_set&#x27; &amp;&amp; event.fields &amp;&amp; &#x27;navigation&#x27; in event.fields &amp;&amp; !validNavigation(event.fields.navigation)) return {ok:false,error:&#x27;invalid_navigation&#x27;};</span>
+<span class="source-line" id="L1072"><a href="#L1072">1072</a>   const at = event.at ?? opts.at ?? todayIso();</span>
+<span class="source-line" id="L1073"><a href="#L1073">1073</a>   const normalized = {</span>
+<span class="source-line" id="L1074"><a href="#L1074">1074</a>     ...event,</span>
+<span class="source-line" id="L1075"><a href="#L1075">1075</a>     seq: roadmap.roadmap_events.length + 1,</span>
+<span class="source-line" id="L1076"><a href="#L1076">1076</a>     kind,</span>
+<span class="source-line" id="L1077"><a href="#L1077">1077</a>     step_id: kind === &#x27;scaffold_proposal&#x27; ? (step_id ?? null) : step_id,</span>
+<span class="source-line" id="L1078"><a href="#L1078">1078</a>     at,</span>
+<span class="source-line" id="L1079"><a href="#L1079">1079</a>   };</span>
+<span class="source-line" id="L1080"><a href="#L1080">1080</a>   if (typeof event.client_event_id === &#x27;string&#x27; &amp;&amp; event.client_event_id.trim()) {</span>
+<span class="source-line" id="L1081"><a href="#L1081">1081</a>     normalized.client_event_id = event.client_event_id;</span>
+<span class="source-line" id="L1082"><a href="#L1082">1082</a>   }</span>
+<span class="source-line" id="L1083"><a href="#L1083">1083</a>   if (kind === &#x27;status_flip&#x27;) {</span>
+<span class="source-line" id="L1084"><a href="#L1084">1084</a>     normalized.from = event.from ?? current.get(step_id).status;</span>
+<span class="source-line" id="L1085"><a href="#L1085">1085</a>     normalized.receipt = {</span>
+<span class="source-line" id="L1086"><a href="#L1086">1086</a>       who: event.receipt.who,</span>
+<span class="source-line" id="L1087"><a href="#L1087">1087</a>       when: event.receipt.when ?? at,</span>
+<span class="source-line" id="L1088"><a href="#L1088">1088</a>       why: event.receipt.why,</span>
+<span class="source-line" id="L1089"><a href="#L1089">1089</a>     };</span>
+<span class="source-line" id="L1090"><a href="#L1090">1090</a>   }</span>
+<span class="source-line" id="L1091"><a href="#L1091">1091</a>   delete normalized.id;</span>
+<span class="source-line" id="L1092"><a href="#L1092">1092</a> </span>
+<span class="source-line" id="L1093"><a href="#L1093">1093</a>   const events = [...roadmap.roadmap_events.map((e) =&gt; ({ ...e })), normalized];</span>
+<span class="source-line" id="L1094"><a href="#L1094">1094</a>   let refinement;</span>
+<span class="source-line" id="L1095"><a href="#L1095">1095</a>   try { refinement=foldRefinements(events); }</span>
+<span class="source-line" id="L1096"><a href="#L1096">1096</a>   catch(e) { return {ok:false,error:e.code || &#x27;invalid-refinement-operation&#x27;,detail:e.message}; }</span>
+<span class="source-line" id="L1097"><a href="#L1097">1097</a>   const built = buildRoadmapProjection(events);</span>
+<span class="source-line" id="L1098"><a href="#L1098">1098</a>   const navIssues = navigationIssues(built.projection);</span>
+<span class="source-line" id="L1099"><a href="#L1099">1099</a>   if (navIssues.length) return {ok:false,error:navIssues[0].code,issues:navIssues};</span>
+<span class="source-line" id="L1100"><a href="#L1100">1100</a> </span>
+<span class="source-line" id="L1101"><a href="#L1101">1101</a>   return {</span>
+<span class="source-line" id="L1102"><a href="#L1102">1102</a>     ok: true,</span>
+<span class="source-line" id="L1103"><a href="#L1103">1103</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L1104"><a href="#L1104">1104</a>     authority: &#x27;roadmap_append_only&#x27;,</span>
+<span class="source-line" id="L1105"><a href="#L1105">1105</a>     event: normalized,</span>
+<span class="source-line" id="L1106"><a href="#L1106">1106</a>     seq: normalized.seq,</span>
+<span class="source-line" id="L1107"><a href="#L1107">1107</a>     idempotent: false,</span>
+<span class="source-line" id="L1108"><a href="#L1108">1108</a>     roadmap: {</span>
+<span class="source-line" id="L1109"><a href="#L1109">1109</a>       ...roadmap,</span>
+<span class="source-line" id="L1110"><a href="#L1110">1110</a>       as_of: at,</span>
+<span class="source-line" id="L1111"><a href="#L1111">1111</a>       roadmap_events: events,</span>
+<span class="source-line" id="L1112"><a href="#L1112">1112</a>       roadmap_projection: built.projection,</span>
+<span class="source-line" id="L1113"><a href="#L1113">1113</a>       ...(refinement.managed ? {refinement_projection:refinement} : {}),</span>
+<span class="source-line" id="L1114"><a href="#L1114">1114</a>     },</span>
+<span class="source-line" id="L1115"><a href="#L1115">1115</a>     projection: built.projection,</span>
+<span class="source-line" id="L1116"><a href="#L1116">1116</a>     issues: built.issues,</span>
+<span class="source-line" id="L1117"><a href="#L1117">1117</a>     events_only: true,</span>
+<span class="source-line" id="L1118"><a href="#L1118">1118</a>     single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L1119"><a href="#L1119">1119</a>   };</span>
+<span class="source-line" id="L1120"><a href="#L1120">1120</a> }</span>
+<span class="source-line" id="L1121"><a href="#L1121">1121</a> </span>
+<span class="source-line" id="L1122"><a href="#L1122">1122</a> /**</span>
+<span class="source-line" id="L1123"><a href="#L1123">1123</a>  * Direct roadmap_projection writes are ALWAYS rejected (single writer path).</span>
+<span class="source-line" id="L1124"><a href="#L1124">1124</a>  * @param {object} roadmap</span>
+<span class="source-line" id="L1125"><a href="#L1125">1125</a>  * @param {object} [patch]</span>
+<span class="source-line" id="L1126"><a href="#L1126">1126</a>  */</span>
+<span class="source-line" id="L1127"><a href="#L1127">1127</a> export function mutateRoadmapProjectionInPlace(roadmap, patch = {}) {</span>
+<span class="source-line" id="L1128"><a href="#L1128">1128</a>   return {</span>
+<span class="source-line" id="L1129"><a href="#L1129">1129</a>     ok: false,</span>
+<span class="source-line" id="L1130"><a href="#L1130">1130</a>     error: &#x27;roadmap_projection_write_rejected&#x27;,</span>
+<span class="source-line" id="L1131"><a href="#L1131">1131</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L1132"><a href="#L1132">1132</a>     message:</span>
+<span class="source-line" id="L1133"><a href="#L1133">1133</a>       &#x27;roadmap_projection is derived from append-only roadmap_events; direct writes are rejected. Use roadmap-propose / roadmap-set → appendRoadmapEvent (single writer), or healRoadmap to rebuild from events.&#x27;,</span>
+<span class="source-line" id="L1134"><a href="#L1134">1134</a>     attempted_fields: Object.keys(patch || {}),</span>
+<span class="source-line" id="L1135"><a href="#L1135">1135</a>     single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L1136"><a href="#L1136">1136</a>     roadmap_unchanged: true,</span>
+<span class="source-line" id="L1137"><a href="#L1137">1137</a>   };</span>
+<span class="source-line" id="L1138"><a href="#L1138">1138</a> }</span>
+<span class="source-line" id="L1139"><a href="#L1139">1139</a> </span>
+<span class="source-line" id="L1140"><a href="#L1140">1140</a> /**</span>
+<span class="source-line" id="L1141"><a href="#L1141">1141</a>  * Load a project&#x27;s roadmap.json (N=1 path; no registry).</span>
+<span class="source-line" id="L1142"><a href="#L1142">1142</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L1143"><a href="#L1143">1143</a>  */</span>
+<span class="source-line" id="L1144"><a href="#L1144">1144</a> export function loadProjectRoadmap(projectPath) {</span>
+<span class="source-line" id="L1145"><a href="#L1145">1145</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L1146"><a href="#L1146">1146</a>   const roadmapPath = path.join(root, ROADMAP_FILE_NAME);</span>
+<span class="source-line" id="L1147"><a href="#L1147">1147</a>   if (!fs.existsSync(roadmapPath) || !fs.statSync(roadmapPath).isFile()) {</span>
+<span class="source-line" id="L1148"><a href="#L1148">1148</a>     return { ok: true, exists: false, roadmap: null, roadmap_path: roadmapPath };</span>
+<span class="source-line" id="L1149"><a href="#L1149">1149</a>   }</span>
+<span class="source-line" id="L1150"><a href="#L1150">1150</a>   try {</span>
+<span class="source-line" id="L1151"><a href="#L1151">1151</a>     const raw = fs.readFileSync(roadmapPath, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L1152"><a href="#L1152">1152</a>     const parsed = parseRoadmap(raw);</span>
+<span class="source-line" id="L1153"><a href="#L1153">1153</a>     if (!parsed.ok) {</span>
+<span class="source-line" id="L1154"><a href="#L1154">1154</a>       return { ok: false, exists: true, roadmap: null, roadmap_path: roadmapPath, ...parsed };</span>
+<span class="source-line" id="L1155"><a href="#L1155">1155</a>     }</span>
+<span class="source-line" id="L1156"><a href="#L1156">1156</a>     return { ok: true, exists: true, roadmap: parsed.roadmap, roadmap_path: roadmapPath };</span>
+<span class="source-line" id="L1157"><a href="#L1157">1157</a>   } catch (e) {</span>
+<span class="source-line" id="L1158"><a href="#L1158">1158</a>     return {</span>
+<span class="source-line" id="L1159"><a href="#L1159">1159</a>       ok: false,</span>
+<span class="source-line" id="L1160"><a href="#L1160">1160</a>       exists: true,</span>
+<span class="source-line" id="L1161"><a href="#L1161">1161</a>       roadmap: null,</span>
+<span class="source-line" id="L1162"><a href="#L1162">1162</a>       roadmap_path: roadmapPath,</span>
+<span class="source-line" id="L1163"><a href="#L1163">1163</a>       error: &#x27;roadmap_read_failed&#x27;,</span>
+<span class="source-line" id="L1164"><a href="#L1164">1164</a>       message: String(e?.message ?? e),</span>
+<span class="source-line" id="L1165"><a href="#L1165">1165</a>     };</span>
+<span class="source-line" id="L1166"><a href="#L1166">1166</a>   }</span>
+<span class="source-line" id="L1167"><a href="#L1167">1167</a> }</span>
+<span class="source-line" id="L1168"><a href="#L1168">1168</a> </span>
+<span class="source-line" id="L1169"><a href="#L1169">1169</a> /**</span>
+<span class="source-line" id="L1170"><a href="#L1170">1170</a>  * The container&#x27;s bytes, in ONE place.</span>
+<span class="source-line" id="L1171"><a href="#L1171">1171</a>  *</span>
+<span class="source-line" id="L1172"><a href="#L1172">1172</a>  * W15 needs these bytes twice - once to write the file and once to hash it into the</span>
+<span class="source-line" id="L1173"><a href="#L1173">1173</a>  * commit-intent that asks for it to be committed - and two spellings of the same</span>
+<span class="source-line" id="L1174"><a href="#L1174">1174</a>  * serialization is how a durability receipt ends up naming a hash the file on disk does not</span>
+<span class="source-line" id="L1175"><a href="#L1175">1175</a>  * have. So the writer below calls this, and so does the intent.</span>
+<span class="source-line" id="L1176"><a href="#L1176">1176</a>  *</span>
+<span class="source-line" id="L1177"><a href="#L1177">1177</a>  * @param {object} roadmap @returns {string}</span>
+<span class="source-line" id="L1178"><a href="#L1178">1178</a>  */</span>
+<span class="source-line" id="L1179"><a href="#L1179">1179</a> export function projectRoadmapBytes(roadmap) {</span>
+<span class="source-line" id="L1180"><a href="#L1180">1180</a>   return `${JSON.stringify(roadmap, null, 2)}\n`;</span>
+<span class="source-line" id="L1181"><a href="#L1181">1181</a> }</span>
+<span class="source-line" id="L1182"><a href="#L1182">1182</a> </span>
+<span class="source-line" id="L1183"><a href="#L1183">1183</a> /**</span>
+<span class="source-line" id="L1184"><a href="#L1184">1184</a>  * Persist a roadmap container to the project root.</span>
+<span class="source-line" id="L1185"><a href="#L1185">1185</a>  *</span>
+<span class="source-line" id="L1186"><a href="#L1186">1186</a>  * Wave 6: whole-file rewrite is serialised under the SAME named lock as the</span>
+<span class="source-line" id="L1187"><a href="#L1187">1187</a>  * spine (`withFileLock` + `writeFileAtomicSync`). Production appends still go</span>
+<span class="source-line" id="L1188"><a href="#L1188">1188</a>  * through `appendRoadmapEventThroughSpine` / `appendRoadmapEventDurable`; this</span>
+<span class="source-line" id="L1189"><a href="#L1189">1189</a>  * helper is the fixture/heal container path — never an unlocked second writer.</span>
+<span class="source-line" id="L1190"><a href="#L1190">1190</a>  *</span>
+<span class="source-line" id="L1191"><a href="#L1191">1191</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L1192"><a href="#L1192">1192</a>  * @param {object} roadmap</span>
+<span class="source-line" id="L1193"><a href="#L1193">1193</a>  * @param {{ timeoutMs?: number }} [opts]</span>
+<span class="source-line" id="L1194"><a href="#L1194">1194</a>  */</span>
+<span class="source-line" id="L1195"><a href="#L1195">1195</a> export function writeProjectRoadmap(projectPath, roadmap, opts = {}) {</span>
+<span class="source-line" id="L1196"><a href="#L1196">1196</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L1197"><a href="#L1197">1197</a>   const roadmapPath = path.join(root, ROADMAP_FILE_NAME);</span>
+<span class="source-line" id="L1198"><a href="#L1198">1198</a>   fs.mkdirSync(root, { recursive: true });</span>
+<span class="source-line" id="L1199"><a href="#L1199">1199</a>   withFileLock(</span>
+<span class="source-line" id="L1200"><a href="#L1200">1200</a>     roadmapPath,</span>
+<span class="source-line" id="L1201"><a href="#L1201">1201</a>     () =&gt; {</span>
+<span class="source-line" id="L1202"><a href="#L1202">1202</a>       writeFileAtomicSync(roadmapPath, projectRoadmapBytes(roadmap));</span>
+<span class="source-line" id="L1203"><a href="#L1203">1203</a>     },</span>
+<span class="source-line" id="L1204"><a href="#L1204">1204</a>     { timeoutMs: opts.timeoutMs },</span>
+<span class="source-line" id="L1205"><a href="#L1205">1205</a>   );</span>
+<span class="source-line" id="L1206"><a href="#L1206">1206</a>   return {</span>
+<span class="source-line" id="L1207"><a href="#L1207">1207</a>     ok: true,</span>
+<span class="source-line" id="L1208"><a href="#L1208">1208</a>     roadmap_path: roadmapPath,</span>
+<span class="source-line" id="L1209"><a href="#L1209">1209</a>     locked: true,</span>
+<span class="source-line" id="L1210"><a href="#L1210">1210</a>     lock: &#x27;withFileLock&#x27;,</span>
+<span class="source-line" id="L1211"><a href="#L1211">1211</a>     atomic_write: &#x27;writeFileAtomicSync&#x27;,</span>
+<span class="source-line" id="L1212"><a href="#L1212">1212</a>   };</span>
+<span class="source-line" id="L1213"><a href="#L1213">1213</a> }</span>
+<span class="source-line" id="L1214"><a href="#L1214">1214</a> </span>
+<span class="source-line" id="L1215"><a href="#L1215">1215</a> // -- W9: the durable, indexed half of the single writer -----------------------</span>
+<span class="source-line" id="L1216"><a href="#L1216">1216</a> </span>
+<span class="source-line" id="L1217"><a href="#L1217">1217</a> /**</span>
+<span class="source-line" id="L1218"><a href="#L1218">1218</a>  * The id used when a roadmap container names neither a roadmap nor a project. Named rather</span>
+<span class="source-line" id="L1219"><a href="#L1219">1219</a>  * than inlined so the carrier path is predictable in the one case where nothing else is.</span>
+<span class="source-line" id="L1220"><a href="#L1220">1220</a>  */</span>
+<span class="source-line" id="L1221"><a href="#L1221">1221</a> export const ROADMAP_DEFAULT_ID = &#x27;roadmap&#x27;;</span>
+<span class="source-line" id="L1222"><a href="#L1222">1222</a> </span>
+<span class="source-line" id="L1223"><a href="#L1223">1223</a> /**</span>
+<span class="source-line" id="L1224"><a href="#L1224">1224</a>  * The roadmap a carrier file belongs to.</span>
+<span class="source-line" id="L1225"><a href="#L1225">1225</a>  *</span>
+<span class="source-line" id="L1226"><a href="#L1226">1226</a>  * @param {object} roadmap @param {{roadmap_id?: string}} [opts] @returns {string}</span>
+<span class="source-line" id="L1227"><a href="#L1227">1227</a>  */</span>
+<span class="source-line" id="L1228"><a href="#L1228">1228</a> export function roadmapIdFor(roadmap, opts = {}) {</span>
+<span class="source-line" id="L1229"><a href="#L1229">1229</a>   const id = opts.roadmap_id ?? roadmap?.roadmap_id ?? roadmap?.project_id ?? null;</span>
+<span class="source-line" id="L1230"><a href="#L1230">1230</a>   return nonEmpty(id) ? String(id) : ROADMAP_DEFAULT_ID;</span>
+<span class="source-line" id="L1231"><a href="#L1231">1231</a> }</span>
+<span class="source-line" id="L1232"><a href="#L1232">1232</a> </span>
+<span class="source-line" id="L1233"><a href="#L1233">1233</a> /**</span>
+<span class="source-line" id="L1234"><a href="#L1234">1234</a>  * The inventory-v1 roadmap-event record for one appended event.</span>
+<span class="source-line" id="L1235"><a href="#L1235">1235</a>  *</span>
+<span class="source-line" id="L1236"><a href="#L1236">1236</a>  * WHY A MAPPING EXISTS AT ALL. The engine&#x27;s roadmap event and the index&#x27;s roadmap-event</span>
+<span class="source-line" id="L1237"><a href="#L1237">1237</a>  * class are two vocabularies that happen to describe the same fact: the engine speaks</span>
+<span class="source-line" id="L1238"><a href="#L1238">1238</a>  * {kind, step_id, at, receipt}, and inventory-v1 plus the frozen `proj` field set ask for</span>
+<span class="source-line" id="L1239"><a href="#L1239">1239</a>  * {event_id, roadmap_id, kind, title, step_status}. This function is the ONE place they are</span>
+<span class="source-line" id="L1240"><a href="#L1240">1240</a>  * lined up, so the carrier a rebuild discovers and the row the write path emitted describe</span>
+<span class="source-line" id="L1241"><a href="#L1241">1241</a>  * the same event in the same words. It invents no authority: appendRoadmapEvent has already</span>
+<span class="source-line" id="L1242"><a href="#L1242">1242</a>  * decided what the event IS and what the projection became, and every value here is read</span>
+<span class="source-line" id="L1243"><a href="#L1243">1243</a>  * back out of that decision.</span>
+<span class="source-line" id="L1244"><a href="#L1244">1244</a>  *</span>
+<span class="source-line" id="L1245"><a href="#L1245">1245</a>  * `title` and `step_status` come from the PROJECTION rather than from the raw event, because</span>
+<span class="source-line" id="L1246"><a href="#L1246">1246</a>  * the projection is the fold the single writer already computed - reading the status off the</span>
+<span class="source-line" id="L1247"><a href="#L1247">1247</a>  * event would re-derive it, and a second derivation is a second answer.</span>
+<span class="source-line" id="L1248"><a href="#L1248">1248</a>  *</span>
+<span class="source-line" id="L1249"><a href="#L1249">1249</a>  * @param {object} roadmap the container AFTER the append</span>
+<span class="source-line" id="L1250"><a href="#L1250">1250</a>  * @param {object} event the normalized event appendRoadmapEvent produced</span>
+<span class="source-line" id="L1251"><a href="#L1251">1251</a>  * @param {{roadmap_id?: string, event_id?: string}} [opts]</span>
+<span class="source-line" id="L1252"><a href="#L1252">1252</a>  * @returns {object}</span>
+<span class="source-line" id="L1253"><a href="#L1253">1253</a>  */</span>
+<span class="source-line" id="L1254"><a href="#L1254">1254</a> export function roadmapEventCarrierRecord(roadmap, event, opts = {}) {</span>
+<span class="source-line" id="L1255"><a href="#L1255">1255</a>   const roadmap_id = roadmapIdFor(roadmap, opts);</span>
+<span class="source-line" id="L1256"><a href="#L1256">1256</a>   const steps = Array.isArray(roadmap?.roadmap_projection) ? roadmap.roadmap_projection : [];</span>
+<span class="source-line" id="L1257"><a href="#L1257">1257</a>   const step = steps.find((s) =&gt; s &amp;&amp; s.id === event.step_id) ?? null;</span>
+<span class="source-line" id="L1258"><a href="#L1258">1258</a>   return {</span>
+<span class="source-line" id="L1259"><a href="#L1259">1259</a>     event_id: nonEmpty(opts.event_id) ? String(opts.event_id) : `${roadmap_id}-${event.seq}`,</span>
+<span class="source-line" id="L1260"><a href="#L1260">1260</a>     roadmap_id,</span>
+<span class="source-line" id="L1261"><a href="#L1261">1261</a>     kind: event.kind,</span>
+<span class="source-line" id="L1262"><a href="#L1262">1262</a>     title: step &amp;&amp; step.name != null ? step.name : (event.name ?? null),</span>
+<span class="source-line" id="L1263"><a href="#L1263">1263</a>     step_status: step &amp;&amp; step.status != null ? step.status : (event.to ?? null),</span>
+<span class="source-line" id="L1264"><a href="#L1264">1264</a>     step_id: event.step_id ?? null,</span>
+<span class="source-line" id="L1265"><a href="#L1265">1265</a>     seq: event.seq,</span>
+<span class="source-line" id="L1266"><a href="#L1266">1266</a>     // inventory-v1 declares {event_id, phase, ts} as this class&#x27;s field set; `phase` is the</span>
+<span class="source-line" id="L1267"><a href="#L1267">1267</a>     // event&#x27;s kind and `ts` its stamp, named here so the census reads the same values the</span>
+<span class="source-line" id="L1268"><a href="#L1268">1268</a>     // index does.</span>
+<span class="source-line" id="L1269"><a href="#L1269">1269</a>     phase: event.kind,</span>
+<span class="source-line" id="L1270"><a href="#L1270">1270</a>     ts: event.at,</span>
+<span class="source-line" id="L1271"><a href="#L1271">1271</a>   };</span>
+<span class="source-line" id="L1272"><a href="#L1272">1272</a> }</span>
+<span class="source-line" id="L1273"><a href="#L1273">1273</a> </span>
+<span class="source-line" id="L1274"><a href="#L1274">1274</a> /**</span>
+<span class="source-line" id="L1275"><a href="#L1275">1275</a>  * The bytes one roadmap event is stored as: ONE JSONL line, one event per carrier file.</span>
+<span class="source-line" id="L1276"><a href="#L1276">1276</a>  *</span>
+<span class="source-line" id="L1277"><a href="#L1277">1277</a>  * inventory-v1 frames this class as `&lt;root&gt;/roadmap/*.jsonl (one event per line)`, which a</span>
+<span class="source-line" id="L1278"><a href="#L1278">1278</a>  * single-line file satisfies. Writing one event per file rather than accumulating them is</span>
+<span class="source-line" id="L1279"><a href="#L1279">1279</a>  * what makes a just-appended roadmap event findable: identity is the PATH, so a file holding</span>
+<span class="source-line" id="L1280"><a href="#L1280">1280</a>  * many events is one row projecting one of them, and the newest event would be invisible</span>
+<span class="source-line" id="L1281"><a href="#L1281">1281</a>  * behind its oldest sibling. One file per event makes roadmap-event a literal peer of</span>
+<span class="source-line" id="L1282"><a href="#L1282">1282</a>  * receipt - one item, one row, one `proj`.</span>
+<span class="source-line" id="L1283"><a href="#L1283">1283</a>  *</span>
+<span class="source-line" id="L1284"><a href="#L1284">1284</a>  * @param {object} record @returns {string}</span>
+<span class="source-line" id="L1285"><a href="#L1285">1285</a>  */</span>
+<span class="source-line" id="L1286"><a href="#L1286">1286</a> export function roadmapEventBytes(record) {</span>
+<span class="source-line" id="L1287"><a href="#L1287">1287</a>   return `${JSON.stringify(record)}\n`;</span>
+<span class="source-line" id="L1288"><a href="#L1288">1288</a> }</span>
+<span class="source-line" id="L1289"><a href="#L1289">1289</a> </span>
+<span class="source-line" id="L1290"><a href="#L1290">1290</a> /**</span>
+<span class="source-line" id="L1291"><a href="#L1291">1291</a>  * appendRoadmapEvent, made durable and findable - the W9 write path for class</span>
+<span class="source-line" id="L1292"><a href="#L1292">1292</a>  * roadmap-event, and class-symmetry leg 4.</span>
+<span class="source-line" id="L1293"><a href="#L1293">1293</a>  *</span>
+<span class="source-line" id="L1294"><a href="#L1294">1294</a>  * Wave 6: production path is the ledger spine (named withFileLock on roadmap.json</span>
+<span class="source-line" id="L1295"><a href="#L1295">1295</a>  * + writeFileAtomicSync). The whole-file-rewrite of the campaign ledger is</span>
+<span class="source-line" id="L1296"><a href="#L1296">1296</a>  * serialised under that lock; when project_id is supplied the inventory carrier</span>
+<span class="source-line" id="L1297"><a href="#L1297">1297</a>  * + portfolio index flush still run (outside the roadmap lock, lock-order law).</span>
+<span class="source-line" id="L1298"><a href="#L1298">1298</a>  *</span>
+<span class="source-line" id="L1299"><a href="#L1299">1299</a>  * @param {string} projectPath the registered root</span>
+<span class="source-line" id="L1300"><a href="#L1300">1300</a>  * @param {object|string} roadmapInput @param {object} event</span>
+<span class="source-line" id="L1301"><a href="#L1301">1301</a>  * @param {{project_id?: string, home?: string, paths?: object, env?: object, at?: string,</span>
+<span class="source-line" id="L1302"><a href="#L1302">1302</a>  *          roadmap_id?: string, event_id?: string, beforeFlush?: Function,</span>
+<span class="source-line" id="L1303"><a href="#L1303">1303</a>  *          appendOpts?: object, skip_index?: boolean, timeoutMs?: number}} opts</span>
+<span class="source-line" id="L1304"><a href="#L1304">1304</a>  * @returns {object}</span>
+<span class="source-line" id="L1305"><a href="#L1305">1305</a>  */</span>
+<span class="source-line" id="L1306"><a href="#L1306">1306</a> export function appendRoadmapEventDurable(projectPath, roadmapInput, event, opts = {}) {</span>
+<span class="source-line" id="L1307"><a href="#L1307">1307</a>   return appendRoadmapEventThroughSpine(projectPath, event, {</span>
+<span class="source-line" id="L1308"><a href="#L1308">1308</a>     ...opts,</span>
+<span class="source-line" id="L1309"><a href="#L1309">1309</a>     seed: roadmapInput === undefined ? undefined : roadmapInput,</span>
+<span class="source-line" id="L1310"><a href="#L1310">1310</a>     at: opts.at,</span>
+<span class="source-line" id="L1311"><a href="#L1311">1311</a>     project_id: opts.project_id,</span>
+<span class="source-line" id="L1312"><a href="#L1312">1312</a>     home: opts.home,</span>
+<span class="source-line" id="L1313"><a href="#L1313">1313</a>     paths: opts.paths,</span>
+<span class="source-line" id="L1314"><a href="#L1314">1314</a>     env: opts.env,</span>
+<span class="source-line" id="L1315"><a href="#L1315">1315</a>     // Without project_id there is no portfolio index identity — locked SoT only.</span>
+<span class="source-line" id="L1316"><a href="#L1316">1316</a>     skip_index: opts.skip_index === true || !opts.project_id,</span>
+<span class="source-line" id="L1317"><a href="#L1317">1317</a>     roadmap_id: opts.roadmap_id,</span>
+<span class="source-line" id="L1318"><a href="#L1318">1318</a>     event_id: opts.event_id,</span>
+<span class="source-line" id="L1319"><a href="#L1319">1319</a>     beforeFlush: opts.beforeFlush,</span>
+<span class="source-line" id="L1320"><a href="#L1320">1320</a>     appendOpts: opts.appendOpts,</span>
+<span class="source-line" id="L1321"><a href="#L1321">1321</a>     timeoutMs: opts.timeoutMs,</span>
+<span class="source-line" id="L1322"><a href="#L1322">1322</a>   });</span>
+<span class="source-line" id="L1323"><a href="#L1323">1323</a> }</span>
+<span class="source-line" id="L1324"><a href="#L1324">1324</a> </span>
+<span class="source-line" id="L1325"><a href="#L1325">1325</a> /** Slug id from a step name. */</span>
+<span class="source-line" id="L1326"><a href="#L1326">1326</a> function slugFromName(name) {</span>
+<span class="source-line" id="L1327"><a href="#L1327">1327</a>   const slug = String(name ?? &#x27;&#x27;)</span>
+<span class="source-line" id="L1328"><a href="#L1328">1328</a>     .toLowerCase()</span>
+<span class="source-line" id="L1329"><a href="#L1329">1329</a>     .replace(/[^a-z0-9]+/g, &#x27;-&#x27;)</span>
+<span class="source-line" id="L1330"><a href="#L1330">1330</a>     .replace(/^-+|-+$/g, &#x27;&#x27;)</span>
+<span class="source-line" id="L1331"><a href="#L1331">1331</a>     .slice(0, 48);</span>
+<span class="source-line" id="L1332"><a href="#L1332">1332</a>   return slug || &#x27;step&#x27;;</span>
+<span class="source-line" id="L1333"><a href="#L1333">1333</a> }</span>
+<span class="source-line" id="L1334"><a href="#L1334">1334</a> </span>
+<span class="source-line" id="L1335"><a href="#L1335">1335</a> function resolveRoadmapSurfaces(opts = {}) {</span>
+<span class="source-line" id="L1336"><a href="#L1336">1336</a>   const project_path = resolveProjectPath({ project: opts.project, cwd: opts.cwd });</span>
+<span class="source-line" id="L1337"><a href="#L1337">1337</a>   const loaded =</span>
+<span class="source-line" id="L1338"><a href="#L1338">1338</a>     opts.roadmap !== undefined</span>
+<span class="source-line" id="L1339"><a href="#L1339">1339</a>       ? {</span>
+<span class="source-line" id="L1340"><a href="#L1340">1340</a>           ok: true,</span>
+<span class="source-line" id="L1341"><a href="#L1341">1341</a>           exists: opts.roadmap != null,</span>
+<span class="source-line" id="L1342"><a href="#L1342">1342</a>           roadmap: opts.roadmap,</span>
+<span class="source-line" id="L1343"><a href="#L1343">1343</a>           roadmap_path: null,</span>
+<span class="source-line" id="L1344"><a href="#L1344">1344</a>           injected: true,</span>
+<span class="source-line" id="L1345"><a href="#L1345">1345</a>         }</span>
+<span class="source-line" id="L1346"><a href="#L1346">1346</a>       : loadProjectRoadmap(project_path);</span>
+<span class="source-line" id="L1347"><a href="#L1347">1347</a>   return { project_path, loaded };</span>
+<span class="source-line" id="L1348"><a href="#L1348">1348</a> }</span>
+<span class="source-line" id="L1349"><a href="#L1349">1349</a> </span>
+<span class="source-line" id="L1350"><a href="#L1350">1350</a> /**</span>
+<span class="source-line" id="L1351"><a href="#L1351">1351</a>  * roadmap-show — status projection from the append-only events.</span>
+<span class="source-line" id="L1352"><a href="#L1352">1352</a>  * Face-only prose → empty projection + honest gap (never invented steps).</span>
+<span class="source-line" id="L1353"><a href="#L1353">1353</a>  * @param {object} opts</span>
+<span class="source-line" id="L1354"><a href="#L1354">1354</a>  */</span>
+<span class="source-line" id="L1355"><a href="#L1355">1355</a> export function verbRoadmapShow(opts = {}) {</span>
+<span class="source-line" id="L1356"><a href="#L1356">1356</a>   const { project_path, loaded } = resolveRoadmapSurfaces(opts);</span>
+<span class="source-line" id="L1357"><a href="#L1357">1357</a> </span>
+<span class="source-line" id="L1358"><a href="#L1358">1358</a>   if (!loaded.ok) {</span>
+<span class="source-line" id="L1359"><a href="#L1359">1359</a>     return {</span>
+<span class="source-line" id="L1360"><a href="#L1360">1360</a>       ok: false,</span>
+<span class="source-line" id="L1361"><a href="#L1361">1361</a>       error: loaded.error ?? &#x27;roadmap_read_failed&#x27;,</span>
+<span class="source-line" id="L1362"><a href="#L1362">1362</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1363"><a href="#L1363">1363</a>       verb: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1364"><a href="#L1364">1364</a>       primary: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1365"><a href="#L1365">1365</a>       project_path,</span>
+<span class="source-line" id="L1366"><a href="#L1366">1366</a>       message: loaded.message ?? &#x27;roadmap.json unreadable&#x27;,</span>
+<span class="source-line" id="L1367"><a href="#L1367">1367</a>     };</span>
+<span class="source-line" id="L1368"><a href="#L1368">1368</a>   }</span>
+<span class="source-line" id="L1369"><a href="#L1369">1369</a> </span>
+<span class="source-line" id="L1370"><a href="#L1370">1370</a>   if (!loaded.exists) {</span>
+<span class="source-line" id="L1371"><a href="#L1371">1371</a>     const surfaces = opts.surfaces ?? loadProjectSurfaces(project_path);</span>
+<span class="source-line" id="L1372"><a href="#L1372">1372</a>     const face_only = Boolean(surfaces &amp;&amp; (surfaces.face || surfaces.strip));</span>
+<span class="source-line" id="L1373"><a href="#L1373">1373</a>     const gap = surfaces &amp;&amp; surfaces.face ? &#x27;face_prose_only&#x27; : &#x27;no_roadmap&#x27;;</span>
+<span class="source-line" id="L1374"><a href="#L1374">1374</a>     return {</span>
+<span class="source-line" id="L1375"><a href="#L1375">1375</a>       ok: true,</span>
+<span class="source-line" id="L1376"><a href="#L1376">1376</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1377"><a href="#L1377">1377</a>       verb: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1378"><a href="#L1378">1378</a>       primary: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1379"><a href="#L1379">1379</a>       project_path,</span>
+<span class="source-line" id="L1380"><a href="#L1380">1380</a>       roadmap_present: false,</span>
+<span class="source-line" id="L1381"><a href="#L1381">1381</a>       projection: [],</span>
+<span class="source-line" id="L1382"><a href="#L1382">1382</a>       steps_count: 0,</span>
+<span class="source-line" id="L1383"><a href="#L1383">1383</a>       events_count: 0,</span>
+<span class="source-line" id="L1384"><a href="#L1384">1384</a>       gap,</span>
+<span class="source-line" id="L1385"><a href="#L1385">1385</a>       honest_gap: true,</span>
+<span class="source-line" id="L1386"><a href="#L1386">1386</a>       invented_steps: false,</span>
+<span class="source-line" id="L1387"><a href="#L1387">1387</a>       face_prose_consulted: face_only &amp;&amp; gap === &#x27;face_prose_only&#x27;,</span>
+<span class="source-line" id="L1388"><a href="#L1388">1388</a>       message:</span>
+<span class="source-line" id="L1389"><a href="#L1389">1389</a>         gap === &#x27;face_prose_only&#x27;</span>
+<span class="source-line" id="L1390"><a href="#L1390">1390</a>           ? &#x27;Face prose exists but there is no engine Roadmap; projection is empty (honest gap — steps are never invented from prose).&#x27;</span>
+<span class="source-line" id="L1391"><a href="#L1391">1391</a>           : &#x27;No Roadmap for this project; projection is empty.&#x27;,</span>
+<span class="source-line" id="L1392"><a href="#L1392">1392</a>     };</span>
+<span class="source-line" id="L1393"><a href="#L1393">1393</a>   }</span>
+<span class="source-line" id="L1394"><a href="#L1394">1394</a> </span>
+<span class="source-line" id="L1395"><a href="#L1395">1395</a>   const validated = validateRoadmap(loaded.roadmap);</span>
+<span class="source-line" id="L1396"><a href="#L1396">1396</a>   if (!validated.ok) {</span>
+<span class="source-line" id="L1397"><a href="#L1397">1397</a>     return {</span>
+<span class="source-line" id="L1398"><a href="#L1398">1398</a>       ...validated,</span>
+<span class="source-line" id="L1399"><a href="#L1399">1399</a>       verb: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1400"><a href="#L1400">1400</a>       primary: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1401"><a href="#L1401">1401</a>       project_path,</span>
+<span class="source-line" id="L1402"><a href="#L1402">1402</a>       roadmap_present: true,</span>
+<span class="source-line" id="L1403"><a href="#L1403">1403</a>     };</span>
+<span class="source-line" id="L1404"><a href="#L1404">1404</a>   }</span>
+<span class="source-line" id="L1405"><a href="#L1405">1405</a> </span>
+<span class="source-line" id="L1406"><a href="#L1406">1406</a>   return {</span>
+<span class="source-line" id="L1407"><a href="#L1407">1407</a>     ok: true,</span>
+<span class="source-line" id="L1408"><a href="#L1408">1408</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L1409"><a href="#L1409">1409</a>     verb: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1410"><a href="#L1410">1410</a>     primary: &#x27;roadmap-show&#x27;,</span>
+<span class="source-line" id="L1411"><a href="#L1411">1411</a>     project_path,</span>
+<span class="source-line" id="L1412"><a href="#L1412">1412</a>     roadmap_present: true,</span>
+<span class="source-line" id="L1413"><a href="#L1413">1413</a>     projection: validated.projection,</span>
+<span class="source-line" id="L1414"><a href="#L1414">1414</a>     steps_count: validated.steps_count,</span>
+<span class="source-line" id="L1415"><a href="#L1415">1415</a>     events_count: validated.events_count,</span>
+<span class="source-line" id="L1416"><a href="#L1416">1416</a>     issues: validated.issues,</span>
+<span class="source-line" id="L1417"><a href="#L1417">1417</a>     gap: null,</span>
+<span class="source-line" id="L1418"><a href="#L1418">1418</a>     invented_steps: false,</span>
+<span class="source-line" id="L1419"><a href="#L1419">1419</a>     message: &#x27;Roadmap projection derived from append-only events (engine truth).&#x27;,</span>
+<span class="source-line" id="L1420"><a href="#L1420">1420</a>   };</span>
+<span class="source-line" id="L1421"><a href="#L1421">1421</a> }</span>
+<span class="source-line" id="L1422"><a href="#L1422">1422</a> </span>
+<span class="source-line" id="L1423"><a href="#L1423">1423</a> /**</span>
+<span class="source-line" id="L1424"><a href="#L1424">1424</a>  * roadmap-propose — propose a step → step_create event only (status proposed).</span>
+<span class="source-line" id="L1425"><a href="#L1425">1425</a>  * @param {object} opts</span>
+<span class="source-line" id="L1426"><a href="#L1426">1426</a>  */</span>
+<span class="source-line" id="L1427"><a href="#L1427">1427</a> export function verbRoadmapPropose(opts = {}) {</span>
+<span class="source-line" id="L1428"><a href="#L1428">1428</a>   const name = opts.name ?? opts.rest?.[0] ?? null;</span>
+<span class="source-line" id="L1429"><a href="#L1429">1429</a>   if (!nonEmpty(name)) {</span>
+<span class="source-line" id="L1430"><a href="#L1430">1430</a>     return {</span>
+<span class="source-line" id="L1431"><a href="#L1431">1431</a>       ok: false,</span>
+<span class="source-line" id="L1432"><a href="#L1432">1432</a>       error: &#x27;roadmap_propose_requires_name&#x27;,</span>
+<span class="source-line" id="L1433"><a href="#L1433">1433</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1434"><a href="#L1434">1434</a>       verb: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1435"><a href="#L1435">1435</a>       primary: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1436"><a href="#L1436">1436</a>       message: &#x27;roadmap-propose requires --name (step name).&#x27;,</span>
+<span class="source-line" id="L1437"><a href="#L1437">1437</a>       required: [&#x27;name&#x27;],</span>
+<span class="source-line" id="L1438"><a href="#L1438">1438</a>     };</span>
+<span class="source-line" id="L1439"><a href="#L1439">1439</a>   }</span>
+<span class="source-line" id="L1440"><a href="#L1440">1440</a> </span>
+<span class="source-line" id="L1441"><a href="#L1441">1441</a>   const { project_path, loaded } = resolveRoadmapSurfaces(opts);</span>
+<span class="source-line" id="L1442"><a href="#L1442">1442</a>   if (!loaded.ok) {</span>
+<span class="source-line" id="L1443"><a href="#L1443">1443</a>     return {</span>
+<span class="source-line" id="L1444"><a href="#L1444">1444</a>       ok: false,</span>
+<span class="source-line" id="L1445"><a href="#L1445">1445</a>       error: loaded.error ?? &#x27;roadmap_read_failed&#x27;,</span>
+<span class="source-line" id="L1446"><a href="#L1446">1446</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1447"><a href="#L1447">1447</a>       verb: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1448"><a href="#L1448">1448</a>       primary: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1449"><a href="#L1449">1449</a>       project_path,</span>
+<span class="source-line" id="L1450"><a href="#L1450">1450</a>       message: loaded.message ?? &#x27;roadmap.json unreadable&#x27;,</span>
+<span class="source-line" id="L1451"><a href="#L1451">1451</a>     };</span>
+<span class="source-line" id="L1452"><a href="#L1452">1452</a>   }</span>
+<span class="source-line" id="L1453"><a href="#L1453">1453</a> </span>
+<span class="source-line" id="L1454"><a href="#L1454">1454</a>   const base = loaded.exists ? loaded.roadmap : emptyRoadmap(opts.project_id ?? null);</span>
+<span class="source-line" id="L1455"><a href="#L1455">1455</a>   const step_id = nonEmpty(opts.step) ? opts.step : slugFromName(name);</span>
+<span class="source-line" id="L1456"><a href="#L1456">1456</a> </span>
+<span class="source-line" id="L1457"><a href="#L1457">1457</a>   const event = {</span>
+<span class="source-line" id="L1458"><a href="#L1458">1458</a>     kind: &#x27;step_create&#x27;,</span>
+<span class="source-line" id="L1459"><a href="#L1459">1459</a>     step_id,</span>
+<span class="source-line" id="L1460"><a href="#L1460">1460</a>     name,</span>
+<span class="source-line" id="L1461"><a href="#L1461">1461</a>     status: &#x27;proposed&#x27;,</span>
+<span class="source-line" id="L1462"><a href="#L1462">1462</a>     done_when: opts.done_when ?? null,</span>
+<span class="source-line" id="L1463"><a href="#L1463">1463</a>     waiting_on: opts.waiting_on ?? null,</span>
+<span class="source-line" id="L1464"><a href="#L1464">1464</a>     ...(opts.due != null ? { due: opts.due } : {}),</span>
+<span class="source-line" id="L1465"><a href="#L1465">1465</a>     ...(opts.ref != null ? { ref: opts.ref } : {}),</span>
+<span class="source-line" id="L1466"><a href="#L1466">1466</a>     ...(opts.tier != null ? { tier: opts.tier } : {}),</span>
+<span class="source-line" id="L1467"><a href="#L1467">1467</a>     ...(opts.area != null ? { area: opts.area } : {}),</span>
+<span class="source-line" id="L1468"><a href="#L1468">1468</a>     at: opts.as_of ?? undefined,</span>
+<span class="source-line" id="L1469"><a href="#L1469">1469</a>     ...(opts.client_event_id ? { client_event_id: opts.client_event_id } : {}),</span>
+<span class="source-line" id="L1470"><a href="#L1470">1470</a>   };</span>
+<span class="source-line" id="L1471"><a href="#L1471">1471</a> </span>
+<span class="source-line" id="L1472"><a href="#L1472">1472</a>   const persist = opts.persist !== false &amp;&amp; !opts.dry_run &amp;&amp; !loaded.injected;</span>
+<span class="source-line" id="L1473"><a href="#L1473">1473</a>   const written = { roadmap: false };</span>
+<span class="source-line" id="L1474"><a href="#L1474">1474</a>   let appended;</span>
+<span class="source-line" id="L1475"><a href="#L1475">1475</a> </span>
+<span class="source-line" id="L1476"><a href="#L1476">1476</a>   if (persist) {</span>
+<span class="source-line" id="L1477"><a href="#L1477">1477</a>     // Wave 6 live-writer migration (roadmap.mjs:1000): production persist via spine.</span>
+<span class="source-line" id="L1478"><a href="#L1478">1478</a>     // appendRoadmapEventDurable is the named durable entry (A5 production caller).</span>
+<span class="source-line" id="L1479"><a href="#L1479">1479</a>     appended = appendRoadmapEventDurable(project_path, base, event, {</span>
+<span class="source-line" id="L1480"><a href="#L1480">1480</a>       project_id: opts.project_id ?? base?.project_id ?? null,</span>
+<span class="source-line" id="L1481"><a href="#L1481">1481</a>       home: opts.home,</span>
+<span class="source-line" id="L1482"><a href="#L1482">1482</a>       paths: opts.paths,</span>
+<span class="source-line" id="L1483"><a href="#L1483">1483</a>       env: opts.env,</span>
+<span class="source-line" id="L1484"><a href="#L1484">1484</a>       at: opts.as_of,</span>
+<span class="source-line" id="L1485"><a href="#L1485">1485</a>       skip_index: !opts.project_id &amp;&amp; !opts.home,</span>
+<span class="source-line" id="L1486"><a href="#L1486">1486</a>     });</span>
+<span class="source-line" id="L1487"><a href="#L1487">1487</a>     if (!appended.ok) {</span>
+<span class="source-line" id="L1488"><a href="#L1488">1488</a>       return {</span>
+<span class="source-line" id="L1489"><a href="#L1489">1489</a>         ...appended,</span>
+<span class="source-line" id="L1490"><a href="#L1490">1490</a>         verb: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1491"><a href="#L1491">1491</a>         primary: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1492"><a href="#L1492">1492</a>         project_path,</span>
+<span class="source-line" id="L1493"><a href="#L1493">1493</a>       };</span>
+<span class="source-line" id="L1494"><a href="#L1494">1494</a>     }</span>
+<span class="source-line" id="L1495"><a href="#L1495">1495</a>     written.roadmap = appended.sot_written === true || appended.persisted === true;</span>
+<span class="source-line" id="L1496"><a href="#L1496">1496</a>   } else {</span>
+<span class="source-line" id="L1497"><a href="#L1497">1497</a>     appended = appendRoadmapEvent(base, event);</span>
+<span class="source-line" id="L1498"><a href="#L1498">1498</a>     if (!appended.ok) {</span>
+<span class="source-line" id="L1499"><a href="#L1499">1499</a>       return {</span>
+<span class="source-line" id="L1500"><a href="#L1500">1500</a>         ...appended,</span>
+<span class="source-line" id="L1501"><a href="#L1501">1501</a>         verb: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1502"><a href="#L1502">1502</a>         primary: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1503"><a href="#L1503">1503</a>         project_path,</span>
+<span class="source-line" id="L1504"><a href="#L1504">1504</a>       };</span>
+<span class="source-line" id="L1505"><a href="#L1505">1505</a>     }</span>
+<span class="source-line" id="L1506"><a href="#L1506">1506</a>   }</span>
+<span class="source-line" id="L1507"><a href="#L1507">1507</a> </span>
+<span class="source-line" id="L1508"><a href="#L1508">1508</a>   return {</span>
+<span class="source-line" id="L1509"><a href="#L1509">1509</a>     ok: true,</span>
+<span class="source-line" id="L1510"><a href="#L1510">1510</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L1511"><a href="#L1511">1511</a>     verb: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1512"><a href="#L1512">1512</a>     primary: &#x27;roadmap-propose&#x27;,</span>
+<span class="source-line" id="L1513"><a href="#L1513">1513</a>     project_path,</span>
+<span class="source-line" id="L1514"><a href="#L1514">1514</a>     event: appended.event,</span>
+<span class="source-line" id="L1515"><a href="#L1515">1515</a>     roadmap: appended.roadmap,</span>
+<span class="source-line" id="L1516"><a href="#L1516">1516</a>     projection: appended.projection,</span>
+<span class="source-line" id="L1517"><a href="#L1517">1517</a>     step_id,</span>
+<span class="source-line" id="L1518"><a href="#L1518">1518</a>     events_only: true,</span>
+<span class="source-line" id="L1519"><a href="#L1519">1519</a>     projection_written_directly: false,</span>
+<span class="source-line" id="L1520"><a href="#L1520">1520</a>     single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L1521"><a href="#L1521">1521</a>     persisted: written,</span>
+<span class="source-line" id="L1522"><a href="#L1522">1522</a>     dry_run: Boolean(opts.dry_run) || opts.persist === false,</span>
+<span class="source-line" id="L1523"><a href="#L1523">1523</a>     spine: persist ? true : undefined,</span>
+<span class="source-line" id="L1524"><a href="#L1524">1524</a>     message: `Step &#x27;${step_id}&#x27; proposed via step_create event (events only; projection derived).`,</span>
+<span class="source-line" id="L1525"><a href="#L1525">1525</a>   };</span>
+<span class="source-line" id="L1526"><a href="#L1526">1526</a> }</span>
+<span class="source-line" id="L1527"><a href="#L1527">1527</a> </span>
+<span class="source-line" id="L1528"><a href="#L1528">1528</a> /**</span>
+<span class="source-line" id="L1529"><a href="#L1529">1529</a>  * roadmap-set — events only:</span>
+<span class="source-line" id="L1530"><a href="#L1530">1530</a>  * - --status &lt;to&gt; flips status (receipt --who/--reason required; refuse without)</span>
+<span class="source-line" id="L1531"><a href="#L1531">1531</a>  * - --commissioned-as binds a commission (TW3 hook path)</span>
+<span class="source-line" id="L1532"><a href="#L1532">1532</a>  * - --name/--done-when/--waiting-on/--due/--ref/--tier/--area emit step_set</span>
+<span class="source-line" id="L1533"><a href="#L1533">1533</a>  * @param {object} opts</span>
+<span class="source-line" id="L1534"><a href="#L1534">1534</a>  */</span>
+<span class="source-line" id="L1535"><a href="#L1535">1535</a> export function verbRoadmapSet(opts = {}) {</span>
+<span class="source-line" id="L1536"><a href="#L1536">1536</a>   const step_id = opts.step ?? null;</span>
+<span class="source-line" id="L1537"><a href="#L1537">1537</a>   if (!nonEmpty(step_id)) {</span>
+<span class="source-line" id="L1538"><a href="#L1538">1538</a>     return {</span>
+<span class="source-line" id="L1539"><a href="#L1539">1539</a>       ok: false,</span>
+<span class="source-line" id="L1540"><a href="#L1540">1540</a>       error: &#x27;roadmap_set_requires_step&#x27;,</span>
+<span class="source-line" id="L1541"><a href="#L1541">1541</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1542"><a href="#L1542">1542</a>       verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1543"><a href="#L1543">1543</a>       primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1544"><a href="#L1544">1544</a>       message: &#x27;roadmap-set requires --step &lt;id&gt;.&#x27;,</span>
+<span class="source-line" id="L1545"><a href="#L1545">1545</a>       required: [&#x27;step&#x27;],</span>
+<span class="source-line" id="L1546"><a href="#L1546">1546</a>     };</span>
+<span class="source-line" id="L1547"><a href="#L1547">1547</a>   }</span>
+<span class="source-line" id="L1548"><a href="#L1548">1548</a> </span>
+<span class="source-line" id="L1549"><a href="#L1549">1549</a>   const { project_path, loaded } = resolveRoadmapSurfaces(opts);</span>
+<span class="source-line" id="L1550"><a href="#L1550">1550</a>   if (!loaded.ok) {</span>
+<span class="source-line" id="L1551"><a href="#L1551">1551</a>     return {</span>
+<span class="source-line" id="L1552"><a href="#L1552">1552</a>       ok: false,</span>
+<span class="source-line" id="L1553"><a href="#L1553">1553</a>       error: loaded.error ?? &#x27;roadmap_read_failed&#x27;,</span>
+<span class="source-line" id="L1554"><a href="#L1554">1554</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1555"><a href="#L1555">1555</a>       verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1556"><a href="#L1556">1556</a>       primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1557"><a href="#L1557">1557</a>       project_path,</span>
+<span class="source-line" id="L1558"><a href="#L1558">1558</a>       message: loaded.message ?? &#x27;roadmap.json unreadable&#x27;,</span>
+<span class="source-line" id="L1559"><a href="#L1559">1559</a>     };</span>
+<span class="source-line" id="L1560"><a href="#L1560">1560</a>   }</span>
+<span class="source-line" id="L1561"><a href="#L1561">1561</a>   if (!loaded.exists) {</span>
+<span class="source-line" id="L1562"><a href="#L1562">1562</a>     return {</span>
+<span class="source-line" id="L1563"><a href="#L1563">1563</a>       ok: false,</span>
+<span class="source-line" id="L1564"><a href="#L1564">1564</a>       error: &#x27;no_roadmap&#x27;,</span>
+<span class="source-line" id="L1565"><a href="#L1565">1565</a>       spelling: SPELLING,</span>
+<span class="source-line" id="L1566"><a href="#L1566">1566</a>       verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1567"><a href="#L1567">1567</a>       primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1568"><a href="#L1568">1568</a>       project_path,</span>
+<span class="source-line" id="L1569"><a href="#L1569">1569</a>       message:</span>
+<span class="source-line" id="L1570"><a href="#L1570">1570</a>         &#x27;No engine Roadmap for this project — nothing to set. Propose steps first (roadmap-propose); prose is not a step list.&#x27;,</span>
+<span class="source-line" id="L1571"><a href="#L1571">1571</a>     };</span>
+<span class="source-line" id="L1572"><a href="#L1572">1572</a>   }</span>
+<span class="source-line" id="L1573"><a href="#L1573">1573</a> </span>
+<span class="source-line" id="L1574"><a href="#L1574">1574</a>   let event;</span>
+<span class="source-line" id="L1575"><a href="#L1575">1575</a>   if (opts.status != null) {</span>
+<span class="source-line" id="L1576"><a href="#L1576">1576</a>     const receipt =</span>
+<span class="source-line" id="L1577"><a href="#L1577">1577</a>       opts.receipt &amp;&amp; typeof opts.receipt === &#x27;object&#x27;</span>
+<span class="source-line" id="L1578"><a href="#L1578">1578</a>         ? opts.receipt</span>
+<span class="source-line" id="L1579"><a href="#L1579">1579</a>         : { who: opts.who ?? null, when: opts.when ?? null, why: opts.reason ?? opts.why ?? null };</span>
+<span class="source-line" id="L1580"><a href="#L1580">1580</a>     if (!isValidFlipReceipt(receipt)) {</span>
+<span class="source-line" id="L1581"><a href="#L1581">1581</a>       return {</span>
+<span class="source-line" id="L1582"><a href="#L1582">1582</a>         ok: false,</span>
+<span class="source-line" id="L1583"><a href="#L1583">1583</a>         error: &#x27;status_flip_requires_receipt&#x27;,</span>
+<span class="source-line" id="L1584"><a href="#L1584">1584</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L1585"><a href="#L1585">1585</a>         verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1586"><a href="#L1586">1586</a>         primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1587"><a href="#L1587">1587</a>         project_path,</span>
+<span class="source-line" id="L1588"><a href="#L1588">1588</a>         step_id,</span>
+<span class="source-line" id="L1589"><a href="#L1589">1589</a>         required: [...FLIP_RECEIPT_FIELDS],</span>
+<span class="source-line" id="L1590"><a href="#L1590">1590</a>         message:</span>
+<span class="source-line" id="L1591"><a href="#L1591">1591</a>           &#x27;Status flip refused without receipt: pass --who and --reason (who/why; when defaults to event date).&#x27;,</span>
+<span class="source-line" id="L1592"><a href="#L1592">1592</a>         single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L1593"><a href="#L1593">1593</a>       };</span>
+<span class="source-line" id="L1594"><a href="#L1594">1594</a>     }</span>
+<span class="source-line" id="L1595"><a href="#L1595">1595</a>     if (opts.status === &#x27;done&#x27;) {</span>
+<span class="source-line" id="L1596"><a href="#L1596">1596</a>       // cockpit Wave B: the steward&#x27;s close states the next act and the goal re-read first</span>
+<span class="source-line" id="L1597"><a href="#L1597">1597</a>       const demand = demandClose(project_path, loaded.roadmap, step_id, opts.goal_reread ?? null);</span>
+<span class="source-line" id="L1598"><a href="#L1598">1598</a>       if (!demand.ok) return { ...demand, spelling: SPELLING, verb: &#x27;roadmap-set&#x27;, primary: &#x27;roadmap-set&#x27;, project_path, step_id };</span>
+<span class="source-line" id="L1599"><a href="#L1599">1599</a>     }</span>
+<span class="source-line" id="L1600"><a href="#L1600">1600</a>     event = {</span>
+<span class="source-line" id="L1601"><a href="#L1601">1601</a>       kind: &#x27;status_flip&#x27;,</span>
+<span class="source-line" id="L1602"><a href="#L1602">1602</a>       step_id,</span>
+<span class="source-line" id="L1603"><a href="#L1603">1603</a>       from: opts.from ?? null,</span>
+<span class="source-line" id="L1604"><a href="#L1604">1604</a>       to: opts.status,</span>
+<span class="source-line" id="L1605"><a href="#L1605">1605</a>       receipt,</span>
+<span class="source-line" id="L1606"><a href="#L1606">1606</a>       at: opts.as_of ?? undefined,</span>
+<span class="source-line" id="L1607"><a href="#L1607">1607</a>       ...(opts.goal_reread ? { goal_reread: opts.goal_reread } : {}),</span>
+<span class="source-line" id="L1608"><a href="#L1608">1608</a>       ...(opts.client_event_id ? { client_event_id: opts.client_event_id } : {}),</span>
+<span class="source-line" id="L1609"><a href="#L1609">1609</a>     };</span>
+<span class="source-line" id="L1610"><a href="#L1610">1610</a>     if (event.from == null) delete event.from;</span>
+<span class="source-line" id="L1611"><a href="#L1611">1611</a>   } else if (nonEmpty(opts.commissioned_as)) {</span>
+<span class="source-line" id="L1612"><a href="#L1612">1612</a>     event = {</span>
+<span class="source-line" id="L1613"><a href="#L1613">1613</a>       kind: &#x27;commission_bind&#x27;,</span>
+<span class="source-line" id="L1614"><a href="#L1614">1614</a>       step_id,</span>
+<span class="source-line" id="L1615"><a href="#L1615">1615</a>       commissioned_as: opts.commissioned_as,</span>
+<span class="source-line" id="L1616"><a href="#L1616">1616</a>       at: opts.as_of ?? undefined,</span>
+<span class="source-line" id="L1617"><a href="#L1617">1617</a>       ...(opts.client_event_id ? { client_event_id: opts.client_event_id } : {}),</span>
+<span class="source-line" id="L1618"><a href="#L1618">1618</a>     };</span>
+<span class="source-line" id="L1619"><a href="#L1619">1619</a>   } else {</span>
+<span class="source-line" id="L1620"><a href="#L1620">1620</a>     const fields = {};</span>
+<span class="source-line" id="L1621"><a href="#L1621">1621</a>     if (opts.name != null) fields.name = opts.name;</span>
+<span class="source-line" id="L1622"><a href="#L1622">1622</a>     if (opts.done_when != null) fields.done_when = opts.done_when;</span>
+<span class="source-line" id="L1623"><a href="#L1623">1623</a>     if (opts.waiting_on != null) fields.waiting_on = opts.waiting_on;</span>
+<span class="source-line" id="L1624"><a href="#L1624">1624</a>     if (opts.due != null) fields.due = (opts.due === &#x27;none&#x27; || opts.due === &#x27;&#x27;) ? null : opts.due;</span>
+<span class="source-line" id="L1625"><a href="#L1625">1625</a>     for (const key of [&#x27;ref&#x27;, &#x27;tier&#x27;, &#x27;area&#x27;]) {</span>
+<span class="source-line" id="L1626"><a href="#L1626">1626</a>       if (opts[key] != null) fields[key] = (opts[key] === &#x27;none&#x27; || opts[key] === &#x27;&#x27;) ? null : opts[key];</span>
+<span class="source-line" id="L1627"><a href="#L1627">1627</a>     }</span>
+<span class="source-line" id="L1628"><a href="#L1628">1628</a>     // the active set (2026-09-29): --active on|off · --active-order N|none · --pace YYYY-MM-DD|none</span>
+<span class="source-line" id="L1629"><a href="#L1629">1629</a>     if (opts.active != null) fields.active = !(opts.active === &#x27;off&#x27; || opts.active === &#x27;false&#x27; || opts.active === false);</span>
+<span class="source-line" id="L1630"><a href="#L1630">1630</a>     if (opts.active_order != null) fields.active_order = (opts.active_order === &#x27;none&#x27; || opts.active_order === &#x27;&#x27;) ? null : opts.active_order;</span>
+<span class="source-line" id="L1631"><a href="#L1631">1631</a>     if (opts.pace != null) fields.pace = (opts.pace === &#x27;none&#x27; || opts.pace === &#x27;&#x27;) ? null : opts.pace;</span>
+<span class="source-line" id="L1632"><a href="#L1632">1632</a>     // the seats (2026-09-30): --seat-in active|deck|none · --seat-order N|none (--seat alone is the model seat)</span>
+<span class="source-line" id="L1633"><a href="#L1633">1633</a>     if (opts.seat_in != null) fields.seat = (opts.seat_in === &#x27;none&#x27; || opts.seat_in === &#x27;&#x27; || opts.seat_in === &#x27;off&#x27;) ? null : opts.seat_in;</span>
+<span class="source-line" id="L1634"><a href="#L1634">1634</a>     if (opts.seat_order != null) fields.seat_order = (opts.seat_order === &#x27;none&#x27; || opts.seat_order === &#x27;&#x27;) ? null : opts.seat_order;</span>
+<span class="source-line" id="L1635"><a href="#L1635">1635</a>     if (!Object.keys(fields).length) {</span>
+<span class="source-line" id="L1636"><a href="#L1636">1636</a>       return {</span>
+<span class="source-line" id="L1637"><a href="#L1637">1637</a>         ok: false,</span>
+<span class="source-line" id="L1638"><a href="#L1638">1638</a>         error: &#x27;roadmap_set_requires_change&#x27;,</span>
+<span class="source-line" id="L1639"><a href="#L1639">1639</a>         spelling: SPELLING,</span>
+<span class="source-line" id="L1640"><a href="#L1640">1640</a>         verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1641"><a href="#L1641">1641</a>         primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1642"><a href="#L1642">1642</a>         project_path,</span>
+<span class="source-line" id="L1643"><a href="#L1643">1643</a>         message:</span>
+<span class="source-line" id="L1644"><a href="#L1644">1644</a>           &#x27;roadmap-set needs a change: --status (+ --who/--reason), --commissioned-as, or --name/--done-when/--waiting-on/--due/--ref/--tier/--area/--active/--active-order/--pace.&#x27;,</span>
+<span class="source-line" id="L1645"><a href="#L1645">1645</a>       };</span>
+<span class="source-line" id="L1646"><a href="#L1646">1646</a>     }</span>
+<span class="source-line" id="L1647"><a href="#L1647">1647</a>     event = {</span>
+<span class="source-line" id="L1648"><a href="#L1648">1648</a>       kind: &#x27;step_set&#x27;,</span>
+<span class="source-line" id="L1649"><a href="#L1649">1649</a>       step_id,</span>
+<span class="source-line" id="L1650"><a href="#L1650">1650</a>       fields,</span>
+<span class="source-line" id="L1651"><a href="#L1651">1651</a>       at: opts.as_of ?? undefined,</span>
+<span class="source-line" id="L1652"><a href="#L1652">1652</a>       ...(opts.client_event_id ? { client_event_id: opts.client_event_id } : {}),</span>
+<span class="source-line" id="L1653"><a href="#L1653">1653</a>     };</span>
+<span class="source-line" id="L1654"><a href="#L1654">1654</a>   }</span>
+<span class="source-line" id="L1655"><a href="#L1655">1655</a> </span>
+<span class="source-line" id="L1656"><a href="#L1656">1656</a>   const persist = opts.persist !== false &amp;&amp; !opts.dry_run &amp;&amp; !loaded.injected;</span>
+<span class="source-line" id="L1657"><a href="#L1657">1657</a>   const written = { roadmap: false };</span>
+<span class="source-line" id="L1658"><a href="#L1658">1658</a>   let appended;</span>
+<span class="source-line" id="L1659"><a href="#L1659">1659</a> </span>
+<span class="source-line" id="L1660"><a href="#L1660">1660</a>   if (persist) {</span>
+<span class="source-line" id="L1661"><a href="#L1661">1661</a>     // Wave 6 live-writer migration (roadmap.mjs:1139): production persist via spine.</span>
+<span class="source-line" id="L1662"><a href="#L1662">1662</a>     appended = appendRoadmapEventDurable(project_path, loaded.roadmap, event, {</span>
+<span class="source-line" id="L1663"><a href="#L1663">1663</a>       project_id: opts.project_id ?? loaded.roadmap?.project_id ?? null,</span>
+<span class="source-line" id="L1664"><a href="#L1664">1664</a>       home: opts.home,</span>
+<span class="source-line" id="L1665"><a href="#L1665">1665</a>       paths: opts.paths,</span>
+<span class="source-line" id="L1666"><a href="#L1666">1666</a>       env: opts.env,</span>
+<span class="source-line" id="L1667"><a href="#L1667">1667</a>       at: opts.as_of,</span>
+<span class="source-line" id="L1668"><a href="#L1668">1668</a>       skip_index: !opts.project_id &amp;&amp; !opts.home,</span>
+<span class="source-line" id="L1669"><a href="#L1669">1669</a>     });</span>
+<span class="source-line" id="L1670"><a href="#L1670">1670</a>     if (!appended.ok) {</span>
+<span class="source-line" id="L1671"><a href="#L1671">1671</a>       return {</span>
+<span class="source-line" id="L1672"><a href="#L1672">1672</a>         ...appended,</span>
+<span class="source-line" id="L1673"><a href="#L1673">1673</a>         verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1674"><a href="#L1674">1674</a>         primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1675"><a href="#L1675">1675</a>         project_path,</span>
+<span class="source-line" id="L1676"><a href="#L1676">1676</a>       };</span>
+<span class="source-line" id="L1677"><a href="#L1677">1677</a>     }</span>
+<span class="source-line" id="L1678"><a href="#L1678">1678</a>     written.roadmap = appended.sot_written === true || appended.persisted === true;</span>
+<span class="source-line" id="L1679"><a href="#L1679">1679</a>   } else {</span>
+<span class="source-line" id="L1680"><a href="#L1680">1680</a>     appended = appendRoadmapEvent(loaded.roadmap, event);</span>
+<span class="source-line" id="L1681"><a href="#L1681">1681</a>     if (!appended.ok) {</span>
+<span class="source-line" id="L1682"><a href="#L1682">1682</a>       return {</span>
+<span class="source-line" id="L1683"><a href="#L1683">1683</a>         ...appended,</span>
+<span class="source-line" id="L1684"><a href="#L1684">1684</a>         verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1685"><a href="#L1685">1685</a>         primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1686"><a href="#L1686">1686</a>         project_path,</span>
+<span class="source-line" id="L1687"><a href="#L1687">1687</a>       };</span>
+<span class="source-line" id="L1688"><a href="#L1688">1688</a>     }</span>
+<span class="source-line" id="L1689"><a href="#L1689">1689</a>   }</span>
+<span class="source-line" id="L1690"><a href="#L1690">1690</a> </span>
+<span class="source-line" id="L1691"><a href="#L1691">1691</a>   return {</span>
+<span class="source-line" id="L1692"><a href="#L1692">1692</a>     ok: true,</span>
+<span class="source-line" id="L1693"><a href="#L1693">1693</a>     spelling: SPELLING,</span>
+<span class="source-line" id="L1694"><a href="#L1694">1694</a>     verb: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1695"><a href="#L1695">1695</a>     primary: &#x27;roadmap-set&#x27;,</span>
+<span class="source-line" id="L1696"><a href="#L1696">1696</a>     project_path,</span>
+<span class="source-line" id="L1697"><a href="#L1697">1697</a>     event: appended.event,</span>
+<span class="source-line" id="L1698"><a href="#L1698">1698</a>     roadmap: appended.roadmap,</span>
+<span class="source-line" id="L1699"><a href="#L1699">1699</a>     projection: appended.projection,</span>
+<span class="source-line" id="L1700"><a href="#L1700">1700</a>     step_id,</span>
+<span class="source-line" id="L1701"><a href="#L1701">1701</a>     events_only: true,</span>
+<span class="source-line" id="L1702"><a href="#L1702">1702</a>     projection_written_directly: false,</span>
+<span class="source-line" id="L1703"><a href="#L1703">1703</a>     single_writer: ROADMAP_SINGLE_WRITER,</span>
+<span class="source-line" id="L1704"><a href="#L1704">1704</a>     persisted: written,</span>
+<span class="source-line" id="L1705"><a href="#L1705">1705</a>     dry_run: Boolean(opts.dry_run) || opts.persist === false,</span>
+<span class="source-line" id="L1706"><a href="#L1706">1706</a>     spine: persist ? true : undefined,</span>
+<span class="source-line" id="L1707"><a href="#L1707">1707</a>     message: `Roadmap event &#x27;${appended.event.kind}&#x27; appended for step &#x27;${step_id}&#x27; (events only; projection derived).`,</span>
+<span class="source-line" id="L1708"><a href="#L1708">1708</a>   };</span>
+<span class="source-line" id="L1709"><a href="#L1709">1709</a> }</span></pre></main></body></html>

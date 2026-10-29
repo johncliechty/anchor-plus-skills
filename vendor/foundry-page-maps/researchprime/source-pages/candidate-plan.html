@@ -1,0 +1,347 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>candidate-plan · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>candidate-plan</h1>
+<p class="note">Frozen reference source · <span class="path">planning/foundry-page-2026-10-02/PLAN.md</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 803a8790579cb51c42c02c194fe4c365855cd8c2aa36ae4cba1584788f8a8293</p></details>
+<p><a href="../sources/candidate-plan.md" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> # Skill Foundry page: current, coherent, and a flow map per skill. PLAN v1.1-candidate (Poincaré correction 2026-10-03; 2026-10-02 evening: journal report, Poincaré knowledge map in the T2R format as default view, Steward at two levels, Campaign counsel with researchPrime evidence)</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> **What it is for:** John can open the Skill Foundry from the Cave of Wonders and, for any skill, see what it is</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> for, what it can do, how it has evolved, and exactly what happens when it is called, with every step linked to the</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> real code and the real instructions.</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> </span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> **His words (2026-10-02, dictated):** all foundry skills listed, A–Z on the left; bigger icons so the detail shows;</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> style in step with the rest of Anchor; for each skill a proper North Star, a link to open the actual skill file and</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> programs, core capabilities filled out, an evolution history that includes the journal entries and the sleep /</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> improvement sessions, the journal entries available. Second: a flow map (rectangles, arrows, descriptions, links in</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> each box to the code and the instructions) showing what is program and what is a model call, which agents are</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> called, whether there is a swarm, how the orchestrator works, when overview / Parable-of-the-Oranges steps happen,</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> how results come back and are adjudicated, how many review rounds, the stop criteria, the final deliverable.</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> researchPrime first, then Gandalf. Superjump for the design; the plan adversarially reviewed and vetted.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> **Inputs:** `SURVEY.md`; `superjump-result.md` (all three candidates killed on one point: the map must be bound to</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> the code); `TRACES.md` + the `FLOWS` data in `mockup/foundry-mockup.src.html` (read from the code); mockup v1</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> https://claude.ai/artifact/NxHfV3NzNeRGmp1k3f1FHd; Grok R1 `review/GROK-PLAN-R1.verdict.json` (revise: 1 blocker,</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> 3 major, 1 minor) and R2 `review/GROK-PLAN-R2.verdict.json` (revise: 1 blocker, 3 major, 1 minor) R3 and R4 (`review/GROK-PLAN-R3/R4.verdict.json`, each</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> revise: 1 blocker, 3 major, 1 minor), all folded below. R4&#x27;s findings were facts about specific anchors; they are</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> kept in the W6 anchor notes at the end, and the plan states the rule.</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> ## Order of work (his rule: mockups are the decision before any plan word or build)</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> **M0. The mockup look.** He goes through the mockup, says what to change, looks again. No build before his word</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> that it matches. This plan is revised to whatever the mockup settles.</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> ## Part 1: make the page current</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> </span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> **W1. Read the skills from disk.** `foundry_api.build_skills` discovers every `SKILL.md` under the configured roots</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> (`Skill Foundry/skills/*` except `skills/templates`, `trio/{crucible,foreman,researchPrime}`, the canonical</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> Ecgberht folder), de-duplicates by resolved path, sorts A–Z ignoring case. The page list IS that scan, minus</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> skills whose SKILL.md front-matter says `foundry: false`: agy-dispatch and Figure-Designer get that line (his word,</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> 2026-10-02: not foundry skills). 15 foundry skills remain.</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> `foundry_map_v2.json` (the edge and autoload graph, with its schema, lock file and clickable rule) is NOT written by</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> this effort: the page shows skills on disk but not in the map as &quot;not in the Foundry map&quot; and lists them in the</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> effort report, so nothing becomes clickable in Anchor without a runner manifest. The stale `SEED_SKILLS`</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> fallback goes. Fixes the missing skills. Ecgberht&#x27;s one folder yields two labelled rows (W1b); the Campaign counsel placeholder is</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> not a scanned SKILL.md but one fixed placeholder row (W8).</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> Acceptance: the page lists the disk scan minus the template and the `foundry: false` skills (15), with Ecgberht as</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a> two rows and the counsel placeholder (17 rows); adding a folder with a SKILL.md adds a row.</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> **W2. Icons from the skill, shown large.** Icon = the SKILL.md `icon:` front-matter when that file exists, else the</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> skill&#x27;s own `assets/icon.*` or `assets/icons/icon.*` (Einstein&#x27;s portrait, Financial-Analyst, Ecgberht), else the</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> art the page already pins today (`SKILL_ICONS` paths, e.g. `research-prime-icon.jpg`, `gandalf-icon-v5.jpg`,</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> `zombie-hunter-radar.jpg`), else one listed alias per skill (Ecgberht → `ecgberht-project-seal.jpg`, Chekhov →</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a> `chekhov-icon.svg`), else the monogram. The table moves into one resolver; no existing art is lost. **White edges become black** (his word): six</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> icons have white backgrounds at the edge (Skill Foundry, Ramanujan, Einstein, Literature-Review, Legal-Beagle,</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> Ecgberht&#x27;s portfolio seal). Black-edged copies are ready in `icons-black-edge/` (before/after sheet there); the</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> build swaps them in, keeping the originals beside them. 56 px in the list, 120 px on the</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> skill head (88 px on a phone). Figure-Designer and agy-dispatch have no art: a monogram marked &quot;art needed&quot; until he picks art. Acceptance: judged on HIS screen at those sizes.</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> (Cut from v0.1: rewiring the icon maps in report_viewer.py, share_onboard.py, steward_routes.py; no need-line.)</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a> </span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> **W3. One look with Anchor: restyle, not rebuild.** Keep the existing React page and its routes; move it onto</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> Anchor&#x27;s `high-seat-page.css` colors, the system font, 7 px tiles and the standard masthead (his anchor, the Ghost</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> World Labs lockup), matching the mockup. Kept: the sleep console&#x27;s propose / apply / rollback (it moves off the</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> primary view into a &quot;Sleep console&quot; panel, since it is the only screen on those write routes) and the</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> `foundry_gui.py` fallback (restyled tokens only). The d3 knowledge graph moves behind a &quot;Related skills&quot; link.</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> Needed because the page must read as part of Anchor (his ask);</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> rebuilding Anchor-native was v0.1 and is cut: it would drop working write routes for no gain he asked for.</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> **W3b. The Foundry home and its actions (mockup v2).** &quot;Foundry home&quot; heads the list: the Foundry North Star</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> (`C:/dev/plans/2026-07-foundry-v2/NORTH-STAR.md`), counts (skills, journal entries, sleep records, maps traced),</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> &quot;Needs attention&quot; (not in the Foundry map; not registered for Claude Code in `~/.claude/skills`, today agy-dispatch,</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> Chekhov, Einstein; no North Star; art needed; traced disagreements), recent activity and recent sleep cycles across</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> all skills, and three actions:</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> - **Build a new skill**: a five-step wizard (name and purpose; two or three scoping questions from the steward, one at</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>   a time with a recommendation; a North Star draft he edits and locks; create from `skills/templates/skill-repo`</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>   through the existing `foundry_gui_write.create_skill` → `foundry.scaffold_skill`, which registers the map row,</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>   regenerates the lock and commits on a branch; then a steward cockpit for its Crucible plan and Foreman build).</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>   The existing &quot;Create New Skill&quot; button opens a form that was never wired (ControlPlaneModal); W3b wires it.</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>   Needed because he asked to BUILD a skill and for the 2–3 clarifying questions; `create_skill` alone yields an empty</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>   template. Dropping the questions and the cockpit costs a hollow skill folder with no plan behind it.</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> - **Sleep console**: propose / apply / roll back (working routes) and &quot;run a sleep session&quot; shown honestly as not</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>   connected yet (`foundry_gui_write.sleep_session_status` reports pending).</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> - **Skill map**: the d3 graph of the Foundry map&#x27;s edges.</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> Per skill (his word, mockup v3): the header (icon, North Star, file buttons), then **tiles you click to open**: How it</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> works, Process map, Poincaré knowledge map, Core capabilities (with when to use it and facts), Evolution</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a> history, Journal report, Files. Each closed tile shows a one-line preview.</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> - **How it works**: a plain-language summary of a call, start to finish, kept in each skill&#x27;s HUMAN.md (`## How it</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>   works`) so it changes with the skill; written for researchPrime and Gandalf from the traces, for the others from</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>   SKILL.md / HUMAN.md until their process map is traced.</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> - **Poincaré knowledge map**: defined once, in W5b below (the same knowledge as an outline is a toggle; the</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>   Piaget development view sits inside it).</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> - **Landing view:** where a skill&#x27;s sphere is drawn, the sphere tile opens first; where it is not drawn yet, How it</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>   works opens and the sphere tile says &quot;not drawn yet&quot; (this wave: researchPrime and Gandalf drawn; the other</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>   skills and both Steward rows land on How it works).</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a> Header buttons for SKILL.md, the program, HUMAN.md and Edit North Star (the existing propose /</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> apply route). (&quot;Run it&quot; from mockup v2 is cut: the program button already opens the run command.)</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a> **W4. Fill each section from the skill&#x27;s own files.**</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a> - **North Star** resolves: `NORTH-STAR.md` → a `## North Star` section in SKILL.md → `VISION.md` → &quot;No North Star</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>   yet&quot;. A draft is offered only where that chain is empty (today: Einstein), and never outranks a locked section.</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>   (v0.1 wrongly listed Chekhov, Crucible, Foreman and Figure-Designer as missing; each has a locked section.)</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a> - **Open the files**: SKILL.md, HUMAN.md and the program the skill&#x27;s own SKILL.md says to run (its &quot;How to run&quot;</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>   command, e.g. Gandalf `runtime/gandalf-run.mjs`, agy-dispatch `Skill Foundry/tools/agy-dispatch.mjs`), plus the</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>   files its FLOW.json anchors, open in a read-only source viewer `/foundry/source?skill=&amp;path=&amp;anchor=`. The viewer</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>   opens that skill&#x27;s own SKILL.md, HUMAN.md, NORTH-STAR.md, VISION.md, CHANGELOG.md, LESSONS.md and files under its</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>   `journal/`, plus any path its SKILL.md, FLOW file(s) or knowledge-node anchors name (so a tool outside the folder still opens); every other</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>   path is refused. The anchor line is highlighted; &quot;open in editor&quot; on the desktop. Needed because he asked to click and see the skill&#x27;s files, and the</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>   flow-map links need a place to land.</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a> - **Core capabilities**: the `##` sections of HUMAN.md / SKILL.md, open by default, each linked to its passage.</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a> - **Evolution**: newest first, merging only records that exist in the skill folder: `journal/NNNN-*.md` (date from</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>   the entry&#x27;s Date line, else file time), `CHANGELOG.md` and `LESSONS.md` where present (jumper, literature-review;</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>   LESSONS in seven skills), each typed. An entry is marked &quot;sleep / improvement&quot; only from a marker already in the</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>   skill folder (a filename or heading naming sleep / elegance / improvement, a LESSONS &quot;Promoted&quot; heading, the</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>   ELEGANCE-LAW block&#x27;s version tag). Ecgberht&#x27;s cross-skill sleep cycles (journal 0076, 0078) are linked from every</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   skill, never copied. Missing sources say &quot;Not recorded&quot;. The mockup&#x27;s hand-written rows are not shipped.</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> - **Journal**: searchable list of every entry, opening in full; colliding ids shown as they are.</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> - **Sleep sessions are already recorded per skill:** the sleep runbook&#x27;s step 5</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>   (`planning/portfolio-program/SLEEP-SESSION-RUNBOOK.md`) commits a `sleep:` message and appends a journal entry.</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>   W4 marks those entries as sleep sessions (and reads the skill&#x27;s `sleep:` commits from git as a second source).</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>   The only runbook change: the promotion journal entry&#x27;s filename or heading must contain &quot;sleep&quot;, so the mark is</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>   reliable. &quot;Not recorded&quot; only when no such entry exists. (v0.3&#x27;s CHANGELOG step is cut.)</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a> Acceptance: researchPrime and Gandalf render against their folders with no hand-written rows.</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a> </span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a> ## Part 2: the flow map</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a> **W5. A flow file per skill, checked against the code.** Each skill folder gets `FLOW.json`: stages; steps (kind:</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a> program / AI call / you decide / operator / orchestrator; title; one plain sentence; seat and count); a required</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> `swarm` field on the map and on each group (yes, with seat, count, concurrency cap and the knob that sets it; or</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a> no); the review loop; exits with stop rules; the final deliverable. A step carries a **Code** anchor and an</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a> **Instructions** anchor (an AI call: its caller and its prompt or heading); a side that does not exist is declared</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a> `no-code` / `no-instruction`. Anchor types, never a bare line number:</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> - **callable**: file + function + the entry point that must reach it + the **consumer**: the caller that uses the</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>   result. Reachability follows static imports, `await import(specifier)` and string-keyed surfaces (researchPrime&#x27;s</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   `TRIO_SURFACE` / `TRIO_MODULES` in contract.mjs, the drivers import in live-round-agent.mjs) from the declared</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>   entry; the checker fails when that chain no longer reaches the function. It hashes the callee AND the consumer,</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>   so a change in how the result is used (e.g. the loop breaking on `obs.converged`, run-rounds.mjs, not on the</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>   Judge verdict) shows &quot;code changed since this map was checked&quot;. Where the result is stored but unused, the step</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>   says so (`differs`).</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a> - **heading**: instruction file + heading; fails if the heading is gone.</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a> - **data**: the value the box displays, anchored to **what the running code actually uses, through the function</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>   that resolves it, including its HALT branches**; fails if the value differs. Every number a box or exit shows is a</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>   data anchor; no typed numbers. A value that can only HALT on a path (e.g. a formal run without a locked scope) is</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>   shown as the HALT, never as a number. The exact chains for researchPrime and Gandalf are in the W6 anchor notes.</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> - **prompt**: file + the function that builds the model&#x27;s prompt text (e.g. `reviewerPrompt`, `defaultRefutePrompt`);</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>   an AI call&#x27;s Instructions link uses this when no SKILL.md heading governs it.</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a> - **conditional swarm**: a swarm shown only inside the condition that starts it, with that condition as a data</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>   anchor; the other branches are drawn too (researchPrime&#x27;s panel: swarm only when spawning is on, the reviews</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>   are vacant, the artifact path is absolute and no sidecar is loaded; beside it the sidecar, HALT and</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>   supplied-reviews branches, per the W6 anchor notes).</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a> - **env**: the knob&#x27;s name and default, checked against where the code reads it.</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a> - **no-code**: declared explicitly (&quot;instructions only&quot;), shown as such; not a failure.</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a> `tools/flow-check.mjs` runs when the page loads a map and in the Foundry test gate. Known code-vs-SKILL.md</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a> disagreements are data on the step (`differs`, with evidence), shown red.</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a> Why hand-traced and machine-checked rather than generated: the control flow is spread across modules, knobs and</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a> prose; a generated graph would be unreadable or wrong, which is what Superjump&#x27;s judge rejected.</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a> Reachability is a static check: a call that exists but is skipped at runtime by a condition is caught only when its</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a> condition is anchored as data. Said, not hidden.</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> **W6. researchPrime, then Gandalf.** FLOW.json for both, re-anchored to the W5 types (the mockup&#x27;s line-number</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a> anchors are not copied). Each map is drawn to its OWN skill:</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a> - researchPrime: a marked Parable-of-the-Oranges foresight step (oranges.mjs); the orchestrator as SKILL.md defines</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>   it (governor + round loop: heartbeat, one respawn, silence fatal); the review loop with its data-anchored exits;</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>   the deliverable naming the three summary levels and who writes them (the session, not the program).</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a> - Gandalf: foresight is the ANTICIPATE part of the session&#x27;s raw read (marked); the orchestrator is the CLI host</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>   (gandalf-run.mjs): ONE live refuter round or a zero-call grade, no loop; the analyze path as its own branch. Swarms,</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>   counts and deliverables per path exactly as in the W6 anchor notes.</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a> Grok checks every anchor and every displayed number against the code before he sees it. Other skills</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a> show &quot;not traced yet&quot; until he asks.</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a> </span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a> **W7. The disagreements become one ticket, not patches.** The 30 disagreements (18 researchPrime, 12 Gandalf) go</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a> to `DISAGREEMENTS.md` in this effort folder with evidence; each skill&#x27;s journal gets ONE entry pointing to it (the</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a> ticket into a formal Foundry improvement cycle, AGENTS.md rule 1). Fixing them is not in this plan.</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a> ## Part 3: his 2026-10-02 evening asks</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a> </span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a> **W4c. The journal report** (mockup v4; built). Per skill, read from every journal entry (`journal-report/&lt;id&gt;.json`,</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a> 15 skills, about 880 entries): a two-sentence summary; 3–6 strengths and 3–6 weaknesses (each marked open or fixed,</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a> each citing entry ids); 3–7 themes; and the entries organised **by batch of work** (what was being worked on, for</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a> which project, dates, outcome) or **by date**. A Foundry job regenerates a skill&#x27;s report whenever its journal gains an entry (and on each sleep cycle); the page</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a> only reads the JSON. The job fails, keeping the last good report and saying so on the tile, when a cited entry id</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a> does not exist, an entry sits in no batch or in two, or a weakness&#x27;s open/fixed mark disagrees with the later</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a> entries, LESSONS or CHANGELOG in either direction. Needed because he asked for it; dropping the regeneration costs a report that goes</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a> stale after the next run.</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a> </span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a> **Correction (John, 2026-10-03):** the hierarchy he wants is **Poincaré** (hyperbolic) geometry, after Nickel &amp;</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a> Kiela 2017 (2–5 hyperbolic dimensions matched or beat 200 Euclidean ones on hierarchical data), with the **Lorentz**</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a> model for computation; &quot;Piaget&quot; was a memory slip. Piaget keeps a later role: the sleep loop&#x27;s assimilate /</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a> accommodate cycle. The map is **derived and calibrated from real usage** (run records, journals, outcomes), not</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a> hand-drawn; its purpose is **context management**: a mixture-of-experts router loads only the relevant branches into</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a> the skill&#x27;s context window. Concept: `poincare-maps/CONCEPT.md`. For THIS page, v1 draws a map **seeded** from the</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a> traced process map and the skill&#x27;s files and labels it &quot;seeded, not yet calibrated&quot;; building the usage-derived,</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a> Lorentz-embedded maps into the skills themselves is **W9**, planned after the knowledge-map research.</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a> </span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a> **W5b. The Poincaré knowledge map, in his T2R cognitive-cell format** (the single definition; replaces v0.10&#x27;s chain; mockup v6;</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a> sources in `piaget-sphere/SOURCES.md`; Gandalf read `piaget-sphere/gandalf-read.json`, cross-family, 2 claims</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a> grounded, 1 refuted). Each Foundry skill is treated as one T2R cognitive cell, and its sphere is that cell&#x27;s</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a> per-cell knowledge store drawn as his BASE-BRAIN-SPEC defines it: hierarchy by radius, general at the apex/center,</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a> specific toward the rim.</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a> - **Center:** the skill&#x27;s focus questions (its question shapes; the North Star distilled). His &quot;most important</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>   questions&quot; and the spec&#x27;s &quot;most general&quot; coincide here; importance below the center is shown by size, not radius.</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a> - **Rings:** expert domains (the cell&#x27;s experts: what its gate routes among) → methods and the skills it</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>   commissions → tools and code → places to look and learned shards (references, constants, LESSONS, journal themes).</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a> - **Format on disk** (his PVB+P Kit concept-file shape, so the Foundry and the GWL brain share one format, minus the</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>   learned parts): `knowledge/` in the skill folder with one file per concept (front-matter `id, name, tags,</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>   parent_ids` (exactly one parent: a declared tree), `sibling_ids`, `ring` (must equal the node&#x27;s depth in the</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>   tree), `facets`, `anchor` to a file or symbol);</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>   `graph.json` is that declared tree (`root_clusters → children`, without the kit&#x27;s `centroid`), not the kit&#x27;s</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>   GEO-derived analogy graph; and</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>   `worldview.md` (the top-level partition). The kit&#x27;s `position` (ball coordinates the GEO worker owns and</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>   overwrites) is omitted until the later learned-geometry stage; v1 radius and sector come only from the declared</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>   tree. `tools/sphere-check.mjs` runs on page load and in the Foundry test gate and fails a node with no anchor, an</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>   anchored source that is missing or changed since the node was checked (the node shows &quot;source changed&quot;), a</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>   `parent_ids` / `graph.json` mismatch, a `ring` that disagrees with the node&#x27;s tree depth, or a radius or sector read</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>   from anything but the tree (`position`, `ring`, a centroid).</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a> - **Several dimensions:** facet lenses over the one hierarchy (where it comes from: instructions / code / learned /</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>   data; health: open weakness or code-vs-instructions disagreement; used by the process map; later certainty,</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>   recency, cost). His &quot;a sphere, not a circle&quot; is carried by the radial hierarchy plus these facet lenses. A 3-D globe</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>   is cut: in the research a 3-D viewer did worst and a globe hides half its nodes.</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a> - **Joined to the process map:** each FLOW.json step stores the ids of the sphere nodes it uses; clicking either lights the other. Run records</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>   gain a &quot;steps run&quot; field copied from flags the engines already write (Gandalf e-2, grounded), which later gives</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>   real usage weights (his routing ledger).</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a> - **Piaget learning cycle (later role) on the map** (his explicit ask, 2026-10-02: &quot;this is useful and I want to incorporate</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>   this&quot;, mockup v3; no source document defines the stage rules, so they are his-to-review proposals): the development</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>   view sits inside the sphere tile: the developmental stage (1 sensorimotor: instructions only or under 3 uses; 2</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>   preoperational: used, nothing accommodated; 3 concrete operational: learns from experience; 4 formal operational:</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>   also has a traced process map that agrees with its code) and three tallies from his records (tallies, not a measure of learning; John&#x27;s requested view, R10 G2 / R12 G1</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>   declined): experiences =</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>   the skill&#x27;s journal entries; disequilibria = the journal report&#x27;s weaknesses with their cited entries;</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>   accommodations = sleep cycles, LESSONS promotions and CHANGELOG entries. The disequilibria awaiting accommodation =</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>   the open weaknesses in the current report; Foundry home shows each skill&#x27;s stage and that number. This wave</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>   does NOT attach journal prose to sphere nodes (Gandalf e-3: that mapping would be invented); the sphere tile lists</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>   the open weaknesses with their entries, and a node shows a hotspot only when a weakness carries node ids that</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>   sphere-check proves. The source card&#x27;s journal list comes only from such proven ids.</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>   accommodation = sleep-cycle proposals to add, split, merge or move nodes, which</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>   he approves. The sleep loop does not emit node edits today (Gandalf e-3 refuted: LESSONS are prose), so W5b adds</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>   one structured field to the promotion record (`sphere_edits`). The disequilibrium signal stays the open weaknesses</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>   until runs record a prediction; only then does it become his §P5 predict → act → compare loop</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>   (&quot;Cognition-Inspired Architectures&quot; §P5).</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a> - **The sphere is the default view** (his word, 2026-10-02, after the evidence that people find a named item faster</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>   in an outline): explore it like a library. Zoom with the wheel or buttons and drag to pan; click an expert domain to</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>   enlarge that sector to the full circle, with a breadcrumb back; click a node for its **source card**: a call</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>   number (skill › domain › ring › node), its shelf (folder), its instruction or code source with Open, the process</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>   steps that use it, and journal entries only where a weakness names this node and sphere-check proves it (otherwise</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>   no journal list). A search box above highlights matching nodes and lists</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>   them; an Outline toggle gives the same hierarchy as a list for finding a named item. For the agents, the same</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   structure is the retrieval index; its geometry pays off once a skill&#x27;s knowledge reaches hundreds of nodes.</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a> - **v1 is the declared hierarchy, not learned geometry** (Aurora critique; T2R D3 defers Lorentz until depth &gt; 3).</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a> - First spheres: researchPrime and Gandalf (drawn in mockup v5), then the others on his word.</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a> </span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a> **W1b. The Steward at two levels.** Ecgberht is listed twice in the Foundry: &quot;Steward: project (the Lamp / Salver /</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a> Seal)&quot; and &quot;Steward: portfolio (the Cave of Wonders / High Seat)&quot;, each with its own process map and sphere, sharing</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a> one skill folder: the named exception to one-FLOW-per-folder: `FLOW.project.json` / `FLOW.portfolio.json` and</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a> `knowledge/project/` / `knowledge/portfolio/`, each tree with its own `graph.json`; sphere-check and the step-to-node</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a> join walk both. This wave adds the two rows and reserves those files as not traced and not drawn. The persona labels follow his Anchor setting.</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a> </span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a> **W8. Campaign counsel (placeholder skill; Superjump `campaign-skill/superjump-result.md`; researchPrime</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a> `research-campaign/REPORT.md`, https://claude.ai/artifact/SFJW7fVj5UoSUF1vRGx5bz, five Grok review passes).** A</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a> variation of the Steward with its own name and remit for the Campaign page. It shares the Steward&#x27;s memory and</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a> delivery path, hands approved work to the High Seat, and changes nothing without his approval. What it does, by the</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a> strength of the evidence:</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a> - **Adopt (corroborated):** each goal has a specific done-when; each Tier-1 goal has one if-then next step; progress is</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>   recorded per goal.</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a> - **Try (sensible, untested as such; each measured on John&#x27;s own record before it is kept):** pace as near-term</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>   milestones; a guided &quot;main obstacle?&quot; exchange; a weekly look-ahead; a starvation check for important undated</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>   goals (deliberate pauses marked in the goal&#x27;s guide do not count); a &quot;park, boneyard or re-commit?&quot; question; a</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>   premortem at goal creation or a slipped deadline; backward planning when a deadline is set, checked against his</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>   own past paces; nudges in two lanes (close dated items at a natural break with a ready-to-resume note; everything</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>   else batched into the look-ahead), each stating why and dismissible in one tap.</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a> - **Try, goal words:** John writes them; the counsel asks questions and offers options (the evidence compared</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>   self-written with fully AI-written goals only), measured on his record like the other Try items.</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a> - **Skip:** OKRs, the 12-week year, horizon scanning, formal scenario planning (no one-person evidence found).</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a> - **Division of labour** (design by analogy): counsel = goals and foresight; High Seat = seating and a soft cap on</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>   active initiatives; project stewards = next actions; only one level nudges about any given item.</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a> Names (one per persona; his pick between Superjump&#x27;s two surviving sets): set 1, Basira (insight; the Astrolabe) /</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a> Prospect (the Spyglass) / Ræd (counsel; the Counsel Book); set 2, Hikma (wisdom; the Astrolabe) / Foresight (the</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a> Spyglass) / Ræd (the Beacon). This plan lists it in the Foundry as one</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a> placeholder row (not a scanned SKILL.md), with no separate engine, goal store or work queue (Superjump&#x27;s cut);</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a> building it is its own effort (Crucible plan, Foreman build) on his word.</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a> </span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a> **W9. Poincaré knowledge maps inside the Foundry skills (to be planned after research).** Build each skill&#x27;s map from</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a> its run records, embed it in the Lorentz model, route context by it, and let the sleep cycle recalibrate it; test it</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a> against a flat (linear) store at matched cost (his Tournament 1 design). Its own researchPrime run and plan first</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a> (`poincare-maps/`); not in this page build.</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a> </span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a> ## How it gets built and checked</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a> - **This effort is run by the Steward** (his word): an Ecgberht cockpit for the Skill Foundry project holds the plan,</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>   the deliverables and his decisions; this session commissions the skills. Build on an Anchor branch; Foreman standard band for</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>   W1–W5 (each wave: execute, adversarial review on the review family, fix).</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a> - Crucible not used: inputs converged (his words, a judged design, code traces), scope fixed and reversible;</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>   lightest band. He can ask for a Crucible LITE pass.</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a> - **Declined review findings (R10 G2, R12 G1):** Grok asked to delete the Piaget developmental stages and tallies as</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>   unsourced; kept because John asked for them, labelled as tallies, and flagged for his review in Open item 5.</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a> - **Plan review closed at R12** (R1–R8 to v0.8; R9–R12 on his evening asks): every finding applied except the one</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>   that is his decision.</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a> - **His-screen acceptance:** on his machine at desktop and phone width: the masthead and colors beside a High Seat</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>   page; the A–Z list and icon sizes; one North Star; one Evolution row whose sleep mark comes from a real journal or</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>   LESSONS file; the skill file and the run command opened from the header; on each map the swarm boxes, every exit (researchPrime: dry,</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>   clean, cap or HALT) and the deliverable visible; and for one box of each map both the Code and the Instructions link opened and</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>   landing on the right passage; the journal report (summary, strengths, weaknesses, themes, by batch and by date) with</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>   one cited entry opened from a weakness; the sphere as the default view (zoom, pan, a domain enlarged, a source card</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>   opened through to its file, search, the outline toggle); the two Steward rows; the counsel placeholder with its</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>   names. Captured, not asserted. One Anchor restart at the end, on his word, after the idle check.</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a> </span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a> ## Cut (Elegance rule 5)</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a> - Fixing the 30 disagreements (own improvement cycle).</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a> - Flow maps and spheres for every skill other than researchPrime and Gandalf, including both Steward levels (on his</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>   word, one at a time).</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a> - The knowledge-map chain and title-keyword disequilibrium count (v0.10, replaced by W5b); the 3-D globe.</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a> - Generated flow maps; the Anchor-native rebuild (v0.1); icon rewiring outside the Foundry page;</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>   writing new rows into foundry_map_v2.json (v0.2).</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a> </span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a> ## Open for John (one at a time, after the mockup)</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a> 1. The mockup v6 (journal report, the sphere as default with zoom and source cards, the two Steward rows, the counsel</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>    placeholder and its names): does it match?</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a> 2. Should every skill ask 2–3 scoping questions before a substantial run (today only Ecgberht does)? The new-skill</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>    wizard asks them either way.</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a> 3. Einstein&#x27;s North Star draft.</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a> 4. Register agy-dispatch, Chekhov and Einstein for Claude Code (add them to `~/.claude/skills`)?</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a> 5. The Piaget development view (four stage rules, sensorimotor → formal operational, and three tallies from your</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>    records): keep as drafted, or adjust? Grok twice advised removing them as unsourced; they stay because you asked</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>    for them, and they are tallies, not a measure of learning.</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a> </span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a> ## Estimate (rough)</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a> W1–W4 about a day of build and review; W5–W6 about a day; W7 an hour. His review time is separate.</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a> </span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a> ## W6 anchor notes (facts from Grok R2–R4, to be verified again when FLOW.json is written)</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a> - researchPrime round cap (`intake.mjs resolveBandRoundBudget`, called by run-rounds with failClosed): locked triage</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>   extension required, else HALT; then `--max-rounds`; then `RESEARCHPRIME_MAX_ROUNDS`; then the extension&#x27;s</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>   `knobs.maxRounds`; else HALT. The contract&#x27;s fallback 8 is never shown on this path. `includeAdjudication` is the</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>   extension knob, with the same HALT. mapping.mjs is only the table that seeds the extension at scope approval.</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a> - researchPrime exits (`round.mjs makeConvergenceTracker`): dry when dryStreak ≥ N; clean when emptyStreak ≥ cleanN</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>   (default N+1). N, K and M all come from the same contract: the locked governor output&#x27;s thresholds when usable</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>   (it has thresholds and a tier), else `deriveGovernorContract` (stage1Inputs when set; else preregistration for N,</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>   4 and 2 for K and M). Preregistration&#x27;s K=2, M=0 marked `differs`.</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a> - researchPrime panel: `runPanelRound` runs the three SHARK_ROLES seats together (serial when</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>   `RESEARCHPRIME_CONCURRENT_PANEL=0`) only when spawning is on (`spawnPanel`, `RESEARCHPRIME_LIVE_ROUND=1` or</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>   `RESEARCHPRIME_SPAWN_PANEL=1`), `isVacantReviews` is true (no reviews, or all with empty findings), the artifact</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>   path is absolute and no sidecar is loaded. Sidecar present: reviews loaded, no new swarm. Spawn on, vacant, no</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>   absolute artifact: HALT. Otherwise the supplied reviews are adjudicated.</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a> - Gandalf grade path: with `--live`, swarm yes: refuters ≤ R=3, 2 at a time (`GANDALF_REFUTER_CONCURRENCY`, ceiling</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>   3); without it, the zero-call grade, swarm no. Both deliver read.json.</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a> - Gandalf analyze path: deliverable is the graded JSON envelope (`gradeScaledReport`) at `--output` or stdout,</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>   degraded, refuters not run; SKILL.md&#x27;s `out.md` example marked `differs`. No swarm on: the direct pass</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>   (`decideTier`), scout-then-fits, and a whole repo without `GANDALF_ALLOW_REPO_SCALE=1` (one degraded direct pass);</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>   otherwise shard readers in parallel, count from `resolveConsumeKnobs`: when locked (depth, tier, or a lock env: `GANDALF_DEPTH`,</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>   `FOUNDRY_TRIAGE_DEPTH`, `GANDALF_TIER`, `FOUNDRY_TRIAGE_TIER`) the band knobs, which the caller cannot override;</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a>   unlocked, the caller&#x27;s cap, or null when none was passed; `GANDALF_MAX_SHARDS` tightens a set cap and is the cap</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>   when it is null; concurrency from the map-reduce resolver</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a>   (default 3).</span></pre></main></body></html>

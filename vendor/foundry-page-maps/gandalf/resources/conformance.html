@@ -1,0 +1,67 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Canary gate and finite salvage · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="conformance" data-anchor-id="a-salvage">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Canary gate and finite salvage</h1>
+<p class="intro">Structural canaries check the envelope. Host salvage tries smaller subsets, preserving the reasoning; a passing structural check is not factual verification.</p><p class="badge">Resource access frequency unknown</p>
+<p>The radius advisor output and current engine receipts carry earned-tier envelopes; structural success alone does not verify the served family or the factual basis.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/gandalf-run.mjs · lines 222–276</p><pre>function degradeToConformant(rawDraft, { cross_model, resolveCommission, reason }) {
+  const firstLine = String(reason || &#x27;conformance failure&#x27;).split(&#x27;\n&#x27;)[0];
+  const note =
+    `\n\n[gandalf-host] Grading degraded: the full draft tripped a conformance canary (${firstLine}); ` +
+    `the read was salvaged to the largest conformant subset (the reasoning narrative above is intact).`;
+  const base = { ...rawDraft, reasoning: String(rawDraft.reasoning || &#x27;&#x27;) + note, degraded: true };
+  const findings = Array.isArray(base.findings) ? base.findings.slice() : [];
+  const nitpicks = Array.isArray(base.nitpicks) ? base.nitpicks.slice() : [];
+  const elevations = Array.isArray(base.elevations) ? base.elevations.slice() : [];
+
+  // 1) P0 2026-07-25 (journals 0276/0277): the common case is ONE offending item —
+  //    drop just IT and preserve every other finding, elevation, and nitpick. The old
+  //    ladder sacrificed the ENTIRE elevations+nitpicks forward layer as its FIRST step,
+  //    which almost always conformed — so any single canary trip silently cost the whole
+  //    recommendation layer (deterministic, byte-identical, observed live twice on
+  //    --live runs; the expensive path returned strictly less advice than the cheap one).
+  let out;
+  for (const [legName, leg] of [[&#x27;nitpicks&#x27;, nitpicks], [&#x27;elevations&#x27;, elevations], [&#x27;findings&#x27;, findings]]) {
+    for (let i = 0; i &lt; leg.length; i++) {
+      out = tryGrade({ ...base, [legName]: leg.filter((_, j) =&gt; j !== i) }, cross_model, resolveCommission);
+      if (out) return out;
+    }
+  }
+  // 1b) multiple offenders in ONE forward leg (e.g. an over-cap overrun by &gt;1): shrink
+  //     that leg from the tail while keeping the other legs whole.
+  for (const [legName, leg] of [[&#x27;nitpicks&#x27;, nitpicks], [&#x27;elevations&#x27;, elevations]]) {
+    for (let keep = leg.length - 2; keep &gt;= 0; keep--) {
+      out = tryGrade({ ...base, [legName]: leg.slice(0, keep) }, cross_model, resolveCommission);
+      if (out) return out;
+    }
+  }
+  // 2) cross-leg offenders: drop whole legs in INCREASING-value order — nitpicks, then
+  //    elevations, then both. (This was the old step 1; it is now a late resort.)
+  out = tryGrade({ ...base, nitpicks: [] }, cross_model, resolveCommission);
+  if (out) return out;
+  out = tryGrade({ ...base, elevations: [] }, cross_model, resolveCommission);
+  if (out) return out;
+  out = tryGrade({ ...base, nitpicks: [], elevations: [] }, cross_model, resolveCommission);
+  if (out) return out;
+  // 3) the offending FINDING cases (with the forward legs already sacrificed):
+  //    single offender, then a shrinking prefix (multiple/interacting offenders).
+  for (let i = 0; i &lt; findings.length; i++) {
+    out = tryGrade({ ...base, findings: findings.filter((_, j) =&gt; j !== i), nitpicks: [], elevations: [] }, cross_model, resolveCommission);
+    if (out) return out;
+  }
+  for (let keep = findings.length - 1; keep &gt;= 0; keep--) {
+    out = tryGrade({ ...base, findings: findings.slice(0, keep), nitpicks: [], elevations: [] }, cross_model, resolveCommission);
+    if (out) return out;
+  }
+  // 4) minimal conformant output (reasoning+verdict only) — empty item arrays always conform
+  out = tryGrade({ ...base, findings: [], nitpicks: [], elevations: [] }, cross_model, resolveCommission);
+  if (out) return out;
+  // Unreachable in practice (the empty shape is conformant); stay honest if a seam ever breaks it.
+  throw new Error(`gandalf-host: could not salvage a conformant output (${firstLine})`);
+}</pre>
+<p><a class="button" href="../source-pages/cli.html#L222">Open numbered source</a>
+<a href="../sources/cli.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/conformance">Run the structural output canaries</a> · <a target="_top" href="../index.html#process/salvage">Finite deterministic subset salvage</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">57f931bd4f1869a4e6ae831bc61e724dcae8ff18f5892bffc083f621b428bd5e</span></p><p>Excerpt hash: <span class="path">43ccc4e0bb72746e536579ead4fc65cd849705678062a586e2141ec0152af0af</span></p></details></article></main></body></html>

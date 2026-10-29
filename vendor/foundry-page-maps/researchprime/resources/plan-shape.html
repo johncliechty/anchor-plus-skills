@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Reusable plan input shape · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="plan-shape" data-anchor-id="a004">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Reusable plan input shape</h1>
+<p class="intro">The actual objective, axis, branches, baselines and stakes fields accepted by the planning program.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\plan-gate.mjs</span><br>Lines 36–61 · frozen source snapshot</p>
+<pre class="excerpt">export function buildResearchPlan({ inputs } = {}) {
+  const src = inputs || {};
+  const objective = src.objective || src.query;
+  if (typeof objective !== &#x27;string&#x27; || objective.length === 0) {
+    throw new TypeError(&#x27;buildResearchPlan requires a non-empty objective&#x27;);
+  }
+  const branches = Array.isArray(src.branches) ? src.branches : [];
+  const baselines = Array.isArray(src.baselines) ? src.baselines : [];
+  const receipt = runPhase1({ stakes: src.stakes ?? {}, plan: { branches } });
+  return {
+    planVersion: RESEARCH_PLAN_VERSION,
+    objective,
+    axis: src.axis ?? null, // the load-bearing win-condition + what FALSIFIES a candidate
+    branches, // candidate research branches
+    baselines, // best-in-class baselines to beat
+    tier: receipt.tier, // governor tier the Phase-3 loop scales by (projection of the stakes vector)
+    stakes: receipt.stakes, // carries the verbatim declared vector (`raw`) + axis_tiers
+    foresight: receipt.foresight, // Oranges receipt (dropped/reordered branch + counterfactual cost)
+  };
+}
+
+/**
+ * Run the two-gate human approval with the REAL Phase-1 plan at Gate 2.
+ * Thin wrapper over runTwoGateMachine that injects `buildResearchPlan`.
+ *
+ * P0 2026-07-25 (journal 0004): the governance record now locks the REAL governor</pre>
+<div class="actions"><a class="button" href="../source-pages/plan.html#L36">Open numbered source at line 36</a>
+<a class="button secondary" href="../sources/plan.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/plan-entry">Planning program entry</a> · <a target="_top" href="../index.html#process/plan-build">Build the plan artifact</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">a9b5e615eb65cde1d0cb50334d0f1bd48cb90c860e1e95904c2e2e5c4dde4e56</span></p>
+<p>Excerpt SHA-256 <span class="path">233b82a72404da3947fda4286f2aa6ec5b751bf9a4e37d2d461d0990bb05a0c4</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

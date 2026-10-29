@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>boundaries · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>boundaries</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Ecgberht/engine/boundaries.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 f024feeb982238361696b4b8cc3b37a7c34f2920cf43f8688b621888e64c9736</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.545077+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/boundaries.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: f024feeb982238361696b4b8cc3b37a7c34f2920cf43f8688b621888e64c9736</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // The speaking boundaries — the named moments at which the steward may speak unprompted on the High Seat.</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // W0 of the steward revision (2026-09-28; PLAN v1.0 §5). The review&#x27;s Superjump passes killed every &quot;prepare and</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // speak&quot; mechanism on an undefined &quot;another boundary&quot;; this list is the definition. Nothing reads it yet except</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // the tests and Anchor&#x27;s mirror (`steward_cockpit/boundaries.py`, kept identical by a test on both sides); W2 and</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> // W3 read it. A moment that is not on this list is not a boundary: the steward prepares and waits.</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> export const SPEAKING_BOUNDARIES = Object.freeze([</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   &#x27;page_open&#x27;,      // he opens the High Seat</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   &#x27;card_open&#x27;,      // he opens a project&#x27;s card on the High Seat</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>   &#x27;turn_submitted&#x27;, // he submits a turn to the steward (the cockpit or the High Seat composer)</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>   &#x27;step_closed&#x27;,    // a step closes on the record (an acceptance, a done)</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>   &#x27;run_finished&#x27;,   // a commissioned run he launched has finished</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> ]);</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> </span>
+<span class="source-line" id="L15"><a href="#L15">15</a> export const SPEAKING_BOUNDARIES_VERSION = 1;</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> </span>
+<span class="source-line" id="L17"><a href="#L17">17</a> /** True when `moment` is one of the named boundaries (a string compare; never a fuzzy match). */</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> export function isSpeakingBoundary(moment) {</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   return typeof moment === &#x27;string&#x27; &amp;&amp; SPEAKING_BOUNDARIES.includes(moment);</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> }</span></pre></main></body></html>

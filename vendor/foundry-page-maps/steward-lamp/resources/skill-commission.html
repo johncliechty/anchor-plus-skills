@@ -1,0 +1,414 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Compose an existing skill · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="skill-commission" data-anchor-id="a-commission-confirmBoundCommission">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Compose an existing skill</h1>
+<p class="intro">Node commission proposal/confirmation checks preconditions and exact identity before executor dispatch. Code jobs are a separate route; neither embeds a new Shark/Foreman loop.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.629114+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/commission-proposal.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 2c18739fcfa89be37f213d5d3659b0d91f322d5a6d40fc2164df2f07941f65f3</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\commission-proposal.mjs · lines 1208–1609</p><pre>export function confirmBoundCommission(opts = {}) {
+  const proposal = opts.proposal;
+  if (
+    !proposal ||
+    typeof proposal !== &#x27;object&#x27; ||
+    proposal.kind !== &#x27;commission_proposal&#x27; ||
+    proposal.requires_confirm !== true
+  ) {
+    return commissionFailure(COMMISSION_CODE.STATE_UNKNOWN, {
+      error: &#x27;commission_confirm_requires_proposal&#x27;,
+      message:
+        &#x27;Confirm needs a steward commission_proposal (propose/confirm path — not a mode picker).&#x27;,
+    });
+  }
+
+  const who = normalizeWho(opts.who);
+  if (!who) {
+    return commissionFailure(COMMISSION_CODE.STATE_UNKNOWN, {
+      error: &#x27;commission_confirm_requires_who&#x27;,
+      message: &#x27;Commission confirm is a human decision — pass who confirmed.&#x27;,
+      required: [&#x27;who&#x27;],
+    });
+  }
+
+  // Auth via injected authorizer — never a token check inside the engine
+  const authCtx = opts.authCtx ?? { principal: who.claimed };
+  const decision = authorize(&#x27;confirm&#x27;, authCtx);
+  if (!decision.ok) {
+    return commissionFailure(COMMISSION_CODE.AUTH_REFUSED, {
+      error: decision.code ?? &#x27;auth-refused&#x27;,
+      message: decision.message ?? COMMISSION_TEXT[COMMISSION_CODE.AUTH_REFUSED],
+      auth: decision,
+      bind_appended: false,
+      processes_launched: 0,
+    });
+  }
+
+  // Hash-bound TOCTOU
+  const expectedHash = recomputeProposalHash(proposal);
+  const providedHash =
+    opts.proposal_hash ?? proposal.proposal_hash ?? &#x27;&#x27;;
+  if (!providedHash || providedHash !== expectedHash) {
+    return commissionFailure(COMMISSION_CODE.CONFIRM_HASH_MISMATCH, {
+      error: &#x27;confirm-hash-mismatch&#x27;,
+      presented_hash: providedHash || null,
+      expected_hash: expectedHash,
+      processes_launched: 0,
+      bind_appended: false,
+    });
+  }
+
+  const client_event_id =
+    opts.client_event_id ??
+    `confirm-${proposal.proposal_id ?? proposal.proposal_hash ?? &#x27;anon&#x27;}`;
+
+  // T-IDEM-11: double submit → original job_id, no second bind/launch
+  const idemKey = opts.project_path
+    ? `${path.resolve(opts.project_path)}::${client_event_id}`
+    : `mem::${client_event_id}`;
+  if (_idempotenceCache.has(idemKey)) {
+    const prior = _idempotenceCache.get(idemKey);
+    return {
+      ...prior,
+      ok: true,
+      idempotent: true,
+      already_confirmed: true,
+      skip_write: true,
+      second_bind: false,
+      second_launch: false,
+      processes_launched: 0,
+      message: `Commission already confirmed (client_event_id=${client_event_id}); original job_id returned, no second bind or launch.`,
+    };
+  }
+
+  const at = opts.at ?? todayIso();
+  const job_id =
+    opts.job_id ??
+    `ecgberht-job-${String(proposal.skill).toLowerCase()}-${proposal.proposal_hash.slice(0, 10)}`;
+  const commissioned_as = `${proposal.skill}:${job_id}`;
+
+  let roadmap = opts.roadmap ?? null;
+  let roadmap_event = null;
+  let projection = null;
+  let strip = opts.strip ?? null;
+  let strip_appended = false;
+  let strip_instrument = null;
+  let durable = false;
+  let confirm_journal = false;
+  let sot_written = false;
+
+  if (opts.project_path) {
+    // Wave 7 confirm journal (spine path)
+    const journaled = confirmCommissionJournaled({
+      project_path: opts.project_path,
+      proposal: { ...proposal, requires_confirm: true },
+      roadmap,
+      strip,
+      who: who.claimed,
+      at,
+      job_id,
+      client_event_id,
+      project_id: opts.project_id ?? null,
+      home: opts.home,
+    });
+    if (!journaled.ok &amp;&amp; !journaled.killed) {
+      return commissionFailure(COMMISSION_CODE.STATE_UNKNOWN, {
+        error: journaled.error ?? &#x27;confirm-journal-failed&#x27;,
+        message: journaled.message,
+        detail: journaled,
+      });
+    }
+    roadmap = journaled.roadmap ?? roadmap;
+    roadmap_event = journaled.roadmap_event ?? null;
+    projection = journaled.projection ?? null;
+    strip = journaled.strip ?? strip;
+    strip_appended = journaled.strip_appended === true;
+    strip_instrument = journaled.strip_instrument ?? null;
+    durable = true;
+    confirm_journal = true;
+    sot_written = journaled.ok === true &amp;&amp; journaled.killed !== true;
+  } else {
+    // In-memory bind for dry-run / fixtures
+    const bindEvent = {
+      kind: &#x27;commission_bind&#x27;,
+      step_id: proposal.step_id,
+      commissioned_as,
+      at,
+      client_event_id,
+      proposal_hash: expectedHash,
+    };
+    if (roadmap) {
+      const bound = appendRoadmapEvent(roadmap, bindEvent, { at });
+      if (!bound.ok) {
+        return commissionFailure(COMMISSION_CODE.STATE_UNKNOWN, {
+          error: bound.error ?? &#x27;bind-failed&#x27;,
+          message: bound.message,
+          detail: bound,
+        });
+      }
+      roadmap = bound.roadmap;
+      roadmap_event = bound.event;
+      projection = bound.projection;
+    }
+    if (strip) {
+      strip_instrument = {
+        _kind: &#x27;instrument&#x27;,
+        kind: &#x27;commission_confirm&#x27;,
+        as_of: at,
+        job_id,
+        commission_id: proposal.commission?.commission_id ?? null,
+        step_id: proposal.step_id,
+        skill: proposal.skill,
+        depth_cell: proposal.depth_cell ?? null,
+        state: &#x27;queued&#x27;,
+        who: who.claimed,
+        client_event_id,
+        proposal_hash: expectedHash,
+      };
+      const appended = appendStripInstrument(strip, strip_instrument, {
+        apply_to_projection: false,
+      });
+      if (!appended.ok) {
+        return commissionFailure(COMMISSION_CODE.STATE_UNKNOWN, {
+          error: &#x27;strip-append-failed&#x27;,
+          message: appended.message,
+        });
+      }
+      strip = appended.strip;
+      strip_appended = true;
+    }
+  }
+
+  const job = {
+    schema: JOB_SCHEMA_ID,
+    job_id,
+    commission_id: proposal.commission?.commission_id ?? null,
+    proposal_id: proposal.proposal_id ?? null,
+    proposal_hash: expectedHash,
+    step_id: proposal.step_id,
+    skill: proposal.skill,
+    depth_cell: proposal.depth_cell ?? null,
+    seat: proposal.seat ?? proposal.seats ?? null,
+    estimate: proposal.estimate ?? null,
+    confirmed_by: who,
+    confirmed: true,
+    runner: ANCHOR_JOB_COMPOSE.runner,
+    compose: ANCHOR_JOB_COMPOSE,
+    spawn: proposal.commission ?? null,
+    state: &#x27;queued&#x27;,
+    commissioned_as,
+    lifecycle_events: [
+      {
+        seq: 1,
+        from: null,
+        to: &#x27;queued&#x27;,
+        at,
+        observed: &#x27;commission_confirm&#x27;,
+        who: who.claimed,
+      },
+    ],
+  };
+
+  // Dossier: confirmation recorded; launch identity filled by executor
+  let dossier = null;
+  if (opts.project_path) {
+    const up = upsertDossier(opts.project_path, {
+      job_id,
+      commissioned_as,
+      proposal: {
+        proposal_id: proposal.proposal_id,
+        proposal_hash: expectedHash,
+        skill: proposal.skill,
+        step_id: proposal.step_id,
+        depth_cell: proposal.depth_cell,
+        seat: proposal.seat,
+        estimate: proposal.estimate,
+      },
+      confirmation: {
+        who,
+        at,
+        client_event_id,
+        proposal_hash: expectedHash,
+        confirmed: true,
+      },
+    });
+    if (up.ok) dossier = up.dossier;
+  } else {
+    dossier = {
+      ...emptyDossier(job_id, commissioned_as),
+      proposal: {
+        proposal_id: proposal.proposal_id,
+        proposal_hash: expectedHash,
+        skill: proposal.skill,
+        step_id: proposal.step_id,
+      },
+      confirmation: {
+        who,
+        at,
+        client_event_id,
+        proposal_hash: expectedHash,
+        confirmed: true,
+      },
+    };
+  }
+
+  // Executor seam — ONLY path to launch
+  let executor_result = null;
+  let launched = false;
+  let confirmed_and_unlaunched = false;
+  let no_executor_host = false;
+  let processes_launched = 0;
+  let pid = null;
+  let proc_create_time = null;
+
+  if (opts.skip_executor !== true) {
+    executor_result = executeCommission(
+      {
+        ...job,
+        confirmed: true,
+        confirmation: dossier?.confirmation ?? { confirmed: true, who },
+        dossier,
+      },
+      {
+        confirmed: true,
+        who,
+        project_path: opts.project_path ?? null,
+        // Launch-seam revalidation is opt-in via executor_ctx.authCtx (or a
+        // direct executeCommission call). Do NOT auto-forward confirm authCtx:
+        // confirm already authorized; Wave 19 launch refusals are proven on
+        // the executeCommission path (auth outcome sweep), and auto-forward
+        // would re-hit authorize(&#x27;launch&#x27;) on every confirm+launch.
+        ...(opts.executor_ctx ?? {}),
+      },
+    );
+
+    if (
+      executor_result &amp;&amp;
+      executor_result.code === COMMISSION_CODE.NO_EXECUTOR_HOST
+    ) {
+      no_executor_host = true;
+      confirmed_and_unlaunched = true;
+      launched = false;
+      processes_launched = 0;
+      // Preserve confirmed state by name on dossier
+      if (opts.project_path &amp;&amp; dossier) {
+        upsertDossier(opts.project_path, {
+          job_id,
+          commissioned_as,
+          confirmation: {
+            ...(dossier.confirmation ?? {}),
+            confirmed: true,
+            launch_state: &#x27;confirmed-and-unlaunched&#x27;,
+            no_executor_host: true,
+          },
+          launch: {
+            state: &#x27;confirmed-and-unlaunched&#x27;,
+            no_executor_host: true,
+            pid: null,
+            proc_create_time: null,
+            at,
+          },
+        });
+      } else if (dossier) {
+        dossier.launch = {
+          state: &#x27;confirmed-and-unlaunched&#x27;,
+          no_executor_host: true,
+          pid: null,
+          proc_create_time: null,
+          at,
+        };
+        dossier.confirmation = {
+          ...(dossier.confirmation ?? {}),
+          launch_state: &#x27;confirmed-and-unlaunched&#x27;,
+          no_executor_host: true,
+        };
+      }
+    } else if (executor_result &amp;&amp; executor_result.ok !== false) {
+      launched = executor_result.launched !== false;
+      processes_launched = launched ? 1 : 0;
+      pid = executor_result.pid ?? null;
+      proc_create_time = executor_result.proc_create_time ?? null;
+      if (launched &amp;&amp; (pid != null || proc_create_time != null)) {
+        if (opts.project_path) {
+          recordLaunchOnDossier(opts.project_path, {
+            job_id,
+            commissioned_as,
+            pid,
+            proc_create_time,
+            intent: executor_result.intent ?? { kind: &#x27;launch_intent&#x27;, at },
+            at,
+          });
+        } else if (dossier) {
+          dossier.launch = {
+            pid,
+            proc_create_time,
+            at,
+            intent: executor_result.intent ?? null,
+          };
+        }
+      }
+    }
+  }
+
+  const success = {
+    ok: true,
+    spelling: SPELLING,
+    job,
+    job_id,
+    commissioned_as,
+    who,
+    proposal_hash: expectedHash,
+    client_event_id,
+    roadmap,
+    roadmap_event,
+    projection,
+    strip,
+    strip_appended,
+    strip_instrument,
+    dossier,
+    durable,
+    confirm_journal,
+    sot_written,
+    bind_appended: true,
+    launched,
+    processes_launched,
+    pid,
+    proc_create_time,
+    confirmed_and_unlaunched,
+    no_executor_host,
+    silently_queued: false,
+    executor_result,
+    single_writer: ROADMAP_SINGLE_WRITER,
+    compose: ANCHOR_JOB_COMPOSE,
+    runner: ANCHOR_JOB_COMPOSE.runner,
+    idempotent: false,
+    already_confirmed: false,
+    message: no_executor_host
+      ? COMMISSION_TEXT[COMMISSION_CODE.NO_EXECUTOR_HOST]
+      : `Commission confirmed by ${who.claimed}: ${commissioned_as} bound to step &#x27;${proposal.step_id}&#x27;${launched ? &#x27; and launched&#x27; : &#x27; (queued)&#x27;}.`,
+  };
+
+  // When no-executor-host, surface the named code while keeping ok-ish confirmed state
+  if (no_executor_host) {
+    const named = {
+      ...success,
+      // Confirmed succeeded; launch refused by name — dual status
+      ok: true,
+      code: COMMISSION_CODE.NO_EXECUTOR_HOST,
+      status: COMMISSION_CODE.NO_EXECUTOR_HOST,
+      status_code: COMMISSION_CODE.NO_EXECUTOR_HOST,
+      text: COMMISSION_TEXT[COMMISSION_CODE.NO_EXECUTOR_HOST],
+      user_text: COMMISSION_TEXT[COMMISSION_CODE.NO_EXECUTOR_HOST],
+      confirmed: true,
+      launched: false,
+    };
+    _idempotenceCache.set(idemKey, named);
+    return named;
+  }
+
+  _idempotenceCache.set(idemKey, success);
+  return success;
+}</pre>
+<p><a class="button" href="../source-pages/commission.html#L1208">Open numbered source</a>
+<a href="../sources/commission.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/commission">Compose a specialist commission</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">2c18739fcfa89be37f213d5d3659b0d91f322d5a6d40fc2164df2f07941f65f3</span></p><p>Excerpt hash: <span class="path">911cc0d360ef035dfa9e49c7af496839ae364e639a12416cb39df9ffd91bc152</span></p></details></article></main></body></html>

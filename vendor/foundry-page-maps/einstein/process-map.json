@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Einstein execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Einstein)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Einstein context.",
+      "code": {
+        "path": "foundry/triage/mapping.mjs",
+        "symbol": "export function"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Einstein \u2014 build the understanding"
+      },
+      "resource_ids": [
+        "einstein-mat-skill-md",
+        "einstein-shared-tool-anvil-engine"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Einstein never repeats cold-start discovery.",
+      "code": {
+        "path": "foundry/triage/mapping.mjs",
+        "symbol": "export function"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## Begin from the actual learner"
+      },
+      "resource_ids": [
+        "einstein-ref-teaching",
+        "einstein-journal-0054-preserve-unchanged-slide-i",
+        "einstein-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Einstein)",
+      "kind": "model",
+      "role": "Primary Einstein Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Einstein, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "foundry/triage/mapping.mjs",
+        "symbol": "export function"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## One teaching sequence drives every product"
+      },
+      "resource_ids": [
+        "einstein-shared-tool-anvil-engine",
+        "einstein-shared-tool-mapping",
+        "einstein-peer-steward-project"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "foundry/triage/mapping.mjs",
+        "symbol": "export function"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## Produce the agreed pack"
+      },
+      "resource_ids": [
+        "einstein-peer-steward-project",
+        "einstein-peer-ramanujan",
+        "einstein-ref-teaching"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Einstein deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "foundry/triage/mapping.mjs",
+        "symbol": "export function"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## Compose specialist work honestly"
+      },
+      "resource_ids": [
+        "einstein-mat-skill-md",
+        "einstein-kb-portfolio-triage-and-band-eval"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Einstein primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Einstein work product + machine run receipt."
+}

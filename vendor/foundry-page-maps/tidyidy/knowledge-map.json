@@ -1,0 +1,452 @@
+{
+  "nodes": [
+    {
+      "id": "tidyidy-root",
+      "name": "Tidy-Idy Knowledge & Execution Architecture",
+      "title": "Tidy-Idy Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "tidyidy-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "tidyidy-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "tidyidy-root"
+      ],
+      "ring": 1,
+      "resource_id": "tidyidy-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "tidyidy-root"
+      ],
+      "ring": 1,
+      "resource_id": "tidyidy-tool-bin-hygiene-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "tidyidy-root"
+      ],
+      "ring": 1,
+      "resource_id": "tidyidy-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "tidyidy-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "tidyidy-root"
+      ],
+      "ring": 1,
+      "resource_id": "tidyidy-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-mat-1",
+      "name": "Tidy-Idy Agent & Execution Protocol (SKILL.md)",
+      "title": "Tidy-Idy Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "tidyidy-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-mat-2",
+      "name": "Tidy-Idy Human Guide (HUMAN.md)",
+      "title": "Tidy-Idy Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "tidyidy-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-mat-3",
+      "name": "Tidy-Idy Locked North Star (NORTH-STAR.md)",
+      "title": "Tidy-Idy Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "tidyidy-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-mat-4",
+      "name": "Tidy-Idy Detailed Specification (DESCRIPTION.md)",
+      "title": "Tidy-Idy Detailed Specification (DESCRIPTION.md)",
+      "parent_ids": [
+        "tidyidy-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-mat-description-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-mat-5",
+      "name": "Tidy-Idy Universal Triage & Seating Block",
+      "title": "Tidy-Idy Universal Triage & Seating Block",
+      "parent_ids": [
+        "tidyidy-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-mat-triage-block",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-1",
+      "name": "hygiene.mjs (bin/hygiene.mjs)",
+      "title": "hygiene.mjs (bin/hygiene.mjs)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-tool-bin-hygiene-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-2",
+      "name": "advisory.mjs (engine/advisory.mjs)",
+      "title": "advisory.mjs (engine/advisory.mjs)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-tool-engine-advisory-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-3",
+      "name": "agent-seam.mjs (engine/agent-seam.mjs)",
+      "title": "agent-seam.mjs (engine/agent-seam.mjs)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-tool-engine-agent-seam-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-4",
+      "name": "bootstrap.mjs (engine/apply/bootstrap.mjs)",
+      "title": "bootstrap.mjs (engine/apply/bootstrap.mjs)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-tool-engine-apply-bootstrap-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-5",
+      "name": "consent-scope.mjs (engine/apply/consent-scope.mjs)",
+      "title": "consent-scope.mjs (engine/apply/consent-scope.mjs)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-tool-engine-apply-consent-scope-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-6",
+      "name": "executor.mjs (engine/apply/executor.mjs)",
+      "title": "executor.mjs (engine/apply/executor.mjs)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-tool-engine-apply-executor-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "tidyidy-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-skill-1",
+      "name": "Gandalf Deep-Think Pruning Advisor",
+      "title": "Gandalf Deep-Think Pruning Advisor",
+      "parent_ids": [
+        "tidyidy-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-skill-2",
+      "name": "Aegis Secret & PII Scanner",
+      "title": "Aegis Secret & PII Scanner",
+      "parent_ids": [
+        "tidyidy-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-peer-aegis",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-skill-3",
+      "name": "Zombie-Hunter Lockfile & Process Auditor",
+      "title": "Zombie-Hunter Lockfile & Process Auditor",
+      "parent_ids": [
+        "tidyidy-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-peer-zombiehunter",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-ref-1",
+      "name": "Tidy-Idy LESSONS.md",
+      "title": "Tidy-Idy LESSONS.md",
+      "parent_ids": [
+        "tidyidy-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-ref-2",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "tidyidy-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-ref-3",
+      "name": "Journal: 0005-receipt-derived-cross-model",
+      "title": "Journal: 0005-receipt-derived-cross-model",
+      "parent_ids": [
+        "tidyidy-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-journal-0005-receipt-derived-cross-model",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-ref-4",
+      "name": "Journal: 0004-shared-trio-agent-seam",
+      "title": "Journal: 0004-shared-trio-agent-seam",
+      "parent_ids": [
+        "tidyidy-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-journal-0004-shared-trio-agent-seam",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "tidyidy-leaf-ref-5",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "tidyidy-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "tidyidy-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,488 @@
+{
+  "nodes": [
+    {
+      "id": "chekhov-root",
+      "name": "Chekhov Knowledge & Execution Architecture",
+      "title": "Chekhov Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "chekhov-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "chekhov-root"
+      ],
+      "ring": 1,
+      "resource_id": "chekhov-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "chekhov-root"
+      ],
+      "ring": 1,
+      "resource_id": "chekhov-tool-lib-engine-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "chekhov-root"
+      ],
+      "ring": 1,
+      "resource_id": "chekhov-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "chekhov-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "chekhov-root"
+      ],
+      "ring": 1,
+      "resource_id": "chekhov-ref-author-style-profiles",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-mat-1",
+      "name": "Chekhov Agent & Execution Protocol (SKILL.md)",
+      "title": "Chekhov Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "chekhov-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-mat-2",
+      "name": "Chekhov Human Guide (HUMAN.md)",
+      "title": "Chekhov Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "chekhov-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-mat-3",
+      "name": "Chekhov Detailed Specification (DESCRIPTION.md)",
+      "title": "Chekhov Detailed Specification (DESCRIPTION.md)",
+      "parent_ids": [
+        "chekhov-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-mat-description-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-mat-4",
+      "name": "Chekhov Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "title": "Chekhov Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "parent_ids": [
+        "chekhov-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-mat-implementation-plan-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-1",
+      "name": "engine.mjs (lib/engine.mjs)",
+      "title": "engine.mjs (lib/engine.mjs)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-tool-lib-engine-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-2",
+      "name": "index.mjs (lib/index.mjs)",
+      "title": "index.mjs (lib/index.mjs)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-tool-lib-index-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-3",
+      "name": "salvage-index.mjs (lib/salvage-index.mjs)",
+      "title": "salvage-index.mjs (lib/salvage-index.mjs)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-tool-lib-salvage-index-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-4",
+      "name": "index.mjs (planning/foundry-20260910-note-scope/before/lib/index.mjs)",
+      "title": "index.mjs (planning/foundry-20260910-note-scope/before/lib/index.mjs)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-tool-planning-foundry-20260910-note-scop",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-5",
+      "name": "anchor_adapter.py (bin/anchor_adapter.py)",
+      "title": "anchor_adapter.py (bin/anchor_adapter.py)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-tool-bin-anchor-adapter-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-6",
+      "name": "attention_adapter.mjs (bin/attention_adapter.mjs)",
+      "title": "attention_adapter.mjs (bin/attention_adapter.mjs)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-tool-bin-attention-adapter-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "chekhov-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-skill-1",
+      "name": "Gandalf Structural & Continuity Critic",
+      "title": "Gandalf Structural & Continuity Critic",
+      "parent_ids": [
+        "chekhov-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-skill-2",
+      "name": "researchPrime Historical & Domain Grounding",
+      "title": "researchPrime Historical & Domain Grounding",
+      "parent_ids": [
+        "chekhov-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-skill-3",
+      "name": "Project Steward (Lamp / Seal)",
+      "title": "Project Steward (Lamp / Seal)",
+      "parent_ids": [
+        "chekhov-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-peer-steward-project",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-1",
+      "name": "Reference: author-style-profiles.md",
+      "title": "Reference: author-style-profiles.md",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-ref-author-style-profiles",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-2",
+      "name": "Reference: beta-reader-subagents.md",
+      "title": "Reference: beta-reader-subagents.md",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-ref-beta-reader-subagents",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-3",
+      "name": "Reference: chapter-refinement.md",
+      "title": "Reference: chapter-refinement.md",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-ref-chapter-refinement",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-4",
+      "name": "Reference: first-writing-session.md",
+      "title": "Reference: first-writing-session.md",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-ref-first-writing-session",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-5",
+      "name": "Journal: 0064-scene-protocol-continuity-and-voice-vitality-gate",
+      "title": "Journal: 0064-scene-protocol-continuity-and-voice-vitality-gate",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-journal-0064-scene-protocol-continuity-a",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-6",
+      "name": "Journal: 0063-cold-reader-context-and-anti-compression-gate",
+      "title": "Journal: 0063-cold-reader-context-and-anti-compression-gate",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-journal-0063-cold-reader-context-and-ant",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-7",
+      "name": "Journal: 0062-head-tracked-deliverables-and-first-mention-character-gate",
+      "title": "Journal: 0062-head-tracked-deliverables-and-first-mention-character-gate",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-journal-0062-head-tracked-deliverables-a",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "chekhov-leaf-ref-8",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "chekhov-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "chekhov-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

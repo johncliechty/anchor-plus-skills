@@ -1,0 +1,769 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>round · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>round</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\round.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 29de2810d55645d7bb6c893c678bd1a9b3e7661077350ab437dff396b963fcd8</p></details>
+<p><a href="../sources/round.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/round.mjs — Wave 7 ROUND ORCHESTRATION (Phase C-2).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // MASTER-PLAN Phase C-2 / IMPLEMENTATION-PLAN Wave 7: the multi-round adversarial loop that sits</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // ON TOP of the Wave-6 evidenced core (C-1). It fills the engine&#x27;s Wave-7 gate-slots&#x27; BEHAVIOR</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // (bin/engine.mjs GATE_SLOTS, `fills:&#x27;Wave 7&#x27;`); the engine/governor WIRING of these behaviors is</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // Wave 8 (&quot;Governor wiring + inclusion-test enforcement&quot;). Wave 7 builds + proves the behaviors as</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // discrete, testable seams, each a concrete `node --test` assertion (the Stage-2 lock).</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> //</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // The gates this wave lands (with the done-when item each serves):</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //   G3  heterogeneous ≥2-agree reviewers — REUSE the trio roster (SHARK_ROLES/angleForShark) + the</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //       trio tally (`tallyFindings`), which already does the ≥2-agree quorum.</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //   G6  stable finding identity — REUSE the trio&#x27;s `normalizeFindingId` (inside `tallyFindings`).</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> //   G5  convergence-until-dry — the dry predicate (a) + an HONEST convergence tracker where an</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //       EMPTY round does NOT increment the dry counter (b, I7).</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> //   (c) suspiciously-dry probe-or-dissent — a high-stakes run reaching dry in &lt; K rounds with &gt; M</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> //       unresolved high-severity findings fires it; on single-family substrate it emits the</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //       &quot;shared-blind-spot un-mitigable&quot; stamp, NOT a mitigation claim (I1).</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> //   G9  conditional debate — fires exactly once on a conflicting INDEPENDENT-ORIGIN pair, zero</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //       otherwise (d).</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> //   GATE-1 / G8  independent origins + cross-lineage fusion — every origin number routes through</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> //       the Wave-2 SHARED module (the sole counter, I3/h); G8 is flagged-INERT by default behind</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> //       the lineage-enum gate (g) so (a)–(f) reach GREEN before the enum is committed.</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> //   G4  separate context-free Judge · active Synthesizer — REUSE the trio&#x27;s `makeJudge` /</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> //       `makeSynthesizer`, exposed through a call-count spy seam (f); the Synthesizer&#x27;s steering is</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> //       measured against a token/round-matched control (e).</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> //</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> // REUSE, NOT FORK: the trio surface is taken from bin/engine.mjs (`TRIO_SURFACE`, already imported</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> // there — one load), and every origin count goes through `#trio-core/independence-accounting.mjs`</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> // (the same canonical package-map route the engine + verify-core use). This module re-homes NO trio</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> // logic; it composes the trio makers behind researchPrime&#x27;s verification-round seams.</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> import { TRIO_SURFACE } from &#x27;./engine.mjs&#x27;;</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> import {</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   meetsQuorum,</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>   countIndependentOrigins,</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>   lineageOf,</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>   STATIC_QUORUM_FLOOR,</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> } from &#x27;#trio-core/independence-accounting.mjs&#x27;;</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a> import { committedLineages } from &#x27;./lineage-enum.mjs&#x27;;</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> import { loadPreregistration } from &#x27;./preregistration.mjs&#x27;;</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> import { makeReliableAgent } from &#x27;../../drivers/reliability.mjs&#x27;;</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> import {</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>   superviseSeat,</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>   lookinAppendix,</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>   trailFromFile,</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>   DEFAULT_CHECKIN_MS,</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>   DEFAULT_DEAD_IDLE_MS,</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>   DEFAULT_SILENT_KILL_MS,</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> } from &#x27;../../drivers/swarm-lookin.mjs&#x27;;</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> </span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a> // Reused trio symbols (the frozen contract surface, bin/contract.mjs). G3/G5/G6 ride on the trio</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> // tally + roster; G4 on the Judge; the active Synthesizer on makeSynthesizer.</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> const { tallyFindings, normalizeFindingId, SHARK_ROLES, angleForShark } = TRIO_SURFACE[&#x27;shark-tank&#x27;];</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> const { makeJudge } = TRIO_SURFACE[&#x27;judge&#x27;];</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> const { makeSynthesizer } = TRIO_SURFACE[&#x27;synthesizer&#x27;];</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> const { HaltError } = TRIO_SURFACE[&#x27;foreman-lib&#x27;];</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> </span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> // ── Severity taxonomy ────────────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> /** The high-severity band (what the suspiciously-dry guard counts as &quot;unresolved high-severity&quot;). */</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> export const HIGH_SEVERITIES = Object.freeze([&#x27;BLOCKER&#x27;, &#x27;MAJOR&#x27;]);</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> /** Is this finding high-severity (BLOCKER/MAJOR)? */</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> export function isHighSeverity(f) {</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>   return HIGH_SEVERITIES.includes(String(f?.severity || &#x27;&#x27;).toUpperCase());</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> }</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> </span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> /**</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>  * Count the still-OPEN high-severity findings — the `unresolvedHighSeverity` input the</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>  * suspiciously-dry guard (c) reads. A finding is unresolved unless explicitly `resolved` (the Judge</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>  * or a G9 debate can resolve one); an unresolved BLOCKER/MAJOR surviving to a fast dry is exactly</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>  * the shared-blind-spot signature the guard fires on.</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>  */</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a> export function countUnresolvedHighSeverity(findings = []) {</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>   if (!Array.isArray(findings)) {</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>     throw new TypeError(&#x27;countUnresolvedHighSeverity(findings): findings must be an array&#x27;);</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>   }</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>   return findings.filter((f) =&gt; isHighSeverity(f) &amp;&amp; !f?.resolved).length;</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> }</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> </span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> // ── Reading the FROZEN loop thresholds (N, K, M) committed in Wave 1 (I6) ──────────────────────────</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> /**</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>  * The pre-registered loop thresholds the convergence + suspicious-dry logic reads. They were</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>  * committed by a human in Wave 1 (preregistration.json); reading them HERE — never re-declaring</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>  * them — keeps the loop honest (I6: the gate cannot be gamed by a locally-chosen number).</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>  * @returns {{N:number, K:number, M:number}}</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>  */</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> export function loopThresholds(prereg = loadPreregistration()) {</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>   const out = {};</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>   for (const k of [&#x27;N&#x27;, &#x27;K&#x27;, &#x27;M&#x27;]) {</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>     const v = prereg[k];</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>     if (!Number.isInteger(v)) {</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>       throw new HaltError(</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>         `round orchestration needs the committed loop threshold ${k} (Wave-1 preregistration). ` +</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>           `Got ${JSON.stringify(v)} — commit it before running the loop (I6).`,</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>       );</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>     }</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>     out[k] = v;</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>   }</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>   return out;</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a> }</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a> // ── (a) the dry-round predicate · (b) the EMPTY-round guard ────────────────────────────────────────</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a> /** The per-round reviews, accepting either a raw reviews[] or a round object carrying `.reviews`. */</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a> function reviewsOf(round) {</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>   if (Array.isArray(round)) return round;</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   return Array.isArray(round?.reviews) ? round.reviews : [];</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> }</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a> /**</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>  * A DRY round: the tally surfaced NO new blocker (the trio&#x27;s `tallyFindings().dry`). This is the</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>  * convergence signal — but only a NON-EMPTY dry round counts toward convergence (see the tracker).</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>  */</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a> export function isDryRound(round) {</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>   return !!round?.tally?.dry;</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a> }</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a> /**</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>  * An EMPTY round: the reviewers produced NO findings at all — nothing was actually examined. This</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>  * is DISTINCT from a dry round (where findings were raised but none was a NEW blocker). I7 honest</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>  * convergence: a run must not be able to &quot;converge&quot; by simply declining to look, so an empty round</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>  * is invisible to the dry counter.</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>  */</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> export function isEmptyRound(round) {</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>   const reviews = reviewsOf(round);</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   const total = reviews.reduce((n, r) =&gt; n + (Array.isArray(r?.findings) ? r.findings.length : 0), 0);</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>   return total === 0;</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a> }</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> </span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a> // ── G5 — convergence-until-dry, with the I7 honest-convergence guard + the T8 CLEAN path ───────────</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a> /** The stamp a CLEAN convergence wears — explicit and DISTINCT from DRY, never conflated. */</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a> export const CLEAN_CONVERGENCE_STAMP =</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>   &#x27;CLEAN convergence: the panel raised ZERO findings for the required consecutive rounds — &#x27; +</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>   &#x27;nothing to dispute was found (DISTINCT from DRY, where findings were raised but none was a &#x27; +</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>   &#x27;new blocker). Clean requires MORE consecutive evidence than dry (cleanN = N + 1).&#x27;;</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a> /**</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>  * Build a convergence tracker: the run is CONVERGED after N consecutive NON-EMPTY dry rounds</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>  * (DRY convergence), OR — T8 (2026-07-11) — after cleanN consecutive EMPTY rounds (CLEAN</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>  * convergence, explicit stamp).</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>  *</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>  * I7 (b), REFINED not abandoned: an EMPTY round still does NOT touch the DRY counter — a run can</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>  * never manufacture *adversarial* convergence by declining to look. But the OLD rule made a</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>  * genuinely defect-free artifact structurally UNABLE to converge: zero-finding rounds counted for</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>  * nothing, so reviewers were pressured to invent filler nits (the dogfood literally scripted one</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>  * per round to terminate). CLEAN is the honest exit: strictly MORE consecutive empty rounds than</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>  * dry needs (cleanN = N + 1 by default), stamped distinctly so the deliverable can never pass a</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>  * clean run off as an adversarially-dry one.</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>  *</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>  * @param {{N:number, cleanN?:number}} o  N = the pre-registered dry threshold (Wave 1);</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>  *   cleanN = the clean threshold (default N + 1; must be &gt; 0)</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>  */</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a> export function makeConvergenceTracker({ N, cleanN = null } = {}) {</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>   if (!Number.isInteger(N) || N &lt; 1) {</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>     throw new HaltError(&#x27;makeConvergenceTracker: N must be an integer &gt;= 1 (the committed threshold)&#x27;);</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>   }</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>   const CLEAN_N = cleanN == null ? N + 1 : cleanN;</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>   if (!Number.isInteger(CLEAN_N) || CLEAN_N &lt; 1) {</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>     throw new HaltError(&#x27;makeConvergenceTracker: cleanN must be an integer &gt;= 1&#x27;);</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>   }</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>   let dryStreak = 0;</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>   let emptyStreak = 0;</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>   let rounds = 0;</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>   let countedRounds = 0; // non-empty rounds — the only ones DRY convergence sees</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>   const snapshot = (extra) =&gt; {</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>     const dry = dryStreak &gt;= N;</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>     const clean = emptyStreak &gt;= CLEAN_N;</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>     return {</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>       converged: dry || clean,</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>       mode: dry ? &#x27;dry&#x27; : clean ? &#x27;clean&#x27; : null,</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>       stamp: !dry &amp;&amp; clean ? CLEAN_CONVERGENCE_STAMP : null,</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>       dryStreak, emptyStreak, rounds, countedRounds,</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>       ...extra,</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>     };</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>   };</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>   return {</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>     /**</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>      * Observe one completed round. Returns the post-observation state, including whether this round</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>      * COUNTED toward DRY (non-empty) and whether the run has now CONVERGED (and in which MODE).</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>      */</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>     observe(round) {</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>       rounds += 1;</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>       if (isEmptyRound(round)) {</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>         // I7: invisible to the DRY streak (not incremented, not reset) — but it ADVANCES the</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>         // CLEAN streak: consecutive genuinely-empty rounds are themselves evidence.</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>         emptyStreak += 1;</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>         return snapshot({ counted: false, empty: true });</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>       }</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>       countedRounds += 1;</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>       emptyStreak = 0; // findings appeared — a clean exit must re-earn its consecutive streak</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>       if (isDryRound(round)) dryStreak += 1;</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>       else dryStreak = 0;</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>       return snapshot({ counted: true, empty: false });</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>     },</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>     state() {</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>       return snapshot({});</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>     },</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>   };</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a> }</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a> </span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a> // ── (c) suspiciously-dry → probe-or-dissent (I1) ───────────────────────────────────────────────────</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a> /** The literal stamp a single-family substrate puts on an un-mitigable shared blind spot (I1). */</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a> export const SHARED_BLIND_SPOT_STAMP =</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>   &#x27;shared blind spot — UN-MITIGABLE on single-family substrate (I1): a same-lineage probe reproduces &#x27; +</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>   &#x27;the shared wrong consensus, so the unresolved high-severity finding is FLAGGED, not mitigated&#x27;;</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a> /**</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>  * Decide whether a converged high-stakes run is SUSPICIOUSLY dry and, if so, fire the</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>  * probe-or-dissent — honestly.</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>  *</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>  * Suspicious (MASTER-PLAN crit-7 / I1) ⇔ the run is HIGH-STAKES, reached dry in FEWER than K</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>  * rounds, AND still has MORE than M unresolved high-severity findings. Converging that fast with</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>  * open high-severity findings is the signature of a SHARED BLIND SPOT, not genuine agreement.</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>  *</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>  * On a SINGLE-FAMILY substrate the only probe available is same-lineage, which by I1 reproduces the</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>  * shared wrong consensus — so the fired probe CANNOT mitigate; it emits the un-mitigable stamp and</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>  * reports `mitigated:false` (never a mitigation claim). A multi-family substrate CAN genuinely</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>  * probe with an independent origin, so it may mitigate.</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>  *</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>  * @param {object} o</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>  * @param {string}   o.stakesTier             governor tier (bin/stakes.mjs TIERS) — &#x27;high&#x27; is high-stakes</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>  * @param {number}   o.roundsToDry            non-empty rounds taken to reach dry</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>  * @param {number}   o.unresolvedHighSeverity count of still-open BLOCKER/MAJOR findings at dry</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>  * @param {string[]}[o.substrateFamilies=[]]  the model families actually reachable this run</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>  * @param {{K:number,M:number}} o.thresholds  the committed K (suspicious bound) + M (finding bound)</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>  * @returns {{ suspicious:boolean, fired:boolean, singleFamily:?boolean, mitigated:?boolean, stamp:?string }}</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>  */</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a> export function assessConvergenceHonesty({</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>   stakesTier,</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>   roundsToDry,</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>   unresolvedHighSeverity,</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>   substrateFamilies = [],</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>   thresholds,</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a> } = {}) {</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>   const { K, M } = thresholds ?? {};</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>   if (!Number.isInteger(K) || !Number.isInteger(M)) {</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>     throw new HaltError(&#x27;assessConvergenceHonesty requires committed thresholds { K, M } (Wave 1)&#x27;);</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   }</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>   const highStakes = stakesTier === &#x27;high&#x27;;</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>   const tooFast = Number.isInteger(roundsToDry) &amp;&amp; roundsToDry &lt; K;</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>   const stillUnresolved = Number(unresolvedHighSeverity) &gt; M;</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>   const suspicious = highStakes &amp;&amp; tooFast &amp;&amp; stillUnresolved;</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>   if (!suspicious) {</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>     return { suspicious: false, fired: false, singleFamily: null, mitigated: null, stamp: null };</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>   }</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>   // Probe-or-dissent fires. Honesty depends on the substrate.</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>   const distinctFamilies = new Set((substrateFamilies || []).map((f) =&gt; (typeof f === &#x27;string&#x27; ? f.trim() : f)).filter(Boolean));</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>   const singleFamily = distinctFamilies.size &lt;= 1;</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>   return {</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>     suspicious: true,</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>     fired: true,</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>     singleFamily,</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>     // I1: a same-lineage probe cannot recover a correlated blind spot — single-family NEVER mitigates.</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>     mitigated: singleFamily ? false : true,</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>     stamp: singleFamily ? SHARED_BLIND_SPOT_STAMP : null,</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>   };</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a> }</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a> </span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a> // ── (d) G9 — conditional cross-origin debate ───────────────────────────────────────────────────────</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a> /**</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>  * Detect CONFLICTING INDEPENDENT-ORIGIN pairs: the same finding (by stable id, G6) on which two</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>  * reviewers of DISTINCT attested lineages reach OPPOSITE verdicts (one `affirm`, one `deny`). A</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>  * same-lineage disagreement is NOT an independent-origin conflict (I3 — same lineage is one</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>  * origin); plain agreement is not a conflict. Each review carries `{ lineage|family, findings:</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>  * [{ topic|id, verdict:&#x27;affirm&#x27;|&#x27;deny&#x27; }] }`; a missing verdict defaults to `affirm` (a raised</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>  * finding is an affirmation).</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>  *</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>  * @param {Array&lt;object&gt;} reviews</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>  * @returns {Array&lt;{ id:string, affirm:string[], deny:string[] }&gt;} one entry per conflicting pair</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>  */</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a> export function detectOriginConflicts(reviews) {</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>   if (!Array.isArray(reviews)) throw new TypeError(&#x27;detectOriginConflicts(reviews): reviews must be an array&#x27;);</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>   const byFinding = new Map(); // id -&gt; { affirm:Set&lt;lineage&gt;, deny:Set&lt;lineage&gt; }</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>   for (const rv of reviews) {</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>     const lineage = lineageOf(rv); // null when unattested</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>     for (const f of Array.isArray(rv?.findings) ? rv.findings : []) {</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>       const id = normalizeFindingId(f);</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>       const rec = byFinding.get(id) ?? { affirm: new Set(), deny: new Set() };</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>       const verdict = String(f?.verdict || &#x27;affirm&#x27;).toLowerCase() === &#x27;deny&#x27; ? &#x27;deny&#x27; : &#x27;affirm&#x27;;</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>       rec[verdict].add(lineage);</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>       byFinding.set(id, rec);</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>     }</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>   }</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>   const conflicts = [];</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>   for (const [id, rec] of byFinding) {</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>     const affirm = [...rec.affirm].filter(Boolean);</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>     const deny = [...rec.deny].filter(Boolean);</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>     // A genuine conflict: an attested lineage affirms while a DIFFERENT attested lineage denies.</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>     const crossLineage = affirm.some((a) =&gt; deny.some((d) =&gt; d !== a));</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>     if (crossLineage) conflicts.push({ id, affirm, deny });</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>   }</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>   return conflicts;</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a> }</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a> </span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a> /** Should the G9 debate fire this round? Conditional on ≥1 conflicting independent-origin pair. */</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a> export function shouldDebate(conflicts) {</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>   return Array.isArray(conflicts) &amp;&amp; conflicts.length &gt; 0;</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a> }</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a> </span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a> function debatePrompt(pair) {</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>   return [</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>     `[researchPrime G9 — conditional cross-origin debate]`,</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>     `Two INDEPENDENT origins conflict on finding ${pair.id}:`,</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>     `  affirmed by lineage(s): ${pair.affirm.join(&#x27;, &#x27;) || &#x27;(none)&#x27;}`,</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>     `  denied   by lineage(s): ${pair.deny.join(&#x27;, &#x27;) || &#x27;(none)&#x27;}`,</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>     `Adjudicate which origin&#x27;s verdict survives by EVIDENCE QUALITY (not by majority). Return the`,</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>     `surviving verdict and the decisive evidence.`,</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>   ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a> }</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a> </span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a> /**</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>  * Run the G9 debate gate. It is CONDITIONAL: it invokes the debate sub-agent EXACTLY ONCE per</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>  * conflicting origin pair, and ZERO times when there is no conflict (done-when d). The injected</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>  * `agent` is the call-count spy seam — every debate call goes through it.</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>  *</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>  * @param {{agent:Function, conflicts:Array, round?:number}} o</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>  * @returns {Promise&lt;{ fired:boolean, count:number, resolutions:object[] }&gt;}</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>  */</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a> export async function runDebateGate({ agent, conflicts = [], round = 1 } = {}) {</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>     throw new HaltError(&#x27;runDebateGate requires an agent() function&#x27;, &#x27;pass the injected seam: { agent }&#x27;);</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>   }</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>   // 2026-07 efficiency: one debate per conflicting pair, all pairs CONCURRENT</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>   // (Promise.all — same count, same order, same failure semantics as the old</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>   // serial loop). RESEARCHPRIME_CONCURRENT_PANEL=0 restores serial.</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>   let resolutions;</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>   if (process.env.RESEARCHPRIME_CONCURRENT_PANEL === &#x27;0&#x27;) {</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>     resolutions = [];</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>     for (const pair of conflicts) {</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>       const out = await agent(debatePrompt(pair), { label: `debate:${pair.id}:r${round}`, role: &#x27;debate&#x27; });</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>       resolutions.push({ id: pair.id, resolution: out ?? null });</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a>     }</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>   } else {</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a>     resolutions = await Promise.all(conflicts.map((pair) =&gt;</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>       agent(debatePrompt(pair), { label: `debate:${pair.id}:r${round}`, role: &#x27;debate&#x27; })</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>         .then((out) =&gt; ({ id: pair.id, resolution: out ?? null }))));</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>   }</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>   return { fired: conflicts.length &gt; 0, count: conflicts.length, resolutions };</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a> }</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a> </span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a> // ── (g)/(h) G8 — cross-lineage origin fusion (flagged-inert; routes through the SHARED module) ─────</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a> /** The stamp G8 wears when it is inert (flag off / lineage-enum not committed). */</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a> export const G8_INERT_STAMP =</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>   &#x27;G8 cross-lineage fusion INERT (flag off or lineage-enum uncommitted) — no cross-lineage origin claimed&#x27;;</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a> </span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a> /**</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a>  * Is G8 enabled? Only when BOTH the explicit flag is on AND the closed attested-lineage enum has</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a>  * been committed (crit-5). The enum being pending (the Wave-7 default) keeps G8 inert regardless of</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>  * the flag, because there is no attested set to fuse against.</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>  */</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a> export function g8Enabled({ flag = false, lineages = committedLineages() } = {}) {</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>   return !!flag &amp;&amp; Array.isArray(lineages) &amp;&amp; lineages.length &gt; 0;</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a> }</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a> </span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a> /**</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a>  * G8 cross-lineage origin fusion. Flagged-INERT by default (g): when disabled it claims ZERO</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a>  * cross-lineage origins and wears the inert stamp. When ENABLED it counts origins ONLY by asking</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>  * the Wave-2 SHARED module `meetsQuorum` (h) — it NEVER tallies origins itself, so the I3 invariant</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>  * (same-lineage agreement adds 0; only an attested distinct lineage adds +1) is enforced in one</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a>  * place. `attestedLineages` is passed straight through to the shared module (the committed enum).</span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a>  *</span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a>  * @param {Array&lt;object&gt;} reviewers  lineage-tagged reviewers ({ lineage } / stampRole { family })</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>  * @param {object} [o]</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>  * @param {boolean}        [o.enabled=false]</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>  * @param {?Iterable&lt;string&gt;} [o.attestedLineages=null]  the committed closed enum (Wave 7)</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>  * @param {?number}        [o.rhoHat=null]               learned correlation (Wave 9 supplies it)</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a>  * @returns {{ enabled:boolean, inert:boolean, origins:number, required:number, met:boolean, stamp:?string }}</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a>  */</span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a> export function g8FuseOrigins(reviewers = [], { enabled = false, attestedLineages = null, rhoHat = null } = {}) {</span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a>   if (!enabled) {</span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a>     return { enabled: false, inert: true, origins: 0, required: STATIC_QUORUM_FLOOR, met: false, stamp: G8_INERT_STAMP };</span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a>   }</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>   // THE SOLE COUNTER: route through the shared module. No origin number is computed here.</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a>   const quorum = meetsQuorum(reviewers, { attestedLineages, rhoHat, staticFloor: STATIC_QUORUM_FLOOR });</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a>   return { enabled: true, inert: false, ...quorum, stamp: null };</span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a> }</span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a> </span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a> // ── GATE-1 — independent-origins quorum for the round (the shared module, the sole counter) ────────</span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a> /**</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>  * The round&#x27;s GATE-1 verdict: independent origins among the round&#x27;s reviewers, via the shared</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>  * module. Identical routing to the engine&#x27;s `gateOneQuorum` (bin/engine.mjs) — origins are counted</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>  * in exactly one place across the whole engine (I3/h).</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>  */</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a> export function gateOneQuorum(reviewers = [], { rhoHat = null, attestedLineages = null } = {}) {</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>   return meetsQuorum(reviewers, { rhoHat, attestedLineages, staticFloor: STATIC_QUORUM_FLOOR });</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a> }</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a> </span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a> // ── (e)/(f) the active Synthesizer + Judge, behind a call-count spy seam ───────────────────────────</span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a> /**</span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a>  * Orchestrate ONE round&#x27;s adjudication layer (G4 Judge · G9 debate · active Synthesizer) over a set</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a>  * of lineage-tagged reviews, exposing a CALL-COUNT SPY SEAM (f): every sub-agent call is routed</span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a>  * through a per-role counting wrapper, and the per-role counts are returned. G3/G5/G6 ride on the</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a>  * trio tally; GATE-1/G8 route through the shared module.</span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a>  *</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>  * @param {object} o</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>  * @param {Function} o.agent                          the injected agent seam (the spy)</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a>  * @param {number}   [o.round=1]</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>  * @param {?string}  [o.northStar=null]</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>  * @param {Array}    o.reviews                        lineage-tagged per-reviewer reviews</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a>  * @param {string[]}[o.priorBlockerIds=[]]</span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a>  * @param {boolean} [o.debate=true]  [o.judge=true]  [o.synthesize=true]</span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a>  * @param {object}  [o.g8={enabled:false}]            G8 fusion options (default inert)</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a>  * @returns {Promise&lt;object&gt;} the round result + `counts:{synthesizer,judge,debate}` (the spy seam)</span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a>  */</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a> export async function orchestrateRound({</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>   agent,</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>   round = 1,</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>   northStar = null,</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>   reviews,</span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>   priorBlockerIds = [],</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a>   debate = true,</span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>   judge = true,</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>   synthesize = true,</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a>   g8 = { enabled: false },</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a> } = {}) {</span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a>     throw new HaltError(&#x27;orchestrateRound requires an agent() function&#x27;, &#x27;pass the injected seam: { agent }&#x27;);</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a>   }</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a>   if (!Array.isArray(reviews)) {</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a>     throw new HaltError(&#x27;orchestrateRound requires a reviews[] array (the round\&#x27;s lineage-tagged reviews)&#x27;);</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a>   }</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a> </span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a>   // Wave 1: reliability-wrap the injected seam at this injection boundary, so every</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>   // adjudication call inherits typed retry + round-aware idempotency. The spy still</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a>   // counts ONE logical call per dispatch (it wraps the reliable seam); the wrapper&#x27;s</span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a>   // `round` keying guarantees NO cross-round dedup — two same-role calls in different</span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a>   // rounds both execute. Transparent on the success path (one inner call per dispatch).</span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a>   const reliableAgent = makeReliableAgent({ agent });</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a> </span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a>   // The call-count spy seam (f): one counting wrapper per adjudication role.</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>   const counts = { synthesizer: 0, judge: 0, debate: 0 };</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>   const spy = (role) =&gt; async (prompt, opts = {}) =&gt; {</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a>     counts[role] += 1;</span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>     return reliableAgent(prompt, { ...opts, role, round });</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>   };</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a> </span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a>   // G3 ≥2-agree + G6 identity + G5 dry: the trio tally (the load-bearing reuse).</span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a>   const tally = tallyFindings(reviews, { priorBlockerIds });</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a> </span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a>   // GATE-1: independent origins via the shared module (the sole counter).</span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a>   const quorum = gateOneQuorum(reviews, { attestedLineages: g8?.attestedLineages ?? null });</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a> </span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a>   // G9 conditional debate (d): fires exactly once per conflicting independent-origin pair.</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a>   const conflicts = detectOriginConflicts(reviews);</span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a>   const debateResult = debate</span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>     ? await runDebateGate({ agent: spy(&#x27;debate&#x27;), conflicts, round })</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>     : { fired: false, count: 0, resolutions: [] };</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a> </span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>   // G8 cross-lineage fusion (flagged-inert by default; routes through the shared module).</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>   const fusion = g8FuseOrigins(reviews, g8);</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a> </span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>   // G4 Judge + Synthesizer: INDEPENDENT seats (the Judge reads the tally findings; the</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>   // Synthesizer steers off the same tally) — dispatched CONCURRENTLY (2026-07-11; they</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a>   // ran serially for no reason, a free agent-call of latency in every medium+ round).</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a>   // Call counts, spy semantics, and results are identical to the serial path.</span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a>   let judgeVerdict = null;</span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a>   let direction = null;</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a>   const judgeP = judge</span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a>     ? makeJudge({ agent: spy(&#x27;judge&#x27;) }).decide({ northStar, findings: tally.findings, round })</span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a>     : Promise.resolve(null);</span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a>   const synthP = synthesize</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a>     ? makeSynthesizer({ agent: spy(&#x27;synthesizer&#x27;), northStar }).direct({ round, verdict: tally, northStar })</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a>     : Promise.resolve(null);</span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a>   [judgeVerdict, direction] = await Promise.all([judgeP, synthP]);</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a> </span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>   return {</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a>     round,</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a>     reviews,</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>     tally,</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>     quorum,</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>     conflicts,</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>     debate: debateResult,</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>     g8: fusion,</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a>     judgeVerdict,</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a>     direction,</span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a>     counts,</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>     dry: !!tally.dry,</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>     empty: isEmptyRound(reviews),</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>   };</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a> }</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a> </span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a> // ── (e) Synthesizer steering, measured vs a token/round-matched control ────────────────────────────</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a> // A heterogeneous reviewer panel that REUSES the trio roster (SHARK_ROLES) + angle rotation</span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a> // (angleForShark) for G3 heterogeneity, calling the injected agent once per reviewer. The verifier</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a> // prompt is researchPrime&#x27;s own (the contract surface anticipates this: makeSharkDriver emits a</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a> // plan-level Shark prompt; verification reviewers need a different one) — but the ROSTER and the</span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a> // angle rotation are the trio&#x27;s, reused not forked. A `focus` hint (the Synthesizer&#x27;s steer) is</span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a> // surfaced to the panel so steered and control runs differ ONLY by whether steering is carried.</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a> /**</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>  * True when the engine must spawn the G3 panel rather than adjudicate supplied</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>  * reviews: missing/non-array, empty array, or every reviewer has zero findings.</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a>  * (journal 0057 — empty findings arrays used to mean &quot;operator will paste&quot;.)</span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>  */</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a> export function isVacantReviews(reviews) {</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>   if (!Array.isArray(reviews) || reviews.length === 0) return true;</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>   return reviews.every((r) =&gt; !Array.isArray(r?.findings) || r.findings.length === 0);</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a> }</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a> </span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a> /**</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>  * Coerce a live-panel finding onto the field-law surface: traces_to_north_star</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>  * is the STRING &#x27;yes&#x27;/&#x27;no&#x27; (booleans coerced — they silently demoted every</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>  * finding when left as booleans, 2026-08-15). Anything else HALTs; never default</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>  * a missing trace to &#x27;yes&#x27; (that would inflate AXIS).</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>  */</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a> export function normalizePanelFindings(raw) {</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>   if (!Array.isArray(raw)) return [];</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>   return raw.map((f, i) =&gt; {</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>     if (!f || typeof f !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>       throw new HaltError(`panel finding [${i}] is not an object`);</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>     }</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a>     let t = f.traces_to_north_star;</span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a>     if (t === true || t === &#x27;true&#x27;) t = &#x27;yes&#x27;;</span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a>     else if (t === false || t === &#x27;false&#x27;) t = &#x27;no&#x27;;</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a>     if (t !== &#x27;yes&#x27; &amp;&amp; t !== &#x27;no&#x27;) {</span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>       throw new HaltError(</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a>         `panel finding [${i}] traces_to_north_star must be the STRING &#x27;yes&#x27; or &#x27;no&#x27; (booleans coerced), got ${JSON.stringify(f.traces_to_north_star)}`,</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a>       );</span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a>     }</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a>     const topic = typeof f.topic === &#x27;string&#x27; &amp;&amp; f.topic.trim() ? f.topic.trim() : `finding-${i + 1}`;</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>     const message = typeof f.message === &#x27;string&#x27; &amp;&amp; f.message.trim() ? f.message.trim() : topic;</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>     return { ...f, topic, message, traces_to_north_star: t, severity: f.severity ?? &#x27;MINOR&#x27; };</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>   });</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a> }</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a> </span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a> function reviewerPrompt(role, { round, angle, focus, artifact, northStar, heartbeatPath }) {</span>
+<span class="source-line" id="L526"><a href="#L526" aria-label="Line 526">526</a>   return [</span>
+<span class="source-line" id="L527"><a href="#L527" aria-label="Line 527">527</a>     `[researchPrime G3 verification reviewer — ${role.role} (${role.persona}); angle ${angle}]`,</span>
+<span class="source-line" id="L528"><a href="#L528" aria-label="Line 528">528</a>     `round ${round}: independently verify the claims and report any defect you can substantiate.`,</span>
+<span class="source-line" id="L529"><a href="#L529" aria-label="Line 529">529</a>     artifact ? `ARTIFACT (absolute path — read this file, do not guess): ${artifact}` : null,</span>
+<span class="source-line" id="L530"><a href="#L530" aria-label="Line 530">530</a>     northStar ? `NORTH STAR: ${northStar}` : null,</span>
+<span class="source-line" id="L531"><a href="#L531" aria-label="Line 531">531</a>     // G6 identity discipline: agreement is keyed on claim_id FIRST (falling back to</span>
+<span class="source-line" id="L532"><a href="#L532" aria-label="Line 532">532</a>     // the topic slug only when no id exists). Three reviewers wording the same claim</span>
+<span class="source-line" id="L533"><a href="#L533" aria-label="Line 533">533</a>     // three ways defeated the &gt;=2-agree quorum once (journal 0001) — never again.</span>
+<span class="source-line" id="L534"><a href="#L534" aria-label="Line 534">534</a>     `For EVERY finding: when the claim you dispute carries an id in the artifact, set`,</span>
+<span class="source-line" id="L535"><a href="#L535" aria-label="Line 535">535</a>     `claim_id to that EXACT id (agreement across reviewers is keyed on it); always also`,</span>
+<span class="source-line" id="L536"><a href="#L536" aria-label="Line 536">536</a>     `set topic to a short stable phrase naming the issue.`,</span>
+<span class="source-line" id="L537"><a href="#L537" aria-label="Line 537">537</a>     `Return JSON { findings: [{ claim_id?, topic, severity, traces_to_north_star, message }] }.`,</span>
+<span class="source-line" id="L538"><a href="#L538" aria-label="Line 538">538</a>     `traces_to_north_star MUST be the STRING &quot;yes&quot; or &quot;no&quot;, never a boolean.`,</span>
+<span class="source-line" id="L539"><a href="#L539" aria-label="Line 539">539</a>     `If you find nothing AXIS-serving, return { findings: [] } — an empty look is honest.`,</span>
+<span class="source-line" id="L540"><a href="#L540" aria-label="Line 540">540</a>     focus ? `STEER (Synthesizer): press hardest on — ${focus}` : `(no steering hint this round)`,</span>
+<span class="source-line" id="L541"><a href="#L541" aria-label="Line 541">541</a>     lookinAppendix({ heartbeatPath, northStar }),</span>
+<span class="source-line" id="L542"><a href="#L542" aria-label="Line 542">542</a>   ].filter(Boolean).join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L543"><a href="#L543" aria-label="Line 543">543</a> }</span>
+<span class="source-line" id="L544"><a href="#L544" aria-label="Line 544">544</a> </span>
+<span class="source-line" id="L545"><a href="#L545" aria-label="Line 545">545</a> export { DEFAULT_CHECKIN_MS, DEFAULT_DEAD_IDLE_MS, DEFAULT_SILENT_KILL_MS };</span>
+<span class="source-line" id="L546"><a href="#L546" aria-label="Line 546">546</a> </span>
+<span class="source-line" id="L547"><a href="#L547" aria-label="Line 547">547</a> /**</span>
+<span class="source-line" id="L548"><a href="#L548" aria-label="Line 548">548</a>  * Recover the findings object from a live seat&#x27;s reply. The drivers return `{ text, rec }`</span>
+<span class="source-line" id="L549"><a href="#L549" aria-label="Line 549">549</a>  * (the model&#x27;s final transcript text), and a real reviewer answers with a ```json-fenced</span>
+<span class="source-line" id="L550"><a href="#L550" aria-label="Line 550">550</a>  * findings object, often after prose. Before 2026-09-04 the panel read `out?.findings`</span>
+<span class="source-line" id="L551"><a href="#L551" aria-label="Line 551">551</a>  * directly, so EVERY live seat reply was silently recorded as zero findings and an</span>
+<span class="source-line" id="L552"><a href="#L552" aria-label="Line 552">552</a>  * unparsed reply was indistinguishable from a clean look (three seats, three fenced</span>
+<span class="source-line" id="L553"><a href="#L553" aria-label="Line 553">553</a>  * findings objects, engine tally 0 — run report/researchprime-novelty, journal 0068).</span>
+<span class="source-line" id="L554"><a href="#L554" aria-label="Line 554">554</a>  * Returns { findings: Array|null, raw: string, parsed: &#x27;object&#x27;|&#x27;json&#x27;|&#x27;empty&#x27;|&#x27;unparsed&#x27; }.</span>
+<span class="source-line" id="L555"><a href="#L555" aria-label="Line 555">555</a>  */</span>
+<span class="source-line" id="L556"><a href="#L556" aria-label="Line 556">556</a> export function extractPanelFindings(out) {</span>
+<span class="source-line" id="L557"><a href="#L557" aria-label="Line 557">557</a>   if (out &amp;&amp; typeof out === &#x27;object&#x27; &amp;&amp; Array.isArray(out.findings)) {</span>
+<span class="source-line" id="L558"><a href="#L558" aria-label="Line 558">558</a>     return { findings: out.findings, raw: typeof out.text === &#x27;string&#x27; ? out.text : &#x27;&#x27;, parsed: &#x27;object&#x27; };</span>
+<span class="source-line" id="L559"><a href="#L559" aria-label="Line 559">559</a>   }</span>
+<span class="source-line" id="L560"><a href="#L560" aria-label="Line 560">560</a>   const text = typeof out === &#x27;string&#x27;</span>
+<span class="source-line" id="L561"><a href="#L561" aria-label="Line 561">561</a>     ? out</span>
+<span class="source-line" id="L562"><a href="#L562" aria-label="Line 562">562</a>     : (out &amp;&amp; typeof out.text === &#x27;string&#x27; ? out.text : (out &amp;&amp; typeof out.reply === &#x27;string&#x27; ? out.reply : &#x27;&#x27;));</span>
+<span class="source-line" id="L563"><a href="#L563" aria-label="Line 563">563</a>   if (!text.trim()) return { findings: null, raw: &#x27;&#x27;, parsed: &#x27;empty&#x27; };</span>
+<span class="source-line" id="L564"><a href="#L564" aria-label="Line 564">564</a>   const candidates = [];</span>
+<span class="source-line" id="L565"><a href="#L565" aria-label="Line 565">565</a>   const fenced = [...text.matchAll(/```(?:json|JSON)?\s*([\s\S]*?)```/g)].map((m) =&gt; m[1].trim());</span>
+<span class="source-line" id="L566"><a href="#L566" aria-label="Line 566">566</a>   for (let i = fenced.length - 1; i &gt;= 0; i--) candidates.push(fenced[i]);</span>
+<span class="source-line" id="L567"><a href="#L567" aria-label="Line 567">567</a>   candidates.push(text.trim());</span>
+<span class="source-line" id="L568"><a href="#L568" aria-label="Line 568">568</a>   // last brace-balanced object that contains &quot;findings&quot;</span>
+<span class="source-line" id="L569"><a href="#L569" aria-label="Line 569">569</a>   const key = text.lastIndexOf(&#x27;&quot;findings&quot;&#x27;);</span>
+<span class="source-line" id="L570"><a href="#L570" aria-label="Line 570">570</a>   if (key &gt;= 0) {</span>
+<span class="source-line" id="L571"><a href="#L571" aria-label="Line 571">571</a>     let start = text.lastIndexOf(&#x27;{&#x27;, key);</span>
+<span class="source-line" id="L572"><a href="#L572" aria-label="Line 572">572</a>     while (start &gt;= 0) {</span>
+<span class="source-line" id="L573"><a href="#L573" aria-label="Line 573">573</a>       let depth = 0; let end = -1;</span>
+<span class="source-line" id="L574"><a href="#L574" aria-label="Line 574">574</a>       for (let i = start; i &lt; text.length; i++) {</span>
+<span class="source-line" id="L575"><a href="#L575" aria-label="Line 575">575</a>         const ch = text[i];</span>
+<span class="source-line" id="L576"><a href="#L576" aria-label="Line 576">576</a>         if (ch === &#x27;{&#x27;) depth++;</span>
+<span class="source-line" id="L577"><a href="#L577" aria-label="Line 577">577</a>         else if (ch === &#x27;}&#x27;) { depth--; if (depth === 0) { end = i; break; } }</span>
+<span class="source-line" id="L578"><a href="#L578" aria-label="Line 578">578</a>       }</span>
+<span class="source-line" id="L579"><a href="#L579" aria-label="Line 579">579</a>       if (end &gt; start) candidates.push(text.slice(start, end + 1));</span>
+<span class="source-line" id="L580"><a href="#L580" aria-label="Line 580">580</a>       start = text.lastIndexOf(&#x27;{&#x27;, start - 1);</span>
+<span class="source-line" id="L581"><a href="#L581" aria-label="Line 581">581</a>       if (candidates.length &gt; 12) break;</span>
+<span class="source-line" id="L582"><a href="#L582" aria-label="Line 582">582</a>     }</span>
+<span class="source-line" id="L583"><a href="#L583" aria-label="Line 583">583</a>   }</span>
+<span class="source-line" id="L584"><a href="#L584" aria-label="Line 584">584</a>   for (const c of candidates) {</span>
+<span class="source-line" id="L585"><a href="#L585" aria-label="Line 585">585</a>     try {</span>
+<span class="source-line" id="L586"><a href="#L586" aria-label="Line 586">586</a>       const j = JSON.parse(c);</span>
+<span class="source-line" id="L587"><a href="#L587" aria-label="Line 587">587</a>       if (j &amp;&amp; typeof j === &#x27;object&#x27; &amp;&amp; Array.isArray(j.findings)) return { findings: j.findings, raw: text, parsed: &#x27;json&#x27; };</span>
+<span class="source-line" id="L588"><a href="#L588" aria-label="Line 588">588</a>     } catch { /* try the next candidate */ }</span>
+<span class="source-line" id="L589"><a href="#L589" aria-label="Line 589">589</a>   }</span>
+<span class="source-line" id="L590"><a href="#L590" aria-label="Line 590">590</a>   return { findings: null, raw: text, parsed: &#x27;unparsed&#x27; };</span>
+<span class="source-line" id="L591"><a href="#L591" aria-label="Line 591">591</a> }</span>
+<span class="source-line" id="L592"><a href="#L592" aria-label="Line 592">592</a> </span>
+<span class="source-line" id="L593"><a href="#L593" aria-label="Line 593">593</a> const RAW_REPLY_KEEP = 20000;</span>
+<span class="source-line" id="L594"><a href="#L594" aria-label="Line 594">594</a> </span>
+<span class="source-line" id="L595"><a href="#L595" aria-label="Line 595">595</a> export function panelSeatAbstain(job, err) {</span>
+<span class="source-line" id="L596"><a href="#L596" aria-label="Line 596">596</a>   const msg = (err &amp;&amp; (err.message || String(err))) || &#x27;rejected&#x27;;</span>
+<span class="source-line" id="L597"><a href="#L597" aria-label="Line 597">597</a>   return {</span>
+<span class="source-line" id="L598"><a href="#L598" aria-label="Line 598">598</a>     reviewer: job.role.role,</span>
+<span class="source-line" id="L599"><a href="#L599" aria-label="Line 599">599</a>     angle: job.angle,</span>
+<span class="source-line" id="L600"><a href="#L600" aria-label="Line 600">600</a>     lineage: null,</span>
+<span class="source-line" id="L601"><a href="#L601" aria-label="Line 601">601</a>     answerable: &#x27;no&#x27;,</span>
+<span class="source-line" id="L602"><a href="#L602" aria-label="Line 602">602</a>     panel_fault: msg,</span>
+<span class="source-line" id="L603"><a href="#L603" aria-label="Line 603">603</a>     note: `shark ${job.role.role} abstained (${msg})`,</span>
+<span class="source-line" id="L604"><a href="#L604" aria-label="Line 604">604</a>     findings: [],</span>
+<span class="source-line" id="L605"><a href="#L605" aria-label="Line 605">605</a>   };</span>
+<span class="source-line" id="L606"><a href="#L606" aria-label="Line 606">606</a> }</span>
+<span class="source-line" id="L607"><a href="#L607" aria-label="Line 607">607</a> </span>
+<span class="source-line" id="L608"><a href="#L608" aria-label="Line 608">608</a> /** Seats that actually looked — not timed out, not thrown, not abstain-stamped. */</span>
+<span class="source-line" id="L609"><a href="#L609" aria-label="Line 609">609</a> export function countSurvivingPanel(reviews) {</span>
+<span class="source-line" id="L610"><a href="#L610" aria-label="Line 610">610</a>   if (!Array.isArray(reviews)) return 0;</span>
+<span class="source-line" id="L611"><a href="#L611" aria-label="Line 611">611</a>   return reviews.filter((r) =&gt; r &amp;&amp; r.answerable !== &#x27;no&#x27; &amp;&amp; !r.panel_fault).length;</span>
+<span class="source-line" id="L612"><a href="#L612" aria-label="Line 612">612</a> }</span>
+<span class="source-line" id="L613"><a href="#L613" aria-label="Line 613">613</a> </span>
+<span class="source-line" id="L614"><a href="#L614" aria-label="Line 614">614</a> /**</span>
+<span class="source-line" id="L615"><a href="#L615" aria-label="Line 615">615</a>  * Spawn the heterogeneous G3 reviewer panel through the injected agent seam.</span>
+<span class="source-line" id="L616"><a href="#L616" aria-label="Line 616">616</a>  * Reuses SHARK_ROLES + angleForShark (not a second roster). Concurrent by</span>
+<span class="source-line" id="L617"><a href="#L617" aria-label="Line 617">617</a>  * default; RESEARCHPRIME_CONCURRENT_PANEL=0 restores serial (measureSteering</span>
+<span class="source-line" id="L618"><a href="#L618" aria-label="Line 618">618</a>  * matched-budget). Live path: run-rounds calls this when reviews are vacant.</span>
+<span class="source-line" id="L619"><a href="#L619" aria-label="Line 619">619</a>  *</span>
+<span class="source-line" id="L620"><a href="#L620" aria-label="Line 620">620</a>  * Swarm look-in (journal 0059/0060/0061): one hung/thrown shark ABSTAINS.</span>
+<span class="source-line" id="L621"><a href="#L621" aria-label="Line 621">621</a>  * Time-since-start is not a kill IF the seat is heartbeating. Silence is.</span>
+<span class="source-line" id="L622"><a href="#L622" aria-label="Line 622">622</a>  * Look in first; still silent → kill and respawn once. A talking seat that</span>
+<span class="source-line" id="L623"><a href="#L623" aria-label="Line 623">623</a>  * goes quiet dies on deadIdleMs. LOOKIN when the seat admits a rabbit hole.</span>
+<span class="source-line" id="L624"><a href="#L624" aria-label="Line 624">624</a>  */</span>
+<span class="source-line" id="L625"><a href="#L625" aria-label="Line 625">625</a> export async function runPanelRound({</span>
+<span class="source-line" id="L626"><a href="#L626" aria-label="Line 626">626</a>   agent, round, focus, onCall, artifact, northStar, lineage,</span>
+<span class="source-line" id="L627"><a href="#L627" aria-label="Line 627">627</a>   checkInMs = DEFAULT_CHECKIN_MS,</span>
+<span class="source-line" id="L628"><a href="#L628" aria-label="Line 628">628</a>   deadIdleMs = DEFAULT_DEAD_IDLE_MS,</span>
+<span class="source-line" id="L629"><a href="#L629" aria-label="Line 629">629</a>   silentKillMs = DEFAULT_SILENT_KILL_MS,</span>
+<span class="source-line" id="L630"><a href="#L630" aria-label="Line 630">630</a>   heartbeatDir = null,</span>
+<span class="source-line" id="L631"><a href="#L631" aria-label="Line 631">631</a>   onLookin = null,</span>
+<span class="source-line" id="L632"><a href="#L632" aria-label="Line 632">632</a> } = {}) {</span>
+<span class="source-line" id="L633"><a href="#L633" aria-label="Line 633">633</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L634"><a href="#L634" aria-label="Line 634">634</a>     throw new HaltError(&#x27;runPanelRound requires an agent() function&#x27;, &#x27;pass the injected seam: { agent }&#x27;);</span>
+<span class="source-line" id="L635"><a href="#L635" aria-label="Line 635">635</a>   }</span>
+<span class="source-line" id="L636"><a href="#L636" aria-label="Line 636">636</a>   if (artifact) {</span>
+<span class="source-line" id="L637"><a href="#L637" aria-label="Line 637">637</a>     if (typeof artifact !== &#x27;string&#x27; || !(path.win32.isAbsolute(artifact) || path.posix.isAbsolute(artifact))) {</span>
+<span class="source-line" id="L638"><a href="#L638" aria-label="Line 638">638</a>       throw new HaltError(</span>
+<span class="source-line" id="L639"><a href="#L639" aria-label="Line 639">639</a>         `runPanelRound artifact must be an ABSOLUTE path (journal 0002), got ${JSON.stringify(artifact)}`,</span>
+<span class="source-line" id="L640"><a href="#L640" aria-label="Line 640">640</a>       );</span>
+<span class="source-line" id="L641"><a href="#L641" aria-label="Line 641">641</a>     }</span>
+<span class="source-line" id="L642"><a href="#L642" aria-label="Line 642">642</a>   }</span>
+<span class="source-line" id="L643"><a href="#L643" aria-label="Line 643">643</a>   const jobs = SHARK_ROLES.map((role, i) =&gt; ({ role, angle: angleForShark(round, i) }));</span>
+<span class="source-line" id="L644"><a href="#L644" aria-label="Line 644">644</a>   const runSeat = async (job) =&gt; {</span>
+<span class="source-line" id="L645"><a href="#L645" aria-label="Line 645">645</a>     if (onCall) onCall();</span>
+<span class="source-line" id="L646"><a href="#L646" aria-label="Line 646">646</a>     const hb = heartbeatDir</span>
+<span class="source-line" id="L647"><a href="#L647" aria-label="Line 647">647</a>       ? path.join(heartbeatDir, `heartbeat-r${round}-${job.role.role}.json`)</span>
+<span class="source-line" id="L648"><a href="#L648" aria-label="Line 648">648</a>       : null;</span>
+<span class="source-line" id="L649"><a href="#L649" aria-label="Line 649">649</a>     try {</span>
+<span class="source-line" id="L650"><a href="#L650" aria-label="Line 650">650</a>       const prompt = reviewerPrompt(job.role, {</span>
+<span class="source-line" id="L651"><a href="#L651" aria-label="Line 651">651</a>         round, angle: job.angle, focus, artifact, northStar, heartbeatPath: hb,</span>
+<span class="source-line" id="L652"><a href="#L652" aria-label="Line 652">652</a>       });</span>
+<span class="source-line" id="L653"><a href="#L653" aria-label="Line 653">653</a>       const out = await superviseSeat({</span>
+<span class="source-line" id="L654"><a href="#L654" aria-label="Line 654">654</a>         run: ({ nudge } = {}) =&gt; agent(nudge ? `${nudge}\n\n${prompt}` : prompt, {</span>
+<span class="source-line" id="L655"><a href="#L655" aria-label="Line 655">655</a>           label: `reviewer:${job.role.role}:r${round}`,</span>
+<span class="source-line" id="L656"><a href="#L656" aria-label="Line 656">656</a>           role: &#x27;reviewer&#x27;,</span>
+<span class="source-line" id="L657"><a href="#L657" aria-label="Line 657">657</a>           round,</span>
+<span class="source-line" id="L658"><a href="#L658" aria-label="Line 658">658</a>           angle: job.angle,</span>
+<span class="source-line" id="L659"><a href="#L659" aria-label="Line 659">659</a>           focus: focus ?? null,</span>
+<span class="source-line" id="L660"><a href="#L660" aria-label="Line 660">660</a>         }),</span>
+<span class="source-line" id="L661"><a href="#L661" aria-label="Line 661">661</a>         getTrail: hb ? () =&gt; trailFromFile(hb) : () =&gt; null,</span>
+<span class="source-line" id="L662"><a href="#L662" aria-label="Line 662">662</a>         checkInMs,</span>
+<span class="source-line" id="L663"><a href="#L663" aria-label="Line 663">663</a>         silentKillMs,</span>
+<span class="source-line" id="L664"><a href="#L664" aria-label="Line 664">664</a>         deadIdleMs,</span>
+<span class="source-line" id="L665"><a href="#L665" aria-label="Line 665">665</a>         northStar,</span>
+<span class="source-line" id="L666"><a href="#L666" aria-label="Line 666">666</a>         task: artifact,</span>
+<span class="source-line" id="L667"><a href="#L667" aria-label="Line 667">667</a>         onLookin,</span>
+<span class="source-line" id="L668"><a href="#L668" aria-label="Line 668">668</a>       });</span>
+<span class="source-line" id="L669"><a href="#L669" aria-label="Line 669">669</a>       const extracted = extractPanelFindings(out);</span>
+<span class="source-line" id="L670"><a href="#L670" aria-label="Line 670">670</a>       if (extracted.findings === null) {</span>
+<span class="source-line" id="L671"><a href="#L671" aria-label="Line 671">671</a>         // An unparseable or empty reply is NOT a clean look: the seat abstains (honest</span>
+<span class="source-line" id="L672"><a href="#L672" aria-label="Line 672">672</a>         // tracker counts it as not-surviving), and the raw text is kept for the audit.</span>
+<span class="source-line" id="L673"><a href="#L673" aria-label="Line 673">673</a>         return {</span>
+<span class="source-line" id="L674"><a href="#L674" aria-label="Line 674">674</a>           ...panelSeatAbstain(job, new Error(`reply not parseable as a findings object (${extracted.parsed})`)),</span>
+<span class="source-line" id="L675"><a href="#L675" aria-label="Line 675">675</a>           lineage: lineage ?? null,</span>
+<span class="source-line" id="L676"><a href="#L676" aria-label="Line 676">676</a>           raw_reply: String(extracted.raw || &#x27;&#x27;).slice(0, RAW_REPLY_KEEP),</span>
+<span class="source-line" id="L677"><a href="#L677" aria-label="Line 677">677</a>         };</span>
+<span class="source-line" id="L678"><a href="#L678" aria-label="Line 678">678</a>       }</span>
+<span class="source-line" id="L679"><a href="#L679" aria-label="Line 679">679</a>       return {</span>
+<span class="source-line" id="L680"><a href="#L680" aria-label="Line 680">680</a>         reviewer: job.role.role,</span>
+<span class="source-line" id="L681"><a href="#L681" aria-label="Line 681">681</a>         angle: job.angle,</span>
+<span class="source-line" id="L682"><a href="#L682" aria-label="Line 682">682</a>         lineage: lineage ?? null,</span>
+<span class="source-line" id="L683"><a href="#L683" aria-label="Line 683">683</a>         findings: normalizePanelFindings(extracted.findings),</span>
+<span class="source-line" id="L684"><a href="#L684" aria-label="Line 684">684</a>         reply_parsed_as: extracted.parsed,</span>
+<span class="source-line" id="L685"><a href="#L685" aria-label="Line 685">685</a>         raw_reply: String(extracted.raw || &#x27;&#x27;).slice(0, RAW_REPLY_KEEP),</span>
+<span class="source-line" id="L686"><a href="#L686" aria-label="Line 686">686</a>       };</span>
+<span class="source-line" id="L687"><a href="#L687" aria-label="Line 687">687</a>     } catch (err) {</span>
+<span class="source-line" id="L688"><a href="#L688" aria-label="Line 688">688</a>       return panelSeatAbstain(job, err);</span>
+<span class="source-line" id="L689"><a href="#L689" aria-label="Line 689">689</a>     }</span>
+<span class="source-line" id="L690"><a href="#L690" aria-label="Line 690">690</a>   };</span>
+<span class="source-line" id="L691"><a href="#L691" aria-label="Line 691">691</a> </span>
+<span class="source-line" id="L692"><a href="#L692" aria-label="Line 692">692</a>   if (process.env.RESEARCHPRIME_CONCURRENT_PANEL === &#x27;0&#x27;) {</span>
+<span class="source-line" id="L693"><a href="#L693" aria-label="Line 693">693</a>     const reviews = [];</span>
+<span class="source-line" id="L694"><a href="#L694" aria-label="Line 694">694</a>     for (const job of jobs) reviews.push(await runSeat(job));</span>
+<span class="source-line" id="L695"><a href="#L695" aria-label="Line 695">695</a>     return reviews;</span>
+<span class="source-line" id="L696"><a href="#L696" aria-label="Line 696">696</a>   }</span>
+<span class="source-line" id="L697"><a href="#L697" aria-label="Line 697">697</a>   const settled = await Promise.allSettled(jobs.map(runSeat));</span>
+<span class="source-line" id="L698"><a href="#L698" aria-label="Line 698">698</a>   return settled.map((s, i) =&gt; s.status === &#x27;fulfilled&#x27; ? s.value : panelSeatAbstain(jobs[i], s.reason));</span>
+<span class="source-line" id="L699"><a href="#L699" aria-label="Line 699">699</a> }</span>
+<span class="source-line" id="L700"><a href="#L700" aria-label="Line 700">700</a> </span>
+<span class="source-line" id="L701"><a href="#L701" aria-label="Line 701">701</a> /**</span>
+<span class="source-line" id="L702"><a href="#L702" aria-label="Line 702">702</a>  * Measure the active Synthesizer&#x27;s STEERING against a token/round-MATCHED control (done-when e).</span>
+<span class="source-line" id="L703"><a href="#L703" aria-label="Line 703">703</a>  *</span>
+<span class="source-line" id="L704"><a href="#L704" aria-label="Line 704">704</a>  * Both arms run the SAME number of rounds and make the SAME number of agent calls (the same panel +</span>
+<span class="source-line" id="L705"><a href="#L705" aria-label="Line 705">705</a>  * one Synthesizer direction per round) — so neither arm gets extra budget. The ONLY difference: the</span>
+<span class="source-line" id="L706"><a href="#L706" aria-label="Line 706">706</a>  * STEERED arm carries the Synthesizer&#x27;s top suggestion forward as the next round&#x27;s `focus`, while</span>
+<span class="source-line" id="L707"><a href="#L707" aria-label="Line 707">707</a>  * the CONTROL arm runs the Synthesizer identically (matched calls) but DISCARDS its suggestion</span>
+<span class="source-line" id="L708"><a href="#L708" aria-label="Line 708">708</a>  * (focus stays null). Any gap in findings caught is therefore attributable to STEERING, not budget.</span>
+<span class="source-line" id="L709"><a href="#L709" aria-label="Line 709">709</a>  *</span>
+<span class="source-line" id="L710"><a href="#L710" aria-label="Line 710">710</a>  * @param {object} o</span>
+<span class="source-line" id="L711"><a href="#L711" aria-label="Line 711">711</a>  * @param {Function} o.agent                  the injected agent seam (scripted in tests)</span>
+<span class="source-line" id="L712"><a href="#L712" aria-label="Line 712">712</a>  * @param {number}   [o.rounds=2]</span>
+<span class="source-line" id="L713"><a href="#L713" aria-label="Line 713">713</a>  * @param {?string}  [o.northStar=null]</span>
+<span class="source-line" id="L714"><a href="#L714" aria-label="Line 714">714</a>  * @returns {Promise&lt;{ rounds:number, matched:boolean, steeringEffect:number,</span>
+<span class="source-line" id="L715"><a href="#L715" aria-label="Line 715">715</a>  *   steered:{caught:string[], agentCalls:number}, control:{caught:string[], agentCalls:number} }&gt;}</span>
+<span class="source-line" id="L716"><a href="#L716" aria-label="Line 716">716</a>  */</span>
+<span class="source-line" id="L717"><a href="#L717" aria-label="Line 717">717</a> export async function measureSteering({ agent, rounds = 2, northStar = null } = {}) {</span>
+<span class="source-line" id="L718"><a href="#L718" aria-label="Line 718">718</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L719"><a href="#L719" aria-label="Line 719">719</a>     throw new HaltError(&#x27;measureSteering requires an agent() function&#x27;, &#x27;pass the injected seam: { agent }&#x27;);</span>
+<span class="source-line" id="L720"><a href="#L720" aria-label="Line 720">720</a>   }</span>
+<span class="source-line" id="L721"><a href="#L721" aria-label="Line 721">721</a>   if (!Number.isInteger(rounds) || rounds &lt; 1) {</span>
+<span class="source-line" id="L722"><a href="#L722" aria-label="Line 722">722</a>     throw new HaltError(&#x27;measureSteering: rounds must be an integer &gt;= 1&#x27;);</span>
+<span class="source-line" id="L723"><a href="#L723" aria-label="Line 723">723</a>   }</span>
+<span class="source-line" id="L724"><a href="#L724" aria-label="Line 724">724</a> </span>
+<span class="source-line" id="L725"><a href="#L725" aria-label="Line 725">725</a>   const arm = async (steer) =&gt; {</span>
+<span class="source-line" id="L726"><a href="#L726" aria-label="Line 726">726</a>     let agentCalls = 0;</span>
+<span class="source-line" id="L727"><a href="#L727" aria-label="Line 727">727</a>     const counted = async (prompt, opts) =&gt; {</span>
+<span class="source-line" id="L728"><a href="#L728" aria-label="Line 728">728</a>       agentCalls += 1;</span>
+<span class="source-line" id="L729"><a href="#L729" aria-label="Line 729">729</a>       return agent(prompt, opts);</span>
+<span class="source-line" id="L730"><a href="#L730" aria-label="Line 730">730</a>     };</span>
+<span class="source-line" id="L731"><a href="#L731" aria-label="Line 731">731</a>     const synth = makeSynthesizer({ agent: counted, northStar });</span>
+<span class="source-line" id="L732"><a href="#L732" aria-label="Line 732">732</a>     const caught = new Set();</span>
+<span class="source-line" id="L733"><a href="#L733" aria-label="Line 733">733</a>     let focus = null;</span>
+<span class="source-line" id="L734"><a href="#L734" aria-label="Line 734">734</a>     for (let r = 1; r &lt;= rounds; r++) {</span>
+<span class="source-line" id="L735"><a href="#L735" aria-label="Line 735">735</a>       const reviews = await runPanelRound({ agent: counted, round: r, focus });</span>
+<span class="source-line" id="L736"><a href="#L736" aria-label="Line 736">736</a>       for (const rv of reviews) for (const f of rv.findings) caught.add(normalizeFindingId(f));</span>
+<span class="source-line" id="L737"><a href="#L737" aria-label="Line 737">737</a>       // The Synthesizer runs IDENTICALLY in both arms (matched calls); only the steered arm USES</span>
+<span class="source-line" id="L738"><a href="#L738" aria-label="Line 738">738</a>       // its suggestion as the next round&#x27;s focus.</span>
+<span class="source-line" id="L739"><a href="#L739" aria-label="Line 739">739</a>       const dir = await synth.direct({ round: r, verdict: { findings: [...caught].map((id) =&gt; ({ id })) }, northStar });</span>
+<span class="source-line" id="L740"><a href="#L740" aria-label="Line 740">740</a>       const suggestion = Array.isArray(dir?.suggestions) &amp;&amp; dir.suggestions.length ? dir.suggestions[0] : null;</span>
+<span class="source-line" id="L741"><a href="#L741" aria-label="Line 741">741</a>       focus = steer ? suggestion : null;</span>
+<span class="source-line" id="L742"><a href="#L742" aria-label="Line 742">742</a>     }</span>
+<span class="source-line" id="L743"><a href="#L743" aria-label="Line 743">743</a>     return { caught: [...caught].sort(), agentCalls };</span>
+<span class="source-line" id="L744"><a href="#L744" aria-label="Line 744">744</a>   };</span>
+<span class="source-line" id="L745"><a href="#L745" aria-label="Line 745">745</a> </span>
+<span class="source-line" id="L746"><a href="#L746" aria-label="Line 746">746</a>   const steered = await arm(true);</span>
+<span class="source-line" id="L747"><a href="#L747" aria-label="Line 747">747</a>   const control = await arm(false);</span>
+<span class="source-line" id="L748"><a href="#L748" aria-label="Line 748">748</a>   return {</span>
+<span class="source-line" id="L749"><a href="#L749" aria-label="Line 749">749</a>     rounds,</span>
+<span class="source-line" id="L750"><a href="#L750" aria-label="Line 750">750</a>     matched: steered.agentCalls === control.agentCalls,</span>
+<span class="source-line" id="L751"><a href="#L751" aria-label="Line 751">751</a>     steeringEffect: steered.caught.length - control.caught.length,</span>
+<span class="source-line" id="L752"><a href="#L752" aria-label="Line 752">752</a>     steered,</span>
+<span class="source-line" id="L753"><a href="#L753" aria-label="Line 753">753</a>     control,</span>
+<span class="source-line" id="L754"><a href="#L754" aria-label="Line 754">754</a>   };</span>
+<span class="source-line" id="L755"><a href="#L755" aria-label="Line 755">755</a> }</span>
+<span class="source-line" id="L756"><a href="#L756" aria-label="Line 756">756</a> </span>
+<span class="source-line" id="L757"><a href="#L757" aria-label="Line 757">757</a> // Re-export the shared-module primitives the round layer routes through, so a consumer/test reads</span>
+<span class="source-line" id="L758"><a href="#L758" aria-label="Line 758">758</a> // the SAME counter the engine + verify-core use (one canonical origin counter, I3/h).</span>
+<span class="source-line" id="L759"><a href="#L759" aria-label="Line 759">759</a> export { meetsQuorum, countIndependentOrigins, STATIC_QUORUM_FLOOR };</span>
+<span class="source-line" id="L760"><a href="#L760" aria-label="Line 760">760</a> </span>
+<span class="source-line" id="L761"><a href="#L761" aria-label="Line 761">761</a> // Re-export the REUSED trio tally + identity (G3 ≥2-agree quorum, G6 stable id) so a consumer/test</span>
+<span class="source-line" id="L762"><a href="#L762" aria-label="Line 762">762</a> // reads the round layer&#x27;s exact G3/G6 surface — these are the trio&#x27;s, reused not forked.</span>
+<span class="source-line" id="L763"><a href="#L763" aria-label="Line 763">763</a> export { tallyFindings, normalizeFindingId };</span></pre></main></body></html>

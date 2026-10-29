@@ -1465,6 +1465,26 @@ Format your output as a JSON object with:
     });
     const { gate3DriverName, substrate: gate3Substrate } = seating;
 
+    if (runOptions.gate3ChannelDead) {
+      const reasoning = `UNJUDGED — independent review channel dead after ping retries (${runOptions.gate3ChannelDead.reason || 'no response'}); the candidate is preserved, not a survivor`;
+      gateLogs.push({
+        gate: 3,
+        name: "Dirac Structural Symmetry Test",
+        substrate: gate3Substrate,
+        passed: null,
+        unjudged: true,
+        reasoning,
+      });
+      return {
+        passed: false,
+        unjudged: true,
+        failedAtGate: null,
+        rejectionReason: reasoning,
+        gateLogs,
+        stageCount: gateLogs.length,
+      };
+    }
+
     // The verifier agent: an injected role-routed stub (tests) wins; else, when a custom runAgent seam
     // is injected, route Gate 3 through it with the cross-family driver (keeps deterministic tests in
     // control); production uses the shared Trio dispatcher with the resolved review-family driver.
@@ -2163,6 +2183,21 @@ Format your output as a JSON object with:
       return {
         mode: 'lean', passed: false, count, survivors: [], killLog: [], unjudged: [], ranking,
         salvage_stamp: 'SALVAGE — no candidates were generated (the generation seat returned an empty or nonconforming portfolio); the review seat was not spent',
+      };
+    }
+    if (runOptions.gate3ChannelDead) {
+      const reason = runOptions.gate3ChannelDead.reason || 'no response';
+      const unjudged = candidates.map((c) => ({
+        round: 1,
+        reason: `UNJUDGED — independent review channel dead after ping retries (${reason}); generated, never judged`,
+        title: c.title,
+        concept: c,
+      }));
+      return {
+        mode: 'lean', passed: false, count, survivors: [], killLog: [], unjudged, ranking,
+        salvage_stamp: 'SALVAGE — Gate-3 channel dead after ping retries; candidates were generated and are preserved under unjudged, never as survivors',
+        honesty_stamp: 'NOT VETTED — independent review channel unreachable after ping retries',
+        gate3_ping: { live: false, driver: runOptions.gate3ChannelDead.driver || null, reason },
       };
     }
 

@@ -1,0 +1,577 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>anchor-api · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>anchor-api</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\Anchor\foundry_api.py</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 e39e19532f64ea320276fd37febf895c716c9f423bb76fbd8f1563c287b33bd7</p></details>
+<p><a href="../sources/anchor-api.py" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> &quot;&quot;&quot;foundry_api.py — the REAL-data API layer behind the folded-in Foundry GUI.</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> This is a faithful Python port of ``foundry-gui/server.mjs`` (the standalone</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> Node sidecar the React app used to talk to). Folding the GUI INTO Anchor means</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> Anchor&#x27;s ``anchor_gui.py`` now serves the built React app from</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> ``foundry-gui/dist`` AND answers the app&#x27;s ``/api/*`` calls itself — no second</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> server, no port 8780.</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> Every value traces to a file on disk (the manifest, each skill&#x27;s SKILL.md +</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> journal, the North Star doc, the sleep-run artifacts); a missing file is an</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> honest empty, never a crash. The three ``sleep_session`` verbs spawn the REAL</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> foundry-v2 kernel CLI (``sleep-kernel-cli.mjs``) headlessly and return its</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> genuine JSON records — nothing here fabricates a proposal.</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> </span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> Stdlib only (json/os/re/subprocess/pathlib/shutil) — ``node`` is invoked as an</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> external CLI, exactly as Anchor already shells out to ``git``/``gh``.</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> import json</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> import os</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> import re</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> import shutil</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> import subprocess</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> from pathlib import Path</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> </span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> import paths as _paths</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> # ── Path config (env-overridable, same defaults as server.mjs) ───────────────</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> ANCHOR_DIR = _paths.ANCHOR_DIR if hasattr(_paths, &quot;ANCHOR_DIR&quot;) else Path(__file__).resolve().parent</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> #: The manifest ships in the Anchor repo root (foundry-v2 Wave 5).</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> MANIFEST_PATH = Path(os.environ.get(&quot;FOUNDRY_MAP&quot;)</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>                      or (ANCHOR_DIR / &quot;foundry_map_v2.json&quot;))</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> FOUNDRY_ROOT = os.environ.get(&quot;FOUNDRY_ROOT&quot;) or &quot;C:/dev/Skill Foundry&quot;</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> NORTH_STAR_PATH = (os.environ.get(&quot;FOUNDRY_NORTH_STAR&quot;)</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>                    or &quot;C:/dev/plans/2026-07-foundry-v2/NORTH-STAR.md&quot;)</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> #: The REAL sleep-session kernel (foundry-v2 kernel build, Wave 2).</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> KERNEL_DIR = (os.environ.get(&quot;FOUNDRY_KERNEL_DIR&quot;)</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>               or &quot;C:/dev/skill-foundry-kernel-wt/planning/portfolio-program&quot;)</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a> KERNEL_CLI = str(Path(KERNEL_DIR) / &quot;src&quot; / &quot;sleep-kernel-cli.mjs&quot;)</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> SKILLS_ROOT = os.environ.get(&quot;FOUNDRY_SKILLS_ROOT&quot;) or &quot;C:/dev/Skill Foundry/skills&quot;</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> #: The git repo whose HEAD is the FROZEN baseline (apply branches off it).</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> SKILLS_REPO = os.environ.get(&quot;FOUNDRY_SKILLS_REPO&quot;) or str(Path(SKILLS_ROOT).parent)</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> #: Where proposal artifacts land (one dir per run) — matches server.mjs&#x27; default.</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> SLEEP_RUNS_DIR = Path(os.environ.get(&quot;FOUNDRY_SLEEP_RUNS&quot;)</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>                       or (ANCHOR_DIR / &quot;foundry-gui&quot; / &quot;sleep-runs&quot;))</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> KERNEL_TIMEOUT_S = int(os.environ.get(&quot;FOUNDRY_KERNEL_TIMEOUT_MS&quot;) or &quot;180000&quot;) / 1000.0</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> </span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> </span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> def _node_cmd() -&gt; str:</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>     &quot;&quot;&quot;The node executable (FOUNDRY_NODE override, else `node` on PATH).&quot;&quot;&quot;</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>     return os.environ.get(&quot;FOUNDRY_NODE&quot;) or shutil.which(&quot;node&quot;) or &quot;node&quot;</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> # ── safe fs helpers (a missing file is an honest empty, never a crash) ────────</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> def _read_text_safe(file_path) -&gt; str:</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>     try:</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>         return Path(file_path).read_text(encoding=&quot;utf-8&quot;)</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>     except OSError:</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>         return None</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> def _stat_safe(file_path):</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>     try:</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>         return os.stat(file_path)</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>     except OSError:</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>         return None</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> </span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a> </span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a> def _read_dir_safe(dir_path):</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>     try:</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>         return list(os.scandir(dir_path))</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>     except OSError:</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>         return []</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> </span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a> # ── real-data extraction (ports of server.mjs) ───────────────────────────────</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> </span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> def _resolve_source(source):</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>     &quot;&quot;&quot;Resolve a manifest ``source`` to an absolute directory.&quot;&quot;&quot;</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>     if not source:</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>         return None</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>     if re.match(r&quot;^[A-Za-z]:[\\/]&quot;, source):</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>         return source</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>     return os.path.join(FOUNDRY_ROOT, source)</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a> </span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> </span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a> def _extract_yaml_description(frontmatter):</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>     &quot;&quot;&quot;Extract the ``description:`` value from YAML frontmatter — handling both</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>     an INLINE scalar (``description: text``) AND a BLOCK scalar</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>     (``description: &gt;-`` / ``|`` folded or literal, the value on the following</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>     indented lines). Returns &quot;&quot; when absent.</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>     server.mjs (and this port&#x27;s first cut) only read the same line as</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>     ``description:``, so a block scalar yielded just the ``&gt;-`` indicator — the</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>     reason crucible/foreman showed an empty North Star while inline-description</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>     skills (researchPrime, gandalf, …) worked.</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>     lines = re.split(r&quot;\r?\n&quot;, frontmatter)</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>     for i, line in enumerate(lines):</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>         m = re.match(r&quot;^description:[ \t]*(.*)$&quot;, line)</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>         if not m:</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>             continue</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>         inline = m.group(1).strip()</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>         block = re.match(r&quot;^([&gt;|])[-+]?\s*$&quot;, inline)  # &gt;, &gt;-, &gt;+, |, |-, |+</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>         if not block:</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>             return inline  # a plain inline scalar (or empty)</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>         style = block.group(1)  # &#x27;&gt;&#x27; folded | &#x27;|&#x27; literal</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>         collected = []</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>         for cont in lines[i + 1:]:</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>             if cont.strip() == &quot;&quot;:</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>                 collected.append(&quot;&quot;)  # blank line inside the block</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>                 continue</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>             if len(cont) - len(cont.lstrip()) == 0:</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>                 break  # dedent to a new top-level key — block ended</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>             collected.append(cont.strip())</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>         while collected and collected[-1] == &quot;&quot;:</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>             collected.pop()</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>         if style == &quot;|&quot;:  # literal: keep line breaks</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>             return &quot;\n&quot;.join(collected)</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>         # folded: blank line = paragraph break, otherwise space-join</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>         paras, para = [], []</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>         for c in collected:</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>             if c == &quot;&quot;:</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>                 if para:</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>                     paras.append(&quot; &quot;.join(para))</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>                     para = []</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>             else:</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>                 para.append(c)</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>         if para:</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>             paras.append(&quot; &quot;.join(para))</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>         return &quot;\n\n&quot;.join(paras)</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>     return &quot;&quot;</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> </span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a> def _parse_skill_md(text):</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>     &quot;&quot;&quot;Parse SKILL.md into ``{description, body}``. Frontmatter is optional.&quot;&quot;&quot;</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>     if not text:</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>         return {&quot;description&quot;: &quot;&quot;, &quot;body&quot;: &quot;&quot;}</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>     body = text</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>     description = &quot;&quot;</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>     fm = re.match(r&quot;^---\r?\n([\s\S]*?)\r?\n---\r?\n?&quot;, text)</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>     if fm:</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>         body = text[len(fm.group(0)):]</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>         description = _extract_yaml_description(fm.group(1))</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>     return {&quot;description&quot;: description, &quot;body&quot;: body}</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a> </span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a> </span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a> def _parse_human_md(text):</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>     &quot;&quot;&quot;Parse HUMAN.md (people-first skill card) into one-sentence + body.</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a> </span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>     Prefer ``**One sentence:** …`` then first non-heading line. Used for</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>     human-facing Foundry UI surfaces; agent SKILL.md stays the protocol source.</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>     if not text:</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>         return {&quot;oneSentence&quot;: &quot;&quot;, &quot;body&quot;: &quot;&quot;}</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>     body = str(text).strip()</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>     one = &quot;&quot;</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>     m = re.search(r&quot;\*\*One sentence:\*\*\s*(.+?)(?:\r?\n|$)&quot;, body, re.IGNORECASE)</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>     if not m:</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>         m = re.search(r&quot;^One sentence:\s*(.+?)(?:\r?\n|$)&quot;, body, re.IGNORECASE | re.MULTILINE)</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>     if m:</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>         one = re.sub(r&quot;\s+&quot;, &quot; &quot;, m.group(1).strip())</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>     if not one:</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>         for line in re.split(r&quot;\r?\n&quot;, body):</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>             t = line.strip()</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>             if not t or t.startswith(&quot;#&quot;):</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>                 continue</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>             one = re.sub(r&quot;^\*\*|\*\*$&quot;, &quot;&quot;, t).strip()</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>             break</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>     return {&quot;oneSentence&quot;: one, &quot;body&quot;: body}</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a> </span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a> </span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a> def _extract_sections(body):</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>     &quot;&quot;&quot;Top-level ``## `` section titles from the SKILL.md body.&quot;&quot;&quot;</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>     if not body:</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>         return []</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>     out = []</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>     for line in re.split(r&quot;\r?\n&quot;, body):</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>         m = re.match(r&quot;^##\s+(.+)$&quot;, line)</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>         if m:</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>             out.append(m.group(1).strip())</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>     return out</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a> </span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a> </span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a> def _extract_section_details(body):</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>     &quot;&quot;&quot;Return ``[{title, detail}]`` for each top-level ``## `` section — the</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>     heading plus its markdown body (until the next ``## `` or a new ``# ``</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>     heading, or the end). Powers the click-to-expand Capabilities tile: each</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>     bullet (the title) reveals its section&#x27;s real content. Long sections are</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>     truncated to keep the /api/skills payload sane.&quot;&quot;&quot;</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>     if not body:</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>         return []</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>     sections = []</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>     cur = None</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>     for line in re.split(r&quot;\r?\n&quot;, body):</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>         if re.match(r&quot;^##\s+(.+)$&quot;, line):</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>             if cur is not None:</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>                 sections.append(cur)</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>             cur = {&quot;title&quot;: re.match(r&quot;^##\s+(.+)$&quot;, line).group(1).strip(),</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>                    &quot;lines&quot;: []}</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>         elif re.match(r&quot;^#\s+(.+)$&quot;, line) and cur is not None:</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>             sections.append(cur)  # a new &#x27;# &#x27; heading closes the ## section</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>             cur = None</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>         elif cur is not None:</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>             cur[&quot;lines&quot;].append(line)</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>     if cur is not None:</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>         sections.append(cur)</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>     out = []</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>     for s in sections:</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>         detail = &quot;\n&quot;.join(s[&quot;lines&quot;]).strip()</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>         if len(detail) &gt; 12000:</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>             detail = detail[:12000].rstrip() + &quot;\n\n…(truncated)&quot;</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>         out.append({&quot;title&quot;: s[&quot;title&quot;], &quot;detail&quot;: detail})</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>     return out</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a> </span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a> </span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a> def _first_paragraph(body):</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>     &quot;&quot;&quot;First non-empty paragraph (per-skill north-star fallback).&quot;&quot;&quot;</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>     if not body:</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>         return &quot;&quot;</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>     for block in re.split(r&quot;\r?\n\s*\r?\n&quot;, body):</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>         if block.strip():</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>             return block.strip()</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>     return &quot;&quot;</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a> </span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a> </span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a> def _journal_events(skill_dir):</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>     &quot;&quot;&quot;Real journal entries for a skill dir: files directly in</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>     ``&lt;dir&gt;/journal/*.md``, ignoring README.md, subdirectories and all-caps</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>     files. Each = ``{event, timestamp (mtime ms), status:&#x27;success&#x27;, details}``.</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>     journal_dir = os.path.join(skill_dir, &quot;journal&quot;)</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>     events = []</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>     for dirent in _read_dir_safe(journal_dir):</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>         if not dirent.is_file():</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>             continue</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>         file_name = dirent.name</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>         low = file_name.lower()</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>         if not low.endswith(&quot;.md&quot;):</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>             continue</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>         if low == &quot;readme.md&quot;:</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>             continue</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>         base = re.sub(r&quot;\.md$&quot;, &quot;&quot;, file_name, flags=re.IGNORECASE)</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>         # all-caps entries (SYNTHESIS.md etc.) are not run records</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>         if re.search(r&quot;[A-Z]&quot;, base) and not re.search(r&quot;[a-z]&quot;, base):</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>             continue</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>         file_path = os.path.join(journal_dir, file_name)</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>         st = _stat_safe(file_path)</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>         if not st:</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>             continue</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>         text = _read_text_safe(file_path) or &quot;&quot;</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>         heading = re.search(r&quot;^#\s+(.+)$&quot;, text, re.MULTILINE)</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>         if heading:</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>             title = heading.group(1).strip()</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>         else:</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>             first_line = next((l for l in re.split(r&quot;\r?\n&quot;, text) if l.strip()), None)</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>             title = first_line.strip() if first_line else base</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>         details = text</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>         if heading:</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>             details = details.replace(heading.group(0), &quot;&quot;)</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>         details = details.strip()[:280]</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>         events.append({</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>             &quot;event&quot;: title,</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>             &quot;timestamp&quot;: st.st_mtime * 1000.0,</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>             &quot;status&quot;: &quot;success&quot;,</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>             &quot;details&quot;: details,</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>         })</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>     events.sort(key=lambda e: e[&quot;timestamp&quot;], reverse=True)</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>     return events</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a> </span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a> </span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a> def _load_manifest():</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>     &quot;&quot;&quot;Load the manifest fresh; ``[]`` when missing/unparseable.&quot;&quot;&quot;</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>     text = _read_text_safe(MANIFEST_PATH)</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>     if not text:</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>         return []</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>     try:</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>         parsed = json.loads(text)</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>     except (json.JSONDecodeError, ValueError):</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>         return []</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>     skills = parsed.get(&quot;skills&quot;)</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>     return skills if isinstance(skills, list) else []</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a> </span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a> </span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a> def build_skills():</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>     &quot;&quot;&quot;The full real ``/api/skills`` payload from the manifest + each skill&#x27;s</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>     files. Human-facing ``description`` / ``northStar`` prefer HUMAN.md when</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>     present; SKILL.md remains agent protocol (agentDescription + sections).&quot;&quot;&quot;</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>     out = []</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>     for entry in _load_manifest():</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>         skill_dir = _resolve_source(entry.get(&quot;source&quot;))</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>         skill_md = _read_text_safe(os.path.join(skill_dir, &quot;SKILL.md&quot;)) if skill_dir else None</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>         human_md = _read_text_safe(os.path.join(skill_dir, &quot;HUMAN.md&quot;)) if skill_dir else None</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>         parsed = _parse_skill_md(skill_md)</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>         agent_description, body = parsed[&quot;description&quot;], parsed[&quot;body&quot;]</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>         human = _parse_human_md(human_md)</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>         description = human[&quot;oneSentence&quot;] or agent_description or _first_paragraph(body)</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a>         north_star = (human[&quot;body&quot;][:4000] if human[&quot;body&quot;]</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>                       else (agent_description or _first_paragraph(body)))</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>         human_sections = _extract_sections(human[&quot;body&quot;]) if human[&quot;body&quot;] else []</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>         agent_sections = _extract_sections(body)</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>         human_details = _extract_section_details(human[&quot;body&quot;]) if human[&quot;body&quot;] else []</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>         agent_details = _extract_section_details(body)</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>         timeline = _journal_events(skill_dir) if skill_dir else []</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>         edges = entry.get(&quot;edges&quot;) if isinstance(entry.get(&quot;edges&quot;), list) else []</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>         src = entry.get(&quot;source&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a>         out.append({</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>             &quot;ref&quot;: entry.get(&quot;ref&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a>             &quot;name&quot;: entry.get(&quot;name&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>             &quot;source&quot;: src,</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>             &quot;status&quot;: entry.get(&quot;status&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>             &quot;tier&quot;: entry.get(&quot;tier&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>             &quot;version&quot;: entry.get(&quot;version&quot;, &quot;&quot;),</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>             &quot;description&quot;: description,</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>             &quot;agentDescription&quot;: agent_description or &quot;&quot;,</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>             &quot;humanCard&quot;: bool(human_md),</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>             &quot;humanOneSentence&quot;: human[&quot;oneSentence&quot;] or &quot;&quot;,</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>             &quot;northStar&quot;: north_star,</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>             &quot;file_path&quot;: (src + &quot;/SKILL.md&quot;) if src else &quot;&quot;,</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>             &quot;human_path&quot;: (src + &quot;/HUMAN.md&quot;) if (src and human_md) else &quot;&quot;,</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>             &quot;capabilities&quot;: human_sections if human_sections else agent_sections,</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>             &quot;capabilitySections&quot;: human_details if human_details else agent_details,</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>             &quot;dependencies&quot;: [d for d in (</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>                 re.sub(r&quot;^skill:&quot;, &quot;&quot;, str(e.get(&quot;to&quot;, &quot;&quot;))) for e in edges) if d],</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>             &quot;edges&quot;: edges,</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>             &quot;timeline&quot;: timeline,</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>             &quot;journalCount&quot;: len(timeline),</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>         })</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>     return out</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a> </span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a> </span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a> def load_north_star():</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>     text = _read_text_safe(NORTH_STAR_PATH)</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>     return text.strip() if text else (&quot;North Star file not found — expected at &quot; + NORTH_STAR_PATH)</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a> </span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a> </span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a> def _sleep_run_stats():</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>     &quot;&quot;&quot;REAL sleep-run stats from the artifacts on disk (a run = a proposal.json dir).&quot;&quot;&quot;</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a>     runs = 0</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>     last_improved = None</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a>     for dirent in _read_dir_safe(SLEEP_RUNS_DIR):</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>         if not dirent.is_dir():</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a>             continue</span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a>         run_dir = os.path.join(SLEEP_RUNS_DIR, dirent.name)</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a>         if not _stat_safe(os.path.join(run_dir, &quot;proposal.json&quot;)):</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a>             continue</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>         runs += 1</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>         apply_path = os.path.join(run_dir, &quot;apply-result.json&quot;)</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a>         apply_stat = _stat_safe(apply_path)</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>         if apply_stat:</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>             try:</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a>                 rec = json.loads(_read_text_safe(apply_path) or &quot;null&quot;)</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a>                 if rec and rec.get(&quot;outcome&quot;) == &quot;applied&quot;:</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a>                     last_improved = max(last_improved or 0, apply_stat.st_mtime * 1000.0)</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a>             except (json.JSONDecodeError, ValueError):</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>                 pass</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>     return {&quot;runs&quot;: runs, &quot;lastImproved&quot;: last_improved}</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a> </span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a> </span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a> def build_summary():</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>     stats = _sleep_run_stats()</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>     if stats[&quot;runs&quot;] == 0:</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>         return (&#x27;No sleep session has run yet — use &quot;Run sleep session&quot; in the &#x27;</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>                 &quot;Sleep &amp; Training tile to propose one from the journal.&quot;)</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a>     return (f&quot;{stats[&#x27;runs&#x27;]} sleep-session run(s) recorded under sleep-runs/&quot;</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a>             + (&quot; (at least one proposal applied on a branch).&quot;</span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a>                if stats[&quot;lastImproved&quot;] else &quot; (no proposal applied yet).&quot;))</span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a> </span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a> </span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a> def build_timeline():</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>     all_events = [e for s in build_skills() for e in s[&quot;timeline&quot;]]</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a>     all_events.sort(key=lambda e: e[&quot;timestamp&quot;], reverse=True)</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a>     return all_events</span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a> </span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a> </span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a> def build_metrics(skills=None):</span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a>     if skills is None:</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>         skills = build_skills()</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>     stats = _sleep_run_stats()</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>     return {</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>         &quot;skills&quot;: len(skills),</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a>         &quot;journalEntries&quot;: sum(s[&quot;journalCount&quot;] for s in skills),</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>         &quot;sleepRuns&quot;: stats[&quot;runs&quot;],</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a>         &quot;lastImproved&quot;: stats[&quot;lastImproved&quot;],</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a>     }</span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a> </span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a> </span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a> def build_agent_payload():</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a>     skills = build_skills()</span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a>     return {</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a>         &quot;timestamp&quot;: 0,  # no wall-clock reads; 0 = &quot;not from a file&quot;</span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a>         &quot;version&quot;: &quot;2.0.0&quot;,</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>         &quot;northStar&quot;: load_north_star(),</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>         &quot;summary&quot;: build_summary(),</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a>         &quot;metrics&quot;: build_metrics(skills),</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>         &quot;skillCount&quot;: len(skills),</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>     }</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a> </span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a> </span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a> # ── the REAL sleep-session kernel (spawned, never simulated) ─────────────────</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a> </span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a> def _run_kernel(args):</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a>     &quot;&quot;&quot;Spawn ``node &lt;KERNEL_CLI&gt; &lt;verb&gt; &lt;args…&gt;`` headlessly. Never raises —</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>     returns ``{status, spawnError, timedOut, stdout, stderr}`` so the caller can</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>     surface the kernel&#x27;s honest exit codes (0 ok / 3 refused / 1 blocked).&quot;&quot;&quot;</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>     try:</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>         proc = subprocess.run(</span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>             [_node_cmd(), KERNEL_CLI, *args],</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a>             cwd=KERNEL_DIR,</span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>             capture_output=True,</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>             text=True,</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a>             encoding=&quot;utf-8&quot;,</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a>             timeout=KERNEL_TIMEOUT_S,</span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a>         )</span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a>         return {&quot;status&quot;: proc.returncode, &quot;spawnError&quot;: None,</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a>                 &quot;timedOut&quot;: False, &quot;stdout&quot;: proc.stdout or &quot;&quot;,</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a>                 &quot;stderr&quot;: proc.stderr or &quot;&quot;}</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a>     except subprocess.TimeoutExpired as exc:</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a>         return {&quot;status&quot;: None, &quot;spawnError&quot;: None, &quot;timedOut&quot;: True,</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a>                 &quot;stdout&quot;: exc.stdout or &quot;&quot;, &quot;stderr&quot;: exc.stderr or &quot;&quot;}</span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a>     except (OSError, ValueError) as exc:</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>         return {&quot;status&quot;: None, &quot;spawnError&quot;: str(exc), &quot;timedOut&quot;: False,</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a>                 &quot;stdout&quot;: &quot;&quot;, &quot;stderr&quot;: &quot;&quot;}</span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a> </span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a> </span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a> def _parse_kernel_json(stdout):</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a>     text = (stdout or &quot;&quot;).strip()</span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a>     if not text:</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>         return None</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>     try:</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a>         return json.loads(text)</span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>     except (json.JSONDecodeError, ValueError):</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>         return None</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a> </span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a> </span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a> def _resolve_proposal_dir(body):</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a>     &quot;&quot;&quot;Resolve the proposal dir from ``{proposalPath | proposalId}``; the result</span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a>     MUST live inside SLEEP_RUNS_DIR (every proposal this server mints does) — a</span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a>     path outside it is refused (None).&quot;&quot;&quot;</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a>     candidate = None</span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a>     if isinstance(body.get(&quot;proposalPath&quot;), str) and body[&quot;proposalPath&quot;].strip():</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a>         candidate = os.path.abspath(body[&quot;proposalPath&quot;].strip())</span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a>     elif isinstance(body.get(&quot;proposalId&quot;), str) and body[&quot;proposalId&quot;].strip():</span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>         candidate = os.path.join(str(SLEEP_RUNS_DIR),</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>                                  os.path.basename(body[&quot;proposalId&quot;].strip()))</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a>     if not candidate:</span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>         return None</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>     runs_root = os.path.abspath(str(SLEEP_RUNS_DIR))</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a>     normalized = os.path.abspath(candidate)</span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>     if normalized != runs_root and not normalized.startswith(runs_root + os.sep):</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>         return None</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a>     return normalized</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a> </span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a> </span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a> _SKILL_NAME_RE = re.compile(r&quot;^[A-Za-z0-9][A-Za-z0-9._-]*$&quot;)</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a> </span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a> </span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a> def sleep_propose(body):</span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a>     &quot;&quot;&quot;POST /api/foundry/sleep_session/propose — spawn the kernel `propose`.</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a>     Returns ``(payload, status_code)``.&quot;&quot;&quot;</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a>     skill = str(body.get(&quot;skill&quot;) or &quot;gandalf&quot;).strip()</span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a>     if not _SKILL_NAME_RE.match(skill):</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a>         return {&quot;error&quot;: f&quot;invalid skill name: {json.dumps(skill)}&quot;}, 400</span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>     skill_dir = os.path.join(SKILLS_ROOT, skill)</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a>     if not (_stat_safe(skill_dir) and os.path.isdir(skill_dir)):</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a>         return {&quot;error&quot;: f&quot;skill directory not found: {skill_dir}&quot;}, 404</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>     os.makedirs(SLEEP_RUNS_DIR, exist_ok=True)</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>     run = _run_kernel([&quot;propose&quot;, skill_dir, &quot;--repo&quot;, SKILLS_REPO,</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>                        &quot;--runs-dir&quot;, str(SLEEP_RUNS_DIR)])</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>     parsed = _parse_kernel_json(run[&quot;stdout&quot;])</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>     if not parsed or parsed.get(&quot;error&quot;) or run[&quot;status&quot;] != 0 or run[&quot;spawnError&quot;]:</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a>         return {</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a>             &quot;error&quot;: (parsed and parsed.get(&quot;error&quot;)) or run[&quot;spawnError&quot;]</span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a>             or f&quot;kernel propose exited {run[&#x27;status&#x27;]}&quot;</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>             + (&quot; (timed out)&quot; if run[&quot;timedOut&quot;] else &quot;&quot;),</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>             &quot;stderr&quot;: run[&quot;stderr&quot;],</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>         }, 500</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a>     # Enrich each unit with its REAL diff text (the artifact the kernel wrote).</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a>     for unit in ((parsed.get(&quot;proposal&quot;) or {}).get(&quot;units&quot;) or []):</span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a>         diff_text = _read_text_safe(unit.get(&quot;diffPath&quot;))</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a>         if diff_text is not None:</span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a>             unit[&quot;diffText&quot;] = diff_text</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a>     return parsed, 200</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a> </span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a> </span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a> def sleep_apply(body):</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a>     &quot;&quot;&quot;POST /api/foundry/sleep_session/apply — confirm-gated kernel `apply`.&quot;&quot;&quot;</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>     if body.get(&quot;confirm&quot;) is not True:</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>         return {&quot;error&quot;: &quot;refused: confirm must be exactly true — the human is &quot;</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a>                 &quot;the promotion authority&quot;, &quot;outcome&quot;: &quot;refused&quot;}, 409</span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>     proposal_dir = _resolve_proposal_dir(body)</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a>     if not proposal_dir:</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>         return {&quot;error&quot;: &quot;proposalId or proposalPath (inside the sleep-runs dir) required&quot;}, 400</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>     if not _stat_safe(os.path.join(proposal_dir, &quot;proposal.json&quot;)):</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a>         return {&quot;error&quot;: f&quot;no proposal.json in {proposal_dir}&quot;}, 404</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a>     args = [&quot;apply&quot;, proposal_dir, &quot;--confirm&quot;, &quot;foundry-gui-user&quot;]</span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a>     if body.get(&quot;unit&quot;):</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>         args += [&quot;--unit&quot;, str(body[&quot;unit&quot;])]</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>     run = _run_kernel(args)</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>     parsed = _parse_kernel_json(run[&quot;stdout&quot;])</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>     if not parsed or parsed.get(&quot;error&quot;) or run[&quot;spawnError&quot;]:</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>         return {</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a>             &quot;error&quot;: (parsed and parsed.get(&quot;error&quot;)) or run[&quot;spawnError&quot;]</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>             or f&quot;kernel apply exited {run[&#x27;status&#x27;]}&quot;</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>             + (&quot; (timed out)&quot; if run[&quot;timedOut&quot;] else &quot;&quot;),</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>             &quot;stderr&quot;: run[&quot;stderr&quot;],</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>         }, 500</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>     return parsed, (409 if parsed.get(&quot;outcome&quot;) == &quot;refused&quot; else 200)</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a> </span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a> </span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a> def sleep_rollback(body):</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a>     &quot;&quot;&quot;POST /api/foundry/sleep_session/rollback — kernel `rollback`.&quot;&quot;&quot;</span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>     proposal_dir = _resolve_proposal_dir(body)</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a>     if not proposal_dir:</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a>         hint = (&quot; (a bare baselineSha is not enough — the kernel reads the &quot;</span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a>                 &quot;frozen baseline from the proposal artifact)&quot;</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a>                 if body.get(&quot;baselineSha&quot;) else &quot;&quot;)</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>         return {&quot;error&quot;: &quot;proposalId or proposalPath (inside the sleep-runs &quot;</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>                 f&quot;dir) required{hint}&quot;}, 400</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>     if not _stat_safe(os.path.join(proposal_dir, &quot;proposal.json&quot;)):</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a>         return {&quot;error&quot;: f&quot;no proposal.json in {proposal_dir}&quot;}, 404</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a>     run = _run_kernel([&quot;rollback&quot;, proposal_dir])</span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a>     parsed = _parse_kernel_json(run[&quot;stdout&quot;])</span>
+<span class="source-line" id="L526"><a href="#L526" aria-label="Line 526">526</a>     if not parsed or parsed.get(&quot;error&quot;) or run[&quot;spawnError&quot;]:</span>
+<span class="source-line" id="L527"><a href="#L527" aria-label="Line 527">527</a>         return {</span>
+<span class="source-line" id="L528"><a href="#L528" aria-label="Line 528">528</a>             &quot;error&quot;: (parsed and parsed.get(&quot;error&quot;)) or run[&quot;spawnError&quot;]</span>
+<span class="source-line" id="L529"><a href="#L529" aria-label="Line 529">529</a>             or f&quot;kernel rollback exited {run[&#x27;status&#x27;]}&quot;</span>
+<span class="source-line" id="L530"><a href="#L530" aria-label="Line 530">530</a>             + (&quot; (timed out)&quot; if run[&quot;timedOut&quot;] else &quot;&quot;),</span>
+<span class="source-line" id="L531"><a href="#L531" aria-label="Line 531">531</a>             &quot;stderr&quot;: run[&quot;stderr&quot;],</span>
+<span class="source-line" id="L532"><a href="#L532" aria-label="Line 532">532</a>         }, 500</span>
+<span class="source-line" id="L533"><a href="#L533" aria-label="Line 533">533</a>     return parsed, 200</span>
+<span class="source-line" id="L534"><a href="#L534" aria-label="Line 534">534</a> </span>
+<span class="source-line" id="L535"><a href="#L535" aria-label="Line 535">535</a> </span>
+<span class="source-line" id="L536"><a href="#L536" aria-label="Line 536">536</a> # ── static-file serving of the built React app (foundry-gui/dist) ────────────</span>
+<span class="source-line" id="L537"><a href="#L537" aria-label="Line 537">537</a> </span>
+<span class="source-line" id="L538"><a href="#L538" aria-label="Line 538">538</a> DIST_DIR = (ANCHOR_DIR / &quot;foundry-gui&quot; / &quot;dist&quot;).resolve()</span>
+<span class="source-line" id="L539"><a href="#L539" aria-label="Line 539">539</a> </span>
+<span class="source-line" id="L540"><a href="#L540" aria-label="Line 540">540</a> _CONTENT_TYPES = {</span>
+<span class="source-line" id="L541"><a href="#L541" aria-label="Line 541">541</a>     &quot;.html&quot;: &quot;text/html; charset=utf-8&quot;,</span>
+<span class="source-line" id="L542"><a href="#L542" aria-label="Line 542">542</a>     &quot;.js&quot;: &quot;application/javascript; charset=utf-8&quot;,</span>
+<span class="source-line" id="L543"><a href="#L543" aria-label="Line 543">543</a>     &quot;.mjs&quot;: &quot;application/javascript; charset=utf-8&quot;,</span>
+<span class="source-line" id="L544"><a href="#L544" aria-label="Line 544">544</a>     &quot;.css&quot;: &quot;text/css; charset=utf-8&quot;,</span>
+<span class="source-line" id="L545"><a href="#L545" aria-label="Line 545">545</a>     &quot;.svg&quot;: &quot;image/svg+xml&quot;,</span>
+<span class="source-line" id="L546"><a href="#L546" aria-label="Line 546">546</a>     &quot;.json&quot;: &quot;application/json; charset=utf-8&quot;,</span>
+<span class="source-line" id="L547"><a href="#L547" aria-label="Line 547">547</a>     &quot;.jpg&quot;: &quot;image/jpeg&quot;, &quot;.jpeg&quot;: &quot;image/jpeg&quot;, &quot;.png&quot;: &quot;image/png&quot;,</span>
+<span class="source-line" id="L548"><a href="#L548" aria-label="Line 548">548</a>     &quot;.gif&quot;: &quot;image/gif&quot;, &quot;.ico&quot;: &quot;image/x-icon&quot;, &quot;.webp&quot;: &quot;image/webp&quot;,</span>
+<span class="source-line" id="L549"><a href="#L549" aria-label="Line 549">549</a>     &quot;.woff&quot;: &quot;font/woff&quot;, &quot;.woff2&quot;: &quot;font/woff2&quot;, &quot;.ttf&quot;: &quot;font/ttf&quot;,</span>
+<span class="source-line" id="L550"><a href="#L550" aria-label="Line 550">550</a>     &quot;.map&quot;: &quot;application/json; charset=utf-8&quot;, &quot;.txt&quot;: &quot;text/plain; charset=utf-8&quot;,</span>
+<span class="source-line" id="L551"><a href="#L551" aria-label="Line 551">551</a>     &quot;.md&quot;: &quot;text/plain; charset=utf-8&quot;,</span>
+<span class="source-line" id="L552"><a href="#L552" aria-label="Line 552">552</a> }</span>
+<span class="source-line" id="L553"><a href="#L553" aria-label="Line 553">553</a> </span>
+<span class="source-line" id="L554"><a href="#L554" aria-label="Line 554">554</a> </span>
+<span class="source-line" id="L555"><a href="#L555" aria-label="Line 555">555</a> def resolve_dist_file(rel_path):</span>
+<span class="source-line" id="L556"><a href="#L556" aria-label="Line 556">556</a>     &quot;&quot;&quot;Traversal-safe resolve of a dist-relative path → (abs_path, content_type)</span>
+<span class="source-line" id="L557"><a href="#L557" aria-label="Line 557">557</a>     or (None, None). ``rel_path`` is the URL path (e.g. &quot;/assets/x.js&quot; or</span>
+<span class="source-line" id="L558"><a href="#L558" aria-label="Line 558">558</a>     &quot;index.html&quot;); it must stay inside DIST_DIR.&quot;&quot;&quot;</span>
+<span class="source-line" id="L559"><a href="#L559" aria-label="Line 559">559</a>     rel = (rel_path or &quot;&quot;).split(&quot;?&quot;, 1)[0].lstrip(&quot;/&quot;)</span>
+<span class="source-line" id="L560"><a href="#L560" aria-label="Line 560">560</a>     if not rel:</span>
+<span class="source-line" id="L561"><a href="#L561" aria-label="Line 561">561</a>         rel = &quot;index.html&quot;</span>
+<span class="source-line" id="L562"><a href="#L562" aria-label="Line 562">562</a>     try:</span>
+<span class="source-line" id="L563"><a href="#L563" aria-label="Line 563">563</a>         resolved = (DIST_DIR / rel).resolve()</span>
+<span class="source-line" id="L564"><a href="#L564" aria-label="Line 564">564</a>     except (OSError, ValueError):</span>
+<span class="source-line" id="L565"><a href="#L565" aria-label="Line 565">565</a>         return None, None</span>
+<span class="source-line" id="L566"><a href="#L566" aria-label="Line 566">566</a>     if resolved != DIST_DIR and DIST_DIR not in resolved.parents:</span>
+<span class="source-line" id="L567"><a href="#L567" aria-label="Line 567">567</a>         return None, None</span>
+<span class="source-line" id="L568"><a href="#L568" aria-label="Line 568">568</a>     if not resolved.is_file():</span>
+<span class="source-line" id="L569"><a href="#L569" aria-label="Line 569">569</a>         return None, None</span>
+<span class="source-line" id="L570"><a href="#L570" aria-label="Line 570">570</a>     ctype = _CONTENT_TYPES.get(resolved.suffix.lower(), &quot;application/octet-stream&quot;)</span>
+<span class="source-line" id="L571"><a href="#L571" aria-label="Line 571">571</a>     return resolved, ctype</span></pre></main></body></html>

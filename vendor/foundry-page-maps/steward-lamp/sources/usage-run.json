@@ -1,0 +1,29 @@
+{
+  "skill": "ecgberht",
+  "tier": "heavy",
+  "started": "2026-09-10T19:11:40.158373+00:00",
+  "ended": "2026-09-10T20:33:23.274561+00:00",
+  "input": "C:\\dev\\Skill Foundry\\planning\\steward-refinement-2026-09-10\\usage-scope.json",
+  "params": {
+    "execution": "direct authorized formal Foundry improvement",
+    "review": "selected Grok subscription latest_supported/highest_supported",
+    "duration_basis": "scope record through release journal; earlier investigation excluded",
+    "usage_accounting": "existing state and broker; no own prices or cross-store sum",
+    "native_host_tokens": null,
+    "provider_charge_total": null
+  },
+  "output": [
+    "C:\\dev\\Skill Foundry\\planning\\steward-refinement-2026-09-10\\PROJECT-USAGE.md",
+    "C:\\dev\\Skill Foundry\\planning\\steward-refinement-2026-09-10\\USAGE-REPAIR-RESULT.md",
+    "C:\\dev\\Skill Foundry\\planning\\steward-refinement-2026-09-10\\usage-review-disposition.json",
+    "C:\\dev\\Skill Foundry\\planning\\steward-refinement-2026-09-10\\ACTIVATION.md"
+  ],
+  "result": "reviewed and committed isolated usage repair; activation blocked on elevated safe restart, not deployed or human accepted",
+  "cross_model": true,
+  "models": [
+    "root Codex host (no separate served-model attestation)",
+    "grok-4.6-build"
+  ],
+  "duration_s": 4903.116188,
+  "journal_ref": "0117-project-usage-accounting-refinement.md"
+}

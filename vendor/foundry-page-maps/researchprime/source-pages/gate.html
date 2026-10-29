@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>gate · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>gate</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\gate-loader.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 6e4a9db9022ea9cc2fc36520d209b61e53ba84c7e2f11b08360291727ea5d010</p></details>
+<p><a href="../sources/gate.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> import { HaltError } from &#x27;./trio-core/contract-core.mjs&#x27;;</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> import { canonicalize, validate } from &#x27;./governance.mjs&#x27;;</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> </span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> export function loadGate(runDir) {</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a>   const govPath = path.join(runDir, &#x27;governance.json&#x27;);</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a>   if (!fs.existsSync(govPath)) {</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a>     throw new HaltError(&#x27;Execution blocked: governance.json missing&#x27;);</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a>   }</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> </span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a>   const raw = fs.readFileSync(govPath, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a>   let canon;</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a>   try {</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a>     canon = canonicalize(raw);</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a>   } catch (e) {</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a>     throw new HaltError(`Execution blocked: ${e.message}`);</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a>   }</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a>   const record = canon.canonicalObj;</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a>   </span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a>   try {</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a>     validate(record);</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a>   } catch (e) {</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>     throw new HaltError(`Execution blocked: ${e.message}`);</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a>   }</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a>   if (record.gate1Decision !== &#x27;APPROVE&#x27;) {</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a>     throw new HaltError(`Execution blocked: Gate 1 decision is ${record.gate1Decision}, expected APPROVE`);</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a>   }</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>   if (record.gate2Decision !== &#x27;APPROVE&#x27;) {</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>     throw new HaltError(`Execution blocked: Gate 2 decision is ${record.gate2Decision}, expected APPROVE`);</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>   }</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>   </span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   return record;</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> }</span></pre></main></body></html>

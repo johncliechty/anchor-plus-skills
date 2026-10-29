@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Named historical shortfalls · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="lessons" data-anchor-id="a-lesson">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">References</p><h1>Named historical shortfalls</h1>
+<p class="intro">Budget/error misdiagnosis, lost recommendations and colliding journal IDs are named here. Several historical statements have since been superseded by current code.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/LESSONS.md · lines 106–123</p><pre>## Promoted 2026-08-15 (the post-08-04 backlog — journals 0292-0301)
+
+6. **Read `err.message`, not the error prefix.** `gandalf-run.mjs` prints one
+   fixed prefix for ANY live-path failure; a refuter-budget HALT was reported
+   as &quot;agy down&quot; twice in one day while agy was up throughout (0300 correcting
+   0298/0299). Fix the prefix; until then, the message text is the truth.
+7. **Derive `--budget` from the firing-elevation count BEFORE launching** —
+   R=3 trips on most real artifact reads (5-7 firing elevations is normal);
+   the budget HALT is the common case, not the exception (0299, jumper 0024).
+8. **A cap must HALT or stamp — never silently drop.** The elevation cap at
+   FULL silently discarded the FIRST/highest-value elevation ungraded (0292,
+   0295); refuted elevations lose their reasoning entirely (0301). Until the
+   engine keeps a `refuted[]` with reasoning, paste refuter verdicts into the
+   run notes by hand.
+9. **The journal namespace is append-only AND monotone**: next id =
+   max(existing NNNN)+1 — 0299 found 190 entries with 32 colliding numbers
+   because sessions read the low numbers as the frontier. Machine dumps never
+   land in the curated namespace (0285&#x27;s disarm holds).</pre>
+<p><a class="button" href="../source-pages/lessons.html#L106">Open numbered source</a>
+<a href="../sources/lessons.md" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/halt">Refuse with the actual failure reason</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">788a88ca2820e7c6ac1f02f1d4053e2c7e4e4a3586323b0c8f6473afc3399e53</span></p><p>Excerpt hash: <span class="path">9cd6c1587c171e4e3fa1c3d965bd6a1bdd0919a06db7a26a8b00331c44402496</span></p></details></article></main></body></html>

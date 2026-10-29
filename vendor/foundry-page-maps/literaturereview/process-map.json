@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Literature-Review execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Literature-Review)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Literature-Review context.",
+      "code": {
+        "path": "bin/cli.mjs",
+        "symbol": "function parseArgs(argv) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## North Star (LOCKED \u2014 John, 2026-08-25)"
+      },
+      "resource_ids": [
+        "literaturereview-mat-skill-md",
+        "literaturereview-tool-bin-cli-mjs"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Literature-Review never repeats cold-start discovery.",
+      "code": {
+        "path": "run-foreman.mjs",
+        "symbol": "function emit(line) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## The Elegance Law (locked by John \u2014 binding on this skill)"
+      },
+      "resource_ids": [
+        "literaturereview-ref-lessons",
+        "literaturereview-ref-changelog",
+        "literaturereview-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Literature-Review)",
+      "kind": "model",
+      "role": "Primary Literature-Review Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Literature-Review, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "src/run-config.mjs",
+        "symbol": "export function combineInspectableExclusions(...records) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# literature-review"
+      },
+      "resource_ids": [
+        "literaturereview-tool-bin-cli-mjs",
+        "literaturereview-tool-run-foreman-mjs",
+        "literaturereview-peer-researchprime"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "src/run-summary.mjs",
+        "symbol": "export function summaryStampLine(summary) {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## How to run (operator manual \u2014 REWIRED REAL 2026-07-11; the CLI never fabricates)"
+      },
+      "resource_ids": [
+        "literaturereview-peer-researchprime",
+        "literaturereview-peer-ramanujan",
+        "literaturereview-ref-lessons"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Literature-Review deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "src/schemas/prismaInclusions.mjs",
+        "symbol": "export const prismaInclusionsSchema = {"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "### Process depth (Track B7 \u2014 operator note)"
+      },
+      "resource_ids": [
+        "literaturereview-mat-triage-block",
+        "literaturereview-kb-portfolio-triage-and-band-ev"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Literature-Review primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Literature-Review work product + machine run receipt."
+}

@@ -1,9 +1,0 @@
-# Doctor flag repair — 2026-09-08
-
-John requested investigation and repair of the remaining dashboard flag. The current canonical report has eight failures: R&D v2–v7 and both supervisor checks. The dashboard reads this report on each render; a fresh clean report and page refresh clear the flag without restarting the service.
-
-- Confirmed real summary launch defect: both summary helpers omit the project-scoped output directory required by the selected ChatGPT adapter. They must supply a bounded read-only launch and retain the selected family.
-- Confirmed synthetic-check drift: healthcheck fixtures emit the Claude-shaped stub protocol but omitted backend selections inherit the live ChatGPT preference. The v4 stdin marker assertion and supervisor stub flags then exercise the wrong transport. Fix synthetic callers explicitly; never change saved preferences to make checks green.
-- Confirmed capability-probe leakage: explicit non-ChatGPT runner overrides and the in-memory stub PTY still resolve installed model capabilities even though they launch no provider. Fix these actual stub boundaries, keep model policy enforced for real transports, and record no fabricated model selection for fixtures.
-- Work is divided across summary launch repair, healthcheck fixture repair, native stub boundary repair, and read-only dashboard verification. Existing unrelated worktree changes and the previous v8 remote fix are preserved.
-- Minimal stub-boundary reproduction: seven tests fail before repair (three fake runner families and four fake PTY families attempt live capability discovery). Five companion checks already pass and prove real transports must reject unavailable model policy, including ChatGPT when a generic runner override is present. Applied the fix at the actual command override / in-memory PTY boundaries; no model-policy resolver is mocked in production or the healthcheck.

@@ -1,0 +1,1053 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>session · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>session</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/commission_session.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 4065cf2079ed2030a70a3e9a29b5acaaf384497b6d9df40a4a107985862fa268</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.537648+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/commission_session.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 4065cf2079ed2030a70a3e9a29b5acaaf384497b6d9df40a4a107985862fa268</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;Conversation -&gt; commission: the steward actually RUNS a skill (2026-08-06).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> WHY THIS MODULE EXISTS. Every seam already existed and none of them were</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> joined: the chamber could talk (converse), the engine could propose and</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> hash-confirm a commission (commission-run-bridge), a managed session could be</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> launched with the skill loaded (commission_executor.launch_commission_in_session),</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> the run loop could drive it to a decision point (commission_runner), and the</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> engine could read a finished run back to John and raise the High Seat</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> (steward-run-ingest via the same bridge). This module is the join, and ONLY</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> the join:</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> </span>
+<span class="source-line" id="L12"><a href="#L12">12</a>     propose -&gt; John confirms -&gt; session starts -&gt; run loop drives -&gt; stopped</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>     -&gt; the run record is written -&gt; the bridge ingests it (report + raise</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>     + handback) -&gt; John opens THAT session, answers, hands it back</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>     -&gt; watch re-arms -&gt; produced -&gt; ingested -&gt; reported.</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> </span>
+<span class="source-line" id="L17"><a href="#L17">17</a> THE LONG-LIVED-PROCESS LAW (learned the hard way): a throwaway process kills</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> the PTY it starts. Launch + drive must live in ONE long-lived process — this</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> module runs inside the Anchor service, and the watcher is a daemon thread of</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> that service.</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> WHAT IT NEVER DOES: answer a question the skill asked (commission_runner&#x27;s</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> law), or derive project state (the engine&#x27;s ledger owns that; run records</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> here are the steward&#x27;s own bookkeeping about runs, nothing more).</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> Stdlib only. The Node bridge is an external CLI through an injectable seam</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> (``ANCHOR_ECGBERHT_BRIDGE_CMD``), fully stubbed in tests — same pattern as</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> ``ANCHOR_RUNNER_CMD``.</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> from __future__ import annotations</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> import json</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> import os</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> import shlex</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> import subprocess</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> import threading</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> import time</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> from pathlib import Path</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> from typing import Any, Callable, Optional</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> </span>
+<span class="source-line" id="L41"><a href="#L41">41</a> import paths as _paths</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> import commission_executor as _ce</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> import commission_runner as _cr</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45">45</a> ANCHOR_DIR = Path(__file__).resolve().parent</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47">47</a> #: Durable per-project stores (under the project folder, like .anchor/ elsewhere).</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> COMMISSION_STORE_REL = os.path.join(&quot;.anchor&quot;, &quot;commissions&quot;)</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> RUN_RECORDS_REL = os.path.join(&quot;.anchor&quot;, &quot;commission-runs&quot;)</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> </span>
+<span class="source-line" id="L51"><a href="#L51">51</a> #: The bridge does a real seat call on ingest-run (report read) — be generous.</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> BRIDGE_TIMEOUT_S = 60</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> INGEST_TIMEOUT_S = 300</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> #: How much transcript tail a run record keeps. The session window replays the</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> #: full PTY; the record only needs enough for a post-mortem read.</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> TRANSCRIPT_TAIL_CHARS = 4000</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> </span>
+<span class="source-line" id="L59"><a href="#L59">59</a> RUN_RECORD_SCHEMA = &quot;anchor-commission-run-v0&quot;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61">61</a> #: Production watch bounds. MEASURED (E2E 2026-08-06): Crucible at xhigh</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> #: effort sat &gt;4 minutes with ZERO TUI repaint mid-think — the runner&#x27;s 90s</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> #: default would have classified a hard-working skill as QUIET. A real plan</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> #: run is tens of minutes, not seconds.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> DEFAULT_RUNNER_KWARGS = {</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     &quot;poll_seconds&quot;: 10,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>     &quot;max_seconds&quot;: 2700,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     &quot;quiet_seconds&quot;: 420,</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> }</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> </span>
+<span class="source-line" id="L71"><a href="#L71">71</a> #: The second turn — the one that turns &quot;skill loaded&quot; into &quot;skill working&quot;.</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> #: The brief itself rides the session seed (launch_commission_in_session folds</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> #: it onto the lane seed), so this stays short and constant.</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> WORK_TURN = (</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>     &quot;Begin the commissioned work now — the brief is in your opening context. &quot;</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>     &quot;Work autonomously and do not wait for further instruction. &quot;</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     &quot;FIRST, check whether any decision on this step is genuinely John&#x27;s alone &quot;</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     &quot;(a goal lock, a direction choice, a spend approval): if so, ask that &quot;</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     &quot;question plainly and STOP — before doing any deep work that the answer &quot;</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>     &quot;could invalidate. Otherwise work on; whenever you genuinely need John&#x27;s &quot;</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>     &quot;decision, ask it plainly and stop.&quot;</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> )</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> </span>
+<span class="source-line" id="L84"><a href="#L84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85">85</a> # ── Bridge (the one door to the Ecgberht engine) ─────────────────────────────</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> </span>
+<span class="source-line" id="L87"><a href="#L87">87</a> def _ecgberht_root() -&gt; Path:</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     &quot;&quot;&quot;ECGBERHT_ROOT env override, else the sibling checkout beside Anchor.&quot;&quot;&quot;</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>     env = os.environ.get(&quot;ECGBERHT_ROOT&quot;, &quot;&quot;).strip()</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     if env:</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>         return Path(env)</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     return ANCHOR_DIR.parent / &quot;Ecgberht&quot;</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> </span>
+<span class="source-line" id="L94"><a href="#L94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95">95</a> def run_bridge(mode: str, payload: dict, timeout: int = BRIDGE_TIMEOUT_S) -&gt; dict:</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>     &quot;&quot;&quot;Spawn the commission-run bridge with ``payload`` on STDIN (never argv —</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     transcripts cross the 32,767-char argv cap instantly) and parse its</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     one-line JSON reply.</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a>     ``ANCHOR_ECGBERHT_BRIDGE_CMD`` overrides the command for tests (a python</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>     stub), exactly like ``ANCHOR_RUNNER_CMD`` stubs the model runner.</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     override = os.environ.get(&quot;ANCHOR_ECGBERHT_BRIDGE_CMD&quot;, &quot;&quot;).strip()</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     if override:</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>         # posix=False so Windows backslash paths survive (job_runner&#x27;s carried</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>         # fix) — but then quoted tokens KEEP their quotes, and subprocess would</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>         # double-quote them. Strip one layer of surrounding quotes per token.</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>         cmd = [t[1:-1] if len(t) &gt; 1 and t[0] == t[-1] == &#x27;&quot;&#x27; else t</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>                for t in shlex.split(override, posix=(os.name != &quot;nt&quot;))] + [mode]</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>         cwd = str(ANCHOR_DIR)</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>     else:</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>         bridge = _ecgberht_root() / &quot;scripts&quot; / &quot;commission-run-bridge.mjs&quot;</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>         if not bridge.exists():</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>             return {&quot;ok&quot;: False, &quot;error&quot;: &quot;ecgberht_engine_missing&quot;,</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>                     &quot;message&quot;: &quot;commission-run bridge not found (set ECGBERHT_ROOT &quot;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>                                &quot;or keep the Ecgberht checkout beside Anchor)&quot;}</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>         cmd = [&quot;node&quot;, str(bridge), mode]</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>         cwd = str(_ecgberht_root())</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>     try:</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>         res = subprocess.run(</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>             cmd,</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>             input=json.dumps(payload),</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>             capture_output=True, text=True, timeout=timeout,</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>             encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;,</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>             cwd=cwd, creationflags=getattr(_paths, &quot;NO_WINDOW&quot;, 0))</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     except Exception as exc:</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;bridge_spawn_failed&quot;, &quot;message&quot;: str(exc)}</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>     out = (res.stdout or &quot;&quot;).strip()</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>     if not out:</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;bridge_no_output&quot;,</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>                 &quot;message&quot;: (res.stderr or &quot;&quot;).strip()[:500]}</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>     try:</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>         return json.loads(out.splitlines()[-1])</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>     except Exception:</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;bridge_bad_json&quot;, &quot;message&quot;: out[:500]}</span>
+<span class="source-line" id="L136"><a href="#L136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137">137</a> </span>
+<span class="source-line" id="L138"><a href="#L138">138</a> # ── Run records (the steward&#x27;s own bookkeeping — never project state) ───────</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140">140</a> def _run_record_path(folder: str, session_id: str) -&gt; Path:</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     safe = &quot;&quot;.join(c for c in str(session_id) if c.isalnum() or c in &quot;-_.&quot;)</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     return Path(folder) / RUN_RECORDS_REL / f&quot;{safe}.json&quot;</span>
+<span class="source-line" id="L143"><a href="#L143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144">144</a> </span>
+<span class="source-line" id="L145"><a href="#L145">145</a> def _atomic_write_json(target: Path, obj: dict) -&gt; None:</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     target.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     tmp = target.with_suffix(&quot;.tmp&quot;)</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     tmp.write_text(json.dumps(obj, indent=2), encoding=&quot;utf-8&quot;)</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     os.replace(tmp, target)</span>
+<span class="source-line" id="L150"><a href="#L150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151">151</a> </span>
+<span class="source-line" id="L152"><a href="#L152">152</a> def load_run_record(folder: str, session_id: str) -&gt; Optional[dict]:</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     p = _run_record_path(folder, session_id)</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     if not p.exists():</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>         return None</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     try:</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>         return json.loads(p.read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     except Exception:</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>         return None</span>
+<span class="source-line" id="L160"><a href="#L160">160</a> </span>
+<span class="source-line" id="L161"><a href="#L161">161</a> </span>
+<span class="source-line" id="L162"><a href="#L162">162</a> def list_runs(folder: str) -&gt; list:</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     &quot;&quot;&quot;SAFE projections of the project&#x27;s commission runs, newest-first.</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     Never a worktree path, never the transcript body.&quot;&quot;&quot;</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     root = Path(folder) / RUN_RECORDS_REL</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>     if not root.exists():</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>         return []</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>     rows = []</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>     for p in sorted(root.glob(&quot;*.json&quot;)):</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>         try:</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>             rec = json.loads(p.read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>         except Exception:</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>             continue</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>         rows.append({</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>             &quot;session_id&quot;: rec.get(&quot;session_id&quot;),</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>             &quot;commission_id&quot;: rec.get(&quot;commission_id&quot;),</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>             &quot;skill&quot;: rec.get(&quot;skill&quot;),</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>             &quot;step_id&quot;: rec.get(&quot;step_id&quot;),</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>             &quot;lane&quot;: rec.get(&quot;lane&quot;),</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>             &quot;outcome&quot;: rec.get(&quot;outcome&quot;),</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>             &quot;ran&quot;: rec.get(&quot;ran&quot;),</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>             &quot;elapsed_s&quot;: rec.get(&quot;elapsed_s&quot;),</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>             &quot;at&quot;: rec.get(&quot;at&quot;),</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>             &quot;watch_count&quot;: rec.get(&quot;watch_count&quot;, 1),</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>             &quot;report&quot;: rec.get(&quot;report&quot;),</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>             &quot;prior_reports&quot;: rec.get(&quot;prior_reports&quot;) or [],</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>             &quot;reflection&quot;: rec.get(&quot;reflection&quot;),</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>             &quot;auto_continue&quot;: rec.get(&quot;auto_continue&quot;),</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>             &quot;auto_chain&quot;: rec.get(&quot;auto_chain&quot;),</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>             &quot;raised&quot;: rec.get(&quot;raised&quot;),</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>         })</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     rows.sort(key=lambda r: r.get(&quot;at&quot;) or &quot;&quot;, reverse=True)</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     return rows</span>
+<span class="source-line" id="L194"><a href="#L194">194</a> </span>
+<span class="source-line" id="L195"><a href="#L195">195</a> </span>
+<span class="source-line" id="L196"><a href="#L196">196</a> # ── Watcher registry (one watcher per session, ever) ────────────────────────</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> </span>
+<span class="source-line" id="L198"><a href="#L198">198</a> _WATCHERS: dict = {}</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> _WATCHERS_LOCK = threading.Lock()</span>
+<span class="source-line" id="L200"><a href="#L200">200</a> </span>
+<span class="source-line" id="L201"><a href="#L201">201</a> </span>
+<span class="source-line" id="L202"><a href="#L202">202</a> def watcher_active(session_id: str) -&gt; bool:</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     with _WATCHERS_LOCK:</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>         t = _WATCHERS.get(session_id)</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>         return bool(t and t.is_alive())</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207">207</a> </span>
+<span class="source-line" id="L208"><a href="#L208">208</a> def _claim_watcher(session_id: str, thread: threading.Thread) -&gt; bool:</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     with _WATCHERS_LOCK:</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>         existing = _WATCHERS.get(session_id)</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>         if existing and existing.is_alive():</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>             return False</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>         _WATCHERS[session_id] = thread</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>         return True</span>
+<span class="source-line" id="L215"><a href="#L215">215</a> </span>
+<span class="source-line" id="L216"><a href="#L216">216</a> </span>
+<span class="source-line" id="L217"><a href="#L217">217</a> # ── Propose ─────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L218"><a href="#L218">218</a> </span>
+<span class="source-line" id="L219"><a href="#L219">219</a> def propose(folder: str, step_id: Optional[str] = None,</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>             skill: Optional[str] = None, depth: Optional[str] = None,</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>             who: str = &quot;ecgberht-steward&quot;) -&gt; dict:</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>     &quot;&quot;&quot;Ask the engine to propose a commission for the step in hand.</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>     READ-ONLY — the reply carries requires_confirm and the hash John binds.&quot;&quot;&quot;</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     payload = {&quot;project&quot;: str(folder), &quot;who&quot;: who}</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     if step_id:</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>         payload[&quot;step_id&quot;] = step_id</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>     if skill:</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>         payload[&quot;skill&quot;] = skill</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>     if depth:</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>         payload[&quot;depth&quot;] = depth</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>     return run_bridge(&quot;propose-active&quot;, payload)</span>
+<span class="source-line" id="L232"><a href="#L232">232</a> </span>
+<span class="source-line" id="L233"><a href="#L233">233</a> </span>
+<span class="source-line" id="L234"><a href="#L234">234</a> # ── Confirm + launch + watch (the join) ─────────────────────────────────────</span>
+<span class="source-line" id="L235"><a href="#L235">235</a> </span>
+<span class="source-line" id="L236"><a href="#L236">236</a> def confirm_and_launch(</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     folder: str,</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>     proposal: dict,</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>     *,</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>     project_id: str,</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     who: str = &quot;john&quot;,</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     backend: str = &quot;claude&quot;,</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>     directive: Optional[str] = None,</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>     record_extra: Optional[dict] = None,</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>     watch: bool = True,</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>     start_session_fn: Optional[Callable] = None,</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     read_fn: Optional[Callable] = None,</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     write_fn: Optional[Callable] = None,</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>     runner_kwargs: Optional[dict] = None,</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>     auth_ctx: Optional[dict] = None,</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>     expected_token: Optional[str] = None,</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>     enforce_auth: bool = False,</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>     thread_factory: Optional[Callable] = None,</span>
+<span class="source-line" id="L254"><a href="#L254">254</a> ) -&gt; dict:</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>     &quot;&quot;&quot;John said go: hash-confirm through the engine, launch the managed</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>     session with the skill loaded and the brief seeded, and start the watcher</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>     that will fetch him when the skill needs him.</span>
+<span class="source-line" id="L258"><a href="#L258">258</a> </span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     Injectable seams (``start_session_fn`` / ``read_fn`` / ``write_fn`` /</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     ``thread_factory``) make this fully testable without a live PTY.</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     if not proposal or not isinstance(proposal, dict):</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;proposal_required&quot;}</span>
+<span class="source-line" id="L264"><a href="#L264">264</a> </span>
+<span class="source-line" id="L265"><a href="#L265">265</a>     # W4 commission-time manifest lint (steward-chamber plan, F2): a NEW</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>     # scaffold (born under the manifest convention) without a valid sidecar</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>     # manifest is a HARD refusal before anything is confirmed or launched;</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>     # a campaign predating the manifest routes to the W5 brownfield dual</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     # path (route &quot;brownfield-w5&quot;) and proceeds.</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     import chamber_manifest as _cm</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     manifest_lint = _cm.commission_time_lint(folder)</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>     if not manifest_lint.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>         return {&quot;ok&quot;: False, &quot;error&quot;: manifest_lint.get(&quot;error&quot;),</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>                 &quot;message&quot;: manifest_lint.get(&quot;message&quot;),</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>                 &quot;manifest_lint&quot;: manifest_lint}</span>
+<span class="source-line" id="L276"><a href="#L276">276</a> </span>
+<span class="source-line" id="L277"><a href="#L277">277</a>     # W10 E2 enqueue gate (steward-chamber, C5 — ENGINE-ENFORCED on THIS</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>     # seam, the W2-proven leg b): while the campaign carries a death whose</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     # containment-checked sweep card is not yet BOUND into the decision-gate</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>     # queue, a re-commission is REFUSED with the named finding — before the</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>     # engine confirm, before any spend. The guard fails CLOSED on an</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     # unreadable gate store (a safety gate never guesses).</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>     import chamber_gates as _cgates</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     e2 = _cgates.enqueue_guard(folder)</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>     if not e2.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>         return {&quot;ok&quot;: False, &quot;error&quot;: e2.get(&quot;error&quot;),</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>                 &quot;finding&quot;: e2.get(&quot;finding&quot;),</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>                 &quot;message&quot;: e2.get(&quot;message&quot;),</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>                 &quot;blocking_deaths&quot;: e2.get(&quot;blocking_deaths&quot;)}</span>
+<span class="source-line" id="L290"><a href="#L290">290</a> </span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     confirmed = run_bridge(&quot;confirm&quot;, {</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>         &quot;project&quot;: str(folder),</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>         &quot;proposal&quot;: proposal,</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>         &quot;who&quot;: who,</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>     })</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     if not confirmed.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>         return {&quot;ok&quot;: False, &quot;error&quot;: confirmed.get(&quot;error&quot;, &quot;confirm_failed&quot;),</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>                 &quot;message&quot;: confirmed.get(&quot;message&quot;), &quot;confirm&quot;: confirmed}</span>
+<span class="source-line" id="L299"><a href="#L299">299</a> </span>
+<span class="source-line" id="L300"><a href="#L300">300</a>     job = confirmed.get(&quot;job&quot;) or {}</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     skill = job.get(&quot;skill&quot;) or proposal.get(&quot;skill&quot;)</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>     step_id = job.get(&quot;step_id&quot;) or proposal.get(&quot;step_id&quot;)</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>     commission_id = (job.get(&quot;commission_id&quot;) or job.get(&quot;job_id&quot;)</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>                      or proposal.get(&quot;proposal_id&quot;))</span>
+<span class="source-line" id="L305"><a href="#L305">305</a> </span>
+<span class="source-line" id="L306"><a href="#L306">306</a>     # Lane resolution. researchPrime/Crucible/Foreman have dedicated lanes whose</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>     # seeds load them. Gandalf and Jumper have NO lane — but a `general` session</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     # sends its seed_context ALONE as the opening turn, so the brief itself can</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     # load the skill by name (they are registered globally). Found in hardening</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     # 2026-08-06: John&#x27;s step 1 IS a Gandalf read; without this his first Go</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     # refused. Truly unknown skills still refuse by name.</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     lane = _ce.lane_for_commissioned_skill(skill)</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>     load_preamble = None</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     if not lane and str(skill).lower() in (&quot;gandalf&quot;, &quot;jumper&quot;):</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>         lane = &quot;general&quot;</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>         load_preamble = (</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>             f&quot;Load the {skill} skill now. Confirm it&#x27;s ready by greeting me &quot;</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>             f&quot;EXACTLY once with: \&quot;{skill} loaded — what would you like to do?\&quot; &quot;</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>             &quot;Then stop and wait for my next message.\n\n&quot;)</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>     if not lane:</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;skill_has_no_session_lane&quot;,</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>                 &quot;message&quot;: f&quot;&#x27;{skill}&#x27; has no managed-session lane — it cannot &quot;</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>                            &quot;run as a commissioned session yet.&quot;,</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>                 &quot;skill&quot;: skill, &quot;confirm&quot;: confirmed}</span>
+<span class="source-line" id="L325"><a href="#L325">325</a> </span>
+<span class="source-line" id="L326"><a href="#L326">326</a>     # (2026-08-07) THE DIRECTIVE. The steward composes the brief from what the</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     # campaign has learned (the reflection), John iterates and approves it, and</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     # it rides here as the heart of the session&#x27;s opening context — the &quot;glue&quot;</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     # between runs he asked for.</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>     directive_block = &quot;&quot;</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     if directive and str(directive).strip():</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>         directive_block = (</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>             &quot;COMMISSION DIRECTIVE (composed by the steward from the campaign&#x27;s &quot;</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>             &quot;current state; approved by John):\n&quot; + str(directive).strip() + &quot;\n\n&quot;)</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>     brief = (load_preamble or &quot;&quot;) + directive_block + build_brief(proposal, skill=skill)</span>
+<span class="source-line" id="L336"><a href="#L336">336</a> </span>
+<span class="source-line" id="L337"><a href="#L337">337</a>     # (steward-chamber W11, E6) Standing-preferences PRELOAD: the feedback</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>     # ledger + global standing rules fold DETERMINISTICALLY into the talk</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>     # instruction at session start, and the projection listing EXACTLY the</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>     # loaded entries persists to the chamber sidecar</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>     # (chamber_preload.preload_into_instruction; verify_preload is the</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>     # mechanical diff — a missing entry is a diffable failure).</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>     try:</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>         import chamber_preload as _cpl</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>         brief = _cpl.preload_into_instruction(folder, brief)[&quot;instruction&quot;]</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     except Exception:</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>         # A preload hiccup never strands a launch; the projection sidecar&#x27;s</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>         # absence is itself the honest record that nothing was loaded.</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>         pass</span>
+<span class="source-line" id="L350"><a href="#L350">350</a> </span>
+<span class="source-line" id="L351"><a href="#L351">351</a>     def _launch(**kwargs):</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>         return _ce.launch_commission_in_session(</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>             start_session_fn=start_session_fn, **kwargs)</span>
+<span class="source-line" id="L354"><a href="#L354">354</a> </span>
+<span class="source-line" id="L355"><a href="#L355">355</a>     store_root = Path(folder) / COMMISSION_STORE_REL</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>     commission = {</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>         &quot;confirmed&quot;: True,</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>         &quot;commission_id&quot;: commission_id,</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>         &quot;skill&quot;: skill,</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>         &quot;depth&quot;: proposal.get(&quot;depth_cell&quot;),</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>         &quot;step_id&quot;: step_id,</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>         &quot;who&quot;: who,</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>     }</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>     launched = _ce.execute_confirmed_commission(</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>         commission,</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>         store_root=store_root,</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>         launch_fn=_launch,</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>         lane=lane,</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>         backend=backend,</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>         project_id=project_id,</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>         folder_path=folder,</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>         prompt=brief,</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>         auth_ctx=auth_ctx,</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>         expected_token=expected_token,</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>         enforce_auth=enforce_auth,</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>     )</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>     if not launched.get(&quot;ok&quot;, True) and launched.get(&quot;error&quot;):</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>         return {&quot;ok&quot;: False, &quot;error&quot;: launched.get(&quot;error&quot;),</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>                 &quot;message&quot;: launched.get(&quot;message&quot;) or launched.get(&quot;user_text&quot;),</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>                 &quot;launch&quot;: launched}</span>
+<span class="source-line" id="L381"><a href="#L381">381</a> </span>
+<span class="source-line" id="L382"><a href="#L382">382</a>     session_id = launched.get(&quot;session_id&quot;) or launched.get(&quot;job_id&quot;)</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>     if not session_id:</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;no_session_id&quot;, &quot;launch&quot;: launched}</span>
+<span class="source-line" id="L385"><a href="#L385">385</a> </span>
+<span class="source-line" id="L386"><a href="#L386">386</a>     record = {</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>         &quot;schema&quot;: RUN_RECORD_SCHEMA,</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>         &quot;session_id&quot;: session_id,</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>         &quot;commission_id&quot;: commission_id,</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>         &quot;skill&quot;: skill,</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>         &quot;step_id&quot;: step_id,</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>         &quot;lane&quot;: lane,</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>         &quot;project_id&quot;: project_id,</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>         &quot;outcome&quot;: &quot;running&quot;,</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>         &quot;at&quot;: time.strftime(&quot;%Y-%m-%dT%H:%M:%S&quot;),</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>         &quot;watch_count&quot;: 0,</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>         &quot;worktree_path&quot;: launched.get(&quot;worktree_path&quot;),</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>         # The composed brief rides the record so the pulse tile can show WHAT</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>         # this run was aimed at (2026-08-07, John&#x27;s inspect-naturally ask).</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>         &quot;directive&quot;: (str(directive).strip() if directive else None),</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>         # e.g. the autonomy chain depth — merged BEFORE the watcher starts so</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>         # the watcher&#x27;s in-memory record carries it to its own finish_run</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>         # (a post-launch disk patch would be silently dropped at run end).</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>         **(record_extra or {}),</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     }</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>     _atomic_write_json(_run_record_path(folder, session_id), record)</span>
+<span class="source-line" id="L407"><a href="#L407">407</a> </span>
+<span class="source-line" id="L408"><a href="#L408">408</a>     # W4 chamber sidecar: the commission_start event-time projection, plus the</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>     # manifest hash keyed to the commission id from the run record&#x27;s EXISTING</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>     # receipt fields (route &quot;manifest&quot; only). Best-effort — a sidecar hiccup</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>     # never blocks a launch John just confirmed; the projections are</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>     # rebuildable derived data (W5 cold-open rebuild).</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>     try:</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>         import chamber_projections as _cproj</span>
+<span class="source-line" id="L415"><a href="#L415">415</a>         _cproj.record_commission_start(</span>
+<span class="source-line" id="L416"><a href="#L416">416</a>             folder, commission_id, session_id=session_id,</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>             step_id=step_id, skill=skill, lane=lane)</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>         if manifest_lint.get(&quot;route&quot;) == _cm.ROUTE_MANIFEST:</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>             _cm.record_manifest_hash(folder, record)</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>     except Exception:</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>         pass</span>
+<span class="source-line" id="L422"><a href="#L422">422</a> </span>
+<span class="source-line" id="L423"><a href="#L423">423</a>     watching = False</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>     if watch:</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>         watching = _start_watcher(</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>             folder, project_id, record, watch_only=False,</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>             read_fn=read_fn, write_fn=write_fn,</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>             runner_kwargs=runner_kwargs, thread_factory=thread_factory)</span>
+<span class="source-line" id="L429"><a href="#L429">429</a> </span>
+<span class="source-line" id="L430"><a href="#L430">430</a>     return {</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>         &quot;ok&quot;: True,</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>         &quot;session_id&quot;: session_id,</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>         &quot;commission_id&quot;: commission_id,</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>         &quot;skill&quot;: skill,</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>         &quot;step_id&quot;: step_id,</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>         &quot;lane&quot;: lane,</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>         &quot;watching&quot;: watching,</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>         &quot;say&quot;: (f&quot;Commissioned — {skill} is running in a session I manage. &quot;</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>                 &quot;I&#x27;ll come get you the moment it needs you.&quot;),</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>     }</span>
+<span class="source-line" id="L441"><a href="#L441">441</a> </span>
+<span class="source-line" id="L442"><a href="#L442">442</a> </span>
+<span class="source-line" id="L443"><a href="#L443">443</a> def build_brief(proposal: dict, skill: Optional[str] = None) -&gt; str:</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>     &quot;&quot;&quot;The opening brief, folded onto the lane seed. Everything the engine</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>     proposal already knows about the step — nothing invented here.&quot;&quot;&quot;</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>     step = proposal.get(&quot;step&quot;) or {}</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>     lines = [</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>         f&quot;COMMISSION BRIEF — {skill or proposal.get(&#x27;skill&#x27;) or &#x27;skill&#x27;} &quot;</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>         f&quot;for roadmap step &#x27;{step.get(&#x27;name&#x27;) or proposal.get(&#x27;step_id&#x27;) or &#x27;&#x27;}&#x27;.&quot;,</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>     ]</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>     if step.get(&quot;done_when&quot;):</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>         lines.append(f&quot;The step is done when: {step[&#x27;done_when&#x27;]}&quot;)</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>     commission = proposal.get(&quot;commission&quot;) or {}</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>     if commission.get(&quot;active_effort&quot;):</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>         lines.append(f&quot;Active effort: {commission[&#x27;active_effort&#x27;]}&quot;)</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>     lines.append(</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>         &quot;Work from the project in this folder. When you genuinely need John&#x27;s &quot;</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>         &quot;decision, ask it plainly and stop — do not guess on his behalf.&quot;)</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>     return &quot;\n&quot;.join(lines)</span>
+<span class="source-line" id="L460"><a href="#L460">460</a> </span>
+<span class="source-line" id="L461"><a href="#L461">461</a> </span>
+<span class="source-line" id="L462"><a href="#L462">462</a> # ── The watcher (runs inside the service — the long-lived process) ──────────</span>
+<span class="source-line" id="L463"><a href="#L463">463</a> </span>
+<span class="source-line" id="L464"><a href="#L464">464</a> def _start_watcher(folder, project_id, record, *, watch_only,</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>                    read_fn=None, write_fn=None, runner_kwargs=None,</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>                    thread_factory=None) -&gt; bool:</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>     session_id = record[&quot;session_id&quot;]</span>
+<span class="source-line" id="L468"><a href="#L468">468</a> </span>
+<span class="source-line" id="L469"><a href="#L469">469</a>     def _run():</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>         _watch_session(folder, project_id, record,</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>                        watch_only=watch_only,</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>                        read_fn=read_fn, write_fn=write_fn,</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>                        runner_kwargs=runner_kwargs)</span>
+<span class="source-line" id="L474"><a href="#L474">474</a> </span>
+<span class="source-line" id="L475"><a href="#L475">475</a>     factory = thread_factory or (lambda fn: threading.Thread(</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>         target=fn, name=f&quot;commission-watch-{session_id}&quot;, daemon=True))</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>     thread = factory(_run)</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>     if not _claim_watcher(session_id, thread):</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>         return False</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>     thread.start()</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>     return True</span>
+<span class="source-line" id="L482"><a href="#L482">482</a> </span>
+<span class="source-line" id="L483"><a href="#L483">483</a> </span>
+<span class="source-line" id="L484"><a href="#L484">484</a> def _watch_session(folder, project_id, record, *, watch_only,</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>                    read_fn=None, write_fn=None, runner_kwargs=None) -&gt; dict:</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>     &quot;&quot;&quot;One watch: drive (or resume watching) the session, then bring the run</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>     home through the bridge. Runs on the watcher thread.&quot;&quot;&quot;</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>     session_id = record[&quot;session_id&quot;]</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>     if read_fn is None or write_fn is None:</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>         import terminal_session as _ts</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>         read_fn = read_fn or _ts.read_since</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>         write_fn = write_fn or _ts.input</span>
+<span class="source-line" id="L493"><a href="#L493">493</a> </span>
+<span class="source-line" id="L494"><a href="#L494">494</a>     kwargs = dict(DEFAULT_RUNNER_KWARGS) if runner_kwargs is None else dict(runner_kwargs)</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>     try:</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>         result = _cr.run_commissioned_session(</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>             session_id,</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>             WORK_TURN,</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>             read_fn=read_fn,</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>             write_fn=write_fn,</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>             watch_only=watch_only,</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>             **kwargs,</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>         )</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>     except Exception as exc:</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>         # (2026-08-07 shark round) A runner exception used to kill the daemon</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>         # thread SILENTLY — the record stranded &quot;running&quot; forever and John was</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>         # never fetched. A dead watcher is a died run: report it honestly.</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>         result = {&quot;outcome&quot;: &quot;died&quot;, &quot;ran&quot;: None, &quot;elapsed_s&quot;: None,</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>                   &quot;transcript&quot;: &quot;&quot;, &quot;transcript_chars&quot;: 0,</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>                   &quot;watcher_error&quot;: str(exc)[:300]}</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>     return finish_run(folder, project_id, record, result,</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>                       read_fn=read_fn, write_fn=write_fn,</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>                       runner_kwargs=runner_kwargs)</span>
+<span class="source-line" id="L514"><a href="#L514">514</a> </span>
+<span class="source-line" id="L515"><a href="#L515">515</a> </span>
+<span class="source-line" id="L516"><a href="#L516">516</a> #: How many runs the steward may chain WITHOUT John touching the campaign.</span>
+<span class="source-line" id="L517"><a href="#L517">517</a> #: John&#x27;s standing rule (2026-08-07): &quot;I want the steward to be able to do as</span>
+<span class="source-line" id="L518"><a href="#L518">518</a> #: much as it can without asking me&quot; — but an unattended chain still checks in</span>
+<span class="source-line" id="L519"><a href="#L519">519</a> #: after this many consecutive auto-hops, so an abandoned campaign never</span>
+<span class="source-line" id="L520"><a href="#L520">520</a> #: burns unbounded runs.</span>
+<span class="source-line" id="L521"><a href="#L521">521</a> AUTO_CHAIN_CAP = 3</span>
+<span class="source-line" id="L522"><a href="#L522">522</a> </span>
+<span class="source-line" id="L523"><a href="#L523">523</a> #: Hook C (reports-links 2026-09-05 W2): the HUMAN-FACING doc roles per lane</span>
+<span class="source-line" id="L524"><a href="#L524">524</a> #: kind — one register row per role, NEVER agent or provenance files</span>
+<span class="source-line" id="L525"><a href="#L525">525</a> #: (campaign journal 0010&#x27;s human-facing scope).</span>
+<span class="source-line" id="L526"><a href="#L526">526</a> HUMAN_FACING_DOC_ROLES = {</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>     &quot;research&quot;: (&quot;report&quot;, &quot;exec&quot;),</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>     &quot;planning&quot;: (&quot;master&quot;, &quot;impl&quot;, &quot;northstar&quot;),</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>     &quot;build&quot;: (&quot;execlog&quot;, &quot;deliverable&quot;),</span>
+<span class="source-line" id="L530"><a href="#L530">530</a> }</span>
+<span class="source-line" id="L531"><a href="#L531">531</a> </span>
+<span class="source-line" id="L532"><a href="#L532">532</a> </span>
+<span class="source-line" id="L533"><a href="#L533">533</a> def _register_gandalf_read(_dreg, _jnl, effort_dir, pfolder, project_id,</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>                            record) -&gt; None:</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>     &quot;&quot;&quot;The cockpit-Gandalf branch of Hook C (W2 second amendment, 2026-09-05):</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>     the cockpit&#x27;s &#x27;Commission a Gandalf read&#x27; maps skill Gandalf to lane</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>     ``general`` — HUMAN_FACING_DOC_ROLES has no ``general`` key and</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>     ``session_doc_roles`` is empty for that lane. The commissioned session</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>     runs in an ISOLATED WORKTREE, so at PRODUCED time its artifacts live at</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>     ``record.worktree_path/gandalf/**/report.md`` (+ sibling</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>     ``exec-summary.md``) — NOT under the campaign folder. THIS run&#x27;s artifacts</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>     are resolved from that worktree (everything under its ``gandalf/`` is this</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>     run&#x27;s own — never a sibling run bound by newest mtime), PERSISTED into</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>     MAIN first (``gandalf`` is a persistable ``effort_history._DOC_DIRS`` dir,</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>     so the capture-first step already copies them; a missed copy is completed</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>     here so the register never mints a dead Where), then registered via</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>     ``effort_dir_for`` + ``where_for(abs_path=&lt;the MAIN path&gt;)`` with the SAME</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>     what-string Hook A uses (&#x27;Gandalf read &lt;tier&gt; — &lt;verdict&gt;&#x27;, verdict from</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>     the exec summary&#x27;s first content line when known). No worktree → nothing</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>     registers (never fabricate). Never raises.&quot;&quot;&quot;</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>     try:</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>         wt = str(record.get(&quot;worktree_path&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>         if not wt:</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>             try:</span>
+<span class="source-line" id="L555"><a href="#L555">555</a>                 import session_registry as _sreg</span>
+<span class="source-line" id="L556"><a href="#L556">556</a>                 srec = _sreg.get_session(str(record.get(&quot;session_id&quot;) or &quot;&quot;))</span>
+<span class="source-line" id="L557"><a href="#L557">557</a>                 wt = str((srec or {}).get(&quot;worktree_path&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L558"><a href="#L558">558</a>             except Exception:</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>                 wt = &quot;&quot;</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>         base = Path(wt) / &quot;gandalf&quot; if wt else None</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>         if base is None or not base.is_dir():</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>             return</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>         docs = []</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>         for rep in sorted(base.rglob(&quot;report.md&quot;)):</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>             try:</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>                 if rep.stat().st_size &lt;= 0:</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>                     continue</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>             except OSError:</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>                 continue</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>             docs.append(rep)</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>             exec_md = rep.parent / &quot;exec-summary.md&quot;</span>
+<span class="source-line" id="L572"><a href="#L572">572</a>             if exec_md.is_file():</span>
+<span class="source-line" id="L573"><a href="#L573">573</a>                 docs.append(exec_md)</span>
+<span class="source-line" id="L574"><a href="#L574">574</a>         if not docs:</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>             return</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>         verdict = &quot;&quot;</span>
+<span class="source-line" id="L577"><a href="#L577">577</a>         for doc in docs:</span>
+<span class="source-line" id="L578"><a href="#L578">578</a>             if doc.name != &quot;exec-summary.md&quot;:</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>                 continue</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>             try:</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>                 for line in doc.read_text(</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>                         encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;).splitlines():</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>                     s = line.strip()</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>                     if s and not s.startswith(&quot;#&quot;):</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>                         verdict = s[:200]</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>                         break</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>             except OSError:</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>                 pass</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>             break</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>         what = &quot;Gandalf read %s — %s&quot; % (record.get(&quot;tier&quot;) or &quot;&quot;,</span>
+<span class="source-line" id="L591"><a href="#L591">591</a>                                          verdict or &quot;complete&quot;)</span>
+<span class="source-line" id="L592"><a href="#L592">592</a>         for doc in docs:</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>             rel = doc.relative_to(wt).as_posix()</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>             main = Path(pfolder) / rel</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>             if not main.is_file():</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>                 # Persist into MAIN before registering (the git-scoped capture</span>
+<span class="source-line" id="L597"><a href="#L597">597</a>                 # normally already did; this closes the stubbed/unmanaged gap).</span>
+<span class="source-line" id="L598"><a href="#L598">598</a>                 try:</span>
+<span class="source-line" id="L599"><a href="#L599">599</a>                     import shutil</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>                     main.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>                     shutil.copy2(str(doc), str(main))</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>                 except OSError:</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>                     continue</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>             where = _dreg.where_for(effort_dir, pfolder, project_id,</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>                                     abs_path=str(main))</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>             out = _dreg.register(effort_dir, what, where,</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>                                  step=record.get(&quot;step_id&quot;),</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>                                  project_folder=pfolder)</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>             _jnl.emit_safe(</span>
+<span class="source-line" id="L610"><a href="#L610">610</a>                 project_id, _jnl.EV_DELIVERABLE_PINNED,</span>
+<span class="source-line" id="L611"><a href="#L611">611</a>                 correlation_id=str(record.get(&quot;session_id&quot;) or &quot;&quot;),</span>
+<span class="source-line" id="L612"><a href="#L612">612</a>                 folder_path=pfolder,</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>                 payload={&quot;register&quot;: out.get(&quot;reason&quot;) or &quot;unknown&quot;,</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>                          &quot;what&quot;: what, &quot;where&quot;: where})</span>
+<span class="source-line" id="L615"><a href="#L615">615</a>     except Exception:</span>
+<span class="source-line" id="L616"><a href="#L616">616</a>         pass</span>
+<span class="source-line" id="L617"><a href="#L617">617</a> </span>
+<span class="source-line" id="L618"><a href="#L618">618</a> </span>
+<span class="source-line" id="L619"><a href="#L619">619</a> def _register_run_docs(folder, project_id, record) -&gt; None:</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>     &quot;&quot;&quot;Hook C (reports-links 2026-09-05 W2): a commissioned run that came home</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>     PRODUCED (the plan&#x27;s RUN_DONE) registers its HUMAN-FACING docs in the</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>     effort&#x27;s DELIVERABLES.md — one row per resolved role, what =</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>     &#x27;&lt;skill&gt; — &lt;role&gt;: &lt;filename&gt;&#x27;, step hint = the commission record&#x27;s step.</span>
+<span class="source-line" id="L624"><a href="#L624">624</a>     Idempotent on resume (the registrar dedups on (what, where)); every</span>
+<span class="source-line" id="L625"><a href="#L625">625</a>     outcome is journaled as ``{register: written|dup|&lt;reason&gt;}`` on the</span>
+<span class="source-line" id="L626"><a href="#L626">626</a>     existing deliverable-pinned event. Best-effort: never raises up a</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>     finishing run; a run with no resolvable docs registers nothing (an honest</span>
+<span class="source-line" id="L628"><a href="#L628">628</a>     register lists only real artifacts).</span>
+<span class="source-line" id="L629"><a href="#L629">629</a> </span>
+<span class="source-line" id="L630"><a href="#L630">630</a>     W2 amendment (2026-09-05): at finish time the produced docs are NOT yet</span>
+<span class="source-line" id="L631"><a href="#L631">631</a>     persisted (PRODUCED is a transcript classify; capture runs on kill/close),</span>
+<span class="source-line" id="L632"><a href="#L632">632</a>     so the docs are CAPTURED FIRST (``terminal_session.capture_session_docs``)</span>
+<span class="source-line" id="L633"><a href="#L633">633</a>     and only then role-resolved — against the record&#x27;s managed session id when</span>
+<span class="source-line" id="L634"><a href="#L634">634</a>     the lane grouping knows it, else against the session whose captured</span>
+<span class="source-line" id="L635"><a href="#L635">635</a>     members carry that managed id (the v8 keystone tag). A Gandalf commission</span>
+<span class="source-line" id="L636"><a href="#L636">636</a>     (lane ``general``) takes the direct-scan branch instead — see</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>     :func:`_register_gandalf_read`.&quot;&quot;&quot;</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>     try:</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>         import deliverables_register as _dreg</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>         import effort_history as _eh</span>
+<span class="source-line" id="L641"><a href="#L641">641</a>         import journal as _jnl</span>
+<span class="source-line" id="L642"><a href="#L642">642</a>         import summarizer as _summ</span>
+<span class="source-line" id="L643"><a href="#L643">643</a>         lane = record.get(&quot;lane&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L644"><a href="#L644">644</a>         session_id = record.get(&quot;session_id&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L645"><a href="#L645">645</a>         skill = record.get(&quot;skill&quot;) or &quot;skill&quot;</span>
+<span class="source-line" id="L646"><a href="#L646">646</a>         pfolder = str(folder)</span>
+<span class="source-line" id="L647"><a href="#L647">647</a>         try:</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>             import rnd_registry as _rnd</span>
+<span class="source-line" id="L649"><a href="#L649">649</a>             proj = _rnd.get_project(project_id)</span>
+<span class="source-line" id="L650"><a href="#L650">650</a>             pfolder = (proj or {}).get(&quot;folder_path&quot;) or pfolder</span>
+<span class="source-line" id="L651"><a href="#L651">651</a>         except Exception:</span>
+<span class="source-line" id="L652"><a href="#L652">652</a>             pass</span>
+<span class="source-line" id="L653"><a href="#L653">653</a>         effort_dir = _dreg.effort_dir_for(str(folder), pfolder)</span>
+<span class="source-line" id="L654"><a href="#L654">654</a>         # Amendment: persist the worktree&#x27;s produced docs NOW so the role</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>         # resolution below sees files that exist (list_efforts is empty until</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>         # persist, and finish_run does not otherwise persist). Best-effort +</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>         # idempotent; a non-managed session id no-ops inside the capture.</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>         try:</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>             import terminal_session as _ts</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>             _ts.capture_session_docs(session_id, project_id=project_id)</span>
+<span class="source-line" id="L661"><a href="#L661">661</a>         except Exception:</span>
+<span class="source-line" id="L662"><a href="#L662">662</a>             pass</span>
+<span class="source-line" id="L663"><a href="#L663">663</a>         if str(skill).strip().lower() == &quot;gandalf&quot;:</span>
+<span class="source-line" id="L664"><a href="#L664">664</a>             _register_gandalf_read(_dreg, _jnl, effort_dir, pfolder,</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>                                    project_id, record)</span>
+<span class="source-line" id="L666"><a href="#L666">666</a>             return</span>
+<span class="source-line" id="L667"><a href="#L667">667</a>         roles = _summ.session_doc_roles(project_id, lane, session_id,</span>
+<span class="source-line" id="L668"><a href="#L668">668</a>                                         folder_path=pfolder) or {}</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>         store_lane = _eh._resolve_subdir(lane)</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>         if not roles:</span>
+<span class="source-line" id="L671"><a href="#L671">671</a>             # The record&#x27;s id is the MANAGED session id; the capture above</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>             # recorded the docs as discovered efforts grouped by their dir</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>             # (a computed ``dir::…`` session id). Bridge via the v8 keystone</span>
+<span class="source-line" id="L674"><a href="#L674">674</a>             # tag: the session whose members carry this managed id.</span>
+<span class="source-line" id="L675"><a href="#L675">675</a>             try:</span>
+<span class="source-line" id="L676"><a href="#L676">676</a>                 import sessions as _sess</span>
+<span class="source-line" id="L677"><a href="#L677">677</a>                 for s in _sess.list_sessions(pfolder, project_id, store_lane):</span>
+<span class="source-line" id="L678"><a href="#L678">678</a>                     if any((m.get(&quot;session_id&quot;) or &quot;&quot;) == session_id</span>
+<span class="source-line" id="L679"><a href="#L679">679</a>                            for m in (s.get(&quot;member_files&quot;) or [])):</span>
+<span class="source-line" id="L680"><a href="#L680">680</a>                         roles = _summ.session_doc_roles(</span>
+<span class="source-line" id="L681"><a href="#L681">681</a>                             project_id, lane, s[&quot;session_id&quot;],</span>
+<span class="source-line" id="L682"><a href="#L682">682</a>                             folder_path=pfolder) or {}</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>                         break</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>             except Exception:</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>                 pass</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>         for role in HUMAN_FACING_DOC_ROLES.get(store_lane, ()):</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>             doc = roles.get(role)</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>             if not doc or not doc.get(&quot;href&quot;):</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>                 continue</span>
+<span class="source-line" id="L690"><a href="#L690">690</a>             what = &quot;%s — %s: %s&quot; % (skill, role, doc.get(&quot;label&quot;) or role)</span>
+<span class="source-line" id="L691"><a href="#L691">691</a>             # The Where cell is minted by the ONE resolver (where_for), fed</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>             # the doc&#x27;s raw facts — never the summarizer&#x27;s UI href, whose</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>             # spelling differs (premortem 1: a second Where form defeats the</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>             # registrar&#x27;s (what, where) dedup across hooks).</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>             rel = (doc.get(&quot;rel&quot;) or &quot;&quot;).strip()</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>             jid = (doc.get(&quot;job_id&quot;) or &quot;&quot;).strip()</span>
+<span class="source-line" id="L697"><a href="#L697">697</a>             where = _dreg.where_for(</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>                 effort_dir, pfolder, project_id,</span>
+<span class="source-line" id="L699"><a href="#L699">699</a>                 abs_path=(os.path.join(pfolder, rel) if rel else None),</span>
+<span class="source-line" id="L700"><a href="#L700">700</a>                 lane=(store_lane if jid and not rel else None),</span>
+<span class="source-line" id="L701"><a href="#L701">701</a>                 job_id=(jid if not rel else None))</span>
+<span class="source-line" id="L702"><a href="#L702">702</a>             out = _dreg.register(effort_dir, what, where,</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>                                  step=record.get(&quot;step_id&quot;),</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>                                  project_folder=pfolder)</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>             _jnl.emit_safe(</span>
+<span class="source-line" id="L706"><a href="#L706">706</a>                 project_id, _jnl.EV_DELIVERABLE_PINNED,</span>
+<span class="source-line" id="L707"><a href="#L707">707</a>                 correlation_id=str(session_id), folder_path=pfolder,</span>
+<span class="source-line" id="L708"><a href="#L708">708</a>                 payload={&quot;register&quot;: out.get(&quot;reason&quot;) or &quot;unknown&quot;,</span>
+<span class="source-line" id="L709"><a href="#L709">709</a>                          &quot;what&quot;: what, &quot;where&quot;: where})</span>
+<span class="source-line" id="L710"><a href="#L710">710</a>     except Exception:</span>
+<span class="source-line" id="L711"><a href="#L711">711</a>         pass</span>
+<span class="source-line" id="L712"><a href="#L712">712</a> </span>
+<span class="source-line" id="L713"><a href="#L713">713</a> </span>
+<span class="source-line" id="L714"><a href="#L714">714</a> def finish_run(folder, project_id, record, result, *,</span>
+<span class="source-line" id="L715"><a href="#L715">715</a>                read_fn=None, write_fn=None, runner_kwargs=None) -&gt; dict:</span>
+<span class="source-line" id="L716"><a href="#L716">716</a>     &quot;&quot;&quot;The run stopped: persist the record, then hand it to the engine —</span>
+<span class="source-line" id="L717"><a href="#L717">717</a>     report, conversation log, raise, handback — via the ingest bridge.</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>     If the reflection says the next move needs no human input, CARRY ON:</span>
+<span class="source-line" id="L719"><a href="#L719">719</a>     launch it unasked (John&#x27;s standing autonomy rule), capped by AUTO_CHAIN_CAP.&quot;&quot;&quot;</span>
+<span class="source-line" id="L720"><a href="#L720">720</a>     session_id = record[&quot;session_id&quot;]</span>
+<span class="source-line" id="L721"><a href="#L721">721</a>     transcript = result.get(&quot;transcript&quot;, &quot;&quot;) or &quot;&quot;</span>
+<span class="source-line" id="L722"><a href="#L722">722</a>     # A re-armed watch must never ERASE the first watch&#x27;s read (found live</span>
+<span class="source-line" id="L723"><a href="#L723">723</a>     # 2026-08-06: watch 2 saw only post-snap silence and its thin report</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>     # replaced the rich verdict). Every prior report is kept.</span>
+<span class="source-line" id="L725"><a href="#L725">725</a>     prior_reports = list(record.get(&quot;prior_reports&quot;) or [])</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>     if isinstance(record.get(&quot;report&quot;), dict) and record[&quot;report&quot;].get(&quot;say&quot;):</span>
+<span class="source-line" id="L727"><a href="#L727">727</a>         prior_reports.append(record[&quot;report&quot;])</span>
+<span class="source-line" id="L728"><a href="#L728">728</a>     updated = {</span>
+<span class="source-line" id="L729"><a href="#L729">729</a>         **record,</span>
+<span class="source-line" id="L730"><a href="#L730">730</a>         &quot;prior_reports&quot;: prior_reports,</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>         &quot;outcome&quot;: result.get(&quot;outcome&quot;),</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>         &quot;ran&quot;: result.get(&quot;ran&quot;),</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>         &quot;elapsed_s&quot;: result.get(&quot;elapsed_s&quot;),</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>         &quot;transcript_chars&quot;: result.get(&quot;transcript_chars&quot;),</span>
+<span class="source-line" id="L735"><a href="#L735">735</a>         &quot;transcript_tail&quot;: transcript[-TRANSCRIPT_TAIL_CHARS:],</span>
+<span class="source-line" id="L736"><a href="#L736">736</a>         &quot;watch_count&quot;: int(record.get(&quot;watch_count&quot;, 0)) + 1,</span>
+<span class="source-line" id="L737"><a href="#L737">737</a>         &quot;at&quot;: time.strftime(&quot;%Y-%m-%dT%H:%M:%S&quot;),</span>
+<span class="source-line" id="L738"><a href="#L738">738</a>     }</span>
+<span class="source-line" id="L739"><a href="#L739">739</a> </span>
+<span class="source-line" id="L740"><a href="#L740">740</a>     # (steward-chamber W11, E3) THE RESURRECTION GUARD on the W2-proven</span>
+<span class="source-line" id="L741"><a href="#L741">741</a>     # handback seam: BEFORE the ingest bridge reaches Ecgberht</span>
+<span class="source-line" id="L742"><a href="#L742">742</a>     # engine/handback-ingest.mjs :: ingestHandback /</span>
+<span class="source-line" id="L743"><a href="#L743">743</a>     # ingestValidatedHandbackBody, every predicate-bearing correction is</span>
+<span class="source-line" id="L744"><a href="#L744">744</a>     # re-asserted against the artifact it names. A regression BLOCKS the</span>
+<span class="source-line" id="L745"><a href="#L745">745</a>     # handback with the named finding; the unassertable remainder rides the</span>
+<span class="source-line" id="L746"><a href="#L746">746</a>     # report DEMOTED. Fails CLOSED on an unreadable corrections store; a</span>
+<span class="source-line" id="L747"><a href="#L747">747</a>     # project with zero corrections passes trivially (honest zero report).</span>
+<span class="source-line" id="L748"><a href="#L748">748</a>     try:</span>
+<span class="source-line" id="L749"><a href="#L749">749</a>         import chamber_corrections as _ccx</span>
+<span class="source-line" id="L750"><a href="#L750">750</a>         guard = _ccx.handback_guard(folder)</span>
+<span class="source-line" id="L751"><a href="#L751">751</a>     except Exception as exc:</span>
+<span class="source-line" id="L752"><a href="#L752">752</a>         guard = {&quot;ok&quot;: False, &quot;blocked&quot;: True,</span>
+<span class="source-line" id="L753"><a href="#L753">753</a>                  &quot;finding&quot;: &quot;E3-CORRECTION-REGRESSED-HANDBACK-BLOCKED&quot;,</span>
+<span class="source-line" id="L754"><a href="#L754">754</a>                  &quot;error&quot;: &quot;guard-crashed&quot;, &quot;message&quot;: str(exc)[:200]}</span>
+<span class="source-line" id="L755"><a href="#L755">755</a>     if guard.get(&quot;blocked&quot;):</span>
+<span class="source-line" id="L756"><a href="#L756">756</a>         updated[&quot;handback_blocked&quot;] = guard</span>
+<span class="source-line" id="L757"><a href="#L757">757</a>         updated[&quot;ingest_error&quot;] = guard.get(&quot;finding&quot;)</span>
+<span class="source-line" id="L758"><a href="#L758">758</a>         updated[&quot;report&quot;] = {</span>
+<span class="source-line" id="L759"><a href="#L759">759</a>             &quot;say&quot;: &quot;Handback BLOCKED (%s): %s&quot;</span>
+<span class="source-line" id="L760"><a href="#L760">760</a>                    % (guard.get(&quot;finding&quot;),</span>
+<span class="source-line" id="L761"><a href="#L761">761</a>                       guard.get(&quot;message&quot;) or &quot;correction regression&quot;),</span>
+<span class="source-line" id="L762"><a href="#L762">762</a>         }</span>
+<span class="source-line" id="L763"><a href="#L763">763</a>         _atomic_write_json(_run_record_path(folder, session_id), updated)</span>
+<span class="source-line" id="L764"><a href="#L764">764</a>         return {&quot;ok&quot;: False, &quot;record&quot;: updated, &quot;blocked&quot;: guard,</span>
+<span class="source-line" id="L765"><a href="#L765">765</a>                 &quot;ingest&quot;: None}</span>
+<span class="source-line" id="L766"><a href="#L766">766</a> </span>
+<span class="source-line" id="L767"><a href="#L767">767</a>     ingest = run_bridge(&quot;ingest-run&quot;, {</span>
+<span class="source-line" id="L768"><a href="#L768">768</a>         &quot;project&quot;: str(folder),</span>
+<span class="source-line" id="L769"><a href="#L769">769</a>         &quot;project_id&quot;: project_id,</span>
+<span class="source-line" id="L770"><a href="#L770">770</a>         &quot;run&quot;: {</span>
+<span class="source-line" id="L771"><a href="#L771">771</a>             &quot;outcome&quot;: result.get(&quot;outcome&quot;),</span>
+<span class="source-line" id="L772"><a href="#L772">772</a>             &quot;transcript&quot;: transcript,</span>
+<span class="source-line" id="L773"><a href="#L773">773</a>             &quot;ran&quot;: result.get(&quot;ran&quot;),</span>
+<span class="source-line" id="L774"><a href="#L774">774</a>             &quot;elapsed_s&quot;: result.get(&quot;elapsed_s&quot;),</span>
+<span class="source-line" id="L775"><a href="#L775">775</a>             &quot;skill&quot;: record.get(&quot;skill&quot;),</span>
+<span class="source-line" id="L776"><a href="#L776">776</a>             &quot;step_id&quot;: record.get(&quot;step_id&quot;),</span>
+<span class="source-line" id="L777"><a href="#L777">777</a>             &quot;session_id&quot;: session_id,</span>
+<span class="source-line" id="L778"><a href="#L778">778</a>             &quot;commission_id&quot;: record.get(&quot;commission_id&quot;),</span>
+<span class="source-line" id="L779"><a href="#L779">779</a>             &quot;worktree&quot;: record.get(&quot;worktree_path&quot;),</span>
+<span class="source-line" id="L780"><a href="#L780">780</a>         },</span>
+<span class="source-line" id="L781"><a href="#L781">781</a>     }, timeout=INGEST_TIMEOUT_S)</span>
+<span class="source-line" id="L782"><a href="#L782">782</a> </span>
+<span class="source-line" id="L783"><a href="#L783">783</a>     if ingest.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L784"><a href="#L784">784</a>         updated[&quot;report&quot;] = ingest.get(&quot;report&quot;)</span>
+<span class="source-line" id="L785"><a href="#L785">785</a>         # (2026-08-07) The frontier reflection: impact, findings fed into the</span>
+<span class="source-line" id="L786"><a href="#L786">786</a>         # scaffolding, and the composed next-move directive John iterates on.</span>
+<span class="source-line" id="L787"><a href="#L787">787</a>         updated[&quot;reflection&quot;] = ingest.get(&quot;reflection&quot;)</span>
+<span class="source-line" id="L788"><a href="#L788">788</a>         updated[&quot;raised&quot;] = ingest.get(&quot;raised&quot;)</span>
+<span class="source-line" id="L789"><a href="#L789">789</a>         updated[&quot;handback&quot;] = (ingest.get(&quot;handback&quot;) or {}).get(&quot;ingested&quot;) \</span>
+<span class="source-line" id="L790"><a href="#L790">790</a>             if isinstance(ingest.get(&quot;handback&quot;), dict) else None</span>
+<span class="source-line" id="L791"><a href="#L791">791</a>     else:</span>
+<span class="source-line" id="L792"><a href="#L792">792</a>         # The ingest failing is a fact John gets, not a silent swallow.</span>
+<span class="source-line" id="L793"><a href="#L793">793</a>         updated[&quot;report&quot;] = {</span>
+<span class="source-line" id="L794"><a href="#L794">794</a>             &quot;say&quot;: &quot;The run stopped but I could not read it back &quot;</span>
+<span class="source-line" id="L795"><a href="#L795">795</a>                    f&quot;({ingest.get(&#x27;error&#x27;, &#x27;bridge_failed&#x27;)}). Open the session to see it.&quot;,</span>
+<span class="source-line" id="L796"><a href="#L796">796</a>         }</span>
+<span class="source-line" id="L797"><a href="#L797">797</a>         updated[&quot;ingest_error&quot;] = ingest.get(&quot;error&quot;)</span>
+<span class="source-line" id="L798"><a href="#L798">798</a> </span>
+<span class="source-line" id="L799"><a href="#L799">799</a>     if result.get(&quot;watcher_error&quot;):</span>
+<span class="source-line" id="L800"><a href="#L800">800</a>         updated[&quot;watcher_error&quot;] = result.get(&quot;watcher_error&quot;)</span>
+<span class="source-line" id="L801"><a href="#L801">801</a> </span>
+<span class="source-line" id="L802"><a href="#L802">802</a>     # BANK the terminal state FIRST (2026-08-07 shark round): the auto hop</span>
+<span class="source-line" id="L803"><a href="#L803">803</a>     # spawns bridge processes and can block for seconds — during which the</span>
+<span class="source-line" id="L804"><a href="#L804">804</a>     # rest of the system must already see this run as finished, not running.</span>
+<span class="source-line" id="L805"><a href="#L805">805</a>     _atomic_write_json(_run_record_path(folder, session_id), updated)</span>
+<span class="source-line" id="L806"><a href="#L806">806</a> </span>
+<span class="source-line" id="L807"><a href="#L807">807</a>     # CARRY ON (2026-08-07): reflection said the next move is fully determined</span>
+<span class="source-line" id="L808"><a href="#L808">808</a>     # by what is on file — no decision is John&#x27;s — so launch it now. Only after</span>
+<span class="source-line" id="L809"><a href="#L809">809</a>     # a clean produced run (asked/died/timeout always come back to him), and</span>
+<span class="source-line" id="L810"><a href="#L810">810</a>     # never more than AUTO_CHAIN_CAP hops without him touching the campaign.</span>
+<span class="source-line" id="L811"><a href="#L811">811</a>     updated[&quot;auto_continue&quot;] = _maybe_auto_continue(</span>
+<span class="source-line" id="L812"><a href="#L812">812</a>         folder, project_id, updated, ingest,</span>
+<span class="source-line" id="L813"><a href="#L813">813</a>         read_fn=read_fn, write_fn=write_fn, runner_kwargs=runner_kwargs)</span>
+<span class="source-line" id="L814"><a href="#L814">814</a>     if updated[&quot;auto_continue&quot;] is not None:</span>
+<span class="source-line" id="L815"><a href="#L815">815</a>         _atomic_write_json(_run_record_path(folder, session_id), updated)</span>
+<span class="source-line" id="L816"><a href="#L816">816</a> </span>
+<span class="source-line" id="L817"><a href="#L817">817</a>     # W5 brief precompute (steward chamber): the reflection just landed, so</span>
+<span class="source-line" id="L818"><a href="#L818">818</a>     # precompute the situation brief into the chamber sidecar NOW — the next</span>
+<span class="source-line" id="L819"><a href="#L819">819</a>     # Seal open paints it with zero model calls (E8: steward-plane sidecar</span>
+<span class="source-line" id="L820"><a href="#L820">820</a>     # only; roadmap/receipts/reflection stores untouched). Best-effort by</span>
+<span class="source-line" id="L821"><a href="#L821">821</a>     # contract — a projector hiccup never blocks a run finishing; the W5</span>
+<span class="source-line" id="L822"><a href="#L822">822</a>     # cold-open rebuild is the cure. Runs BEFORE the campaign commit so the</span>
+<span class="source-line" id="L823"><a href="#L823">823</a>     # sidecar rides the same bank.</span>
+<span class="source-line" id="L824"><a href="#L824">824</a>     try:</span>
+<span class="source-line" id="L825"><a href="#L825">825</a>         import chamber_reconcile as _chamber_reconcile</span>
+<span class="source-line" id="L826"><a href="#L826">826</a>         _chamber_reconcile.on_reflection_landing(folder)</span>
+<span class="source-line" id="L827"><a href="#L827">827</a>     except Exception:</span>
+<span class="source-line" id="L828"><a href="#L828">828</a>         pass</span>
+<span class="source-line" id="L829"><a href="#L829">829</a> </span>
+<span class="source-line" id="L830"><a href="#L830">830</a>     # W9 deliverable landing (steward chamber, C2 — ENGINE-FED, never</span>
+<span class="source-line" id="L831"><a href="#L831">831</a>     # model-remembered): the run just stopped, so if the manifest-declared</span>
+<span class="source-line" id="L832"><a href="#L832">832</a>     # output now exists CONTAINED on disk, record the W4 deliverable_landing</span>
+<span class="source-line" id="L833"><a href="#L833">833</a>     # projection NOW — the open chamber&#x27;s injection-clock poll flips the ◇</span>
+<span class="source-line" id="L834"><a href="#L834">834</a>     # box live with no reopen. Idempotent per output path; best-effort by</span>
+<span class="source-line" id="L835"><a href="#L835">835</a>     # the same contract as the brief precompute above (a sidecar hiccup</span>
+<span class="source-line" id="L836"><a href="#L836">836</a>     # never blocks a run finishing).</span>
+<span class="source-line" id="L837"><a href="#L837">837</a>     try:</span>
+<span class="source-line" id="L838"><a href="#L838">838</a>         import chamber_deliverable as _chamber_deliverable</span>
+<span class="source-line" id="L839"><a href="#L839">839</a>         _chamber_deliverable.record_landing_if_present(folder, updated)</span>
+<span class="source-line" id="L840"><a href="#L840">840</a>     except Exception:</span>
+<span class="source-line" id="L841"><a href="#L841">841</a>         pass</span>
+<span class="source-line" id="L842"><a href="#L842">842</a> </span>
+<span class="source-line" id="L843"><a href="#L843">843</a>     # W10 died→sweep-card state machine (steward-chamber, C5/E2): a run that</span>
+<span class="source-line" id="L844"><a href="#L844">844</a>     # ended died/quiet/timeout registers SWEEP-PENDING now — from here the</span>
+<span class="source-line" id="L845"><a href="#L845">845</a>     # E2 gate in confirm_and_launch blocks any re-commission until the</span>
+<span class="source-line" id="L846"><a href="#L846">846</a>     # containment-checked sweep card is bound into the queue, and a HELD</span>
+<span class="source-line" id="L847"><a href="#L847">847</a>     # gate is never dropped (the transition never touches the queue head).</span>
+<span class="source-line" id="L848"><a href="#L848">848</a>     # Best-effort by the same sidecar contract as the hooks above; the E2</span>
+<span class="source-line" id="L849"><a href="#L849">849</a>     # refusal itself is enforced at the confirm_and_launch seam.</span>
+<span class="source-line" id="L850"><a href="#L850">850</a>     try:</span>
+<span class="source-line" id="L851"><a href="#L851">851</a>         if result.get(&quot;outcome&quot;) in (&quot;died&quot;, &quot;quiet&quot;, &quot;timeout&quot;):</span>
+<span class="source-line" id="L852"><a href="#L852">852</a>             import chamber_gates as _cgates</span>
+<span class="source-line" id="L853"><a href="#L853">853</a>             _cgates.on_run_death(folder, updated)</span>
+<span class="source-line" id="L854"><a href="#L854">854</a>     except Exception:</span>
+<span class="source-line" id="L855"><a href="#L855">855</a>         pass</span>
+<span class="source-line" id="L856"><a href="#L856">856</a> </span>
+<span class="source-line" id="L857"><a href="#L857">857</a>     # Hook C (reports-links 2026-09-05 W2): a run that came home PRODUCED</span>
+<span class="source-line" id="L858"><a href="#L858">858</a>     # registers its human-facing docs (idempotent on the re-armed watch&#x27;s</span>
+<span class="source-line" id="L859"><a href="#L859">859</a>     # second finish); asked/died/quiet/timeout runs never register. Runs</span>
+<span class="source-line" id="L860"><a href="#L860">860</a>     # BEFORE the campaign commit so the register row rides the same bank.</span>
+<span class="source-line" id="L861"><a href="#L861">861</a>     if result.get(&quot;outcome&quot;) == _cr.RUN_PRODUCED:</span>
+<span class="source-line" id="L862"><a href="#L862">862</a>         _register_run_docs(folder, project_id, updated)</span>
+<span class="source-line" id="L863"><a href="#L863">863</a> </span>
+<span class="source-line" id="L864"><a href="#L864">864</a>     # A finished run changed campaign state (record, attention, log) — bank it.</span>
+<span class="source-line" id="L865"><a href="#L865">865</a>     commit_campaign_state(</span>
+<span class="source-line" id="L866"><a href="#L866">866</a>         folder, f&quot;{record.get(&#x27;skill&#x27;, &#x27;skill&#x27;)} run {result.get(&#x27;outcome&#x27;)}&quot;)</span>
+<span class="source-line" id="L867"><a href="#L867">867</a>     return {&quot;ok&quot;: True, &quot;record&quot;: updated, &quot;ingest&quot;: ingest}</span>
+<span class="source-line" id="L868"><a href="#L868">868</a> </span>
+<span class="source-line" id="L869"><a href="#L869">869</a> </span>
+<span class="source-line" id="L870"><a href="#L870">870</a> def _maybe_auto_continue(folder, project_id, updated, ingest, *,</span>
+<span class="source-line" id="L871"><a href="#L871">871</a>                          read_fn=None, write_fn=None,</span>
+<span class="source-line" id="L872"><a href="#L872">872</a>                          runner_kwargs=None) -&gt; Optional[dict]:</span>
+<span class="source-line" id="L873"><a href="#L873">873</a>     &quot;&quot;&quot;The autonomy hop: propose + confirm + launch the reflection&#x27;s next move</span>
+<span class="source-line" id="L874"><a href="#L874">874</a>     when it declared needs_human false. Returns the note stored on the run</span>
+<span class="source-line" id="L875"><a href="#L875">875</a>     record (None when the situation simply doesn&#x27;t call for one). Best-effort —</span>
+<span class="source-line" id="L876"><a href="#L876">876</a>     a failed hop is a recorded fact, never an exception up the watcher.&quot;&quot;&quot;</span>
+<span class="source-line" id="L877"><a href="#L877">877</a>     try:</span>
+<span class="source-line" id="L878"><a href="#L878">878</a>         reflection = ingest.get(&quot;reflection&quot;) if ingest.get(&quot;ok&quot;) else None</span>
+<span class="source-line" id="L879"><a href="#L879">879</a>         nxt = (reflection or {}).get(&quot;next&quot;) if isinstance(reflection, dict) else None</span>
+<span class="source-line" id="L880"><a href="#L880">880</a>         if not (isinstance(nxt, dict) and nxt.get(&quot;skill&quot;) and nxt.get(&quot;directive&quot;)):</span>
+<span class="source-line" id="L881"><a href="#L881">881</a>             return None</span>
+<span class="source-line" id="L882"><a href="#L882">882</a>         if nxt.get(&quot;needs_human&quot;) is not False:</span>
+<span class="source-line" id="L883"><a href="#L883">883</a>             return None</span>
+<span class="source-line" id="L884"><a href="#L884">884</a>         # Defense in depth (2026-08-07 shark round): an unattended hop must</span>
+<span class="source-line" id="L885"><a href="#L885">885</a>         # aim a NAMED roadmap step with one of the five commissionable</span>
+<span class="source-line" id="L886"><a href="#L886">886</a>         # engines — the engine parse enforces both, this refuses if anything</span>
+<span class="source-line" id="L887"><a href="#L887">887</a>         # slipped through a stale bridge.</span>
+<span class="source-line" id="L888"><a href="#L888">888</a>         if nxt.get(&quot;skill&quot;) not in (&quot;researchPrime&quot;, &quot;Crucible&quot;, &quot;Foreman&quot;,</span>
+<span class="source-line" id="L889"><a href="#L889">889</a>                                     &quot;Gandalf&quot;, &quot;Jumper&quot;):</span>
+<span class="source-line" id="L890"><a href="#L890">890</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;skill-not-commissionable&quot;,</span>
+<span class="source-line" id="L891"><a href="#L891">891</a>                     &quot;detail&quot;: str(nxt.get(&quot;skill&quot;))[:60]}</span>
+<span class="source-line" id="L892"><a href="#L892">892</a>         if not nxt.get(&quot;step_id&quot;):</span>
+<span class="source-line" id="L893"><a href="#L893">893</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;no-step-id&quot;,</span>
+<span class="source-line" id="L894"><a href="#L894">894</a>                     &quot;say&quot;: &quot;The next move named no roadmap step — bringing &quot;</span>
+<span class="source-line" id="L895"><a href="#L895">895</a>                            &quot;it to John instead.&quot;}</span>
+<span class="source-line" id="L896"><a href="#L896">896</a>         # A stuck model re-proposing the move that JUST ran is the classic</span>
+<span class="source-line" id="L897"><a href="#L897">897</a>         # burn loop (shark P1) — an identical hop always goes back to John.</span>
+<span class="source-line" id="L898"><a href="#L898">898</a>         if (nxt.get(&quot;step_id&quot;) == updated.get(&quot;step_id&quot;)</span>
+<span class="source-line" id="L899"><a href="#L899">899</a>                 and nxt.get(&quot;skill&quot;) == updated.get(&quot;skill&quot;)):</span>
+<span class="source-line" id="L900"><a href="#L900">900</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;same-move&quot;,</span>
+<span class="source-line" id="L901"><a href="#L901">901</a>                     &quot;say&quot;: &quot;The next move would repeat the run that just &quot;</span>
+<span class="source-line" id="L902"><a href="#L902">902</a>                            &quot;finished — checking with you instead of looping.&quot;}</span>
+<span class="source-line" id="L903"><a href="#L903">903</a>         if updated.get(&quot;outcome&quot;) != &quot;produced&quot;:</span>
+<span class="source-line" id="L904"><a href="#L904">904</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;outcome-not-produced&quot;,</span>
+<span class="source-line" id="L905"><a href="#L905">905</a>                     &quot;say&quot;: &quot;The next move was ready but this run didn&#x27;t end &quot;</span>
+<span class="source-line" id="L906"><a href="#L906">906</a>                            &quot;clean — bringing it to John instead.&quot;}</span>
+<span class="source-line" id="L907"><a href="#L907">907</a>         chain = int(updated.get(&quot;auto_chain&quot;) or 0)</span>
+<span class="source-line" id="L908"><a href="#L908">908</a>         if chain &gt;= AUTO_CHAIN_CAP:</span>
+<span class="source-line" id="L909"><a href="#L909">909</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;auto-chain-cap&quot;,</span>
+<span class="source-line" id="L910"><a href="#L910">910</a>                     &quot;say&quot;: f&quot;I&#x27;ve carried on {chain} times in a row without &quot;</span>
+<span class="source-line" id="L911"><a href="#L911">911</a>                            &quot;you — checking in before the next move.&quot;}</span>
+<span class="source-line" id="L912"><a href="#L912">912</a>         # The finished session&#x27;s PTY is usually STILL OPEN, and the executor&#x27;s</span>
+<span class="source-line" id="L913"><a href="#L913">913</a>         # DEGRADED one-run-at-a-time scan refuses a new launch while a prior</span>
+<span class="source-line" id="L914"><a href="#L914">914</a>         # intent&#x27;s pid is alive (found in the 2026-08-07 hardening pass —</span>
+<span class="source-line" id="L915"><a href="#L915">915</a>         # without this every auto hop dies EXEC_SUBSTRATE_BUSY). The run is</span>
+<span class="source-line" id="L916"><a href="#L916">916</a>         # produced + ingested + reflected: park it gracefully (close is</span>
+<span class="source-line" id="L917"><a href="#L917">917</a>         # warm-resumable, docs persisted; John reopens it any time).</span>
+<span class="source-line" id="L918"><a href="#L918">918</a>         try:</span>
+<span class="source-line" id="L919"><a href="#L919">919</a>             import terminal_session as _ts</span>
+<span class="source-line" id="L920"><a href="#L920">920</a>             _ts.close_session(updated.get(&quot;session_id&quot;),</span>
+<span class="source-line" id="L921"><a href="#L921">921</a>                               project_id=project_id, actor=&quot;steward-auto-continue&quot;)</span>
+<span class="source-line" id="L922"><a href="#L922">922</a>         except Exception:</span>
+<span class="source-line" id="L923"><a href="#L923">923</a>             pass</span>
+<span class="source-line" id="L924"><a href="#L924">924</a>         proposed = propose(folder, step_id=(nxt.get(&quot;step_id&quot;) or None),</span>
+<span class="source-line" id="L925"><a href="#L925">925</a>                            skill=nxt.get(&quot;skill&quot;))</span>
+<span class="source-line" id="L926"><a href="#L926">926</a>         if not proposed.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L927"><a href="#L927">927</a>             detail = proposed.get(&quot;error&quot;) or proposed.get(&quot;message&quot;)</span>
+<span class="source-line" id="L928"><a href="#L928">928</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;propose-refused&quot;,</span>
+<span class="source-line" id="L929"><a href="#L929">929</a>                     &quot;detail&quot;: detail,</span>
+<span class="source-line" id="L930"><a href="#L930">930</a>                     &quot;say&quot;: &quot;I tried to carry on but couldn&#x27;t frame the next &quot;</span>
+<span class="source-line" id="L931"><a href="#L931">931</a>                            f&quot;commission ({detail}) — your call from here.&quot;}</span>
+<span class="source-line" id="L932"><a href="#L932">932</a>         tok = _paths.expected_token()</span>
+<span class="source-line" id="L933"><a href="#L933">933</a>         launched = confirm_and_launch(</span>
+<span class="source-line" id="L934"><a href="#L934">934</a>             folder, proposed,</span>
+<span class="source-line" id="L935"><a href="#L935">935</a>             project_id=project_id,</span>
+<span class="source-line" id="L936"><a href="#L936">936</a>             # Honest provenance: John&#x27;s 2026-08-07 standing autonomy rule is</span>
+<span class="source-line" id="L937"><a href="#L937">937</a>             # the confirming authority, never a fabricated human click.</span>
+<span class="source-line" id="L938"><a href="#L938">938</a>             who=&quot;john-standing-autonomy&quot;,</span>
+<span class="source-line" id="L939"><a href="#L939">939</a>             directive=nxt.get(&quot;directive&quot;),</span>
+<span class="source-line" id="L940"><a href="#L940">940</a>             # Chain depth rides the record FROM BIRTH — the watcher&#x27;s</span>
+<span class="source-line" id="L941"><a href="#L941">941</a>             # in-memory copy must carry it or its finish_run would drop it</span>
+<span class="source-line" id="L942"><a href="#L942">942</a>             # (cap bypass, found in the 2026-08-07 hardening pass).</span>
+<span class="source-line" id="L943"><a href="#L943">943</a>             record_extra={&quot;auto_chain&quot;: chain + 1,</span>
+<span class="source-line" id="L944"><a href="#L944">944</a>                           &quot;auto_from&quot;: updated.get(&quot;session_id&quot;)},</span>
+<span class="source-line" id="L945"><a href="#L945">945</a>             read_fn=read_fn, write_fn=write_fn, runner_kwargs=runner_kwargs,</span>
+<span class="source-line" id="L946"><a href="#L946">946</a>             auth_ctx={&quot;token&quot;: tok} if tok else None,</span>
+<span class="source-line" id="L947"><a href="#L947">947</a>             expected_token=tok,</span>
+<span class="source-line" id="L948"><a href="#L948">948</a>             enforce_auth=bool(tok),</span>
+<span class="source-line" id="L949"><a href="#L949">949</a>         )</span>
+<span class="source-line" id="L950"><a href="#L950">950</a>         if not launched.get(&quot;ok&quot;):</span>
+<span class="source-line" id="L951"><a href="#L951">951</a>             detail = launched.get(&quot;error&quot;) or launched.get(&quot;message&quot;)</span>
+<span class="source-line" id="L952"><a href="#L952">952</a>             return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;launch-refused&quot;,</span>
+<span class="source-line" id="L953"><a href="#L953">953</a>                     &quot;detail&quot;: detail,</span>
+<span class="source-line" id="L954"><a href="#L954">954</a>                     &quot;say&quot;: &quot;I tried to carry on but the launch was refused &quot;</span>
+<span class="source-line" id="L955"><a href="#L955">955</a>                            f&quot;({detail}) — nothing is running; your call.&quot;}</span>
+<span class="source-line" id="L956"><a href="#L956">956</a>         new_sid = launched.get(&quot;session_id&quot;)</span>
+<span class="source-line" id="L957"><a href="#L957">957</a>         return {&quot;launched&quot;: True, &quot;session_id&quot;: new_sid,</span>
+<span class="source-line" id="L958"><a href="#L958">958</a>                 &quot;skill&quot;: launched.get(&quot;skill&quot;), &quot;step_id&quot;: launched.get(&quot;step_id&quot;),</span>
+<span class="source-line" id="L959"><a href="#L959">959</a>                 &quot;auto_chain&quot;: chain + 1,</span>
+<span class="source-line" id="L960"><a href="#L960">960</a>                 &quot;say&quot;: f&quot;Carried on without you: {launched.get(&#x27;skill&#x27;)} is now &quot;</span>
+<span class="source-line" id="L961"><a href="#L961">961</a>                        &quot;running with the directive I composed — &quot;</span>
+<span class="source-line" id="L962"><a href="#L962">962</a>                        + (nxt.get(&quot;why&quot;) or &quot;it needed no decision of yours.&quot;)}</span>
+<span class="source-line" id="L963"><a href="#L963">963</a>     except Exception as exc:</span>
+<span class="source-line" id="L964"><a href="#L964">964</a>         return {&quot;launched&quot;: False, &quot;reason&quot;: &quot;auto-continue-threw&quot;,</span>
+<span class="source-line" id="L965"><a href="#L965">965</a>                 &quot;detail&quot;: str(exc)[:200]}</span>
+<span class="source-line" id="L966"><a href="#L966">966</a> </span>
+<span class="source-line" id="L967"><a href="#L967">967</a> </span>
+<span class="source-line" id="L968"><a href="#L968">968</a> # ── Campaign state → git (a crash costs nothing) ────────────────────────────</span>
+<span class="source-line" id="L969"><a href="#L969">969</a> </span>
+<span class="source-line" id="L970"><a href="#L970">970</a> #: The campaign&#x27;s durable surfaces — staged EXPLICITLY, never `git add -A`</span>
+<span class="source-line" id="L971"><a href="#L971">971</a> #: (the user&#x27;s unrelated changes are not the steward&#x27;s to commit).</span>
+<span class="source-line" id="L972"><a href="#L972">972</a> CAMPAIGN_STATE_PATHS = (</span>
+<span class="source-line" id="L973"><a href="#L973">973</a>     &quot;roadmap.json&quot;, &quot;ECGBERHT.md&quot;, &quot;Anchor.md&quot;, &quot;strip.json&quot;,</span>
+<span class="source-line" id="L974"><a href="#L974">974</a>     &quot;.ecgberht&quot;, &quot;.anchor&quot;,</span>
+<span class="source-line" id="L975"><a href="#L975">975</a> )</span>
+<span class="source-line" id="L976"><a href="#L976">976</a> </span>
+<span class="source-line" id="L977"><a href="#L977">977</a> </span>
+<span class="source-line" id="L978"><a href="#L978">978</a> def commit_campaign_state(folder, label: str = &quot;campaign state&quot;) -&gt; dict:</span>
+<span class="source-line" id="L979"><a href="#L979">979</a>     &quot;&quot;&quot;Commit the steward&#x27;s campaign surfaces in the PROJECT repo. Best-effort,</span>
+<span class="source-line" id="L980"><a href="#L980">980</a>     never raises — John&#x27;s standing rule (2026-08-06, his first real campaigns):</span>
+<span class="source-line" id="L981"><a href="#L981">981</a>     &#x27;you should be committing things as we go along so they don&#x27;t lose</span>
+<span class="source-line" id="L982"><a href="#L982">982</a>     anything.&#x27; Both his campaigns sat untracked for a day before this existed.</span>
+<span class="source-line" id="L983"><a href="#L983">983</a>     &quot;&quot;&quot;</span>
+<span class="source-line" id="L984"><a href="#L984">984</a>     out = {&quot;ok&quot;: False, &quot;committed&quot;: False, &quot;reason&quot;: &quot;ok&quot;}</span>
+<span class="source-line" id="L985"><a href="#L985">985</a>     try:</span>
+<span class="source-line" id="L986"><a href="#L986">986</a>         import subprocess as _sp</span>
+<span class="source-line" id="L987"><a href="#L987">987</a>         import project_bootstrap as _pb</span>
+<span class="source-line" id="L988"><a href="#L988">988</a>         folder = str(folder)</span>
+<span class="source-line" id="L989"><a href="#L989">989</a>         _pb.ensure_git_repo(folder)</span>
+<span class="source-line" id="L990"><a href="#L990">990</a> </span>
+<span class="source-line" id="L991"><a href="#L991">991</a>         def _git(*args):</span>
+<span class="source-line" id="L992"><a href="#L992">992</a>             return _sp.run([&quot;git&quot;, *args], cwd=folder, capture_output=True,</span>
+<span class="source-line" id="L993"><a href="#L993">993</a>                            text=True, timeout=60,</span>
+<span class="source-line" id="L994"><a href="#L994">994</a>                            creationflags=getattr(_paths, &quot;NO_WINDOW&quot;, 0))</span>
+<span class="source-line" id="L995"><a href="#L995">995</a> </span>
+<span class="source-line" id="L996"><a href="#L996">996</a>         present = [p for p in CAMPAIGN_STATE_PATHS</span>
+<span class="source-line" id="L997"><a href="#L997">997</a>                    if (Path(folder) / p).exists()]</span>
+<span class="source-line" id="L998"><a href="#L998">998</a>         if not present:</span>
+<span class="source-line" id="L999"><a href="#L999">999</a>             out.update(ok=True, reason=&quot;no-campaign-state&quot;)</span>
+<span class="source-line" id="L1000"><a href="#L1000">1000</a>             return out</span>
+<span class="source-line" id="L1001"><a href="#L1001">1001</a>         import git_safety as _gs</span>
+<span class="source-line" id="L1002"><a href="#L1002">1002</a>         with _gs.repo_lock(_gs.toplevel(folder) or folder, wait_s=60, who=&quot;campaign state &quot; + folder) as held:</span>
+<span class="source-line" id="L1003"><a href="#L1003">1003</a>             if not held:</span>
+<span class="source-line" id="L1004"><a href="#L1004">1004</a>                 out.update(ok=False, reason=&quot;lock-busy&quot;)      # a land holds the lock; nothing committed (Grok code R1 F8)</span>
+<span class="source-line" id="L1005"><a href="#L1005">1005</a>                 return out</span>
+<span class="source-line" id="L1006"><a href="#L1006">1006</a>             _git(&quot;add&quot;, &quot;--&quot;, *present)</span>
+<span class="source-line" id="L1007"><a href="#L1007">1007</a>             staged = _git(&quot;diff&quot;, &quot;--cached&quot;, &quot;--name-only&quot;, &quot;--&quot;, *present)</span>
+<span class="source-line" id="L1008"><a href="#L1008">1008</a>             if not (staged.stdout or &quot;&quot;).strip():</span>
+<span class="source-line" id="L1009"><a href="#L1009">1009</a>                 out.update(ok=True, reason=&quot;nothing-new&quot;)</span>
+<span class="source-line" id="L1010"><a href="#L1010">1010</a>                 return out</span>
+<span class="source-line" id="L1011"><a href="#L1011">1011</a>             # only these paths: never the whole index, which may hold another session&#x27;s staging (Grok R2 G1)</span>
+<span class="source-line" id="L1012"><a href="#L1012">1012</a>             done = _git(&quot;-c&quot;, &quot;user.email=ecgberht@anchor.local&quot;,</span>
+<span class="source-line" id="L1013"><a href="#L1013">1013</a>                         &quot;-c&quot;, &quot;user.name=Ecgberht Steward&quot;,</span>
+<span class="source-line" id="L1014"><a href="#L1014">1014</a>                         &quot;commit&quot;, &quot;-m&quot;, f&quot;ecgberht: {label}&quot;, &quot;--&quot;, *present)</span>
+<span class="source-line" id="L1015"><a href="#L1015">1015</a>         out.update(ok=done.returncode == 0, committed=done.returncode == 0,</span>
+<span class="source-line" id="L1016"><a href="#L1016">1016</a>                    reason=&quot;ok&quot; if done.returncode == 0</span>
+<span class="source-line" id="L1017"><a href="#L1017">1017</a>                    else (done.stderr or done.stdout or &quot;commit-failed&quot;)[:200])</span>
+<span class="source-line" id="L1018"><a href="#L1018">1018</a>         return out</span>
+<span class="source-line" id="L1019"><a href="#L1019">1019</a>     except Exception as exc:</span>
+<span class="source-line" id="L1020"><a href="#L1020">1020</a>         out[&quot;reason&quot;] = str(exc)[:200]</span>
+<span class="source-line" id="L1021"><a href="#L1021">1021</a>         return out</span>
+<span class="source-line" id="L1022"><a href="#L1022">1022</a> </span>
+<span class="source-line" id="L1023"><a href="#L1023">1023</a> </span>
+<span class="source-line" id="L1024"><a href="#L1024">1024</a> # ── Hand it back (after John answered in the session) ───────────────────────</span>
+<span class="source-line" id="L1025"><a href="#L1025">1025</a> </span>
+<span class="source-line" id="L1026"><a href="#L1026">1026</a> def rearm_watch(folder, project_id, session_id, *,</span>
+<span class="source-line" id="L1027"><a href="#L1027">1027</a>                 read_fn=None, write_fn=None, runner_kwargs=None,</span>
+<span class="source-line" id="L1028"><a href="#L1028">1028</a>                 thread_factory=None) -&gt; dict:</span>
+<span class="source-line" id="L1029"><a href="#L1029">1029</a>     &quot;&quot;&quot;John answered in the session and handed it back — resume the watch</span>
+<span class="source-line" id="L1030"><a href="#L1030">1030</a>     WITHOUT sending anything (the cursor snaps past the old question first).&quot;&quot;&quot;</span>
+<span class="source-line" id="L1031"><a href="#L1031">1031</a>     record = load_run_record(folder, session_id)</span>
+<span class="source-line" id="L1032"><a href="#L1032">1032</a>     if record is None:</span>
+<span class="source-line" id="L1033"><a href="#L1033">1033</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;unknown_run&quot;,</span>
+<span class="source-line" id="L1034"><a href="#L1034">1034</a>                 &quot;message&quot;: &quot;No commission run record for that session.&quot;}</span>
+<span class="source-line" id="L1035"><a href="#L1035">1035</a>     if watcher_active(session_id):</span>
+<span class="source-line" id="L1036"><a href="#L1036">1036</a>         return {&quot;ok&quot;: True, &quot;already_watching&quot;: True, &quot;session_id&quot;: session_id}</span>
+<span class="source-line" id="L1037"><a href="#L1037">1037</a>     started = _start_watcher(</span>
+<span class="source-line" id="L1038"><a href="#L1038">1038</a>         folder, project_id, record, watch_only=True,</span>
+<span class="source-line" id="L1039"><a href="#L1039">1039</a>         read_fn=read_fn, write_fn=write_fn,</span>
+<span class="source-line" id="L1040"><a href="#L1040">1040</a>         runner_kwargs=runner_kwargs, thread_factory=thread_factory)</span>
+<span class="source-line" id="L1041"><a href="#L1041">1041</a>     return {&quot;ok&quot;: started, &quot;session_id&quot;: session_id, &quot;watching&quot;: started,</span>
+<span class="source-line" id="L1042"><a href="#L1042">1042</a>             &quot;say&quot;: &quot;Watching again — carry on; I&#x27;ll take it from here.&quot;}</span>
+<span class="source-line" id="L1043"><a href="#L1043">1043</a> </span>
+<span class="source-line" id="L1044"><a href="#L1044">1044</a> # NOTE deliberately ABSENT: a panel-close re-arm hook. The panel × is a</span>
+<span class="source-line" id="L1045"><a href="#L1045">1045</a> # GRACEFUL CLOSE that STOPS the PTY (terminal_session.close_session) — there</span>
+<span class="source-line" id="L1046"><a href="#L1046">1046</a> # is nothing left to watch after it. Handing a session back to the steward is</span>
+<span class="source-line" id="L1047"><a href="#L1047">1047</a> # an explicit act on a LIVE session (&quot;Hand it back&quot; → /commission_watch),</span>
+<span class="source-line" id="L1048"><a href="#L1048">1048</a> # which is also exactly how John described the flow.</span></pre></main></body></html>

@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Bounded refuter budget · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="budget" data-anchor-id="a-budget">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Bounded refuter budget</h1>
+<p class="intro">Default R comes from the refute constants (3). Top-R firing suggestions get a refuter; excess suggestions ship speculative with a named budget-floor entry.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/live-refuter.mjs · lines 234–252</p><pre>  let toRefute = firing;
+  let floored = [];
+  if (firing.length &gt; budget) {
+    const rank = (i) =&gt; {
+      const e = rawElevations[i];
+      const v = String(e?.value_if_true ?? &#x27;&#x27;).toLowerCase() === &#x27;high&#x27; ? 2 : 1;
+      // 2026-08-25 review fix: &#x27;critical&#x27; outranks &#x27;major&#x27; (it scored 0 — criticals
+      // were floored BEFORE majors under budget pressure, inverted priority).
+      const sev = String(e?.severity ?? &#x27;&#x27;).toLowerCase();
+      const s = sev === &#x27;critical&#x27; ? 2 : sev === &#x27;major&#x27; ? 1 : 0;
+      return v * 10 + s;
+    };
+    const sorted = [...firing].sort((a, b) =&gt; rank(b) - rank(a) || a - b);
+    toRefute = sorted.slice(0, budget).sort((a, b) =&gt; a - b);
+    floored = sorted.slice(budget).sort((a, b) =&gt; a - b);
+    const nameOf = (i) =&gt; rawElevations[i]?.id ?? `e${i}`;
+    const ceiling = firing.length &gt; Math.max(12, 4 * budget) ? &#x27; RUNAWAY CEILING TRIPPED —&#x27; : &#x27;&#x27;;
+    log(`refuter budget PRE-FLIGHT:${ceiling} ${firing.length} firing elevation(s) exceed budget ${budget} — FLOORING, not halting: refuting top ${budget} (${toRefute.map(nameOf).join(&#x27;, &#x27;)}); ${floored.length} ship SPECULATIVE un-refuted (${floored.map(nameOf).join(&#x27;, &#x27;)}). Re-run with --budget ${firing.length} to cover all.`);
+  }</pre>
+<p><a class="button" href="../source-pages/live.html#L234">Open numbered source</a>
+<a href="../sources/live.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/budget">Pre-flight the top-R budget</a> · <a target="_top" href="../index.html#process/rerun">Explicitly commission another bounded run</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">02d66c8e1f4966c2d784962de6cf66818a10f69205e93b1b014575dcd2a7b324</span></p><p>Excerpt hash: <span class="path">f50bb1f2ad51169a1fbef7b610e72292456ab22a76d8a722d3c1047bb862268e</span></p></details></article></main></body></html>

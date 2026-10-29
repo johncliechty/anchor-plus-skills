@@ -1,0 +1,114 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Compact project facts · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="project-facts" data-anchor-id="a-rows-project_facts">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Compact project facts</h1>
+<p class="intro">The current page gathers project summaries and nested effort waits; it does not establish the instructions&#x27; strict index-only reading boundary.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.531389+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/home_rows.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 2d62ba30d88ecdbfd141b67c07a4e426679b3b57c809eb2cf675b63adf7d8f79</p></aside>
+<p class="path">C:/dev/Anchor/home_rows.py · lines 35–136</p><pre>def project_facts(entry, today=None):
+    &quot;&quot;&quot;One registry entry → the facts its home row is made of.
+
+    ``needs_you``  the strip&#x27;s human wait, else the last status&#x27;s &quot;waiting on you&quot; (the fact
+                   behind a needs-you row); ``next`` / ``why`` the strip&#x27;s next step and its reason;
+                   ``summary`` the last persisted status, parsed once, with ``summary_age_s`` (the
+                   row&#x27;s steward line reads it from here, not from the file again); ``dated`` the
+                   open steps that carry a ``due`` (soonest first, each with its project);
+                   ``nearest_due`` the first of them; ``has_record`` whether any file existed.
+    &quot;&quot;&quot;
+    today = today or date.today()
+    entry = entry if isinstance(entry, dict) else {}
+    pid = str(entry.get(&quot;id&quot;) or &quot;&quot;)
+    name = str(entry.get(&quot;name&quot;) or pid[:8])
+    folder = str(entry.get(&quot;folder_path&quot;) or &quot;&quot;).strip()
+    out = {&quot;id&quot;: pid, &quot;name&quot;: name, &quot;href&quot;: (&quot;/project/%s&quot; % pid) if pid else &quot;&quot;,
+           &quot;needs_you&quot;: &quot;&quot;, &quot;next&quot;: &quot;&quot;, &quot;why&quot;: &quot;&quot;, &quot;summary&quot;: None, &quot;summary_age_s&quot;: None, &quot;dated&quot;: [],
+           &quot;nearest_due&quot;: &quot;&quot;, &quot;has_record&quot;: False, &quot;folder&quot;: folder, &quot;projection&quot;: None}
+    if not folder or not pid:
+        return out
+    root = Path(folder)
+    # the record may live one folder down (the cockpit&#x27;s own discovery: the root, or a subfolder with a Face);
+    # the card reads the effort touched last and names it (John, 2026-09-27: &quot;I don&#x27;t see many efforts&quot;)
+    rel = current_effort(folder)
+    if rel:
+        root = root / rel
+    out[&quot;effort&quot;] = rel
+    strip = _read_json(root / &quot;strip.json&quot;)
+    if isinstance(strip, dict):
+        out[&quot;has_record&quot;] = True
+        out[&quot;needs_you&quot;] = _real_wait(strip.get(&quot;human_wait&quot;))
+        out[&quot;next&quot;] = str(strip.get(&quot;next_recommended&quot;) or &quot;&quot;).strip()
+        out[&quot;why&quot;] = str(strip.get(&quot;why_next&quot;) or &quot;&quot;).strip()
+    sfile = root / &quot;.ecgberht&quot; / &quot;status-summary.json&quot;
+    summ = _read_json(sfile)
+    if isinstance(summ, dict):
+        out[&quot;has_record&quot;] = True
+        out[&quot;summary&quot;] = summ
+        try:
+            out[&quot;summary_age_s&quot;] = max(0.0, time.time() - sfile.stat().st_mtime)
+        except Exception:
+            out[&quot;summary_age_s&quot;] = None
+        plan = summ.get(&quot;plan&quot;) if isinstance(summ.get(&quot;plan&quot;), dict) else {}
+        if not out[&quot;needs_you&quot;]:
+            out[&quot;needs_you&quot;] = _real_wait(plan.get(&quot;waiting_on_you&quot;))
+    rm = _read_json(root / &quot;roadmap.json&quot;)
+    if isinstance(rm, dict):
+        out[&quot;has_record&quot;] = True
+        if not rel:
+            out[&quot;projection&quot;] = rm.get(&quot;roadmap_projection&quot;) or []   # the ROOT record only: a resolver in the same request keys on the project folder
+        dated = []
+        for s in rm.get(&quot;roadmap_projection&quot;) or []:
+            if not isinstance(s, dict) or s.get(&quot;status&quot;) not in _OPEN:
+                continue
+            d = _iso(s.get(&quot;due&quot;)) if s.get(&quot;due&quot;) else None
+            if d is None:
+                continue
+            dated.append({&quot;step_id&quot;: str(s.get(&quot;id&quot;) or &quot;&quot;), &quot;name&quot;: str(s.get(&quot;name&quot;) or &quot;&quot;),
+                          &quot;due&quot;: d.isoformat(), &quot;status&quot;: str(s.get(&quot;status&quot;) or &quot;&quot;),
+                          &quot;project_id&quot;: pid, &quot;project_name&quot;: name})
+        dated.sort(key=lambda x: (x[&quot;due&quot;], x[&quot;name&quot;]))
+        out[&quot;dated&quot;] = dated
+        out[&quot;nearest_due&quot;] = dated[0][&quot;due&quot;] if dated else &quot;&quot;
+        # W2 (2026-09-28): what closed — every status flip to done with its INSTANT (the event&#x27;s `at`, else the
+        # receipt&#x27;s date at midnight), one per step (the latest), so the head&#x27;s &quot;since you last opened&quot; can compare
+        # against the real instant of his last page open (Grok W2: the date alone cannot see a second open)
+        names_by_id = {str(s.get(&quot;id&quot;)): str(s.get(&quot;name&quot;) or s.get(&quot;id&quot;) or &quot;&quot;) for s in rm.get(&quot;roadmap_projection&quot;) or [] if isinstance(s, dict)}
+        closed = {}
+        for ev in rm.get(&quot;roadmap_events&quot;) or []:
+            if not isinstance(ev, dict) or ev.get(&quot;kind&quot;) != &quot;status_flip&quot; or str(ev.get(&quot;to&quot;) or &quot;&quot;) != &quot;done&quot;:
+                continue
+            rc = ev.get(&quot;receipt&quot;) if isinstance(ev.get(&quot;receipt&quot;), dict) else {}
+            instant = _instant(ev.get(&quot;at&quot;)) or _instant(rc.get(&quot;when&quot;))
+            if instant is None:
+                continue
+            sid = str(ev.get(&quot;step_id&quot;) or &quot;&quot;)
+            closed[sid] = {&quot;step_id&quot;: sid, &quot;name&quot;: names_by_id.get(sid, sid), &quot;at&quot;: instant, &quot;project_name&quot;: name, &quot;project_id&quot;: pid}
+        out[&quot;closed_recent&quot;] = sorted(closed.values(), key=lambda x: x[&quot;at&quot;])
+        # W4 (2026-09-28): the repairs proposed and not yet resolved on his word (the card says &quot;proposed: N corrections&quot;)
+        try:
+            from steward_cockpit.repair import open_proposals as _open_proposals
+            props = _open_proposals(rm.get(&quot;roadmap_events&quot;))
+            out[&quot;repair_proposals&quot;] = [{&quot;proposal_id&quot;: str(p.get(&quot;proposal_id&quot;) or &quot;&quot;), &quot;count&quot;: int(p.get(&quot;count&quot;) or 0)} for p in props]
+        except Exception:
+            out[&quot;repair_proposals&quot;] = []
+    # W2 (2026-09-28): the age of the wait — from the record, never the strip&#x27;s last touch: the earliest instrument
+    # that set the current wait, else the status summary&#x27;s own time when it carries it; None when unknown
+    out[&quot;wait_age_days&quot;] = _wait_age_days(root, out[&quot;needs_you&quot;], strip, summ, sfile, today) if out[&quot;needs_you&quot;] else None
+    # W5 (2026-09-28): where he left — the strip&#x27;s last leave receipt (W0&#x27;s, written on the switch he made), re-read
+    # against the roadmap as it stands now (how many events since); None when he never left this record
+    out[&quot;resume&quot;] = _resume(strip, rm if isinstance(rm, dict) else None, rel)
+    # W1 of the steward revision (2026-09-28): EVERY effort&#x27;s wait, not only the effort touched last — Grok&#x27;s live
+    # replay (2026-09-27) showed alternating touches hiding the second MBA effort&#x27;s review from the home. The card
+    # keeps the shown effort for its line; the other efforts&#x27; waits ride beside it, each opening its own record.
+    out[&quot;efforts&quot;], out[&quot;efforts_gap&quot;] = _effort_waits(folder, rel, today)
+    out[&quot;other_waits&quot;] = [x for x in out[&quot;efforts&quot;] if x[&quot;needs_you&quot;] and x[&quot;rel&quot;] != rel]
+    if not out[&quot;needs_you&quot;] and out[&quot;other_waits&quot;]:
+        first = out[&quot;other_waits&quot;][0]
+        out[&quot;needs_you&quot;] = &quot;%s: %s&quot; % (first[&quot;name&quot;], first[&quot;needs_you&quot;])
+        out[&quot;needs_you_effort&quot;] = first[&quot;rel&quot;]
+        out[&quot;wait_age_days&quot;] = first.get(&quot;age_days&quot;)     # the promoted wait&#x27;s own age (Grok W2)
+    return out</pre>
+<p><a class="button" href="../source-pages/rows.html#L35">Open numbered source</a>
+<a href="../sources/rows.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/intake">Read registry and compact project facts</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">2d62ba30d88ecdbfd141b67c07a4e426679b3b57c809eb2cf675b63adf7d8f79</span></p><p>Excerpt hash: <span class="path">4c20ed3279d9363b4936dbad26acc7aa4792ff57759f19e2ab7c9376cc28cfa2</span></p></details></article></main></body></html>

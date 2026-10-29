@@ -1,0 +1,336 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>models · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>models</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Anchor\model_policy.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 e1009b05ea6c5636f64625410ff0aeaaf1a7a5ab84e6aff839422b26913b4142</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.633990+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/model_policy.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: e1009b05ea6c5636f64625410ff0aeaaf1a7a5ab84e6aff839422b26913b4142</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;Subscription-CLI model capabilities; no dated model IDs or API-key calls.</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> The durable choice is latest-supported / highest-supported. Exact model IDs</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> belong only to short-lived capability records and per-launch receipts.</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> from __future__ import annotations</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> </span>
+<span class="source-line" id="L8"><a href="#L8">8</a> import json</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> import math</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> import os</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> from pathlib import Path</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> import re</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> import shutil</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> import subprocess</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> import threading</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> import time</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> from codex_catalog import reconcile_codex_catalog</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19">19</a> POLICY_VERSION = 1</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> DEFAULT_POLICY = {&quot;mode&quot;: &quot;latest_supported&quot;, &quot;effort&quot;: &quot;highest_supported&quot;}</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> FAMILIES = frozenset({&quot;chatgpt&quot;, &quot;claude&quot;, &quot;grok&quot;, &quot;gemini&quot;})</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> EFFORT_ORDER = (&quot;none&quot;, &quot;minimal&quot;, &quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;xhigh&quot;, &quot;max&quot;, &quot;ultra&quot;)</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> CAPABILITY_TTL_SECONDS = 300</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> _LOCK = threading.RLock()</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> _MEMORY = {}</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28">28</a> class PolicyUnavailable(RuntimeError):</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>     def __init__(self, family, reason, *, code=&quot;capability_unavailable&quot;):</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>         self.family, self.code = family, code</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>         super().__init__(f&quot;{family}: {reason}&quot;)</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> </span>
+<span class="source-line" id="L33"><a href="#L33">33</a> </span>
+<span class="source-line" id="L34"><a href="#L34">34</a> def validate_policy(value):</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>     if not isinstance(value, dict) or value != DEFAULT_POLICY:</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>         raise ValueError(&quot;model_policy must select latest_supported / highest_supported&quot;)</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>     return dict(DEFAULT_POLICY)</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> </span>
+<span class="source-line" id="L39"><a href="#L39">39</a> </span>
+<span class="source-line" id="L40"><a href="#L40">40</a> def highest_effort(levels):</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>     &quot;&quot;&quot;Reject unknown semantics instead of silently choosing a lower effort.&quot;&quot;&quot;</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>     values = []</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>     if not isinstance(levels, list):</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>         raise ValueError(&quot;No supported, understood reasoning-effort ordering&quot;)</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>     for level in levels:</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>         if not isinstance(level, (str, dict)):</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>             raise ValueError(&quot;Invalid reasoning-effort metadata&quot;)</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>         value = level if isinstance(level, str) else (</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>             level.get(&quot;effort&quot;) or level.get(&quot;reasoningEffort&quot;)</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>             or level.get(&quot;value&quot;) or level.get(&quot;id&quot;))</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>         if value:</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>             values.append(str(value).lower())</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>     if not values or any(value not in EFFORT_ORDER for value in values):</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>         raise ValueError(&quot;No supported, understood reasoning-effort ordering&quot;)</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>     return max(values, key=EFFORT_ORDER.index)</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58">58</a> def normalize_catalog(family, raw):</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     &quot;&quot;&quot;Keep capability fields only; never persist prompts, headers or secrets.&quot;&quot;&quot;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     rows = []</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     if not isinstance(raw, dict):</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         raise PolicyUnavailable(family, &quot;invalid capability catalog&quot;)</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     def hidden(entry):</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>         return (entry.get(&quot;hidden&quot;) is True or entry.get(&quot;isHidden&quot;) is True</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>                 or entry.get(&quot;selectable&quot;) is False</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>                 or entry.get(&quot;visibility&quot;) in (&quot;hide&quot;, &quot;hidden&quot;, &quot;none&quot;))</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>     def row(model, levels, rank, upgrade, evidence):</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>         if not isinstance(model, str) or not re.fullmatch(r&quot;[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}&quot;, model):</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>             raise PolicyUnavailable(family, &quot;catalog model identity has unsupported characters&quot;)</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>         if type(rank) not in (int, float) or not math.isfinite(rank):</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>             raise PolicyUnavailable(family, &quot;invalid catalog priority&quot;)</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>         try:</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>             highest_effort(levels)</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>         except ValueError as exc:</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>             raise PolicyUnavailable(family, str(exc), code=&quot;unsupported_effort&quot;) from exc</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>         rows.append({&quot;model&quot;: model, &quot;efforts&quot;: levels, &quot;rank&quot;: rank,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>                      &quot;upgrade&quot;: upgrade, &quot;evidence&quot;: evidence})</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     if family == &quot;chatgpt&quot;:</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>         entries = raw.get(&quot;models&quot;, raw.get(&quot;data&quot;, []))</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>         if not isinstance(entries, list):</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>             raise PolicyUnavailable(family, &quot;invalid capability catalog&quot;)</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>         explicit_priority = bool(entries) and all(isinstance(e, dict) and type(e.get(&quot;priority&quot;)) in (int, float) for e in entries)</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>         for index, entry in enumerate(entries):</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>             if not isinstance(entry, dict):</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>                 raise PolicyUnavailable(family, &quot;invalid model metadata&quot;)</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>             model = entry.get(&quot;slug&quot;) or entry.get(&quot;model&quot;) or entry.get(&quot;id&quot;)</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>             if hidden(entry):</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>                 continue</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>             levels = entry.get(&quot;supported_reasoning_levels&quot;, entry.get(&quot;supportedReasoningEfforts&quot;, []))</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>             row(model, levels, entry[&quot;priority&quot;] if explicit_priority else index,</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>                 entry.get(&quot;upgrade&quot;), &quot;installed_cli_priority+native_capabilities&quot; if entry.get(&quot;_codex_catalog_evidence&quot;)</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>                 else &quot;provider_priority&quot; if explicit_priority else &quot;provider_catalog_order&quot;)</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     elif family == &quot;grok&quot;:</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>         entries = raw.get(&quot;models&quot;, {})</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>         if isinstance(entries, dict):</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>             entries = list(entries.values())</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>         if not isinstance(entries, list):</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>             raise PolicyUnavailable(family, &quot;invalid capability catalog&quot;)</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>         for index, entry in enumerate(entries):</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>             if not isinstance(entry, dict):</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>                 raise PolicyUnavailable(family, &quot;invalid model metadata&quot;)</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>             info = entry.get(&quot;info&quot;, entry)</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>             if not isinstance(info, dict):</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>                 raise PolicyUnavailable(family, &quot;invalid model metadata&quot;)</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>             model = info.get(&quot;model&quot;) or info.get(&quot;id&quot;)</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>             if hidden(info):</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>                 continue</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>             row(model, info.get(&quot;reasoning_efforts&quot;, []), index, None, &quot;provider_catalog_order&quot;)</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>     elif family == &quot;claude&quot;:</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>         # `best` is the provider&#x27;s moving frontier alias, not a product-name pin.</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>         rows.append({&quot;model&quot;: &quot;best&quot;, &quot;efforts&quot;: raw.get(&quot;efforts&quot;, []), &quot;rank&quot;: 0,</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>                      &quot;upgrade&quot;: None, &quot;evidence&quot;: &quot;provider_moving_alias&quot;})</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     else:</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>         raise PolicyUnavailable(family, &quot;the installed transport does not expose verified model capabilities&quot;)</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>     if not rows:</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>         raise PolicyUnavailable(family, &quot;no visible subscription models were advertised&quot;)</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     return rows</span>
+<span class="source-line" id="L118"><a href="#L118">118</a> </span>
+<span class="source-line" id="L119"><a href="#L119">119</a> </span>
+<span class="source-line" id="L120"><a href="#L120">120</a> def select_model(family, catalog):</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>     if family not in FAMILIES:</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>         raise PolicyUnavailable(str(family), &quot;unknown model family&quot;)</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>     rows = sorted(catalog, key=lambda item: item[&quot;rank&quot;])</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     if not rows:</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>         raise PolicyUnavailable(family, &quot;no available model&quot;)</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     if family == &quot;chatgpt&quot; and len(rows) &gt; 1 and rows[0][&quot;rank&quot;] == rows[1][&quot;rank&quot;]:</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>         raise PolicyUnavailable(family, &quot;latest model ranking is ambiguous; refresh subscription capabilities&quot;)</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>     chosen = rows[0]</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>     initial_model = chosen[&quot;model&quot;]</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>     initial_evidence = chosen[&quot;evidence&quot;]</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     by_name = {row[&quot;model&quot;]: row for row in rows}</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>     visited = set()</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     while chosen.get(&quot;upgrade&quot;):</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>         target = chosen[&quot;upgrade&quot;]</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>         if isinstance(target, dict):</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>             target = target.get(&quot;model&quot;) or target.get(&quot;id&quot;)</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>         if target in visited:</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>             raise PolicyUnavailable(family, &quot;cyclic catalog upgrade metadata&quot;)</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>         visited.add(chosen[&quot;model&quot;])</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>         if target not in by_name:</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>             raise PolicyUnavailable(family, &quot;recommended model upgrade is unavailable&quot;)</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>         chosen = by_name[target]</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     try:</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>         effort = highest_effort(chosen[&quot;efforts&quot;])</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     except ValueError as error:</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>         raise PolicyUnavailable(family, str(error), code=&quot;unsupported_effort&quot;) from error</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>     result = {&quot;policy_version&quot;: POLICY_VERSION, &quot;requested_policy&quot;: dict(DEFAULT_POLICY),</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>               &quot;family&quot;: family, &quot;model&quot;: chosen[&quot;model&quot;], &quot;effort&quot;: effort,</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>               &quot;selection_evidence&quot;: initial_evidence + (&quot;+provider_upgrade&quot; if initial_model != chosen[&quot;model&quot;] else &quot;&quot;), &quot;model_attested&quot;: False}</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     if not re.fullmatch(r&quot;[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}&quot;, result[&quot;model&quot;]):</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>         raise PolicyUnavailable(family, &quot;catalog model identity has unsupported characters&quot;)</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>     if initial_evidence == &quot;provider_catalog_order&quot;:</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>         result[&quot;warning&quot;] = &quot;Provider-recommended catalog order; frontier ranking is not explicitly attested.&quot;</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     return result</span>
+<span class="source-line" id="L155"><a href="#L155">155</a> </span>
+<span class="source-line" id="L156"><a href="#L156">156</a> </span>
+<span class="source-line" id="L157"><a href="#L157">157</a> def policy_environment(env=None):</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     &quot;&quot;&quot;Ignore stale model-only pins; preserve credentials and permission policy.&quot;&quot;&quot;</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     out = dict(os.environ if env is None else env)</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     for key in list(out):</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>         if (key.startswith(&quot;ANTHROPIC_DEFAULT_&quot;) and key.endswith(&quot;_MODEL&quot;)) or key in {</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>             &quot;ANTHROPIC_MODEL&quot;, &quot;CLAUDE_MODEL&quot;, &quot;CLAUDE_CODE_EFFORT_LEVEL&quot;, &quot;GROK_DEFAULT_MODEL&quot;,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>             &quot;GROK_MODEL&quot;, &quot;CODEX_MODEL&quot;, &quot;CHATGPT_MODEL&quot;, &quot;CODEX_REASONING_EFFORT&quot;,</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>             &quot;OPENAI_API_KEY&quot;, &quot;CODEX_API_KEY&quot;, &quot;XAI_API_KEY&quot;, &quot;GROK_API_KEY&quot;,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>             &quot;ANTHROPIC_API_KEY&quot;, &quot;ANTHROPIC_AUTH_TOKEN&quot;,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>             &quot;OPENAI_BASE_URL&quot;, &quot;OPENAI_API_BASE&quot;, &quot;ANTHROPIC_BASE_URL&quot;,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>             &quot;XAI_BASE_URL&quot;, &quot;GROK_BASE_URL&quot;, &quot;GEMINI_API_KEY&quot;, &quot;GOOGLE_API_KEY&quot;,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>             &quot;CLAUDE_CODE_USE_BEDROCK&quot;, &quot;CLAUDE_CODE_USE_VERTEX&quot;, &quot;CLAUDE_CODE_USE_FOUNDRY&quot;,</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>         }:</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>             out.pop(key, None)</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>     return out</span>
+<span class="source-line" id="L172"><a href="#L172">172</a> </span>
+<span class="source-line" id="L173"><a href="#L173">173</a> </span>
+<span class="source-line" id="L174"><a href="#L174">174</a> def _run(argv, env):</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>     try:</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>         completed = subprocess.run(argv, env=env, capture_output=True, text=True,</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>                                    encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;, timeout=25,</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>                                    shell=False, creationflags=(subprocess.CREATE_NO_WINDOW if os.name == &quot;nt&quot; else 0))</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     except (OSError, subprocess.TimeoutExpired) as error:</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>         raise RuntimeError(f&quot;CLI discovery {type(error).__name__}&quot;) from error</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     if completed.returncode:</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>         # Provider stderr can contain credentials/login URLs. Never return it.</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>         # Classify it instead (Grok R2 N1): only an auth-shaped failure is a</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>         # dead login; any other nonzero exit is transient or unknown.</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>         # URLs are stripped first: a transient body can name auth.openai.com</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>         # without meaning the login is dead (Grok R3 P1); the phrases below</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>         # are the adapter&#x27;s own auth pattern.</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>         diagnostics = re.sub(r&quot;https?://\S+&quot;, &quot; &quot;, f&quot;{completed.stderr or &#x27;&#x27;} {completed.stdout or &#x27;&#x27;}&quot;)</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>         if re.search(r&quot;(?i)(not logged in|logged out|authentication|unauthori[sz]ed|forbidden|\b401\b|\b403\b)&quot;, diagnostics):</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>             raise RuntimeError(f&quot;CLI discovery exited {completed.returncode}; subscription login required&quot;)</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>         raise RuntimeError(f&quot;CLI discovery exited {completed.returncode}; transient or unknown failure&quot;)</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     return completed.stdout</span>
+<span class="source-line" id="L193"><a href="#L193">193</a> </span>
+<span class="source-line" id="L194"><a href="#L194">194</a> </span>
+<span class="source-line" id="L195"><a href="#L195">195</a> def discover(family, *, env=None, runner=_run):</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>     env = policy_environment(env)</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     binary = {&quot;chatgpt&quot;: &quot;codex&quot;, &quot;claude&quot;: &quot;claude&quot;, &quot;grok&quot;: &quot;grok&quot;, &quot;gemini&quot;: &quot;agy&quot;}.get(family)</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>     if binary is None:</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>         raise PolicyUnavailable(str(family), &quot;unknown model family&quot;)</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>     command = shutil.which(binary + (&quot;.exe&quot; if os.name == &quot;nt&quot; else &quot;&quot;), path=env.get(&quot;PATH&quot;))</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>     if not command:</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>         raise PolicyUnavailable(family, &quot;subscription CLI is not installed&quot;, code=&quot;cli_missing&quot;)</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     try:</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>         if family == &quot;chatgpt&quot;:</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>             raw = json.loads(runner([command, &quot;debug&quot;, &quot;models&quot;], env))</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>             # The refreshed catalog may retain bundled predecessor ranks.</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>             # Reconcile only an ambiguous native top group; availability and</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>             # effort remain from the refreshed subscription capabilities.</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>             try:</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>                 bundled = json.loads(runner([command, &quot;debug&quot;, &quot;models&quot;, &quot;--bundled&quot;], env))</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>             except Exception:</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>                 bundled = None  # A unique current ranking needs no tie-break.</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>             raw = reconcile_codex_catalog(raw, bundled)</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>         elif family == &quot;grok&quot;:</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>             version_text = runner([command, &quot;--version&quot;], env)</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>             version_match = re.search(r&quot;\b\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?\b&quot;, version_text)</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>             runner([command, &quot;models&quot;], env)</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>             grok_root = Path(env.get(&quot;GROK_HOME&quot;) or Path(env.get(&quot;USERPROFILE&quot;) or env.get(&quot;HOME&quot;) or Path.home()) / &quot;.grok&quot;)</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>             cache = json.loads((grok_root / &quot;models_cache.json&quot;).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>             from datetime import datetime, timezone</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>             fetched = datetime.fromisoformat(cache[&quot;fetched_at&quot;].replace(&quot;Z&quot;, &quot;+00:00&quot;))</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>             # The subscription CLI renews unchanged catalogs after an etag</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>             # check without changing their original content-fetch timestamp.</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>             renewed = cache.get(&quot;renewed_at&quot;)</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>             fresh = (datetime.fromisoformat(renewed.replace(&quot;Z&quot;, &quot;+00:00&quot;))</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>                      if renewed is not None else fetched)</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>             if fresh &lt; fetched:</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>                 raise RuntimeError(&quot;Grok catalog renewal predates its content&quot;)</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>             age = (datetime.now(timezone.utc) - fresh).total_seconds()</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>             if not 0 &lt;= age &lt; CAPABILITY_TTL_SECONDS:</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>                 raise RuntimeError(&quot;Grok catalog is stale; refresh subscription capability discovery&quot;)</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>             if cache.get(&quot;auth_method&quot;) != &quot;session&quot;:</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>                 raise RuntimeError(&quot;Grok capability catalog is not from subscription authentication&quot;)</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>             if not version_match or cache.get(&quot;grok_version&quot;) != version_match.group(0):</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>                 raise RuntimeError(&quot;Grok capability catalog belongs to another CLI version&quot;)</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>             if cache.get(&quot;origin&quot;) != &quot;https://cli-chat-proxy.grok.com/v1/models&quot;:</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>                 raise RuntimeError(&quot;Grok capability catalog has an unverified subscription origin&quot;)</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>             raw = cache</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>         elif family == &quot;claude&quot;:</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>             help_text = runner([command, &quot;--help&quot;], env)</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>             match = re.search(r&quot;--effort\s+&lt;[^&gt;]+&gt;[\s\S]{0,180}?\(([^)]+)\)&quot;, help_text)</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>             if not match:</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>                 raise RuntimeError(&quot;Installed Claude CLI does not advertise effort capabilities&quot;)</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>             raw = {&quot;efforts&quot;: [part.strip() for part in match.group(1).split(&quot;,&quot;)]}</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>         else:</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>             raise RuntimeError(&quot;agy capability discovery is not supported; configure a verified transport&quot;)</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>         return normalize_catalog(family, raw), command</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     except (RuntimeError, ValueError, OSError, KeyError, TypeError, AttributeError) as error:</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>         # codex-discipline-2026-09-15: a dead subscription login is a capacity</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>         # loss (the ladder may walk), unlike a timeout or an ambiguous ranking.</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>         code = &quot;auth_required&quot; if &quot;subscription login required&quot; in str(error) else &quot;capability_unavailable&quot;</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>         raise PolicyUnavailable(family, str(error), code=code) from error</span>
+<span class="source-line" id="L253"><a href="#L253">253</a> </span>
+<span class="source-line" id="L254"><a href="#L254">254</a> </span>
+<span class="source-line" id="L255"><a href="#L255">255</a> def _cache_identity(family, env):</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>     &quot;&quot;&quot;Invalidate on CLI/auth/config changes without reading credential values.&quot;&quot;&quot;</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>     profile = Path(env.get(&quot;USERPROFILE&quot;) or env.get(&quot;HOME&quot;) or Path.home())</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     binary = {&quot;chatgpt&quot;: &quot;codex&quot;, &quot;claude&quot;: &quot;claude&quot;, &quot;grok&quot;: &quot;grok&quot;, &quot;gemini&quot;: &quot;agy&quot;}.get(family, &quot;&quot;)</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>     command = shutil.which(binary, path=env.get(&quot;PATH&quot;)) if binary else None</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     provider_root = Path(env.get(&quot;CODEX_HOME&quot;) or profile / &quot;.codex&quot;) if family == &quot;chatgpt&quot; else (</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>         Path(env.get(&quot;GROK_HOME&quot;) or profile / &quot;.grok&quot;) if family == &quot;grok&quot; else Path(env.get(&quot;CLAUDE_CONFIG_DIR&quot;) or profile / &quot;.claude&quot;))</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     paths = ([Path(command)] if command else []) + [provider_root / name for name in</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>              (&quot;auth.json&quot;, &quot;config.toml&quot;, &quot;settings.json&quot;, &quot;.credentials.json&quot;, &quot;session.json&quot;, &quot;models_cache.json&quot;)]</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     stamps = []</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>     for path in paths:</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>         try:</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>             stat = path.stat()</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>             stamps.append((str(path), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns))</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>         except OSError:</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>             stamps.append((str(path), None))</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     return (family, str(profile), env.get(&quot;PATH&quot;), str(provider_root), tuple(stamps))</span>
+<span class="source-line" id="L272"><a href="#L272">272</a> </span>
+<span class="source-line" id="L273"><a href="#L273">273</a> </span>
+<span class="source-line" id="L274"><a href="#L274">274</a> def resolve(family, *, settings=None, force=False, env=None, discoverer=None):</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>     &quot;&quot;&quot;Resolve for a new session/seat. This never changes an existing session.&quot;&quot;&quot;</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>     discoverer = discoverer or discover</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>     if settings is not None:</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>         if settings.get(&quot;settings_error&quot;):</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>             raise PolicyUnavailable(family, &quot;Anchor settings are invalid&quot;, code=&quot;invalid_settings&quot;)</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>         validate_policy(settings.get(&quot;model_policy&quot;, DEFAULT_POLICY))</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>     active_env = os.environ if env is None else env</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>     identity = _cache_identity(family, active_env)</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>     with _LOCK:</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>         cached = _MEMORY.get(identity)</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>         if force or not cached or time.time() - cached[&quot;discovered_at&quot;] &gt;= CAPABILITY_TTL_SECONDS:</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>             catalog, command = discoverer(family, env=active_env)</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>             selected = select_model(family, catalog)</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>             cached = {**selected, &quot;command&quot;: command, &quot;discovered_at&quot;: time.time()}</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>             _MEMORY[_cache_identity(family, active_env)] = cached</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>         result = dict(cached)</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>         result[&quot;requested_policy&quot;] = dict(DEFAULT_POLICY)</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     result[&quot;settings_revision&quot;] = (settings or {}).get(&quot;settings_revision&quot;, 0)</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     return result</span>
+<span class="source-line" id="L294"><a href="#L294">294</a> </span>
+<span class="source-line" id="L295"><a href="#L295">295</a> </span>
+<span class="source-line" id="L296"><a href="#L296">296</a> def cached_selection(family, *, settings=None, env=None):</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>     &quot;&quot;&quot;codex-discipline-2026-09-15 Wave 1.2: the last successful discovery for</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>     ``family`` regardless of age (``stale`` says whether it is past the TTL),</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>     or None when there has never been one. A pinned steward answers John from</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>     this and refreshes discovery off the request thread; it never blocks a</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     send on a 25 s catalog probe.&quot;&quot;&quot;</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>     active_env = os.environ if env is None else env</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>     with _LOCK:</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>         cached = _MEMORY.get(_cache_identity(family, active_env))</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>         if not cached:</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>             return None</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>         result = dict(cached)</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     result[&quot;requested_policy&quot;] = dict(DEFAULT_POLICY)</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     result[&quot;settings_revision&quot;] = (settings or {}).get(&quot;settings_revision&quot;, 0)</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     result[&quot;stale&quot;] = time.time() - result.get(&quot;discovered_at&quot;, 0) &gt;= CAPABILITY_TTL_SECONDS</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     return result</span>
+<span class="source-line" id="L312"><a href="#L312">312</a> </span>
+<span class="source-line" id="L313"><a href="#L313">313</a> </span>
+<span class="source-line" id="L314"><a href="#L314">314</a> def launch_args(selection, *, subagents=True):</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     family, model, effort = selection[&quot;family&quot;], selection[&quot;model&quot;], selection[&quot;effort&quot;]</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     if (family not in FAMILIES or not isinstance(model, str)</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>             or not re.fullmatch(r&quot;[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}&quot;, model)</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>             or effort not in EFFORT_ORDER):</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>         raise PolicyUnavailable(family, &quot;invalid frozen launch selection&quot;)</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>     if family == &quot;chatgpt&quot;:</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>         args = [&quot;--model&quot;, model, &quot;-c&quot;, f&#x27;model_reasoning_effort=&quot;{effort}&quot;&#x27;,</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>                 &quot;-c&quot;, &#x27;forced_login_method=&quot;chatgpt&quot;&#x27;]</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>         if subagents:</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>             args += [&quot;-c&quot;, f&#x27;agents.default_subagent_model=&quot;{model}&quot;&#x27;,</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>                      &quot;-c&quot;, f&#x27;agents.default_subagent_reasoning_effort=&quot;{effort}&quot;&#x27;]</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>         return args</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>     if family == &quot;claude&quot;:</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>         return [&quot;--model&quot;, model, &quot;--effort&quot;, effort]</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     if family == &quot;grok&quot;:</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>         return [&quot;--model&quot;, model, &quot;--reasoning-effort&quot;, effort]</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>     raise PolicyUnavailable(family, &quot;no supported highest-effort launch contract&quot;)</span></pre></main></body></html>

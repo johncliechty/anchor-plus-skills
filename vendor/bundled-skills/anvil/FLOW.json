@@ -1,101 +1,136 @@
 {
-  "qualification": "Source-anchored Anvil v1.1 programmatic orchestrator process map (5-Stage Orchestrator + Parable of the Oranges + Modes 1–4 + LibCST/Hypothesis Verification)",
+  "qualification": "Source-anchored Anvil execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
   "steps": [
     {
-      "id": "stage0-orange-split",
-      "title": "Stage 0: Programmatic Orchestrator & The Parable of the Oranges (Proactive Completed Staff Work)",
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Anvil)",
       "kind": "program",
-      "description": "Governs the 5-stage state machine (RUN-STATE.json), applies the Parable of the Oranges (thinking 2–3 steps ahead to solve the boss's wife's party oranges problem in one trip), and decomposes the repository into Essential Domain Logic (Juice), Surface I/O Contracts (Peel), and Legacy Scaffolding (Pith & Seeds / Null Space).",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Anvil context.",
       "code": {
         "path": "scripts/anvil_engine.py",
-        "symbol": "def orchestrate_anvil"
+        "symbol": "def _classify_stage"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "Stage 0: The Parable of the Oranges (Proactive One-Trip Problem Solving) & Programmatic Orchestration"
-      }
+        "heading": "# Anvil v2 \u2014 Programmatic Code Comprehension, Progressive Abstraction, Live Walkthrough & Software Beta-Reader Engine"
+      },
+      "resource_ids": [
+        "anvil-mat-skill-md",
+        "anvil-tool-scripts-anvil-engine-py"
+      ]
     },
     {
-      "id": "mode1-map",
-      "title": "Mode 1: Conceptual Groupings + Process Map + AI Agent Seams",
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
       "kind": "program",
-      "description": "Partitions the codebase into human-digestible Conceptual Buckets with function summaries and builds the Block-to-Block Process Map with AI Agent Interaction Badges.",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Anvil never repeats cold-start discovery.",
       "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def build_map"
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode1_conceptual_buckets_and_process_map_with_ai_badges"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "Mode 1: Conceptual Groupings & Block-to-Block Process Map"
-      }
+        "heading": "## 1. Mission & Core Architecture"
+      },
+      "resource_ids": [
+        "anvil-ref-researchprime-code-rewriting-tools",
+        "anvil-journal-0007-dual-map-algorithm-math-to-co",
+        "anvil-mat-skill-md"
+      ]
     },
     {
-      "id": "mode2-inspect",
-      "title": "Mode 2: Single-Block Drill-Down + Empirical Claim Runner",
-      "kind": "program",
-      "description": "Isolates one code block with its Inner Process Map, executes the block empirically to test whether its stated summary matches runtime behavior, and locks a Validated description.",
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Anvil)",
+      "kind": "model",
+      "role": "Primary Anvil Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Anvil, transforming validated inputs into structured candidate artifacts.",
       "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def inspect_block"
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode2_single_block_drilldown_and_empirical_claim_runner"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "Mode 2: Single-Block Drill-Down & Empirical Claim Testing"
-      }
+        "heading": "## 2. Programmatic CLI Usage (`scripts/anvil_engine.py`)"
+      },
+      "resource_ids": [
+        "anvil-tool-scripts-anvil-engine-py",
+        "anvil-tool-tests-test-anvil-engine-py",
+        "anvil-peer-gandalf"
+      ]
     },
     {
-      "id": "mode3-remap",
-      "title": "Mode 3: Lossless LibCST Remapping + Explicit Null Space + Hypothesis Equivalence Gate",
-      "kind": "program",
-      "description": "Rewrites code structurally via LibCST/parso, isolates unmapped legacy Pith/Seeds into the Null Space, verifies 1. Get Data, 2. Do Analysis, 3. Create Output, and runs Hypothesis differential equivalence tests.",
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
       "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def remap_code"
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode3_remap_null_space_and_three_stage_pipeline_validation"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "Mode 3: Best-in-Class Code Remapping & Explicit `∅ Null Space`"
-      }
+        "heading": "# 1. Full 5-Stage Orchestrator State Machine (writes .anvil/RUN-STATE.json & .anvil/manifest.json)"
+      },
+      "resource_ids": [
+        "anvil-peer-gandalf",
+        "anvil-peer-researchprime",
+        "anvil-ref-researchprime-code-rewriting-tools"
+      ]
     },
     {
-      "id": "mode4-paper-map",
-      "title": "Mode 4: Paper-to-Code Mapping + Native MathML + Empirical Verification",
-      "kind": "program",
-      "description": "Aligns paper equations (in native typeset MathML), algorithms, and figures to implementing code functions and runs empirical reproduction harnesses.",
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Anvil deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
       "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def paper_to_code_map"
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode4_paper_to_code_enforces_native_mathml_and_rejects_raw_latex"
       },
       "instructions": {
         "path": "SKILL.md",
-        "heading": "Mode 4: Paper-to-Code Mapping & Native Typeset Math"
-      }
-    },
-    {
-      "id": "persistent-dialogue",
-      "title": "Persistent Anvil Agent Dialogue Across All 4 Pages",
-      "kind": "program",
-      "description": "Context-aware interactive dialogue docked across all 4 modes so the human can ask questions, refine descriptions, and lock validated comprehension.",
-      "code": {
-        "path": "scripts/anvil_engine.py",
-        "symbol": "def anvil_chat"
+        "heading": "# 2. Mode 1 + Anvil v2 3-Level Progressive Map, Beta-Reader Panel & Walkthrough Trace"
       },
-      "instructions": {
-        "path": "SKILL.md",
-        "heading": "How to run (operator manual)"
-      }
+      "resource_ids": [
+        "anvil-mat-north-star-md",
+        "anvil-kb-portfolio-triage-and-band-eval"
+      ]
     }
   ],
   "edges": [
-    { "from": "stage0-orange-split", "to": "mode1-map" },
-    { "from": "mode1-map", "to": "mode2-inspect" },
-    { "from": "mode2-inspect", "to": "mode3-remap" },
-    { "from": "mode4-paper-map", "to": "mode3-remap" },
-    { "from": "stage0-orange-split", "to": "persistent-dialogue" },
-    { "from": "mode1-map", "to": "persistent-dialogue" },
-    { "from": "mode2-inspect", "to": "persistent-dialogue" },
-    { "from": "mode3-remap", "to": "persistent-dialogue" },
-    { "from": "mode4-paper-map", "to": "persistent-dialogue" }
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
   ],
-  "exits": ["RUN-STATE.json", "ANVIL-REPORT.md", "anvil-remap.json", "anvil-paper-map.json"]
+  "exits": [
+    "Verified Anvil primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Anvil work product + machine run receipt."
 }

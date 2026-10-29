@@ -1,0 +1,434 @@
+{
+  "nodes": [
+    {
+      "id": "financialanalyst-root",
+      "name": "Financial-Analyst Knowledge & Execution Architecture",
+      "title": "Financial-Analyst Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "financialanalyst-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "financialanalyst-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "financialanalyst-root"
+      ],
+      "ring": 1,
+      "resource_id": "financialanalyst-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "financialanalyst-root"
+      ],
+      "ring": 1,
+      "resource_id": "financialanalyst-tool-compiler-excel-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "financialanalyst-root"
+      ],
+      "ring": 1,
+      "resource_id": "financialanalyst-peer-ramanujan",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "financialanalyst-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "financialanalyst-root"
+      ],
+      "ring": 1,
+      "resource_id": "financialanalyst-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-mat-1",
+      "name": "Financial-Analyst Agent & Execution Protocol (SKILL.md)",
+      "title": "Financial-Analyst Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "financialanalyst-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-mat-2",
+      "name": "Financial-Analyst Human Guide (HUMAN.md)",
+      "title": "Financial-Analyst Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "financialanalyst-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-mat-3",
+      "name": "Financial-Analyst Locked North Star (NORTH-STAR.md)",
+      "title": "Financial-Analyst Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "financialanalyst-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-mat-4",
+      "name": "Financial-Analyst Universal Triage & Seating Block",
+      "title": "Financial-Analyst Universal Triage & Seating Block",
+      "parent_ids": [
+        "financialanalyst-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-mat-triage-block",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-1",
+      "name": "compiler_excel.py (compiler_excel.py)",
+      "title": "compiler_excel.py (compiler_excel.py)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-tool-compiler-excel-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-2",
+      "name": "compiler_python.py (compiler_python.py)",
+      "title": "compiler_python.py (compiler_python.py)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-tool-compiler-python-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-3",
+      "name": "graph_engine.py (graph_engine.py)",
+      "title": "graph_engine.py (graph_engine.py)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-tool-graph-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-4",
+      "name": "agent_interface.py (agent_interface.py)",
+      "title": "agent_interface.py (agent_interface.py)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-tool-agent-interface-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-5",
+      "name": "deal-chain.mjs (bin/deal-chain.mjs)",
+      "title": "deal-chain.mjs (bin/deal-chain.mjs)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-tool-bin-deal-chain-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-6",
+      "name": "deal-review.mjs (bin/deal-review.mjs)",
+      "title": "deal-review.mjs (bin/deal-review.mjs)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-tool-bin-deal-review-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "financialanalyst-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-skill-1",
+      "name": "Ramanujan Exact-Arithmetic Certifier",
+      "title": "Ramanujan Exact-Arithmetic Certifier",
+      "parent_ids": [
+        "financialanalyst-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-peer-ramanujan",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-skill-2",
+      "name": "Gandalf Deal-Structure Critic",
+      "title": "Gandalf Deal-Structure Critic",
+      "parent_ids": [
+        "financialanalyst-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-skill-3",
+      "name": "Legal-Beagle Term-Sheet & Covenant Advisor",
+      "title": "Legal-Beagle Term-Sheet & Covenant Advisor",
+      "parent_ids": [
+        "financialanalyst-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-peer-legalbeagle",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-ref-1",
+      "name": "Financial-Analyst LESSONS.md",
+      "title": "Financial-Analyst LESSONS.md",
+      "parent_ids": [
+        "financialanalyst-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-ref-2",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "financialanalyst-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-ref-3",
+      "name": "Journal: 0003-thin-chain-tieout-seam-receipts-exitcode",
+      "title": "Journal: 0003-thin-chain-tieout-seam-receipts-exitcode",
+      "parent_ids": [
+        "financialanalyst-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-journal-0003-thin-chain-tieout-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-ref-4",
+      "name": "Journal: 0002-cancer-human-capital-l7",
+      "title": "Journal: 0002-cancer-human-capital-l7",
+      "parent_ids": [
+        "financialanalyst-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-journal-0002-cancer-human-capit",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "financialanalyst-leaf-ref-5",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "financialanalyst-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "financialanalyst-kb-portfolio-triage-and-band-ev",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

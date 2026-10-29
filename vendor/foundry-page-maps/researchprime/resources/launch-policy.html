@@ -1,0 +1,59 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider-specific launch arguments · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="launch-policy" data-anchor-id="a021">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Provider-specific launch arguments</h1>
+<p class="intro">The shared policy resolver and launch argument adapter keep provider model and effort selection distinct from research depth. These are requested values, not a served-model receipt.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\drivers\model-policy.mjs</span><br>Lines 399–443 · frozen source snapshot</p>
+<pre class="excerpt">export function resolveModelPolicy(family, {
+  env = process.env, settings, force = false, discoverer = discoverModelCapabilities,
+} = {}) {
+  familyName(family);
+  const prefs = settings === undefined ? loadPolicyPrefs(env) : validatePrefs(settings);
+  const executable = executableFor(family, env);
+  if (typeof discoverer !== &#x27;function&#x27;) fail(family, &#x27;The capability discovery adapter is unavailable.&#x27;);
+  if (!discovererIds.has(discoverer)) discovererIds.set(discoverer, nextDiscovererId++);
+  const keyFor = () =&gt; JSON.stringify([discovererIds.get(discoverer), provenance(family, env, executable)]);
+  let key = keyFor();
+  let entry = force ? null : cache.get(key);
+  if (!entry || Date.now() - entry.at &gt; TTL_MS || Date.now() &lt; entry.at) {
+    const catalog = normalizeCatalog(family, discoverer(family, { env: policyEnvironment(env), executable }));
+    const at = Date.now();
+    entry = { catalog, at, discovered_at: new Date(at).toISOString() };
+    // Discovery may refresh a provider cache or authentication/config metadata.
+    key = keyFor();
+    cache.set(key, entry);
+    if (cache.size &gt; 64) cache.delete(cache.keys().next().value);
+  }
+  return {
+    ...selectModel(family, entry.catalog),
+    policy_version: POLICY_VERSION,
+    requested_policy: { ...prefs.model_policy },
+    settings_revision: prefs.settings_revision,
+    discovered_at: entry.discovered_at,
+  };
+}
+
+/** Caller retains its existing permission flags; these affect selection only. */
+export function modelLaunchArgs(selection) {
+  const family = familyName(selection?.family);
+  const model = modelId(selection.model, family);
+  const effort = highestEffort([selection.effort], family);
+  if (family === &#x27;chatgpt&#x27;) return [
+    &#x27;--model&#x27;, model,
+    &#x27;-c&#x27;, `model_reasoning_effort=${JSON.stringify(effort)}`,
+    &#x27;-c&#x27;, `agents.default_subagent_model=${JSON.stringify(model)}`,
+    &#x27;-c&#x27;, `agents.default_subagent_reasoning_effort=${JSON.stringify(effort)}`,
+    &#x27;-c&#x27;, &#x27;forced_login_method=&quot;chatgpt&quot;&#x27;,
+  ];
+  if (family === &#x27;grok&#x27;) return [&#x27;--model&#x27;, model, &#x27;--reasoning-effort&#x27;, effort];
+  if (family === &#x27;claude&#x27;) return [&#x27;--model&#x27;, model, &#x27;--effort&#x27;, effort];
+  fail(family, &#x27;The agy subscription adapter has no verified latest/highest launch contract.&#x27;, &#x27;capability_unsupported&#x27;);
+}</pre>
+<div class="actions"><a class="button" href="../source-pages/policy.html#L399">Open numbered source at line 399</a>
+<a class="button secondary" href="../sources/policy.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/route">Resolve live or replay seats</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">c012f2b2ab9bed983d1c3c4204ad503c4c21da45b22ae3e97dd633af0f46e2c1</span></p>
+<p>Excerpt SHA-256 <span class="path">b8c9e98de71edde1a73d081a316516b1caf671733288e9bc1e2ae4780cdf96fe</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

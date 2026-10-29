@@ -1,0 +1,71 @@
+{
+  "created": "2026-10-05T19:38:09.999792+00:00",
+  "source_campaign": "C:\\dev\\Skill Foundry\\Foundry page and knowledge maps",
+  "roadmap_sha256": "8cb8c4ffce700ede0e365466c076ee0f889b04f969ea35a7135f8416c8867652",
+  "step_ids": [
+    "gwl-page",
+    "gwl-process-maps",
+    "gwl-recording",
+    "gwl-knowledge",
+    "gwl-stargazer",
+    "gwl-integration",
+    "gwl-review",
+    "gwl-libraries",
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf",
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+  ],
+  "source_turns": [
+    "07bfea64-62c7-4f42-a8d2-cf68e3e75833",
+    "38ec52d8-a881-4391-809d-bf7a44ec13a8",
+    "8b5e46a9-0cbb-407e-b78c-288326064a98",
+    "775e739d-ad1a-4b9c-a796-9cc938bec5a1"
+  ],
+  "managed": false,
+  "refinement_seq": 52,
+  "producer_kind": "conversation",
+  "producer_handoff": "not created: campaign unmanaged",
+  "acceptance": "open; no slice closed",
+  "publication": "review copy of existing plan, including settled persona names",
+  "register_pending": false,
+  "overhead_session": 2,
+  "pdf": "C:\\dev\\steward-review-artifacts\\foundry-page-and-knowledge-maps\\Foundry-working-plan-review-1-2026-10-05.pdf",
+  "pdf_sha256": "51ca14f12fce36ce0d9288c2e336edcfd4e219b176e67cb7f4b81de3b8a4bcb5",
+  "route": "/artifact/__dashboard__?path=steward-review-artifacts%2Ffoundry-page-and-knowledge-maps%2FFoundry-working-plan-review-1-2026-10-05.pdf",
+  "deliverables_row": "| ecgberht Current Foundry working plan ? PDF review copy 1 | /artifact/__dashboard__?path=steward-review-artifacts%2Ffoundry-page-and-knowledge-maps%2FFoundry-working-plan-review-1-2026-10-05.pdf | 2026-10-05 | gwl-page |",
+  "content_check": "three pages; complete names, no replacement glyphs, text inside page",
+  "visual_check": "all pages inspected; shell punctuation loss corrected before publication",
+  "open_check": {
+    "status": 200,
+    "content_type": "application/pdf",
+    "normal_cookie_login": true,
+    "exact_route": "/artifact/__dashboard__?path=steward-review-artifacts%2Ffoundry-page-and-knowledge-maps%2FFoundry-working-plan-review-1-2026-10-05.pdf",
+    "same_bytes": true,
+    "browser_navigation": "PDF bytes served; browser navigation: Error"
+  },
+  "chrome_open_check": {
+    "status": 200,
+    "url_is_exact": true,
+    "live_dialogue_link_rendered": true,
+    "downloads": [],
+    "body_preview": "\n    \n  \n\n",
+    "frames": 3
+  },
+  "conversation_click_check": {
+    "normal_cookie_login": true,
+    "exact_live_link": true,
+    "popup_url": "/artifact/__dashboard__?path=steward-review-artifacts%2Ffoundry-page-and-knowledge-maps%2FFoundry-working-plan-review-1-2026-10-05.pdf",
+    "chrome_pdf_frames": 3,
+    "screenshot": "C:\\dev\\steward-review-artifacts\\foundry-page-and-knowledge-maps\\chrome-conversation-pdf-click.png"
+  },
+  "canonical_pdf": "planning/working-plan/PLAN-review-copy-1.pdf",
+  "gandalf_handback": {
+    "id": "20261005-131354-4c72a5",
+    "status": "done",
+    "landed": true,
+    "check_ok": true,
+    "land_note": "landed on c:\\dev\\skill foundry (138 files; snapshot refs/anchor-snapshots/20261005-134349-64da47)"
+  }
+}

@@ -1,7 +1,0 @@
-HaltError: human-lockable: The plan is ready for your call. The reviewers have stopped finding problems they agree on, though 21 single-reviewer concern(s) stay listed for your eyes (OPEN-FINDINGS.json). Approving locks this draft as the Master Plan; challenging costs another review round. Recommendation: approve — the concerns left are single-reviewer catches, worth a read but none met the two-reviewer bar; challenge instead if one of them names something you care about. The full draft is on disk (BEST-DRAFT.md). Approve, challenge, or tell me something else?
-    at haltForHuman (file:///C:/dev/trio/crucible/bin/crucible-lib.mjs:220:15)
-    at runMasterPlanLoop (file:///C:/dev/trio/crucible/bin/stage1.mjs:969:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async withPhaseProgress (file:///C:/dev/trio/drivers/process-lifetime.mjs:209:20)
-    at async runStage1 (file:///C:/dev/trio/crucible/bin/stage1.mjs:1462:16)
-    at async file:///C:/dev/Anchor/planning/reports-links-2026-09-05/_run-crucible-lite.mjs:56:14

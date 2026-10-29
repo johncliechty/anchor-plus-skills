@@ -1,0 +1,1396 @@
+{
+  "schema": "ecgberht-roadmap-v0",
+  "project_id": null,
+  "as_of": "2026-10-05",
+  "roadmap_events": [
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-page",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-page",
+      "name": "Foundry page: existing candidate plan and mockup",
+      "status": "proposed",
+      "part": "slice",
+      "done_when": "Redo the Skill Foundry page; carry the existing mockup review forward.",
+      "seq": 1
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-page-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ],
+          "groups": [
+            {
+              "id": "gwl-foundry-maps",
+              "label": "Foundry page and knowledge maps",
+              "order": 0,
+              "parent_id": null
+            }
+          ],
+          "current": true
+        }
+      },
+      "seq": 2
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-process-maps",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-process-maps",
+      "name": "Process maps for the Foundry skills",
+      "status": "proposed",
+      "part": "slice",
+      "done_when": "Add process maps to each skill, traced to its instructions and code.",
+      "seq": 3
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-process-maps-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-process-maps",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "seq": 4
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-recording",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-recording",
+      "name": "Record skill activities and use",
+      "status": "proposed",
+      "part": "slice",
+      "done_when": "Record the activities of each Foundry skill and how it is used.",
+      "seq": 5
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-recording-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-recording",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "seq": 6
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-knowledge",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-knowledge",
+      "name": "Usage-derived Poincaré knowledge maps",
+      "status": "proposed",
+      "part": "research",
+      "done_when": "Build knowledge maps from recorded skill use and integrate them into the skills.",
+      "seq": 7
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-knowledge-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-knowledge",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "seq": 8
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-stargazer",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-stargazer",
+      "name": "Stargazer: proposed Foundry skill",
+      "status": "proposed",
+      "part": "research",
+      "done_when": "Look at things and ruminate; come up with ways of seeing things that are not obvious.",
+      "seq": 9
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-stargazer-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-stargazer",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "seq": 10
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-integration",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-integration",
+      "name": "Page, process maps and knowledge maps together",
+      "status": "proposed",
+      "part": "integrate",
+      "done_when": "Integrate the maps and recorded use into the revised Foundry page and skills.",
+      "seq": 11
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-integration-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-integration",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "seq": 12
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-review",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_create",
+      "step_id": "gwl-review",
+      "name": "Review the page and each skill’s maps separately",
+      "status": "proposed",
+      "part": "rigor",
+      "done_when": "Retain independent feedback and acceptance for each human-facing product.",
+      "seq": 13
+    },
+    {
+      "at": "2026-10-04T14:54:54.041Z",
+      "client_event_id": "gwl-org-v1-3c476265-7142-441c-a934-a7a37d5a1e98-gwl-foundry-maps-review-nav",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04T14:54:54.041Z",
+        "why": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or publication."
+      },
+      "kind": "step_set",
+      "step_id": "gwl-review",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "seq": 14
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-page",
+      "to": "active",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04",
+        "why": "John accepted the saved recommendation to resume existing mockup feedback for page PLAN v1.1-candidate; turn dfa5c6fd-b997-4c28-b952-e29e5b303db9. This opens review only, without accepting the mockup, plan or build."
+      },
+      "at": "2026-10-04",
+      "seq": 15,
+      "from": "proposed"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "waiting_on": "Feedback on researchPrime purpose and navigation in existing mockup v7; page PLAN v1.1-candidate."
+      },
+      "at": "2026-10-04",
+      "seq": 16
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-page",
+      "to": "waiting",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-04",
+        "why": "Existing mockup v7 is directly openable from Current work after refresh and reopening; its first skill screen is presented for the resumed feedback John authorized in turn dfa5c6fd-b997-4c28-b952-e29e5b303db9. Waiting for that feedback, with no artifact acceptance or slice close."
+      },
+      "at": "2026-10-04",
+      "seq": 17,
+      "from": "active"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "waiting_on": "Decision on a plain researchPrime introduction for the next refinement of mockup v7, within page plan v1.1-candidate; existing review focus accepted in turn c38e531b-6414-4d7a-904b-3fd58fcf5176."
+      },
+      "at": "2026-10-05",
+      "seq": 18
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "waiting_on": "Anchor integration is waiting for the other code job that owns the Anchor repository; John has authorized proceeding."
+      },
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-0",
+      "seq": 19
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-process-maps",
+      "fields": {
+        "done_when": "For each skill show actual program/model steps, agents/swarms, interim reports, human feedback, adversarial reviews, depth/effort/round selection and stopping rules, with source anchors."
+      },
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-1",
+      "seq": 20
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-knowledge",
+      "fields": {
+        "done_when": "Provide navigable knowledge maps that open each skill library, with use-frequency and learned geometry qualified by actual run evidence."
+      },
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-2",
+      "seq": 21
+    },
+    {
+      "kind": "step_create",
+      "step_id": "gwl-libraries",
+      "name": "Library for every skill: recurring material, references, other skills and tools",
+      "status": "planned",
+      "part": "slice",
+      "done_when": "Each skill knowledge map opens its reusable library resources; frequency claims come from recorded use.",
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-3",
+      "seq": 22
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-libraries",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ]
+        }
+      },
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-4",
+      "seq": 23
+    },
+    {
+      "kind": "step_create",
+      "step_id": "gwl-walk-researchprime",
+      "name": "researchPrime - library, knowledge map and process map",
+      "status": "active",
+      "part": "slice",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "gate": "python -m pytest -q \"Foundry page and knowledge maps/researchprime/test_maps.py\"",
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-5",
+      "seq": 24
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-researchprime",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "groups": [
+            {
+              "id": "gwl-walkthroughs",
+              "label": "Skill walkthroughs: researchPrime first",
+              "order": 1,
+              "parent_id": "gwl-foundry-maps"
+            }
+          ],
+          "current": true
+        }
+      },
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-6",
+      "seq": 25
+    },
+    {
+      "kind": "step_create",
+      "step_id": "gwl-walk-gandalf",
+      "name": "Gandalf - library, knowledge map and process map",
+      "status": "planned",
+      "part": "slice",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "gate": null,
+      "at": "2026-10-05T00:56:54.306Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:56:54.306Z",
+        "why": "John authorized integration, a library per skill, complete process maps and sequential walkthroughs: 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Mockup v7 is a starting point; no product is closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-7",
+      "seq": 26
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-gandalf",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-8",
+      "seq": 27
+    },
+    {
+      "kind": "step_create",
+      "step_id": "gwl-walk-steward-lamp",
+      "name": "Steward: AI cockpit / Lamp - library, knowledge map and process map",
+      "status": "planned",
+      "part": "slice",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "gate": null,
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-9",
+      "seq": 28
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-10",
+      "seq": 29
+    },
+    {
+      "kind": "step_create",
+      "step_id": "gwl-walk-steward-cave",
+      "name": "Steward: Cave of Wonders - library, knowledge map and process map",
+      "status": "planned",
+      "part": "slice",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "gate": null,
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-11",
+      "seq": 30
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-cave",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-12",
+      "seq": 31
+    },
+    {
+      "kind": "step_create",
+      "step_id": "gwl-walk-steward-star-chart",
+      "name": "Steward: Star Chart - library, knowledge map and process map",
+      "status": "planned",
+      "part": "slice",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "gate": null,
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-13",
+      "seq": 32
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-star-chart",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "at": "2026-10-05T00:58:20.824Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T00:58:20.824Z",
+        "why": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is occupied; prepare researchPrime independently. No product accepted or slice closed."
+      },
+      "client_event_id": "foundry-go-07bfea64-62c7-4f42-a8d2-cf68e3e75833-14",
+      "seq": 33
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ],
+          "groups": [
+            {
+              "id": "gwl-foundry-maps",
+              "label": "Foundry page and knowledge maps",
+              "order": 0,
+              "parent_id": null
+            }
+          ],
+          "current": false
+        }
+      },
+      "seq": 34,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "commission_bind",
+      "step_id": "gwl-walk-researchprime",
+      "commissioned_as": "code-job:20261004-191251-2cc7b3",
+      "at": "2026-10-05T01:41:20.131Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:41:20.131Z",
+        "why": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an incident. Replacement Anchor job 20261004-191301-c36b42 is running. Job completion is not human acceptance or slice closure."
+      },
+      "client_event_id": "rp-refinement-1-finished-20261004-191251-2cc7b3-0",
+      "seq": 35
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-researchprime",
+      "fields": {
+        "waiting_on": "Refinement 1 is saved on steward-job-20261004-191251-2cc7b3 (a01a49f); 28 tests passed. Safe landing, Anchor integration and human review remain open."
+      },
+      "at": "2026-10-05T01:41:20.131Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:41:20.131Z",
+        "why": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an incident. Replacement Anchor job 20261004-191301-c36b42 is running. Job completion is not human acceptance or slice closure."
+      },
+      "client_event_id": "rp-refinement-1-finished-20261004-191251-2cc7b3-1",
+      "seq": 36
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-walk-researchprime",
+      "to": "waiting",
+      "at": "2026-10-05T01:41:20.131Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:41:20.131Z",
+        "why": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an incident. Replacement Anchor job 20261004-191301-c36b42 is running. Job completion is not human acceptance or slice closure."
+      },
+      "client_event_id": "rp-refinement-1-finished-20261004-191251-2cc7b3-2",
+      "seq": 37,
+      "from": "active"
+    },
+    {
+      "kind": "commission_bind",
+      "step_id": "gwl-page",
+      "commissioned_as": "code-job:20261004-191301-c36b42",
+      "at": "2026-10-05T01:41:20.131Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:41:20.131Z",
+        "why": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an incident. Replacement Anchor job 20261004-191301-c36b42 is running. Job completion is not human acceptance or slice closure."
+      },
+      "client_event_id": "rp-refinement-1-finished-20261004-191251-2cc7b3-3",
+      "seq": 38
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "waiting_on": null
+      },
+      "at": "2026-10-05T01:41:20.131Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:41:20.131Z",
+        "why": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an incident. Replacement Anchor job 20261004-191301-c36b42 is running. Job completion is not human acceptance or slice closure."
+      },
+      "client_event_id": "rp-refinement-1-finished-20261004-191251-2cc7b3-4",
+      "seq": 39
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-page",
+      "to": "active",
+      "at": "2026-10-05T01:41:20.131Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:41:20.131Z",
+        "why": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an incident. Replacement Anchor job 20261004-191301-c36b42 is running. Job completion is not human acceptance or slice closure."
+      },
+      "client_event_id": "rp-refinement-1-finished-20261004-191251-2cc7b3-5",
+      "seq": 40,
+      "from": "waiting"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "waiting_on": "Anchor integration saved on steward-job-20261004-191301-c36b42 (9392411); 17 walkthrough tests passed. Safe landing, canonical researchPrime content and activation in the existing client remain open."
+      },
+      "at": "2026-10-05T01:44:49.048Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:44:49.048Z",
+        "why": "Anchor code job 20261004-191301-c36b42 finished; 17 targeted walkthrough tests passed. Commit 9392411 remains on its branch because landing is paused after an incident. Both product builds are preserved; no live activation, human acceptance or slice close."
+      },
+      "client_event_id": "anchor-foundry-finished-20261004-191301-c36b42-0",
+      "seq": 41
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-page",
+      "to": "waiting",
+      "at": "2026-10-05T01:44:49.048Z",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05T01:44:49.048Z",
+        "why": "Anchor code job 20261004-191301-c36b42 finished; 17 targeted walkthrough tests passed. Commit 9392411 remains on its branch because landing is paused after an incident. Both product builds are preserved; no live activation, human acceptance or slice close."
+      },
+      "client_event_id": "anchor-foundry-finished-20261004-191301-c36b42-1",
+      "seq": 42,
+      "from": "active"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ],
+          "groups": [
+            {
+              "id": "gwl-foundry-maps",
+              "label": "Foundry page and knowledge maps",
+              "order": 0,
+              "parent_id": null
+            }
+          ],
+          "current": true
+        }
+      },
+      "seq": 43,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-researchprime",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "groups": [
+            {
+              "id": "gwl-walkthroughs",
+              "label": "Skill walkthroughs: researchPrime first",
+              "order": 1,
+              "parent_id": "gwl-foundry-maps"
+            }
+          ],
+          "current": false
+        }
+      },
+      "seq": 44,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "waiting_on": "Both builds are safely landed and the restarted service renders the new page. Per-product feedback remains open; routine population is authorized."
+      },
+      "at": "2026-10-05T19:13:50.521Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:13:50.521Z",
+        "why": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance remains open. Gandalf is independent and visibly unfinished. Tarmac naming needs one canonical confirmation; no role rename or slice close inferred."
+      },
+      "client_event_id": "foundry-populate-after-restart-38ec52d8-a881-4391-809d-bf7a44ec13a8-0",
+      "seq": 45
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-researchprime",
+      "fields": {
+        "waiting_on": "Refinement 1 is safely landed and its Library/source viewer renders on the restarted service. John can review it independently; no acceptance inferred."
+      },
+      "at": "2026-10-05T19:13:50.521Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:13:50.521Z",
+        "why": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance remains open. Gandalf is independent and visibly unfinished. Tarmac naming needs one canonical confirmation; no role rename or slice close inferred."
+      },
+      "client_event_id": "foundry-populate-after-restart-38ec52d8-a881-4391-809d-bf7a44ec13a8-1",
+      "seq": 46
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-gandalf",
+      "fields": {
+        "gate": "python -m pytest -q \"Foundry page and knowledge maps/gandalf/test_maps.py\""
+      },
+      "at": "2026-10-05T19:13:50.521Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:13:50.521Z",
+        "why": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance remains open. Gandalf is independent and visibly unfinished. Tarmac naming needs one canonical confirmation; no role rename or slice close inferred."
+      },
+      "client_event_id": "foundry-populate-after-restart-38ec52d8-a881-4391-809d-bf7a44ec13a8-2",
+      "seq": 47
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-walk-gandalf",
+      "to": "active",
+      "at": "2026-10-05T19:13:50.521Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:13:50.521Z",
+        "why": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance remains open. Gandalf is independent and visibly unfinished. Tarmac naming needs one canonical confirmation; no role rename or slice close inferred."
+      },
+      "client_event_id": "foundry-populate-after-restart-38ec52d8-a881-4391-809d-bf7a44ec13a8-3",
+      "seq": 48,
+      "from": "planned"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "fields": {
+        "name": "Steward: AI cockpit - Lamp / proposed Tarmac name",
+        "waiting_on": "Confirm the canonical reading of John's dictation: rename the AI-cockpit Steward label to Aladdin - Tarmac; this does not block Gandalf population."
+      },
+      "at": "2026-10-05T19:13:50.521Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:13:50.521Z",
+        "why": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance remains open. Gandalf is independent and visibly unfinished. Tarmac naming needs one canonical confirmation; no role rename or slice close inferred."
+      },
+      "client_event_id": "foundry-populate-after-restart-38ec52d8-a881-4391-809d-bf7a44ec13a8-4",
+      "seq": 49
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-recording",
+      "fields": {
+        "done_when": "Record real skill use, outputs and named shortfalls; connect evidence to reusable Library material and the existing continuous-improvement pathway without inventing use frequency or new engine authorization."
+      },
+      "at": "2026-10-05T19:13:50.521Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:13:50.521Z",
+        "why": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance remains open. Gandalf is independent and visibly unfinished. Tarmac naming needs one canonical confirmation; no role rename or slice close inferred."
+      },
+      "client_event_id": "foundry-populate-after-restart-38ec52d8-a881-4391-809d-bf7a44ec13a8-5",
+      "seq": 50
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-page",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps"
+          ],
+          "groups": [
+            {
+              "id": "gwl-foundry-maps",
+              "label": "Foundry page and knowledge maps",
+              "order": 0,
+              "parent_id": null
+            }
+          ],
+          "current": false
+        }
+      },
+      "seq": 51,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-gandalf",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": true
+        }
+      },
+      "seq": 52,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "fields": {
+        "name": "Aladdin-Lamp - Library, knowledge map and process map",
+        "waiting_on": null,
+        "gate": "python -m pytest -q \"Foundry page and knowledge maps/steward-lamp/test_maps.py\""
+      },
+      "at": "2026-10-05T19:50:40.568Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:50:40.568Z",
+        "why": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job 20261005-131354-4c72a5 is done, safely landed and check_ok=true. This records current work and feedback, with no acceptance or slice close."
+      },
+      "client_event_id": "foundry-pdf-names-775e739d-0",
+      "seq": 53
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-cave",
+      "fields": {
+        "name": "Aladdin-Cave of Wonders - Library, knowledge map and process map",
+        "waiting_on": null
+      },
+      "at": "2026-10-05T19:50:40.568Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:50:40.568Z",
+        "why": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job 20261005-131354-4c72a5 is done, safely landed and check_ok=true. This records current work and feedback, with no acceptance or slice close."
+      },
+      "client_event_id": "foundry-pdf-names-775e739d-1",
+      "seq": 54
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-star-chart",
+      "fields": {
+        "name": "Aladdin-Star Chart - Library, knowledge map and process map",
+        "waiting_on": null
+      },
+      "at": "2026-10-05T19:50:40.568Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:50:40.568Z",
+        "why": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job 20261005-131354-4c72a5 is done, safely landed and check_ok=true. This records current work and feedback, with no acceptance or slice close."
+      },
+      "client_event_id": "foundry-pdf-names-775e739d-2",
+      "seq": 55
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-walk-gandalf",
+      "to": "waiting",
+      "at": "2026-10-05T19:50:40.568Z",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:50:40.568Z",
+        "why": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job 20261005-131354-4c72a5 is done, safely landed and check_ok=true. This records current work and feedback, with no acceptance or slice close."
+      },
+      "client_event_id": "foundry-pdf-names-775e739d-3",
+      "seq": 56,
+      "from": "active"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-gandalf",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "seq": 57,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": true
+        }
+      },
+      "seq": 58,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-gandalf",
+      "fields": {
+        "waiting_on": "Gandalf Initial draft is safely landed; its 73-test gate passed. Independent feedback remains open; the existing unfinished banner is disclosed.",
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "at": "2026-10-05T19:52:44.530Z",
+      "client_event_id": "foundry-pdf-feedback-775e739d-draft1",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:52:44.530Z",
+        "why": "The three Steward names are settled and the plan PDF is ready. Gandalf is built and checked; populate Lamp next while keeping each skill open for separate feedback."
+      },
+      "seq": 59
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-walk-steward-lamp",
+      "to": "active",
+      "at": "2026-10-05T19:55:15.582Z",
+      "client_event_id": "foundry-lamp-handoff-after-plan-pdf-775e739d",
+      "receipt": {
+        "who": "Aladdin, acting on John",
+        "when": "2026-10-05T19:55:15.582Z",
+        "why": "Continue the already-authorized skill walkthroughs with Aladdin-Lamp. researchPrime and Gandalf remain open for independent feedback; the plan PDF is directly reviewable. No product is accepted or closed."
+      },
+      "seq": 60,
+      "from": "planned"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "client_event_id": "lamp-final-check-repair-20261005",
+      "fields": {
+        "waiting_on": null
+      },
+      "receipt": {
+        "who": "Aladdin",
+        "why": "The Lamp draft is preserved but its final source check failed. Repair that draft under the approved plan; no acceptance or close."
+      },
+      "seq": 61,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "reorder",
+      "step_id": "gwl-stargazer",
+      "after": "gwl-walk-steward-star-chart",
+      "client_event_id": "john-stargazer-last-b7036892",
+      "receipt": {
+        "who": "John",
+        "why": "John approved the working plan and placed Stargazer after all skill walkthroughs in turn b7036892-d6e9-4df8-bb0e-15bfaac6e1cc."
+      },
+      "seq": 62,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-stargazer",
+      "client_event_id": "john-stargazer-prerequisite-b7036892",
+      "fields": {
+        "done_when": "After the remaining skill walkthroughs and their Library, knowledge and process documentation, investigate and propose Stargazer with evidence from real use; preserve its separate approval and acceptance."
+      },
+      "receipt": {
+        "who": "John",
+        "why": "Stargazer follows the skill documentation under the approved working plan."
+      },
+      "seq": 63,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-walk-steward-lamp",
+      "to": "waiting",
+      "client_event_id": "lamp-repair-landed-172843-a6d394",
+      "receipt": {
+        "who": "Aladdin",
+        "when": "2026-10-05",
+        "why": "The Lamp Initial draft is landed with 125 tests passing. Its cockpit review link still needs Anchor integration; no acceptance or close."
+      },
+      "seq": 64,
+      "at": "2026-10-05",
+      "from": "active"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "client_event_id": "lamp-review-opening-pending-20261005",
+      "fields": {
+        "waiting_on": "Initial draft is landed and checked; repair the Anchor opening route and role mapping, then retain separate feedback.",
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": true
+        }
+      },
+      "receipt": {
+        "who": "Aladdin",
+        "why": "The delivered draft survives focus changes; its real review route failed asset loading and is being repaired."
+      },
+      "seq": 65,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-cave",
+      "client_event_id": "cave-build-gate-20261005",
+      "fields": {
+        "gate": "python -m pytest -q \"Foundry page and knowledge maps/steward-cave/test_maps.py\"",
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": true
+        }
+      },
+      "receipt": {
+        "who": "Aladdin",
+        "why": "Continue the next independently authorized skill walkthrough under the approved plan."
+      },
+      "seq": 66,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-walk-steward-cave",
+      "to": "active",
+      "client_event_id": "cave-build-active-20261005",
+      "receipt": {
+        "who": "John",
+        "when": "2026-10-05",
+        "why": "John approved the sequence: Lamp, Cave of Wonders, Star Chart and remaining skills. Build Cave next without accepting the prior products."
+      },
+      "seq": 67,
+      "at": "2026-10-05",
+      "from": "planned"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-integration",
+      "client_event_id": "lamp-anchor-integration-gate-20261005",
+      "fields": {
+        "gate": "python -m pytest -q tests/test_foundry_page_walkthrough.py"
+      },
+      "receipt": {
+        "who": "Aladdin",
+        "why": "The source-checked Lamp bundle needs the existing Anchor adapter and review route to open it."
+      },
+      "seq": 68,
+      "at": "2026-10-05"
+    },
+    {
+      "kind": "status_flip",
+      "step_id": "gwl-integration",
+      "to": "active",
+      "client_event_id": "lamp-anchor-integration-active-20261005",
+      "receipt": {
+        "who": "John",
+        "when": "2026-10-05",
+        "why": "John authorized integration and routine population. Connect the existing Lamp draft while the Cave documentation proceeds independently."
+      },
+      "seq": 69,
+      "at": "2026-10-05",
+      "from": "proposed"
+    },
+    {
+      "kind": "step_set",
+      "step_id": "gwl-walk-steward-lamp",
+      "fields": {
+        "navigation": {
+          "path": [
+            "gwl-foundry-maps",
+            "gwl-walkthroughs"
+          ],
+          "current": false
+        }
+      },
+      "seq": 70,
+      "at": "2026-10-05"
+    }
+  ],
+  "roadmap_projection": [
+    {
+      "id": "gwl-page",
+      "name": "Foundry page: existing candidate plan and mockup",
+      "status": "waiting",
+      "done_when": "Redo the Skill Foundry page; carry the existing mockup review forward.",
+      "waiting_on": "Both builds are safely landed and the restarted service renders the new page. Per-product feedback remains open; routine population is authorized.",
+      "commissioned_as": "code-job:20261004-191301-c36b42",
+      "part": "slice",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ],
+        "groups": [
+          {
+            "id": "gwl-foundry-maps",
+            "label": "Foundry page and knowledge maps",
+            "order": 0,
+            "parent_id": null
+          }
+        ],
+        "current": false
+      }
+    },
+    {
+      "id": "gwl-process-maps",
+      "name": "Process maps for the Foundry skills",
+      "status": "proposed",
+      "done_when": "For each skill show actual program/model steps, agents/swarms, interim reports, human feedback, adversarial reviews, depth/effort/round selection and stopping rules, with source anchors.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    },
+    {
+      "id": "gwl-recording",
+      "name": "Record skill activities and use",
+      "status": "proposed",
+      "done_when": "Record real skill use, outputs and named shortfalls; connect evidence to reusable Library material and the existing continuous-improvement pathway without inventing use frequency or new engine authorization.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    },
+    {
+      "id": "gwl-knowledge",
+      "name": "Usage-derived Poincaré knowledge maps",
+      "status": "proposed",
+      "done_when": "Provide navigable knowledge maps that open each skill library, with use-frequency and learned geometry qualified by actual run evidence.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "research",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    },
+    {
+      "id": "gwl-integration",
+      "name": "Page, process maps and knowledge maps together",
+      "status": "active",
+      "done_when": "Integrate the maps and recorded use into the revised Foundry page and skills.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "integrate",
+      "gate": "python -m pytest -q tests/test_foundry_page_walkthrough.py",
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    },
+    {
+      "id": "gwl-review",
+      "name": "Review the page and each skill’s maps separately",
+      "status": "proposed",
+      "done_when": "Retain independent feedback and acceptance for each human-facing product.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "rigor",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    },
+    {
+      "id": "gwl-libraries",
+      "name": "Library for every skill: recurring material, references, other skills and tools",
+      "status": "planned",
+      "done_when": "Each skill knowledge map opens its reusable library resources; frequency claims come from recorded use.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    },
+    {
+      "id": "gwl-walk-researchprime",
+      "name": "researchPrime - library, knowledge map and process map",
+      "status": "waiting",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "waiting_on": "Refinement 1 is safely landed and its Library/source viewer renders on the restarted service. John can review it independently; no acceptance inferred.",
+      "commissioned_as": "code-job:20261004-191251-2cc7b3",
+      "part": "slice",
+      "gate": "python -m pytest -q \"Foundry page and knowledge maps/researchprime/test_maps.py\"",
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps",
+          "gwl-walkthroughs"
+        ],
+        "groups": [
+          {
+            "id": "gwl-walkthroughs",
+            "label": "Skill walkthroughs: researchPrime first",
+            "order": 1,
+            "parent_id": "gwl-foundry-maps"
+          }
+        ],
+        "current": false
+      }
+    },
+    {
+      "id": "gwl-walk-gandalf",
+      "name": "Gandalf - library, knowledge map and process map",
+      "status": "waiting",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "waiting_on": "Gandalf Initial draft is safely landed; its 73-test gate passed. Independent feedback remains open; the existing unfinished banner is disclosed.",
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": "python -m pytest -q \"Foundry page and knowledge maps/gandalf/test_maps.py\"",
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps",
+          "gwl-walkthroughs"
+        ],
+        "current": false
+      }
+    },
+    {
+      "id": "gwl-walk-steward-lamp",
+      "name": "Aladdin-Lamp - Library, knowledge map and process map",
+      "status": "waiting",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "waiting_on": "Initial draft is landed and checked; repair the Anchor opening route and role mapping, then retain separate feedback.",
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": "python -m pytest -q \"Foundry page and knowledge maps/steward-lamp/test_maps.py\"",
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps",
+          "gwl-walkthroughs"
+        ],
+        "current": false
+      }
+    },
+    {
+      "id": "gwl-walk-steward-cave",
+      "name": "Aladdin-Cave of Wonders - Library, knowledge map and process map",
+      "status": "active",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": "python -m pytest -q \"Foundry page and knowledge maps/steward-cave/test_maps.py\"",
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps",
+          "gwl-walkthroughs"
+        ],
+        "current": true
+      }
+    },
+    {
+      "id": "gwl-walk-steward-star-chart",
+      "name": "Aladdin-Star Chart - Library, knowledge map and process map",
+      "status": "planned",
+      "done_when": "Source-grounded navigable library and both maps are produced, independently reviewed, and explicitly accepted by John.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "slice",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps",
+          "gwl-walkthroughs"
+        ],
+        "current": false
+      }
+    },
+    {
+      "id": "gwl-stargazer",
+      "name": "Stargazer: proposed Foundry skill",
+      "status": "proposed",
+      "done_when": "After the remaining skill walkthroughs and their Library, knowledge and process documentation, investigate and propose Stargazer with evidence from real use; preserve its separate approval and acceptance.",
+      "waiting_on": null,
+      "commissioned_as": null,
+      "part": "research",
+      "gate": null,
+      "navigation": {
+        "path": [
+          "gwl-foundry-maps"
+        ]
+      }
+    }
+  ]
+}

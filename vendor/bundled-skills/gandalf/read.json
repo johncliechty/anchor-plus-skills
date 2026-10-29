@@ -1,0 +1,92 @@
+{
+  "schema_version": "gandalf-advisor-1",
+  "cross_model": false,
+  "cross_model_requested": true,
+  "degraded": false,
+  "reasoning": "The core problem is estimating a massive cross-price elasticity matrix for grocery categories where parameters scale quadratically with the number of products (N^2), while the time series of weekly sales data is fixed and short. The user proposes three parameter reduction strategies: (1) rescaling elasticities based on package size, (2) Bayesian variable selection (stochastic search) to enforce sparsity by zeroing out non-competing pairs, and (3) grouping brands with similar competitive strategies to share own-price and cross-price elasticity parameters. This is a classic high-dimensional structured sparsity problem. While theoretically sound, the strategies carry risks: hard variable selection can introduce instability in MCMC estimation, and deterministic rescaling by package size assumes linear utility scaling which may violate actual consumer behavior (e.g., bulk discount thresholds).",
+  "verdict": "The parameter reduction strategies are necessary and structurally sound, but the specific mechanisms (hard zeroing and strict size rescaling) risk estimation fragility and behavioral violations without hierarchical regularization.",
+  "findings": [
+    {
+      "id": "d-1",
+      "rung": "CLAIMED",
+      "kind": "diagnose",
+      "severity": "critical",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "The N^2 parameter space vastly outstrips the degrees of freedom provided by weekly sales data, guaranteeing severe overfitting unless aggressive structure is imposed. Grouping brands and zeroing cross-category elasticities correctly identifies the sparsity inherent in consumer choice sets.",
+      "verdict": "The diagnosis of the dimensionality curse and the necessity of structural grouping is accurate and load-bearing."
+    },
+    {
+      "id": "s-1",
+      "rung": "CLAIMED",
+      "kind": "situate",
+      "s0_abstraction": {
+        "stage": "S0-abstract",
+        "skeleton": "Estimating a massive parameter interaction matrix using limited temporal observations by imposing structural sparsity and group-level shrinkage."
+      },
+      "researchprime_commission_id": null,
+      "independent_origin": false,
+      "structure_map": {
+        "answer": "Adopt hierarchical Bayesian shrinkage priors from genetic network inference because the structure matches: thousands of nodes with sparse interactions and short time series.",
+        "correspondences": [
+          {
+            "source_relation": "Genetic nodes interacting in sparse pathways",
+            "target_relation": "Products competing in isolated sub-categories"
+          },
+          {
+            "source_relation": "Short temporal expression data",
+            "target_relation": "Limited weekly sales data"
+          }
+        ]
+      },
+      "outside_view_base_rate": "In genetic networks, hard variable selection often fails due to collinearity; continuous shrinkage priors (like horseshoe) are preferred.",
+      "facts_verified": false,
+      "needs_verification": "route to researchPrime: independently verify the structure-map correspondences and outside-view base rate for 's-1' (single-family substrate earns no independent-origin credit)",
+      "reasoning": "The problem of estimating dense interaction matrices with sparse data is deeply studied in other fields.",
+      "verdict": "We can map this to high-dimensional structured sparsity."
+    },
+    {
+      "id": "a-1",
+      "rung": "UNVERIFIED",
+      "kind": "anticipate",
+      "subject_cardinality": 1,
+      "future_state_condition": "The estimation matrix becomes singular, causing the MCMC sampler to fail to converge or yield wild elasticity estimates.",
+      "enabling_assumption": "Retailers use algorithmic price-matching that eliminates independent price variation between the grouped brands.",
+      "severity": "critical",
+      "reasoning": "Retailers frequently employ automated price-matching strategies against competitors or across their own similar SKUs, resulting in perfectly collinear price series.",
+      "verdict": "The model will likely collapse due to a lack of independent price variation."
+    }
+  ],
+  "nitpicks": [],
+  "elevations": [
+    {
+      "id": "e-2",
+      "rung": "UNVERIFIED",
+      "value_if_true": "medium",
+      "what_would_refute_it": "Evidence showing that within the target categories, price sensitivity scales perfectly linearly with volume, making non-linear parameters redundant.",
+      "tier": "SPECULATIVE",
+      "no_independent_refutation": true,
+      "refutation_stamp": "no independent refutation ran",
+      "reasoning": "Rescaling elasticities strictly by package size assumes a linear relationship between volume and utility. Consumers often exhibit non-linear responses to bulk sizing (e.g., pantry loading behavior). Introducing a non-linear size adjustment parameter would capture this reality.",
+      "verdict": "Package size adjustments must account for non-linear consumer stockpiling behaviors."
+    }
+  ],
+  "risk_labels": [
+    {
+      "leg": "diagnose",
+      "tier": "PROMISING",
+      "rung": "CLAIMED"
+    },
+    {
+      "leg": "situate",
+      "tier": "PROMISING",
+      "rung": "CLAIMED"
+    },
+    {
+      "leg": "anticipate",
+      "tier": "PROMISING",
+      "rung": "UNVERIFIED"
+    }
+  ]
+}

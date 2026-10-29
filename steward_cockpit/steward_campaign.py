@@ -4156,16 +4156,17 @@ def _commit_paths(campaign_dir, rels, message):
     """The Campaign's own paths only, and only when the Campaign folder IS a repo's root (a Campaign inside some parent
     repo is left to that repo's owner - Grok's read of W2d); git's word is the note, never a failure of the write."""
     import subprocess
+    _nw = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
-        probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(campaign_dir), capture_output=True, text=True, timeout=15)
+        probe = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(campaign_dir), capture_output=True, text=True, timeout=15, creationflags=_nw)
         top = probe.stdout.strip().replace("/", os.sep).rstrip(os.sep).lower() if probe.returncode == 0 else ""
         here = os.path.normpath(os.path.realpath(str(campaign_dir))).rstrip(os.sep).lower()
         if not top or os.path.normpath(os.path.realpath(top)).lower() != here:
             return "not committed (the Campaign is not a repo here)"
-        add = subprocess.run(["git", "add", "--", *rels], cwd=str(campaign_dir), capture_output=True, text=True, timeout=30)
+        add = subprocess.run(["git", "add", "--", *rels], cwd=str(campaign_dir), capture_output=True, text=True, timeout=30, creationflags=_nw)
         if add.returncode != 0:
             return "commit failed: " + ((add.stderr or add.stdout).strip().splitlines() or ["git add refused"])[-1]
-        c = subprocess.run(["git", "commit", "-q", "-m", message, "--", *rels], cwd=str(campaign_dir), capture_output=True, text=True, timeout=30)
+        c = subprocess.run(["git", "commit", "-q", "-m", message, "--", *rels], cwd=str(campaign_dir), capture_output=True, text=True, timeout=30, creationflags=_nw)
         if c.returncode != 0:
             tail = (c.stderr or c.stdout).strip().splitlines()
             return "commit failed: " + (tail[-1] if tail else "git exit %d" % c.returncode)

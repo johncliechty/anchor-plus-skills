@@ -141,7 +141,7 @@ def main(argv):
     script = HERE / argv[0] / "tool.py"
     t0 = time.time()
     try:
-        code = subprocess.call([sys.executable, str(script)] + argv[1:])
+        code = subprocess.call([sys.executable, str(script)] + argv[1:], creationflags=(subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0))
     except KeyboardInterrupt:
         code = 130
     log({"tool": argv[0], "at": datetime.fromtimestamp(t0).isoformat(timespec="seconds"), "at_epoch": t0,

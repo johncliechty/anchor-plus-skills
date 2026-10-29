@@ -1,0 +1,158 @@
+{
+  "resources": [
+    {
+      "id": "literaturereview-mat-skill-md",
+      "title": "Literature-Review Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "literaturereview-mat-human-md",
+      "title": "Literature-Review Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "literaturereview-mat-north-star-md",
+      "title": "Literature-Review Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "literaturereview-mat-description-md",
+      "title": "Literature-Review Detailed Specification (DESCRIPTION.md)",
+      "category": "material",
+      "path": "DESCRIPTION.md",
+      "description": "Detailed capability specification and module breakdown."
+    },
+    {
+      "id": "literaturereview-mat-implementation-plan-md",
+      "title": "Literature-Review Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "category": "material",
+      "path": "IMPLEMENTATION-PLAN.md",
+      "description": "Wave-by-wave engineering plan and verification gates."
+    },
+    {
+      "id": "literaturereview-mat-triage-block",
+      "title": "Literature-Review Universal Triage & Seating Block",
+      "category": "material",
+      "path": "foundry/triage/generated/literature-review.triage-block.md",
+      "description": "Generated Universal Seating Law & complexity triage protocol block."
+    },
+    {
+      "id": "literaturereview-tool-bin-cli-mjs",
+      "title": "cli.mjs (bin/cli.mjs)",
+      "category": "tools",
+      "path": "bin/cli.mjs",
+      "description": "Executable .mjs module (850 LOC; key symbols: parseArgs, buildStage0Adapters, summarize, derive)."
+    },
+    {
+      "id": "literaturereview-tool-run-foreman-mjs",
+      "title": "run-foreman.mjs (run-foreman.mjs)",
+      "category": "tools",
+      "path": "run-foreman.mjs",
+      "description": "Executable .mjs module (44 LOC; key symbols: MAX_WAVES, emit)."
+    },
+    {
+      "id": "literaturereview-tool-src-run-config-mjs",
+      "title": "run-config.mjs (src/run-config.mjs)",
+      "category": "tools",
+      "path": "src/run-config.mjs",
+      "description": "Executable .mjs module (130 LOC; key symbols: resolveUnitInterval, resolveInvariantTrue, combineInspectableExclusions, parseMaxPapers)."
+    },
+    {
+      "id": "literaturereview-tool-src-run-summary-mjs",
+      "title": "run-summary.mjs (src/run-summary.mjs)",
+      "category": "tools",
+      "path": "src/run-summary.mjs",
+      "description": "Executable .mjs module (219 LOC; key symbols: round6, assertUnitInterval, finalizeRunSummary, summaryStampLine)."
+    },
+    {
+      "id": "literaturereview-tool-src-schemas-prismainclusio",
+      "title": "prismaInclusions.mjs (src/schemas/prismaInclusions.mjs)",
+      "category": "tools",
+      "path": "src/schemas/prismaInclusions.mjs",
+      "description": "Executable .mjs module (26 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "literaturereview-tool-src-schemas-runsummary-mjs",
+      "title": "runSummary.mjs (src/schemas/runSummary.mjs)",
+      "category": "tools",
+      "path": "src/schemas/runSummary.mjs",
+      "description": "Executable .mjs module (27 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "literaturereview-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "literaturereview-peer-researchprime",
+      "title": "researchPrime Governed Adversarial Round",
+      "category": "skills",
+      "skill": "researchprime",
+      "description": "Augments researchPrime to run Phase-3 adversarial verification over extracted paper claims"
+    },
+    {
+      "id": "literaturereview-peer-ramanujan",
+      "title": "Ramanujan Quantitative Meta-Analysis Partner",
+      "category": "skills",
+      "skill": "ramanujan",
+      "description": "Audits statistical power, effect-size aggregation, and methodological equations"
+    },
+    {
+      "id": "literaturereview-peer-anvil",
+      "title": "Anvil Paper-to-Code Mapper",
+      "category": "skills",
+      "skill": "anvil",
+      "description": "Connects literature equations and algorithms directly to reference code implementations"
+    },
+    {
+      "id": "literaturereview-ref-lessons",
+      "title": "Literature-Review LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "literaturereview-ref-changelog",
+      "title": "Literature-Review CHANGELOG.md",
+      "category": "references",
+      "path": "CHANGELOG.md",
+      "description": "Accumulated operational lessons and historical evolution in CHANGELOG.md."
+    },
+    {
+      "id": "literaturereview-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "literaturereview-journal-0018-ebbes-approved-led",
+      "title": "Journal: 0018-ebbes-approved-ledger-review",
+      "category": "references",
+      "path": "journal/0018-ebbes-approved-ledger-review.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0018-ebbes-approved-ledger-review.md)."
+    },
+    {
+      "id": "literaturereview-journal-0017-ebbes-scoped-plan-",
+      "title": "Journal: 0017-ebbes-scoped-plan-recovery",
+      "category": "references",
+      "path": "journal/0017-ebbes-scoped-plan-recovery.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0017-ebbes-scoped-plan-recovery.md)."
+    },
+    {
+      "id": "literaturereview-kb-portfolio-triage-and-band-ev",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

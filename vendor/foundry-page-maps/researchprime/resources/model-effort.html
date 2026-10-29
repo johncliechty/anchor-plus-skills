@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Latest model and highest supported effort · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="model-effort" data-anchor-id="a020">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Latest model and highest supported effort</h1>
+<p class="intro">Select from the provider capability catalog and upgrade links, using that model’s highest supported effort. Ambiguous ranking fails; selection begins model_attested:false.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\drivers\model-policy.mjs</span><br>Lines 251–276 · frozen source snapshot</p>
+<pre class="excerpt">export function selectModel(family, catalog) {
+  const normalized = normalizeCatalog(family, catalog);
+  const ranked = [...normalized.models].sort((left, right) =&gt; left.rank - right.rank);
+  if (family === &#x27;chatgpt&#x27; &amp;&amp; ranked.length &gt; 1 &amp;&amp; ranked[0].rank === ranked[1].rank) {
+    fail(family, &#x27;Latest model ranking is ambiguous; refresh subscription capabilities.&#x27;);
+  }
+  const byId = new Map(ranked.map(entry =&gt; [entry.model, entry]));
+  const visited = new Set();
+  let selected = ranked[0];
+  let upgraded = false;
+  while (selected.upgrade) {
+    if (visited.has(selected.model)) fail(family, &#x27;The model upgrade links contain a cycle.&#x27;);
+    visited.add(selected.model);
+    const successor = byId.get(selected.upgrade);
+    if (!successor) fail(family, &#x27;The advertised model upgrade target is absent or unavailable.&#x27;);
+    selected = successor;
+    upgraded = true;
+  }
+  return {
+    family, model: selected.model, effort: highestEffort(selected.efforts, family),
+    selection_evidence: upgraded ? `${normalized.selection_evidence}+provider_upgrade` : normalized.selection_evidence,
+    model_attested: false,
+    ...(normalized.warning ? { warning: normalized.warning } : {}),
+  };
+}
+</pre>
+<div class="actions"><a class="button" href="../source-pages/policy.html#L251">Open numbered source at line 251</a>
+<a class="button secondary" href="../sources/policy.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/route">Resolve live or replay seats</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">c012f2b2ab9bed983d1c3c4204ad503c4c21da45b22ae3e97dd633af0f46e2c1</span></p>
+<p>Excerpt SHA-256 <span class="path">90b32889077c3c4303751ad1fa0a740f36de10fcfdf7efa649e752f9e87c7175</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

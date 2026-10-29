@@ -24358,6 +24358,10 @@ def main():
         # Tests/the 5 AM healthcheck never call main(), so they keep the flag
         # unset/OFF and never spawn live claude.
         os.environ["ANCHOR_PROACTIVE_SUMMARY"] = "1"
+    try:
+        _paths.ensure_hidden_subprocesses()
+    except Exception:
+        pass
     port = 8777
     no_browser = "--no-browser" in sys.argv
     if "--port" in sys.argv:

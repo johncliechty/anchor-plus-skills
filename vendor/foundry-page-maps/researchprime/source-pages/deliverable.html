@@ -1,0 +1,363 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>deliverable · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>deliverable</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\deliverable.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 9c6b345878eca35cf724fd94a50ce57563bf018a058fe0bb588f8350af41c2de</p></details>
+<p><a href="../sources/deliverable.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/deliverable.mjs — Wave 10: Deliverable assembly and rendering (Wave 10 changes recovered)+ HONEST DEGRADED MODE (Phase E).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // MASTER-PLAN Phase E / IMPLEMENTATION-PLAN Wave 10 done-when: assemble the run&#x27;s final deliverable so</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // it CARRIES — as first-class, separable sections —</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> //   • the ROUND HISTORY (the Wave-7 multi-round adversarial loop, per-round),</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> //   • the JUDGE VERDICT (G4, the separate context-free decider),</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> //   • the CONVERGENCE PROOF (the Wave-7 honest convergence tracker&#x27;s final state + per-round trail),</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> //   • ρ̂ + the LEARNED-QUORUM STATE (the Wave-9 calibration verdict — carried in BOTH modes because</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> //     default-mode calibration is a pure function of inputs), and</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //   • the separate SYNTHESIZER BRIEF (the active Deep-Think steer — kept STRICTLY SEPARATE from the</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //     Judge verdict: the Synthesizer steers, it never decides — premortem #6 / crit-6).</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // And it makes the DEGRADED (non-engine / prose) mode HONEST:</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //   • a non-engine run emits the literal HONESTY STAMP (&quot;schema conforms; adversarial verification did</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> //     NOT run&quot;) and force-sets `cross_model:false` (I3 — degraded mode is never an independence claim);</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> //   • the user-facing prose surfaces (the three researchPrime summary levels) of a prose-mode</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //     deliverable NEVER claim &quot;parity&quot; with an engine-verified result — the output-conformance gate</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> //     (test/output-conformance.test.mjs) forbids the literal word in every prose-mode surface.</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> // REUSE, NOT FORK: this module ASSEMBLES already-produced outputs (round.mjs&#x27;s `orchestrateRound`</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> // results, its `makeConvergenceTracker` state, and rho-ledger.mjs&#x27;s `calibrationVerdict`) into the</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> // deliverable shape + renders the user surfaces. It computes no verification of its own and re-homes no</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> // gate logic; it is the presentation seam on top of Waves 6–9. `MODES` is the SAME two-mode taxonomy the</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> // evidenced core (verify-core.mjs) already locks, imported not re-declared.</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> //</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> // PURITY: every function here is a deterministic, side-effect-free function of its inputs — no clock, no</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> // randomness, no I/O. The deliverable is a value; rendering it is a pure projection of that value.</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> </span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> import { MODES } from &#x27;./verify-core.mjs&#x27;;</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> // HALT-for-human signalling — the single upstream class, via the canonical trio-core specifier (no fork).</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> import { HaltError } from &#x27;#trio-core/contract-core.mjs&#x27;;</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> </span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> /**</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>  * The literal honesty stamp a NON-ENGINE (prose/degraded) run wears (done-when). Asserted verbatim by</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>  * the output-conformance gate — a host that cannot run the adversarial loop says so in exactly these</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>  * words, never silently presenting prose as if it were verified.</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>  */</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> export const HONESTY_STAMP = &#x27;schema conforms; adversarial verification did NOT run&#x27;;</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> </span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a> /** researchPrime&#x27;s three deliverable summary levels — the user-facing surfaces (the prose check&#x27;s scope). */</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> export const SUMMARY_LEVELS = Object.freeze([&#x27;full&#x27;, &#x27;executive&#x27;, &#x27;agent-implementation&#x27;]);</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> </span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> /**</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>  * The word FORBIDDEN in any prose-mode (non-engine) user surface (done-when). A degraded run must not</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>  * imply it is on par / &quot;parity&quot; with an engine-verified result — the honesty stamp already says</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>  * verification did not run, and no surface may walk that back.</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>  */</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> export const FORBIDDEN_PROSE_WORD = &#x27;parity&#x27;;</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> </span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> // ── cross_model (I3): a heterogeneity proxy, true ONLY in the engine across attested distinct lineages ──</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> /**</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>  * `cross_model` is TRUE only in ENGINE mode AND when the run actually spanned ≥2 distinct substrate</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>  * families (a heterogeneity PROXY, never an independence guarantee — I3). DEGRADED mode forces it FALSE</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>  * unconditionally: a host that did not run the adversarial loop cannot claim cross-model anything.</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a>  */</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> export function crossModelFor(mode, substrateFamilies = []) {</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a>   if (mode !== &#x27;engine&#x27;) return false; // I3: degraded ⇒ cross_model:false, always</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>   const fams = new Set(</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>     (Array.isArray(substrateFamilies) ? substrateFamilies : [])</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>       .filter((f) =&gt; typeof f === &#x27;string&#x27; &amp;&amp; f.trim().length &gt; 0)</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>       .map((f) =&gt; f.trim()),</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>   );</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>   return fams.size &gt;= 2;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> }</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> // ── ROUND HISTORY — the per-round trail of the Wave-7 loop ───────────────────────────────────────────</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> /**</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>  * Project the raw `orchestrateRound` results into a compact, auditable round-history trail: one record</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>  * per round naming what that round did (dry/empty, finding count, the GATE-1 origin quorum, conflicts,</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>  * whether G9 debate fired). This is the deliverable&#x27;s &quot;round history&quot; section.</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>  */</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> export function deriveRoundHistory(rounds = []) {</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>   if (!Array.isArray(rounds)) throw new HaltError(&#x27;deriveRoundHistory requires a rounds[] array&#x27;);</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>   return rounds.map((r, i) =&gt; ({</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>     round: Number.isInteger(r?.round) ? r.round : i + 1,</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>     dry: !!r?.dry,</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>     empty: !!r?.empty,</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>     findings: Array.isArray(r?.tally?.findings) ? r.tally.findings.length : 0,</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>     quorum: r?.quorum</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>       ? { origins: r.quorum.origins ?? 0, required: r.quorum.required ?? null, met: !!r.quorum.met }</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>       : null,</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>     conflicts: Array.isArray(r?.conflicts) ? r.conflicts.length : 0,</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>     debate_fired: !!r?.debate?.fired,</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>   }));</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a> }</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a> </span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a> // ── SYNTHESIZER BRIEF — the steer, kept STRICTLY SEPARATE from the Judge verdict ─────────────────────</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> /**</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>  * Build the Synthesizer Brief from the per-round `direction` outputs. It is a SEPARATE section</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>  * (premortem #6 / crit-6: the Synthesizer steers, it never decides) and is stamped `decides:false` so</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>  * the conformance gate can assert it is never conflated with the Judge&#x27;s verdict (G4 decides).</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>  */</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a> export function buildSynthesizerBrief(rounds = []) {</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>   if (!Array.isArray(rounds)) throw new HaltError(&#x27;buildSynthesizerBrief requires a rounds[] array&#x27;);</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>   const perRound = rounds</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>     .map((r, i) =&gt; ({ round: Number.isInteger(r?.round) ? r.round : i + 1, direction: r?.direction ?? null }))</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>     .filter((x) =&gt; x.direction != null);</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>   return {</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>     role: &#x27;synthesizer&#x27;,</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>     decides: false, // crit-6: STEERS, never decides — the separate Judge (G4) decides.</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>     note: &#x27;STEERING ONLY — the Synthesizer steers; the separate context-free Judge (G4) decides.&#x27;,</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>     rounds: perRound,</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>   };</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a> }</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a> // ── The DELIVERABLE assembler ────────────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a> /**</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>  * Assemble the run&#x27;s final deliverable VALUE.</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>  *</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>  * ENGINE mode: the full adversarially-verified deliverable — round history, the final round&#x27;s Judge</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>  * verdict, the convergence proof, the calibration (ρ̂ + learned-quorum) state, and the separate</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>  * Synthesizer Brief. `cross_model` reflects the actual substrate.</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>  *</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>  * DEGRADED / non-engine mode: the adversarial loop did NOT run on this host, so the verification-only</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>  * sections are NULL and the deliverable carries the literal HONESTY STAMP with `cross_model:false`</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>  * (I3). The calibration state is still carried (default-mode ρ̂/learned-quorum is a pure function of</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>  * inputs), so the deliverable never has to fabricate or omit it.</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>  *</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>  * @param {object} o</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>  * @param {&#x27;engine&#x27;|&#x27;degraded&#x27;} o.mode</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>  * @param {Array&lt;object&gt;} [o.rounds]              raw orchestrateRound results (round history source)</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>  * @param {?object}       [o.convergence]         the convergence tracker&#x27;s final state (the proof)</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>  * @param {?object}       [o.calibration]         the Wave-9 calibrationVerdict (ρ̂ + learned-quorum state)</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>  * @param {string[]}      [o.substrateFamilies]   the model families actually reachable this run</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>  * @param {?string}       [o.northStar]</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>  * @returns {object} the deliverable value</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>  */</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a> export function assembleDeliverable({</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>   mode,</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>   rounds = [],</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>   convergence = null,</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>   calibration = null,</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>   substrateFamilies = [],</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>   northStar = null,</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> } = {}) {</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>   if (!MODES.includes(mode)) {</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>     throw new HaltError(`assembleDeliverable: mode must be one of ${MODES.join(&#x27; | &#x27;)}, got ${JSON.stringify(mode)}`);</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>   }</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>   const cross_model = crossModelFor(mode, substrateFamilies);</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>   const base = {</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>     mode,</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>     north_star: northStar ?? null,</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>     cross_model,</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>     // ρ̂ + learned-quorum state — carried in BOTH modes (default-mode calibration is pure-of-inputs).</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>     calibration: calibration ?? null,</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>     rho_hat: calibration?.rho_hat ?? null,</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>   };</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a> </span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>   if (mode !== &#x27;engine&#x27;) {</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>     // Non-engine / prose / degraded: the adversarial loop did NOT run on this host. Say so, honestly.</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>     return {</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>       ...base,</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>       verified: false,</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>       honesty_stamp: HONESTY_STAMP,</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>       round_history: [],</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>       judge_verdict: null,</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>       convergence_proof: null,</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>       synthesizer_brief: null,</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>     };</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>   }</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a> </span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>   // Engine mode: the full, adversarially-verified deliverable.</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>   const finalRound = rounds.length ? rounds[rounds.length - 1] : null;</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>   return {</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>     ...base,</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>     verified: true,</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>     honesty_stamp: null,</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>     round_history: deriveRoundHistory(rounds),</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>     judge_verdict: engineJudgeVerdict(finalRound),</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>     convergence_proof: convergence ?? null,</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>     synthesizer_brief: buildSynthesizerBrief(rounds),</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>   };</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a> }</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a> </span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a> /**</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>  * The engine deliverable&#x27;s judge section. P0 2026-07-25: a GOVERNED run may legitimately</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>  * have no Judge verdict — the stakes governor excludes the Judge below the adjudication</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>  * floor (crit-2), and the inclusion test skips zero-AXIS rounds entirely (crit-4). Those</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>  * are HONEST absences and must be CARRIED as explicit exclusion stamps, not null — so the</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>  * output-conformance gate still catches a verdict that is missing for any OTHER reason</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>  * (a judge that should have run and didn&#x27;t stays a contract violation).</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>  */</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a> function engineJudgeVerdict(finalRound) {</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>   const jv = finalRound?.judgeVerdict;</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>   if (jv != null) return jv;</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>   if (finalRound?.skipped === true) {</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>     return {</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>       excluded: true,</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>       by: &#x27;inclusion-test&#x27;,</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>       reason: finalRound.reason ?? &#x27;zero-AXIS-finding round skipped (crit-4) — no adjudication ran&#x27;,</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>     };</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>   }</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>   if (finalRound?.policy &amp;&amp; finalRound.policy.judge === false) {</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>     return {</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>       excluded: true,</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>       by: &#x27;stakes-governor&#x27;,</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>       tier: finalRound.tier ?? null,</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>       reason: finalRound.policy.reason ?? &#x27;governor tier below the adjudication floor — Judge excluded (crit-2)&#x27;,</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>     };</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>   }</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>   return null; // genuinely missing — the conformance gate rejects this, by design</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a> }</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a> </span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a> // ── USER SURFACES — researchPrime&#x27;s three summary levels (pure projections of the deliverable) ────────</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a> function fmtConvergence(c) {</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>   if (!c || typeof c !== &#x27;object&#x27;) return &#x27;convergence: (none recorded)&#x27;;</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>   return `convergence: ${c.converged ? &#x27;CONVERGED&#x27; : &#x27;not converged&#x27;} ` +</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>     `(dryStreak=${c.dryStreak ?? &#x27;?&#x27;}, counted=${c.countedRounds ?? &#x27;?&#x27;}, rounds=${c.rounds ?? &#x27;?&#x27;})`;</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a> }</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a> </span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a> function fmtCalibration(d) {</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>   const c = d.calibration;</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>   if (!c) return &#x27;ρ̂: (calibration not carried)&#x27;;</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>   const rho = c.rho_hat == null ? &#x27;unestimated&#x27; : String(c.rho_hat);</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>   return `ρ̂: ${rho} · learned-quorum required=${c.required ?? &#x27;?&#x27;} ` +</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>     `(static would require ${c.static_would_require ?? &#x27;?&#x27;}) · ${c.stamp ?? c.mode ?? &#x27;&#x27;}`.trim();</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a> }</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a> </span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a> /**</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>  * Render ONE user-facing summary surface (a string) for a deliverable. The three levels mirror</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>  * researchPrime&#x27;s full / executive / agent-implementation tiers. A NON-ENGINE deliverable&#x27;s surfaces</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>  * lead with the honesty stamp and NEVER use the forbidden &quot;parity&quot; claim (the conformance gate enforces</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>  * this); an engine deliverable&#x27;s surfaces report the verified result.</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>  *</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>  * @param {object} deliverable  the value from assembleDeliverable</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>  * @param {&#x27;full&#x27;|&#x27;executive&#x27;|&#x27;agent-implementation&#x27;} level</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>  * @returns {string}</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>  */</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a> export function renderSurface(deliverable, level) {</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>   if (!SUMMARY_LEVELS.includes(level)) {</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>     throw new HaltError(`renderSurface: level must be one of ${SUMMARY_LEVELS.join(&#x27; | &#x27;)}, got ${JSON.stringify(level)}`);</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>   }</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>   if (!deliverable || typeof deliverable !== &#x27;object&#x27; || !MODES.includes(deliverable.mode)) {</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>     throw new HaltError(&#x27;renderSurface requires a deliverable from assembleDeliverable&#x27;);</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>   }</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>   const ns = deliverable.north_star ? `North Star: ${deliverable.north_star}` : &#x27;North Star: (unset)&#x27;;</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a> </span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   if (deliverable.mode !== &#x27;engine&#x27;) {</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>     // Prose / degraded mode. HONEST: leads with the stamp; makes NO equivalence/&quot;parity&quot; claim.</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>     const stamp = `Honesty: ${deliverable.honesty_stamp}`;</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>     const xm = `cross_model: ${deliverable.cross_model}`;</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>     if (level === &#x27;executive&#x27;) {</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>       return [`researchPrime (DEGRADED prose mode) — UNVERIFIED.`, stamp, xm].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>     }</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>     if (level === &#x27;agent-implementation&#x27;) {</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>       return [</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>         `# researchPrime deliverable [mode=degraded verified=false]`,</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>         stamp,</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>         xm,</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>         fmtCalibration(deliverable),</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>         `findings are SCHEMA-CONFORMANT prose only — re-run on an engine host for adversarial verification.`,</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>       ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>     }</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>     // full</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>     return [</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>       `# researchPrime Deliverable — DEGRADED (prose) mode`,</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>       stamp,</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>       xm,</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>       ns,</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>       ``,</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>       `This host could not run the adversarial verification loop (G1–G9). The output below conforms to`,</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>       `the deliverable SCHEMA only: there is NO Judge verdict, NO convergence proof, and NO round`,</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>       `history. Treat every finding as UNVERIFIED prose — it has not been independently checked. To`,</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>       `obtain a verified result, re-run on an engine host.`,</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>       fmtCalibration(deliverable),</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>     ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>   }</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a> </span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>   // Engine mode: the verified surfaces.</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>   const j = deliverable.judge_verdict;</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>   const jline = `Judge verdict: ${j ? (j.verdict ?? j.decision ?? JSON.stringify(j)) : &#x27;(none)&#x27;}`;</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>   const rounds = `rounds: ${deliverable.round_history.length}`;</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>   if (level === &#x27;executive&#x27;) {</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>     return [`researchPrime (engine, VERIFIED).`, jline, fmtConvergence(deliverable.convergence_proof)].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>   }</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>   if (level === &#x27;agent-implementation&#x27;) {</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>     return [</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>       `# researchPrime deliverable [mode=engine verified=true]`,</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>       `cross_model: ${deliverable.cross_model}`,</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>       jline,</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>       rounds,</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>       fmtConvergence(deliverable.convergence_proof),</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>       fmtCalibration(deliverable),</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>       `synthesizer_brief: present (decides=${deliverable.synthesizer_brief?.decides}) — steering only.`,</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>     ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>   }</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>   // full</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>   return [</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>     `# researchPrime Deliverable — ENGINE (adversarially verified)`,</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>     ns,</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>     `cross_model: ${deliverable.cross_model}`,</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>     jline,</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>     rounds,</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>     fmtConvergence(deliverable.convergence_proof),</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>     fmtCalibration(deliverable),</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>     ``,</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>     `Round history and the separate Synthesizer Brief (steering only — the Judge decides) accompany`,</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>     `this report as structured sections.`,</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>   ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a> }</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a> </span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a> /** Render all three summary-level surfaces of a deliverable as `{ level: text }`. */</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a> export function renderAllSurfaces(deliverable) {</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>   return Object.fromEntries(SUMMARY_LEVELS.map((l) =&gt; [l, renderSurface(deliverable, l)]));</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a> }</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a> </span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a> // ── The OUTPUT-CONFORMANCE gate (the predicate test/output-conformance.test.mjs asserts on) ──────────</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a> /** Does `text` use the forbidden prose word as a whole word (case-insensitive)? */</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a> export function containsForbiddenProse(text) {</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>   return new RegExp(`\\b${FORBIDDEN_PROSE_WORD}\\b`, &#x27;i&#x27;).test(String(text ?? &#x27;&#x27;));</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a> }</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a> </span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a> /**</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>  * Check a deliverable against the Wave-10 output contract, returning `{ ok, violations }`.</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>  *</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>  * NON-ENGINE (prose) mode: must carry the literal honesty stamp, force `cross_model:false` (I3), and</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>  * NO user surface may contain the forbidden &quot;parity&quot; claim.</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>  * ENGINE mode: must carry every required section — round history, Judge verdict, convergence proof, the</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>  * calibration (ρ̂ + learned-quorum) state, and the Synthesizer Brief — and the Brief must be SEPARATE</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>  * from the Judge verdict (it must NOT decide).</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>  *</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>  * @returns {{ ok:boolean, violations:string[] }}</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>  */</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a> export function checkOutputConformance(deliverable) {</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>   const violations = [];</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>   if (!deliverable || typeof deliverable !== &#x27;object&#x27; || !MODES.includes(deliverable.mode)) {</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>     return { ok: false, violations: [&#x27;not a deliverable (missing/invalid mode)&#x27;] };</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>   }</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>   const surfaces = renderAllSurfaces(deliverable);</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a> </span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>   if (deliverable.mode !== &#x27;engine&#x27;) {</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a>     if (deliverable.honesty_stamp !== HONESTY_STAMP) {</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>       violations.push(&#x27;non-engine deliverable must carry the exact honesty stamp&#x27;);</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a>     }</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>     if (deliverable.cross_model !== false) {</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>       violations.push(&#x27;non-engine deliverable must force cross_model:false (I3)&#x27;);</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>     }</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>     for (const [level, text] of Object.entries(surfaces)) {</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a>       if (containsForbiddenProse(text)) {</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>         violations.push(`prose-mode surface &#x27;${level}&#x27; claims &quot;${FORBIDDEN_PROSE_WORD}&quot; (forbidden)`);</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a>       }</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>     }</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a>     return { ok: violations.length === 0, violations };</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>   }</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a> </span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a>   // Engine mode: every section must be carried.</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a>   for (const k of [&#x27;round_history&#x27;, &#x27;judge_verdict&#x27;, &#x27;convergence_proof&#x27;, &#x27;calibration&#x27;, &#x27;synthesizer_brief&#x27;]) {</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a>     if (deliverable[k] == null) violations.push(`engine deliverable missing required section: ${k}`);</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>   }</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>   if (deliverable.synthesizer_brief &amp;&amp; deliverable.synthesizer_brief.decides !== false) {</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a>     violations.push(&#x27;Synthesizer Brief must be SEPARATE from the Judge verdict (decides must be false)&#x27;);</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>   }</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>   return { ok: violations.length === 0, violations };</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a> }</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a> </span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a> // Re-export the two-mode taxonomy so a consumer/test reads the SAME modes the evidenced core locks.</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a> export { MODES };</span></pre></main></body></html>

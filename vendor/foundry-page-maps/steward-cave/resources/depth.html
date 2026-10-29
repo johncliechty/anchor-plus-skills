@@ -1,0 +1,107 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose the amount of work · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="depth" data-anchor-id="a-depth-table">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Choose the amount of work</h1>
+<p class="intro">The shipped table defaults to LITE, uses SPIKE for unknown data shape, FULL only in an explicit high-uncertainty/high-cost cell, and refuses blocked wait or out-of-scope work. Unknown capacity demotes FULL to LITE. This optional engine lane does not prove every Cave turn consults it.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.525656+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/fixtures/dispatch-table-seed.json</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 95f4198fc29899f619eda529ebc70a5b83fd82e31a83b37843a25c67ffbf5f5b</p></aside>
+<p class="path">C:/dev/Ecgberht/fixtures/dispatch-table-seed.json · lines 1–95</p><pre>{
+  &quot;schema&quot;: &quot;ecgberht-dispatch-table-seed-v0&quot;,
+  &quot;spelling&quot;: &quot;Ecgberht&quot;,
+  &quot;description&quot;: &quot;W4 dispatch matrix: phase × uncertainty × human_wait × cost → LITE|FULL|SPIKE|commission|refuse. Defaults bias LITE. SPIKE for unknown data shape. FULL only when cell says so. refuse when human_wait blocks or out-of-scope. capacity=unknown → LITE bias flag (never silent FULL green).&quot;,
+  &quot;dimensions&quot;: [&quot;phase&quot;, &quot;uncertainty&quot;, &quot;human_wait&quot;, &quot;cost&quot;],
+  &quot;outcomes&quot;: [&quot;LITE&quot;, &quot;FULL&quot;, &quot;SPIKE&quot;, &quot;commission&quot;, &quot;refuse&quot;],
+  &quot;bias&quot;: &quot;LITE&quot;,
+  &quot;capacity_rule&quot;: {
+    &quot;when&quot;: &quot;unknown&quot;,
+    &quot;effect&quot;: [&quot;rank_penalty&quot;, &quot;LITE_bias_flag&quot;],
+    &quot;forbid&quot;: &quot;silent_green&quot;
+  },
+  &quot;cells&quot;: [
+    {
+      &quot;phase&quot;: &quot;planning&quot;,
+      &quot;uncertainty&quot;: &quot;low&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;low&quot;,
+      &quot;outcome&quot;: &quot;LITE&quot;,
+      &quot;why&quot;: &quot;planning + low uncertainty + known shape → LITE bias&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;build&quot;,
+      &quot;uncertainty&quot;: &quot;low&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;low&quot;,
+      &quot;outcome&quot;: &quot;LITE&quot;,
+      &quot;why&quot;: &quot;build + low uncertainty → LITE&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;low&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;low&quot;,
+      &quot;outcome&quot;: &quot;LITE&quot;,
+      &quot;why&quot;: &quot;default LITE-biased cell&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;medium&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;low&quot;,
+      &quot;outcome&quot;: &quot;LITE&quot;,
+      &quot;why&quot;: &quot;medium uncertainty still LITE-biased&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;high&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;unknown_shape&quot;,
+      &quot;outcome&quot;: &quot;SPIKE&quot;,
+      &quot;why&quot;: &quot;unknown data shape → SPIKE first&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;any&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;unknown_shape&quot;,
+      &quot;outcome&quot;: &quot;SPIKE&quot;,
+      &quot;why&quot;: &quot;unknown data shape → SPIKE&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;high&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;high&quot;,
+      &quot;outcome&quot;: &quot;FULL&quot;,
+      &quot;why&quot;: &quot;high uncertainty + high cost → FULL (explicit cell only)&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;build&quot;,
+      &quot;uncertainty&quot;: &quot;low&quot;,
+      &quot;human_wait&quot;: &quot;none&quot;,
+      &quot;cost&quot;: &quot;high&quot;,
+      &quot;outcome&quot;: &quot;commission&quot;,
+      &quot;why&quot;: &quot;known build shape with high cost may commission specialist&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;any&quot;,
+      &quot;human_wait&quot;: &quot;blocked&quot;,
+      &quot;cost&quot;: &quot;any&quot;,
+      &quot;outcome&quot;: &quot;refuse&quot;,
+      &quot;why&quot;: &quot;human_wait blocks depth ceremony&quot;
+    },
+    {
+      &quot;phase&quot;: &quot;any&quot;,
+      &quot;uncertainty&quot;: &quot;any&quot;,
+      &quot;human_wait&quot;: &quot;any&quot;,
+      &quot;cost&quot;: &quot;out_of_scope&quot;,
+      &quot;outcome&quot;: &quot;refuse&quot;,
+      &quot;why&quot;: &quot;out-of-scope refuses dispatch&quot;
+    }
+  ]
+}</pre>
+<p><a class="button" href="../source-pages/depth-table.html#L1">Open numbered source</a>
+<a href="../sources/depth-table.json" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/depth">Choose depth without changing model quality</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">95f4198fc29899f619eda529ebc70a5b83fd82e31a83b37843a25c67ffbf5f5b</span></p><p>Excerpt hash: <span class="path">10cebefe6c46c366f5efb0454d5b05465995317267e459ce0c0b9a99473a8b0f</span></p></details></article></main></body></html>

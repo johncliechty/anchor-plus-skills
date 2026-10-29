@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Depth bands · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="depth-bands" data-anchor-id="a015">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Depth bands</h1>
+<p class="intro">The researchPrime mapping sets FULL to 8 rounds, LITE to 2 and SPIKE to 4. Its includeAdjudication knob only tightens debate in the actual runner; model quality is resolved separately.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">foundry/triage/mapping.mjs</span><br>Lines 146–171 · frozen source snapshot</p>
+<pre class="excerpt">  researchPrime: Object.freeze({
+    [DEPTH_BANDS.FULL]: Object.freeze({
+      maxRounds: 8,
+      includeAdjudication: true,
+      seats: &#x27;frontier&#x27;,
+      ceremony: &#x27;full&#x27;,
+    }),
+    [DEPTH_BANDS.LITE]: Object.freeze({
+      maxRounds: 2,
+      includeAdjudication: false,
+      seats: &#x27;standard&#x27;,
+      ceremony: &#x27;lite&#x27;,
+    }),
+    [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({
+      maxRounds: 4,
+      includeAdjudication: true,
+      seats: &#x27;frontier&#x27;,
+      ceremony: &#x27;spike-first&#x27;,
+    }),
+  }),
+  gandalf: Object.freeze({
+    [DEPTH_BANDS.FULL]: Object.freeze({
+      shards: 8,
+      fusionPasses: 2,
+      seats: &#x27;frontier&#x27;,
+      ceremony: &#x27;full&#x27;,</pre>
+<div class="actions"><a class="button" href="../source-pages/budget-map.html#L146">Open numbered source at line 146</a>
+<a class="button secondary" href="../sources/budget-map.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/budget">Resolve the locked round budget</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">6886d7086f0b118e402851970d895432433b5e90f8ea3bbff1e221cbc7d2c755</span></p>
+<p>Excerpt SHA-256 <span class="path">840cb27d8f0c5ad274143d72fd81fdc3c7002ff86843c4334cb56c1b34871a37</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

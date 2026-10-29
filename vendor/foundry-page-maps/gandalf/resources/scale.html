@@ -1,0 +1,265 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Scoped analysis and sharding · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="scale" data-anchor-id="a-map">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Scoped analysis and sharding</h1>
+<p class="intro">Small inputs use one synthesis seat; large inputs scout, recheck size and may map shards. The whole-repository gate can produce an explicitly partial slice.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/map-reduce.mjs · lines 676–928</p><pre>export async function runMapReduce({
+  projectDir = null,
+  payload,
+  userObjective,
+  agent = null,
+  reduceAgent = null,
+  env = process.env,
+  log = () =&gt; {},
+  highContextLimit = null,
+  concurrencyLimit = 3,
+  /** Band knobs from @foundry/triage gandalf table (optional). */
+  maxShards = null,
+  fusionPasses = null,
+} = {}) {
+  let activeAgent = agent;
+  if (!activeAgent) {
+    // W4 (2026-07-05): resolve the agy LABEL via the TRIO_TIER ladder — NEVER a hardcoded API-style id
+    // (the old hardcoded default was a phantom id that live agy silently degrades to Flash). The clever
+    // map=STANDARD / reduce=HEAVY split is applied by the CLI wiring (runtime/gandalf-run.mjs
+    // runScaledAnalysis), which injects distinct map/reduce agents; standalone callers get one
+    // ladder-resolved agent for both roles.
+    const model = env.GANDALF_HIGH_CONTEXT_MODEL || env.GEMINI_MODEL || resolveGeminiModel({ env });
+    const seam = makeGeminiCliSeam({ model, env, log });
+    activeAgent = seam.agent;
+  }
+  // W4: the REDUCE/synthesis seat (and the single-frontier direct pass) may run on a distinct,
+  // higher-tier agent than the bulk MAP reads. Defaults to activeAgent so standalone/legacy callers
+  // (and every existing test that injects a single `agent`) behave exactly as before.
+  const activeReduceAgent = reduceAgent || activeAgent;
+
+  // Resolve High-Context + per-chunk byte limits (shared with decideTier so they never disagree).
+  const limit = resolveHighContextLimit(env, highContextLimit);
+  const maxChunkBytes = resolveMaxChunkBytes(env);
+
+  // Resolve Concurrency limit
+  let resolvedConcurrency = 3;
+  if (env.GANDALF_MAX_CONCURRENCY) {
+    const val = parseInt(env.GANDALF_MAX_CONCURRENCY, 10);
+    if (!isNaN(val)) resolvedConcurrency = val;
+  } else if (concurrencyLimit !== null &amp;&amp; concurrencyLimit !== undefined) {
+    resolvedConcurrency = concurrencyLimit;
+  }
+
+  const estimatedTokens = estimatePayloadTokens(payload, projectDir);
+  const totalSerializedSize = estimateSerializedSize(payload, projectDir);
+
+  // JUDGE SCOPE FIRST: default to a direct pass; only escalate when the scoped artifact warrants it.
+  const tier = decideTier({ payload, objective: userObjective, env, projectDir, highContextLimit });
+
+  if (tier === &#x27;direct&#x27;) {
+    const resolvedPayload = resolvePayload(payload, projectDir);
+    log(`Payload size (${estimatedTokens} tokens, ${totalSerializedSize} bytes) is within limits. Processing directly (tier=direct).`);
+    const directPrompt = `Analyze the following files for the objective: &quot;${userObjective}&quot;
+
+Codebase Payload:
+${serializeChunk(resolvedPayload, projectDir)}
+
+Provide a coherent advisory report addressing the user objective.`;
+
+    // W4: a SMALL target answered in ONE frontier pass — the reduce (HEAVY/frontier) seat.
+    const report = await activeReduceAgent(directPrompt, { label: &#x27;map-reduce-direct&#x27; });
+    return report;
+  }
+
+  log(`Payload size (${estimatedTokens} tokens, ${totalSerializedSize} bytes) exceeds limits. Checking scout-pass default.`);
+
+  let scoutedPayload = payload;
+  let degraded = false;
+  let stamp = &#x27;&#x27;;
+
+  const skipScout = env.GANDALF_SKIP_SCOUT === &#x27;true&#x27; || env.GANDALF_FORCE_WHOLE_REPO === &#x27;true&#x27;;
+
+  if (!skipScout) {
+    log(`Scouting first to filter the payload.`);
+    scoutedPayload = await scoutAndFilter({
+      projectDir,
+      payload,
+      userObjective,
+      agent: activeAgent,
+      env,
+      log
+    });
+
+    if (isContentDropped(payload, scoutedPayload)) {
+      degraded = true;
+      const originalCount = getPayloadItemCount(payload);
+      const prunedCount = getPayloadItemCount(scoutedPayload);
+      const skippedCount = originalCount - prunedCount;
+      stamp = `analyzed slice ${prunedCount} of ${originalCount}; skipped ${skippedCount}`;
+      log(`Scouting dropped content. Stamp: &quot;${stamp}&quot;`);
+    }
+  } else {
+    log(`Bypassing scout pass as requested.`);
+  }
+
+  const scoutedTokens = estimatePayloadTokens(scoutedPayload, projectDir);
+  const scoutedSerializedSize = estimateSerializedSize(scoutedPayload, projectDir);
+
+  if (scoutedTokens &lt;= limit &amp;&amp; scoutedSerializedSize &lt;= maxChunkBytes) {
+    const resolvedPayload = resolvePayload(scoutedPayload, projectDir);
+    log(`Scouted payload size (${scoutedTokens} tokens, ${scoutedSerializedSize} bytes) is within limits. Processing directly.`);
+    const directPrompt = `Analyze the following files for the objective: &quot;${userObjective}&quot;
+
+Codebase Payload:
+${serializeChunk(resolvedPayload, projectDir)}
+
+Provide a coherent advisory report addressing the user objective.`;
+
+    // W4: the final advisory over the curated (scouted) payload — the reduce (HEAVY/frontier) seat.
+    let report = await activeReduceAgent(directPrompt, { label: &#x27;map-reduce-direct&#x27; });
+    if (degraded) {
+      report = report + `\n\n[degraded:true] Stamp: ${stamp}`;
+      const reportStr = new String(report);
+      reportStr.degraded = true;
+      reportStr.stamp = stamp;
+      return reportStr;
+    }
+    return report;
+  }
+
+  // WHOLE-REPO GUARD: scouting could not curate this below whole-repo scale. Do NOT silently fan out
+  // the whole repo for a focused question — that requires an explicit operator opt-in. Without it,
+  // run a bounded, honestly-degraded direct pass over the slice that fits the per-chunk ceiling.
+  const allowRepoScale = env.GANDALF_ALLOW_REPO_SCALE === &#x27;1&#x27;;
+  if (looksLikeWholeRepo(scoutedPayload) &amp;&amp; !allowRepoScale) {
+    const { kept, total, keptCount } = capPayloadToBudget(scoutedPayload, maxChunkBytes, projectDir);
+    const skippedCount = total - keptCount;
+    log(`Whole-repo guard: ${total} files exceed limits and GANDALF_ALLOW_REPO_SCALE!=1. Capping to ${keptCount} files and running a degraded direct pass instead of a Map-Reduce fan-out.`);
+    const resolvedPayload = resolvePayload(kept, projectDir);
+    const directPrompt = `Analyze the following files for the objective: &quot;${userObjective}&quot;
+
+Codebase Payload:
+${serializeChunk(resolvedPayload, projectDir)}
+
+Provide a coherent advisory report addressing the user objective.`;
+
+    // W4: the bounded degraded pass over the fitting slice — the reduce (HEAVY/frontier) seat.
+    let report = await activeReduceAgent(directPrompt, { label: &#x27;map-reduce-direct&#x27; });
+    // Compose an honest degraded stamp (preserving any earlier scout-drop count in the total).
+    const guardStamp = `analyzed slice ${keptCount} of ${total}; skipped ${skippedCount} (whole-repo fan-out gated; set GANDALF_ALLOW_REPO_SCALE=1 to opt in)`;
+    const finalStamp = degraded &amp;&amp; stamp ? `${stamp}; ${guardStamp}` : guardStamp;
+    report = report + `\n\n[degraded:true] Stamp: ${finalStamp}`;
+    const reportStr = new String(report);
+    reportStr.degraded = true;
+    reportStr.stamp = finalStamp;
+    return reportStr;
+  }
+
+  log(`Payload size (${scoutedTokens} tokens, ${scoutedSerializedSize} bytes) exceeds limits. Initiating Map-Reduce.`);
+
+  let groups = groupPayloadByTopLevelDir(scoutedPayload);
+  // Band-thin + legacy env cap (L2/L4):
+  // - locked call sites pass maxShards = knobs.shards; GANDALF_MAX_SHARDS may only TIGHTEN
+  //   (min), never expand past the lock.
+  // - unlocked call sites leave maxShards null; GANDALF_MAX_SHARDS is the legacy-only cap.
+  let shardCap = null;
+  if (maxShards != null &amp;&amp; Number.isFinite(Number(maxShards))) {
+    shardCap = Math.max(1, Math.floor(Number(maxShards)));
+    if (env.GANDALF_MAX_SHARDS) {
+      const envCap = Math.max(1, parseInt(env.GANDALF_MAX_SHARDS, 10) || 8);
+      if (Number.isFinite(envCap)) shardCap = Math.min(shardCap, envCap);
+    }
+  } else if (env.GANDALF_MAX_SHARDS) {
+    shardCap = Math.max(1, parseInt(env.GANDALF_MAX_SHARDS, 10) || 8);
+  }
+  if (shardCap != null) {
+    const before = Object.keys(groups).length;
+    groups = capGroupsToMaxShards(groups, shardCap);
+    const after = Object.keys(groups).length;
+    if (after &lt; before) log(`band-thin: capped shards ${before} → ${after} (maxShards=${shardCap})`);
+  }
+  const groupEntries = Object.entries(groups);
+
+  let activeCount = 0;
+  let maxActiveCount = 0;
+
+  const tasks = groupEntries.map(([groupName, chunk]) =&gt; {
+    return async () =&gt; {
+      activeCount++;
+      if (activeCount &gt; maxActiveCount) {
+        maxActiveCount = activeCount;
+      }
+      log(`Starting chunk analysis for ${groupName} (current active: ${activeCount}, max active: ${maxActiveCount})`);
+      
+      try {
+        const resultText = await mapOrSplit({
+          payload: chunk,
+          groupName,
+          userObjective,
+          activeAgent,
+          reduceAgent: activeReduceAgent,
+          maxChunkBytes,
+          projectDir,
+          log
+        });
+        return { group: groupName, text: resultText };
+      } finally {
+        activeCount--;
+        log(`Finished chunk analysis for ${groupName} (current active: ${activeCount})`);
+      }
+    };
+  });
+
+  let chunkSummaries = await limitConcurrency(tasks, resolvedConcurrency);
+
+  log(`Completed all ${chunkSummaries.length} chunk analyses (max concurrent tasks: ${maxActiveCount}). Initiating synthesis.`);
+
+  const passes =
+    fusionPasses != null &amp;&amp; Number.isFinite(Number(fusionPasses))
+      ? Math.max(1, Math.floor(Number(fusionPasses)))
+      : 1;
+
+  // fusionPasses &gt; 1: hierarchical pair-fuse then final reduce (FULL band); LITE keeps one pass.
+  if (passes &gt;= 2 &amp;&amp; chunkSummaries.length &gt; 2) {
+    log(`band-thin: fusionPasses=${passes} — intermediate pair fusion over ${chunkSummaries.length} shards`);
+    const mid = [];
+    for (let i = 0; i &lt; chunkSummaries.length; i += 2) {
+      const pair = chunkSummaries.slice(i, i + 2);
+      if (pair.length === 1) {
+        mid.push(pair[0]);
+        continue;
+      }
+      const midPrompt = `You are a codebase synthesizer. Fuse these two chunk summaries.
+User Objective: &quot;${userObjective}&quot;
+
+${pair.map((s) =&gt; `--- Chunk: ${s.group} ---\n${s.text}`).join(&#x27;\n\n&#x27;)}
+
+Return one fused summary.`;
+      const text = await activeReduceAgent(midPrompt, { label: `map-reduce-fusion-mid-${i}` });
+      mid.push({ group: `${pair[0].group}+${pair[1].group}`, text });
+    }
+    chunkSummaries = mid;
+  }
+
+  const synthPrompt = `You are a codebase synthesizer. You are given several chunk summaries of a codebase analysis.
+User Objective: &quot;${userObjective}&quot;
+
+Chunk Summaries:
+${chunkSummaries.map(s =&gt; `--- Chunk: ${s.group} ---\n${s.text}`).join(&#x27;\n\n&#x27;)}
+
+Please fuse these summaries into a single, coherent advisory report addressing the user objective.`;
+
+  // W4: the top-level REDUCE — fuse the shard summaries on the HEAVY/frontier seat.
+  const finalReport = await activeReduceAgent(synthPrompt, { label: &#x27;map-reduce-synthesis&#x27; });
+  if (degraded) {
+    const reportWithStamp = finalReport + `\n\n[degraded:true] Stamp: ${stamp}`;
+    const reportStr = new String(reportWithStamp);
+    reportStr.degraded = true;
+    reportStr.stamp = stamp;
+    return reportStr;
+  }
+  return finalReport;
+}</pre>
+<p><a class="button" href="../source-pages/map.html#L676">Open numbered source</a>
+<a href="../sources/map.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/human-scope">Supply missing scope or scale consent</a> · <a target="_top" href="../index.html#process/size">Check scoped context size</a> · <a target="_top" href="../index.html#process/curated">Recheck the curated payload</a> · <a target="_top" href="../index.html#process/repo-gate">Check explicit whole-repo opt-in</a> · <a target="_top" href="../index.html#process/slice">Preserve a partial-slice qualification</a> · <a target="_top" href="../index.html#process/direct">One model pass over a fitting input</a> · <a target="_top" href="../index.html#process/shard">Group sources and apply shard caps</a> · <a target="_top" href="../index.html#process/interim">Join chunk summaries in memory</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">e2a6402805c21a2c4f9d5f77d470c0150c8c8d1695bf639296136bc6bff04120</span></p><p>Excerpt hash: <span class="path">1797fb2416cc5e7b989c579f75ceec8e072b3176ff4a96ed1e9c0271d2398632</span></p></details></article></main></body></html>

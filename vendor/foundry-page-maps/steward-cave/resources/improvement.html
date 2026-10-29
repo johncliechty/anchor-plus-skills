@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Existing lesson pathway and its failure · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="improvement" data-anchor-id="a-sleep-example">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Real-use examples</p><h1>Existing lesson pathway and its failure</h1>
+<p class="intro">A sleep-cycle lesson once introduced a live bug. Route a named shortfall through the existing scoped improvement/review process; no automatic promotion is established.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="frozen-example"><p><strong>Frozen historical example</strong> · captured <time>2026-10-05T23:59:10.722980+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/journal/0076-sleep-cycle-promoted-a-gandalf-lesson-into-a-live-bug.md</p><p>Historical cross-skill improvement failure and reported repair; does not authorize a new engine wave or automatic lesson promotion.</p><p class="path">Capture SHA-256: 5aeda7221cd43e440c51f5cd79454a37939249a013b97aba0bf1545858cc7e48</p></aside>
+<p class="path">Foundry page and knowledge maps/steward-cave/sources/sleep-example.md · lines 1–43</p><pre>- `id`: 0076-sleep-cycle-promoted-a-gandalf-lesson-into-a-live-bug
+- `skill`: ecgberht@v1.2.0
+- `situation`: a sleep cycle promotes a lesson from one skill&#x27;s journal and it lands on a live defect in another
+- `context`: first real sleep cycle over the Foundry+trio corpus, 2026-08-04, run after
+  514 journal files had accumulated with no cycle ever executed.
+- `observation`:
+
+  **A lesson from gandalf&#x27;s journal found a bug shipped in Ecgberht hours earlier.**
+  Gandalf 0274+0275 clustered (2 distinct contexts) on whole-project brownfield reads,
+  and 0275&#x27;s named fix was: a `main()` guard comparing `resolve(argv[1])` to the module&#x27;s
+  own path is a SILENT NO-OP through a junction — two spellings of one file, never equal,
+  so `main()` never runs and the process exits 0 with empty stdout.
+
+  Ecgberht is REGISTERED as a junction (`~/.claude/skills/ecgberht -&gt; C:\dev\Ecgberht`),
+  so the canonical host path is exactly the spelling that triggers it. Verified live:
+  `node ~/.claude/skills/ecgberht/bin/ecgberht.mjs status --project …` printed NOTHING
+  and exited 0. Same for `bin/steward.mjs` — which I had written that same day, copying
+  the defective guard from `bin/ecgberht.mjs` without examining it. That is the second
+  time in two days a defect propagated because I copied a working-looking construct
+  (the first was the Foreman launcher&#x27;s inverted model seats, journal foreman/0098).
+
+  Fixed by realpathing both sides (`engine/direct-invocation.mjs`), exported, used by
+  both CLIs, and pinned by `test/wh2-junction-invocation.test.mjs`, which reaches the
+  CLIs through a real junction and fails if either guard regresses.
+
+  **Two process notes worth more than the bug.** (1) My first version of that test used
+  `t.skip()` when a symlink could not be created — and the repo&#x27;s w48 guard correctly
+  failed the build: a silently-skipped test is indistinguishable from a passing one. The
+  skip was unnecessary (directory junctions need no privilege), so the test now fails
+  loudly instead. (2) My first two journal PARSERS were wrong (a JS regex with `\Z`,
+  which matches a literal Z, so the last field never terminated) and reported 0-32
+  entries out of 514. A parser bug and a genuinely quiet corpus produce IDENTICAL output
+  — &quot;no candidates&quot; — which is precisely how a broken improvement loop stays invisible.
+- `outcome`: worked — 2 lessons promoted to gandalf LESSONS.md, 1 live defect fixed in
+  two CLIs, gate 1205/0
+- `provenance`: genuine-execution
+
+## Lesson (one line)
+
+**Run the sleep cycle across skills, not within one — the corroborated lesson from one
+skill&#x27;s journal is often a live, unnoticed defect in another — and never trust a
+&quot;0 candidates&quot; cycle until you have printed parsed-vs-total, because a broken reader and
+a quiet corpus look exactly alike.**</pre>
+<p><a class="button" href="../source-pages/sleep-example.html#L1">Open numbered source</a>
+<a href="../sources/sleep-example.md" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/improve">Use a named shortfall in the existing pathway</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">5aeda7221cd43e440c51f5cd79454a37939249a013b97aba0bf1545858cc7e48</span></p><p>Excerpt hash: <span class="path">c989814e49f6f7fa004ac7a54bbeb9fd32d572a7134ab81959154c2e288a7f1c</span></p></details></article></main></body></html>

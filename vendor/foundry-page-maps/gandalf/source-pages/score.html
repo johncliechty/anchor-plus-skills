@@ -1,0 +1,251 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>score · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>score</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/seam/score-label.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 3c1c11800f445d19862e58211c80101624f9740cffe19f2305fcf5e4e5d54046</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf advisor — the SCORE / LABEL / SYNTHESIS seam (Wave 6 / serves NS4, NS6).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // This is the seam that turns vetted findings into honestly-scored, honestly-labelled,</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // honestly-synthesised output. Three jobs, each pinned to a locked North-Star boundary and a</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // deterministic gate (label/semantic TRUTH staying the advisory layer&#x27;s job — PRINCIPLE-D):</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> //</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> //   • SCORE — DUAL-AXIS, NEVER COLLAPSED. Every suggestion is scored on TWO independent ordinal</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> //     axes: value-if-true (low→high) × groundedness (the evidence rung). The two are NEVER</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> //     collapsed into a single scalar — a high-value/low-grounded suggestion and a low-value/</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> //     high-grounded one are NOT interchangeable, and collapsing them would launder the one into</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> //     the other. `scoreDualAxis` returns the two axes side by side; `isDualAxisScore` /</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> //     COLLAPSED_SCORE_FIELDS detect a collapsed scalar.</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //   • LABEL — TIERED, HONEST. Tier = the refutation outcome. ONLY the REFUTED drops; everything</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //     else is kept and labelled (nothing unverified is asserted as real, but nothing un-refuted</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //     is silently discarded either). The single-family ceiling is PROMISING, never GROUNDED</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> //     (the deterministic B-ceiling embodiment lives in harness.mjs; `labelTier` honours it).</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> //</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> //   • SYNTHESIS — HONEST (B8). A leg the run actually reports (a diagnose/situate/anticipate</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> //     finding is present) MUST appear in `risk_labels`, and a leg&#x27;s synthesis label may NOT claim</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> //     a rung above that leg&#x27;s EVIDENTIAL ENVELOPE — the strongest rung any finding in the leg</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> //     reached. A synthesis that out-claims its own findings is laundering (carry rung at-or-below</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> //     source). `legEnvelopeRung` / `legsPresent` / `composeRiskLabels` are the surface; the</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> //     deterministic gate is harness.mjs `assertHonestSynthesis` (= B8).</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> //</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> // And the NS6 anti-drift boundary the wave makes machine-checkable:</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> //   • B1 — ZERO IDEATION. Gandalf&#x27;s value is INSIGHT (understand + situate + anticipate), not the</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> //     open-ended generation of NEW ideas/extensions — that is Jumper&#x27;s (a separate later skill).</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> //     An &quot;ideate&quot;-class finding (a divergent/brainstorm kind, or a finding carrying an idea-</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> //     generation field) FAILS B1. `IDEATION_KINDS` / `IDEATION_FIELDS` / `isIdeationFinding` are</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> //     the discriminator; the gate is harness.mjs `assertNoIdeation`.</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> //</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> //   • B6 — NO SILENT DEGRADATION. If any item ran degraded (`degraded:true`), the top-level output</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> //     MUST own that (`degraded:true`). A per-item `degraded:true` under a top-level `degraded:false`</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> //     is a silent degradation and FAILS B6. `degradedItems` / `hasSilentDegradation` are the</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> //     surface; the gate is harness.mjs `assertNoSilentDegradation`.</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> //</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> // Public surface:</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> //   VALUE_AXIS / GROUNDEDNESS_AXIS            — the two SCORE axes (ordinal, low→high)</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> //   COLLAPSED_SCORE_FIELDS                    — fields that would collapse the two axes into one</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> //   scoreDualAxis(item)                       — mint a {value_if_true, groundedness} dual-axis score</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> //   isDualAxisScore(score)                    — predicate: two separate axes, not collapsed</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> //   isCollapsedScore(score)                   — predicate: carries a single collapsed scalar</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> //   TIER_CEILING_SINGLE_FAMILY / DROP_RUNG    — the PROMISING ceiling / the only-dropped rung</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> //   dropsFromOutput(item)                     — predicate: rung REFUTED ⇒ the only drop</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> //   labelTier(item)                           — tier the refutation outcome (only REFUTED drops)</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> //   LEGS / legsPresent(output)                — the synthesis legs present in an output</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> //   legEnvelopeRung(output, leg)              — the strongest rung any finding in the leg reached</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> //   composeRiskLabels(output)                 — mint honest, envelope-bounded risk_labels</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> //   IDEATION_KINDS / IDEATION_FIELDS          — the B1 ideation discriminator</span>
+<span class="source-line" id="L51"><a href="#L51">51</a> //   isIdeationFinding(item)                   — predicate: a divergent/brainstorm ideate-class item</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> //   degradedItems(output) / hasSilentDegradation(output) — the B6 surface</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54">54</a> // --- self-contained helpers + ladders (the seam imports nothing; harness imports the seam) ----</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> function isNonEmpty(v) {</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>   if (v === undefined || v === null) return false;</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>   if (Array.isArray(v)) return v.length &gt; 0;</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   if (typeof v === &#x27;string&#x27;) return v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>   if (typeof v === &#x27;object&#x27;) return Object.keys(v).length &gt; 0;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>   return true; // numbers, booleans</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> }</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> </span>
+<span class="source-line" id="L63"><a href="#L63">63</a> // Ladders local to the seam (low → high), identical to the harness ladders (no drift); the</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> // harness mirrors these and harness.test.mjs asserts the schema enums agree with them.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> const RUNG_LADDER = [&#x27;REFUTED&#x27;, &#x27;UNVERIFIED&#x27;, &#x27;CLAIMED&#x27;, &#x27;CORROBORATED&#x27;, &#x27;OBSERVED&#x27;];</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> const TIER_LADDER = [&#x27;SPECULATIVE&#x27;, &#x27;PROMISING&#x27;, &#x27;GROUNDED&#x27;];</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> </span>
+<span class="source-line" id="L68"><a href="#L68">68</a> /** The value-if-true axis of the dual-axis score (low → high). */</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> export const VALUE_AXIS = [&#x27;low&#x27;, &#x27;medium&#x27;, &#x27;high&#x27;];</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> /** The groundedness axis of the dual-axis score = the evidence rung ladder (low → high). */</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> export const GROUNDEDNESS_AXIS = RUNG_LADDER.slice();</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73">73</a> function rungIdx(rung) {</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>   return RUNG_LADDER.indexOf(rung);</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> }</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77">77</a> // === SCORE — dual-axis, never collapsed =======================================================</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> /** Fields whose presence would COLLAPSE the two independent axes into a single scalar — a</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>  *  laundering move (a high-value/low-grounded suggestion and a low-value/high-grounded one must</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>  *  stay distinguishable). A dual-axis score must carry NONE of these. */</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> export const COLLAPSED_SCORE_FIELDS = [</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>   &#x27;score&#x27;, &#x27;combined_score&#x27;, &#x27;overall_score&#x27;, &#x27;priority&#x27;, &#x27;priority_score&#x27;,</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>   &#x27;weighted_score&#x27;, &#x27;collapsed_score&#x27;, &#x27;rank_score&#x27;, &#x27;composite&#x27;,</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> ];</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> </span>
+<span class="source-line" id="L86"><a href="#L86">86</a> /** Mint a DUAL-AXIS score for a suggestion: value-if-true × groundedness, kept on two SEPARATE</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>  *  ordinal axes and NEVER collapsed into one scalar. `value_if_true` must be on VALUE_AXIS and</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>  *  `rung` on GROUNDEDNESS_AXIS. Returns a fresh `{ value_if_true, groundedness }`; throws on a</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>  *  missing/invalid axis (judging the magnitudes is the advisory layer&#x27;s job — PRINCIPLE-D). */</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> export function scoreDualAxis(item) {</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   if (item === null || typeof item !== &#x27;object&#x27; || Array.isArray(item)) {</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     throw new Error(&#x27;score-label: scoreDualAxis target is not an object&#x27;);</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   if (!VALUE_AXIS.includes(item.value_if_true)) {</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>     throw new Error(`score-label: scoreDualAxis requires value_if_true on the value axis [${VALUE_AXIS.join(&#x27;, &#x27;)}], got ${JSON.stringify(item.value_if_true)}`);</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   }</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   if (!GROUNDEDNESS_AXIS.includes(item.rung)) {</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     throw new Error(`score-label: scoreDualAxis requires a groundedness rung on [${GROUNDEDNESS_AXIS.join(&#x27;, &#x27;)}], got ${JSON.stringify(item.rung)}`);</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   }</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   return { value_if_true: item.value_if_true, groundedness: item.rung };</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> }</span>
+<span class="source-line" id="L102"><a href="#L102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103">103</a> /** Predicate: does `score` carry any field that COLLAPSES the two axes into a single scalar?</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>  *  Pure; never throws. */</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> export function isCollapsedScore(score) {</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   if (score === null || typeof score !== &#x27;object&#x27; || Array.isArray(score)) return false;</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   return COLLAPSED_SCORE_FIELDS.some((f) =&gt; f in score &amp;&amp; isNonEmpty(score[f]));</span>
+<span class="source-line" id="L108"><a href="#L108">108</a> }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110">110</a> /** Predicate: is `score` a well-formed DUAL-AXIS score — both axes present on their ladders AND</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>  *  no collapsed scalar field? Pure; never throws. */</span>
+<span class="source-line" id="L112"><a href="#L112">112</a> export function isDualAxisScore(score) {</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>   if (score === null || typeof score !== &#x27;object&#x27; || Array.isArray(score)) return false;</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   if (isCollapsedScore(score)) return false;</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>   return VALUE_AXIS.includes(score.value_if_true) &amp;&amp; GROUNDEDNESS_AXIS.includes(score.groundedness);</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> }</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118">118</a> // === LABEL — tiered, honest (only REFUTED drops; single-family ceiling PROMISING) =============</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> /** The single-family substrate tier ceiling: the max achievable tier on a `cross_model:false`</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>  *  run is PROMISING (GROUNDED is unreachable without a cross-family refuter). */</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> export const TIER_CEILING_SINGLE_FAMILY = &#x27;PROMISING&#x27;;</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> /** The ONLY rung that drops a finding from the output. Everything above REFUTED is kept and</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>  *  honestly labelled (nothing un-refuted is silently discarded). */</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> export const DROP_RUNG = &#x27;REFUTED&#x27;;</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> </span>
+<span class="source-line" id="L126"><a href="#L126">126</a> /** Predicate: does `item` drop from the output? TRUE iff its rung is REFUTED — the only rung that</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>  *  drops. A finding at any higher rung is kept and labelled. Pure; never throws. */</span>
+<span class="source-line" id="L128"><a href="#L128">128</a> export function dropsFromOutput(item) {</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   return item !== null &amp;&amp; typeof item === &#x27;object&#x27; &amp;&amp; item.rung === DROP_RUNG;</span>
+<span class="source-line" id="L130"><a href="#L130">130</a> }</span>
+<span class="source-line" id="L131"><a href="#L131">131</a> </span>
+<span class="source-line" id="L132"><a href="#L132">132</a> /** Label a suggestion&#x27;s tier from its refutation outcome, honouring the two label invariants:</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>  *    • only REFUTED drops — a REFUTED item returns `{ dropped:true, tier:null }`;</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>  *    • the single-family ceiling is PROMISING — when `cross_model` is false (default), a tier is</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>  *      capped at PROMISING; GROUNDED is unreachable.</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>  *  `requested_tier` (if on the tier ladder) is the advisory layer&#x27;s proposed tier; this caps it.</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>  *  Returns `{ dropped, tier }`; pure, never throws on data (throws only on a non-object). */</span>
+<span class="source-line" id="L138"><a href="#L138">138</a> export function labelTier(item, { cross_model = false } = {}) {</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>   if (item === null || typeof item !== &#x27;object&#x27; || Array.isArray(item)) {</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>     throw new Error(&#x27;score-label: labelTier target is not an object&#x27;);</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>   }</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>   if (dropsFromOutput(item)) return { dropped: true, tier: null };</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>   const requested = TIER_LADDER.includes(item.tier) ? item.tier : TIER_CEILING_SINGLE_FAMILY;</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>   let tier = requested;</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>   if (cross_model === false &amp;&amp; TIER_LADDER.indexOf(tier) &gt; TIER_LADDER.indexOf(TIER_CEILING_SINGLE_FAMILY)) {</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     tier = TIER_CEILING_SINGLE_FAMILY; // single-family ceiling</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   }</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>   return { dropped: false, tier };</span>
+<span class="source-line" id="L149"><a href="#L149">149</a> }</span>
+<span class="source-line" id="L150"><a href="#L150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151">151</a> // === SYNTHESIS — honest (B8) ==================================================================</span>
+<span class="source-line" id="L152"><a href="#L152">152</a> /** The synthesis legs — exactly the `risk_labels` leg enum and the finding kinds that map to a</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>  *  leg. (`nitpick` is not a leg; it is not synthesised into a risk label.) */</span>
+<span class="source-line" id="L154"><a href="#L154">154</a> export const LEGS = [&#x27;diagnose&#x27;, &#x27;situate&#x27;, &#x27;anticipate&#x27;];</span>
+<span class="source-line" id="L155"><a href="#L155">155</a> </span>
+<span class="source-line" id="L156"><a href="#L156">156</a> /** The set of legs the run actually REPORTS: a leg is present iff at least one finding carries</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>  *  that `kind`. Returns an array (LEGS order). Pure; never throws. */</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> export function legsPresent(output) {</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>   const kinds = new Set(findings.map((f) =&gt; (f &amp;&amp; typeof f === &#x27;object&#x27; ? f.kind : undefined)));</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   return LEGS.filter((leg) =&gt; kinds.has(leg));</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> }</span>
+<span class="source-line" id="L163"><a href="#L163">163</a> </span>
+<span class="source-line" id="L164"><a href="#L164">164</a> /** The EVIDENTIAL ENVELOPE rung of a leg: the STRONGEST rung any finding in the leg reached (the</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>  *  upper bound the leg&#x27;s evidence supports). A synthesis label for the leg may not exceed it. Returns</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>  *  the rung string, or null if the leg has no rung-bearing finding. Pure; never throws. */</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> export function legEnvelopeRung(output, leg) {</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>   let best = -1;</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   for (const f of findings) {</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>     if (f === null || typeof f !== &#x27;object&#x27; || f.kind !== leg) continue;</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>     const i = rungIdx(f.rung);</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>     if (i &gt; best) best = i;</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>   }</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   return best === -1 ? null : RUNG_LADDER[best];</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> }</span>
+<span class="source-line" id="L177"><a href="#L177">177</a> </span>
+<span class="source-line" id="L178"><a href="#L178">178</a> /** Mint HONEST risk_labels: one per present leg, with `rung` = the leg&#x27;s evidential envelope and each</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>  *  leg&#x27;s `tier` capped PER-LEG — NEVER off the run-level `cross_model` flag (that is the risk-label</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>  *  LAUNDERING hole: one genuine cross-family elevation would flip the global flag and lift EVERY</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>  *  unrelated leg to GROUNDED). A findings leg (diagnose/situate/anticipate) has NO commission-provenance</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>  *  surface, so it can never be cross-family; a leg is GROUNDED-eligible ONLY if some finding in it is</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>  *  ITSELF digest-bound cross-family (`cross_family_refuted:true`) — which findings never are — so every</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>  *  findings leg stays at the single-family PROMISING ceiling regardless of the run-level flag. The result</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>  *  passes the B8 honest-synthesis gate and the B-ceiling gate by construction. Returns a fresh array.</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>  *  Pure; never throws. */</span>
+<span class="source-line" id="L187"><a href="#L187">187</a> export function composeRiskLabels(output) {</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>   const findings = Array.isArray(output?.findings) ? output.findings : [];</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   return legsPresent(output).map((leg) =&gt; {</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>     const rung = legEnvelopeRung(output, leg);</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     // PER-LEG cross-family eligibility — keyed off each finding&#x27;s OWN derived `cross_family_refuted`,</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>     // never the global cross_model flag. Findings carry no commission provenance ⇒ this is always false</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     // ⇒ findings legs never launder up to GROUNDED off an unrelated elevation&#x27;s genuine refutation.</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     const legCrossFamily = findings.some(</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>       (f) =&gt; f &amp;&amp; typeof f === &#x27;object&#x27; &amp;&amp; f.kind === leg &amp;&amp; f.cross_family_refuted === true</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>     );</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     const label = { leg, tier: legCrossFamily ? &#x27;GROUNDED&#x27; : TIER_CEILING_SINGLE_FAMILY };</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>     if (rung !== null) label.rung = rung;</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>     return label;</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   });</span>
+<span class="source-line" id="L201"><a href="#L201">201</a> }</span>
+<span class="source-line" id="L202"><a href="#L202">202</a> </span>
+<span class="source-line" id="L203"><a href="#L203">203</a> // === B1 — zero ideation (NS6 anti-drift: ideation is Jumper&#x27;s) =================================</span>
+<span class="source-line" id="L204"><a href="#L204">204</a> /** Divergent/brainstorm `kind` markers — an &quot;ideate&quot;-class leg Gandalf does not run (the open-</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>  *  ended generation of new ideas/extensions is Jumper&#x27;s). */</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> export const IDEATION_KINDS = [&#x27;ideate&#x27;, &#x27;ideation&#x27;, &#x27;brainstorm&#x27;, &#x27;divergent&#x27;, &#x27;jumper&#x27;];</span>
+<span class="source-line" id="L207"><a href="#L207">207</a> </span>
+<span class="source-line" id="L208"><a href="#L208">208</a> /** Idea-generation FIELDS — a finding carrying one of these is doing open-ended ideation, not</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>  *  the grounded insight (understand/situate/anticipate) Gandalf delivers. */</span>
+<span class="source-line" id="L210"><a href="#L210">210</a> export const IDEATION_FIELDS = [</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   &#x27;brainstorm&#x27;, &#x27;brainstormed_ideas&#x27;, &#x27;new_idea&#x27;, &#x27;new_ideas&#x27;, &#x27;novel_idea&#x27;, &#x27;novel_ideas&#x27;,</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   &#x27;generated_ideas&#x27;, &#x27;idea_generation&#x27;, &#x27;divergent_options&#x27;, &#x27;invented&#x27;, &#x27;blue_sky&#x27;, &#x27;novel_extension&#x27;,</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> ];</span>
+<span class="source-line" id="L214"><a href="#L214">214</a> </span>
+<span class="source-line" id="L215"><a href="#L215">215</a> /** Predicate (the B1 core): is `item` a divergent/brainstorm &quot;ideate&quot;-class finding — a finding</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>  *  whose `kind` is an ideation kind, OR which carries a populated idea-generation field? Pure;</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>  *  never throws. (Judging whether prose is &quot;genuinely divergent&quot; is the advisory layer&#x27;s job —</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>  *  PRINCIPLE-D; the gate owns the structural ideate-class signal.) */</span>
+<span class="source-line" id="L219"><a href="#L219">219</a> export function isIdeationFinding(item) {</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   if (item === null || typeof item !== &#x27;object&#x27; || Array.isArray(item)) return false;</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   if (typeof item.kind === &#x27;string&#x27; &amp;&amp; IDEATION_KINDS.includes(item.kind.toLowerCase())) return true;</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   return IDEATION_FIELDS.some((f) =&gt; isNonEmpty(item[f]));</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> }</span>
+<span class="source-line" id="L224"><a href="#L224">224</a> </span>
+<span class="source-line" id="L225"><a href="#L225">225</a> // === B6 — no silent degradation ===============================================================</span>
+<span class="source-line" id="L226"><a href="#L226">226</a> /** Collect the items that ran DEGRADED (`degraded:true`) across an output&#x27;s finding/nitpick/</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>  *  elevation/risk_label arrays. Returns an array of `{ where, item }`. Pure; never throws. */</span>
+<span class="source-line" id="L228"><a href="#L228">228</a> export function degradedItems(output) {</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>   const out = [];</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   if (output === null || typeof output !== &#x27;object&#x27;) return out;</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>   for (const arr of [&#x27;findings&#x27;, &#x27;nitpicks&#x27;, &#x27;elevations&#x27;, &#x27;risk_labels&#x27;]) {</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     const items = Array.isArray(output[arr]) ? output[arr] : [];</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>     items.forEach((item, i) =&gt; {</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>       if (item &amp;&amp; typeof item === &#x27;object&#x27; &amp;&amp; item.degraded === true) out.push({ where: `${arr}[${i}]`, item });</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>     });</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   }</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   return out;</span>
+<span class="source-line" id="L238"><a href="#L238">238</a> }</span>
+<span class="source-line" id="L239"><a href="#L239">239</a> </span>
+<span class="source-line" id="L240"><a href="#L240">240</a> /** Predicate (the B6 core): does `output` carry a SILENT degradation — at least one item ran</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>  *  `degraded:true` while the top-level output is NOT `degraded:true`? Pure; never throws. */</span>
+<span class="source-line" id="L242"><a href="#L242">242</a> export function hasSilentDegradation(output) {</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>   if (output === null || typeof output !== &#x27;object&#x27;) return false;</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>   if (output.degraded === true) return false; // the top level owns the degradation ⇒ not silent</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>   return degradedItems(output).length &gt; 0;</span>
+<span class="source-line" id="L246"><a href="#L246">246</a> }</span></pre></main></body></html>

@@ -1,0 +1,452 @@
+{
+  "nodes": [
+    {
+      "id": "crucible-root",
+      "name": "Crucible Knowledge & Execution Architecture",
+      "title": "Crucible Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "crucible-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "crucible-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "crucible-root"
+      ],
+      "ring": 1,
+      "resource_id": "crucible-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "crucible-root"
+      ],
+      "ring": 1,
+      "resource_id": "crucible-tool-bin-steward-redesign-stage1-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "crucible-root"
+      ],
+      "ring": 1,
+      "resource_id": "crucible-peer-foreman",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "crucible-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "crucible-root"
+      ],
+      "ring": 1,
+      "resource_id": "crucible-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "crucible-leaf-mat-1",
+      "name": "Crucible Agent & Execution Protocol (SKILL.md)",
+      "title": "Crucible Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "crucible-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-mat-2",
+      "name": "Crucible Human Guide (HUMAN.md)",
+      "title": "Crucible Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "crucible-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-mat-3",
+      "name": "Crucible Detailed Specification (DESCRIPTION.md)",
+      "title": "Crucible Detailed Specification (DESCRIPTION.md)",
+      "parent_ids": [
+        "crucible-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-mat-description-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-mat-4",
+      "name": "Crucible Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "title": "Crucible Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "parent_ids": [
+        "crucible-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-mat-implementation-plan-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-mat-5",
+      "name": "Crucible Master Plan (MASTER-PLAN.md)",
+      "title": "Crucible Master Plan (MASTER-PLAN.md)",
+      "parent_ids": [
+        "crucible-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-mat-master-plan-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-1",
+      "name": "_steward_redesign_stage1.mjs (bin/_steward_redesign_stage1.mjs)",
+      "title": "_steward_redesign_stage1.mjs (bin/_steward_redesign_stage1.mjs)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-tool-bin-steward-redesign-stage1-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-2",
+      "name": "_steward_redesign_stage2.mjs (bin/_steward_redesign_stage2.mjs)",
+      "title": "_steward_redesign_stage2.mjs (bin/_steward_redesign_stage2.mjs)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-tool-bin-steward-redesign-stage2-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-3",
+      "name": "_steward_stage1.mjs (bin/_steward_stage1.mjs)",
+      "title": "_steward_stage1.mjs (bin/_steward_stage1.mjs)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-tool-bin-steward-stage1-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-4",
+      "name": "_steward_stage2.mjs (bin/_steward_stage2.mjs)",
+      "title": "_steward_stage2.mjs (bin/_steward_stage2.mjs)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-tool-bin-steward-stage2-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-5",
+      "name": "self-run.mjs (bin/self-run.mjs)",
+      "title": "self-run.mjs (bin/self-run.mjs)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-tool-bin-self-run-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-6",
+      "name": "_gate5_stage0.mjs (bin/_gate5_stage0.mjs)",
+      "title": "_gate5_stage0.mjs (bin/_gate5_stage0.mjs)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-tool-bin-gate5-stage0-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "crucible-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "crucible-leaf-skill-1",
+      "name": "Foreman Multi-Wave Build Engine",
+      "title": "Foreman Multi-Wave Build Engine",
+      "parent_ids": [
+        "crucible-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-peer-foreman",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "crucible-leaf-skill-2",
+      "name": "researchPrime Upstream Research Engine",
+      "title": "researchPrime Upstream Research Engine",
+      "parent_ids": [
+        "crucible-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "crucible-leaf-skill-3",
+      "name": "Gandalf Deep-Think Synthesizer",
+      "title": "Gandalf Deep-Think Synthesizer",
+      "parent_ids": [
+        "crucible-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "crucible-leaf-ref-1",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "crucible-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "crucible-leaf-ref-2",
+      "name": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
+      "title": "Journal: 0108-parallel-study-matrix-and-bounded-single-pass-convergence",
+      "parent_ids": [
+        "crucible-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-journal-0108-parallel-study-matrix-and-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "crucible-leaf-ref-3",
+      "name": "Journal: 0107-calculator-history-slim-delay",
+      "title": "Journal: 0107-calculator-history-slim-delay",
+      "parent_ids": [
+        "crucible-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-journal-0107-calculator-history-slim-de",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "crucible-leaf-ref-4",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "crucible-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "crucible-leaf-ref-5",
+      "name": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "title": "Knowledge Base: Lossless Code-Rewriting & Functional Core Patterns",
+      "parent_ids": [
+        "crucible-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "crucible-kb-researchprime-code-rewriting-tools",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

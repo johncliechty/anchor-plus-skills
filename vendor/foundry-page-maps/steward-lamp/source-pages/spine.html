@@ -1,0 +1,994 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>spine · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>spine</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Ecgberht\engine\ledger-spine.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 935cbe7fee7610bf2e1171237b9549cac97dabd1096e4507edf685d4a7427298</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.627834+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/ledger-spine.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 935cbe7fee7610bf2e1171237b9549cac97dabd1096e4507edf685d4a7427298</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> /**</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>  * Wave 6 — Ledger spine: ONE writer for roadmap_events IN PRODUCTION.</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  *</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * Reality (named, not hidden): the campaign ledger is a whole-file JSON rewrite</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  * of `roadmap.json` (roadmap_events[] + derived projection). Concurrent short-lived</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  * Node bridge processes (Anchor `subprocess.run(timeout=20/30)`) used to</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  * read-modify-write unlocked; a kill mid-write could tear the file and two</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  * processes could silently drop each other&#x27;s events.</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>  *</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>  * This module is the sole production append path:</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>  *   - NAMED lock: `withFileLock` on the roadmap.json path (durable-write.mjs)</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>  *   - NAMED atomic write: `writeFileAtomicSync` under that lock</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>  *   - Versioned event-kind allow-list (Master-Plan P2) — chat turns impossible</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>  *   - Typed-store allow-list — undeclared store writes refused by name</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>  *   - client_event_id append idempotence (T-IDEM-06)</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>  *   - ROADMAP_EVENTS_MAX bound with events-bound-exceeded refusal</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>  *</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>  * Pure in-memory law stays in roadmap.mjs (`appendRoadmapEvent`); production</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>  * persist ALWAYS re-loads under the lock so concurrent appenders serialise.</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>  *</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>  * Stdlib only.</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>  */</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24">24</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> import { northStarRevision, FACE_FILE_NAME } from &#x27;./face-strip.mjs&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> import { overCap, missingSpine } from &#x27;./write-authority.mjs&#x27;;</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> import { prepareRefinementEvent, publishRefinementProjections, refinementProjectionStatus, refinementRoadmapStatus, refinementResult } from &#x27;./refinement.mjs&#x27;;</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> import { foldRefinements } from &#x27;./refinement-state.mjs&#x27;;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> </span>
+<span class="source-line" id="L31"><a href="#L31">31</a> import {</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>   writeFileAtomicSync,</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>   withFileLock,</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>   LOCK_TIMEOUT_MS,</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> } from &#x27;./durable-write.mjs&#x27;;</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> // NOTE: function-body imports from roadmap.mjs only — never top-level const</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> // reads of roadmap bindings (circular ESM: roadmap imports this module).</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> import {</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>   appendRoadmapEvent,</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>   loadProjectRoadmap,</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>   healRoadmap,</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>   emptyRoadmap,</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>   projectRoadmapBytes,</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   roadmapEventCarrierRecord,</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>   roadmapEventBytes,</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   roadmapIdFor,</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   ROADMAP_EVENT_KINDS as ROADMAP_KINDS_FROM_MODULE,</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> } from &#x27;./roadmap.mjs&#x27;;</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> import { pathEntryFor } from &#x27;./portfolio/commit-intent.mjs&#x27;;</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> import { ingestWrite, relPathFor } from &#x27;./portfolio/ingest.mjs&#x27;;</span>
+<span class="source-line" id="L51"><a href="#L51">51</a> import { CLASS } from &#x27;./portfolio/inventory.mjs&#x27;;</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> import { PROJECT_ID_PATTERN } from &#x27;./portfolio/marker.mjs&#x27;;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54">54</a> // ── Named durability helpers (removal-proof T-DUR-S1) ──────────────────────</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> </span>
+<span class="source-line" id="L56"><a href="#L56">56</a> /** Named lock helper — Durable-store map S1. */</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> export const SPINE_LOCK_HELPER = &#x27;withFileLock&#x27;;</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> </span>
+<span class="source-line" id="L59"><a href="#L59">59</a> /** Named atomic write — Durable-store map S1. */</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> export const SPINE_ATOMIC_WRITE = &#x27;writeFileAtomicSync&#x27;;</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> </span>
+<span class="source-line" id="L62"><a href="#L62">62</a> /**</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>  * The file the spine serialises under the lock (whole-file rewrite reality).</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>  * Literal — do not import ROADMAP_FILE_NAME at top level (circular ESM TDZ).</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>  */</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> export const SPINE_LEDGER_FILE = &#x27;roadmap.json&#x27;;</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> const ROADMAP_FILE_NAME = SPINE_LEDGER_FILE;</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69">69</a> // ── Versioned event-kind allow-list (Master-Plan P2) ────────────────────────</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> </span>
+<span class="source-line" id="L71"><a href="#L71">71</a> /**</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>  * Allow-list VERSION. Admitting reflection_receipt / next_stage_proposal /</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>  * attention events requires an explicit VERSION BUMP + test — never a silent</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>  * kind add. This list IS the mechanical chat-turn detector.</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>  *</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>  * v1: step_* + commission_bind + scaffold_proposal (Wave 6/9)</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>  * v2: + face_assert / face_retract / face_refine / face_compile (Wave 10 — Face</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>  *     compile projection; Master-Plan P4)</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>  * v3: + elaboration_probe / elaboration_answer / elaboration_decline /</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>  *     elaboration_offer_refused (Wave 12 — progressive elaboration at stage START)</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>  * v4: + reflection_receipt / next_stage_proposal (Wave 14 — gate decision 4</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>  *     zero-model emit at validated handback)</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>  * v5: + attention_projection_published (Wave 16 — altitude contract / criterion 12)</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>  * v6: + goal_flip (Wave 17 — steward slice loop; re-read the North Star on close)</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>  * v7: + kickoff_proposal / kickoff_confirm (Wave 18 — conversational kickoff lineage)</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>  */</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> export const ROADMAP_EVENT_KINDS_VERSION = 9;</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> </span>
+<span class="source-line" id="L89"><a href="#L89">89</a> /**</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>  * Kinds admitted at the current version. Mirror of roadmap.mjs ROADMAP_EVENT_KINDS.</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>  * Wave 10 (v2): face_assert / face_retract / face_refine / face_compile.</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>  * Wave 12 (v3): elaboration_* progressive-elaboration events.</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>  * Wave 14 (v4): reflection_receipt / next_stage_proposal (gate decision 4).</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>  * Wave 16 (v5): attention_projection_published (altitude contract).</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>  * Wave 17 (v6): goal_flip (steward slice loop).</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>  * Wave 18 (v7): kickoff_proposal / kickoff_confirm (versioned human confirmation).</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>  * Steward revision W4 (v9, 2026-09-28): repair_proposal / repair_resolve (a repair shown, applied on his word) and</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>  * reorder (his own act on the plan&#x27;s order).</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>  */</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> export const SPINE_EVENT_KINDS = Object.freeze([</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>   &#x27;step_create&#x27;,</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   &#x27;step_set&#x27;,</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>   &#x27;status_flip&#x27;,</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   &#x27;commission_bind&#x27;,</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   &#x27;scaffold_proposal&#x27;,</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   &#x27;face_assert&#x27;,</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   &#x27;face_retract&#x27;,</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   &#x27;face_refine&#x27;,</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   &#x27;face_compile&#x27;,</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   &#x27;elaboration_probe&#x27;,</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>   &#x27;elaboration_answer&#x27;,</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>   &#x27;elaboration_decline&#x27;,</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>   &#x27;elaboration_offer_refused&#x27;,</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   &#x27;reflection_receipt&#x27;,</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>   &#x27;next_stage_proposal&#x27;,</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>   &#x27;attention_projection_published&#x27;,</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>   &#x27;goal_flip&#x27;,</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>   &#x27;kickoff_proposal&#x27;,</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   &#x27;kickoff_confirm&#x27;,</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   &#x27;refinement_update&#x27;,</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   &#x27;repair_proposal&#x27;,</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>   &#x27;repair_resolve&#x27;,</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>   &#x27;reorder&#x27;,</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> ]);</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> </span>
+<span class="source-line" id="L126"><a href="#L126">126</a> // ── Typed-store allow-list ─────────────────────────────────────────────────</span>
+<span class="source-line" id="L127"><a href="#L127">127</a> </span>
+<span class="source-line" id="L128"><a href="#L128">128</a> /** Stores the spine (and its strip / Face durable peers) may write. */</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> export const TYPED_STORES = Object.freeze([</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>   &#x27;roadmap_events&#x27;,</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   &#x27;strip_receipts&#x27;,</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   &#x27;strip_instruments&#x27;,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   &#x27;face_events&#x27;,</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   &#x27;source_text&#x27;,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> ]);</span>
+<span class="source-line" id="L136"><a href="#L136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137">137</a> // ── Bound ──────────────────────────────────────────────────────────────────</span>
+<span class="source-line" id="L138"><a href="#L138">138</a> </span>
+<span class="source-line" id="L139"><a href="#L139">139</a> /** Named bound — further appends refuse with events-bound-exceeded. */</span>
+<span class="source-line" id="L140"><a href="#L140">140</a> export const ROADMAP_EVENTS_MAX = 50_000;</span>
+<span class="source-line" id="L141"><a href="#L141">141</a> </span>
+<span class="source-line" id="L142"><a href="#L142">142</a> // ── Failure states (spine surface) ─────────────────────────────────────────</span>
+<span class="source-line" id="L143"><a href="#L143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144">144</a> export const SPINE_CODE = Object.freeze({</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>   LOCK_TIMEOUT: &#x27;SPINE_LOCK_TIMEOUT&#x27;,</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>   STORE_REFUSED: &#x27;SPINE_STORE_REFUSED&#x27;,</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   KIND_REFUSED: &#x27;SPINE_KIND_REFUSED&#x27;,</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>   EVENTS_BOUND: &#x27;SPINE_EVENTS_BOUND&#x27;,</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>   LEDGER_UNREADABLE: &#x27;SPINE_LEDGER_UNREADABLE&#x27;,</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>   LEDGER_EMPTY: &#x27;SPINE_LEDGER_EMPTY&#x27;,</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>   STATE_UNKNOWN: &#x27;SPINE_STATE_UNKNOWN&#x27;,</span>
+<span class="source-line" id="L152"><a href="#L152">152</a> });</span>
+<span class="source-line" id="L153"><a href="#L153">153</a> </span>
+<span class="source-line" id="L154"><a href="#L154">154</a> export const SPINE_TEXT = Object.freeze({</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>   [SPINE_CODE.LOCK_TIMEOUT]:</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     &#x27;Ledger busy — write retried then refused; nothing partial was written.&#x27;,</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>   [SPINE_CODE.STORE_REFUSED]:</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     &#x27;Write aimed at an undeclared store — refused by name.&#x27;,</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>   [SPINE_CODE.KIND_REFUSED]:</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     &#x27;Event kind is not on the versioned allow-list — refused; no transcript sink.&#x27;,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   [SPINE_CODE.EVENTS_BOUND]:</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     &#x27;Ledger at its 50000-event bound — append refused by name, never truncated.&#x27;,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>   [SPINE_CODE.LEDGER_UNREADABLE]:</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     &#x27;Campaign ledger unreadable — writes refused rather than guessed.&#x27;,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   [SPINE_CODE.LEDGER_EMPTY]: &#x27;No campaign events yet.&#x27;,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>   [SPINE_CODE.STATE_UNKNOWN]:</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>     &#x27;Ledger state unknown — reported as unknown, not healthy.&#x27;,</span>
+<span class="source-line" id="L168"><a href="#L168">168</a> });</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170">170</a> /**</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>  * @param {string} code SPINE_CODE value</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>  * @param {object} [extra]</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>  */</span>
+<span class="source-line" id="L174"><a href="#L174">174</a> export function spineFailure(code, extra = {}) {</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   const kind = extra.kind;</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   let text = SPINE_TEXT[code] ?? SPINE_TEXT[SPINE_CODE.STATE_UNKNOWN];</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>   if (code === SPINE_CODE.KIND_REFUSED &amp;&amp; kind != null) {</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     text = `Event kind ${kind} is not on the versioned allow-list — refused; no transcript sink.`;</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>   }</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   return {</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     ok: false,</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     error: extra.error ?? code.toLowerCase().replace(/_/g, &#x27;-&#x27;),</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     code,</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     status: code,</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>     text,</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     message: text,</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>     spine: true,</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>     kinds_version: ROADMAP_EVENT_KINDS_VERSION,</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>     ...extra,</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>   };</span>
+<span class="source-line" id="L191"><a href="#L191">191</a> }</span>
+<span class="source-line" id="L192"><a href="#L192">192</a> </span>
+<span class="source-line" id="L193"><a href="#L193">193</a> /**</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>  * Refuse an undeclared store by name.</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>  * @param {string} store</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>  */</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> export function assertStoreDeclared(store) {</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   if (!TYPED_STORES.includes(store)) {</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>     return spineFailure(SPINE_CODE.STORE_REFUSED, {</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>       error: &#x27;store-not-declared&#x27;,</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>       store: store ?? null,</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>       declared: [...TYPED_STORES],</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     });</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   }</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   return { ok: true, store };</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> }</span>
+<span class="source-line" id="L207"><a href="#L207">207</a> </span>
+<span class="source-line" id="L208"><a href="#L208">208</a> /**</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>  * Refuse a kind outside the versioned allow-list.</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>  * @param {string} kind</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>  */</span>
+<span class="source-line" id="L212"><a href="#L212">212</a> export function assertEventKindAllowed(kind) {</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   if (!SPINE_EVENT_KINDS.includes(kind)) {</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     return spineFailure(SPINE_CODE.KIND_REFUSED, {</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>       error: &#x27;event-kind-not-allowed&#x27;,</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>       kind: kind ?? null,</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>       allowed: [...SPINE_EVENT_KINDS],</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>       kinds_version: ROADMAP_EVENT_KINDS_VERSION,</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>     });</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   }</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   return { ok: true, kind, kinds_version: ROADMAP_EVENT_KINDS_VERSION };</span>
+<span class="source-line" id="L222"><a href="#L222">222</a> }</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> </span>
+<span class="source-line" id="L224"><a href="#L224">224</a> /**</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>  * Portfolio index flush requires a minted project_id (RFC-4122). Logical names</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>  * on fixture roadmaps (`fixture-roadmap-minimal`, `w9-proj`, …) identify the</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>  * campaign ledger only — they must never reach ingestWrite, which throws</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>  * INGEST_PROJECT_ID_REQUIRED before any source-of-truth write.</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>  * @param {{ project_id?: string, skip_index?: boolean }} opts</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>  */</span>
+<span class="source-line" id="L231"><a href="#L231">231</a> function shouldFlushPortfolioIndex(opts) {</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>   if (opts.skip_index === true) return false;</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>   const id = opts.project_id;</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   if (typeof id !== &#x27;string&#x27; || id.trim() === &#x27;&#x27;) return false;</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   return PROJECT_ID_PATTERN.test(id.trim());</span>
+<span class="source-line" id="L236"><a href="#L236">236</a> }</span>
+<span class="source-line" id="L237"><a href="#L237">237</a> </span>
+<span class="source-line" id="L238"><a href="#L238">238</a> /**</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>  * Absolute path of the campaign ledger file for a project root.</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>  */</span>
+<span class="source-line" id="L242"><a href="#L242">242</a> export function roadmapLedgerPath(projectPath) {</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>   return path.join(path.resolve(projectPath), ROADMAP_FILE_NAME);</span>
+<span class="source-line" id="L244"><a href="#L244">244</a> }</span>
+<span class="source-line" id="L245"><a href="#L245">245</a> </span>
+<span class="source-line" id="L246"><a href="#L246">246</a> /**</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>  * Bounded read of roadmap_events (never returns more than ROADMAP_EVENTS_MAX).</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>  * Empty-but-valid and unreadable are SEPARATE named states.</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>  *</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>  * @param {{ limit?: number, offset?: number }} [opts]</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>  */</span>
+<span class="source-line" id="L253"><a href="#L253">253</a> export function readRoadmapEventsBounded(projectPath, opts = {}) {</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   const ledgerPath = roadmapLedgerPath(projectPath);</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>   if (!fs.existsSync(ledgerPath)) {</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>     return {</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>       ok: true,</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>       code: SPINE_CODE.LEDGER_EMPTY,</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>       status: SPINE_CODE.LEDGER_EMPTY,</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>       text: SPINE_TEXT[SPINE_CODE.LEDGER_EMPTY],</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>       message: SPINE_TEXT[SPINE_CODE.LEDGER_EMPTY],</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>       events: [],</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>       count: 0,</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>       bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>       exists: false,</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>     };</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>   }</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>   let raw;</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>   try {</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     raw = fs.readFileSync(ledgerPath, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>   } catch (e) {</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>     return spineFailure(SPINE_CODE.LEDGER_UNREADABLE, {</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>       error: &#x27;backing-store-unreadable&#x27;,</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>     });</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>   }</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>   let roadmap;</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>   try {</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>     roadmap = JSON.parse(raw);</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>   } catch (e) {</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>     return spineFailure(SPINE_CODE.LEDGER_UNREADABLE, {</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>       error: &#x27;backing-store-unreadable&#x27;,</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     });</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>   }</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>   if (!roadmap || typeof roadmap !== &#x27;object&#x27; || Array.isArray(roadmap)) {</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     return spineFailure(SPINE_CODE.STATE_UNKNOWN, {</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>       error: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>     });</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   }</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>   const all = Array.isArray(roadmap.roadmap_events) ? roadmap.roadmap_events : [];</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>   if (all.length === 0) {</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     return {</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>       ok: true,</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>       code: SPINE_CODE.LEDGER_EMPTY,</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>       status: SPINE_CODE.LEDGER_EMPTY,</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>       text: SPINE_TEXT[SPINE_CODE.LEDGER_EMPTY],</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>       message: SPINE_TEXT[SPINE_CODE.LEDGER_EMPTY],</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>       events: [],</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>       count: 0,</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>       bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>       exists: true,</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>       roadmap,</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>     };</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>   }</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>   const offset = Math.max(0, Number(opts.offset) || 0);</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>   const limit = Math.min(</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     Math.max(0, opts.limit != null ? Number(opts.limit) : ROADMAP_EVENTS_MAX),</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>   );</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>   const slice = all.slice(offset, offset + limit);</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>   return {</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>     ok: true,</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     code: null,</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     status: null,</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     events: slice,</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>     count: all.length,</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>     offset,</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>     limit,</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>     bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>     exists: true,</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>     roadmap,</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>   };</span>
+<span class="source-line" id="L324"><a href="#L324">324</a> }</span>
+<span class="source-line" id="L325"><a href="#L325">325</a> </span>
+<span class="source-line" id="L326"><a href="#L326">326</a> /**</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>  * Find an existing event by caller-supplied client_event_id (idempotence key).</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>  * @param {object} roadmap</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>  * @param {string} clientEventId</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>  */</span>
+<span class="source-line" id="L331"><a href="#L331">331</a> export function findEventByClientId(roadmap, clientEventId) {</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>   if (!clientEventId || typeof clientEventId !== &#x27;string&#x27;) return null;</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>   const events = Array.isArray(roadmap?.roadmap_events) ? roadmap.roadmap_events : [];</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>   return events.find((e) =&gt; e &amp;&amp; e.client_event_id === clientEventId) ?? null;</span>
+<span class="source-line" id="L335"><a href="#L335">335</a> }</span>
+<span class="source-line" id="L336"><a href="#L336">336</a> </span>
+<span class="source-line" id="L337"><a href="#L337">337</a> /**</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>  * Pure append law used under the lock (and by pure callers via roadmap.mjs).</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>  * Re-exported for tests that assert the spine owns the production path.</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>  *</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>  * @param {object|string|null} roadmapInput</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>  * @param {object} event</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>  * @param {{ at?: string }} [opts]</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>  */</span>
+<span class="source-line" id="L345"><a href="#L345">345</a> export function appendRoadmapEventSpineLaw(roadmapInput, event, opts = {}) {</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>   const storeGate = assertStoreDeclared(&#x27;roadmap_events&#x27;);</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>   if (!storeGate.ok) return storeGate;</span>
+<span class="source-line" id="L348"><a href="#L348">348</a> </span>
+<span class="source-line" id="L349"><a href="#L349">349</a>   if (!event || typeof event !== &#x27;object&#x27; || Array.isArray(event)) {</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     return spineFailure(SPINE_CODE.STATE_UNKNOWN, {</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>       error: &#x27;event_not_object&#x27;,</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>     });</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>   }</span>
+<span class="source-line" id="L354"><a href="#L354">354</a> </span>
+<span class="source-line" id="L355"><a href="#L355">355</a>   const kindGate = assertEventKindAllowed(event.kind);</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>   if (!kindGate.ok) return kindGate;</span>
+<span class="source-line" id="L357"><a href="#L357">357</a> </span>
+<span class="source-line" id="L358"><a href="#L358">358</a>   // Seed / parse base</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>   const base =</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>     roadmapInput == null || roadmapInput === undefined</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>       ? emptyRoadmap()</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>       : roadmapInput;</span>
+<span class="source-line" id="L363"><a href="#L363">363</a> </span>
+<span class="source-line" id="L364"><a href="#L364">364</a>   // Bound check before pure append (also enforced inside pure path)</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>   let eventCount = 0;</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>   if (typeof base === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>     try {</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>       const p = JSON.parse(base);</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>       eventCount = Array.isArray(p?.roadmap_events) ? p.roadmap_events.length : 0;</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>     } catch {</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>       eventCount = 0;</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>     }</span>
+<span class="source-line" id="L373"><a href="#L373">373</a>   } else if (base &amp;&amp; typeof base === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>     eventCount = Array.isArray(base.roadmap_events) ? base.roadmap_events.length : 0;</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>   }</span>
+<span class="source-line" id="L376"><a href="#L376">376</a> </span>
+<span class="source-line" id="L377"><a href="#L377">377</a>   // Idempotence: same client_event_id → no-op, original seq</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>   if (typeof event.client_event_id === &#x27;string&#x27; &amp;&amp; event.client_event_id.trim()) {</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>     const parsed =</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>       typeof base === &#x27;string&#x27;</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>         ? (() =&gt; {</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>             try {</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>               return JSON.parse(base);</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>             } catch {</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>               return null;</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>             }</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>           })()</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>         : base;</span>
+<span class="source-line" id="L389"><a href="#L389">389</a>     const prior = findEventByClientId(parsed, event.client_event_id);</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>     if (prior) {</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>       if (event.kind === &#x27;refinement_update&#x27; &amp;&amp; (prior.kind !== event.kind || prior.request_digest !== event.request_digest)) {</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>         return {ok:false,error:&#x27;operation-id-collision&#x27;,committed:false};</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>       }</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>       return {</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>         ok: true,</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>         idempotent: true,</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>         client_event_id: event.client_event_id,</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>         seq: prior.seq,</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>         event: prior,</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>         roadmap: parsed,</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>         projection: parsed?.roadmap_projection ?? [],</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>         spine: true,</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>         single_writer: SPINE_SINGLE_WRITER,</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>       };</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>     }</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>   }</span>
+<span class="source-line" id="L407"><a href="#L407">407</a> </span>
+<span class="source-line" id="L408"><a href="#L408">408</a>   if (eventCount &gt;= ROADMAP_EVENTS_MAX) {</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>     return spineFailure(SPINE_CODE.EVENTS_BOUND, {</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>       error: &#x27;events-bound-exceeded&#x27;,</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>       bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>       count: eventCount,</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>     });</span>
+<span class="source-line" id="L414"><a href="#L414">414</a>   }</span>
+<span class="source-line" id="L415"><a href="#L415">415</a> </span>
+<span class="source-line" id="L416"><a href="#L416">416</a>   const result = appendRoadmapEvent(base, event, opts);</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>   if (!result.ok) {</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>     // Preserve pure-law error identity (unknown_roadmap_event_kind,</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>     // status_flip_requires_receipt, …). Stamp spine code only for bound.</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>     if (result.error === &#x27;events-bound-exceeded&#x27;) {</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>       return spineFailure(SPINE_CODE.EVENTS_BOUND, {</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>         error: &#x27;events-bound-exceeded&#x27;,</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>         bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>         count: result.count,</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>       });</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>     }</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>     if (result.error === &#x27;unknown_roadmap_event_kind&#x27;) {</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>       return {</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>         ...result,</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>         spine: true,</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>         code: SPINE_CODE.KIND_REFUSED,</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>         status: SPINE_CODE.KIND_REFUSED,</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>         text: SPINE_TEXT[SPINE_CODE.KIND_REFUSED],</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>         allowed: [...SPINE_EVENT_KINDS],</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>         kinds_version: ROADMAP_EVENT_KINDS_VERSION,</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>       };</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>     }</span>
+<span class="source-line" id="L438"><a href="#L438">438</a>     return { ...result, spine: true };</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>   }</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>   return {</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>     ...result,</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>     spine: true,</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>     idempotent: false,</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>     seq: result.event?.seq ?? null,</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>     single_writer: SPINE_SINGLE_WRITER,</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>   };</span>
+<span class="source-line" id="L447"><a href="#L447">447</a> }</span>
+<span class="source-line" id="L448"><a href="#L448">448</a> </span>
+<span class="source-line" id="L449"><a href="#L449">449</a> /** Single-writer contract stamped on every spine result. */</span>
+<span class="source-line" id="L450"><a href="#L450">450</a> export const SPINE_SINGLE_WRITER = Object.freeze({</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>   writer: &#x27;appendRoadmapEventThroughSpine&#x27;,</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>   module: &#x27;engine/ledger-spine.mjs&#x27;,</span>
+<span class="source-line" id="L453"><a href="#L453">453</a>   lock: SPINE_LOCK_HELPER,</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>   atomic_write: SPINE_ATOMIC_WRITE,</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>   ledger_file: SPINE_LEDGER_FILE,</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>   whole_file_rewrite: true,</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>   kinds_version: ROADMAP_EVENT_KINDS_VERSION,</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>   event_kinds: SPINE_EVENT_KINDS,</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>   bound: ROADMAP_EVENTS_MAX,</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>   dual_write_forbidden: true,</span>
+<span class="source-line" id="L461"><a href="#L461">461</a> });</span>
+<span class="source-line" id="L462"><a href="#L462">462</a> </span>
+<span class="source-line" id="L463"><a href="#L463">463</a> /**</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>  * THE production append: load under lock → append → atomic whole-file rewrite.</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>  *</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>  * When `opts.project_id` is set and `opts.skip_index` is not true, also writes</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>  * the inventory-v1 carrier and flushes the portfolio index (closing Wave-3&#x27;s</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>  * pre-decided FAIL: appendRoadmapEventDurable gains production callers).</span>
+<span class="source-line" id="L469"><a href="#L469">469</a>  *</span>
+<span class="source-line" id="L470"><a href="#L470">470</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>  * @param {object} event</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>  * @param {{</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>  *   project_id?: string,</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>  *   home?: string,</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>  *   paths?: object,</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>  *   env?: object,</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>  *   at?: string,</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>  *   seed?: object|string|null,</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>  *   skip_index?: boolean,</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>  *   timeoutMs?: number,</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>  *   roadmap_id?: string,</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>  *   event_id?: string,</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>  *   beforeFlush?: Function,</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>  *   appendOpts?: object,</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>  * }} [opts]</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>  */</span>
+<span class="source-line" id="L487"><a href="#L487">487</a> /** The step a close event closes (one not already done), with its goal re-read, else null. */</span>
+<span class="source-line" id="L488"><a href="#L488">488</a> function closeOf(event, base) {</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>   let step_id = null, goal_reread = null;</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>   if (event?.kind === &#x27;status_flip&#x27; &amp;&amp; event.to === &#x27;done&#x27;) {</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>     step_id = event.step_id; goal_reread = event.goal_reread ?? null;</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>   } else if (event?.kind === &#x27;refinement_update&#x27; &amp;&amp; event.operation?.action === &#x27;close&#x27;) {</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>     step_id = event.operation.step_id; goal_reread = event.operation.goal_reread ?? null;</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>   } else return null;</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>   const steps = Array.isArray(base?.roadmap_projection) ? base.roadmap_projection : [];</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>   const step = steps.find((st) =&gt; st &amp;&amp; st.id === step_id);</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>   if (step &amp;&amp; step.status === &#x27;done&#x27;) return null;      // already closed: nothing to demand, no second flip</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>   return { step_id, goal_reread };</span>
+<span class="source-line" id="L499"><a href="#L499">499</a> }</span>
+<span class="source-line" id="L500"><a href="#L500">500</a> </span>
+<span class="source-line" id="L501"><a href="#L501">501</a> export const GOAL_REREAD = Object.freeze([&#x27;reaffirmed&#x27;, &#x27;rewritten&#x27;]);</span>
+<span class="source-line" id="L502"><a href="#L502">502</a> </span>
+<span class="source-line" id="L503"><a href="#L503">503</a> /** A steward&#x27;s close: the strip must name the step that follows with its next and why (within the caps), and the close its goal re-read. */</span>
+<span class="source-line" id="L504"><a href="#L504">504</a> export function demandClose(root, base, step_id, goal_reread) {</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>   const closing = closeOf({ kind: &#x27;status_flip&#x27;, to: &#x27;done&#x27;, step_id, goal_reread }, base);</span>
+<span class="source-line" id="L506"><a href="#L506">506</a>   if (!closing) return { ok: true, demanded: false };</span>
+<span class="source-line" id="L507"><a href="#L507">507</a>   const demand = demandSpineForClose(root, base, step_id);</span>
+<span class="source-line" id="L508"><a href="#L508">508</a>   if (!demand.ok) return demand;</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>   if (!GOAL_REREAD.includes(goal_reread)) {</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>     return {</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>       ok: false, error: &#x27;goal_reread_required&#x27;, closing: step_id,</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>       message: &#x27;Close refused: re-read the North Star and say so - --goal-reread reaffirmed|rewritten &#x27;</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>         + &#x27;(or goal_reread on the refinement close operation); the engine records the goal_flip.&#x27;,</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>     };</span>
+<span class="source-line" id="L515"><a href="#L515">515</a>   }</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>   return { ok: true, demanded: true };</span>
+<span class="source-line" id="L517"><a href="#L517">517</a> }</span>
+<span class="source-line" id="L518"><a href="#L518">518</a> </span>
+<span class="source-line" id="L519"><a href="#L519">519</a> /** No strip (legacy) or no open step left after the close: nothing to demand. */</span>
+<span class="source-line" id="L520"><a href="#L520">520</a> export function demandSpineForClose(root, base, step_id) {</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>   const stripPath = path.join(root, &#x27;strip.json&#x27;);</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>   if (!fs.existsSync(stripPath)) return { ok: true, demanded: false };</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>   let strip;</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>   try { strip = JSON.parse(fs.readFileSync(stripPath, &#x27;utf8&#x27;)); } catch { return { ok: true, demanded: false }; }</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>   if (!strip || typeof strip !== &#x27;object&#x27;) return { ok: true, demanded: false };</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>   const steps = Array.isArray(base?.roadmap_projection) ? base.roadmap_projection : [];</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>   const open = steps.filter((st) =&gt; st &amp;&amp; st.id !== step_id &amp;&amp; ![&#x27;done&#x27;, &#x27;parked&#x27;].includes(st.status));</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>   if (!open.length) return { ok: true, demanded: false, campaign_done: true };</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>   const pinned = typeof strip.current_step_id === &#x27;string&#x27; ? strip.current_step_id.trim() : &#x27;&#x27;;</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>   const stale = pinned === step_id;</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>   const missing = [...(pinned &amp;&amp; !stale ? [] : [&#x27;current_step_id&#x27;]), ...missingSpine(strip)];</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>   if (missing.length) {</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>     return {</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>       ok: false, error: &#x27;spine_required&#x27;, closing: step_id, missing,</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>       message: (stale ? &#x27;current_step_id is still the step being closed. &#x27; : &#x27;&#x27;)</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>         + &#x27;Close refused: first pin the step that follows and say what comes next - &#x27;</span>
+<span class="source-line" id="L537"><a href="#L537">537</a>         + &#x27;ecgberht update --current-step &lt;id&gt; --next-recommended &quot;&lt;up to 15 words&gt;&quot; --strip-why-next &quot;&lt;up to 20 words&gt;&quot; - then close. &#x27;</span>
+<span class="source-line" id="L538"><a href="#L538">538</a>         + &#x27;A campaign with no open step left needs no next.&#x27;,</span>
+<span class="source-line" id="L539"><a href="#L539">539</a>     };</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>   }</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>   for (const field of [&#x27;next_recommended&#x27;, &#x27;why_next&#x27;]) {</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>     const over = overCap(field, strip[field]);</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>     if (over) return { ok: false, error: &#x27;over_cap&#x27;, ...over, closing: step_id, message: `${field} on the strip is ${over.words} words; the cap is ${over.cap}. Say it shorter, then close.` };</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>   }</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>   return { ok: true, demanded: true };</span>
+<span class="source-line" id="L546"><a href="#L546">546</a> }</span>
+<span class="source-line" id="L547"><a href="#L547">547</a> </span>
+<span class="source-line" id="L548"><a href="#L548">548</a> export function appendRoadmapEventThroughSpine(projectPath, event, opts = {}) {</span>
+<span class="source-line" id="L549"><a href="#L549">549</a>   const storeGate = assertStoreDeclared(&#x27;roadmap_events&#x27;);</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>   if (!storeGate.ok) return storeGate;</span>
+<span class="source-line" id="L551"><a href="#L551">551</a> </span>
+<span class="source-line" id="L552"><a href="#L552">552</a>   if (!event || typeof event !== &#x27;object&#x27; || Array.isArray(event)) {</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>     return spineFailure(SPINE_CODE.STATE_UNKNOWN, { error: &#x27;event_not_object&#x27; });</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>   }</span>
+<span class="source-line" id="L555"><a href="#L555">555</a> </span>
+<span class="source-line" id="L556"><a href="#L556">556</a>   // Kind gate: keep SPINE_KIND_REFUSED + allow-list text, but preserve the pure</span>
+<span class="source-line" id="L557"><a href="#L557">557</a>   // law&#x27;s error identity (`unknown_roadmap_event_kind`) so durable callers</span>
+<span class="source-line" id="L558"><a href="#L558">558</a>   // (appendRoadmapEventDurable / single-writer law) still see the authority</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>   // refusal they always refused — Wave 6 must not rename pure-law refusals.</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>   const kindGate = assertEventKindAllowed(event.kind);</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>   if (!kindGate.ok) {</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>     return {</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>       ...kindGate,</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>       error: &#x27;unknown_roadmap_event_kind&#x27;,</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>       event_kinds: [...SPINE_EVENT_KINDS],</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>     };</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>   }</span>
+<span class="source-line" id="L568"><a href="#L568">568</a> </span>
+<span class="source-line" id="L569"><a href="#L569">569</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>   const ledgerPath = roadmapLedgerPath(root);</span>
+<span class="source-line" id="L571"><a href="#L571">571</a>   const flushIndex = shouldFlushPortfolioIndex(opts);</span>
+<span class="source-line" id="L572"><a href="#L572">572</a> </span>
+<span class="source-line" id="L573"><a href="#L573">573</a>   const timeoutMs = opts.timeoutMs ?? LOCK_TIMEOUT_MS;</span>
+<span class="source-line" id="L574"><a href="#L574">574</a> </span>
+<span class="source-line" id="L575"><a href="#L575">575</a>   let lockedResult;</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>   try {</span>
+<span class="source-line" id="L577"><a href="#L577">577</a>     lockedResult = withFileLock(</span>
+<span class="source-line" id="L578"><a href="#L578">578</a>       ledgerPath,</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>       () =&gt; {</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>         // LOAD under the lock (whole-file RMW serialisation). Always prefer the</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>         // on-disk ledger when present so concurrent OS processes serialise</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>         // correctly; seed is only used to initialise a missing file.</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>         const loaded = loadProjectRoadmap(root);</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>         if (!loaded.ok &amp;&amp; loaded.exists) {</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>           return spineFailure(SPINE_CODE.LEDGER_UNREADABLE, {</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>             error: &#x27;backing-store-unreadable&#x27;,</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>             detail: loaded.message ?? loaded.error,</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>           });</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>         }</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>         let base;</span>
+<span class="source-line" id="L591"><a href="#L591">591</a>         if (loaded.exists) {</span>
+<span class="source-line" id="L592"><a href="#L592">592</a>           base = loaded.roadmap;</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>         } else if (opts.seed != null &amp;&amp; opts.seed !== undefined) {</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>           base = opts.seed;</span>
+<span class="source-line" id="L595"><a href="#L595">595</a>         } else {</span>
+<span class="source-line" id="L596"><a href="#L596">596</a>           base = emptyRoadmap(opts.project_id ?? null);</span>
+<span class="source-line" id="L597"><a href="#L597">597</a>         }</span>
+<span class="source-line" id="L598"><a href="#L598">598</a> </span>
+<span class="source-line" id="L599"><a href="#L599">599</a>         if (event.kind === &#x27;refinement_update&#x27;) {</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>           const prior = findEventByClientId(base,event.client_event_id);</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>           if (!prior) {</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>             if (event.operation?.expected_seq !== base.roadmap_events.length) return {ok:false,error:&#x27;sequence-conflict&#x27;,expected_seq:event.operation?.expected_seq,actual_seq:base.roadmap_events.length};</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>             const prepared=prepareRefinementEvent(root,base,event);</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>             if(!prepared.ok) return prepared;</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>             event=prepared.event;</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>           }</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>         } else if (event.kind === &#x27;status_flip&#x27; &amp;&amp; event.to === &#x27;done&#x27; &amp;&amp; foldRefinements(base.roadmap_events).slices?.[event.step_id]) {</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>           return {ok:false,error:&#x27;managed-slice-requires-explicit-close&#x27;};</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>         }</span>
+<span class="source-line" id="L610"><a href="#L610">610</a>         let law = appendRoadmapEventSpineLaw(base, event, { at: opts.at });</span>
+<span class="source-line" id="L611"><a href="#L611">611</a>         if (!law.ok) return law;</span>
+<span class="source-line" id="L612"><a href="#L612">612</a>         // an accepted close that carries its goal re-read gets its goal_flip from the one writer</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>         const closing = closeOf(event, base);</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>         let goalFlip = null;</span>
+<span class="source-line" id="L615"><a href="#L615">615</a>         if (closing &amp;&amp; GOAL_REREAD.includes(closing.goal_reread) &amp;&amp; !law.idempotent) {</span>
+<span class="source-line" id="L616"><a href="#L616">616</a>           let face = &#x27;&#x27;;</span>
+<span class="source-line" id="L617"><a href="#L617">617</a>           try { face = fs.readFileSync(path.join(root, FACE_FILE_NAME), &#x27;utf8&#x27;); } catch { face = &#x27;&#x27;; }</span>
+<span class="source-line" id="L618"><a href="#L618">618</a>           goalFlip = {</span>
+<span class="source-line" id="L619"><a href="#L619">619</a>             kind: &#x27;goal_flip&#x27;, step_id: closing.step_id, verdict: closing.goal_reread,</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>             goal_revision: northStarRevision(face), scope: closing.step_id,</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>             receipt: { who: event.receipt?.who ?? event.operation?.human?.who ?? &#x27;steward&#x27;, why: &#x27;close of &#x27; + closing.step_id },</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>             ...(opts.at ? { at: opts.at } : {}),</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>           };</span>
+<span class="source-line" id="L624"><a href="#L624">624</a>           const flipLaw = appendRoadmapEventSpineLaw(law.roadmap, goalFlip, { at: opts.at });</span>
+<span class="source-line" id="L625"><a href="#L625">625</a>           if (!flipLaw.ok) return flipLaw;</span>
+<span class="source-line" id="L626"><a href="#L626">626</a>           law = { ...law, roadmap: flipLaw.roadmap, projection: flipLaw.projection, goal_flip: flipLaw.event };</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>         }</span>
+<span class="source-line" id="L628"><a href="#L628">628</a>         if (law.idempotent) {</span>
+<span class="source-line" id="L629"><a href="#L629">629</a>           const publication=event.kind===&#x27;refinement_update&#x27; ? publishRefinementProjections(root,law.roadmap) : null;</span>
+<span class="source-line" id="L630"><a href="#L630">630</a>           if(publication &amp;&amp; !publication.ok) return {...publication,committed:true,operation_id:event.client_event_id};</span>
+<span class="source-line" id="L631"><a href="#L631">631</a>           return {</span>
+<span class="source-line" id="L632"><a href="#L632">632</a>             ...law,</span>
+<span class="source-line" id="L633"><a href="#L633">633</a>             projection_status:publication,</span>
+<span class="source-line" id="L634"><a href="#L634">634</a>             project_path: root,</span>
+<span class="source-line" id="L635"><a href="#L635">635</a>             roadmap_path: ledgerPath,</span>
+<span class="source-line" id="L636"><a href="#L636">636</a>             persisted: false,</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>             sot_written: false,</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>             locked: true,</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>           };</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>         }</span>
+<span class="source-line" id="L641"><a href="#L641">641</a> </span>
+<span class="source-line" id="L642"><a href="#L642">642</a>         // Persist under the same lock</span>
+<span class="source-line" id="L643"><a href="#L643">643</a>         fs.mkdirSync(root, { recursive: true });</span>
+<span class="source-line" id="L644"><a href="#L644">644</a>         writeFileAtomicSync(ledgerPath, projectRoadmapBytes(law.roadmap));</span>
+<span class="source-line" id="L645"><a href="#L645">645</a>         let publication=null;</span>
+<span class="source-line" id="L646"><a href="#L646">646</a>         if(event.kind===&#x27;refinement_update&#x27;) {</span>
+<span class="source-line" id="L647"><a href="#L647">647</a>           try { publication=publishRefinementProjections(root,law.roadmap); }</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>           catch(e) { return {ok:false,error:&#x27;projection-lag&#x27;,committed:true,operation_id:event.client_event_id,detail:e.message}; }</span>
+<span class="source-line" id="L649"><a href="#L649">649</a>           if(!publication.ok) return {...publication,committed:true,operation_id:event.client_event_id};</span>
+<span class="source-line" id="L650"><a href="#L650">650</a>         }</span>
+<span class="source-line" id="L651"><a href="#L651">651</a> </span>
+<span class="source-line" id="L652"><a href="#L652">652</a>         let carrier = null;</span>
+<span class="source-line" id="L653"><a href="#L653">653</a>         let carrierRel = null;</span>
+<span class="source-line" id="L654"><a href="#L654">654</a>         let carrierBytes = null;</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>         if (flushIndex) {</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>           carrier = roadmapEventCarrierRecord(law.roadmap, law.event, opts);</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>           carrierRel = relPathFor(CLASS.ROADMAP_EVENT, carrier.event_id);</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>           carrierBytes = roadmapEventBytes(carrier);</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>           const carrierAbs = path.join(root, ...carrierRel.split(&#x27;/&#x27;));</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>           fs.mkdirSync(path.dirname(carrierAbs), { recursive: true });</span>
+<span class="source-line" id="L661"><a href="#L661">661</a>           writeFileAtomicSync(carrierAbs, carrierBytes);</span>
+<span class="source-line" id="L662"><a href="#L662">662</a>         }</span>
+<span class="source-line" id="L663"><a href="#L663">663</a> </span>
+<span class="source-line" id="L664"><a href="#L664">664</a>         return {</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>           ok: true,</span>
+<span class="source-line" id="L666"><a href="#L666">666</a>           projection_status:publication,</span>
+<span class="source-line" id="L667"><a href="#L667">667</a>           spelling: law.spelling,</span>
+<span class="source-line" id="L668"><a href="#L668">668</a>           authority: law.authority,</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>           event: law.event,</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>           roadmap: law.roadmap,</span>
+<span class="source-line" id="L671"><a href="#L671">671</a>           projection: law.projection,</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>           issues: law.issues,</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>           events_only: true,</span>
+<span class="source-line" id="L674"><a href="#L674">674</a>           spine: true,</span>
+<span class="source-line" id="L675"><a href="#L675">675</a>           idempotent: false,</span>
+<span class="source-line" id="L676"><a href="#L676">676</a>           seq: law.event.seq,</span>
+<span class="source-line" id="L677"><a href="#L677">677</a>           client_event_id: law.event.client_event_id ?? null,</span>
+<span class="source-line" id="L678"><a href="#L678">678</a>           project_path: root,</span>
+<span class="source-line" id="L679"><a href="#L679">679</a>           roadmap_path: ledgerPath,</span>
+<span class="source-line" id="L680"><a href="#L680">680</a>           persisted: true,</span>
+<span class="source-line" id="L681"><a href="#L681">681</a>           sot_written: true,</span>
+<span class="source-line" id="L682"><a href="#L682">682</a>           locked: true,</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>           single_writer: SPINE_SINGLE_WRITER,</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>           carrier,</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>           carrier_rel: carrierRel,</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>           carrier_bytes: carrierBytes,</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>           container_bytes: projectRoadmapBytes(law.roadmap),</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>         };</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>       },</span>
+<span class="source-line" id="L690"><a href="#L690">690</a>       {</span>
+<span class="source-line" id="L691"><a href="#L691">691</a>         timeoutMs,</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>         onTimeout: (info) =&gt; {</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>           const err = new Error(SPINE_TEXT[SPINE_CODE.LOCK_TIMEOUT]);</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>           err.code = SPINE_CODE.LOCK_TIMEOUT;</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>           err.spine_info = info;</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>           return err;</span>
+<span class="source-line" id="L697"><a href="#L697">697</a>         },</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>       },</span>
+<span class="source-line" id="L699"><a href="#L699">699</a>     );</span>
+<span class="source-line" id="L700"><a href="#L700">700</a>   } catch (e) {</span>
+<span class="source-line" id="L701"><a href="#L701">701</a>     if (e &amp;&amp; e.code === SPINE_CODE.LOCK_TIMEOUT) {</span>
+<span class="source-line" id="L702"><a href="#L702">702</a>       return spineFailure(SPINE_CODE.LOCK_TIMEOUT, {</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>         error: &#x27;lock-contended&#x27;,</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>       });</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>     }</span>
+<span class="source-line" id="L706"><a href="#L706">706</a>     if (e &amp;&amp; e.code === &#x27;ELOCKTIMEOUT&#x27;) {</span>
+<span class="source-line" id="L707"><a href="#L707">707</a>       return spineFailure(SPINE_CODE.LOCK_TIMEOUT, {</span>
+<span class="source-line" id="L708"><a href="#L708">708</a>         error: &#x27;lock-contended&#x27;,</span>
+<span class="source-line" id="L709"><a href="#L709">709</a>       });</span>
+<span class="source-line" id="L710"><a href="#L710">710</a>     }</span>
+<span class="source-line" id="L711"><a href="#L711">711</a>     return spineFailure(SPINE_CODE.STATE_UNKNOWN, {</span>
+<span class="source-line" id="L712"><a href="#L712">712</a>       error: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L713"><a href="#L713">713</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L714"><a href="#L714">714</a>     });</span>
+<span class="source-line" id="L715"><a href="#L715">715</a>   }</span>
+<span class="source-line" id="L716"><a href="#L716">716</a> </span>
+<span class="source-line" id="L717"><a href="#L717">717</a>   if (!lockedResult || !lockedResult.ok) return lockedResult;</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>   if (lockedResult.idempotent) return lockedResult;</span>
+<span class="source-line" id="L719"><a href="#L719">719</a> </span>
+<span class="source-line" id="L720"><a href="#L720">720</a>   // Optional portfolio index flush OUTSIDE the roadmap lock (lock-order law:</span>
+<span class="source-line" id="L721"><a href="#L721">721</a>   // never hold project + portfolio locks together). Carrier bytes were written</span>
+<span class="source-line" id="L722"><a href="#L722">722</a>   // under the roadmap lock; ingestWrite re-writes the carrier (idempotent</span>
+<span class="source-line" id="L723"><a href="#L723">723</a>   // atomic replace) and flushes the derived row. Only minted project_ids index.</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>   if (flushIndex &amp;&amp; lockedResult.carrier &amp;&amp; lockedResult.carrier_rel) {</span>
+<span class="source-line" id="L725"><a href="#L725">725</a>     const containerBytes = lockedResult.container_bytes;</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>     let ingest;</span>
+<span class="source-line" id="L727"><a href="#L727">727</a>     try {</span>
+<span class="source-line" id="L728"><a href="#L728">728</a>       ingest = ingestWrite({</span>
+<span class="source-line" id="L729"><a href="#L729">729</a>         class: CLASS.ROADMAP_EVENT,</span>
+<span class="source-line" id="L730"><a href="#L730">730</a>         project_id: opts.project_id,</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>         root,</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>         rel: lockedResult.carrier_rel,</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>         bytes: lockedResult.carrier_bytes,</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>         intent_paths: [pathEntryFor(ROADMAP_FILE_NAME, containerBytes)],</span>
+<span class="source-line" id="L735"><a href="#L735">735</a>         home: opts.home,</span>
+<span class="source-line" id="L736"><a href="#L736">736</a>         paths: opts.paths,</span>
+<span class="source-line" id="L737"><a href="#L737">737</a>         env: opts.env,</span>
+<span class="source-line" id="L738"><a href="#L738">738</a>         appendOpts: opts.appendOpts,</span>
+<span class="source-line" id="L739"><a href="#L739">739</a>         beforeFlush: opts.beforeFlush,</span>
+<span class="source-line" id="L740"><a href="#L740">740</a>         // Carrier already durable under the spine lock; re-assert atomically.</span>
+<span class="source-line" id="L741"><a href="#L741">741</a>         write: (target) =&gt; {</span>
+<span class="source-line" id="L742"><a href="#L742">742</a>           fs.mkdirSync(path.dirname(target.abs), { recursive: true });</span>
+<span class="source-line" id="L743"><a href="#L743">743</a>           writeFileAtomicSync(target.abs, target.bytes.toString(&#x27;utf8&#x27;));</span>
+<span class="source-line" id="L744"><a href="#L744">744</a>         },</span>
+<span class="source-line" id="L745"><a href="#L745">745</a>       });</span>
+<span class="source-line" id="L746"><a href="#L746">746</a>     } catch (e) {</span>
+<span class="source-line" id="L747"><a href="#L747">747</a>       // SoT already stands; never throw past the durable path.</span>
+<span class="source-line" id="L748"><a href="#L748">748</a>       return {</span>
+<span class="source-line" id="L749"><a href="#L749">749</a>         ...lockedResult,</span>
+<span class="source-line" id="L750"><a href="#L750">750</a>         ok: true,</span>
+<span class="source-line" id="L751"><a href="#L751">751</a>         indexed: false,</span>
+<span class="source-line" id="L752"><a href="#L752">752</a>         sot_written: true,</span>
+<span class="source-line" id="L753"><a href="#L753">753</a>         index_error: e?.code ?? &#x27;ingest_threw&#x27;,</span>
+<span class="source-line" id="L754"><a href="#L754">754</a>         message:</span>
+<span class="source-line" id="L755"><a href="#L755">755</a>           `Spine append seq=${lockedResult.seq} durable; index flush refused: ${e?.message ?? e}`,</span>
+<span class="source-line" id="L756"><a href="#L756">756</a>       };</span>
+<span class="source-line" id="L757"><a href="#L757">757</a>     }</span>
+<span class="source-line" id="L758"><a href="#L758">758</a> </span>
+<span class="source-line" id="L759"><a href="#L759">759</a>     return {</span>
+<span class="source-line" id="L760"><a href="#L760">760</a>       ...lockedResult,</span>
+<span class="source-line" id="L761"><a href="#L761">761</a>       ok: ingest.ok === true,</span>
+<span class="source-line" id="L762"><a href="#L762">762</a>       code: ingest.code ?? null,</span>
+<span class="source-line" id="L763"><a href="#L763">763</a>       status: ingest.status ?? null,</span>
+<span class="source-line" id="L764"><a href="#L764">764</a>       text: ingest.text ?? &#x27;&#x27;,</span>
+<span class="source-line" id="L765"><a href="#L765">765</a>       ingest,</span>
+<span class="source-line" id="L766"><a href="#L766">766</a>       indexed: ingest.ok === true,</span>
+<span class="source-line" id="L767"><a href="#L767">767</a>       row: ingest.row ?? null,</span>
+<span class="source-line" id="L768"><a href="#L768">768</a>       seq_indexed: ingest.seq ?? null,</span>
+<span class="source-line" id="L769"><a href="#L769">769</a>       intent: ingest.intent ?? null,</span>
+<span class="source-line" id="L770"><a href="#L770">770</a>       intent_seq: ingest.intent_seq ?? null,</span>
+<span class="source-line" id="L771"><a href="#L771">771</a>       intent_emitted: ingest.intent_emitted === true,</span>
+<span class="source-line" id="L772"><a href="#L772">772</a>       freshness: ingest.freshness,</span>
+<span class="source-line" id="L773"><a href="#L773">773</a>       path: ingest.path ?? null,</span>
+<span class="source-line" id="L774"><a href="#L774">774</a>       trace: ingest.trace ?? [],</span>
+<span class="source-line" id="L775"><a href="#L775">775</a>       // SoT stands even when index fails</span>
+<span class="source-line" id="L776"><a href="#L776">776</a>       sot_written: true,</span>
+<span class="source-line" id="L777"><a href="#L777">777</a>       message:</span>
+<span class="source-line" id="L778"><a href="#L778">778</a>         ingest.ok === true</span>
+<span class="source-line" id="L779"><a href="#L779">779</a>           ? `Spine append seq=${lockedResult.seq} durable + indexed.`</span>
+<span class="source-line" id="L780"><a href="#L780">780</a>           : `Spine append seq=${lockedResult.seq} durable; index flush: ${ingest.text || ingest.code}`,</span>
+<span class="source-line" id="L781"><a href="#L781">781</a>     };</span>
+<span class="source-line" id="L782"><a href="#L782">782</a>   }</span>
+<span class="source-line" id="L783"><a href="#L783">783</a> </span>
+<span class="source-line" id="L784"><a href="#L784">784</a>   return {</span>
+<span class="source-line" id="L785"><a href="#L785">785</a>     ...lockedResult,</span>
+<span class="source-line" id="L786"><a href="#L786">786</a>     indexed: false,</span>
+<span class="source-line" id="L787"><a href="#L787">787</a>     message: `Spine append seq=${lockedResult.seq} durable under ${SPINE_LOCK_HELPER}+${SPINE_ATOMIC_WRITE}.`,</span>
+<span class="source-line" id="L788"><a href="#L788">788</a>   };</span>
+<span class="source-line" id="L789"><a href="#L789">789</a> }</span>
+<span class="source-line" id="L790"><a href="#L790">790</a> </span>
+<span class="source-line" id="L791"><a href="#L791">791</a> /**</span>
+<span class="source-line" id="L792"><a href="#L792">792</a>  * Persist an already-computed roadmap container under the spine lock.</span>
+<span class="source-line" id="L793"><a href="#L793">793</a>  * Used only when a pure multi-event fold finished in memory and must land</span>
+<span class="source-line" id="L794"><a href="#L794">794</a>  * atomically (e.g. E7 multi-step record). Prefer appendRoadmapEventThroughSpine</span>
+<span class="source-line" id="L795"><a href="#L795">795</a>  * for single-event production appends.</span>
+<span class="source-line" id="L796"><a href="#L796">796</a>  *</span>
+<span class="source-line" id="L797"><a href="#L797">797</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L798"><a href="#L798">798</a>  * @param {object} roadmap</span>
+<span class="source-line" id="L799"><a href="#L799">799</a>  * @param {{ timeoutMs?: number }} [opts]</span>
+<span class="source-line" id="L800"><a href="#L800">800</a>  */</span>
+<span class="source-line" id="L801"><a href="#L801">801</a> export function writeRoadmapThroughSpine(projectPath, roadmap, opts = {}) {</span>
+<span class="source-line" id="L802"><a href="#L802">802</a>   const storeGate = assertStoreDeclared(&#x27;roadmap_events&#x27;);</span>
+<span class="source-line" id="L803"><a href="#L803">803</a>   if (!storeGate.ok) return storeGate;</span>
+<span class="source-line" id="L804"><a href="#L804">804</a> </span>
+<span class="source-line" id="L805"><a href="#L805">805</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L806"><a href="#L806">806</a>   const ledgerPath = roadmapLedgerPath(root);</span>
+<span class="source-line" id="L807"><a href="#L807">807</a> </span>
+<span class="source-line" id="L808"><a href="#L808">808</a>   try {</span>
+<span class="source-line" id="L809"><a href="#L809">809</a>     withFileLock(</span>
+<span class="source-line" id="L810"><a href="#L810">810</a>       ledgerPath,</span>
+<span class="source-line" id="L811"><a href="#L811">811</a>       () =&gt; {</span>
+<span class="source-line" id="L812"><a href="#L812">812</a>         const current=loadProjectRoadmap(root);</span>
+<span class="source-line" id="L813"><a href="#L813">813</a>         if ((roadmap.roadmap_events || []).some(e=&gt;e.kind===&#x27;refinement_update&#x27;) ||</span>
+<span class="source-line" id="L814"><a href="#L814">814</a>             (current.roadmap?.roadmap_events || []).some(e=&gt;e.kind===&#x27;refinement_update&#x27;)) {</span>
+<span class="source-line" id="L815"><a href="#L815">815</a>           const error=new Error(&#x27;Managed roadmap replacement requires the refinement append operation&#x27;);</span>
+<span class="source-line" id="L816"><a href="#L816">816</a>           error.code=&#x27;managed-write-refused&#x27;; throw error;</span>
+<span class="source-line" id="L817"><a href="#L817">817</a>         }</span>
+<span class="source-line" id="L818"><a href="#L818">818</a>         fs.mkdirSync(root, { recursive: true });</span>
+<span class="source-line" id="L819"><a href="#L819">819</a>         writeFileAtomicSync(ledgerPath, projectRoadmapBytes(roadmap));</span>
+<span class="source-line" id="L820"><a href="#L820">820</a>       },</span>
+<span class="source-line" id="L821"><a href="#L821">821</a>       {</span>
+<span class="source-line" id="L822"><a href="#L822">822</a>         timeoutMs: opts.timeoutMs ?? LOCK_TIMEOUT_MS,</span>
+<span class="source-line" id="L823"><a href="#L823">823</a>         onTimeout: (info) =&gt; {</span>
+<span class="source-line" id="L824"><a href="#L824">824</a>           const err = new Error(SPINE_TEXT[SPINE_CODE.LOCK_TIMEOUT]);</span>
+<span class="source-line" id="L825"><a href="#L825">825</a>           err.code = SPINE_CODE.LOCK_TIMEOUT;</span>
+<span class="source-line" id="L826"><a href="#L826">826</a>           err.spine_info = info;</span>
+<span class="source-line" id="L827"><a href="#L827">827</a>           return err;</span>
+<span class="source-line" id="L828"><a href="#L828">828</a>         },</span>
+<span class="source-line" id="L829"><a href="#L829">829</a>       },</span>
+<span class="source-line" id="L830"><a href="#L830">830</a>     );</span>
+<span class="source-line" id="L831"><a href="#L831">831</a>   } catch (e) {</span>
+<span class="source-line" id="L832"><a href="#L832">832</a>     if(e?.code===&#x27;managed-write-refused&#x27;) return {ok:false,error:e.code};</span>
+<span class="source-line" id="L833"><a href="#L833">833</a>     if (e &amp;&amp; (e.code === SPINE_CODE.LOCK_TIMEOUT || e.code === &#x27;ELOCKTIMEOUT&#x27;)) {</span>
+<span class="source-line" id="L834"><a href="#L834">834</a>       return spineFailure(SPINE_CODE.LOCK_TIMEOUT, { error: &#x27;lock-contended&#x27; });</span>
+<span class="source-line" id="L835"><a href="#L835">835</a>     }</span>
+<span class="source-line" id="L836"><a href="#L836">836</a>     return spineFailure(SPINE_CODE.STATE_UNKNOWN, {</span>
+<span class="source-line" id="L837"><a href="#L837">837</a>       error: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L838"><a href="#L838">838</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L839"><a href="#L839">839</a>     });</span>
+<span class="source-line" id="L840"><a href="#L840">840</a>   }</span>
+<span class="source-line" id="L841"><a href="#L841">841</a> </span>
+<span class="source-line" id="L842"><a href="#L842">842</a>   return {</span>
+<span class="source-line" id="L843"><a href="#L843">843</a>     ok: true,</span>
+<span class="source-line" id="L844"><a href="#L844">844</a>     roadmap_path: ledgerPath,</span>
+<span class="source-line" id="L845"><a href="#L845">845</a>     project_path: root,</span>
+<span class="source-line" id="L846"><a href="#L846">846</a>     spine: true,</span>
+<span class="source-line" id="L847"><a href="#L847">847</a>     single_writer: SPINE_SINGLE_WRITER,</span>
+<span class="source-line" id="L848"><a href="#L848">848</a>     sot_written: true,</span>
+<span class="source-line" id="L849"><a href="#L849">849</a>   };</span>
+<span class="source-line" id="L850"><a href="#L850">850</a> }</span>
+<span class="source-line" id="L851"><a href="#L851">851</a> </span>
+<span class="source-line" id="L852"><a href="#L852">852</a> /**</span>
+<span class="source-line" id="L853"><a href="#L853">853</a>  * Supported managed repair. No caller-supplied replacement or event mutation:</span>
+<span class="source-line" id="L854"><a href="#L854">854</a>  * reload and derive both cached projections under the existing writer lock.</span>
+<span class="source-line" id="L855"><a href="#L855">855</a>  * Normal appends and container replacements retain their drift/refusal guards.</span>
+<span class="source-line" id="L856"><a href="#L856">856</a>  */</span>
+<span class="source-line" id="L857"><a href="#L857">857</a> export function repairRoadmapProjectionsThroughSpine(projectPath, opts = {}) {</span>
+<span class="source-line" id="L858"><a href="#L858">858</a>   const storeGate=assertStoreDeclared(&#x27;roadmap_events&#x27;);</span>
+<span class="source-line" id="L859"><a href="#L859">859</a>   if(!storeGate.ok) return storeGate;</span>
+<span class="source-line" id="L860"><a href="#L860">860</a>   const root=path.resolve(projectPath),ledgerPath=roadmapLedgerPath(root);</span>
+<span class="source-line" id="L861"><a href="#L861">861</a>   let repair;</span>
+<span class="source-line" id="L862"><a href="#L862">862</a>   try {</span>
+<span class="source-line" id="L863"><a href="#L863">863</a>     return withFileLock(ledgerPath,()=&gt;{</span>
+<span class="source-line" id="L864"><a href="#L864">864</a>       const loaded=loadProjectRoadmap(root);</span>
+<span class="source-line" id="L865"><a href="#L865">865</a>       if(!loaded.ok || !loaded.exists) return {ok:false,error:&#x27;backing-store-unreadable&#x27;};</span>
+<span class="source-line" id="L866"><a href="#L866">866</a>       const base=loaded.roadmap,state=foldRefinements(base.roadmap_events);</span>
+<span class="source-line" id="L867"><a href="#L867">867</a>       if(!state.managed) return {ok:false,error:&#x27;unmanaged-campaign&#x27;};</span>
+<span class="source-line" id="L868"><a href="#L868">868</a>       const healed=healRoadmap(base);</span>
+<span class="source-line" id="L869"><a href="#L869">869</a>       if(!healed.ok) return healed;</span>
+<span class="source-line" id="L870"><a href="#L870">870</a>       const roadmap={...healed.roadmap,refinement_projection:state};</span>
+<span class="source-line" id="L871"><a href="#L871">871</a>       const valid=refinementRoadmapStatus(roadmap);</span>
+<span class="source-line" id="L872"><a href="#L872">872</a>       if(!valid.consistent) return {ok:false,error:valid.error,issues:valid.issues,invalid_issues:valid.invalid_issues};</span>
+<span class="source-line" id="L873"><a href="#L873">873</a>       // Authenticate every document before any repair write. An external edit</span>
+<span class="source-line" id="L874"><a href="#L874">874</a>       // is a conflict, even when a cached roadmap projection also needs repair.</span>
+<span class="source-line" id="L875"><a href="#L875">875</a>       const documents=refinementProjectionStatus(root,base);</span>
+<span class="source-line" id="L876"><a href="#L876">876</a>       if(documents.error) return {ok:false,...documents};</span>
+<span class="source-line" id="L877"><a href="#L877">877</a>       const changed=[&#x27;roadmap_projection&#x27;,&#x27;refinement_projection&#x27;].filter(</span>
+<span class="source-line" id="L878"><a href="#L878">878</a>         field=&gt;JSON.stringify(base[field])!==JSON.stringify(roadmap[field]));</span>
+<span class="source-line" id="L879"><a href="#L879">879</a>       repair={repaired_fields:[],</span>
+<span class="source-line" id="L880"><a href="#L880">880</a>         events_rewritten:false,locked:true,persisted:false,updated_documents:[]};</span>
+<span class="source-line" id="L881"><a href="#L881">881</a>       if(changed.length) {</span>
+<span class="source-line" id="L882"><a href="#L882">882</a>         writeFileAtomicSync(ledgerPath,projectRoadmapBytes(roadmap));</span>
+<span class="source-line" id="L883"><a href="#L883">883</a>         repair.persisted=true;</span>
+<span class="source-line" id="L884"><a href="#L884">884</a>         repair.repaired_fields=changed;</span>
+<span class="source-line" id="L885"><a href="#L885">885</a>       }</span>
+<span class="source-line" id="L886"><a href="#L886">886</a>       const publication=publishRefinementProjections(root,roadmap);</span>
+<span class="source-line" id="L887"><a href="#L887">887</a>       repair.updated_documents=publication.updated_documents || [];</span>
+<span class="source-line" id="L888"><a href="#L888">888</a>       repair.finished=publication.finished || null;</span>
+<span class="source-line" id="L889"><a href="#L889">889</a>       const saved=loadProjectRoadmap(root);</span>
+<span class="source-line" id="L890"><a href="#L890">890</a>       if(!saved.ok || !saved.exists) return {ok:false,error:&#x27;backing-store-unreadable&#x27;,repair};</span>
+<span class="source-line" id="L891"><a href="#L891">891</a>       const view=refinementResult(root,saved.roadmap);</span>
+<span class="source-line" id="L892"><a href="#L892">892</a>       return {...view,ok:publication.ok &amp;&amp; publication.consistent &amp;&amp; view.consistent,repair,</span>
+<span class="source-line" id="L893"><a href="#L893">893</a>         ...(!publication.ok || !publication.consistent || !view.consistent ? {</span>
+<span class="source-line" id="L894"><a href="#L894">894</a>           error:publication.error || publication.finished?.error || &#x27;projection-lag&#x27;,</span>
+<span class="source-line" id="L895"><a href="#L895">895</a>           detail:publication.detail || publication.finished?.detail,</span>
+<span class="source-line" id="L896"><a href="#L896">896</a>         } : {})};</span>
+<span class="source-line" id="L897"><a href="#L897">897</a>     },{timeoutMs:opts.timeoutMs ?? LOCK_TIMEOUT_MS});</span>
+<span class="source-line" id="L898"><a href="#L898">898</a>   } catch(e) {</span>
+<span class="source-line" id="L899"><a href="#L899">899</a>     if(e?.code===&#x27;ELOCKTIMEOUT&#x27;) return spineFailure(SPINE_CODE.LOCK_TIMEOUT,{error:&#x27;lock-contended&#x27;});</span>
+<span class="source-line" id="L900"><a href="#L900">900</a>     return {ok:false,error:e.code || &#x27;projection-repair-failed&#x27;,detail:e.message,...(repair ? {repair} : {})};</span>
+<span class="source-line" id="L901"><a href="#L901">901</a>   }</span>
+<span class="source-line" id="L902"><a href="#L902">902</a> }</span>
+<span class="source-line" id="L903"><a href="#L903">903</a> </span>
+<span class="source-line" id="L904"><a href="#L904">904</a> /**</span>
+<span class="source-line" id="L905"><a href="#L905">905</a>  * Persist strip.json under a named lock (S2 companion path when portfolio</span>
+<span class="source-line" id="L906"><a href="#L906">906</a>  * index is not in play). Production strip instruments/receipts prefer</span>
+<span class="source-line" id="L907"><a href="#L907">907</a>  * write-authority durable paths when project_id is available.</span>
+<span class="source-line" id="L908"><a href="#L908">908</a>  *</span>
+<span class="source-line" id="L909"><a href="#L909">909</a>  * @param {string} projectPath</span>
+<span class="source-line" id="L910"><a href="#L910">910</a>  * @param {object} strip</span>
+<span class="source-line" id="L911"><a href="#L911">911</a>  * @param {{ timeoutMs?: number, fileName?: string }} [opts]</span>
+<span class="source-line" id="L912"><a href="#L912">912</a>  */</span>
+<span class="source-line" id="L913"><a href="#L913">913</a> export function writeStripThroughSpine(projectPath, strip, opts = {}) {</span>
+<span class="source-line" id="L914"><a href="#L914">914</a>   const storeGate = assertStoreDeclared(&#x27;strip_instruments&#x27;);</span>
+<span class="source-line" id="L915"><a href="#L915">915</a>   if (!storeGate.ok) return storeGate;</span>
+<span class="source-line" id="L916"><a href="#L916">916</a> </span>
+<span class="source-line" id="L917"><a href="#L917">917</a>   const root = path.resolve(projectPath);</span>
+<span class="source-line" id="L918"><a href="#L918">918</a>   const fileName = opts.fileName ?? &#x27;strip.json&#x27;;</span>
+<span class="source-line" id="L919"><a href="#L919">919</a>   const stripPath = path.join(root, fileName);</span>
+<span class="source-line" id="L920"><a href="#L920">920</a> </span>
+<span class="source-line" id="L921"><a href="#L921">921</a>   try {</span>
+<span class="source-line" id="L922"><a href="#L922">922</a>     withFileLock(</span>
+<span class="source-line" id="L923"><a href="#L923">923</a>       stripPath,</span>
+<span class="source-line" id="L924"><a href="#L924">924</a>       () =&gt; {</span>
+<span class="source-line" id="L925"><a href="#L925">925</a>         fs.mkdirSync(root, { recursive: true });</span>
+<span class="source-line" id="L926"><a href="#L926">926</a>         writeFileAtomicSync(stripPath, `${JSON.stringify(strip, null, 2)}\n`);</span>
+<span class="source-line" id="L927"><a href="#L927">927</a>       },</span>
+<span class="source-line" id="L928"><a href="#L928">928</a>       {</span>
+<span class="source-line" id="L929"><a href="#L929">929</a>         timeoutMs: opts.timeoutMs ?? LOCK_TIMEOUT_MS,</span>
+<span class="source-line" id="L930"><a href="#L930">930</a>         onTimeout: (info) =&gt; {</span>
+<span class="source-line" id="L931"><a href="#L931">931</a>           const err = new Error(SPINE_TEXT[SPINE_CODE.LOCK_TIMEOUT]);</span>
+<span class="source-line" id="L932"><a href="#L932">932</a>           err.code = SPINE_CODE.LOCK_TIMEOUT;</span>
+<span class="source-line" id="L933"><a href="#L933">933</a>           err.spine_info = info;</span>
+<span class="source-line" id="L934"><a href="#L934">934</a>           return err;</span>
+<span class="source-line" id="L935"><a href="#L935">935</a>         },</span>
+<span class="source-line" id="L936"><a href="#L936">936</a>       },</span>
+<span class="source-line" id="L937"><a href="#L937">937</a>     );</span>
+<span class="source-line" id="L938"><a href="#L938">938</a>   } catch (e) {</span>
+<span class="source-line" id="L939"><a href="#L939">939</a>     if (e &amp;&amp; (e.code === SPINE_CODE.LOCK_TIMEOUT || e.code === &#x27;ELOCKTIMEOUT&#x27;)) {</span>
+<span class="source-line" id="L940"><a href="#L940">940</a>       return spineFailure(SPINE_CODE.LOCK_TIMEOUT, { error: &#x27;lock-contended&#x27; });</span>
+<span class="source-line" id="L941"><a href="#L941">941</a>     }</span>
+<span class="source-line" id="L942"><a href="#L942">942</a>     return spineFailure(SPINE_CODE.STATE_UNKNOWN, {</span>
+<span class="source-line" id="L943"><a href="#L943">943</a>       error: &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L944"><a href="#L944">944</a>       detail: String(e?.message ?? e),</span>
+<span class="source-line" id="L945"><a href="#L945">945</a>     });</span>
+<span class="source-line" id="L946"><a href="#L946">946</a>   }</span>
+<span class="source-line" id="L947"><a href="#L947">947</a> </span>
+<span class="source-line" id="L948"><a href="#L948">948</a>   return {</span>
+<span class="source-line" id="L949"><a href="#L949">949</a>     ok: true,</span>
+<span class="source-line" id="L950"><a href="#L950">950</a>     strip_path: stripPath,</span>
+<span class="source-line" id="L951"><a href="#L951">951</a>     project_path: root,</span>
+<span class="source-line" id="L952"><a href="#L952">952</a>     spine: true,</span>
+<span class="source-line" id="L953"><a href="#L953">953</a>     sot_written: true,</span>
+<span class="source-line" id="L954"><a href="#L954">954</a>   };</span>
+<span class="source-line" id="L955"><a href="#L955">955</a> }</span>
+<span class="source-line" id="L956"><a href="#L956">956</a> </span>
+<span class="source-line" id="L957"><a href="#L957">957</a> /**</span>
+<span class="source-line" id="L958"><a href="#L958">958</a>  * Source-removal proof: spine module text must still name the durable helpers.</span>
+<span class="source-line" id="L959"><a href="#L959">959</a>  * @param {string} sourceText</span>
+<span class="source-line" id="L960"><a href="#L960">960</a>  */</span>
+<span class="source-line" id="L961"><a href="#L961">961</a> export function assertSpineDurableHelpersPresent(sourceText) {</span>
+<span class="source-line" id="L962"><a href="#L962">962</a>   const missing = [];</span>
+<span class="source-line" id="L963"><a href="#L963">963</a>   if (!sourceText.includes(&#x27;writeFileAtomicSync&#x27;)) missing.push(&#x27;writeFileAtomicSync&#x27;);</span>
+<span class="source-line" id="L964"><a href="#L964">964</a>   if (!sourceText.includes(&#x27;withFileLock&#x27;)) missing.push(&#x27;withFileLock&#x27;);</span>
+<span class="source-line" id="L965"><a href="#L965">965</a>   if (!sourceText.includes(&#x27;appendRoadmapEventThroughSpine&#x27;)) {</span>
+<span class="source-line" id="L966"><a href="#L966">966</a>     missing.push(&#x27;appendRoadmapEventThroughSpine&#x27;);</span>
+<span class="source-line" id="L967"><a href="#L967">967</a>   }</span>
+<span class="source-line" id="L968"><a href="#L968">968</a>   return { ok: missing.length === 0, missing };</span>
+<span class="source-line" id="L969"><a href="#L969">969</a> }</span>
+<span class="source-line" id="L970"><a href="#L970">970</a> </span>
+<span class="source-line" id="L971"><a href="#L971">971</a> /**</span>
+<span class="source-line" id="L972"><a href="#L972">972</a>  * Allow-list kinds must match the roadmap module&#x27;s admitted set (current version).</span>
+<span class="source-line" id="L973"><a href="#L973">973</a>  * scaffold_proposal (v1) + face_* (v2 / Wave 10) + elaboration_* (v3 / Wave 12)</span>
+<span class="source-line" id="L974"><a href="#L974">974</a>  * + reflection_receipt / next_stage_proposal (v4 / Wave 14) are on both.</span>
+<span class="source-line" id="L975"><a href="#L975">975</a>  */</span>
+<span class="source-line" id="L976"><a href="#L976">976</a> export function assertKindsAligned() {</span>
+<span class="source-line" id="L977"><a href="#L977">977</a>   const fromRoadmap = new Set(ROADMAP_KINDS_FROM_MODULE);</span>
+<span class="source-line" id="L978"><a href="#L978">978</a>   const fromSpine = new Set(SPINE_EVENT_KINDS);</span>
+<span class="source-line" id="L979"><a href="#L979">979</a>   const missingInRoadmap = SPINE_EVENT_KINDS.filter((k) =&gt; !fromRoadmap.has(k));</span>
+<span class="source-line" id="L980"><a href="#L980">980</a>   const missingInSpine = ROADMAP_KINDS_FROM_MODULE.filter((k) =&gt; !fromSpine.has(k));</span>
+<span class="source-line" id="L981"><a href="#L981">981</a>   return {</span>
+<span class="source-line" id="L982"><a href="#L982">982</a>     ok: missingInRoadmap.length === 0 &amp;&amp; missingInSpine.length === 0,</span>
+<span class="source-line" id="L983"><a href="#L983">983</a>     missingInRoadmap,</span>
+<span class="source-line" id="L984"><a href="#L984">984</a>     missingInSpine,</span>
+<span class="source-line" id="L985"><a href="#L985">985</a>     version: ROADMAP_EVENT_KINDS_VERSION,</span>
+<span class="source-line" id="L986"><a href="#L986">986</a>   };</span>
+<span class="source-line" id="L987"><a href="#L987">987</a> }</span>
+<span class="source-line" id="L988"><a href="#L988">988</a> </span>
+<span class="source-line" id="L989"><a href="#L989">989</a> export { roadmapIdFor };</span></pre></main></body></html>

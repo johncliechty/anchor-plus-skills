@@ -1,0 +1,105 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Host grading and honest synthesis · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="grading" data-anchor-id="a-seam">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Host grading and honest synthesis</h1>
+<p class="intro">Seams stamp diagnosis, anticipation, verification handoffs, per-elevation tiers and per-leg risk labels. This deterministic grade is separate from model reasoning.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/seam-pass.mjs · lines 235–327</p><pre>export function applySeamPass(rawDraft, { cross_model = false, resolveCommission } = {}) {
+  validateRawDraft(rawDraft);
+  const crossModelRequested = cross_model === true; // the caller INTENT — never the stamp itself
+  // A FRESH per-run ledger (no module-default singleton state leak). The injection seam wins: tests and
+  // future callers may pass an explicit resolver; otherwise this run resolves against its own ledger.
+  const resolve = typeof resolveCommission === &#x27;function&#x27;
+    ? resolveCommission
+    : createCommissionLedger().resolveCommission;
+
+  // The three item arrays are coerced to [] when the model omitted them (lenient input).
+  const rawFindings = Array.isArray(rawDraft.findings) ? rawDraft.findings : [];
+  const rawNitpicks = Array.isArray(rawDraft.nitpicks) ? rawDraft.nitpicks : [];
+  const rawElevations = Array.isArray(rawDraft.elevations) ? rawDraft.elevations : [];
+
+  // --- findings: dispatch by kind through the shipped seams; drop only REFUTED -----------------
+  // 2026-08-25 (John-ratified card — journals 0301/0303: killed/dropped items left NO record,
+  // so a kill was indistinguishable from a silent omission — an honesty hole in an honesty
+  // engine): every drop is RECORDED with its reason in output.kill_log (below the fold).
+  const killLog = { findings: [], nitpicks: [], elevations: [] };
+  const briefOf = (raw) =&gt; String(raw?.topic ?? raw?.claim ?? raw?.message ?? raw?.id ?? &#x27;(untitled)&#x27;).slice(0, 120);
+  const findings = [];
+  let anyDegraded = false;
+  rawFindings.forEach((raw, i) =&gt; {
+    if (!isPlainObject(raw)) { killLog.findings.push({ index: i, reason: &#x27;not an object&#x27; }); return; }
+    if (dropsFromOutput(raw)) { killLog.findings.push({ index: i, brief: briefOf(raw), reason: &#x27;REFUTED — rung refuted by its refutation record&#x27; }); return; }
+    const passed = passFinding(raw, i); // never throws now (a seam refusal → a generic finding)
+    if (itemDegraded(passed)) anyDegraded = true;
+    findings.push(ensureItemKeys(passed, i, &#x27;f&#x27;));
+  });
+
+  // --- nitpicks: normalize to the required keys; skip non-objects; drop REFUTED -----------------
+  const nitpicks = [];
+  rawNitpicks.forEach((raw, i) =&gt; {
+    if (!isPlainObject(raw)) { killLog.nitpicks.push({ index: i, reason: &#x27;not an object&#x27; }); return; }
+    if (dropsFromOutput(raw)) { killLog.nitpicks.push({ index: i, brief: briefOf(raw), reason: &#x27;REFUTED — rung refuted by its refutation record&#x27; }); return; }
+    if (itemDegraded(raw)) anyDegraded = true;
+    nitpicks.push(ensureItemKeys(raw, i, &#x27;n&#x27;));
+  });
+
+  // --- elevations: vet refutation (SPECULATIVE floor) → label tier; drop REFUTED ----------------
+  const elevations = [];
+  let anyCrossFamily = false; // W2b: DERIVES the top-level cross_model — set only by a genuine refutation
+  rawElevations.forEach((raw, i) =&gt; {
+    if (!isPlainObject(raw)) { killLog.elevations.push({ index: i, reason: &#x27;not an object&#x27; }); return; }
+    let passed;
+    try {
+      passed = passElevation(raw, i, resolve);
+    } catch (e) {
+      // an un-salvageable elevation is dropped, never fatal to the run — but RECORDED
+      killLog.elevations.push({ index: i, brief: briefOf(raw), reason: `un-salvageable: ${e?.message ?? e}` });
+      return;
+    }
+    if (passed === null) {
+      // dropped (REFUTED) — record WHY, incl. the refutation&#x27;s named defeater when present
+      const defeater = raw?.refutation_provenance?.defeater ?? null;
+      killLog.elevations.push({ index: i, brief: briefOf(raw), reason: &#x27;REFUTED — the named defeater landed&#x27;, defeater });
+      return;
+    }
+    if (passed.cross_family_refuted === true) anyCrossFamily = true; // a real ledger-bound refutation
+    if (itemDegraded(passed)) anyDegraded = true;
+    // Guarantee a valid value_if_true (required enum) before normalizing the rest.
+    if (!_VALUES.includes(passed.value_if_true)) passed = { ...passed, value_if_true: &#x27;low&#x27; };
+    elevations.push(ensureItemKeys(passed, i, &#x27;e&#x27;));
+  });
+
+  // --- assemble the partial output, then synthesize honest risk_labels over it ------------------
+  // B6: if any item ran degraded, OR the draft itself declared degraded, the top level owns it.
+  const degraded = anyDegraded || rawDraft.degraded === true;
+
+  // W2b: cross_model is DERIVED — true IFF a shipped elevation earned a genuine cross-family
+  // refutation. The caller&#x27;s intent flag is recorded separately and never sets this true.
+  const output = {
+    schema_version: SCHEMA_VERSION,
+    cross_model: anyCrossFamily === true,
+    cross_model_requested: crossModelRequested,
+    degraded,
+    reasoning: rawDraft.reasoning, // reasoning BEFORE verdict (key order is load-bearing)
+    verdict: rawDraft.verdict,
+    findings,
+    nitpicks,
+    elevations,
+    risk_labels: [], // filled below from the finalized findings
+  };
+  // composeRiskLabels reads the finalized findings: one label per present leg, envelope rung,
+  // PROMISING ceiling on a single-family run.
+  output.risk_labels = composeRiskLabels(output);
+
+  // Kill log rides below the fold (additive; schema additionalProperties:true) — John sees
+  // WHY each recommendation died, and a kill is never confusable with a silent omission.
+  output.kill_log = killLog;
+
+  return output;
+}</pre>
+<p><a class="button" href="../source-pages/seams.html#L235">Open numbered source</a>
+<a href="../sources/seams.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/analyze-grade">Grade analyze output as degraded</a> · <a target="_top" href="../index.html#process/live-gate">Choose deterministic or live grade</a> · <a target="_top" href="../index.html#process/seam">Apply seams and risk labels</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">e4d3c3a3fdfc91f030280700f713dc871cf548e52a83a251c747f61dbfc21c53</span></p><p>Excerpt hash: <span class="path">82d0027eb9a3f4d9d6df65f673f016b48bfc4cc51ecba0e4689da560035ee17a</span></p></details></article></main></body></html>

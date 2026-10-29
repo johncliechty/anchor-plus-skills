@@ -1,0 +1,189 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Oversized shard splitting · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="splitting" data-anchor-id="a-split">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Oversized shard splitting</h1>
+<p class="intro">Split files or lines recursively and fuse the summaries. One oversized line is sent as-is, so the ceiling is not absolute.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/map-reduce.mjs · lines 449–625</p><pre>async function mapOrSplit({
+  payload,
+  groupName,
+  userObjective,
+  activeAgent,
+  reduceAgent = null,
+  maxChunkBytes,
+  projectDir,
+  log
+}) {
+  // W4: bulk MAP reads run on activeAgent (STANDARD); intra-shard SYNTHESIS on the reduce
+  // (HEAVY/frontier) seat when supplied, else fall back to the single agent (legacy behaviour).
+  const activeReduceAgent = reduceAgent || activeAgent;
+  const items = getChunkItems(payload);
+  
+  const estimatedSize = estimateSerializedSize(items, projectDir);
+
+  if (estimatedSize &lt;= maxChunkBytes) {
+    log(`Payload size (${estimatedSize} bytes) is within ceiling (${maxChunkBytes}). Mapping chunk: ${groupName}`);
+    const serializedContent = serializeChunk(items, projectDir);
+    const chunkPrompt = `Analyze the following files from directory/chunk: ${groupName}
+User Objective: &quot;${userObjective}&quot;
+
+Provide a summary of findings, code patterns, and potential issues for this chunk.
+
+Codebase Chunk Files:
+${serializedContent}`;
+
+    return await activeAgent(chunkPrompt, { label: `map-reduce-chunk-${groupName}` });
+  }
+
+  log(`Payload size (${estimatedSize} bytes) exceeds ceiling (${maxChunkBytes}) for chunk ${groupName}. Splitting recursively.`);
+
+  if (items.length &gt; 1) {
+    const mid = Math.floor(items.length / 2);
+    const leftItems = items.slice(0, mid);
+    const rightItems = items.slice(mid);
+
+    log(`Splitting ${groupName} by file into two sub-chunks (sizes: ${leftItems.length}, ${rightItems.length})`);
+
+    const leftName = `${groupName}.1`;
+    const rightName = `${groupName}.2`;
+
+    const leftSummary = await mapOrSplit({
+      payload: leftItems,
+      groupName: leftName,
+      userObjective,
+      activeAgent,
+      reduceAgent: activeReduceAgent,
+      maxChunkBytes,
+      projectDir,
+      log
+    });
+
+    const rightSummary = await mapOrSplit({
+      payload: rightItems,
+      groupName: rightName,
+      userObjective,
+      activeAgent,
+      reduceAgent: activeReduceAgent,
+      maxChunkBytes,
+      projectDir,
+      log
+    });
+
+    log(`Synthesizing split file summaries for ${groupName}`);
+    const synthPrompt = `You are a codebase synthesizer. You are given several chunk summaries of a codebase analysis.
+User Objective: &quot;${userObjective}&quot;
+
+Chunk Summaries:
+--- Chunk: ${leftName} ---
+${leftSummary}
+
+--- Chunk: ${rightName} ---
+${rightSummary}
+
+Please fuse these summaries into a single, coherent advisory report addressing the user objective.`;
+
+    return await activeReduceAgent(synthPrompt, { label: `map-reduce-synth-${groupName}` });
+  } else {
+    const item = items[0];
+    let filePath = &#x27;&#x27;;
+    let content = &#x27;&#x27;;
+
+    if (typeof item === &#x27;string&#x27;) {
+      filePath = item;
+      try {
+        const fullPath = projectDir ? path.resolve(projectDir, filePath) : path.resolve(filePath);
+        content = fs.readFileSync(fullPath, &#x27;utf8&#x27;);
+      } catch {
+        // fallback
+      }
+    } else if (item &amp;&amp; typeof item === &#x27;object&#x27;) {
+      filePath = item.path;
+      if (item.content !== undefined) {
+        content = item.content;
+      } else {
+        try {
+          const fullPath = projectDir ? path.resolve(projectDir, filePath) : path.resolve(filePath);
+          content = fs.readFileSync(fullPath, &#x27;utf8&#x27;);
+        } catch {
+          // fallback
+        }
+      }
+    }
+
+    const lines = content.split(/\r?\n/);
+    if (lines.length &lt;= 1) {
+      log(`Warning: single line in ${filePath} exceeds ceiling. Mapping as-is.`);
+      const serializedContent = serializeChunk(items, projectDir);
+      const chunkPrompt = `Analyze the following files from directory/chunk: ${groupName}
+User Objective: &quot;${userObjective}&quot;
+
+Provide a summary of findings, code patterns, and potential issues for this chunk.
+
+Codebase Chunk Files:
+${serializedContent}`;
+
+      return await activeAgent(chunkPrompt, { label: `map-reduce-chunk-${groupName}` });
+    }
+
+    const mid = Math.floor(lines.length / 2);
+    const leftLines = lines.slice(0, mid);
+    const rightLines = lines.slice(mid);
+
+    log(`Splitting file ${filePath} by line into two halves (${leftLines.length} lines, ${rightLines.length} lines)`);
+
+    const leftItem = {
+      path: filePath,
+      content: leftLines.join(&#x27;\n&#x27;)
+    };
+    const rightItem = {
+      path: filePath,
+      content: rightLines.join(&#x27;\n&#x27;)
+    };
+
+    const leftName = `${groupName}.1`;
+    const rightName = `${groupName}.2`;
+
+    const leftSummary = await mapOrSplit({
+      payload: [leftItem],
+      groupName: leftName,
+      userObjective,
+      activeAgent,
+      reduceAgent: activeReduceAgent,
+      maxChunkBytes,
+      projectDir,
+      log
+    });
+
+    const rightSummary = await mapOrSplit({
+      payload: [rightItem],
+      groupName: rightName,
+      userObjective,
+      activeAgent,
+      reduceAgent: activeReduceAgent,
+      maxChunkBytes,
+      projectDir,
+      log
+    });
+
+    log(`Synthesizing split line summaries for ${groupName}`);
+    const synthPrompt = `You are a codebase synthesizer. You are given several chunk summaries of a codebase analysis.
+User Objective: &quot;${userObjective}&quot;
+
+Chunk Summaries:
+--- Chunk: ${leftName} ---
+${leftSummary}
+
+--- Chunk: ${rightName} ---
+${rightSummary}
+
+Please fuse these summaries into a single, coherent advisory report addressing the user objective.`;
+
+    return await activeReduceAgent(synthPrompt, { label: `map-reduce-synth-${groupName}` });
+  }
+}</pre>
+<p><a class="button" href="../source-pages/map.html#L449">Open numbered source</a>
+<a href="../sources/map.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/split">Split oversized shards recursively</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">e2a6402805c21a2c4f9d5f77d470c0150c8c8d1695bf639296136bc6bff04120</span></p><p>Excerpt hash: <span class="path">66b8845268b93082f388000b64f249344db3a62886a6eec138971ebe3f332bf6</span></p></details></article></main></body></html>

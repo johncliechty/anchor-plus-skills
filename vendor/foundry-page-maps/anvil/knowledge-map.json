@@ -1,0 +1,380 @@
+{
+  "nodes": [
+    {
+      "id": "anvil-root",
+      "name": "Anvil Knowledge & Execution Architecture",
+      "title": "Anvil Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "anvil-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "anvil-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "anvil-root"
+      ],
+      "ring": 1,
+      "resource_id": "anvil-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "anvil-root"
+      ],
+      "ring": 1,
+      "resource_id": "anvil-tool-scripts-anvil-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "anvil-root"
+      ],
+      "ring": 1,
+      "resource_id": "anvil-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "anvil-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "anvil-root"
+      ],
+      "ring": 1,
+      "resource_id": "anvil-ref-researchprime-code-rewriting-tools",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "anvil-leaf-mat-1",
+      "name": "Anvil Agent & Execution Protocol (SKILL.md)",
+      "title": "Anvil Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "anvil-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-mat-2",
+      "name": "Anvil Human Guide (HUMAN.md)",
+      "title": "Anvil Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "anvil-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-mat-3",
+      "name": "Anvil Locked North Star (NORTH-STAR.md)",
+      "title": "Anvil Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "anvil-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-tool-1",
+      "name": "anvil_engine.py (scripts/anvil_engine.py)",
+      "title": "anvil_engine.py (scripts/anvil_engine.py)",
+      "parent_ids": [
+        "anvil-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-tool-scripts-anvil-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-tool-2",
+      "name": "test_anvil_engine.py (tests/test_anvil_engine.py)",
+      "title": "test_anvil_engine.py (tests/test_anvil_engine.py)",
+      "parent_ids": [
+        "anvil-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-tool-tests-test-anvil-engine-py",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-tool-3",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "anvil-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-tool-4",
+      "name": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "parent_ids": [
+        "anvil-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-shared-tool-mapping",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-tool-5",
+      "name": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "parent_ids": [
+        "anvil-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-shared-tool-foreman-lib",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "anvil-leaf-skill-1",
+      "name": "Gandalf Deep-Think Advisor",
+      "title": "Gandalf Deep-Think Advisor",
+      "parent_ids": [
+        "anvil-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "anvil-leaf-skill-2",
+      "name": "researchPrime Empirical Validator",
+      "title": "researchPrime Empirical Validator",
+      "parent_ids": [
+        "anvil-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "anvil-leaf-skill-3",
+      "name": "Ramanujan Math Certifier",
+      "title": "Ramanujan Math Certifier",
+      "parent_ids": [
+        "anvil-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-peer-ramanujan",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "anvil-leaf-ref-1",
+      "name": "Reference: RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "title": "Reference: RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "parent_ids": [
+        "anvil-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-ref-researchprime-code-rewriting-tools",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "anvil-leaf-ref-2",
+      "name": "Journal: 0007-dual-map-algorithm-math-to-code-and-visual-glossary",
+      "title": "Journal: 0007-dual-map-algorithm-math-to-code-and-visual-glossary",
+      "parent_ids": [
+        "anvil-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-journal-0007-dual-map-algorithm-math-to-co",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "anvil-leaf-ref-3",
+      "name": "Journal: 0006-anvil-v2-progressive-map-walkthrough-and-beta-readers",
+      "title": "Journal: 0006-anvil-v2-progressive-map-walkthrough-and-beta-readers",
+      "parent_ids": [
+        "anvil-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-journal-0006-anvil-v2-progressive-map-walk",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "anvil-leaf-ref-4",
+      "name": "Journal: 0005-einstein-gandalf-progressive-report-organization",
+      "title": "Journal: 0005-einstein-gandalf-progressive-report-organization",
+      "parent_ids": [
+        "anvil-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-journal-0005-einstein-gandalf-progressive-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "anvil-leaf-ref-5",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "anvil-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "anvil-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

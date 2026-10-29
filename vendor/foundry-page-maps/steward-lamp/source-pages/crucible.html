@@ -1,0 +1,360 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>crucible · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>crucible</h1>
+<p>other skill · frozen exact bytes</p><p class="path">Original: C:\dev\trio\crucible\SKILL.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 db6ac791ff4884ac84ea8c203e5bcb42a8772bc3b02bb178c591da46a7d5dca9</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.642493+00:00</time></p><p class="path">Captured from: C:/dev/trio/crucible/SKILL.md</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: db6ac791ff4884ac84ea8c203e5bcb42a8772bc3b02bb178c591da46a7d5dca9</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> ---</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> name: crucible</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> description: &gt;-</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>   Standalone production planning skill — the planning brain of the trio</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>   researchPrime (research) -&gt; Crucible (planning) -&gt; Foreman (build). Invoke it on</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   an intent (greenfield) or a messy existing project (brownfield) to forge a</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   vetted, gold-standard, Foreman-ready implementation plan WITHOUT drifting from</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   the project&#x27;s locked objective. Three you-approve stages — Stage 0 Intake &amp;</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   Framing (lock the North Star) -&gt; Stage 1 Master Plan -&gt; Stage 2 Implementation</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>   Plan + Foreman handoff — each refined by an adversarial Shark-Tank loop (3</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>   fresh-context Sharks; BLOCKER needs &gt;=2 to agree) steered by a persistent</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>   Deep-Think Synthesizer (steers, never decides) and decided by a context-free</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>   Judge plus the user (the convergence authority). A Node engine that IMPORTS</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>   Foreman&#x27;s durability/git/driver modules (never forks) and SPAWNS</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>   locate-plan.mjs as the machine well-formedness gate. STATUS (2026-08-24): engine</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>   LIVE and in regular use (depth bands, Speaking-Law decision asks, first-dry stop);</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>   current verified status lives in the foundry PLAN.md, never in this line.</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> ---</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20">20</a> ## North Star (LOCKED — John, 2026-08-25)</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> Given an intent or a messy existing project, Crucible forges the shortest gold-standard, Foreman-ready plan that cannot drift from the user-locked North Star — right-sized to the stakes, with the user approving only three compact gates.</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24">24</a> </span>
+<span class="source-line" id="L25"><a href="#L25">25</a> &lt;!-- ELEGANCE-LAW v2 --&gt;</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> ## The Elegance Law (locked by John — binding on this skill)</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28">28</a> Canonical text: `Skill Foundry/ELEGANCE.md`. Applies to ANY agent running this</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> skill on ANY host. If this block and a longer procedure below disagree, this</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> block wins.</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32">32</a> 1. **Approvals are ≤200 words** — what changes in his world, the recommendation,</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>    the one thing that gets worse. The artifact stays on disk and is named, not</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>    pasted. An approval obtained with a longer block is VOID.</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> 2. **Summaries are ≤150 words** — goal in one line, done / not done, ≤3 findings</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>    ranked by consequence, the single next decision. Never rounds, waves, seats,</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>    stamps, gate counts, or file inventories.</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> 3. **Default to the lightest band, without asking.** A heavier tier requires the</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>    first status line to NAME its trigger: irreversible or externally visible,</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>    inputs unconverged, a prior failure in this exact area, or he asked for it.</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> 4. **Needed-because line.** Any element he did not request carries one line:</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>    &quot;Needed because ___; dropping it costs ___.&quot; No line, no element.</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> 5. **Show a cut.** ONE dry round ends a review loop — never a streak. Every plan</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>    names something it removed; &quot;nothing cut&quot; is said aloud.</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> </span>
+<span class="source-line" id="L46"><a href="#L46">46</a> **THE VERIFICATION LAW** (added 2026-08-15 after its FOURTH recurrence — each of</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> the first three was written into a journal and recurred anyway):</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> </span>
+<span class="source-line" id="L49"><a href="#L49">49</a> 6. **Verify the claim you actually made, on the surface he actually uses.**</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>    &quot;It&#x27;s live / fixed / renders&quot; is a claim about HIS screen. That the server</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>    emits new bytes, that a build exited zero, or that assertions passed are</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>    claims about something else. Render it and look at it.</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> 7. **A symptom reported twice retires the first explanation.** Test the</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>    hypothesis; never repeat it. An explanation that makes his report false</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>    (&quot;it&#x27;s your cache&quot;, &quot;it&#x27;s a data issue&quot;) needs MORE evidence, not less.</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> 8. **Prefer a mechanism to an instruction.** If the same instruction is given</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>    every session, the instruction is the defect — build what removes it.</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> 9. **A correction that lives only in a journal or a memory has not been made.**</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>    Promote it to where it is loaded BEFORE the work starts.</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61">61</a> **Two laws these serve.** A gate that cannot see what the user sees is not a gate</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> — structure diffs are lints, and must be labelled as lints. And a guardrail is</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> never the whole product of a turn — if enforcement withholds output he already</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> paid for, show it anyway.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> &lt;!-- ELEGANCE-V2.1 addendum --&gt;</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> **What elegance IS (researchPrime-vetted, 2026-08-15):** the largest result</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> carried by the least machinery its user can actually hold — every element</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> forced by an INDEPENDENT citable need, nothing present the objective does not</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> pay for. Earned by iteration, never by skipping work: as simple as the task</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> allows, no simpler than a single datum permits.</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> </span>
+<span class="source-line" id="L72"><a href="#L72">72</a> **The Rabbit-Catcher (canonical battery: `ELEGANCE.md` Part II, ships with</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> the bundle):** the steering seat runs the full RC battery at PLAN APPROVAL</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> and on any NEW mid-run element; round boundaries ask only RC-6 (&quot;still on the</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> critical path?&quot;). Uncertain ⇒ PARK the element (zero further spend) + one</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> batched line in the next block the user already reads — never silent pursuit,</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> never ad-hoc interruption. Needs and hazards must be independent of their</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> proposer (no self-authored justification records); malleability work is</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> never cut as &quot;unused capability&quot;; guards are judged by RC-G, never by</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> retirement. Verdicts: KEEP / HOLD (with written trigger or budget) / CUT</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> (logged).</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83">83</a> **THE SPEAKING LAW (John, 2026-08-16 — ELEGANCE.md Part III):** every ask,</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> HALT, or summary this skill puts to the user describes the DECISION, never</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> the machinery (a gate ask took FOUR attempts because it kept narrating waves</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> and gates); a few plain sentences carrying the two-three details that matter</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> + where the full detail lives; genuinely complicated content goes in NUMBERED</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> BATCHES, one at a time, each ending &quot;OK so far?&quot;; no seat/stamp/gate</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> vocabulary in the sentence the user must read; every ask ends with a question</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> answerable in one word AND carries a recommendation (what you would choose +</span>
+<span class="source-line" id="L91"><a href="#L91">91</a> one line of why + alternatives when the choice has them + &quot;or tell me</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> something else&quot; — options are a convenience, never a cage).</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> **Engine-enforced since 2026-09-05 (John):** the Rabbit-Catcher battery runs INSIDE `runStage1` (after the phased plan) and `runStage2` (after the wave decomposition), BEFORE the Shark round — steering seat judges, review seat attacks the verdicts, CUT blocks, HOLD carries its trigger, the table rides the Shark draft; record: `ELEGANCE-PASS.md` / `elegance-pass.json` in the stage artifacts (`bin/elegance-hooks.mjs`, `drivers/elegance-pass.mjs`). Stage 2 also asks RC-8 (the wave-count question; adjacent waves that are one change merge, the adversary disputes, the record rides the draft — `ELEGANCE-RC8-stage2.md`).</span>
+<span class="source-line" id="L94"><a href="#L94">94</a> &lt;!-- /ELEGANCE-V2.1 --&gt;</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> &lt;!-- /ELEGANCE-LAW --&gt;</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> </span>
+<span class="source-line" id="L97"><a href="#L97">97</a> </span>
+<span class="source-line" id="L98"><a href="#L98">98</a> &gt; **Humans:** read `HUMAN.md` first. This file is the agent/engine protocol.</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a> # Crucible</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> </span>
+<span class="source-line" id="L102"><a href="#L102">102</a> Crucible is the **planning brain** of John&#x27;s skill trio: **researchPrime** (research)</span>
+<span class="source-line" id="L103"><a href="#L103">103</a> → **Crucible** (planning) → **Foreman** (build). It is a deliberately-invoked,</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> heavyweight planner that turns an intent — or a messy existing project — into a</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> **vetted, gold-standard, Foreman-ready implementation plan**, while **never</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> drifting** from the project&#x27;s locked objective.</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> </span>
+<span class="source-line" id="L108"><a href="#L108">108</a> &gt; **Tier definition (Heavy vs regular · always-cross-model · seat mapping):** canonical in `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → &quot;Skill tiers&quot;. A `-Heavy` run uses top-frontier models on EVERY seat regardless of the base session (delegate the frontier seat to a frontier-pinned sub-agent if the base session isn&#x27;t frontier); foundry skills are ALWAYS true cross-model. Do not re-define tiers locally.</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110">110</a> &gt; **Status (2026-08-24, elegance sweep): the engine is LIVE and in regular use.** The</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> &gt; three-stage pipeline, Shark-Tank round engine, Synthesizer + Judge, two-gate</span>
+<span class="source-line" id="L112"><a href="#L112">112</a> &gt; convergence, and researchPrime integration live in `bin/` and are exercised by</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> &gt; `node --test test/`; the machine well-formedness gate is Foreman&#x27;s real</span>
+<span class="source-line" id="L114"><a href="#L114">114</a> &gt; `locate-plan.mjs`, SPAWNED (never forked) so its exit code is forge-proof.</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> &gt; Per the foundry rule, do NOT trust this block for currency — the verified</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> &gt; per-skill status table is `Skill Foundry/PLAN.md`.</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> </span>
+<span class="source-line" id="L118"><a href="#L118">118</a> ## What Crucible is / is NOT</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> </span>
+<span class="source-line" id="L120"><a href="#L120">120</a> - **Is:** a standalone skill that forges a plan through framing, brainstorming, and</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   **Shark-Tank** refinement steered by a persistent **Deep-Think Synthesizer** and</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>   backed by researchPrime, then hands a Foreman-ready plan to the builder.</span>
+<span class="source-line" id="L123"><a href="#L123">123</a> - **Reuses, never forks:** imports Foreman&#x27;s `foreman-lib.mjs` (atomic checkpoints,</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>   budget, contract primitives), `git-hygiene.mjs`, and `makeAgentDriver` from</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>   `wave-workflow.js`; **spawns** `foreman/bin/locate-plan.mjs` as the well-formedness</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>   gate. Exactly one copy of each on disk.</span>
+<span class="source-line" id="L127"><a href="#L127">127</a> - **Is NOT:** a lightweight everyday planner (that&#x27;s Project-Manager), a code builder</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   (that&#x27;s Foreman), or an infinite-polishing machine.</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> </span>
+<span class="source-line" id="L130"><a href="#L130">130</a> ## Two guiding principles</span>
+<span class="source-line" id="L131"><a href="#L131">131</a> </span>
+<span class="source-line" id="L132"><a href="#L132">132</a> - **The inclusion test (the size rule):** every element must serve a North-Star</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   criterion; growth that serves the objective is welcome — only non-serving bloat is</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   cut or Grasscatched.</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> - **The Parable of the Oranges (real-intent foresight):** probe for the real goal,</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   bring expertise, think 2–3 steps ahead, add justified value, show the receipt.</span>
+<span class="source-line" id="L137"><a href="#L137">137</a> </span>
+<span class="source-line" id="L138"><a href="#L138">138</a> ## The pipeline — three you-approve stages</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140">140</a> 1. **Stage 0 — Intake &amp; Framing** → 🚦 the user **locks the North Star**. It opens with</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>    a **complexity triage** (`assessComplexity`): cheap intake signals (scope, novelty,</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>    stakes/irreversibility, unknowns) recommend a pipeline depth — **LITE** (single-pass,</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>    minimal/no Shark rounds for small/clear work), **FULL** (the full 3-stage + Shark-Tank</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>    machinery — the default), or **SPIKE-FIRST** (probe before planning when genuinely</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>    uncertain). Since 2026-08-25 (John-ratified card; Elegance rule 3) the band</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>    **AUTO-APPLIES and announces itself in the first status line — it never asks** (a</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>    confirm question was a fourth gate); an unsizable intake defaults to FULL **loudly**</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>    (&quot;DEFAULTED — triage could not size&quot;), so rigor is never silently downgraded and a</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>    small task never silently pays the FULL tax (journal 0087). The auto-band also writes</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>    the triage LOCK record, so the Stage-2 Foreman handoff&#x27;s fail-closed emit is satisfied. The triage only right-sizes *ceremony*: the North-Star lock, post-lock drift</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>    detection, the inclusion test, and full Shark-Tank rigor (when FULL) are unchanged in</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>    every band. Then greenfield Oranges framing, or a tiered brownfield ingest (T1</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>    inventory/dedupe → T2 reproduce-first + coverage → T3 delegate deep archaeology to</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>    researchPrime), with Confirmed/Inferred/Gap labels that gate. Drift detection begins</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>    **after** the lock.</span>
+<span class="source-line" id="L156"><a href="#L156">156</a> 2. **Stage 1 — Master Plan** → 🚦 the user **approves**. Oranges brainstorm</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>    (assumption-map → premortem → ideate), batch triage, a phased plan, then the</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>    Shark-Tank loop to convergence.</span>
+<span class="source-line" id="L159"><a href="#L159">159</a> 3. **Stage 2 — Implementation Plan** → 🚦 the user **approves** → the well-formedness</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>    gate → **Foreman handoff**. Wave decomposition with per-wave acceptance criteria</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>    (a one-line *done-when* + Given/When/Then for non-trivial waves), the Shark-Tank</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>    loop, then the emitted doc-trio + `foreman.config.json`.</span>
+<span class="source-line" id="L163"><a href="#L163">163</a> </span>
+<span class="source-line" id="L164"><a href="#L164">164</a> ### The hardening law (Stage 2 — MANDATORY; `bin/hardening-gate.mjs`, journal 0080)</span>
+<span class="source-line" id="L165"><a href="#L165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166">166</a> **A plan that ASSERTS a property must EMIT a mechanical gate for it.** This is the</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> sibling of the mockup-contract law (journal 0079): the plan does not get to *describe*</span>
+<span class="source-line" id="L168"><a href="#L168">168</a> a guarantee, it must emit the artifact that makes the guarantee checkable.</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170">170</a> It exists because Crucible planned, and Foreman built GREEN, a subsystem whose plan</span>
+<span class="source-line" id="L171"><a href="#L171">171</a> asserted *&quot;Strip is append-only; receipts are never lost&quot;* and *&quot;the steward never</span>
+<span class="source-line" id="L172"><a href="#L172">172</a> invents; unknown is spoken as unknown&quot;* — and shipped both as prose. The ledger was a</span>
+<span class="source-line" id="L173"><a href="#L173">173</a> bare `writeFileSync` read-modify-write, so two concurrent acts silently dropped</span>
+<span class="source-line" id="L174"><a href="#L174">174</a> receipts; a swallowed exception rendered a **broken** store as the cheerful *&quot;no</span>
+<span class="source-line" id="L175"><a href="#L175">175</a> projects&quot;* with an ambient queue badge of **0** (= &quot;nothing needs you&quot;).</span>
+<span class="source-line" id="L176"><a href="#L176">176</a> </span>
+<span class="source-line" id="L177"><a href="#L177">177</a> At Stage 2, run `checkPropertyGates({plan, waves, addsSurface})` — **enforced in engine**</span>
+<span class="source-line" id="L178"><a href="#L178">178</a> (`bin/apply-hardening-to-plan.mjs` + `writeDocTrio` fail-closed, journal **0081**). Draft injects</span>
+<span class="source-line" id="L179"><a href="#L179">179</a> the checklist; emit HALTs with `hardening-gate-failed` if still not pass:</span>
+<span class="source-line" id="L180"><a href="#L180">180</a> </span>
+<span class="source-line" id="L181"><a href="#L181">181</a> 1. **Durability claims are STORAGE claims.** &quot;append-only&quot; / &quot;never lost&quot; / &quot;single</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>    writer&quot; / &quot;atomic&quot; ⇒ the plan must name atomic write (temp + fsync + rename), a lock</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>    or documented serialization, **and a concurrency test**. A module that *validates* a</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>    rule does not *provide* it — say which layer provides it.</span>
+<span class="source-line" id="L185"><a href="#L185">185</a> 2. **Every surface-bearing wave emits a failure-state table**: dependency-missing,</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>    dependency-slow-or-killed, dependency-returns-garbage, backing-store-unreadable,</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>    empty-but-valid. Each row names the **status code AND the user-visible text**.</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>    **&quot;unknown&quot; and &quot;empty&quot; are DIFFERENT rows** — collapsing them is the single most</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>    common honesty defect across this codebase.</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> 3. **Any value crossing a process boundary as a delimited string** needs a delimiter</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>    guard in the plan (reject / escape / drop-and-report), not just in review.</span>
+<span class="source-line" id="L192"><a href="#L192">192</a> 4. **Any client-side poller against an endpoint that spawns a process** must be planned</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>    with visibility gating + failure backoff. Fixed-rate polling of a spawning endpoint</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>    is a standing BLOCKER.</span>
+<span class="source-line" id="L195"><a href="#L195">195</a> 5. **Sharks attack the plan for &quot;property asserted, no gate emitted&quot;** as a standard</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>    finding class.</span>
+<span class="source-line" id="L197"><a href="#L197">197</a> </span>
+<span class="source-line" id="L198"><a href="#L198">198</a> **The Shark Tank** is the adversarial review round: 3 independent fresh-context Sharks</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> (Skeptic / Contrarian / Analyst), each prompted to refute, each embedding the North</span>
+<span class="source-line" id="L200"><a href="#L200">200</a> Star + a rotated PM critique angle. **BLOCKER = ≥2 Sharks agree.** **The Synthesizer**</span>
+<span class="source-line" id="L201"><a href="#L201">201</a> is a persistent Director that steers but never decides; **the Judge** decides</span>
+<span class="source-line" id="L202"><a href="#L202">202</a> (cross-model when reachable, else a same-model fresh-context judge persona), and **the</span>
+<span class="source-line" id="L203"><a href="#L203">203</a> user is the final convergence authority**.</span>
+<span class="source-line" id="L204"><a href="#L204">204</a> </span>
+<span class="source-line" id="L205"><a href="#L205">205</a> ## Substrate (two modes)</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207">207</a> - **Default (subscription-only):** fresh-context Sharks + a same-model fresh-context</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>   Judge persona. Fully functional on the bare subscription.</span>
+<span class="source-line" id="L209"><a href="#L209">209</a> - **Enhanced (API keys / CLIs present):** a cross-model Judge at the lock gate + a</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>   reasoning Synthesizer, selected by reasoning-strength + family diversity, with</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   graceful degrade. Every run **stamps which model filled which role**.</span>
+<span class="source-line" id="L212"><a href="#L212">212</a> </span>
+<span class="source-line" id="L213"><a href="#L213">213</a> ## Files in this skill</span>
+<span class="source-line" id="L214"><a href="#L214">214</a> </span>
+<span class="source-line" id="L215"><a href="#L215">215</a> **Engine (Node — ESM `.mjs`):**</span>
+<span class="source-line" id="L216"><a href="#L216">216</a> - `bin/crucible-lib.mjs` — the contract layer: re-exports the imported Foreman</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   primitives, the checkpoint superset (`newCrucibleCheckpoint`), the three-stage state</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>   machine + HALT-gate set, and the containment-safe managed-git context.</span>
+<span class="source-line" id="L219"><a href="#L219">219</a> - `bin/agent.mjs` — the live `agent()` seam (`claude -p`), env-gated by</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   `CRUCIBLE_AGENT_LIVE=1`, stubbable in tests.</span>
+<span class="source-line" id="L221"><a href="#L221">221</a> - `bin/shark-tank.mjs` — the adversarial round engine (Sharks, cross-Shark finding</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   identity, ≥2-agree BLOCKER, inclusion-test demotion, dry-round detection).</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> - `bin/synthesizer.mjs` / `bin/judge.mjs` — the Director (steers, never decides; the</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>   fresh-eyes cold pass + isolation oracle) and the context-free deciding Judge.</span>
+<span class="source-line" id="L225"><a href="#L225">225</a> - `bin/gates.mjs` — the well-formedness gate (spawns `locate-plan.mjs`), the</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>   quality/convergence gate, and the post-lock tiered drift detector.</span>
+<span class="source-line" id="L227"><a href="#L227">227</a> - `bin/hardening-gate.mjs` — the **hardening law** (journal 0080): detects properties a</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>   plan ASSERTS; pure predicates; `renderPropertyGateChecklist()` emits plan text.</span>
+<span class="source-line" id="L229"><a href="#L229">229</a> - `bin/apply-hardening-to-plan.mjs` — inject + re-check; wired into `writeDocTrio` fail-closed</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   (journal **0081**).</span>
+<span class="source-line" id="L231"><a href="#L231">231</a> - `bin/research.mjs` — researchPrime integration (once up-front + cost-guarded per round).</span>
+<span class="source-line" id="L232"><a href="#L232">232</a> - `bin/stage0.mjs` / `bin/stage1.mjs` / `bin/stage2.mjs` — the three stage protocols.</span>
+<span class="source-line" id="L233"><a href="#L233">233</a> - `bin/band-profile.mjs` — LITE / SPIKE-FIRST / FULL ceremony profiles (cf-slick; depth → real path).</span>
+<span class="source-line" id="L234"><a href="#L234">234</a> - `bin/enhanced.mjs` / `bin/remote.mjs` — the CROSS-FAMILY verification seam (builds the</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   live role-routed agent from the Anchor dashboard prefs: Sharks/Judge on `review_family`,</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   steering on `coding_family` — `buildDefaultCrucibleRoutes` → the shared</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   `makeRoleRoutedAgent`; same family on both ⇒ honest `cross_model:false`) + the</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   push-at-approval-gates GitHub remote (never auto-pushes).</span>
+<span class="source-line" id="L239"><a href="#L239">239</a> - `bin/docs.mjs` — the living-doc + version-control layer.</span>
+<span class="source-line" id="L240"><a href="#L240">240</a> - `bin/self-run.mjs` — the dogfood self-run (drives Stage 0→1→2, proves convergence +</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>   HALT/resume, emits a zero-HALT doc-trio) — also the runnable entrypoint.</span>
+<span class="source-line" id="L242"><a href="#L242">242</a> - `bin/checklist.mjs` — the 5-gate Skill Productionization Checklist (the five</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>   North-Star criteria, made checkable) + the SKILL.md manifest checker.</span>
+<span class="source-line" id="L244"><a href="#L244">244</a> </span>
+<span class="source-line" id="L245"><a href="#L245">245</a> **Tests:** `test/*.test.mjs`, auto-discovered by `test/index.mjs`. The gate is</span>
+<span class="source-line" id="L246"><a href="#L246">246</a> `node --test test/`.</span>
+<span class="source-line" id="L247"><a href="#L247">247</a> </span>
+<span class="source-line" id="L248"><a href="#L248">248</a> ## How to invoke — the OPERATOR RUNBOOK (2026-07-11; a live session drives THIS, never an improvised protocol)</span>
+<span class="source-line" id="L249"><a href="#L249">249</a> </span>
+<span class="source-line" id="L250"><a href="#L250">250</a> 1. **Bind the live seam.** `CRUCIBLE_AGENT_LIVE=1`; build the cross-family agent via</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>    `buildLiveCrucibleAgent()` (`bin/enhanced.mjs` — Sharks/Judge on the dashboard&#x27;s `review_family`,</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>    steering on `coding_family`; never a hardwired family — 2026-09-04). Pass its ROUTES into the loop</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>    (`runMasterPlanLoop({ ..., routes })`) so the Judge&#x27;s stamp derives from where the judge role</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>    ACTUALLY dispatches (T7) — the default same-model Judge persona is the seat-down fallback, not</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>    the normal path.</span>
+<span class="source-line" id="L256"><a href="#L256">256</a> 2. **Stage 0** → `runStage0`/protocol: complexity triage AUTO-BANDS (announced, never asked —</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>    2026-08-25) + writes the triage lock; frame; candidate North Star. **Gate ergonomics (John&#x27;s</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>    locked preferences — SCOPE RECONCILED 2026-08-25):** the 07-16 show-the-artifact rule and the</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>    08-15 Elegance rule 1 (artifact on disk + ≤200-word ask; longer approvals VOID) are BOTH his</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>    locked words. Scope by artifact size, per his own later law and his live acceptances (0090/</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>    0091 first-attempt approvals with the draft on disk): the **North Star (a short document)</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>    still prints IN FULL at its lock ask** — the rule below stands verbatim for it and for any</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>    short approval artifact (amendment diffs). **Long artifacts (Master Plan, Implementation</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>    Plan) live on disk, named by path, with a ≤200-word decision block + print-on-request** —</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>    never a clipped dialog preview.</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>    &gt; **THE SHOW-THE-ARTIFACT RULE (locked by John, 2026-07-16): NEVER ask the user to approve/lock a</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>    &gt; North Star they have not just been SHOWN. At the moment of the ask, print the ENTIRE candidate</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>    &gt; North Star document — statement, success criteria, non-goals, risk taxonomy, foresight brief,</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>    &gt; every section, verbatim — to the screen in the message body. A file pointer is NOT showing it.</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>    &gt; A summary or paraphrase is NOT showing it. A clipped dialog preview is NOT showing it. If it was</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>    &gt; shown earlier but anything intervened since, print it again in full with the ask. The same</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>    &gt; discipline applies to every user-approval artifact (Stage-1 Master Plan, Stage-2 plan, amendment</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>    &gt; diffs): the user approves what is on the screen, never what is in a file.**</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>    &gt; **PROTOTYPE RULE (locked by John, 2026-07-18):** If the stage involves generating GUI prototypes or images, you MUST physically open them in the user&#x27;s local browser (e.g. via an HTML wrapper and `Start-Process chrome`) BEFORE asking for their approval. Asking for approval before they have seen the prototypes on their screen is strictly forbidden.</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>    If the user asked for research, DELIVER IT BEFORE the lock ask; present decisions ONE AT A TIME,</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>    each with 30-second plain-English context and a recommendation first.</span>
+<span class="source-line" id="L277"><a href="#L277">277</a> 3. **Stage 1** → `runStage1({ agent, northStar, depth, routes, artifactsDir, statusLog, ... })` —</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>    brainstorm → triage → phased plan → Shark loop. On the round cap it HALTs WITH the best draft +</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>    open findings attached and persisted (T5) — review those, never restart from zero.</span>
+<span class="source-line" id="L280"><a href="#L280">280</a> 4. **Stage 2** → `runStage2({ agent, northStar, masterPlan, outputDir, depth, routes, statusLog, ... })`</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>    — decompose → loop → approval → emit + well-formedness gate → Foreman handoff. A cap HALT emits the</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>    unapproved doc-trio to `&lt;outputDir&gt;/_unapproved-cap-draft` (gated, clearly not the handoff).</span>
+<span class="source-line" id="L283"><a href="#L283">283</a> 5. **Dogfood deterministically** (no model, no billing): `node bin/self-run.mjs [outputDir]`.</span>
+<span class="source-line" id="L284"><a href="#L284">284</a> 6. **LITE / SPIKE / FULL bands (cf-slick 2026-07-22):** locked Stage-0 depth is resolved by</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>    `bin/band-profile.mjs` into a real ceremony profile — **not** label-only.</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>    - **LITE:** single-pass brainstorm (no full assumption→premortem→wide ideation), roundCap 1,</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>      2 concurrent Sharks, research-upfront off by default, low call budget. Still NS-embedded +</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>      inclusion test + user approval + locate-plan.</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>    - **SPIKE-FIRST:** probe required (`spikeProbe=`) before Stage-1 plan ceremony; then re-band.</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>    - **FULL:** full Oranges order, roundCap 5, 3 concurrent Sharks, effort-scoped caps + human-lockable.</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>    Explicit `roundCap` still wins over the profile default.</span>
+<span class="source-line" id="L292"><a href="#L292">292</a> </span>
+<span class="source-line" id="L293"><a href="#L293">293</a> &gt; **⏱ STATUS UPDATES TO CHAT — the launch pattern (2026-07-11 fix).** A Shark-Tank stage loop runs</span>
+<span class="source-line" id="L294"><a href="#L294">294</a> &gt; 20-40 min; a driving session that calls a stage FOREGROUND is frozen and CANNOT post updates — the</span>
+<span class="source-line" id="L295"><a href="#L295">295</a> &gt; silent-cadence bug. So when a session drives Crucible:</span>
+<span class="source-line" id="L296"><a href="#L296">296</a> &gt; 1. **Pass `statusLog: &#x27;&lt;outputDir&gt;/_crucible-status.log&#x27;`** into `runStage1`/`runStage2` — the loop</span>
+<span class="source-line" id="L297"><a href="#L297">297</a> &gt;    then writes the LOCKED Status table there at t=0, every ~10 min, and on stop (`bin/status-heartbeat.mjs`;</span>
+<span class="source-line" id="L298"><a href="#L298">298</a> &gt;    OFF when `statusLog` is omitted, so tests/dogfood stay silent). Crucible had NO emitter before this.</span>
+<span class="source-line" id="L299"><a href="#L299">299</a> &gt; 2. **Run the stage detached from the agent job tree.** P1 2026-07-25 (journals 0020–0027,</span>
+<span class="source-line" id="L300"><a href="#L300">300</a> &gt;    0064–0067): stages launched via the agent&#x27;s background Bash (`run_in_background: true`) or</span>
+<span class="source-line" id="L301"><a href="#L301">301</a> &gt;    `Start-Process -WindowStyle Hidden` died SILENTLY 9+ times — external job-object SIGKILL, not</span>
+<span class="source-line" id="L302"><a href="#L302">302</a> &gt;    catchable in-process (0066 proved even installed lifetime guards + a watchdog all died with a</span>
+<span class="source-line" id="L303"><a href="#L303">303</a> &gt;    frozen heartbeat and 0-byte stderr). The PROVEN survivor (0067, ~44 min end-to-end) is a</span>
+<span class="source-line" id="L304"><a href="#L304">304</a> &gt;    **Windows Scheduled-Task breakaway**:</span>
+<span class="source-line" id="L305"><a href="#L305">305</a> &gt;    `schtasks /create /tn crucible-&lt;name&gt; /tr &quot;node &lt;launcher&gt; ...&quot; /sc once /st &lt;now+1min&gt; /f`</span>
+<span class="source-line" id="L306"><a href="#L306">306</a> &gt;    then `schtasks /run /tn crucible-&lt;name&gt;` (delete after). For FULL runs use schtasks; a</span>
+<span class="source-line" id="L307"><a href="#L307">307</a> &gt;    foreground tool-owned node call also survives (0027) when the operator can hold the window.</span>
+<span class="source-line" id="L308"><a href="#L308">308</a> &gt;    In-process guards now cover BOTH stages (last-crash.json + HALT.json + per-round BEST-DRAFT.md),</span>
+<span class="source-line" id="L309"><a href="#L309">309</a> &gt;    but they cannot catch a job-object kill — the launch path is the real mitigation.</span>
+<span class="source-line" id="L310"><a href="#L310">310</a> &gt; 3. **Arm the cadence at launch** (`ScheduleWakeup` ~600s or `/loop 10m`) and **each tick READ the tail</span>
+<span class="source-line" id="L311"><a href="#L311">311</a> &gt;    of `_crucible-status.log` (shell-free) and POST the latest status to chat in the LOCKED Status-table</span>
+<span class="source-line" id="L312"><a href="#L312">312</a> &gt;    format — canonical definition in ONE place: the canonical `AGENTS.md` → &quot;Long-run progress updates&quot;</span>
+<span class="source-line" id="L313"><a href="#L313">313</a> &gt;    (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer).</span>
+<span class="source-line" id="L314"><a href="#L314">314</a> &gt;    The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick —</span>
+<span class="source-line" id="L315"><a href="#L315">315</a> &gt;    the engine log is the data source; the SESSION composes the Journal row from `journal/`.**</span>
+<span class="source-line" id="L316"><a href="#L316">316</a> &gt; 4. **Stop** at the stage&#x27;s user-approval HALT (the loop&#x27;s `stop()` fires the final table automatically).</span>
+<span class="source-line" id="L317"><a href="#L317">317</a> &gt; The chat window is the PRIMARY channel; the log is the data source. Only a session reaches chat.</span>
+<span class="source-line" id="L318"><a href="#L318">318</a> </span>
+<span class="source-line" id="L319"><a href="#L319">319</a> Every real run writes a `journal/runs/` training record (Skill Foundry AGENTS.md &quot;Run capture&quot;).</span>
+<span class="source-line" id="L320"><a href="#L320">320</a> </span>
+<span class="source-line" id="L321"><a href="#L321">321</a> ## Standing rules (sleep-cycle promotion 2026-08-15 — journals 0086-0089, 0005, 0069)</span>
+<span class="source-line" id="L322"><a href="#L322">322</a> </span>
+<span class="source-line" id="L323"><a href="#L323">323</a> - **A criterion names the SURFACE, not the capability.** &quot;The chamber can</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>   render M1&quot; was green while the page deleted it; the criterion is &quot;M1 is ON</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>   THE USER&#x27;S SCREEN after open,&quot; and its gate must look there. (0086)</span>
+<span class="source-line" id="L326"><a href="#L326">326</a> - **Right-size on task signals, never invocation vocabulary.** Invoking</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>   Crucible by name is not a request for FULL; converged inputs + fixed scope</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>   + reversible ⇒ LITE. An `assessComplexity` schema mismatch must be a loud</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>   refusal — `emptyIntake:true` silently defaulting to FULL is how ceremony</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>   taxes small tasks. (0087)</span>
+<span class="source-line" id="L331"><a href="#L331">331</a> - **The declared testCommand must be machine-countable** — a Stage-2 lint on</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>   runner names; a &quot;gate&quot; that cannot emit counts is not a gate. (0088)</span>
+<span class="source-line" id="L333"><a href="#L333">333</a> - **A plan that replaces a surface names the DELETION** — acceptance asserts</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>   the old surface is ABSENT, or the replacement ships beside its ghost. (0089)</span>
+<span class="source-line" id="L335"><a href="#L335">335</a> - **agy takes model LABEL strings** — stale short ids kill every Shark in a</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>   round and the wreckage reads as a dry round; the abstain path (never</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>   silent-drop) exists for exactly this. (0005)</span>
+<span class="source-line" id="L338"><a href="#L338">338</a> - **`approved=true` must emit, full stop.** A Stage-2 that re-tanks an</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>   approved plan without emitting is a defect (0069/0076&#x27;s force-emit exists</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>   for it) — approval is the user&#x27;s convergence authority being exercised.</span>
+<span class="source-line" id="L341"><a href="#L341">341</a> - **DRY ≠ clean — read OPEN-FINDINGS at every gate.** A quiet review round means</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>   the reviewers stopped AGREEING, not that the plan is defect-free: on LITE&#x27;s two</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>   seats, real blocker-severity findings ride through as single-reviewer catches</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>   (0091: four of four were real). The gate ask now says this; honor it. (0091, rule 9)</span>
+<span class="source-line" id="L345"><a href="#L345">345</a> </span>
+<span class="source-line" id="L346"><a href="#L346">346</a> ## Usage journal (sleep-loop feed — append after every REAL run)</span>
+<span class="source-line" id="L347"><a href="#L347">347</a> </span>
+<span class="source-line" id="L348"><a href="#L348">348</a> At the end of any real (non-test) run of this skill, append ONE entry to</span>
+<span class="source-line" id="L349"><a href="#L349">349</a> `journal/` in this skill folder as `NNNN-&lt;slug&gt;.md` (next number = **max(existing NNNN)+1 over the WHOLE directory** — gandalf accumulated 32 colliding ids because sessions read the low numbers as the frontier; APPEND-ONLY —</span>
+<span class="source-line" id="L350"><a href="#L350">350</a> a correction is a new entry, never an edit). Keep it under ~15 lines, honest over</span>
+<span class="source-line" id="L351"><a href="#L351">351</a> polished, with the 7 canonical fields (see the Skill Foundry&#x27;s</span>
+<span class="source-line" id="L352"><a href="#L352">352</a> `planning/portfolio-program/src/journal.mjs`): id, skill, situation, context,</span>
+<span class="source-line" id="L353"><a href="#L353">353</a> observation, outcome (worked | friction | failed | refused), provenance</span>
+<span class="source-line" id="L354"><a href="#L354">354</a> (genuine-execution | seeded — only genuine-execution corroborates).</span>
+<span class="source-line" id="L355"><a href="#L355">355</a> No journal entries → the sleep loop has nothing to learn from.</span></pre></main></body></html>

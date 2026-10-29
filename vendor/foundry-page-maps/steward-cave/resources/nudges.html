@@ -1,0 +1,132 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Nudges without a model turn · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="nudges" data-anchor-id="a-nudges-derive">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Nudges without a model turn</h1>
+<p class="intro">Derive one fact-based suggestion at a boundary. Dates, deck waits, one/two-week starvation and seeds have explicit conditions; the dated interrupt lane is separate.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.535959+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/nudges.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 3264f9e5ce97635a1c4ded19ed7fb48b37e1d65954f949ebf0c388de3ffcf76a</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/nudges.py · lines 75–194</p><pre>def derive(initiatives, facts=None, seeds=None, working=None, today=None, strip_ages=None, goal_last_at=None,
+           dismissed=None, scope_goal=None, campaign_pid=&quot;&quot;, head_lead=None, kinds=None):
+    &quot;&quot;&quot;The one nudge for this boundary, or None. ``scope_goal`` narrows it to one goal&#x27;s conversation (the Campaign
+    page&#x27;s place): only that goal&#x27;s dated parts, deck waits and starvation; seeds and the free moment belong to the
+    High Seat&#x27;s brief. ``dismissed`` is the receipts file read (``read_dismissed``). ``head_lead`` is (pid, part name)
+    of the brief&#x27;s own lead sentence: a part the head already names is never nudged too (Grok W3, RC-3). ``kinds``
+    limits the candidates to those kinds (None = all): one lane per item (John, 2026-10-03) - the Cave&#x27;s interrupt lane
+    asks for ``{&quot;dated&quot;}``, its panel and the Star Chart&#x27;s goal places for the rest, so a dated item shows once.&quot;&quot;&quot;
+    today = today or date.today()
+    inits = [i for i in initiatives or () if isinstance(i, dict) and i.get(&quot;status&quot;) not in (&quot;done&quot;, &quot;parked&quot;)]
+    if scope_goal:
+        inits = [i for i in inits if i.get(&quot;id&quot;) == scope_goal]
+    dismissed = dismissed or {}
+    working = working or set()
+    seeds = [s for s in (seeds if isinstance(seeds, (list, tuple)) else ()) if isinstance(s, dict)]   # rows, never a count
+    at_hand = _goals_at_hand(initiatives, working)
+    lead_pid, lead_part = (str(head_lead[0] or &quot;&quot;), str(head_lead[1] or &quot;&quot;)) if isinstance(head_lead, (list, tuple)) and len(head_lead) == 2 else (&quot;&quot;, &quot;&quot;)
+
+    def _is_lead(p):
+        name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;&quot;)
+        return bool((lead_pid and p.get(&quot;pid&quot;) == lead_pid) or (lead_part and name == lead_part))
+    cands = []
+
+    def add(kind, subject, fact, text, why, acts, goal=None, rank=0):
+        key = fact_key(kind, subject, fact)
+        if (kinds is not None and kind not in kinds) or key in dismissed:
+            return
+        cands.append({&quot;kind&quot;: kind, &quot;key&quot;: key, &quot;fact&quot;: str(fact), &quot;text&quot;: text, &quot;why&quot;: why, &quot;acts&quot;: acts, &quot;goal&quot;: goal, &quot;rank&quot;: rank})
+
+    # 1. a dated thing near while he is elsewhere
+    best = None
+    for i in inits:
+        for p in i.get(&quot;parts&quot;) or ():
+            if not _open(p) or p.get(&quot;broken&quot;):
+                continue
+            d = _iso(p.get(&quot;date&quot;))
+            if d is None or d &lt; today or (d - today).days &gt; DATED_WINDOW_DAYS:
+                continue
+            if not scope_goal and i[&quot;id&quot;] in at_hand:
+                continue      # his own goal at hand: the head says it, not a nudge
+            if best is None or d &lt; best[0]:
+                best = (d, i, p)
+    if best:
+        d, i, p = best
+        name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;a part&quot;)
+        # in the goal&#x27;s own place the goal is already open on screen: no link to it (Grok W3)
+        opens = [{&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s?open=%s&quot; % (campaign_pid, i[&quot;id&quot;]), &quot;label&quot;: &quot;open the goal&quot;}] if campaign_pid and not scope_goal else []
+        if p.get(&quot;pid&quot;):
+            opens.insert(0, {&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s&quot; % p[&quot;pid&quot;], &quot;label&quot;: &quot;open the cockpit&quot;})
+        add(&quot;dated&quot;, p.get(&quot;id&quot;) or name, d.isoformat(),
+            &quot;Excuse me: %s is due %s (%s).&quot; % (name, when_words(d, today), i.get(&quot;name&quot;) or &quot;a goal&quot;),
+            &quot;the part&#x27;s date on the Campaign record: %s&quot; % d.isoformat(), opens, goal=i[&quot;id&quot;], rank=1)
+
+    # 2. an initiative that needs him and is only on deck - unless the head&#x27;s own sentence already leads with it
+    for i in inits:
+        for p in i.get(&quot;parts&quot;) or ():
+            if _open(p) and p.get(&quot;seat&quot;) == &quot;deck&quot; and p.get(&quot;needs_you&quot;) and not _is_lead(p):
+                wait = re.sub(r&quot;^waiting on you[:\s]*&quot;, &quot;&quot;, str(p.get(&quot;state&quot;) or &quot;&quot;), flags=re.I).strip(&quot; .&quot;) or &quot;a wait&quot;
+                name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;it&quot;)
+                add(&quot;deck_wait&quot;, p.get(&quot;id&quot;), wait,
+                    &quot;%s waits on you and is only on deck — make it active?&quot; % name,
+                    &quot;its record: needs you · %s&quot; % wait[:120],
+                    [{&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: p.get(&quot;id&quot;), &quot;seat&quot;: &quot;active&quot;, &quot;label&quot;: &quot;make it active&quot;}] + ([{&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s&quot; % p[&quot;pid&quot;], &quot;label&quot;: &quot;open&quot;}] if p.get(&quot;pid&quot;) else []),
+                    goal=i[&quot;id&quot;], rank=2)
+                break
+
+    # 3. a top goal starving
+    for i in inits:
+        tier = i.get(&quot;tier&quot;)
+        if tier not in STARVE_DAYS or i[&quot;id&quot;] in at_hand:
+            continue
+        ages = [int((strip_ages or {}).get(p.get(&quot;pid&quot;), 0) or 0) for p in i.get(&quot;parts&quot;) or () if p.get(&quot;pid&quot;)]
+        age = max(ages) if ages else 0
+        last = (goal_last_at or {}).get(i[&quot;id&quot;])
+        if not age and last:
+            try:
+                age = (today - _iso(last)).days if _iso(last) else 0
+            except Exception:
+                age = 0
+        if age &gt;= STARVE_DAYS[tier]:
+            # the cockpit offered is the one whose age was quoted when it is unseated, else the first unseated (Grok W3)
+            unseated = [p for p in i.get(&quot;parts&quot;) or () if _open(p) and p.get(&quot;kind&quot;) in (&quot;project&quot;, &quot;effort&quot;) and not p.get(&quot;seat&quot;)]
+            unseated.sort(key=lambda p: -int((strip_ages or {}).get(p.get(&quot;pid&quot;), 0) or 0))
+            cockpit = unseated[0] if unseated else None
+            acts = ([{&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: cockpit.get(&quot;id&quot;), &quot;seat&quot;: &quot;deck&quot;, &quot;label&quot;: &quot;put %s on deck&quot; % str(cockpit.get(&quot;target&quot;) or cockpit.get(&quot;text&quot;) or &quot;it&quot;)[:40]}] if cockpit else [])
+            if campaign_pid:
+                acts.append({&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s?open=%s&quot; % (campaign_pid, i[&quot;id&quot;]), &quot;label&quot;: &quot;open the goal&quot;})
+            add(&quot;starving&quot;, i[&quot;id&quot;], age // 7,
+                &quot;%s is a Tier-%d goal untouched for %d days — %s&quot; % (i.get(&quot;name&quot;) or &quot;a goal&quot;, tier, age, &quot;put one of its cockpits on deck?&quot; if cockpit else &quot;pick it up?&quot;),
+                &quot;the strip&#x27;s anti_starvation_age_days of its cockpits, else the days since its last turn: %d&quot; % age, acts, goal=i[&quot;id&quot;], rank=3)
+
+    if not scope_goal:
+        # 4. a seed that reads like a goal
+        for s in seeds or ():
+            text = &quot; &quot;.join(str(s.get(&quot;text&quot;) or &quot;&quot;).split())
+            words = text.split()
+            if len(words) &gt;= 6 and not text.endswith(&quot;?&quot;) and (_SEED_VERBS.search(text) or re.search(r&quot;\bby\b&quot;, text, re.I)):
+                add(&quot;seed&quot;, s.get(&quot;id&quot;), s.get(&quot;id&quot;),
+                    &quot;the seed ‘%s’ reads like a goal — make it one?&quot; % (text[:90] + (&quot;…&quot; if len(text) &gt; 90 else &quot;&quot;)),
+                    &quot;a seed on the Campaign&#x27;s strip, %d words with a verb&quot; % len(words),
+                    [{&quot;act&quot;: &quot;promote&quot;, &quot;seed&quot;: s.get(&quot;id&quot;), &quot;tier&quot;: 2, &quot;area&quot;: &quot;&quot;, &quot;done_when&quot;: text[:200], &quot;label&quot;: &quot;make it a goal (tier 2)&quot;}] + ([{&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s&quot; % campaign_pid, &quot;label&quot;: &quot;open the seeds&quot;}] if campaign_pid else []),
+                    rank=4)
+                break
+        # 5. a free moment: nothing active, something on deck - never the part whose deck wait he already put off
+        # (that would be the same &quot;make it active?&quot; twice)
+        put_off = {k.split(&quot;:&quot;, 2)[1] for k in dismissed if k.startswith(&quot;deck_wait:&quot;)}
+        active = [p for i in inits for p in i.get(&quot;parts&quot;) or () if _open(p) and p.get(&quot;seat&quot;) == &quot;active&quot;]
+        deck = sorted([(i, p) for i in inits for p in i.get(&quot;parts&quot;) or () if _open(p) and p.get(&quot;seat&quot;) == &quot;deck&quot; and str(p.get(&quot;id&quot;))[:40] not in put_off and not _is_lead(p)],
+                      key=lambda t: (t[1].get(&quot;seat_order&quot;) if isinstance(t[1].get(&quot;seat_order&quot;), int) else 999))
+        if not active and deck:
+            i, p = deck[0]
+            name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;it&quot;)
+            add(&quot;free&quot;, p.get(&quot;id&quot;), p.get(&quot;id&quot;),
+                &quot;A free moment: %s is on deck (%s) — make it active?&quot; % (name, i.get(&quot;name&quot;) or &quot;a goal&quot;),
+                &quot;nothing is active; the top of On deck&quot;, [{&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: p.get(&quot;id&quot;), &quot;seat&quot;: &quot;active&quot;, &quot;label&quot;: &quot;make it active&quot;}], goal=i[&quot;id&quot;], rank=5)
+
+    if not cands:
+        return None
+    cands.sort(key=lambda c: c[&quot;rank&quot;])
+    return cands[0]</pre>
+<p><a class="button" href="../source-pages/nudges.html#L75">Open numbered source</a>
+<a href="../sources/nudges.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/nudge">Derive a boundary suggestion</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">3264f9e5ce97635a1c4ded19ed7fb48b37e1d65954f949ebf0c388de3ffcf76a</span></p><p>Excerpt hash: <span class="path">24dc3ffe107fb124eb859bbfad28cc0d254978ca4ee3d1f42f702218fbf7815f</span></p></details></article></main></body></html>

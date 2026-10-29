@@ -1,0 +1,69 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Configured families for specialist work · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="family-seats" data-anchor-id="a-seats-resolveSeats">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Configured families for specialist work</h1>
+<p class="intro">Resolve coding and review seats through saved Anchor preferences and subscription transports. Selection is not a native receipt of the served model.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.540994+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/seating.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 73073c16afe49488dd54eef2a4e50524ad99e80b460c772a433b25e7403288b0</p></aside>
+<p class="path">C:/dev/Ecgberht/engine/seating.mjs · lines 253–309</p><pre>export function resolveSeats(opts = {}) {
+  const prefs = loadAnchorPrefs(opts);
+  const coding_driver = familyToSubscriptionDriver(prefs.coding_family);
+  const review_driver = familyToSubscriptionDriver(prefs.review_family);
+
+  const seat = {
+    coding_family: prefs.coding_family,
+    review_family: prefs.review_family,
+    default_cli: prefs.default_cli,
+    coding_driver,
+    review_driver,
+    /** Honest stamp: false when same-family; true when families differ. */
+    cross_model: prefs.coding_family !== prefs.review_family,
+    prefs_source: prefs.source,
+    subscription_only: true,
+    /** Production seats never use raw xAI HTTP + API key. */
+    xai_http_seat: false,
+    xai_api_key_path: false,
+    product_model_ids: [],
+    drivers: {
+      coding: coding_driver,
+      review: review_driver,
+    },
+  };
+
+  // Fail closed if a driver is missing or not a subscription CLI
+  const drivers = [coding_driver, review_driver];
+  for (const d of drivers) {
+    if (!d || !PRODUCTION_SEAT_DRIVERS.includes(d)) {
+      seat.ok = false;
+      seat.error = &#x27;non_subscription_driver&#x27;;
+      seat.message = `Seat driver must be subscription CLI only; got ${d}`;
+      return seat;
+    }
+  }
+
+  // Raw HTTP grok driver name is forbidden for production seats
+  if (coding_driver === &#x27;grok&#x27; || review_driver === &#x27;grok&#x27;) {
+    seat.ok = false;
+    seat.error = &#x27;xai_http_seat_forbidden&#x27;;
+    seat.message =
+      &#x27;Production seats must use grok-cli subscription transport, not raw grok HTTP&#x27;;
+    return seat;
+  }
+
+  const productHits = findProductModelIds(seat);
+  if (productHits.length) {
+    seat.ok = false;
+    seat.error = &#x27;product_model_id_forbidden&#x27;;
+    seat.message = `Seat stamp must not carry product model IDs: ${productHits.join(&#x27;, &#x27;)}`;
+    seat.product_model_ids = productHits;
+    return seat;
+  }
+
+  seat.ok = true;
+  return seat;
+}</pre>
+<p><a class="button" href="../source-pages/seats.html#L253">Open numbered source</a>
+<a href="../sources/seats.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/talk">Answer or propose bounded work</a> · <a target="_top" href="../index.html#process/policy">Resolve family, capability and honest service</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">73073c16afe49488dd54eef2a4e50524ad99e80b460c772a433b25e7403288b0</span></p><p>Excerpt hash: <span class="path">6e9b8551f011de262bd68ec17365d955a420f8de9a1bea8f9fb076410064e68b</span></p></details></article></main></body></html>

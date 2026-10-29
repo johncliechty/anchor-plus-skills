@@ -55,8 +55,9 @@ def allowed(target, real_git, allow_under):
     """A destructive verb runs only inside a code job's own worktree; unprovable means no."""
     if not allow_under:
         return False
+    _nw = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
-        r = subprocess.run([real_git, "-C", target, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=30)
+        r = subprocess.run([real_git, "-C", target, "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=30, creationflags=_nw)
         top = os.path.normcase(os.path.realpath(r.stdout.strip())) if r.returncode == 0 and r.stdout.strip() else ""
     except Exception:
         top = ""
@@ -82,8 +83,9 @@ def main(argv):
             "merge in a shared tree wiped other sessions' unsaved work. To land work, use a code job (it lands safely,\n"
             "file by file); to discard your own edit, rewrite the file. Tell John if you need this verb.\n" % (verb, target))
         return 1
+    _nw = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
-        return subprocess.call([real_git] + list(argv))
+        return subprocess.call([real_git] + list(argv), creationflags=_nw)
     except KeyboardInterrupt:
         return 130
 

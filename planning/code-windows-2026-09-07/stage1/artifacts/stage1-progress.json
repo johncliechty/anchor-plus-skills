@@ -1,6 +1,0 @@
-{
-  "phase": "stage1-shark-loop",
-  "status": "error",
-  "ts": "2026-09-08T02:17:46.891Z",
-  "error": "human-lockable: The plan is ready for your call. The reviewers have stopped finding problems they agree on, though 21 single-reviewer concern(s) stay listed for your eyes (OPEN-FINDINGS.json). Approving locks this draft as the Master Plan; challenging costs another review round. Recommendation: approve — the concerns left are single-reviewer catches, worth a read but none met the two-reviewer bar; challenge instead if one of them names something you care about. The full draft is on disk (BEST-DR"
-}

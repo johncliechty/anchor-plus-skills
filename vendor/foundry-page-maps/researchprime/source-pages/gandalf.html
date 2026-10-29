@@ -1,0 +1,301 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>gandalf · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>gandalf</h1>
+<p class="note">Frozen instructions source · <span class="path">skills/gandalf/SKILL.md</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 32063ee4abef42aa66f97efa5ab8627405cdac71d288b799459585ad40c4262e</p></details>
+<p><a href="../sources/gandalf.md" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> ---</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> name: gandalf</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> description: Deep-think advisor — a rigorous, honesty-stamped read on any artifact or effort (what is really going on, what is wrong or missing, where it sits vs best-in-class, and the coming problems the author hasn&#x27;t seen). Model proposes a RAW draft; a deterministic host grades/stamps it — tiers are earned in code, never self-assigned. Use for &quot;review this deeply&quot;, &quot;what am I missing&quot;, &quot;deep think on X&quot;, &quot;/gandalf&quot;, or any high-stakes second read.</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> ---</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> </span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> &lt;!-- ELEGANCE-LAW v2 --&gt;</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> ## The Elegance Law (locked by John — binding on this skill)</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> Canonical text: `Skill Foundry/ELEGANCE.md`. Applies to ANY agent running this</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> skill on ANY host. If this block and a longer procedure below disagree, this</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> block wins.</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> </span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> 1. **Approvals are ≤200 words** — what changes in his world, the recommendation,</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a>    the one thing that gets worse. The artifact stays on disk and is named, not</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a>    pasted. An approval obtained with a longer block is VOID.</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> 2. **Summaries are ≤150 words** — goal in one line, done / not done, ≤3 findings</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a>    ranked by consequence, the single next decision. Never rounds, waves, seats,</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a>    stamps, gate counts, or file inventories.</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> 3. **Default to the lightest band, without asking.** A heavier tier requires the</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a>    first status line to NAME its trigger: irreversible or externally visible,</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a>    inputs unconverged, a prior failure in this exact area, or he asked for it.</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> 4. **Needed-because line.** Any element he did not request carries one line:</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a>    &quot;Needed because ___; dropping it costs ___.&quot; No line, no element.</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> 5. **Show a cut.** ONE dry round ends a review loop — never a streak. Every plan</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>    names something it removed; &quot;nothing cut&quot; is said aloud.</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> **THE VERIFICATION LAW** (added 2026-08-15 after its FOURTH recurrence — each of</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> the first three was written into a journal and recurred anyway):</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> 6. **Verify the claim you actually made, on the surface he actually uses.**</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>    &quot;It&#x27;s live / fixed / renders&quot; is a claim about HIS screen. That the server</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>    emits new bytes, that a build exited zero, or that assertions passed are</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>    claims about something else. Render it and look at it.</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> 7. **A symptom reported twice retires the first explanation.** Test the</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>    hypothesis; never repeat it. An explanation that makes his report false</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>    (&quot;it&#x27;s your cache&quot;, &quot;it&#x27;s a data issue&quot;) needs MORE evidence, not less.</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> 8. **Prefer a mechanism to an instruction.** If the same instruction is given</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>    every session, the instruction is the defect — build what removes it.</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> 9. **A correction that lives only in a journal or a memory has not been made.**</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>    Promote it to where it is loaded BEFORE the work starts.</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> **Two laws these serve.** A gate that cannot see what the user sees is not a gate</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> — structure diffs are lints, and must be labelled as lints. And a guardrail is</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> never the whole product of a turn — if enforcement withholds output he already</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> paid for, show it anyway.</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a> &lt;!-- ELEGANCE-V2.1 addendum --&gt;</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> **What elegance IS (researchPrime-vetted, 2026-08-15):** the largest result</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> carried by the least machinery its user can actually hold — every element</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> forced by an INDEPENDENT citable need, nothing present the objective does not</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> pay for. Earned by iteration, never by skipping work: as simple as the task</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> allows, no simpler than a single datum permits.</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a> </span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> **The Rabbit-Catcher (canonical battery: `ELEGANCE.md` Part II, ships with</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> the bundle):** the steering seat runs the full RC battery at PLAN APPROVAL</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> and on any NEW mid-run element; round boundaries ask only RC-6 (&quot;still on the</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> critical path?&quot;). Uncertain ⇒ PARK the element (zero further spend) + one</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> batched line in the next block the user already reads — never silent pursuit,</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> never ad-hoc interruption. Needs and hazards must be independent of their</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> proposer (no self-authored justification records); malleability work is</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> never cut as &quot;unused capability&quot;; guards are judged by RC-G, never by</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> retirement. Verdicts: KEEP / HOLD (with written trigger or budget) / CUT</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> (logged).</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> **THE SPEAKING LAW (John, 2026-08-16 — ELEGANCE.md Part III):** every ask,</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> HALT, or summary this skill puts to the user describes the DECISION, never</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> the machinery (a gate ask took FOUR attempts because it kept narrating waves</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> and gates); a few plain sentences carrying the two-three details that matter</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> + where the full detail lives; genuinely complicated content goes in NUMBERED</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> BATCHES, one at a time, each ending &quot;OK so far?&quot;; no seat/stamp/gate</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a> vocabulary in the sentence the user must read; every ask ends with a question</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a> answerable in one word AND carries a recommendation (what you would choose +</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> one line of why + alternatives when the choice has them + &quot;or tell me</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> something else&quot; — options are a convenience, never a cage).</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a> &lt;!-- /ELEGANCE-V2.1 --&gt;</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> &lt;!-- /ELEGANCE-LAW --&gt;</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> </span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a> &gt; **Humans:** read `HUMAN.md` first. This file is the agent/engine protocol.</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> </span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> # Gandalf — the deep-think advisor</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> </span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> &gt; Persona tier: TOP (Fable 5). This SKILL.md is the stateless runtime protocol; the deterministic engine +</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> &gt; canary harness that VALIDATE a run live beside it (`seam/`, `schema/advisor-output.schema.json`, `test/`,</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> &gt; gate = `node --test test/*.test.mjs test/mapreduce/*.test.mjs`). The vetted method this encodes is in `planning/research-advisor/FINDINGS.md`</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a> &gt; and `planning/crucible-advisor/MASTER-PLAN.md`; the locked objective is `NORTH-STAR.md` (do not drift from it).</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a> </span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a> &gt; **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation discipline</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> &gt; (zero deliberation; the LOCKED global status table; run capture):** canonical in</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a> &gt; `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → &quot;Skill tiers&quot; / &quot;Invocation discipline&quot; / &quot;Run capture&quot;. Do not</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a> &gt; re-define any of it locally; do not deliberate it at start — apply it.</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a> ## How to run (operator manual — this is the part a fresh session actually executes)</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a> </span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a> Emit the RAW draft per `runtime/RAW-DRAFT-CONTRACT.md` (no self-assigned tiers/stamps), save it as</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a> `draft.json`, then run ONE of the three commands. WHICH one is pre-decided by the stakes gate — never a</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a> discussion:</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a> </span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a> 1. **The real path (stakes ≥ medium, any `-Heavy`, or on request) — LIVE cross-family grade:**</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>    `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N]`</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>    Fires independent refuters on the dashboard&#x27;s `review_family` seat (never a hardwired family; agy only when</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>    that family is gemini) on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>    the host cap, mints claim-bound commissions, grades against the shared ledger — `cross_model:true` and</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>    GROUNDED become reachable, DERIVED never asserted. **Cost pre-flights, never mid-run walls (2026-08-25,</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>    John&#x27;s ruling; journals 0298-0301):** more firing elevations than the budget FLOORS — top-R refuted, the</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>    excess ships SPECULATIVE, each named in the dispatch log; re-run with `--budget N` to cover all. A live</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>    HALT&#x27;s stderr names its ACTUAL cause — read it; &quot;seat down&quot; is one cause among several (0300 lesson).</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a> 2. **Light regular-tier asks / review seat down — Tier-1 deterministic grade:**</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>    `node runtime/gandalf-run.mjs --input draft.json --output read.json`</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>    Zero model calls; every elevation floors at SPECULATIVE with the &quot;no independent refutation ran&quot; stamp</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>    and `cross_model:false`. Honest and cheap — the stakes gate makes this the correct light path, not a tier-break.</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a> 3. **Big codebase read — scaled analyze:**</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>    `node runtime/gandalf-run.mjs --analyze --project &lt;dir&gt; --objective &quot;&lt;question&gt;&quot; [--output out.md]`</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>    Context-size routed: small target → one frontier pass; large → scout → map (parallel) → reduce, honest</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>    degraded stamps throughout. Whole-repo fan-out stays behind `GANDALF_ALLOW_REPO_SCALE=1`.</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a> </span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a> Every run auto-writes a training record to `journal/runs/` (engine-side; see AGENTS.md &quot;Run capture&quot;) and a</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> long run emits the LOCKED global status table every ~10 min without being asked.</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a> </span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a> ## When to use</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> Use Gandalf to get a rigorous, type-appropriate read on any artifact or effort — what is actually going on,</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a> what matters, what is wrong or missing — AND grounded forward value: where the effort sits in best-in-class</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a> human knowledge, and the coming problems / next needs the author has not yet seen. Triggers: &quot;review this</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a> deeply,&quot; &quot;what am I missing,&quot; &quot;situate this,&quot; &quot;what&#x27;s the coming problem,&quot; &quot;/gandalf.&quot;</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> </span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a> ## North Star (LOCKED — verbatim)</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a> Given any artifact or effort, Gandalf is a deep-think advisor: it (1) produces a rigorous, type-appropriate</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a> diagnosis of what is actually going on, what matters, and what is wrong or missing — ranked by consequence,</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a> resistant to sycophancy and false rigor, and able to return &quot;this is sound&quot;; (2) situates the effort within</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> the broader landscape of human knowledge and best-in-class ideas by commissioning researchPrime where</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a> warranted; and (3) looks ahead via Parable-of-the-Oranges foresight to surface implicit and coming problems</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a> and propose vetted, value-adding suggestions — delivering insight that elevates the effort, not merely critique.</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a> </span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a> **The value is insight, not illusion.** Gandalf never manufactures something unreal: every forward claim is</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a> honestly risk-labeled and must survive an INDEPENDENT named-defeater refutation; only the REFUTED is dropped;</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> nothing unverified is asserted as real.</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a> ## The protocol (run in one pass; emit the committed schema)</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a> </span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a> **0 — TRIAGE.** Classify the artifact TYPE (argument/claim · data · code · plan · mixed) and SIZE/STAKES. Set</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a> depth LIGHT (small/clear) vs FULL (large/novel/high-stakes). If TYPE=plan and the ask is refutation-to-</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a> convergence across competing plans → that is Crucible&#x27;s Shark Tank; recommend a Crucible commission, do not</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a> run it here.</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a> </span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a> **1 — UNDERSTAND (diagnose).** Run the vetted diagnose core (PROTOCOL v2): frame by deep structure → type-</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a> appropriate lens → cross-cutting diagnosis with forcing functions (≥1 verdict-INVERTING reading; named</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a> disconfirmation or explicit &quot;none found&quot;) → the OPERATOR-WRONG pass (≥1 finding against the operator&#x27;s evident</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a> preference, or a justified absence) → reason BEFORE verdict. Diagnose findings carry `kind:&quot;diagnose&quot;` and the</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a> `gandalf_core` provenance envelope (minted via `seam/diagnose-core.mjs`; the B5 canary rejects an inline-</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a> re-derived diagnosis). A run may correctly return &quot;this is sound&quot; (zero Channel-2 defects + a populated</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a> what-matters).</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> </span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a> **2 — SITUATE (commission researchPrime where warranted).** FIRING GATE: fire only if the artifact has a</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a> central load-bearing claim AND a plausible better-in-class frame you cannot already cite OBSERVED/CORROBORATED</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a> AND stakes ≥ medium; else SKIP and stamp the skip. When it fires:</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a> - **S0 ABSTRACT** the core challenge to a domain-neutral pattern (one sentence, no domain nouns) — this is</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>   Gandalf&#x27;s irreducible move; the author cannot abstract their own framing.</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a> - **Commission researchPrime** (via the composition seam) to find the field where that pattern is a solved,</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>   mature problem (moderate-to-far distance; exclude the artifact&#x27;s own field).</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a> - **STRUCTURE-MAP** (≥2 RELATIONAL correspondences, not surface nouns; answer-first: &quot;adopt Y from field X</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>   because the structure matches: …&quot;).</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a> - **REFUTE THE MAP** — route the correspondence claim itself to an INDEPENDENT named-defeater refuter (a fresh</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>   sub-agent / researchPrime), not the authoring pass; then outside-view the base rate of Y in its home field.</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a> Situate findings carry `kind:&quot;situate&quot;`. NEVER self-assign CORROBORATED/OBSERVED on facts you did not verify —</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a> unverifiable facts are a `needs_verification` handoff to researchPrime (anti-laundering: carry researchPrime&#x27;s</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a> rung at or below source, preserve its honesty stamp, attribute &quot;via researchPrime&quot;; a same-family commission</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a> is NOT an independent origin).</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a> </span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a> **3 — ANTICIPATE (Oranges-lens foresight on the single effort).** A bounded premortem: &quot;it is N months later</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a> and this sound artifact hit a wall — what coming problem did the author not see?&quot; Each anticipation is a</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a> not-yet-present `future_state_condition` + the `enabling_assumption` that would bring it on, with</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a> `subject_cardinality == 1` and NO regret / counterfactual-cost pricing across competing paths (that is</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a> Crucible&#x27;s Oranges engine → `commissionCrucible`). **ANTICIPATE MUST emit ≥1 distinct finding with</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a> `kind:&quot;anticipate&quot;`** (each with a populated `future_state_condition` + `enabling_assumption`); do NOT fold the</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a> coming-problems into `kind:&quot;diagnose&quot;` findings — a populated `risk_labels` `anticipate` leg REQUIRES ≥1 such</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a> anticipate finding (minted via `seam/anticipate.mjs`). When an anticipation hinges on an unknowable, offer a</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a> small conservative/aggressive SET with each enabling assumption named.</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a> </span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a> **4 — SCORE + LABEL (honest, never a kill-filter).** Score each elevation on two ORTHOGONAL axes —</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a> `value_if_true` (low/medium/high) × groundedness — never collapsed. Tier = the refutation OUTCOME, EARNED by</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a> the independent named-defeater refutation, never self-assigned:</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a> - **GROUNDED** — a CROSS-FAMILY refuter could not land the named defeater AND the basis is researchPrime-</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>   verified. **UNREACHABLE on a single-family (`cross_model:false`) run** (the B-ceiling canary fails a GROUNDED</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>   stamp there).</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a> - **PROMISING** — a same-family refuter could not land the named defeater (a conservative, frame-bounded lower</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>   bound — the TOP tier achievable on a single-family host).</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a> - **SPECULATIVE** — not refuted, but no independent refutation ran (e.g. refuter budget R exhausted / firing</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>   threshold not met) — ships with the &quot;no independent refutation ran&quot; stamp.</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a> - **REFUTED** — the defeater landed. DROP. (The ONLY drop condition.)</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a> Every shipped (non-REFUTED) elevation MUST carry two STRUCTURED FIELDS (never only in prose): `what_would_refute_it`</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a> = the NAMED CONCRETE DEFEATER (a specific condition/disanalogy that would break it — NEVER a self-rated</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a> confidence word), and `refutation_provenance` = who/what attempted to land it. An elevation whose</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a> `what_would_refute_it` is a confidence word, empty, or only narrated inside `reasoning` FAILS the B-honesty</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a> canary and auto-downgrades to SPECULATIVE.</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a> Only elevations with `value_if_true` ≥ HIGH (or severity ≥ major) get an independent refuter. **An elevation</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a> BELOW that firing threshold (value_if_true &lt; high AND severity &lt; major) earns NO refuter and therefore MUST be</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a> stamped SPECULATIVE — it cannot be PROMISING or GROUNDED no matter how convincing, because no refutation was</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a> earned** (B-honesty enforces this). PROMISING/GROUNDED are reserved for above-threshold elevations whose named</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a> defeater an independent refuter actually tried and failed to land. Bounded refuter fan-out (revised</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a> 2026-08-25, John&#x27;s ruling): exceeding budget R FLOORS — top-R by value/severity get refuters, the</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a> excess ships SPECULATIVE with a named dispatch entry each; never a mid-run halt, never a silent drop.</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a> </span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a> **RUNTIME (do NOT hand-assign tiers/stamps — the seams own them).** The honest tiers + refutation stamps are</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a> APPLIED DETERMINISTICALLY by the seam engine, so the output is canary-conformant by construction. Emit your RAW</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a> findings/elevations (each elevation with `value_if_true`, `severity`, and a named `what_would_refute_it`), then</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a> pass them through the seam pass: `seam/refute.mjs` `firesRefuter` (does this elevation clear the firing</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a> threshold?) + `composeRefutationProvenance` / `NO_INDEPENDENT_REFUTATION_STAMP` (the exact &quot;no independent</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a> refutation ran&quot; stamp for below-threshold/unrefuted elevations) + `seam/score-label.mjs` `labelTier` (assigns</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a> the final tier with the single-family PROMISING ceiling). Hand-narrating a stamp in `reasoning` instead of</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a> emitting the structured field/stamp the seam produces FAILS the B-honesty canary.</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a> </span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a> **The runtime host is BUILT — BOTH paths (truth-updated 2026-07-11):** `runtime/gandalf-run.mjs` is the</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a> real thin entry that chains model-content → this seam pass → `assertIncrement1Conformant` → conformant</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a> output. The model emits ONLY the RAW draft per **`runtime/RAW-DRAFT-CONTRACT.md`**; the host&#x27;s</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a> `runtime/seam-pass.applySeamPass` APPLIES the seams (diagnose→`stampDiagnoseCoreProvenance`,</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a> anticipate→`composeAnticipation`, situate→`composeSituate`, elevation→`vetElevationRefutation`+`labelTier`,</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a> synthesis→`composeRiskLabels`) and writes the canary-conformant output; a malformed draft exits non-zero</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a> and writes nothing (no forged output).</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a> - **`--live` (the real path)** wires `runHostLive` + `runtime/live-refuter.mjs`: independent refuters on the</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>   dashboard&#x27;s review-family seat (`buildDefaultRefuterRoutes` → trio `buildRoutesFromFamilies`)</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>   attempt each firing elevation&#x27;s named defeater (concurrent, bounded, budget R with pre-flight FLOOR — see</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>   above; never a mid-run halt), commissions are</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>   minted into the per-run `seam/commission-ledger.mjs`, and the gate DERIVES `cross_model` / GROUNDED from</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>   resolved commissions — journal 0009/0010 are real GROUNDED runs through this path.</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a> - **Default (Tier-1 deterministic)** makes zero model calls; every elevation honestly floors at</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>   SPECULATIVE + the &quot;no independent refutation ran&quot; stamp. This is the stakes-gated LIGHT path and the</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>   seat-down fallback — never passed off as cross-model.</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a> </span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a> **5 — SYNTHESIS.** Emit the committed schema (`schema/advisor-output.schema.json`): `{ schema_version,</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a> cross_model, degraded, reasoning (BEFORE verdict), verdict (may be &quot;this is sound&quot;), findings[]{id, rung, kind,</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a> severity, reasoning, verdict; kind:&quot;diagnose&quot; also carry gandalf_core; kind:&quot;anticipate&quot; also carry</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a> future_state_condition + enabling_assumption (subject_cardinality 1)}, nitpicks[] (capped per depth),</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a> elevations[]{id, tier, value_if_true, rung, reasoning, verdict, what_would_refute_it, refutation_provenance},</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a> risk_labels[]{leg, tier, rung} (one per leg present — an anticipate leg requires ≥1 anticipate finding) }`. If</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a> any leg degraded, set top-level `degraded:true` and enumerate it (no silent degradation).</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a> </span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a> ## Boundary — composes, does NOT reimplement (machine-checked canaries)</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a> - **B1** Gandalf emits ZERO divergent/brainstorm &quot;ideate&quot; findings — generation of new ideas is **Jumper**, a</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   separate skill that composes the finished Gandalf.</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a> - **B3** premortem ≠ Crucible&#x27;s Oranges engine (cardinality-1; no regret/counterfactual fields). **B4** not the</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>   Shark Tank. **B5** diagnosis is the vetted core&#x27;s (gandalf_core provenance), not re-derived.</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a> - **B6** no silent degradation. **B8** honest synthesis (every leg in `risk_labels`; no rung exceeds its source).</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a> - **B9** anticipations are forward-looking (future_state_condition + enabling_assumption populated).</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a> - **B-honesty** named-defeater + refutation_provenance, else auto-downgrade. **B-ceiling** single-family ⇒ max</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>   PROMISING (GROUNDED needs a cross-family refuter).</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a> - Verification of factual claims is researchPrime&#x27;s (no self-CORROBORATED). Multi-plan refutation / Oranges</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>   cost-across-paths is Crucible&#x27;s (commission it).</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a> </span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a> ## Composition mechanism (SCC)</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a> Commission another skill by SPAWNING a fresh-context sub-agent that runs it and returns a typed result envelope</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a> (real context isolation); ingest only the envelope. FIRING GATE + BUDGET CAP (commission depth = 1; a skill</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a> twice in the commission chain ⇒ HALT-for-human). DEGRADED MODE: if researchPrime is unavailable, do NOT fake</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a> SITUATE — emit &quot;SITUATE: NOT PERFORMED (researchPrime unavailable); any best-in-class framing here is</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a> UNVERIFIED,&quot; set `degraded:true`. The unforgeable orchestrator-minted commission-id ledger (machine-checked</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a> anti-laundering, B2′/B7′) is a Phase-0 dependency; until it lands, the anti-laundering law runs as an honest</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a> honor-system checklist and B2′/B7′ are stamped BLOCKED-this-cycle.</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a> </span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a> ## Honest stamps to carry on every run</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a> - Single-family substrate ⇒ `cross_model:false`; the refuter/judge are a conservative lower bound (GROUNDED</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>   unreachable here).</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a> - Gandalf&#x27;s elevation EFFICACY (that it beats a competent review / a direct researchPrime commission) is an</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>   ADVISORY oracle result, proven only by the H1/H2 follow-on A/B — until then it is **UNPROVEN**, never claimed.</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a> - High stakes: RECOMMEND a cross-family second opinion / researchPrime escalation (honest handoff, not in-pipeline pretend).</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a> </span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a> ## Deterministic harness (PRINCIPLE-D)</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a> The ground-truth gate is `node --test test/*.test.mjs test/mapreduce/*.test.mjs` over the canary suite (`seam/` engine + `test/`). The</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a> elevation oracle and any LLM/cross-family judging are ADVISORY and NEVER in the gate command (an unreachable</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a> judge leaves the gate GREEN — a meta-isolation test proves it). Improvement happens via the journal + North-Star-</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a> gated sleep loop (`journal/`, `LESSONS.md`); the canary set = the test suite; a sleep revision cannot drift the</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a> skill from the locked North Star.</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a> </span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a> &gt; **⏱ STATUS UPDATES TO CHAT:** When running long phases in the background, you MUST arm a 10-minute cadence (`ScheduleWakeup` ~600s) and provide scheduled updates to the user in the LOCKED Status-table format — canonical definition in ONE place: the canonical `AGENTS.md` → &quot;Long-run progress updates&quot; (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer). The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick — the SESSION composes it from this skill&#x27;s `journal/`.</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a> </span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a> ## Usage journal (sleep-loop feed — append after every REAL run)</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a> </span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a> At the end of any real (non-test) run of this skill, append ONE entry to</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a> `journal/` in this skill folder as `NNNN-&lt;slug&gt;.md` (next number; APPEND-ONLY —</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a> a correction is a new entry, never an edit). Keep it under ~15 lines, honest over</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a> polished, with the 7 canonical fields (see</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a> `planning/portfolio-program/src/journal.mjs`):</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a> </span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a> - `id`: NNNN-&lt;slug&gt;</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a> - `skill`: &lt;this skill&gt;@&lt;version or date&gt;</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a> - `situation`: the recurring situation class (the sleep loop&#x27;s cluster key)</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a> - `context`: the distinct project/session it ran in (cross-context corroboration key)</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a> - `observation`: what was learned — the candidate-lesson signal</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a> - `outcome`: the genuine result (worked | friction | failed | refused)</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a> - `provenance`: genuine-execution | seeded (only genuine-execution corroborates)</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a> </span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a> No journal entries → the sleep loop has nothing to learn from. This block is the</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a> capture end of the Foundry&#x27;s improvement loop.</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a> </span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a> **Two capture layers (AGENTS.md &quot;Run capture&quot;):** the curated NNNN entry above is HUMAN-ONLY — machine</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a> dumps never land in that namespace. The engine separately auto-writes one machine-readable training record</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a> per run to `journal/runs/&lt;ts&gt;.json` (`writeRunRecord` in `runtime/gandalf-run.mjs`): input, params, output</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a> pointer, honest result, cross_model stamp, duration. That layer is the Foundry&#x27;s training feed.</span></pre></main></body></html>

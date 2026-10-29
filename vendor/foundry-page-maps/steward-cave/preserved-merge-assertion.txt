@@ -1,0 +1,7 @@
+Preserved merge-candidate assertion replay: 942d109fb221e3cf9f0ae5bd8309ff3efc5d009d
+Original test body; register reads and git HEAD resolve to exact preserved candidate bytes. No campaign writes.
+Traceback (most recent call last):
+  File "<stdin>", line 25, in <module>
+  File "942d109fb221e3cf9f0ae5bd8309ff3efc5d009d/test_maps.py", line 336, in test_payload_and_existing_register_preserve_all_prior_rows
+AssertionError
+Actual added-row count = 0; required count = 2. HEAD already contains both Cave rows after commit/merge.

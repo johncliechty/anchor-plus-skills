@@ -1,0 +1,39 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Read, situate, anticipate · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="protocol" data-anchor-id="a-operator">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Reusable material</p><h1>Read, situate, anticipate</h1>
+<p class="intro">The operating protocol and its three distinct reasoning legs; this branch starts from the operator instructions.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/SKILL.md · lines 92–118</p><pre>## How to run (operator manual — this is the part a fresh session actually executes)
+
+Emit the RAW draft per `runtime/RAW-DRAFT-CONTRACT.md` (no self-assigned tiers/stamps), save it as
+`draft.json`, then run ONE of the three commands. WHICH one is pre-decided by the stakes gate — never a
+discussion:
+
+1. **The real path (stakes ≥ medium, any `-Heavy`, or on request) — LIVE cross-family grade:**
+   `node runtime/gandalf-run.mjs --live --input draft.json --output read.json [--budget N]`
+   Fires independent refuters on the dashboard&#x27;s `review_family` seat (never a hardwired family; agy only when
+   that family is gemini) on every firing elevation (value_if_true ≥ HIGH / severity ≥ major), CONCURRENT under
+   the host cap, mints claim-bound commissions, grades against the shared ledger — `cross_model:true` and
+   GROUNDED become reachable, DERIVED never asserted. **Cost pre-flights, never mid-run walls (2026-08-25,
+   John&#x27;s ruling; journals 0298-0301):** more firing elevations than the budget FLOORS — top-R refuted, the
+   excess ships SPECULATIVE, each named in the dispatch log; re-run with `--budget N` to cover all. A live
+   HALT&#x27;s stderr names its ACTUAL cause — read it; &quot;seat down&quot; is one cause among several (0300 lesson).
+2. **Light regular-tier asks / review seat down — Tier-1 deterministic grade:**
+   `node runtime/gandalf-run.mjs --input draft.json --output read.json`
+   Zero model calls; every elevation floors at SPECULATIVE with the &quot;no independent refutation ran&quot; stamp
+   and `cross_model:false`. Honest and cheap — the stakes gate makes this the correct light path, not a tier-break.
+3. **Big codebase read — scaled analyze:**
+   `node runtime/gandalf-run.mjs --analyze --project &lt;dir&gt; --objective &quot;&lt;question&gt;&quot; [--output out.md]`
+   Context-size routed: small target → one frontier pass; large → scout → map (parallel) → reduce, honest
+   degraded stamps throughout. Whole-repo fan-out stays behind `GANDALF_ALLOW_REPO_SCALE=1`.
+
+Every run auto-writes a training record to `journal/runs/` (engine-side; see AGENTS.md &quot;Run capture&quot;) and a
+long run emits the LOCKED global status table every ~10 min without being asked.
+</pre>
+<p><a class="button" href="../source-pages/skill.html#L92">Open numbered source</a>
+<a href="../sources/skill.md" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/entry">Point to the artifact and decision</a> · <a target="_top" href="../index.html#process/cli">First program: parse CLI arguments</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">32063ee4abef42aa66f97efa5ab8627405cdac71d288b799459585ad40c4262e</span></p><p>Excerpt hash: <span class="path">772e725f30262256bd646e87c1d0011ff25c60fc6362f229832082ccae8c4beb</span></p></details></article></main></body></html>

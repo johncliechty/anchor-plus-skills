@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Capture obligations and gaps · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="capture" data-anchor-id="a-capture">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Reusable material</p><h1>Capture obligations and gaps</h1>
+<p class="intro">Foundry requires paired human/machine run records. Conversation, journal-update and usage hooks are separate mechanisms; they do not prove every resource access or complete accounting.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.624421+00:00</time></p><p class="path">Captured from: AGENTS.md</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 9ce37401032dca449eaf0a5d902daaa1bdfec802a8e0ca20d3f6cf7b320ba793</p></aside>
+<p class="path">AGENTS.md · lines 138–158</p><pre>### Run capture for training — EVERY job leaves a machine-readable record (added 2026-07-11, John&#x27;s directive)
+
+Every foundry/trio skill run captures its work in TWO layers under the skill&#x27;s `journal/`:
+
+1. **The human entry (unchanged):** the curated `NNNN-&lt;slug&gt;.md` — 7 fields, ≤15 lines, one per real run.
+   Id = **max(existing NNNN)+1 over the WHOLE directory** — never read the low numbers as the frontier
+   (gandalf accumulated 32 colliding ids that way; journal 0299).
+   This layer stays HUMAN-ONLY: no machine dumps in the `NNNN` namespace, ever (the Gandalf journal drowned
+   under 460 auto-dumped files and its sleep-loop signal died — that is the failure mode this split prevents).
+2. **The training record (NEW, required):** `journal/runs/&lt;UTC-timestamp&gt;-&lt;runid&gt;.json` — machine-readable,
+   committed, written by the ENGINE where one exists (Foreman run-live, Crucible, researchPrime rounds, Gandalf
+   host, Jumper CLI) and by the operating agent for prompt-only skills. Schema (keep flat, keep small):
+   `{ skill, tier, started, ended, input, params, output, result, cross_model, models, duration_s, journal_ref }`
+   where `input` = the task/prompt (or a path pointer when large), `params` = the decisive knobs (stakes, fanOut,
+   roundCap, wave range…), `output` = pointer(s) to the deliverable(s), `result` = the honest outcome
+   (verdict/grade/GO-HALT/converged + one-line note), `journal_ref` = the NNNN entry it pairs with.
+   Large payloads go NEXT TO the record as files in the same `runs/` dir, pointed to — never inlined.
+   A crash storm collapses to ONE aggregated record. These records are the Foundry&#x27;s TRAINING FEED
+   (sleep-loop distillation, few-shot exemplars, regression corpora) — they only have value if they are
+   written EVERY run, so an engine that finishes a job without its run record is a defect.
+</pre>
+<p><a class="button" href="../source-pages/foundry.html#L138">Open numbered source</a>
+<a href="../sources/foundry.md" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/capture">Capture dialogue and journal-change receipts</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">9ce37401032dca449eaf0a5d902daaa1bdfec802a8e0ca20d3f6cf7b320ba793</span></p><p>Excerpt hash: <span class="path">c2f202c2c42aa4eab2419c41c6f86f82b30da2ab6ea0cdc313c23495ccf83306</span></p></details></article></main></body></html>

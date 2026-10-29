@@ -1,0 +1,308 @@
+{
+  "nodes": [
+    {
+      "id": "einstein-root",
+      "name": "Einstein Knowledge & Execution Architecture",
+      "title": "Einstein Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "einstein-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "einstein-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "einstein-root"
+      ],
+      "ring": 1,
+      "resource_id": "einstein-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "einstein-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "einstein-root"
+      ],
+      "ring": 1,
+      "resource_id": "einstein-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "einstein-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "einstein-root"
+      ],
+      "ring": 1,
+      "resource_id": "einstein-peer-steward-project",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "einstein-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "einstein-root"
+      ],
+      "ring": 1,
+      "resource_id": "einstein-ref-teaching",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "einstein-leaf-mat-1",
+      "name": "Einstein Agent & Execution Protocol (SKILL.md)",
+      "title": "Einstein Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "einstein-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "einstein-leaf-tool-1",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "einstein-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "einstein-leaf-tool-2",
+      "name": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "parent_ids": [
+        "einstein-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-shared-tool-mapping",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "einstein-leaf-tool-3",
+      "name": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "parent_ids": [
+        "einstein-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-shared-tool-foreman-lib",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "einstein-leaf-skill-1",
+      "name": "Project Steward (Lamp / Seal)",
+      "title": "Project Steward (Lamp / Seal)",
+      "parent_ids": [
+        "einstein-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-peer-steward-project",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "einstein-leaf-skill-2",
+      "name": "Ramanujan Mathematical Partner",
+      "title": "Ramanujan Mathematical Partner",
+      "parent_ids": [
+        "einstein-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-peer-ramanujan",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "einstein-leaf-skill-3",
+      "name": "Gandalf Pedagogical Reviewer",
+      "title": "Gandalf Pedagogical Reviewer",
+      "parent_ids": [
+        "einstein-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "einstein-leaf-ref-1",
+      "name": "Reference: teaching.md",
+      "title": "Reference: teaching.md",
+      "parent_ids": [
+        "einstein-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-ref-teaching",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "einstein-leaf-ref-2",
+      "name": "Journal: 0054-preserve-unchanged-slide-image-hashes-across-refinements",
+      "title": "Journal: 0054-preserve-unchanged-slide-image-hashes-across-refinements",
+      "parent_ids": [
+        "einstein-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-journal-0054-preserve-unchanged-slide-i",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "einstein-leaf-ref-3",
+      "name": "Journal: 0053-shared-axis-density-caption-and-bin-scaling",
+      "title": "Journal: 0053-shared-axis-density-caption-and-bin-scaling",
+      "parent_ids": [
+        "einstein-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-journal-0053-shared-axis-density-captio",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "einstein-leaf-ref-4",
+      "name": "Journal: 0052-stream-interruption-large-deck-builder",
+      "title": "Journal: 0052-stream-interruption-large-deck-builder",
+      "parent_ids": [
+        "einstein-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-journal-0052-stream-interruption-large-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "einstein-leaf-ref-5",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "einstein-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "einstein-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

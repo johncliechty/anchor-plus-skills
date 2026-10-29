@@ -1,114 +1,67 @@
----
-name: Anvil
-icon: assets/icon.jpg
-description: Programmatic codebase comprehension, Parable-of-the-Oranges proactive one-trip complete staff work (understanding the real goal, thinking 2-3 steps ahead, and solving the whole problem with a clear recommendation), Essential Core vs. Scaffolding decomposition, interactive block-by-block empirical validation, lossless LibCST/parso best-in-class code remapping (with explicit Null Space, Get-Data/Do-Analysis/Create-Output purity, and Hypothesis differential equivalence), and paper-to-code verification with native MathML and persistent Anvil Agent dialogue.
----
-
-<!-- ELEGANCE-LAW v2 -->
-## The Elegance Law (locked by John — binding on this skill)
-
-Canonical text: `Skill Foundry/ELEGANCE.md`. Applies to ANY agent running this
-skill on ANY host. If this block and a longer procedure below disagree, this
-block wins.
-
-1. **Approvals are ≤200 words** — what changes in his world, the recommendation,
-   the one thing that gets worse. The artifact stays on disk and is named, not
-   pasted. An approval obtained with a longer block is VOID.
-2. **Summaries are ≤150 words** — goal in one line, done / not done, ≤3 findings
-   ranked by consequence, the single next decision. Never rounds, waves, seats,
-   stamps, gate counts, or file inventories.
-3. **Default to the lightest band, without asking.** A heavier tier requires the
-   first status line to NAME its trigger: irreversible or externally visible,
-   inputs unconverged, a prior failure in this exact area, or he asked for it.
-4. **Needed-because line.** Any element he did not request carries one line:
-   "Needed because ___; dropping it costs ___." No line, no element.
-5. **Show a cut.** ONE dry round ends a review loop — never a streak. Every plan
-   names something it removed; "nothing cut" is said aloud.
-
-**THE VERIFICATION LAW** (added 2026-08-15):
-6. **Verify the claim you actually made, on the surface he actually uses.**
-7. **A symptom reported twice retires the first explanation.**
-8. **Prefer a mechanism to an instruction.**
-9. **A correction that lives only in a journal or a memory has not been made.**
-<!-- /ELEGANCE-LAW -->
-
-> **Humans:** read `HUMAN.md` first. This file is the agent/engine protocol.
-> **Locked Objective:** see `NORTH-STAR.md` (Rev 3, `ANV-01` through `ANV-11`) and `references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md`. Do not drift from it.
-
-# Anvil — Programmatic Orchestrator for Code Comprehension, Parable-of-the-Oranges Proactive Foresight, Empirical Validation & Best-in-Class CST Remapping
-
-**Anvil is a programmatic orchestrator skill** — never a prose checklist handed to an LLM. Its deterministic Python engine (`scripts/anvil_engine.py`) governs stage transitions, enforces hard machine verification gates (`LibCST`/`parso`, `ruff`, `Hypothesis`, `pytest`), and persists a signed `RUN-STATE.json`.
-
-## How to run (operator manual)
-
-Run `scripts/anvil_engine.py` (or the Foundry Tool `python <path> cst-rewrite`):
-
-1. **Programmatic 5-Stage Orchestrator (`orchestrate`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" orchestrate --old-repo <old_path> [--new-repo <new_path>] [--sign-off <fn_name>]... [--test-cmd "<cmd>"] --output <out.json>
-   ```
-   Executes the 5-stage state machine (`STAGE_0_ORANGE_SPLIT` -> `STAGE_1_CONCEPTUAL_MAP` -> `STAGE_2_EMPIRICAL_BLOCK_PROBES` -> `STAGE_3_CST_REMAP_AND_NULL_SPACE` -> `STAGE_4_DIFFERENTIAL_EQUIVALENCE_GATE`) and writes `.anvil/RUN-STATE.json`.
-
-2. **Stage 0 — The Parable of the Oranges: Proactive Complete Staff Work & Essential Core Decomposition (`orange-split`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" orange-split --repo <path> --output <out.json>
-   ```
-   Modeled on the classic LDS General Conference story of the employee sent to buy oranges for the boss's wife's party: instead of returning empty-handed saying *"the market is out of oranges"* (or stopping at the first obstacle), the proactive employee asks *why* the oranges are needed, tracks down where fine oranges can be sourced, negotiates the terms, verifies quality, arranges delivery in time for the party, and returns having **solved the entire problem in one trip**. In Anvil, Stage 0 proactively probes the true downstream goal, anticipates blockers 2–3 steps ahead, separates Essential Domain Logic (`Do-Analysis` / `juice`), Surface Contracts (`Get-Data` & `Create-Output` / `peel`), and Legacy Scaffolding (`Null Space` candidates / `pith_and_seeds`), and delivers a complete, actionable recommendation in one pass.
-
-3. **Mode 1 — Conceptual Groupings + Process Map + AI Agent Seams (`map`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" map --repo <path> --output <out.json>
-   ```
-   Partitions the codebase into human-meaningful **Conceptual Buckets** (with concise function summaries) and builds the **Block-to-Block Process Map** with explicit **AI Agent Interaction Badges** (`prompt_assembly`, `cli_dispatch`, `schema_gate`).
-
-4. **Mode 2 — Single-Block Drill-Down + Empirical Claim Test (`inspect`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" inspect --repo <path> --block <block_id> [--test-cmd "<cmd>"] [--lock-description "<text>"] --output <out.json>
-   ```
-   Isolates a single code block, builds its **Inner Process Map** (`entry -> helpers -> exit`), pairs its plain-English **Claimed Intent** against **Empirical Execution** (`PASS` / `MISMATCH`), and records the user-approved **`✓ Validated` Description** into `ANVIL-REPORT.md`.
-
-5. **Mode 3 — Best-in-Class Code Remapping, `∅ Null Space` & 3-Stage Pipeline Validation (`remap`, `cst-rewrite`, `verify-equivalence`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" remap --old-repo <old_path> --new-repo <new_path> --output <out.json>
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" cst-rewrite --source <file.py> [--rename old:new] [--drop pith_fn]
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" verify-equivalence --old-repo <old_path> --new-repo <new_path>
-   ```
-   Applies lossless `LibCST`/`parso` structural transformations, enforces the **`∅ Null Space`** ledger (`100%` accounted, zero silent drops), validates the 3-stage pipeline (**1. Getting the Data [`INGEST`]**, **2. Doing the Analysis [`COMPUTE`]**, **3. Creating the Output [`EMIT`]**), and proves differential behavioral equivalence via `Hypothesis` property-based vectors.
-
-6. **Mode 4 — Paper-to-Code Mapping, Native MathML & Empirical Verification (`paper-map`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" paper-map --repo <path> --paper <paper_spec_or_md> --output <out.json>
-   ```
-   Maps paper equations (rendered in native HTML5 `<math>` MathML — never raw LaTeX strings), algorithms, and figures to implementing code functions, runs empirical verification harnesses, and prepares a production remap plan.
-
-7. **Persistent Anvil Agent Dialogue (`chat`):**
-   ```bash
-   python "<path> Foundry/skills/anvil/scripts/anvil_engine.py" chat --repo <path> --mode <map|inspect|remap|paper-map> --target <id> --question "<text>"
-   ```
-   Answers context-grounded questions on any of the 4 Anvil pages and updates the validated comprehension ledger.
-
-## Core Architecture & Invariants
-
-### Stage 0: The Parable of the Oranges (Proactive One-Trip Problem Solving) & Programmatic Orchestration
-- **The Parable of the Oranges:** In the classic LDS General Conference story, two employees are sent to get oranges for the boss's wife's party. The first returns empty-handed saying "there are no oranges in the market." The second asks *why* the oranges are needed (for the boss's wife's party), locates where quality oranges can be sourced, negotiates price and delivery, verifies quality, and returns with the **entire problem solved in one trip**. Anvil's Orchestrator and Agent follow this exact law: never stop at a surface symptom or dump raw AST errors back on the user — understand the true scientific/engineering purpose, think 2–3 steps ahead, separate Essential Core (`Do-Analysis`) and Surface I/O Contracts (`Get-Data` / `Create-Output`) from Legacy Scaffolding (`Null Space`), and present a complete, verified recommendation.
-- `orchestrate_anvil` governs all 5 stages deterministically and writes `.anvil/RUN-STATE.json`.
-
-### Mode 1: Conceptual Groupings & Block-to-Block Process Map (`ANV-01`, `ANV-02`)
-- Every analyzed codebase is grouped into 4–9 human-digestible **Conceptual Buckets** (never raw alphabetical file lists).
-- Every function inside a bucket carries a concise 1–2 sentence human summary of its role and inputs/outputs.
-- Every block where an AI agent participates carries an explicit **AI Agent Interaction Badge** naming the agent/family, the interaction type, and the verification gate.
-
-### Mode 2: Single-Block Drill-Down & Empirical Claim Testing (`ANV-03`, `ANV-04`, `ANV-05`)
-- Clicking any block opens **only that block** with its **Inner Process Map**, plain-English **Claimed Intent**, and **Empirical Execution Harness**.
-- Claims are never trusted from docstrings alone: the engine executes the block or its targeted test command and compares actual runtime behavior against the summary.
-- Once refined with the user in the **Anvil Agent Dialogue**, locking the block stamps it **`✓ Validated`** and updates `ANVIL-REPORT.md`.
-
-### Mode 3: Best-in-Class Code Remapping & Explicit `∅ Null Space` (`ANV-06`, `ANV-07`, `ANV-08`)
-- Structural rewrites use lossless Concrete Syntax Trees (`LibCST` / `parso`) + `ruff` static gates (`cst_rewrite_module`) so comments and docstrings on untouched nodes are never destroyed.
-- Any legacy block/function with no target in the new code lands in the **`∅ Null Space`** right beside the new code map. Accidental omissions fail closed (`BLOCKER`); intentional drops require explicit user sign-off.
-- End-to-end validation verifies all three stages (**1. Getting the Data [`INGEST`]**, **2. Doing the Analysis [`COMPUTE`]**, **3. Creating the Output [`EMIT`]**) and runs `verify_behavioral_equivalence` (`Hypothesis` property-based vectors, `rtol=1e-7`).
-
-### Mode 4: Paper-to-Code Mapping & Native Typeset Math (`ANV-09`, `ANV-10`, `ANV-11`)
-- Maps paper equations, algorithms, and figures to exact code functions and line ranges.
-- All mathematical equations render as native typeset MathML (`<math display="block">`), never raw LaTeX strings (`\sum`, `\frac`, `$$`).
-- Includes a 1-click bridge from Paper-to-Code Audit into Mode 3 (`remap`) to transform research prototype scripts into production-grade best-in-class code.
+---
+name: Anvil
+description: Programmatic codebase comprehension, Parable-of-the-Oranges proactive one-trip complete staff work, 3-Level Progressive Abstraction Map (Level 1 Role & I/O -> Level 2 Sub-flow, Native MathML Formulas, Explicit Assumptions & Old-to-New Diff -> Level 3 Full Numbered Source), Live Polyglot Code Walkthrough (Claimed vs. Actual Runtime Verification), 5-Seat Software Beta-Reader Panel (grounded in Cal Newport cognitive-load reduction, John Ousterhout Deep Modules, and Gary Bernhardt Functional Core / Imperative Shell), lossless LibCST/parso remapping with explicit Null Space, and paper-to-code verification.
+---
+
+# Anvil v2 — Programmatic Code Comprehension, Progressive Abstraction, Live Walkthrough & Software Beta-Reader Engine
+
+## 1. Mission & Core Architecture
+
+**Anvil (`v2`)** is the programmatic code comprehension, mathematical verification, and architectural refactoring engine of the Skill Foundry portfolio. It eliminates the need to open multiple tabs or jump between pages by organizing every codebase and scientific paper into a **Single-Surface Progressive Process Map**:
+
+1. **3-Level Progressive Abstraction on Every Process-Map Node**:
+   - **Level 1 (`level1_summary` — High-Level Role & I/O):** Plain-English purpose, inputs, outputs, pipeline stage (`INGEST` / `COMPUTE` / `EMIT`), and Orange role (`CORE` Juice vs. `CONTRACT` Peel vs. `SCAFFOLDING` Pith/Seeds).
+   - **Level 2 (`level2_mechanics` — Internal Sub-Flow, Native MathML Equations, Assumptions & Old→New Diff):** Step-by-step inner function flow, native `<math>` equations, explicit mathematical/engineering assumptions, and Old-to-New Best-in-Class diff summary with cognitive-load reduction percentage.
+   - **Level 3 (`level3_code` — Full Source Code):** Numbered line-by-line original source code alongside the clean Functional Core / Imperative Shell refactored source preview.
+2. **Live Polyglot Code Walkthrough & Claim-vs-Reality Validator (`walkthrough` / `--walkthrough`):**
+   - Steps through each block on the Process Map in execution order (`Ingest` $\to$ `Compute` $\to$ `Emit`), running or tracing concrete inputs against `Python`, `R`, `JS/Node`, and `C/C++` modules and comparing **Claimed Behavior** (docstring / paper equation) against **Actual Runtime Calculation & Output** (`ACCURATE` | `DRIFT` | `MISMATCH`).
+3. **5-Seat Software Beta-Reader Panel (`beta-readers`):**
+   - Inspired by **Chekhov's** beta-reader panel and grounded in **Cal Newport** (*Slow Productivity* / *A World Without Email* cognitive-load & context-switch reduction), **John Ousterhout** (*A Philosophy of Software Design* Deep Modules), and **Gary Bernhardt** (*Functional Core, Imperative Shell*):
+     - `cal_newport_cognitive_load` — Cognitive Load & Context-Switch Auditor
+     - `functional_core_architect` — Functional Core / Imperative Shell Architect
+     - `numerical_verification_auditor` — Runtime & Numerical Verification Debugger
+     - `systems_performance_specialist` — Systems Performance & Idiom Specialist
+     - `security_boundary_auditor` — Defensive Security & Input Boundary Auditor
+4. **Parable of the Oranges One-Trip Staff Work & Explicit Null Space (`orange-split` / `remap`):**
+   - Grounded in **The Parable of the Oranges** (when the boss's wife asks to buy oranges at the market, a proactive staff member gathers price, variety, stock, and delivery details in **one trip** instead of making repeated follow-up trips), Anvil separates **Juice** (Essential Domain Logic), **Peel** (Surface I/O Contracts), and **Pith & Seeds** (`∅ Null Space` dead/legacy code requiring explicit human sign-off).
+
+---
+
+## 2. Programmatic CLI Usage (`scripts/anvil_engine.py`)
+
+```powershell
+# 1. Full 5-Stage Orchestrator State Machine (writes .anvil/RUN-STATE.json & .anvil/manifest.json)
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" orchestrate --old-repo "<path>" --new-repo "<path>"
+
+# 2. Mode 1 + Anvil v2 3-Level Progressive Map, Beta-Reader Panel & Walkthrough Trace
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" map --repo "<path>"
+
+# 3. Live Polyglot Code Walkthrough (Claimed vs. Actual Runtime)
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" walkthrough --repo "<path>"
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" --walkthrough --repo "<path>"
+
+# 4. 5-Seat Software Beta-Reader Panel
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" beta-readers --repo "<path>"
+
+# 5. Standalone Illustrated Markdown Report (with Inline SVGs, Beta-Readers & Walkthrough Table)
+python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" render-report --repo "<path>" --output "<path>/ANVIL-REPORT.md"
+```
+
+---
+
+## 3. Mandatory Pedagogical & Visual Report Standard (`Einstein` + `Gandalf` + `Figure-Designer` + `Ramanujan`)
+
+Every human-facing `ANVIL-REPORT.md` / `ANVIL-REPORT.pdf` (and companion paper-to-code evaluation report) MUST include the following five structural pillars:
+
+1. **Up-Front Plain-English Glossary & Visual Concept Primer**:
+   - Right after the plain-English executive summary and 60-second roadmap table, include a dedicated **Key Terms & Visual Definitions Primer** that defines every central mathematical, statistical, and architectural term in simple, concrete language, paired with a miniature numerical example and a visual diagram (`Figure 0`).
+2. **Genuine Graphical Plots & Diagrams (`figure-designer` Compliance — Never Text-Wall SVG Cards)**:
+   - Every SVG figure must be a real visual graph or diagram: plotted 2D contours/curves (e.g., Gaussian vs. Neal's funnel contours), block-sparse matrix heatmaps/grids, directed forward + backward computation flowcharts, schedule trajectories, and proportional bar/line charts with coordinate axes. Keep in-figure text labels short (`<= 6` words per label, `>= 10px` sans-serif typography) and put detailed prose explanations in the surrounding text and caption.
+3. **Explicit Forward Pass + Backward Pass (Backpropagation) Block Complexity Trace**:
+   - When auditing variational inference, normalizing flows, or block-structured optimization algorithms, explicitly explain and diagram how **both** the **Forward Pass** (parallel base-noise draw, root-to-leaf block conditioning, triangular $\log|\det J|$, and objective evaluation) and the **Backward Pass** (parallel reverse-mode gradient backpropagation $\nabla_\phi \mathcal{L}$ across decoupled local blocks plus parent gradient sum-reduction) execute in parallel across blocks to achieve true $\mathcal{O}(p)$ time and memory scaling.
+4. **The Two Canonical Maps (Visual Diagrams + Complete Reference Tables)**:
+   - **Map 1 — Paper-to-Software Map (Sections, Equations & Tables $\leftrightarrow$ Files & Symbols)**: Visually and tabularly connects every manuscript section, equation, and benchmark table to its exact production file, class/function symbol, and line span. Always audit `.anvil/session.json`'s automated token-overlap equation matches and explicitly display the **Automated Heuristic Match vs. Domain-Verified Production Symbol** correction table alongside any differences between how the paper describes the algorithm and how the software implements it.
+   - **Map 2 — Step-by-Step Formal Algorithm Math $\leftrightarrow$ Verbatim Code Execution Map**: Traces the complete algorithm in execution order (Step 1 $\to$ Step $K$), showing side-by-side: (i) the **Execution Step & Purpose**, (ii) the **Formal Mathematical Formula**, (iii) the **Exact Verbatim Code Expression & File/Line Citation**, and (iv) the **Per-Step Complexity ($\mathcal{O}(p)$ verification)**.
+5. **Einstein 4-Block Pedagogical Progression Inside Every Section**:
+   - Structure each section as: *(a) Plain-English Intuition $\to$ (b) Small Worked Toy Example (tied out to deterministic ground-truth checks where applicable) $\to$ (c) Graphical Vector Figure $\to$ (d) Verified Codebase Evidence, 5-Seat Beta-Reader / Walkthrough Tie-Out & One-Line Takeaway*.
+

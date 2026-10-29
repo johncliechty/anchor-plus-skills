@@ -1,950 +1,999 @@
-#!/usr/bin/env node
-// jumper-run.mjs — the thin CLI entry for the Jumper ideation engine (W2–W4, 2026-07).
-//
-// Before this file existed, SKILL.md gave no invocation path at all, so a real
-// /jumper invocation IMPROVISED the tripartite pipeline in prose — bypassing the
-// ledger, the cross-family Gate 3, and every honesty guarantee (the exact failure
-// mode index.js documents fixing for the composed Gandalf). This CLI is the
-// documented way a session runs the REAL engine.
-//
-//   node bin/jumper-run.mjs --problem "<statement>" [--fan-out N] [--retry-on-kill]
-//        [--output out.json] [--input problem.txt]
-//
-// Defaults are the AGENTS.md invocation discipline: portfolio fanOut=3, drafter =
-// Anchor coding family, Gate 3 = Anchor review family (cross-family when distinct,
-// fail-closed when independence cannot be proved). HALT semantics are
-// BY DESIGN, not bugs: JumperSelfReviewHalt (Gate 3 routed to the drafter family)
-// and JumperCrossFamilyDegradeHalt (review seat down) exit non-zero with the reason —
-// Jumper never silently self-reviews.
-//
-// B3 W3: SC2 omit-path fanOut := resolved.ideaRounds (one derivation); SC3 pre-run
-// refuse killGates < 3 with named JumperKillGatesFloorHalt before Jumper().run;
-// killGates passed into engine so kill-filter stage count matches knobs.
-// B3 W4: P-CONFLICT (not SC2) — both --depth and --fan-out: allow only when
-// fanOut === live ideaRounds; mismatch → named JumperDepthFanOutConflictHalt,
-// exit≠0, stderr names both values, Jumper().run never called (no warn-and-inherit,
-// no silent prefer of either flag).
-// B3 W5: Gate 3 cross-family fail-closed under LITE — depthLockedGate3Seating +
-// resolveGate3Seating; same-family → JumperSelfReviewHalt; review seat down →
-// JumperCrossFamilyDegradeHalt; JUMPER_GATE3_DRIVER may retarget family never skip independence.
-
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
-import process from 'node:process';
-
-import {
-  Jumper,
-  createJumperSeatingLedger,
-  runJumperDispatch,
-  resolveGate3Seating,
-  JumperSelfReviewHalt,
-  JumperCrossFamilyDegradeHalt,
-} from '../index.js';
-import { runAgent as trioRunAgent } from '../../../../trio/drivers/index.mjs';
-// B3 SC1 sole resolver — depth → ideaRounds/killGates ONLY via this helper
-// (no second depth→knob map; no path-local depth→knob table).
-import {
-  resolveJumperDepthKnobs,
-  JUMPER_KILL_GATES_MIN,
-} from 'fil<path>';
-
-const USAGE =
-  'usage: node bin/jumper-run.mjs --problem "<statement>" [--fan-out N] [--depth LITE|SPIKE|FULL] [--tier Heavy|Standard] [--retry-on-kill] [--no-live-refuter]\n' +
-  '       [--mode lean|portfolio] [--count N] [--input <file>] [--output <out.json>]\n' +
-  '       (--mode lean: ONE generation call + ONE cross-family review of the whole portfolio, --count candidates (default 3);\n' +
-  '        takes no --depth/--fan-out; same seating law, receipts, salvage and partial emit)\n' +
-  '       (default: portfolio mode fanOut=3; --fan-out 1 = legacy single-candidate;\n' +
-  '        --depth locks @foundry/triage knobs via resolveJumperDepthKnobs → ideaRounds as fanOut when --fan-out omitted;\n' +
-  '        both --depth and --fan-out: only allowed when --fan-out equals live ideaRounds (P-CONFLICT fail-closed on mismatch);\n' +
-  '        recovery: omit --fan-out (SC2 inherit) or set --fan-out equal to ideaRounds;\n' +
-  '        --tier does not rebind ideaRounds/killGates (depth selects those knobs);\n' +
-  '        killGates ≥ 3 at every depth (pre-run refuse if thinned); Gate 3 uses the Anchor review family and HALTs honestly if that seat is down;\n' +
-  '        --no-live-refuter floors only Gandalf elevations to SPECULATIVE and never disables Jumper Gate 3, its ping, or seating checks)';
-
-/**
- * Named pre-run HALT when resolved killGates is below the floor (B3-SC3-PRERUN-REFUSE).
- * Stable class — not stringly-only — so operators/Foreman triage one fail surface.
- * Engine must never start after this HALT (Jumper().run call count === 0).
- */
-export class JumperKillGatesFloorHalt extends Error {
-  /**
-   * @param {unknown} killGates
-   * @param {number} [min]
-   */
-  constructor(killGates, min = JUMPER_KILL_GATES_MIN) {
-    super(
-      `jumper-run: refusing killGates=${JSON.stringify(killGates)} below floor ${min} ` +
-        `(never clamp; never start engine)`,
-    );
-    this.name = 'JumperKillGatesFloorHalt';
-    this.code = 'JUMPER_KILLGATES_FLOOR_HALT';
-    this.killGates = killGates;
-    this.min = min;
-  }
-}
-
-/**
- * Named pre-run HALT when both --depth and --fan-out are set and disagree (B3 P-CONFLICT).
- * Not SC2 (SC2 is omit-path only). Fail-closed: no warn-and-inherit, no silent prefer
- * of either flag. Engine must never start after this HALT (Jumper().run call count === 0).
- * Stderr / message always names both numbers so operators can recover (omit fan-out or equalize).
- */
-export class JumperDepthFanOutConflictHalt extends Error {
-  /**
-   * @param {unknown} fanOut  explicit --fan-out value
-   * @param {unknown} ideaRounds  live resolved.ideaRounds for the locked depth
-   */
-  constructor(fanOut, ideaRounds) {
-    super(
-      `jumper-run: P-CONFLICT — --fan-out=${JSON.stringify(fanOut)} conflicts with ` +
-        `depth ideaRounds=${JSON.stringify(ideaRounds)} ` +
-        `(fail-closed; do not warn-and-inherit; omit --fan-out or set --fan-out equal to ideaRounds)`,
-    );
-    this.name = 'JumperDepthFanOutConflictHalt';
-    this.code = 'JUMPER_DEPTH_FANOUT_CONFLICT';
-    this.fanOut = fanOut;
-    this.ideaRounds = ideaRounds;
-  }
-}
-
-/** @param {string[]} argv */
-export function parseArgs(argv) {
-  const o = { problem: null, input: null, output: null, fanOut: null, depth: null, tier: null, retryOnKill: false, budget: null, liveRefuter: null, mode: null, count: null };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--problem') { o.problem = argv[++i]; if (o.problem === undefined) throw new Error('--problem requires text'); }
-    else if (a === '--input') { o.input = argv[++i]; if (o.input === undefined) throw new Error('--input requires a file'); }
-    else if (a === '--output') { o.output = argv[++i]; if (o.output === undefined) throw new Error('--output requires a file'); }
-    else if (a === '--fan-out') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1) throw new Error('--fan-out requires a positive integer'); o.fanOut = n; }
-    else if (a === '--depth') { o.depth = argv[++i]; if (o.depth === undefined) throw new Error('--depth requires LITE|SPIKE|FULL'); }
-    else if (a === '--tier') { o.tier = argv[++i]; if (o.tier === undefined) throw new Error('--tier requires Heavy|Standard'); }
-    else if (a === '--retry-on-kill') { o.retryOnKill = true; }
-    // P1 2026-07-25 (journals 0003/0012): the refuter-budget dial — RefuterBudgetHalt
-    // (elevations > prereg R=3) killed whole tournaments with no CLI override.
-    else if (a === '--budget') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1) throw new Error('--budget requires a positive integer (refuter budget)'); o.budget = n; }
-    // Explicit single-family run: floor elevations to SPECULATIVE without paying for
-    // (or HALTing on) the cross-family refuter lane. Honest — never a fake grant.
-    else if (a === '--no-live-refuter') { o.liveRefuter = false; }
-    // 2026-09-13 (journal 0056, John-approved): lean mode — one generation call + one
-    // cross-family review of the whole portfolio. --count = candidates requested (default 3).
-    else if (a === '--mode') { o.mode = argv[++i]; if (o.mode === undefined) throw new Error('--mode requires lean|portfolio'); }
-    else if (a === '--count') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1 || n > 12) throw new Error('--count requires an integer 1–12 (lean-mode candidates)'); o.count = n; }
-    else if (a === '--help' || a === '-h') { o.help = true; }
-    else throw new Error(`unknown argument ${JSON.stringify(a)}`);
-  }
-  return o;
-}
-
-/**
- * Hermetic depth-lock step (B3 SC1). Sole production path when --depth is set.
- * Tier is accepted for operator ergonomics but does NOT rebind ideaRounds/killGates.
- *
- * @param {unknown} depthArg
- * @param {unknown} [_tierArg] intentionally ignored for ideaRounds/killGates
- * @returns {{ ok: true, resolved: Readonly<{depth:string,ideaRounds:number,killGates:number}> }
- *   | { ok: false, exitCode: number, stderr: string, error: Error }}
- */
-export function depthLockStep(depthArg, _tierArg) {
-  try {
-    const resolved = resolveJumperDepthKnobs(depthArg);
-    return { ok: true, resolved };
-  } catch (err) {
-    const message = err?.message ?? String(err);
-    return {
-      ok: false,
-      exitCode: 2,
-      stderr: `jumper-run: ${message}\n`,
-      error: /** @type {Error} */ (err),
-    };
-  }
-}
-
-/**
- * SC3 pre-run refuse: resolved killGates must be integer ≥ floor before Jumper().run.
- * Never clamps. Throws JumperKillGatesFloorHalt on thin/invalid values.
- *
- * @param {{ killGates?: unknown } | null | undefined} resolved
- * @param {{ min?: number }} [opts]
- * @returns {true}
- */
-export function assertPreRunKillGatesFloor(resolved, opts = {}) {
-  const min = Number.isInteger(opts.min) ? /** @type {number} */ (opts.min) : JUMPER_KILL_GATES_MIN;
-  const kg = resolved?.killGates;
-  if (!Number.isInteger(kg) || /** @type {number} */ (kg) < min) {
-    throw new JumperKillGatesFloorHalt(kg, min);
-  }
-  return true;
-}
-
-/**
- * B3 P-CONFLICT (W4, not SC2): when both --depth and an explicit --fan-out are set,
- * allow only if fanOut === live resolved.ideaRounds (idempotent dual-flag).
- * Mismatch → JumperDepthFanOutConflictHalt (fail-closed; no warn-and-inherit;
- * no silent prefer of either flag). Omit path (fanOut null/undefined) is SC2 — not this gate.
- *
- * @param {{ ideaRounds?: unknown } | null | undefined} resolved
- * @param {unknown} fanOut  explicit --fan-out, or null/undefined when omitted
- * @returns {true}
- */
-export function assertDepthFanOutNoConflict(resolved, fanOut) {
-  if (fanOut == null) return true; // SC2 omit path — not a dual-flag conflict
-  const ideaRounds = resolved?.ideaRounds;
-  if (!Number.isInteger(fanOut) || fanOut !== ideaRounds) {
-    throw new JumperDepthFanOutConflictHalt(fanOut, ideaRounds);
-  }
-  return true;
-}
-
-/**
- * Build engine runOptions for a depth-locked CLI path (B3 W3–W4).
- *
- * SC2 omit path: when fanOut is null/undefined, fanOut := resolved.ideaRounds
- * (one derivation from live resolve — never portfolio literals).
- * SC3: pre-run floor refuse; pass killGates into engine for Decision A cardinality.
- * W4 P-CONFLICT: when fanOut is explicit, require fanOut === ideaRounds or hard-fail
- * before engine entry (no warn-and-inherit; no silent prefer of either flag).
- *
- * @param {{
- *   resolved: Readonly<{ depth: string, ideaRounds: number, killGates: number }>,
- *   fanOut?: number | null,
- *   retryOnKill?: boolean,
- * }} p
- * @returns {{ fanOut: number, killGates: number, retryOnKill: boolean }}
- */
-export function buildDepthLockedRunOptions({ resolved, fanOut = null, retryOnKill = false }) {
-  assertPreRunKillGatesFloor(resolved);
-  assertDepthFanOutNoConflict(resolved, fanOut);
-  /** @type {{ fanOut: number, killGates: number, retryOnKill: boolean }} */
-  const runOptions = {
-    retryOnKill: !!retryOnKill,
-    // Decision A substrate: engine receives killGates so stage count can match knobs.
-    killGates: resolved.killGates,
-    // SC2 omit → ideaRounds; dual-flag equal → same value (idempotent); mismatch already threw.
-    fanOut: fanOut == null ? resolved.ideaRounds : fanOut,
-  };
-  return runOptions;
-}
-
-/**
- * Hermetic depth-locked CLI → engine-entry step (B3 SC2 / SC3 spy surface).
- *
- * Resolve knobs via depthLockStep (or resolvedOverride for pre-run inject),
- * build runOptions (omit-path fanOut + killGates), optionally invoke an injected
- * Jumper implementation so tests can spy Jumper().run call count and options.
- *
- * @param {{
- *   depth: unknown,
- *   tier?: unknown,
- *   fanOut?: number | null,
- *   problem?: string,
- *   retryOnKill?: boolean,
- *   resolvedOverride?: Partial<{ depth: string, ideaRounds: number, killGates: number }> | null,
- *   createJumper?: (() => { run: (problem: string, opts: object) => Promise<unknown> }) | null,
- * }} p
- */
-export async function depthLockedEngineEntry({
-  depth,
-  tier = null,
-  fanOut = null,
-  problem = 'hermetic-problem',
-  retryOnKill = false,
-  resolvedOverride = null,
-  createJumper = null,
-} = {}) {
-  const lock = depthLockStep(depth, tier);
-  if (!lock.ok) {
-    return {
-      ok: false,
-      exitCode: lock.exitCode,
-      stderr: lock.stderr,
-      error: lock.error,
-      jumperRunCalls: 0,
-      runOptions: null,
-      resolved: null,
-      result: null,
-    };
-  }
-
-  const base = lock.resolved;
-  const resolved = Object.freeze({
-    depth: resolvedOverride?.depth ?? base.depth,
-    ideaRounds: resolvedOverride?.ideaRounds ?? base.ideaRounds,
-    killGates: resolvedOverride?.killGates ?? base.killGates,
-  });
-
-  let runOptions;
-  try {
-    runOptions = buildDepthLockedRunOptions({ resolved, fanOut, retryOnKill });
-  } catch (err) {
-    if (
-      err instanceof JumperKillGatesFloorHalt ||
-      err?.name === 'JumperKillGatesFloorHalt' ||
-      err instanceof JumperDepthFanOutConflictHalt ||
-      err?.name === 'JumperDepthFanOutConflictHalt'
-    ) {
-      return {
-        ok: false,
-        exitCode: 2,
-        stderr: `jumper-run: HALT — ${err.name}: ${err.message}\n`,
-        error: /** @type {Error} */ (err),
-        jumperRunCalls: 0,
-        runOptions: null,
-        resolved,
-        result: null,
-      };
-    }
-    throw err;
-  }
-
-  if (typeof createJumper !== 'function') {
-    // Options-only path: proves SC2 derivation without starting the real engine.
-    return {
-      ok: true,
-      exitCode: 0,
-      resolved,
-      runOptions,
-      jumperRunCalls: 0,
-      result: null,
-      error: null,
-      stderr: '',
-    };
-  }
-
-  let jumperRunCalls = 0;
-  const jumper = createJumper();
-  const originalRun = jumper.run.bind(jumper);
-  jumper.run = async (problemArg, opts) => {
-    jumperRunCalls += 1;
-    return originalRun(problemArg, opts);
-  };
-
-  try {
-    const result = await jumper.run(problem, runOptions);
-    return {
-      ok: true,
-      exitCode: 0,
-      resolved,
-      runOptions,
-      jumperRunCalls,
-      result,
-      error: null,
-      stderr: '',
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      exitCode: 1,
-      resolved,
-      runOptions,
-      jumperRunCalls,
-      result: null,
-      error: /** @type {Error} */ (err),
-      stderr: `jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`,
-    };
-  }
-}
-
-export { resolveJumperDepthKnobs, JUMPER_KILL_GATES_MIN };
-export {
-  resolveGate3Seating,
-  JumperSelfReviewHalt,
-  JumperCrossFamilyDegradeHalt,
-};
-
-/**
- * 2026-09-13 (repair card R2, journals 0045/0056): the first model round-trip has landed when
- * the Gandalf DRAFT returns (or the lean generation returns). The watchdog used to wait for
- * `gandalf:done`, which fires only after the composed refuter lane — 15–40 min on a rich
- * brief — so it killed four healthy runs.
- */
-export function disarmsStartupWatchdog(line) {
-  const s = String(line ?? '');
-  return s.includes('gandalf:draft:done') || s.includes('gandalf:done') || s.includes('lean:generate done');
-}
-
-export class JumperStartupWatchdog extends Error {
-  constructor(timeoutMs) {
-    super(
-      `STARTUP-STALL: no first model round-trip (the Gandalf DRAFT returning, or the lean generation) within ${Math.round(timeoutMs / 1000)}s — `
-      + 'the active Jumper/Gandalf/refuter tree was aborted and joined before terminal serialization',
-    );
-    this.name = 'JumperStartupWatchdog';
-    this.code = 'JUMPER_STARTUP_WATCHDOG';
-    this.timeout_ms = timeoutMs;
-  }
-}
-
-/** Root watchdog: timeout only aborts; the caller still owns awaiting the run promise. */
-export function createStartupWatchdog({ controller, timeoutMs, onAbort = () => {} } = {}) {
-  if (!(controller instanceof AbortController)) {
-    throw new TypeError('createStartupWatchdog requires a root AbortController');
-  }
-  let timer = null;
-  let reason = null;
-  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
-    timer = setTimeout(() => {
-      reason = new JumperStartupWatchdog(timeoutMs);
-      controller.abort(reason);
-      onAbort(reason);
-    }, timeoutMs);
-    timer.unref?.();
-  }
-  return {
-    disarm() {
-      if (timer) clearTimeout(timer);
-      timer = null;
-    },
-    get fired() { return reason !== null; },
-    get reason() { return reason; },
-  };
-}
-
-/** Shared-dispatcher Gate-3 liveness check. Timeout aborts and then joins the dispatch. */
-export async function runGate3Ping({
-  ledger,
-  driver,
-  model = null,
-  runAgent = trioRunAgent,
-  signal = null,
-  timeoutMs = 90_000,
-} = {}) {
-  const pingController = new AbortController();
-  const pingSignal = signal
-    ? AbortSignal.any([signal, pingController.signal])
-    : pingController.signal;
-  let timedOut = false;
-  const timer = Number.isFinite(timeoutMs) && timeoutMs > 0
-    ? setTimeout(() => {
-      timedOut = true;
-      pingController.abort(new DOMException(`Gate-3 liveness ping timed out at ${timeoutMs}ms`, 'TimeoutError'));
-    }, timeoutMs)
-    : null;
-  timer?.unref?.();
-  try {
-    const value = await runJumperDispatch({
-      ledger,
-      kind: 'ping',
-      dispatchId: 'gate3:ping',
-      runAgent,
-      signal: pingSignal,
-      args: {
-        prompt: 'Reply with the single word OK.',
-        driver,
-        model,
-        label: 'Gate3LivenessPing',
-        role: 'gate3',
-        freshContext: true,
-      },
-    });
-    if (timedOut) {
-      throw new DOMException(`Gate-3 liveness ping exceeded ${timeoutMs}ms`, 'TimeoutError');
-    }
-    return value;
-  } catch (err) {
-    if (err instanceof JumperCrossFamilyDegradeHalt) throw err;
-    throw new JumperCrossFamilyDegradeHalt(driver, err);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/**
- * Production-entry Gate-3 seating under a depth lock (B3-G3-LITE-SEATING).
- *
- * Composes the same CLI depth-lock path (resolveJumperDepthKnobs → buildDepthLockedRunOptions)
- * with resolveGate3Seating — the seating policy KillFilter uses at engine entry. LITE may lean
- * ideaRounds (in runOptions.fanOut) but never collapses Gate-3 independence.
- *
- * Hermetic: no network; no live review seat. assertIndependent defaults true (fail-closed).
- *
- * @param {{
- *   depth?: unknown,
- *   tier?: unknown,
- *   gate3Driver?: string | null,
- *   drafterDriver?: string | null,
- *   gate3Agent?: Function | null,
- *   env?: NodeJS.ProcessEnv,
- *   assertIndependent?: boolean,
- * }} [p]
- */
-export function depthLockedGate3Seating({
-  depth = 'LITE',
-  tier = null,
-  gate3Driver = null,
-  drafterDriver = null,
-  gate3Agent = null,
-  env = process.env,
-  assertIndependent = true,
-} = {}) {
-  const lock = depthLockStep(depth, tier);
-  if (!lock.ok) {
-    return {
-      ok: false,
-      exitCode: lock.exitCode,
-      stderr: lock.stderr,
-      error: lock.error,
-      resolved: null,
-      runOptions: null,
-      seating: null,
-    };
-  }
-  let runOptions;
-  try {
-    runOptions = buildDepthLockedRunOptions({
-      resolved: lock.resolved,
-      fanOut: null, // SC2 omit-path — ideaRounds lean only; Gate-3 seating orthogonal
-    });
-  } catch (err) {
-    return {
-      ok: false,
-      exitCode: 2,
-      stderr: `jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`,
-      error: /** @type {Error} */ (err),
-      resolved: lock.resolved,
-      runOptions: null,
-      seating: null,
-    };
-  }
-
-  try {
-    const seating = resolveGate3Seating({
-      drafterDriver,
-      gate3Driver,
-      gate3Agent,
-      env,
-      assertIndependent,
-    });
-    return {
-      ok: true,
-      exitCode: 0,
-      resolved: lock.resolved,
-      runOptions,
-      seating,
-      error: null,
-      stderr: '',
-    };
-  } catch (err) {
-    // Named Gate-3 HALTs (self-review) surface as production-entry fail-closed.
-    return {
-      ok: false,
-      exitCode: 1,
-      resolved: lock.resolved,
-      runOptions,
-      seating: null,
-      error: /** @type {Error} */ (err),
-      stderr: `jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`,
-    };
-  }
-}
-
-/** Run-capture for training (canonical: Skill Foundry AGENTS.md → "Run capture"). Best-effort.
- *  2026-08-19 (journal 0031): accepts an explicit `file` so a run writes ONE record — an
- *  IN-FLIGHT record at startup, rewritten in place at HALT/success. Before this, a record
- *  existed only at the END of a run, so a stalled engine and a never-launched engine were
- *  indistinguishable (the BA-815 0.14s-CPU/25-min stall left zero trace). */
-export function writeRunRecord(record, { skillDir = resolve(dirname(fileURLToPath(import.meta.url)), '..'), file = null } = {}) {
-  try {
-    const dir = join(skillDir, 'journal', 'runs');
-    mkdirSync(dir, { recursive: true });
-    const started = record.started || new Date().toISOString();
-    const target = file || join(dir, `${started.replace(/[:.]/g, '-')}-${Math.abs(Date.now() % 100000)}.json`);
-    writeFileSync(target, JSON.stringify({ skill: 'jumper', ...record }, null, 2) + '\n', 'utf8');
-    return target;
-  } catch { return null; }
-}
-
-async function main() {
-  let opts;
-  try { opts = parseArgs(process.argv.slice(2)); }
-  catch (err) { process.stderr.write(`jumper-run: ${err.message}\n${USAGE}\n`); process.exitCode = 2; return; }
-  if (opts.help) { process.stdout.write(`${USAGE}\n`); return; }
-
-  let problem = opts.problem;
-  if (!problem && opts.input) {
-    try { problem = readFileSync(opts.input, 'utf8'); }
-    catch (err) { process.stderr.write(`jumper-run: could not read --input: ${err.message}\n`); process.exitCode = 2; return; }
-  }
-  if (!problem || !String(problem).trim()) {
-    process.stderr.write(`jumper-run: a problem statement is required (--problem or --input)\n${USAGE}\n`);
-    process.exitCode = 2;
-    return;
-  }
-
-  // 2026-08-19 (journal 0031, output-dir ENOENT class from journal 0019): validate the
-  // --output parent at PRE-FLIGHT, before any paid call — a full tournament once died at
-  // the final writeFileSync because the directory did not exist, losing the killLog.
-  if (opts.output) {
-    try { mkdirSync(dirname(resolve(opts.output)), { recursive: true }); }
-    catch (err) {
-      process.stderr.write(`jumper-run: cannot create --output directory (pre-flight): ${err.message}\n`);
-      process.exitCode = 2;
-      return;
-    }
-  }
-
-  const started = new Date().toISOString();
-  const t0 = Date.now();
-  const rootController = new AbortController();
-  const seatingLedger = createJumperSeatingLedger();
-  /** @type {{ retryOnKill: boolean, fanOut?: number, killGates?: number, refuterBudget?: number, liveRefuter?: boolean, log?: Function, signal?:AbortSignal, seatingLedger?:object, runId?:string }} */
-  const runOptions = {
-    retryOnKill: opts.retryOnKill,
-    signal: rootController.signal,
-    seatingLedger,
-    runId: `${started.replace(/[:.]/g, '-')}-${randomUUID()}`,
-  };
-  // P1 2026-07-25: heartbeat sink (stderr keeps stdout's JSON result clean) + the
-  // new dials. Stage lines let a cadence agent tell healthy-long-run from hang
-  // (journal 0014's false-DONE came from exactly this blindness).
-  //
-  // 2026-08-19 (journal 0031, BA-815 startup stall — 0.14s CPU / 25 min / zero output /
-  // zero trace): (1) an IN-FLIGHT run record is written NOW, so a wedged run leaves a
-  // record naming its start time, pid, and input (record present = engine started;
-  // absent = the launch wrapper never reached node); (2) a STARTUP WATCHDOG fails the
-  // run LOUDLY if the first model round-trip (the 'gandalf:draft:done' or 'lean:generate
-  // done' heartbeat — R2, 2026-09-13; it used to wait on 'gandalf:done', i.e. the whole
-  // refuter lane) has not landed
-  // within JUMPER_STARTUP_WATCHDOG_S (default 900s) — writing WHY into the run record
-  // instead of idling forever. The 20-min transport kill guards a hung CALL; this
-  // guards the seams BEFORE and AROUND it.
-  const watchdogS = (() => {
-    const n = Number(process.env.JUMPER_STARTUP_WATCHDOG_S);
-    return Number.isFinite(n) && n >= 0 ? n : 900;
-  })();
-  const initialSeating = seatingLedger.snapshot();
-  const recordFile = writeRunRecord({
-    tier: 'in-flight', started, ended: null,
-    input: opts.input || '(--problem argv)', params: { retryOnKill: opts.retryOnKill },
-    output: null, result: `IN-FLIGHT — engine started (pid ${process.pid}); startup watchdog ${watchdogS ? `${watchdogS}s` : 'DISABLED'}`,
-    seating: initialSeating,
-    cross_model: initialSeating.cross_model,
-    models: initialSeating.models,
-    duration_s: 0,
-    journal_ref: null,
-  });
-  const startupWatchdog = createStartupWatchdog({
-    controller: rootController,
-    timeoutMs: watchdogS * 1000,
-    onAbort: (reason) => {
-      // No record/output/exit here. The terminal path runs only after the active
-      // Jumper/Gandalf/refuter promise rejects and every started child has joined.
-      process.stderr.write(`jumper-run: startup watchdog abort requested — ${reason.message}\n`);
-    },
-  });
-  const disarmWatchdog = () => startupWatchdog.disarm();
-  runOptions.log = (m) => {
-    // 2026-09-13 (R2): every heartbeat carries elapsed seconds so a reader can tell a slow
-    // stage from a dead one without process forensics (journals 0022/0024/0039).
-    process.stderr.write(`[+${Math.round((Date.now() - t0) / 1000)}s] ${m}\n`);
-    if (disarmsStartupWatchdog(m)) disarmWatchdog();
-  };
-  if (Number.isInteger(opts.budget) && opts.budget > 0) runOptions.refuterBudget = opts.budget;
-  if (opts.liveRefuter === false) runOptions.liveRefuter = false;
-
-  const recordParams = () => {
-    const { signal: _signal, seatingLedger: _ledger, log: _log, ...params } = runOptions;
-    return params;
-  };
-  const writeTerminalRecord = ({ result, output = null, seating = seatingLedger.snapshot() }) =>
-    writeRunRecord({
-      tier: 'halted',
-      started,
-      ended: new Date().toISOString(),
-      input: opts.input || '(--problem argv)',
-      params: recordParams(),
-      output,
-      result,
-      seating,
-      cross_model: seating.cross_model,
-      models: seating.models,
-      duration_s: Math.round((Date.now() - t0) / 1000),
-      journal_ref: null,
-    }, { file: recordFile });
-
-  // P1 2026-07-25 (journal 0006): PRE-FLIGHT Gate-3 seating check. JumperSelfReviewHalt
-  // used to fire only inside the kill filter — AFTER ~8 minutes of paid seats on a
-  // single-family host. Resolve the seating now (sub-second, env-only) and refuse
-  // BEFORE any model call. `--no-live-refuter` controls the composed Gandalf
-  // refuter only; it never disables Jumper's final Gate-3 kill-filter.
-  let gate3Seating;
-  try {
-    gate3Seating = resolveGate3Seating({
-      drafterDriver: runOptions.driver ?? null,
-      gate3Driver: runOptions.gate3Driver ?? null,
-      gate3Agent: runOptions.gate3Agent ?? null,
-      env: process.env,
-      assertIndependent: !runOptions.gate3Agent,
-    });
-  } catch (err) {
-    disarmWatchdog();
-    const seating = err?.seating ?? seatingLedger.snapshot();
-    process.stderr.write(`jumper-run: HALT (pre-flight) — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`);
-    process.stderr.write('jumper-run: select distinct coding/review families or explicitly retarget JUMPER_GATE3_DRIVER to an independent review family.\n');
-    writeTerminalRecord({
-      result: `HALT pre-flight: ${err?.name ?? 'Error'} — ${String(err?.message ?? err).slice(0, 300)}`,
-      seating,
-    });
-    process.exitCode = 1;
-    return;
-  }
-
-  // 2026-09-13 (journal 0056): --mode lean takes no depth/fan-out knobs — it is two calls.
-  const mode = opts.mode ? String(opts.mode).trim().toLowerCase() : 'portfolio';
-  if (mode !== 'lean' && mode !== 'portfolio') {
-    disarmWatchdog();
-    process.stderr.write(`jumper-run: unknown --mode ${JSON.stringify(opts.mode)} (expected lean|portfolio)\n`);
-    writeTerminalRecord({ result: `HALT pre-flight: unknown --mode ${JSON.stringify(opts.mode)}` });
-    process.exitCode = 2;
-    return;
-  }
-  if (mode !== 'lean' && opts.count != null) {
-    disarmWatchdog();
-    process.stderr.write('jumper-run: --count applies to --mode lean only (portfolio size is --fan-out / --depth)\n');
-    writeTerminalRecord({ result: 'HALT pre-flight: --count without --mode lean' });
-    process.exitCode = 2;
-    return;
-  }
-  if (mode === 'lean' && (opts.depth || opts.fanOut != null)) {
-    disarmWatchdog();
-    process.stderr.write('jumper-run: --mode lean takes no --depth or --fan-out (it is one generation call + one review call)\n');
-    writeTerminalRecord({ result: 'HALT pre-flight: --mode lean combined with --depth/--fan-out' });
-    process.exitCode = 2;
-    return;
-  }
-  if (mode === 'lean') {
-    runOptions.mode = 'lean';
-    runOptions.count = Number.isInteger(opts.count) ? opts.count : 3;
-    process.stderr.write(`jumper-run: mode=lean count=${runOptions.count} (one generation call + one cross-family review)\n`);
-  }
-
-  // B3 SC1: --depth → sole resolveJumperDepthKnobs (no second local map).
-  // --tier does not rebind ideaRounds/killGates (B3-SC1-TIER-INERT).
-  // B3 SC2/SC3: omit-path fanOut inherit + pre-run killGates floor + killGates pass-through.
-  // B3 W4 P-CONFLICT: dual-flag equal allowed; mismatch named halt before engine.
-  if (mode === 'lean') {
-    // knobs above; nothing to lock
-  } else if (opts.depth) {
-    const step = depthLockStep(opts.depth, opts.tier);
-    if (!step.ok) {
-      disarmWatchdog();
-      process.stderr.write(step.stderr);
-      writeTerminalRecord({
-        result: `HALT pre-flight: ${String(step.error?.message ?? step.stderr).trim().slice(0, 300)}`,
-      });
-      process.exitCode = step.exitCode;
-      return;
-    }
-    const resolved = step.resolved;
-    try {
-      // Shared derivation with hermetic depthLockedEngineEntry / buildDepthLockedRunOptions.
-      // Omit path: fanOut from ideaRounds when --fan-out omitted.
-      // Dual-flag: equal to ideaRounds allowed; mismatch → JumperDepthFanOutConflictHalt.
-      const depthOpts = buildDepthLockedRunOptions({
-        resolved,
-        fanOut: opts.fanOut,
-        retryOnKill: opts.retryOnKill,
-      });
-      runOptions.fanOut = depthOpts.fanOut;
-      runOptions.killGates = depthOpts.killGates;
-      runOptions.retryOnKill = depthOpts.retryOnKill;
-    } catch (err) {
-      if (
-        err instanceof JumperKillGatesFloorHalt ||
-        err?.name === 'JumperKillGatesFloorHalt' ||
-        err instanceof JumperDepthFanOutConflictHalt ||
-        err?.name === 'JumperDepthFanOutConflictHalt'
-      ) {
-        // Named class HALT before Jumper().run — exit≠0, engine never starts.
-        disarmWatchdog();
-        process.stderr.write(`jumper-run: HALT — ${err.name}: ${err.message}\n`);
-        writeTerminalRecord({
-          result: `HALT pre-flight: ${err.name} — ${String(err.message).slice(0, 300)}`,
-        });
-        process.exitCode = 2;
-        return;
-      }
-      throw err;
-    }
-    process.stderr.write(
-      `jumper-run: triage depth=${resolved.depth} ideaRounds=${resolved.ideaRounds} killGates=${resolved.killGates}\n`,
-    );
-  } else if (opts.fanOut != null) {
-    // Unlocked path: explicit --fan-out only (legacy default stays inside Jumper when omitted).
-    runOptions.fanOut = opts.fanOut;
-  }
-
-  // Gate-3 channel LIVENESS pre-flight (2026-08-25, John-ratified card): the same dead
-  // grok-cli channel burned ~25 paid minutes on 2026-08-19 AND 08-20 before the engine could
-  // HALT. Family independence was already pre-flighted in <1s; channel liveness now is too —
-  // one tiny dispatch through the SAME seat Gate 3 will use, 90s cap. Dead channel ⇒ HALT in
-  // seconds with the channel NAMED, zero drafting spend. JUMPER_SKIP_GATE3_PING=1 bypasses
-  // with eyes open (e.g. offline replays); injected gate3Agent (tests) needs no ping.
-  // Seating resolves for EVERY run first — the RECORD is honest even when the ping is
-  // skipped or an agent is injected (review finding #7: skip-ping runs stamped
-  // cross_model:false on genuinely cross-family seatings).
-  if (process.env.JUMPER_SKIP_GATE3_PING !== '1' && !runOptions.gate3Agent) {
-    const tPing = Date.now();
-    try {
-      await runGate3Ping({
-        ledger: seatingLedger,
-        driver: gate3Seating.gate3DriverName,
-        model: runOptions.gate3Model ?? null,
-        runAgent: trioRunAgent,
-        signal: rootController.signal,
-        timeoutMs: 90_000,
-      });
-      process.stderr.write(`jumper-run: gate-3 channel LIVE (${gate3Seating.gate3DriverName}, ping ${Math.round((Date.now() - tPing) / 1000)}s)\n`);
-    } catch (caught) {
-      disarmWatchdog();
-      const err = startupWatchdog.fired ? startupWatchdog.reason : caught;
-      const seating = err?.seating ?? seatingLedger.snapshot();
-      process.stderr.write(`jumper-run: HALT before drafting — gate-3 channel DEAD (${gate3Seating.gate3DriverName}): ${String(err?.message ?? err).slice(0, 200)}. Zero drafting spend. Restore the selected review-family subscription channel or set JUMPER_SKIP_GATE3_PING=1 to bypass the liveness check with eyes open.\n`);
-      writeTerminalRecord({
-        result: `HALT pre-flight: gate-3 channel dead (${gate3Seating.gate3DriverName}) — ${String(err?.message ?? err).slice(0, 200)}`,
-        seating,
-      });
-      process.exitCode = 1;
-      return;
-    }
-  }
-
-  let result;
-  try {
-    result = await new Jumper().run(problem, runOptions);
-  } catch (caught) {
-    disarmWatchdog();
-    const err = startupWatchdog.fired ? startupWatchdog.reason : caught;
-    if (startupWatchdog.fired && caught && caught !== err) {
-      err.cause = caught;
-      err.receipt = caught?.receipt ?? null;
-      err.jumperPartial = caught?.jumperPartial ?? null;
-      err.seating = caught?.seating ?? null;
-    }
-    const seating = err?.seating ?? seatingLedger.snapshot();
-    // Named HALTs are honest outcomes (self-review route / review seat down) — report and exit non-zero.
-    process.stderr.write(`jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`);
-    // 2026-08-19 (journal 0031): a HALT must NEVER destroy paid work — when the engine
-    // attached the candidates it had already built (err.jumperPartial), emit them with
-    // their honesty stamp instead of nothing ("a guardrail is never the whole product
-    // of a turn"). The honesty stamp records the incomplete phase; the artifact
-    // says exactly what existed when the joined call tree settled.
-    let partialOut = null;
-    const partial = {
-      passed: false,
-      halted: err?.name ?? 'Error',
-      halt_message: String(err?.message ?? err).slice(0, 500),
-      ...(err?.jumperPartial && typeof err.jumperPartial === 'object'
-        ? err.jumperPartial
-        : {
-          stage: 'engine',
-          honesty_stamp: 'NOT FULLY VETTED — the run HALTed before a complete candidate portfolio was available',
-          candidates: [],
-        }),
-      seating,
-    };
-    const serializedPartial = `${JSON.stringify(partial, null, 2)}\n`;
-    if (opts.output) {
-      try {
-        writeFileSync(opts.output, serializedPartial, 'utf8');
-        partialOut = opts.output;
-      } catch (writeErr) {
-        process.stderr.write(`jumper-run: partial --output write failed (${writeErr.message}) — dumping partial to stdout\n`);
-        process.stdout.write(serializedPartial);
-        partialOut = '(stdout — output write failed)';
-      }
-    } else {
-      process.stdout.write(serializedPartial);
-      partialOut = '(stdout)';
-    }
-    process.stderr.write(`jumper-run: partial emitted (${Array.isArray(partial.candidates) ? partial.candidates.length : '?'} unvetted candidate(s)) → ${partialOut}\n`);
-    // 2026-09-13 (R3): a partial may carry round-one verdicts the retry round would have
-    // destroyed — print them verbatim so the paid reasoning is never invisible.
-    if (Array.isArray(partial.killLog) && partial.killLog.length) {
-      process.stderr.write(`jumper-run: the partial carries ${partial.killLog.length} round-one kill(s) verbatim:\n`);
-      for (const k of partial.killLog) {
-        process.stderr.write(`  — [round ${k.round}] ${k.foreignDomain ?? k.title ?? '(no domain)'} · killed at gate ${k.failedAtGate}: ${String(k.rejectionReason ?? '').slice(0, 400)}\n`);
-      }
-    }
-    if (Array.isArray(partial.unjudged) && partial.unjudged.length) {
-      process.stderr.write(`jumper-run: the partial carries ${partial.unjudged.length} UNJUDGED candidate(s) (preserved, never evaluated)\n`);
-    }
-    writeTerminalRecord({
-      output: partialOut,
-      result: `HALT: ${err?.name ?? 'Error'} — ${String(err?.message ?? err).slice(0, 300)}${partialOut ? ' (partial emitted)' : ''}`,
-      seating,
-    });
-    process.exitCode = 1;
-    return;
-  }
-  disarmWatchdog();
-
-  // Zero-survivor SALVAGE surfacing (2026-08-25, John-ratified card): the killLog is the
-  // deliverable on these runs — print it VERBATIM (never summarized) so John never gets an
-  // empty hand for a 25-75 min run. The manual rescue of 0025/0027 is now the engine's job.
-  if (result && result.passed === false && result.salvage_stamp) {
-    process.stderr.write(`jumper-run: ${result.salvage_stamp}\n`);
-    for (const k of (Array.isArray(result.killLog) ? result.killLog : [])) {
-      process.stderr.write(`  — [round ${k.round}] ${k.foreignDomain ?? k.title ?? '(no domain)'} · killed at gate ${k.failedAtGate}: ${String(k.rejectionReason ?? '').slice(0, 400)}\n`);
-    }
-    if (Array.isArray(result.unjudged) && result.unjudged.length) {
-      process.stderr.write(`  — ${result.unjudged.length} candidate(s) UNJUDGED (no gate verdict after one retry) — preserved under unjudged[], never counted as kills\n`);
-    }
-    process.stderr.write(`  (full verbatim gate logs ride in the emitted result under killLog / unjudged)\n`);
-  }
-
-  const serialized = `${JSON.stringify(result, null, 2)}\n`;
-  // 2026-08-19 (journal 0019 class): the final write must never lose the tournament —
-  // pre-flight created the directory, but if the write STILL fails, dump to stdout.
-  let outputDest = opts.output || '(stdout)';
-  if (opts.output) {
-    try { writeFileSync(opts.output, serialized, 'utf8'); }
-    catch (err) {
-      process.stderr.write(`jumper-run: --output write failed (${err.message}) — dumping result to stdout so the run is not lost\n`);
-      process.stdout.write(serialized);
-      outputDest = '(stdout — output write failed)';
-    }
-  } else process.stdout.write(serialized);
-
-  writeRunRecord({
-    tier: result.mode === 'lean' ? `lean-${result.count}` : result.fanOut ? `portfolio-${result.fanOut}` : 'legacy-single',
-    started, ended: new Date().toISOString(),
-    input: opts.input || '(--problem argv)',
-    params: recordParams(),
-    output: outputDest,
-    result: (result.passed
-      ? `passed: ${result.survivors ? `${result.survivors.length} survivor(s)` : 'concept'}${result.mode === 'lean' ? ' (lean: 1 generation + 1 cross-family review)' : ' + GEP'}`
-      : `killed: gate ${result.failedAtGate ?? '?'}${result.retried ? ' (after retry)' : ''}${result.salvage_stamp ? ' (SALVAGE emitted from killLog)' : ''}`)
-      + (Array.isArray(result.unjudged) && result.unjudged.length ? ` [${result.unjudged.length} unjudged]` : '')
-      + (result.refutation_capped ? ` [refutation capped: ${result.refutation_capped.requested}>${result.refutation_capped.budget}]` : ''),
-    seating: result.seating,
-    cross_model: result.seating.cross_model,
-    models: result.seating.models,
-    duration_s: Math.round((Date.now() - t0) / 1000),
-    journal_ref: null,
-  }, { file: recordFile });
-}
-
-// P0 2026-07-25 (journals 0001/0008/0011): realpath + case-fold BOTH sides — a junction path
-// in argv never string-equals the resolved module URL, so the CLI silently exited 0 producing
-// nothing. Same fix as gandalf-run.mjs.
-function invokedDirectly() {
-  const entry = process.argv[1];
-  if (!entry) return false;
-  try {
-    const canon = (p) => {
-      const abs = resolve(p);
-      let real = abs;
-      try { real = realpathSync(abs); } catch { /* keep abs */ }
-      return process.platform === 'win32' ? real.toLowerCase() : real;
-    };
-    return canon(fileURLToPath(import.meta.url)) === canon(entry);
-  } catch { return false; }
-}
-if (invokedDirectly()) {
-  main().catch((err) => {
-    process.stderr.write(`jumper-run: fatal — ${err?.message ?? err}\n`);
-    process.exitCode = 1;
-  });
-}
+#!/usr/bin/env node
+// jumper-run.mjs — the thin CLI entry for the Jumper ideation engine (W2–W4, 2026-07).
+//
+// Before this file existed, SKILL.md gave no invocation path at all, so a real
+// /jumper invocation IMPROVISED the tripartite pipeline in prose — bypassing the
+// ledger, the cross-family Gate 3, and every honesty guarantee (the exact failure
+// mode index.js documents fixing for the composed Gandalf). This CLI is the
+// documented way a session runs the REAL engine.
+//
+//   node bin/jumper-run.mjs --problem "<statement>" [--fan-out N] [--retry-on-kill]
+//        [--output out.json] [--input problem.txt]
+//
+// Defaults are the AGENTS.md invocation discipline: portfolio fanOut=3, drafter =
+// Anchor coding family, Gate 3 = Anchor review family (cross-family when distinct,
+// fail-closed when independence cannot be proved). HALT semantics are
+// BY DESIGN, not bugs: JumperSelfReviewHalt (Gate 3 routed to the drafter family)
+// and JumperCrossFamilyDegradeHalt (review seat down mid-run) exit non-zero with the reason —
+// Jumper never silently self-reviews. A dead Gate-3 *ping* after retries no longer empty-halts:
+// the engine still generates and stamps ideas UNJUDGED (never survivors).
+//
+// B3 W3: SC2 omit-path fanOut := resolved.ideaRounds (one derivation); SC3 pre-run
+// refuse killGates < 3 with named JumperKillGatesFloorHalt before Jumper().run;
+// killGates passed into engine so kill-filter stage count matches knobs.
+// B3 W4: P-CONFLICT (not SC2) — both --depth and --fan-out: allow only when
+// fanOut === live ideaRounds; mismatch → named JumperDepthFanOutConflictHalt,
+// exit≠0, stderr names both values, Jumper().run never called (no warn-and-inherit,
+// no silent prefer of either flag).
+// B3 W5: Gate 3 cross-family fail-closed under LITE — depthLockedGate3Seating +
+// resolveGate3Seating; same-family → JumperSelfReviewHalt; review seat down →
+// JumperCrossFamilyDegradeHalt; JUMPER_GATE3_DRIVER may retarget family never skip independence.
+
+import { readFileSync, writeFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+import process from 'node:process';
+
+import {
+  Jumper,
+  createJumperSeatingLedger,
+  runJumperDispatch,
+  resolveGate3Seating,
+  JumperSelfReviewHalt,
+  JumperCrossFamilyDegradeHalt,
+} from '../index.js';
+import { runAgent as trioRunAgent } from '../../../../trio/drivers/index.mjs';
+// B3 SC1 sole resolver — depth → ideaRounds/killGates ONLY via this helper
+// (no second depth→knob map; no path-local depth→knob table).
+import {
+  resolveJumperDepthKnobs,
+  JUMPER_KILL_GATES_MIN,
+} from 'fil<path>';
+
+const USAGE =
+  'usage: node bin/jumper-run.mjs --problem "<statement>" [--fan-out N] [--depth LITE|SPIKE|FULL] [--tier Heavy|Standard] [--retry-on-kill] [--no-live-refuter]\n' +
+  '       [--mode lean|portfolio] [--count N] [--input <file>] [--output <out.json>]\n' +
+  '       (--mode lean: ONE generation call + ONE cross-family review of the whole portfolio, --count candidates (default 3);\n' +
+  '        takes no --depth/--fan-out; same seating law, receipts, salvage and partial emit)\n' +
+  '       (default: portfolio mode fanOut=3; --fan-out 1 = legacy single-candidate;\n' +
+  '        --depth locks @foundry/triage knobs via resolveJumperDepthKnobs → ideaRounds as fanOut when --fan-out omitted;\n' +
+  '        both --depth and --fan-out: only allowed when --fan-out equals live ideaRounds (P-CONFLICT fail-closed on mismatch);\n' +
+  '        recovery: omit --fan-out (SC2 inherit) or set --fan-out equal to ideaRounds;\n' +
+  '        --tier does not rebind ideaRounds/killGates (depth selects those knobs);\n' +
+  '        killGates ≥ 3 at every depth (pre-run refuse if thinned); Gate 3 uses the Anchor review family and HALTs honestly if that seat is down;\n' +
+  '        --no-live-refuter floors only Gandalf elevations to SPECULATIVE and never disables Jumper Gate 3, its ping, or seating checks)';
+
+/**
+ * Named pre-run HALT when resolved killGates is below the floor (B3-SC3-PRERUN-REFUSE).
+ * Stable class — not stringly-only — so operators/Foreman triage one fail surface.
+ * Engine must never start after this HALT (Jumper().run call count === 0).
+ */
+export class JumperKillGatesFloorHalt extends Error {
+  /**
+   * @param {unknown} killGates
+   * @param {number} [min]
+   */
+  constructor(killGates, min = JUMPER_KILL_GATES_MIN) {
+    super(
+      `jumper-run: refusing killGates=${JSON.stringify(killGates)} below floor ${min} ` +
+        `(never clamp; never start engine)`,
+    );
+    this.name = 'JumperKillGatesFloorHalt';
+    this.code = 'JUMPER_KILLGATES_FLOOR_HALT';
+    this.killGates = killGates;
+    this.min = min;
+  }
+}
+
+/**
+ * Named pre-run HALT when both --depth and --fan-out are set and disagree (B3 P-CONFLICT).
+ * Not SC2 (SC2 is omit-path only). Fail-closed: no warn-and-inherit, no silent prefer
+ * of either flag. Engine must never start after this HALT (Jumper().run call count === 0).
+ * Stderr / message always names both numbers so operators can recover (omit fan-out or equalize).
+ */
+export class JumperDepthFanOutConflictHalt extends Error {
+  /**
+   * @param {unknown} fanOut  explicit --fan-out value
+   * @param {unknown} ideaRounds  live resolved.ideaRounds for the locked depth
+   */
+  constructor(fanOut, ideaRounds) {
+    super(
+      `jumper-run: P-CONFLICT — --fan-out=${JSON.stringify(fanOut)} conflicts with ` +
+        `depth ideaRounds=${JSON.stringify(ideaRounds)} ` +
+        `(fail-closed; do not warn-and-inherit; omit --fan-out or set --fan-out equal to ideaRounds)`,
+    );
+    this.name = 'JumperDepthFanOutConflictHalt';
+    this.code = 'JUMPER_DEPTH_FANOUT_CONFLICT';
+    this.fanOut = fanOut;
+    this.ideaRounds = ideaRounds;
+  }
+}
+
+/** @param {string[]} argv */
+export function parseArgs(argv) {
+  const o = { problem: null, input: null, output: null, fanOut: null, depth: null, tier: null, retryOnKill: false, budget: null, liveRefuter: null, mode: null, count: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--problem') { o.problem = argv[++i]; if (o.problem === undefined) throw new Error('--problem requires text'); }
+    else if (a === '--input') { o.input = argv[++i]; if (o.input === undefined) throw new Error('--input requires a file'); }
+    else if (a === '--output') { o.output = argv[++i]; if (o.output === undefined) throw new Error('--output requires a file'); }
+    else if (a === '--fan-out') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1) throw new Error('--fan-out requires a positive integer'); o.fanOut = n; }
+    else if (a === '--depth') { o.depth = argv[++i]; if (o.depth === undefined) throw new Error('--depth requires LITE|SPIKE|FULL'); }
+    else if (a === '--tier') { o.tier = argv[++i]; if (o.tier === undefined) throw new Error('--tier requires Heavy|Standard'); }
+    else if (a === '--retry-on-kill') { o.retryOnKill = true; }
+    // P1 2026-07-25 (journals 0003/0012): the refuter-budget dial — RefuterBudgetHalt
+    // (elevations > prereg R=3) killed whole tournaments with no CLI override.
+    else if (a === '--budget') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1) throw new Error('--budget requires a positive integer (refuter budget)'); o.budget = n; }
+    // Explicit single-family run: floor elevations to SPECULATIVE without paying for
+    // (or HALTing on) the cross-family refuter lane. Honest — never a fake grant.
+    else if (a === '--no-live-refuter') { o.liveRefuter = false; }
+    // 2026-09-13 (journal 0056, John-approved): lean mode — one generation call + one
+    // cross-family review of the whole portfolio. --count = candidates requested (default 3).
+    else if (a === '--mode') { o.mode = argv[++i]; if (o.mode === undefined) throw new Error('--mode requires lean|portfolio'); }
+    else if (a === '--count') { const n = Number(argv[++i]); if (!Number.isInteger(n) || n < 1 || n > 12) throw new Error('--count requires an integer 1–12 (lean-mode candidates)'); o.count = n; }
+    else if (a === '--help' || a === '-h') { o.help = true; }
+    else throw new Error(`unknown argument ${JSON.stringify(a)}`);
+  }
+  return o;
+}
+
+/**
+ * Hermetic depth-lock step (B3 SC1). Sole production path when --depth is set.
+ * Tier is accepted for operator ergonomics but does NOT rebind ideaRounds/killGates.
+ *
+ * @param {unknown} depthArg
+ * @param {unknown} [_tierArg] intentionally ignored for ideaRounds/killGates
+ * @returns {{ ok: true, resolved: Readonly<{depth:string,ideaRounds:number,killGates:number}> }
+ *   | { ok: false, exitCode: number, stderr: string, error: Error }}
+ */
+export function depthLockStep(depthArg, _tierArg) {
+  try {
+    const resolved = resolveJumperDepthKnobs(depthArg);
+    return { ok: true, resolved };
+  } catch (err) {
+    const message = err?.message ?? String(err);
+    return {
+      ok: false,
+      exitCode: 2,
+      stderr: `jumper-run: ${message}\n`,
+      error: /** @type {Error} */ (err),
+    };
+  }
+}
+
+/**
+ * SC3 pre-run refuse: resolved killGates must be integer ≥ floor before Jumper().run.
+ * Never clamps. Throws JumperKillGatesFloorHalt on thin/invalid values.
+ *
+ * @param {{ killGates?: unknown } | null | undefined} resolved
+ * @param {{ min?: number }} [opts]
+ * @returns {true}
+ */
+export function assertPreRunKillGatesFloor(resolved, opts = {}) {
+  const min = Number.isInteger(opts.min) ? /** @type {number} */ (opts.min) : JUMPER_KILL_GATES_MIN;
+  const kg = resolved?.killGates;
+  if (!Number.isInteger(kg) || /** @type {number} */ (kg) < min) {
+    throw new JumperKillGatesFloorHalt(kg, min);
+  }
+  return true;
+}
+
+/**
+ * B3 P-CONFLICT (W4, not SC2): when both --depth and an explicit --fan-out are set,
+ * allow only if fanOut === live resolved.ideaRounds (idempotent dual-flag).
+ * Mismatch → JumperDepthFanOutConflictHalt (fail-closed; no warn-and-inherit;
+ * no silent prefer of either flag). Omit path (fanOut null/undefined) is SC2 — not this gate.
+ *
+ * @param {{ ideaRounds?: unknown } | null | undefined} resolved
+ * @param {unknown} fanOut  explicit --fan-out, or null/undefined when omitted
+ * @returns {true}
+ */
+export function assertDepthFanOutNoConflict(resolved, fanOut) {
+  if (fanOut == null) return true; // SC2 omit path — not a dual-flag conflict
+  const ideaRounds = resolved?.ideaRounds;
+  if (!Number.isInteger(fanOut) || fanOut !== ideaRounds) {
+    throw new JumperDepthFanOutConflictHalt(fanOut, ideaRounds);
+  }
+  return true;
+}
+
+/**
+ * Build engine runOptions for a depth-locked CLI path (B3 W3–W4).
+ *
+ * SC2 omit path: when fanOut is null/undefined, fanOut := resolved.ideaRounds
+ * (one derivation from live resolve — never portfolio literals).
+ * SC3: pre-run floor refuse; pass killGates into engine for Decision A cardinality.
+ * W4 P-CONFLICT: when fanOut is explicit, require fanOut === ideaRounds or hard-fail
+ * before engine entry (no warn-and-inherit; no silent prefer of either flag).
+ *
+ * @param {{
+ *   resolved: Readonly<{ depth: string, ideaRounds: number, killGates: number }>,
+ *   fanOut?: number | null,
+ *   retryOnKill?: boolean,
+ * }} p
+ * @returns {{ fanOut: number, killGates: number, retryOnKill: boolean }}
+ */
+export function buildDepthLockedRunOptions({ resolved, fanOut = null, retryOnKill = false }) {
+  assertPreRunKillGatesFloor(resolved);
+  assertDepthFanOutNoConflict(resolved, fanOut);
+  /** @type {{ fanOut: number, killGates: number, retryOnKill: boolean }} */
+  const runOptions = {
+    retryOnKill: !!retryOnKill,
+    // Decision A substrate: engine receives killGates so stage count can match knobs.
+    killGates: resolved.killGates,
+    // SC2 omit → ideaRounds; dual-flag equal → same value (idempotent); mismatch already threw.
+    fanOut: fanOut == null ? resolved.ideaRounds : fanOut,
+  };
+  return runOptions;
+}
+
+/**
+ * Hermetic depth-locked CLI → engine-entry step (B3 SC2 / SC3 spy surface).
+ *
+ * Resolve knobs via depthLockStep (or resolvedOverride for pre-run inject),
+ * build runOptions (omit-path fanOut + killGates), optionally invoke an injected
+ * Jumper implementation so tests can spy Jumper().run call count and options.
+ *
+ * @param {{
+ *   depth: unknown,
+ *   tier?: unknown,
+ *   fanOut?: number | null,
+ *   problem?: string,
+ *   retryOnKill?: boolean,
+ *   resolvedOverride?: Partial<{ depth: string, ideaRounds: number, killGates: number }> | null,
+ *   createJumper?: (() => { run: (problem: string, opts: object) => Promise<unknown> }) | null,
+ * }} p
+ */
+export async function depthLockedEngineEntry({
+  depth,
+  tier = null,
+  fanOut = null,
+  problem = 'hermetic-problem',
+  retryOnKill = false,
+  resolvedOverride = null,
+  createJumper = null,
+} = {}) {
+  const lock = depthLockStep(depth, tier);
+  if (!lock.ok) {
+    return {
+      ok: false,
+      exitCode: lock.exitCode,
+      stderr: lock.stderr,
+      error: lock.error,
+      jumperRunCalls: 0,
+      runOptions: null,
+      resolved: null,
+      result: null,
+    };
+  }
+
+  const base = lock.resolved;
+  const resolved = Object.freeze({
+    depth: resolvedOverride?.depth ?? base.depth,
+    ideaRounds: resolvedOverride?.ideaRounds ?? base.ideaRounds,
+    killGates: resolvedOverride?.killGates ?? base.killGates,
+  });
+
+  let runOptions;
+  try {
+    runOptions = buildDepthLockedRunOptions({ resolved, fanOut, retryOnKill });
+  } catch (err) {
+    if (
+      err instanceof JumperKillGatesFloorHalt ||
+      err?.name === 'JumperKillGatesFloorHalt' ||
+      err instanceof JumperDepthFanOutConflictHalt ||
+      err?.name === 'JumperDepthFanOutConflictHalt'
+    ) {
+      return {
+        ok: false,
+        exitCode: 2,
+        stderr: `jumper-run: HALT — ${err.name}: ${err.message}\n`,
+        error: /** @type {Error} */ (err),
+        jumperRunCalls: 0,
+        runOptions: null,
+        resolved,
+        result: null,
+      };
+    }
+    throw err;
+  }
+
+  if (typeof createJumper !== 'function') {
+    // Options-only path: proves SC2 derivation without starting the real engine.
+    return {
+      ok: true,
+      exitCode: 0,
+      resolved,
+      runOptions,
+      jumperRunCalls: 0,
+      result: null,
+      error: null,
+      stderr: '',
+    };
+  }
+
+  let jumperRunCalls = 0;
+  const jumper = createJumper();
+  const originalRun = jumper.run.bind(jumper);
+  jumper.run = async (problemArg, opts) => {
+    jumperRunCalls += 1;
+    return originalRun(problemArg, opts);
+  };
+
+  try {
+    const result = await jumper.run(problem, runOptions);
+    return {
+      ok: true,
+      exitCode: 0,
+      resolved,
+      runOptions,
+      jumperRunCalls,
+      result,
+      error: null,
+      stderr: '',
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      exitCode: 1,
+      resolved,
+      runOptions,
+      jumperRunCalls,
+      result: null,
+      error: /** @type {Error} */ (err),
+      stderr: `jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`,
+    };
+  }
+}
+
+export { resolveJumperDepthKnobs, JUMPER_KILL_GATES_MIN };
+export {
+  resolveGate3Seating,
+  JumperSelfReviewHalt,
+  JumperCrossFamilyDegradeHalt,
+};
+
+/**
+ * 2026-09-13 (repair card R2, journals 0045/0056): the first model round-trip has landed when
+ * the Gandalf DRAFT returns (or the lean generation returns). The watchdog used to wait for
+ * `gandalf:done`, which fires only after the composed refuter lane — 15–40 min on a rich
+ * brief — so it killed four healthy runs.
+ */
+export function disarmsStartupWatchdog(line) {
+  const s = String(line ?? '');
+  return s.includes('gandalf:draft:done') || s.includes('gandalf:done') || s.includes('lean:generate done');
+}
+
+export class JumperStartupWatchdog extends Error {
+  constructor(timeoutMs) {
+    super(
+      `STARTUP-STALL: no first model round-trip (the Gandalf DRAFT returning, or the lean generation) within ${Math.round(timeoutMs / 1000)}s — `
+      + 'the active Jumper/Gandalf/refuter tree was aborted and joined before terminal serialization',
+    );
+    this.name = 'JumperStartupWatchdog';
+    this.code = 'JUMPER_STARTUP_WATCHDOG';
+    this.timeout_ms = timeoutMs;
+  }
+}
+
+/** Root watchdog: timeout only aborts; the caller still owns awaiting the run promise. */
+export function createStartupWatchdog({ controller, timeoutMs, onAbort = () => {} } = {}) {
+  if (!(controller instanceof AbortController)) {
+    throw new TypeError('createStartupWatchdog requires a root AbortController');
+  }
+  let timer = null;
+  let reason = null;
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timer = setTimeout(() => {
+      reason = new JumperStartupWatchdog(timeoutMs);
+      controller.abort(reason);
+      onAbort(reason);
+    }, timeoutMs);
+    timer.unref?.();
+  }
+  return {
+    disarm() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+    get fired() { return reason !== null; },
+    get reason() { return reason; },
+  };
+}
+
+/** One Gate-3 hello. 90s emptied journal 0063 on a live Grok seat; 3 min is still a ping. */
+export const GATE3_PING_TIMEOUT_MS = 180_000;
+/** Ledger caps a dispatch at two logical attempts — one retry, not a streak. */
+export const GATE3_PING_ATTEMPTS = 2;
+
+export function gate3PingOptionsFromEnv(env = process.env) {
+  const timeoutMs = Number(env.JUMPER_GATE3_PING_TIMEOUT_MS);
+  const attempts = Number(env.JUMPER_GATE3_PING_ATTEMPTS);
+  return {
+    timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : GATE3_PING_TIMEOUT_MS,
+    attempts: Number.isInteger(attempts) && attempts >= 1 && attempts <= 2
+      ? attempts
+      : GATE3_PING_ATTEMPTS,
+  };
+}
+
+async function runGate3PingOnce({
+  ledger,
+  driver,
+  model = null,
+  runAgent = trioRunAgent,
+  signal = null,
+  timeoutMs = GATE3_PING_TIMEOUT_MS,
+} = {}) {
+  const pingController = new AbortController();
+  const pingSignal = signal
+    ? AbortSignal.any([signal, pingController.signal])
+    : pingController.signal;
+  let timedOut = false;
+  const timer = Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? setTimeout(() => {
+      timedOut = true;
+      pingController.abort(new DOMException(`Gate-3 liveness ping timed out at ${timeoutMs}ms`, 'TimeoutError'));
+    }, timeoutMs)
+    : null;
+  timer?.unref?.();
+  try {
+    const value = await runJumperDispatch({
+      ledger,
+      kind: 'ping',
+      dispatchId: 'gate3:ping',
+      runAgent,
+      signal: pingSignal,
+      args: {
+        prompt: 'Reply with the single word OK.',
+        driver,
+        model,
+        label: 'Gate3LivenessPing',
+        role: 'gate3',
+        freshContext: true,
+      },
+    });
+    if (timedOut) {
+      throw new DOMException(`Gate-3 liveness ping exceeded ${timeoutMs}ms`, 'TimeoutError');
+    }
+    return value;
+  } catch (err) {
+    if (err instanceof JumperCrossFamilyDegradeHalt) throw err;
+    throw new JumperCrossFamilyDegradeHalt(driver, err);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Shared-dispatcher Gate-3 liveness check. Timeout aborts and then joins the dispatch. */
+export async function runGate3Ping({
+  ledger,
+  driver,
+  model = null,
+  runAgent = trioRunAgent,
+  signal = null,
+  timeoutMs = GATE3_PING_TIMEOUT_MS,
+  attempts = GATE3_PING_ATTEMPTS,
+} = {}) {
+  const n = Number.isInteger(attempts) && attempts >= 1
+    ? Math.min(2, attempts)
+    : GATE3_PING_ATTEMPTS;
+  let lastErr;
+  for (let i = 1; i <= n; i++) {
+    try {
+      return await runGate3PingOnce({
+        ledger, driver, model, runAgent, signal, timeoutMs,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (i === n) throw err;
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Production-entry Gate-3 seating under a depth lock (B3-G3-LITE-SEATING).
+ *
+ * Composes the same CLI depth-lock path (resolveJumperDepthKnobs → buildDepthLockedRunOptions)
+ * with resolveGate3Seating — the seating policy KillFilter uses at engine entry. LITE may lean
+ * ideaRounds (in runOptions.fanOut) but never collapses Gate-3 independence.
+ *
+ * Hermetic: no network; no live review seat. assertIndependent defaults true (fail-closed).
+ *
+ * @param {{
+ *   depth?: unknown,
+ *   tier?: unknown,
+ *   gate3Driver?: string | null,
+ *   drafterDriver?: string | null,
+ *   gate3Agent?: Function | null,
+ *   env?: NodeJS.ProcessEnv,
+ *   assertIndependent?: boolean,
+ * }} [p]
+ */
+export function depthLockedGate3Seating({
+  depth = 'LITE',
+  tier = null,
+  gate3Driver = null,
+  drafterDriver = null,
+  gate3Agent = null,
+  env = process.env,
+  assertIndependent = true,
+} = {}) {
+  const lock = depthLockStep(depth, tier);
+  if (!lock.ok) {
+    return {
+      ok: false,
+      exitCode: lock.exitCode,
+      stderr: lock.stderr,
+      error: lock.error,
+      resolved: null,
+      runOptions: null,
+      seating: null,
+    };
+  }
+  let runOptions;
+  try {
+    runOptions = buildDepthLockedRunOptions({
+      resolved: lock.resolved,
+      fanOut: null, // SC2 omit-path — ideaRounds lean only; Gate-3 seating orthogonal
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      exitCode: 2,
+      stderr: `jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`,
+      error: /** @type {Error} */ (err),
+      resolved: lock.resolved,
+      runOptions: null,
+      seating: null,
+    };
+  }
+
+  try {
+    const seating = resolveGate3Seating({
+      drafterDriver,
+      gate3Driver,
+      gate3Agent,
+      env,
+      assertIndependent,
+    });
+    return {
+      ok: true,
+      exitCode: 0,
+      resolved: lock.resolved,
+      runOptions,
+      seating,
+      error: null,
+      stderr: '',
+    };
+  } catch (err) {
+    // Named Gate-3 HALTs (self-review) surface as production-entry fail-closed.
+    return {
+      ok: false,
+      exitCode: 1,
+      resolved: lock.resolved,
+      runOptions,
+      seating: null,
+      error: /** @type {Error} */ (err),
+      stderr: `jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`,
+    };
+  }
+}
+
+/** Run-capture for training (canonical: Skill Foundry AGENTS.md → "Run capture"). Best-effort.
+ *  2026-08-19 (journal 0031): accepts an explicit `file` so a run writes ONE record — an
+ *  IN-FLIGHT record at startup, rewritten in place at HALT/success. Before this, a record
+ *  existed only at the END of a run, so a stalled engine and a never-launched engine were
+ *  indistinguishable (the BA-815 0.14s-CPU/25-min stall left zero trace). */
+export function writeRunRecord(record, { skillDir = resolve(dirname(fileURLToPath(import.meta.url)), '..'), file = null } = {}) {
+  try {
+    const dir = join(skillDir, 'journal', 'runs');
+    mkdirSync(dir, { recursive: true });
+    const started = record.started || new Date().toISOString();
+    const target = file || join(dir, `${started.replace(/[:.]/g, '-')}-${Math.abs(Date.now() % 100000)}.json`);
+    writeFileSync(target, JSON.stringify({ skill: 'jumper', ...record }, null, 2) + '\n', 'utf8');
+    return target;
+  } catch { return null; }
+}
+
+async function main() {
+  let opts;
+  try { opts = parseArgs(process.argv.slice(2)); }
+  catch (err) { process.stderr.write(`jumper-run: ${err.message}\n${USAGE}\n`); process.exitCode = 2; return; }
+  if (opts.help) { process.stdout.write(`${USAGE}\n`); return; }
+
+  let problem = opts.problem;
+  if (!problem && opts.input) {
+    try { problem = readFileSync(opts.input, 'utf8'); }
+    catch (err) { process.stderr.write(`jumper-run: could not read --input: ${err.message}\n`); process.exitCode = 2; return; }
+  }
+  if (!problem || !String(problem).trim()) {
+    process.stderr.write(`jumper-run: a problem statement is required (--problem or --input)\n${USAGE}\n`);
+    process.exitCode = 2;
+    return;
+  }
+
+  // 2026-08-19 (journal 0031, output-dir ENOENT class from journal 0019): validate the
+  // --output parent at PRE-FLIGHT, before any paid call — a full tournament once died at
+  // the final writeFileSync because the directory did not exist, losing the killLog.
+  if (opts.output) {
+    try { mkdirSync(dirname(resolve(opts.output)), { recursive: true }); }
+    catch (err) {
+      process.stderr.write(`jumper-run: cannot create --output directory (pre-flight): ${err.message}\n`);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
+  const started = new Date().toISOString();
+  const t0 = Date.now();
+  const rootController = new AbortController();
+  const seatingLedger = createJumperSeatingLedger();
+  /** @type {{ retryOnKill: boolean, fanOut?: number, killGates?: number, refuterBudget?: number, liveRefuter?: boolean, log?: Function, signal?:AbortSignal, seatingLedger?:object, runId?:string }} */
+  const runOptions = {
+    retryOnKill: opts.retryOnKill,
+    signal: rootController.signal,
+    seatingLedger,
+    runId: `${started.replace(/[:.]/g, '-')}-${randomUUID()}`,
+  };
+  // P1 2026-07-25: heartbeat sink (stderr keeps stdout's JSON result clean) + the
+  // new dials. Stage lines let a cadence agent tell healthy-long-run from hang
+  // (journal 0014's false-DONE came from exactly this blindness).
+  //
+  // 2026-08-19 (journal 0031, BA-815 startup stall — 0.14s CPU / 25 min / zero output /
+  // zero trace): (1) an IN-FLIGHT run record is written NOW, so a wedged run leaves a
+  // record naming its start time, pid, and input (record present = engine started;
+  // absent = the launch wrapper never reached node); (2) a STARTUP WATCHDOG fails the
+  // run LOUDLY if the first model round-trip (the 'gandalf:draft:done' or 'lean:generate
+  // done' heartbeat — R2, 2026-09-13; it used to wait on 'gandalf:done', i.e. the whole
+  // refuter lane) has not landed
+  // within JUMPER_STARTUP_WATCHDOG_S (default 900s) — writing WHY into the run record
+  // instead of idling forever. The 20-min transport kill guards a hung CALL; this
+  // guards the seams BEFORE and AROUND it.
+  const watchdogS = (() => {
+    const n = Number(process.env.JUMPER_STARTUP_WATCHDOG_S);
+    return Number.isFinite(n) && n >= 0 ? n : 900;
+  })();
+  const initialSeating = seatingLedger.snapshot();
+  const recordFile = writeRunRecord({
+    tier: 'in-flight', started, ended: null,
+    input: opts.input || '(--problem argv)', params: { retryOnKill: opts.retryOnKill },
+    output: null, result: `IN-FLIGHT — engine started (pid ${process.pid}); startup watchdog ${watchdogS ? `${watchdogS}s` : 'DISABLED'}`,
+    seating: initialSeating,
+    cross_model: initialSeating.cross_model,
+    models: initialSeating.models,
+    duration_s: 0,
+    journal_ref: null,
+  });
+  const startupWatchdog = createStartupWatchdog({
+    controller: rootController,
+    timeoutMs: watchdogS * 1000,
+    onAbort: (reason) => {
+      // No record/output/exit here. The terminal path runs only after the active
+      // Jumper/Gandalf/refuter promise rejects and every started child has joined.
+      process.stderr.write(`jumper-run: startup watchdog abort requested — ${reason.message}\n`);
+    },
+  });
+  const disarmWatchdog = () => startupWatchdog.disarm();
+  runOptions.log = (m) => {
+    // 2026-09-13 (R2): every heartbeat carries elapsed seconds so a reader can tell a slow
+    // stage from a dead one without process forensics (journals 0022/0024/0039).
+    process.stderr.write(`[+${Math.round((Date.now() - t0) / 1000)}s] ${m}\n`);
+    if (disarmsStartupWatchdog(m)) disarmWatchdog();
+  };
+  if (Number.isInteger(opts.budget) && opts.budget > 0) runOptions.refuterBudget = opts.budget;
+  if (opts.liveRefuter === false) runOptions.liveRefuter = false;
+
+  const recordParams = () => {
+    const { signal: _signal, seatingLedger: _ledger, log: _log, ...params } = runOptions;
+    return params;
+  };
+  const writeTerminalRecord = ({ result, output = null, seating = seatingLedger.snapshot() }) =>
+    writeRunRecord({
+      tier: 'halted',
+      started,
+      ended: new Date().toISOString(),
+      input: opts.input || '(--problem argv)',
+      params: recordParams(),
+      output,
+      result,
+      seating,
+      cross_model: seating.cross_model,
+      models: seating.models,
+      duration_s: Math.round((Date.now() - t0) / 1000),
+      journal_ref: null,
+    }, { file: recordFile });
+
+  // P1 2026-07-25 (journal 0006): PRE-FLIGHT Gate-3 seating check. JumperSelfReviewHalt
+  // used to fire only inside the kill filter — AFTER ~8 minutes of paid seats on a
+  // single-family host. Resolve the seating now (sub-second, env-only) and refuse
+  // BEFORE any model call. `--no-live-refuter` controls the composed Gandalf
+  // refuter only; it never disables Jumper's final Gate-3 kill-filter.
+  let gate3Seating;
+  try {
+    gate3Seating = resolveGate3Seating({
+      drafterDriver: runOptions.driver ?? null,
+      gate3Driver: runOptions.gate3Driver ?? null,
+      gate3Agent: runOptions.gate3Agent ?? null,
+      env: process.env,
+      assertIndependent: !runOptions.gate3Agent,
+    });
+  } catch (err) {
+    disarmWatchdog();
+    const seating = err?.seating ?? seatingLedger.snapshot();
+    process.stderr.write(`jumper-run: HALT (pre-flight) — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`);
+    process.stderr.write('jumper-run: select distinct coding/review families or explicitly retarget JUMPER_GATE3_DRIVER to an independent review family.\n');
+    writeTerminalRecord({
+      result: `HALT pre-flight: ${err?.name ?? 'Error'} — ${String(err?.message ?? err).slice(0, 300)}`,
+      seating,
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  // 2026-09-13 (journal 0056): --mode lean takes no depth/fan-out knobs — it is two calls.
+  const mode = opts.mode ? String(opts.mode).trim().toLowerCase() : 'portfolio';
+  if (mode !== 'lean' && mode !== 'portfolio') {
+    disarmWatchdog();
+    process.stderr.write(`jumper-run: unknown --mode ${JSON.stringify(opts.mode)} (expected lean|portfolio)\n`);
+    writeTerminalRecord({ result: `HALT pre-flight: unknown --mode ${JSON.stringify(opts.mode)}` });
+    process.exitCode = 2;
+    return;
+  }
+  if (mode !== 'lean' && opts.count != null) {
+    disarmWatchdog();
+    process.stderr.write('jumper-run: --count applies to --mode lean only (portfolio size is --fan-out / --depth)\n');
+    writeTerminalRecord({ result: 'HALT pre-flight: --count without --mode lean' });
+    process.exitCode = 2;
+    return;
+  }
+  if (mode === 'lean' && (opts.depth || opts.fanOut != null)) {
+    disarmWatchdog();
+    process.stderr.write('jumper-run: --mode lean takes no --depth or --fan-out (it is one generation call + one review call)\n');
+    writeTerminalRecord({ result: 'HALT pre-flight: --mode lean combined with --depth/--fan-out' });
+    process.exitCode = 2;
+    return;
+  }
+  if (mode === 'lean') {
+    runOptions.mode = 'lean';
+    runOptions.count = Number.isInteger(opts.count) ? opts.count : 3;
+    process.stderr.write(`jumper-run: mode=lean count=${runOptions.count} (one generation call + one cross-family review)\n`);
+  }
+
+  // B3 SC1: --depth → sole resolveJumperDepthKnobs (no second local map).
+  // --tier does not rebind ideaRounds/killGates (B3-SC1-TIER-INERT).
+  // B3 SC2/SC3: omit-path fanOut inherit + pre-run killGates floor + killGates pass-through.
+  // B3 W4 P-CONFLICT: dual-flag equal allowed; mismatch named halt before engine.
+  if (mode === 'lean') {
+    // knobs above; nothing to lock
+  } else if (opts.depth) {
+    const step = depthLockStep(opts.depth, opts.tier);
+    if (!step.ok) {
+      disarmWatchdog();
+      process.stderr.write(step.stderr);
+      writeTerminalRecord({
+        result: `HALT pre-flight: ${String(step.error?.message ?? step.stderr).trim().slice(0, 300)}`,
+      });
+      process.exitCode = step.exitCode;
+      return;
+    }
+    const resolved = step.resolved;
+    try {
+      // Shared derivation with hermetic depthLockedEngineEntry / buildDepthLockedRunOptions.
+      // Omit path: fanOut from ideaRounds when --fan-out omitted.
+      // Dual-flag: equal to ideaRounds allowed; mismatch → JumperDepthFanOutConflictHalt.
+      const depthOpts = buildDepthLockedRunOptions({
+        resolved,
+        fanOut: opts.fanOut,
+        retryOnKill: opts.retryOnKill,
+      });
+      runOptions.fanOut = depthOpts.fanOut;
+      runOptions.killGates = depthOpts.killGates;
+      runOptions.retryOnKill = depthOpts.retryOnKill;
+    } catch (err) {
+      if (
+        err instanceof JumperKillGatesFloorHalt ||
+        err?.name === 'JumperKillGatesFloorHalt' ||
+        err instanceof JumperDepthFanOutConflictHalt ||
+        err?.name === 'JumperDepthFanOutConflictHalt'
+      ) {
+        // Named class HALT before Jumper().run — exit≠0, engine never starts.
+        disarmWatchdog();
+        process.stderr.write(`jumper-run: HALT — ${err.name}: ${err.message}\n`);
+        writeTerminalRecord({
+          result: `HALT pre-flight: ${err.name} — ${String(err.message).slice(0, 300)}`,
+        });
+        process.exitCode = 2;
+        return;
+      }
+      throw err;
+    }
+    process.stderr.write(
+      `jumper-run: triage depth=${resolved.depth} ideaRounds=${resolved.ideaRounds} killGates=${resolved.killGates}\n`,
+    );
+  } else if (opts.fanOut != null) {
+    // Unlocked path: explicit --fan-out only (legacy default stays inside Jumper when omitted).
+    runOptions.fanOut = opts.fanOut;
+  }
+
+  // Gate-3 channel LIVENESS pre-flight (2026-08-25; bound/retry 2026-09-18):
+  // a dead channel used to burn ~25 paid minutes (0032) then, after the 90s
+  // ping, empty-halt on a live Grok seat that needed longer than 90s (0063).
+  // Retry once at GATE3_PING_TIMEOUT_MS. Still dead ⇒ generate anyway and
+  // stamp UNJUDGED (never survivors). JUMPER_SKIP_GATE3_PING=1 bypasses with
+  // eyes open; injected gate3Agent (tests) needs no ping.
+  if (process.env.JUMPER_SKIP_GATE3_PING !== '1' && !runOptions.gate3Agent) {
+    const tPing = Date.now();
+    const pingOpts = gate3PingOptionsFromEnv(process.env);
+    try {
+      await runGate3Ping({
+        ledger: seatingLedger,
+        driver: gate3Seating.gate3DriverName,
+        model: runOptions.gate3Model ?? null,
+        runAgent: trioRunAgent,
+        signal: rootController.signal,
+        timeoutMs: pingOpts.timeoutMs,
+        attempts: pingOpts.attempts,
+      });
+      process.stderr.write(`jumper-run: gate-3 channel LIVE (${gate3Seating.gate3DriverName}, ping ${Math.round((Date.now() - tPing) / 1000)}s)\n`);
+    } catch (caught) {
+      const err = startupWatchdog.fired ? startupWatchdog.reason : caught;
+      if (startupWatchdog.fired) {
+        disarmWatchdog();
+        const seating = err?.seating ?? seatingLedger.snapshot();
+        process.stderr.write(`jumper-run: HALT before drafting — ${err?.name || 'watchdog'}: ${String(err?.message ?? err).slice(0, 200)}\n`);
+        writeTerminalRecord({
+          result: `HALT pre-flight: ${err?.name} — ${String(err?.message ?? err).slice(0, 200)}`,
+          seating,
+        });
+        process.exitCode = 1;
+        return;
+      }
+      runOptions.gate3ChannelDead = {
+        driver: gate3Seating.gate3DriverName,
+        reason: String(err?.message ?? err).slice(0, 200),
+      };
+      process.stderr.write(`jumper-run: gate-3 channel DEAD after retries (${gate3Seating.gate3DriverName}): ${runOptions.gate3ChannelDead.reason}. Generating anyway; ideas will be UNJUDGED, never survivors.\n`);
+    }
+  }
+
+  let result;
+  try {
+    result = await new Jumper().run(problem, runOptions);
+  } catch (caught) {
+    disarmWatchdog();
+    const err = startupWatchdog.fired ? startupWatchdog.reason : caught;
+    if (startupWatchdog.fired && caught && caught !== err) {
+      err.cause = caught;
+      err.receipt = caught?.receipt ?? null;
+      err.jumperPartial = caught?.jumperPartial ?? null;
+      err.seating = caught?.seating ?? null;
+    }
+    const seating = err?.seating ?? seatingLedger.snapshot();
+    // Named HALTs are honest outcomes (self-review route / review seat down) — report and exit non-zero.
+    process.stderr.write(`jumper-run: HALT — ${err?.name ?? 'Error'}: ${err?.message ?? err}\n`);
+    // 2026-08-19 (journal 0031): a HALT must NEVER destroy paid work — when the engine
+    // attached the candidates it had already built (err.jumperPartial), emit them with
+    // their honesty stamp instead of nothing ("a guardrail is never the whole product
+    // of a turn"). The honesty stamp records the incomplete phase; the artifact
+    // says exactly what existed when the joined call tree settled.
+    let partialOut = null;
+    const partial = {
+      passed: false,
+      halted: err?.name ?? 'Error',
+      halt_message: String(err?.message ?? err).slice(0, 500),
+      ...(err?.jumperPartial && typeof err.jumperPartial === 'object'
+        ? err.jumperPartial
+        : {
+          stage: 'engine',
+          honesty_stamp: 'NOT FULLY VETTED — the run HALTed before a complete candidate portfolio was available',
+          candidates: [],
+        }),
+      seating,
+    };
+    const serializedPartial = `${JSON.stringify(partial, null, 2)}\n`;
+    if (opts.output) {
+      try {
+        writeFileSync(opts.output, serializedPartial, 'utf8');
+        partialOut = opts.output;
+      } catch (writeErr) {
+        process.stderr.write(`jumper-run: partial --output write failed (${writeErr.message}) — dumping partial to stdout\n`);
+        process.stdout.write(serializedPartial);
+        partialOut = '(stdout — output write failed)';
+      }
+    } else {
+      process.stdout.write(serializedPartial);
+      partialOut = '(stdout)';
+    }
+    process.stderr.write(`jumper-run: partial emitted (${Array.isArray(partial.candidates) ? partial.candidates.length : '?'} unvetted candidate(s)) → ${partialOut}\n`);
+    // 2026-09-13 (R3): a partial may carry round-one verdicts the retry round would have
+    // destroyed — print them verbatim so the paid reasoning is never invisible.
+    if (Array.isArray(partial.killLog) && partial.killLog.length) {
+      process.stderr.write(`jumper-run: the partial carries ${partial.killLog.length} round-one kill(s) verbatim:\n`);
+      for (const k of partial.killLog) {
+        process.stderr.write(`  — [round ${k.round}] ${k.foreignDomain ?? k.title ?? '(no domain)'} · killed at gate ${k.failedAtGate}: ${String(k.rejectionReason ?? '').slice(0, 400)}\n`);
+      }
+    }
+    if (Array.isArray(partial.unjudged) && partial.unjudged.length) {
+      process.stderr.write(`jumper-run: the partial carries ${partial.unjudged.length} UNJUDGED candidate(s) (preserved, never evaluated)\n`);
+    }
+    writeTerminalRecord({
+      output: partialOut,
+      result: `HALT: ${err?.name ?? 'Error'} — ${String(err?.message ?? err).slice(0, 300)}${partialOut ? ' (partial emitted)' : ''}`,
+      seating,
+    });
+    process.exitCode = 1;
+    return;
+  }
+  disarmWatchdog();
+
+  // Zero-survivor SALVAGE surfacing (2026-08-25, John-ratified card): the killLog is the
+  // deliverable on these runs — print it VERBATIM (never summarized) so John never gets an
+  // empty hand for a 25-75 min run. The manual rescue of 0025/0027 is now the engine's job.
+  if (result && result.passed === false && result.salvage_stamp) {
+    process.stderr.write(`jumper-run: ${result.salvage_stamp}\n`);
+    for (const k of (Array.isArray(result.killLog) ? result.killLog : [])) {
+      process.stderr.write(`  — [round ${k.round}] ${k.foreignDomain ?? k.title ?? '(no domain)'} · killed at gate ${k.failedAtGate}: ${String(k.rejectionReason ?? '').slice(0, 400)}\n`);
+    }
+    if (Array.isArray(result.unjudged) && result.unjudged.length) {
+      process.stderr.write(`  — ${result.unjudged.length} candidate(s) UNJUDGED (no gate verdict after one retry) — preserved under unjudged[], never counted as kills\n`);
+    }
+    process.stderr.write(`  (full verbatim gate logs ride in the emitted result under killLog / unjudged)\n`);
+  }
+
+  const serialized = `${JSON.stringify(result, null, 2)}\n`;
+  // 2026-08-19 (journal 0019 class): the final write must never lose the tournament —
+  // pre-flight created the directory, but if the write STILL fails, dump to stdout.
+  let outputDest = opts.output || '(stdout)';
+  if (opts.output) {
+    try { writeFileSync(opts.output, serialized, 'utf8'); }
+    catch (err) {
+      process.stderr.write(`jumper-run: --output write failed (${err.message}) — dumping result to stdout so the run is not lost\n`);
+      process.stdout.write(serialized);
+      outputDest = '(stdout — output write failed)';
+    }
+  } else process.stdout.write(serialized);
+
+  writeRunRecord({
+    tier: result.mode === 'lean' ? `lean-${result.count}` : result.fanOut ? `portfolio-${result.fanOut}` : 'legacy-single',
+    started, ended: new Date().toISOString(),
+    input: opts.input || '(--problem argv)',
+    params: recordParams(),
+    output: outputDest,
+    result: (result.passed
+      ? `passed: ${result.survivors ? `${result.survivors.length} survivor(s)` : 'concept'}${result.mode === 'lean' ? ' (lean: 1 generation + 1 cross-family review)' : ' + GEP'}`
+      : `killed: gate ${result.failedAtGate ?? '?'}${result.retried ? ' (after retry)' : ''}${result.salvage_stamp ? ' (SALVAGE emitted from killLog)' : ''}`)
+      + (Array.isArray(result.unjudged) && result.unjudged.length ? ` [${result.unjudged.length} unjudged]` : '')
+      + (result.refutation_capped ? ` [refutation capped: ${result.refutation_capped.requested}>${result.refutation_capped.budget}]` : ''),
+    seating: result.seating,
+    cross_model: result.seating.cross_model,
+    models: result.seating.models,
+    duration_s: Math.round((Date.now() - t0) / 1000),
+    journal_ref: null,
+  }, { file: recordFile });
+}
+
+// P0 2026-07-25 (journals 0001/0008/0011): realpath + case-fold BOTH sides — a junction path
+// in argv never string-equals the resolved module URL, so the CLI silently exited 0 producing
+// nothing. Same fix as gandalf-run.mjs.
+function invokedDirectly() {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    const canon = (p) => {
+      const abs = resolve(p);
+      let real = abs;
+      try { real = realpathSync(abs); } catch { /* keep abs */ }
+      return process.platform === 'win32' ? real.toLowerCase() : real;
+    };
+    return canon(fileURLToPath(import.meta.url)) === canon(entry);
+  } catch { return false; }
+}
+if (invokedDirectly()) {
+  main().catch((err) => {
+    process.stderr.write(`jumper-run: fatal — ${err?.message ?? err}\n`);
+    process.exitCode = 1;
+  });
+}

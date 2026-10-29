@@ -1,0 +1,416 @@
+{
+  "nodes": [
+    {
+      "id": "legalbeagle-root",
+      "name": "Legal-Beagle Knowledge & Execution Architecture",
+      "title": "Legal-Beagle Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "legalbeagle-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "legalbeagle-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "legalbeagle-root"
+      ],
+      "ring": 1,
+      "resource_id": "legalbeagle-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "legalbeagle-root"
+      ],
+      "ring": 1,
+      "resource_id": "legalbeagle-tool-bin-legal-round-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "legalbeagle-root"
+      ],
+      "ring": 1,
+      "resource_id": "legalbeagle-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "legalbeagle-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "legalbeagle-root"
+      ],
+      "ring": 1,
+      "resource_id": "legalbeagle-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-mat-1",
+      "name": "Legal-Beagle Agent & Execution Protocol (SKILL.md)",
+      "title": "Legal-Beagle Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "legalbeagle-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-mat-2",
+      "name": "Legal-Beagle Human Guide (HUMAN.md)",
+      "title": "Legal-Beagle Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "legalbeagle-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-mat-3",
+      "name": "Legal-Beagle Locked North Star (NORTH-STAR.md)",
+      "title": "Legal-Beagle Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "legalbeagle-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-mat-4",
+      "name": "Legal-Beagle Universal Triage & Seating Block",
+      "title": "Legal-Beagle Universal Triage & Seating Block",
+      "parent_ids": [
+        "legalbeagle-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-mat-triage-block",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-tool-1",
+      "name": "legal-round.mjs (bin/legal-round.mjs)",
+      "title": "legal-round.mjs (bin/legal-round.mjs)",
+      "parent_ids": [
+        "legalbeagle-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-tool-bin-legal-round-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-tool-2",
+      "name": "citation-lint.js (src/citation-lint.js)",
+      "title": "citation-lint.js (src/citation-lint.js)",
+      "parent_ids": [
+        "legalbeagle-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-tool-src-citation-lint-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-tool-3",
+      "name": "citation-lint.test.js (test/citation-lint.test.js)",
+      "title": "citation-lint.test.js (test/citation-lint.test.js)",
+      "parent_ids": [
+        "legalbeagle-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-tool-test-citation-lint-test-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-tool-4",
+      "name": "legal-round.test.mjs (test/legal-round.test.mjs)",
+      "title": "legal-round.test.mjs (test/legal-round.test.mjs)",
+      "parent_ids": [
+        "legalbeagle-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-tool-test-legal-round-test-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-tool-5",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "legalbeagle-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-tool-6",
+      "name": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "parent_ids": [
+        "legalbeagle-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-shared-tool-mapping",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-skill-1",
+      "name": "researchPrime Source-Grounded Verifier",
+      "title": "researchPrime Source-Grounded Verifier",
+      "parent_ids": [
+        "legalbeagle-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-peer-researchprime",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-skill-2",
+      "name": "Gandalf Adversarial Risk Reviewer",
+      "title": "Gandalf Adversarial Risk Reviewer",
+      "parent_ids": [
+        "legalbeagle-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-skill-3",
+      "name": "Financial-Analyst Deal Modeler",
+      "title": "Financial-Analyst Deal Modeler",
+      "parent_ids": [
+        "legalbeagle-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-peer-financialanalyst",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-ref-1",
+      "name": "Legal-Beagle LESSONS.md",
+      "title": "Legal-Beagle LESSONS.md",
+      "parent_ids": [
+        "legalbeagle-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-ref-2",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "legalbeagle-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-ref-3",
+      "name": "Journal: 0015-utah-title-75b-citation-lint-docx-and-cockpit-gate-hardening",
+      "title": "Journal: 0015-utah-title-75b-citation-lint-docx-and-cockpit-gate-hardening",
+      "parent_ids": [
+        "legalbeagle-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-journal-0015-utah-title-75b-citation",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-ref-4",
+      "name": "Journal: 0014-utah-title-75b-recodification-memory-hallucination",
+      "title": "Journal: 0014-utah-title-75b-recodification-memory-hallucination",
+      "parent_ids": [
+        "legalbeagle-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-journal-0014-utah-title-75b-recodifi",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "legalbeagle-leaf-ref-5",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "legalbeagle-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "legalbeagle-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

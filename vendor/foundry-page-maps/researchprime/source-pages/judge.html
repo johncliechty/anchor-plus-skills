@@ -1,0 +1,258 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>judge · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>judge</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\crucible\bin\judge.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 776fdb280b324dff39beda3b3162b75e4403e8706df66bdd2df92421c96d9141</p></details>
+<p><a href="../sources/judge.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // judge.mjs — Crucible&#x27;s model-side DECIDER of convergence (Wave 3).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // The Judge is the model-side decider (the human is the final authority; the</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // Synthesizer DIRECTS but never decides — see bin/synthesizer.mjs). It runs as a</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // FRESH, CONTEXT-FREE sub-agent with ALL the evidence placed in its prompt — the</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // round&#x27;s surviving findings, the North Star, the per-wave acceptance criteria,</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // and (when present) the fresh-eyes cold pass. It never reads the anchored</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // Synthesizer&#x27;s direction log, so it cannot inherit the Director&#x27;s position.</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> //</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> // Two modes (MASTER-PLAN §10):</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //   - Default (subscription-only): a SAME-MODEL judge persona run as a fresh,</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //     context-free sub-agent through the Wave-1 `agent` seam.</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> //   - Enhanced (a different model family is reachable): a CROSS-MODEL judge — the</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //     strongest model from a family OTHER than the plan&#x27;s author. Wave 3 builds the</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> //     selection + the per-role STAMP and routes both paths through the injected</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> //     `agent` seam; Wave 9 binds the real cross-model CLIs to the probe.</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> // Either way the run STAMPS which model filled the Judge role, so a plan&#x27;s</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> // provenance shows exactly how much cross-model independence it actually got.</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> import { HaltError } from &#x27;./crucible-lib.mjs&#x27;;</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> import { makeReliableAgent } from &#x27;../../drivers/reliability.mjs&#x27;;</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> export const JUDGE_ROLE = &#x27;Judge&#x27;;</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> // Per-role model stamp (shared by the Judge and the Synthesizer).</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> /**</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>  * The provenance stamp for one role: which model/family filled it, under which</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>  * substrate mode, and whether that was genuine cross-model independence. Both the</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>  * Judge and the Synthesizer stamp themselves with this so every run records who</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>  * filled which role (MASTER-PLAN §10 &quot;stamp which model filled which role&quot;).</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>  *</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>  * @param {object} o</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>  * @param {string}  o.role                  e.g. &#x27;Judge&#x27; | &#x27;Synthesizer&#x27;</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>  * @param {string} [o.model=&#x27;claude&#x27;]       the concrete model that ran the role</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>  * @param {string} [o.family=&#x27;claude&#x27;]      its model family</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>  * @param {string} [o.mode=&#x27;default&#x27;]       &#x27;default&#x27; | &#x27;enhanced&#x27;</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>  * @param {boolean}[o.reachable=false]      was a different-family model reachable?</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>  * @returns {{role:string,model:string,family:string,mode:string,cross_model:boolean}}</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>  */</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> export function stampRole({ role, model = &#x27;claude&#x27;, family = &#x27;claude&#x27;, mode = &#x27;default&#x27;, reachable = false } = {}) {</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>   if (!role) {</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>     throw new HaltError(&#x27;stampRole requires a role&#x27;, &#x27;pass { role: &quot;Judge&quot; | &quot;Synthesizer&quot; | ... }&#x27;);</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>   }</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>   return {</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>     role,</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>     model,</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>     family,</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>     mode,</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>     // Genuine cross-model independence only when Enhanced mode actually reached a</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>     // different family — Default mode (same-model persona) is never cross-model.</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a>     cross_model: mode === &#x27;enhanced&#x27; &amp;&amp; !!reachable,</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a>   };</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> }</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> </span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> // Judge-model selection (Default vs Enhanced).</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> //</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> // Wave 3 establishes the contract + stamp; the probe is INJECTABLE so Wave 9 can</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> // bind the real Gemini/GPT/Grok CLIs. The default probe returns null =&gt; Default</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> // mode, exactly like Foreman on the bare subscription.</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> </span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> /** Default capability probe: nothing reachable ⇒ Default (same-model) mode. */</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> export function defaultProbeCrossModel() {</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>   return null;</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a> }</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a> </span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> /**</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>  * Pick the Judge&#x27;s model. Enhanced when the probe surfaces a model from a family</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>  * OTHER than the plan&#x27;s author (the highest-leverage place to break same-family</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>  * self-preference); otherwise the same-model judge persona (Default mode).</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>  *</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>  * @param {object} o</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>  * @param {string}   [o.authorFamily=&#x27;claude&#x27;]            the family that AUTHORED the plan</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>  * @param {Function} [o.probe=defaultProbeCrossModel]     ()=&gt; ({model,family}) | null</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>  * @returns {{model:string,family:string,mode:string,reachable:boolean}}</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>  */</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> export function selectJudgeModel({ authorFamily = &#x27;claude&#x27;, probe = defaultProbeCrossModel } = {}) {</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>   const reachable = typeof probe === &#x27;function&#x27; ? probe() : null;</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>   if (reachable &amp;&amp; reachable.family &amp;&amp; reachable.family !== authorFamily) {</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>     // Enhanced: a genuinely different family decides at the lock gate.</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>     return { model: reachable.model || reachable.family, family: reachable.family, mode: &#x27;enhanced&#x27;, reachable: true };</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>   }</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>   // Default: a same-model judge persona, run fresh + context-free.</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>   return { model: authorFamily, family: authorFamily, mode: &#x27;default&#x27;, reachable: false };</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a> }</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a> /**</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>  * T7 (2026-07-11): derive the Judge&#x27;s selection from the run&#x27;s ROLE ROUTES — the</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>  * ground truth of where the judge role&#x27;s calls actually dispatch. When a role-routed</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>  * agent sends `role:&#x27;judge&#x27;` to a non-author family (the DEFAULT_CRUCIBLE_ROUTES</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>  * shape: judge → gemini-cli), the stamp is honestly `enhanced`/cross_model — the old</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>  * default probe returned null and UNDERSTATED a genuinely cross-family run as a</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>  * same-model persona (and the observed live pathology was the inverse: the default</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>  * Claude substrate judging its own family&#x27;s plan across 4 held dry rounds).</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>  *</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>  * @param {object} o</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>  * @param {?object} [o.routes=null]         role → { driver, model } (judge ?? default)</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>  * @param {string}  [o.authorFamily=&#x27;claude&#x27;]</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>  * @returns {{model:string,family:string,mode:string,reachable:boolean}}</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>  */</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a> export function selectJudgeFromRoutes({ routes = null, authorFamily = &#x27;claude&#x27; } = {}) {</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   const r = routes &amp;&amp; (routes.judge ?? routes.default);</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>   const drv = r &amp;&amp; r.driver ? String(r.driver).trim().toLowerCase() : null;</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>   const family = !drv ? null</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>     : drv.startsWith(&#x27;gemini&#x27;) ? &#x27;gemini&#x27;</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>     : drv.startsWith(&#x27;claude&#x27;) ? &#x27;claude&#x27;</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>     : drv.split(/[-\s]/)[0] || null;</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>   if (family &amp;&amp; family !== authorFamily) {</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>     return { model: (r.model || r.driver), family, mode: &#x27;enhanced&#x27;, reachable: true };</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>   }</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>   return { model: authorFamily, family: authorFamily, mode: &#x27;default&#x27;, reachable: false };</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> }</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a> </span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> // The Judge&#x27;s decision schema + its context-free prompt.</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a> </span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a> /** The Judge&#x27;s reply: a binding verdict (it DECIDES — this is not advisory). */</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> export const JUDGE_SCHEMA = {</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>   type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   required: [&#x27;decision&#x27;],</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>   properties: {</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>     decision: { enum: [&#x27;CONVERGED&#x27;, &#x27;NOT_CONVERGED&#x27;, &#x27;CHALLENGE&#x27;] },</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>     reasons: { type: &#x27;array&#x27;, items: { type: &#x27;string&#x27; } },</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>     blocking: {</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>       type: &#x27;array&#x27;,</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>       items: {</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>         type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>         properties: { id: { type: &#x27;string&#x27; }, severity: { type: &#x27;string&#x27; }, note: { type: &#x27;string&#x27; } },</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>       },</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>     },</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>   },</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a> };</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a> function judgePrompt({ northStar, findings, acceptanceCriteria, freshEyes }) {</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>   return [</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>     `You are the JUDGE — the model-side DECIDER of convergence — running in a FRESH,`,</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>     `CONTEXT-FREE sub-agent. You have NO prior context: no memory of any prior round and`,</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>     `no access to any Director&#x27;s direction log. Decide ONLY from the evidence below.`,</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>     ``,</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>     `=== THE NORTH STAR (verbatim) ===`,</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>     String(northStar ?? &#x27;(none provided)&#x27;),</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>     `=== END NORTH STAR ===`,</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>     ``,</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>     `=== SURVIVING FINDINGS (the round&#x27;s tallied, non-demoted findings) ===`,</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>     findings.length</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>       ? findings.map((f, i) =&gt; `(${i + 1}) [${f.severity || &#x27;?&#x27;}] ${f.message || f.id || JSON.stringify(f)}`).join(&#x27;\n&#x27;)</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>       : &#x27;(none — the round is clean)&#x27;,</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>     `=== END FINDINGS ===`,</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>     ``,</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>     `=== PER-WAVE ACCEPTANCE CRITERIA ===`,</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>     acceptanceCriteria.length ? acceptanceCriteria.map((c, i) =&gt; `(${i + 1}) ${c}`).join(&#x27;\n&#x27;) : &#x27;(none provided)&#x27;,</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>     `=== END ACCEPTANCE CRITERIA ===`,</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>     freshEyes</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>       ? `\n=== FRESH-EYES COLD PASS ===\nlean=${freshEyes.lean}; ${freshEyes.note || &#x27;&#x27;}\n=== END FRESH-EYES ===\n`</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>       : &#x27;&#x27;,</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>     ``,</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>     `DECIDE:`,</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>     `  - CONVERGED only if there is NO open BLOCKER/MAJOR, the round is dry, and the`,</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>     `    fresh-eyes pass raises no material divergence.`,</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>     `  - CHALLENGE if the fresh-eyes pass materially diverges and one more adversarial`,</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>     `    round is warranted before any lock.`,</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>     `  - otherwise NOT_CONVERGED.`,</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>   ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a> }</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a> </span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a> // The Judge.</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a> </span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a> /**</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>  * Build the Judge from the injected Wave-1 `agent` seam. The Judge holds NO</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>  * reference to the Synthesizer — its only inputs are the evidence handed to</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>  * `decide()`, keeping it genuinely context-free.</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>  *</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>  * @param {object} o</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>  * @param {Function}  o.agent                                the Wave-1 agent seam</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>  * @param {string}   [o.authorFamily=&#x27;claude&#x27;]               family that authored the plan</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>  * @param {Function} [o.probeCrossModel=defaultProbeCrossModel]</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>  * @param {Function} [o.log=()=&gt;{}]</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>  */</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a> export function makeJudge({ agent, authorFamily = &#x27;claude&#x27;, probeCrossModel = defaultProbeCrossModel, routes = null, log = () =&gt; {} } = {}) {</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>     throw new HaltError(</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>       &#x27;makeJudge requires an agent() function&#x27;,</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>       &#x27;pass the Wave-1 seam: makeJudge({ agent: makeAgentSeam(...).agent })&#x27;,</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>     );</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>   }</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>   // Wave 1: the injected seam is reliability-wrapped HERE, at its injection point,</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>   // so the Judge&#x27;s adjudication call inherits typed retry + round-aware idempotency.</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>   // Transparent on the success path (one inner call, opts unchanged).</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>   const reliableAgent = makeReliableAgent({ agent });</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>   // T7: routes (where the judge role ACTUALLY dispatches) beat the probe when supplied.</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>   const selection = routes</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>     ? selectJudgeFromRoutes({ routes, authorFamily })</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>     : selectJudgeModel({ authorFamily, probe: probeCrossModel });</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>   const stamp = stampRole({ role: JUDGE_ROLE, model: selection.model, family: selection.family, mode: selection.mode, reachable: selection.reachable });</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a> </span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>   return {</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>     selection,</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>     stamp,</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a> </span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>     /**</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>      * DECIDE convergence from the injected evidence (and nothing else). Returns a</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>      * binding verdict carrying the model stamp. An abstain/unparseable judge reply</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>      * cannot silently pass — the Judge synthesizes a HALT for human review instead.</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>      *</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>      * @param {object} o</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>      * @param {string}   o.northStar</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>      * @param {object[]}[o.findings=[]]             the round&#x27;s surviving (non-demoted) findings</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>      * @param {string[]}[o.acceptanceCriteria=[]]   the per-wave oracle</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>      * @param {?object} [o.freshEyes=null]          the fresh-eyes cold-pass assessment</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>      * @param {number}  [o.round=0]</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>      */</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>     async decide({ northStar, findings = [], acceptanceCriteria = [], freshEyes = null, round = 0 } = {}) {</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>       const prompt = judgePrompt({ northStar, findings, acceptanceCriteria, freshEyes });</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>       const out = await reliableAgent(prompt, { label: `judge:r${round}:${selection.model}`, schema: JUDGE_SCHEMA, role: &#x27;judge&#x27;, round });</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a> </span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>       // The Judge MUST decide. An abstain (answerable:no) or a reply without a</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>       // decision cannot be read as a silent pass — escalate to the human.</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>       const decision = out?.decision;</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>       if (!decision || out?.answerable === &#x27;no&#x27;) {</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>         log(`judge r${round}: no decision from the sub-agent — HALT for human review`);</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>         return {</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>           decision: &#x27;HALT&#x27;,</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>           lockable: false,</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>           halted: true,</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>           reasons: [&#x27;judge sub-agent could not produce a decision after retry — HALT for human review&#x27;],</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>           blocking: [],</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>           stamp,</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>           promptSent: prompt,</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>         };</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>       }</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a> </span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>       const verdict = {</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>         decision,</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>         lockable: decision === &#x27;CONVERGED&#x27;,</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>         reasons: Array.isArray(out.reasons) ? out.reasons : [],</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>         blocking: Array.isArray(out.blocking) ? out.blocking : [],</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>         stamp,</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>         promptSent: prompt,</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>       };</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>       log(`judge r${round}: ${decision} (${stamp.cross_model ? `cross-model: ${stamp.model}` : `same-model persona: ${stamp.model}`})`);</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>       return verdict;</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>     },</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>   };</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a> }</span></pre></main></body></html>

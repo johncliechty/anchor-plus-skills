@@ -1,0 +1,390 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Index-only portfolio glance · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="index-glance" data-anchor-id="a-glance-assemblePortfolioGlance">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Index-only portfolio glance</h1>
+<p class="intro">Ecgberht also has an index-only glance with named unknowns and a row cap. It is a distinct engine lane, not demonstrated as the modern Cave page&#x27;s entry.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.542934+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/high-seat-glance.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 4a6c96be8d0fc55a1abbcd6d7915b981416ab9c710ccbbeeda615e614bfa32dd</p></aside>
+<p class="path">C:/dev/Ecgberht/engine/high-seat-glance.mjs · lines 998–1375</p><pre>export function assemblePortfolioGlance(opts = {}) {
+  const inject = opts.inject ?? {};
+  const degraded = [];
+
+  // Injected rows (tests / pure fold)
+  if (Array.isArray(inject.rows)) {
+    const rows = [...inject.rows];
+    for (const s of opts.skipped_roots ?? inject.skipped_roots ?? []) {
+      const pathStr = typeof s === &#x27;string&#x27; ? s : s?.project_path ?? s?.root ?? &#x27;&#x27;;
+      if (!pathStr) continue;
+      rows.push(
+        buildGlanceRow({
+          project_id: typeof s === &#x27;object&#x27; ? s.project_id ?? null : null,
+          project_path: pathStr,
+          label: typeof s === &#x27;object&#x27; ? s.label ?? pathStr : pathStr,
+          skipped: true,
+        }),
+      );
+    }
+    for (const u of opts.unreadable_projects ?? inject.unreadable_projects ?? []) {
+      const already = rows.some(
+        (r) =&gt;
+          (u.project_id &amp;&amp; r.project_id === u.project_id) ||
+          (u.project_path &amp;&amp; r.project_path === u.project_path),
+      );
+      if (already) continue;
+      rows.push(
+        buildGlanceRow({
+          project_id: u.project_id ?? null,
+          project_path: u.project_path ?? null,
+          label: u.label ?? u.project_id ?? u.project_path,
+          unreadable: true,
+        }),
+      );
+    }
+    if (rows.length &gt; PORTFOLIO_MAX_ROWS) {
+      return boundExceededResult(rows.length);
+    }
+    const folded = foldProjections(rows, inject);
+    for (const row of rows) {
+      for (const f of CRITERION_13_FIELDS) {
+        if (row.fields?.[f]?.known === false) {
+          degraded.push(
+            Object.freeze({
+              project_id: row.project_id,
+              field: f,
+              mark: COMPOSITE.DEGRADED,
+              note: &#x27;A5 field beyond cap / absent in index — named unknown; Wave 19 kill gate cannot green criterion 13 on DEGRADED without signed decision&#x27;,
+            }),
+          );
+        }
+      }
+    }
+    return Object.freeze({
+      ok: true,
+      schema: GLANCE_SCHEMA,
+      rows: Object.freeze(rows),
+      row_count: rows.length,
+      ...folded,
+      write_authority: &#x27;none&#x27;,
+      discoverStrips_reached: false,
+      degraded: Object.freeze(degraded),
+      ambient: ambientSignals(folded.badge),
+      field_coverage: Object.freeze({
+        keys: GLANCE_FIELD_KEYS,
+        every_row_complete: rows.every((r) =&gt; r.field_coverage_complete === true),
+      }),
+    });
+  }
+
+  let home = opts.home ?? inject.home ?? null;
+  let paths;
+  try {
+    paths = opts.paths ?? inject.paths ?? indexPathsFrom({
+      home: opts.home,
+      env: opts.env ?? inject.env,
+      paths: opts.paths,
+    });
+    home = paths.home;
+  } catch (e) {
+    return Object.freeze({
+      ok: false,
+      schema: GLANCE_SCHEMA,
+      error: GLANCE_CODE.GLANCE_INDEX_MISSING,
+      code: GLANCE_CODE.GLANCE_INDEX_MISSING,
+      message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],
+      detail: String(e?.message ?? e),
+      rows: Object.freeze([]),
+      row_count: 0,
+      discoverStrips_reached: false,
+      write_authority: &#x27;none&#x27;,
+    });
+  }
+
+  if (!home || !fs.existsSync(home)) {
+    return Object.freeze({
+      ok: false,
+      schema: GLANCE_SCHEMA,
+      error: GLANCE_CODE.GLANCE_INDEX_MISSING,
+      code: GLANCE_CODE.GLANCE_INDEX_MISSING,
+      message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_MISSING],
+      rows: Object.freeze([]),
+      row_count: 0,
+      discoverStrips_reached: false,
+      write_authority: &#x27;none&#x27;,
+    });
+  }
+
+  const journal = newReadJournal();
+  journal.writes = [];
+  const guarded = glanceIndexOnlyFs(opts.fsx ?? fs, home, journal);
+
+  let read;
+  try {
+    read = openIndexForRead({ ...opts, paths, home, fsx: guarded, env: opts.env ?? inject.env });
+  } catch (e) {
+    if (e instanceof QueryRefusal) {
+      return Object.freeze({
+        ok: false,
+        schema: GLANCE_SCHEMA,
+        error: GLANCE_CODE.GLANCE_QUERY_REFUSED,
+        code: GLANCE_CODE.GLANCE_QUERY_REFUSED,
+        message: GLANCE_TEXT[GLANCE_CODE.GLANCE_QUERY_REFUSED],
+        detail: e.message,
+        rows: Object.freeze([]),
+        row_count: 0,
+        discoverStrips_reached: false,
+        no_walk: noWalkReceipt(journal),
+        write_authority: &#x27;none&#x27;,
+      });
+    }
+    return Object.freeze({
+      ok: false,
+      schema: GLANCE_SCHEMA,
+      error: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,
+      code: GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE,
+      message: GLANCE_TEXT[GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE],
+      detail: String(e?.message ?? e),
+      rows: Object.freeze([]),
+      row_count: 0,
+      discoverStrips_reached: false,
+      no_walk: noWalkReceipt(journal),
+      write_authority: &#x27;none&#x27;,
+    });
+  }
+
+  if (read.ok !== true) {
+    // Distinguish missing vs unparseable
+    const code =
+      read.code === &#x27;INDEX_ABSENT&#x27; || read.reason === &#x27;absent&#x27;
+        ? GLANCE_CODE.GLANCE_INDEX_MISSING
+        : GLANCE_CODE.GLANCE_INDEX_UNPARSEABLE;
+    return Object.freeze({
+      ok: false,
+      schema: GLANCE_SCHEMA,
+      error: code,
+      code,
+      message: GLANCE_TEXT[code],
+      detail: read.reason ?? read.text ?? null,
+      rows: Object.freeze([]),
+      row_count: 0,
+      discoverStrips_reached: false,
+      no_walk: noWalkReceipt(journal),
+      write_authority: &#x27;none&#x27;,
+    });
+  }
+
+  const events = replayEvents(read.events ?? []);
+  const registry = materializeRegistry(events);
+  const snapshot = read.snapshot_value &amp;&amp; typeof read.snapshot_value === &#x27;object&#x27;
+    ? read.snapshot_value
+    : null;
+  const freshness = snapshot?.freshness &amp;&amp; typeof snapshot.freshness === &#x27;object&#x27;
+    ? snapshot.freshness
+    : { per_project: {} };
+  const perProject = freshness.per_project &amp;&amp; typeof freshness.per_project === &#x27;object&#x27;
+    ? freshness.per_project
+    : {};
+
+  // Body rows by project for stage binding
+  const bodyRows = [];
+  if (snapshot?.body &amp;&amp; typeof snapshot.body === &#x27;object&#x27;) {
+    const projects = snapshot.body.projects ?? snapshot.body;
+    // body shape varies — collect derived-like arrays if present
+    if (Array.isArray(snapshot.body.rows)) bodyRows.push(...snapshot.body.rows);
+  }
+
+  const attentionCells = listAttentionCellsFromIndex({ home, fsx: guarded, journal });
+  const attentionById = new Map();
+  const attentionByPath = new Map();
+  for (const c of attentionCells) {
+    if (c.project_id) attentionById.set(String(c.project_id), c);
+    if (c.key) attentionById.set(String(c.key), c);
+    // Option-P path passport: a cell pushed by the HOST carries the host&#x27;s
+    // project id (Anchor&#x27;s), which is not the steward registry&#x27;s id — found
+    // live 2026-08-06: a real needs_you cell folded to queue 0. The resolved
+    // project path is the identity both sides share. NEWEST WINS when several
+    // ids pushed cells for one path (1 folder : N host projects is legal) —
+    // otherwise a stale cell can shadow a live raise.
+    if (c.project_path) {
+      const key = path.resolve(String(c.project_path));
+      const prev = attentionByPath.get(key);
+      if (!prev || String(c.at ?? &#x27;&#x27;) &gt;= String(prev.at ?? &#x27;&#x27;)) {
+        attentionByPath.set(key, c);
+      }
+    }
+  }
+
+  const rows = [];
+  const projects = Array.isArray(registry.projects) ? registry.projects : [];
+
+  for (const p of projects) {
+    const pid = p.project_id;
+    const fresh = perProject[pid] ?? null;
+    const rowPath = p.current_path ?? p.root ?? null;
+    const att =
+      attentionById.get(String(pid)) ??
+      (rowPath ? attentionByPath.get(path.resolve(String(rowPath))) : null) ??
+      null;
+    // Presence UNREACHABLE / unreadable store → unknown row kept.
+    //
+    // EXCEPT (2026-08-06, found live): UNREACHABLE means &quot;nobody has checked
+    // the filesystem yet&quot;, not &quot;the root is gone&quot; — and a LIVE attention cell
+    // pushed by the project moments ago is itself evidence. Zeroing the row
+    // threw away a real needs_you: the ⚑ badge (which reads cells directly)
+    // said 1 while the raise queue said 0 — the two surfaces disagreeing about
+    // the same fact. ABSENT (checked and gone) still marks the row unreadable.
+    const presence = fresh?.presence ?? p.presence ?? null;
+    const unreadable =
+      (presence === PRESENCE.UNREACHABLE &amp;&amp; att == null) ||
+      presence === PRESENCE.ABSENT ||
+      presence === &#x27;unreadable&#x27; ||
+      p.unreadable === true;
+
+    const derivedForProject = bodyRows.filter(
+      (r) =&gt; r &amp;&amp; String(r.project_id) === String(pid),
+    );
+
+    const row = buildGlanceRow({
+      project_id: pid,
+      project_path: p.current_path ?? p.root ?? null,
+      label: p.label ?? pid,
+      fresh,
+      attention: att
+        ? {
+            state: att.state,
+            reason: att.reason,
+            waiting_steps: att.waiting_steps,
+            briefing: att.briefing ?? null,
+          }
+        : null,
+      derived_rows: derivedForProject,
+      unreadable,
+    });
+
+    // DEGRADED: any A5 field still unknown ships named + gate-report entry
+    for (const f of CRITERION_13_FIELDS) {
+      if (row.fields[f]?.known === false) {
+        degraded.push(
+          Object.freeze({
+            project_id: pid,
+            field: f,
+            mark: COMPOSITE.DEGRADED,
+            note: &#x27;A5 field beyond cap / absent in index — named unknown; Wave 19 kill gate cannot green criterion 13 on DEGRADED without signed decision&#x27;,
+          }),
+        );
+      }
+    }
+    rows.push(row);
+  }
+
+  // Unreadable projects supplied explicitly (not in registry)
+  for (const u of opts.unreadable_projects ?? inject.unreadable_projects ?? []) {
+    const already = rows.some(
+      (r) =&gt;
+        (u.project_id &amp;&amp; r.project_id === u.project_id) ||
+        (u.project_path &amp;&amp; r.project_path === u.project_path),
+    );
+    if (already) continue;
+    rows.push(
+      buildGlanceRow({
+        project_id: u.project_id ?? null,
+        project_path: u.project_path ?? null,
+        label: u.label ?? u.project_id ?? u.project_path,
+        unreadable: true,
+      }),
+    );
+  }
+
+  // Semicolon-skipped roots → unknown rows (row count never shrinks)
+  const skipped = [
+    ...(opts.skipped_roots ?? []),
+    ...(inject.skipped_roots ?? []),
+  ];
+  for (const s of skipped) {
+    const pathStr = typeof s === &#x27;string&#x27; ? s : s?.project_path ?? s?.root ?? &#x27;&#x27;;
+    if (!pathStr) continue;
+    rows.push(
+      buildGlanceRow({
+        project_id: typeof s === &#x27;object&#x27; ? s.project_id ?? null : null,
+        project_path: pathStr,
+        label: typeof s === &#x27;object&#x27; ? s.label ?? pathStr : pathStr,
+        skipped: true,
+      }),
+    );
+  }
+
+  if (rows.length &gt; PORTFOLIO_MAX_ROWS) {
+    return boundExceededResult(rows.length, journal);
+  }
+
+  if (rows.length === 0) {
+    return Object.freeze({
+      ok: true,
+      schema: GLANCE_SCHEMA,
+      code: GLANCE_CODE.GLANCE_PORTFOLIO_EMPTY,
+      message: GLANCE_TEXT[GLANCE_CODE.GLANCE_PORTFOLIO_EMPTY],
+      rows: Object.freeze([]),
+      row_count: 0,
+      items: Object.freeze([]),
+      badge: Object.freeze({
+        glyph: &#x27;⚑&#x27;,
+        count: 0,
+        only_ambient_signal: true,
+      }),
+      queue_length: 0,
+      empty: true,
+      discoverStrips_reached: false,
+      no_walk: noWalkReceipt(journal),
+      write_authority: &#x27;none&#x27;,
+      writes_attempted: journal.writes.length,
+      degraded: Object.freeze(degraded),
+      ambient: ambientSignals({ count: 0 }),
+      files_opened: journal.total,
+    });
+  }
+
+  const folded = foldProjections(rows, inject);
+
+  // Refresh badge cache so the next poll is cache-hit cheap
+  try {
+    writeBadgeCache({
+      home,
+      count: folded.queue_length,
+      projects: folded.raise_queue.queue
+        .map((q) =&gt; q.project_id)
+        .filter(Boolean),
+      updated_via: &#x27;assemblePortfolioGlance&#x27;,
+      fsx: fs,
+    });
+  } catch {
+    // Cache refresh failure does not fail the glance read.
+  }
+
+  return Object.freeze({
+    ok: true,
+    schema: GLANCE_SCHEMA,
+    home,
+    rows: Object.freeze(rows),
+    row_count: rows.length,
+    items: folded.items,
+    raise_queue: folded.raise_queue,
+    badge: folded.badge,
+    queue_length: folded.queue_length,
+    discoverStrips_reached: false,
+    walk_path_unreachable: true,
+    no_walk: noWalkReceipt(journal),
+    write_authority: &#x27;none&#x27;,
+    writes_attempted: journal.writes.length,
+    degraded: Object.freeze(degraded),
+    ambient: ambientSignals(folded.badge),
+    files_opened: journal.total,
+    field_coverage: Object.freeze({
+      keys: GLANCE_FIELD_KEYS,
+      every_row_complete: rows.every((r) =&gt; r.field_coverage_complete === true),
+    }),
+  });
+}</pre>
+<p><a class="button" href="../source-pages/glance.html#L998">Open numbered source</a>
+<a href="../sources/glance.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/cli">Optional explicit CLI / index lane</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">4a6c96be8d0fc55a1abbcd6d7915b981416ab9c710ccbbeeda615e614bfa32dd</span></p><p>Excerpt hash: <span class="path">5f4ded3578560171ce90be22b7333c1f89000b60865b1fb42b94265dc54ff1c7</span></p></details></article></main></body></html>

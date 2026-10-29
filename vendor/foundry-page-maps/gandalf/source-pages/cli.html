@@ -1,0 +1,742 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>cli · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>cli</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/runtime/gandalf-run.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 57f931bd4f1869a4e6ae831bc61e724dcae8ff18f5892bffc083f621b428bd5e</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> #!/usr/bin/env node</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> // Gandalf runtime host — the thin runtime ENTRY (Tier-1 CLI).</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> //</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // THE REAL HOST (journal/0001 + LESSONS.md): read a model&#x27;s RAW draft → run the deterministic seam</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // pass (`runtime/seam-pass.applySeamPass`) → validate it with the shipped `assertIncrement1Conformant`</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> // → emit the canary-conformant, honestly-graded advisor output. This is the chain the v1 build was</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> // missing: model-content → seam-stamping → conformant output.</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> //</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> // CONTRACT (see runtime/RAW-DRAFT-CONTRACT.md): the model emits ONLY the raw draft and does NOT</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> // self-assign tiers/stamps — the host applies them via the seams.</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> //</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> // USAGE:</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //   node runtime/gandalf-run.mjs --input &lt;file.json&gt; [--output &lt;file.json&gt;]</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //   cat draft.json | node runtime/gandalf-run.mjs            (stdin → stdout)</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //   node runtime/gandalf-run.mjs &lt; draft.json --output out.json</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> // HONESTY DISCIPLINE: on malformed input OR a failed conformance assertion, the host exits NON-ZERO</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> // with an honest stderr reason and writes NOTHING (no partial / no forged output). It NEVER fabricates</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> // a finding to make the gate pass — that would defeat the entire anti-illusion spine.</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21">21</a> import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, realpathSync } from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> import process from &#x27;node:process&#x27;;</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> import { fileURLToPath } from &#x27;node:url&#x27;;</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> import { resolve, relative, join, dirname } from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> import { applySeamPass, SeamPassInputError } from &#x27;./seam-pass.mjs&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> import { assertIncrement1Conformant } from &#x27;../test/harness.mjs&#x27;;</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> import { getGitignorePatterns, isIgnored } from &#x27;./context-sizer.mjs&#x27;;</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> import { runMapReduce } from &#x27;./map-reduce.mjs&#x27;;</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> import {</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>   resolveGandalfBand,</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>   isGandalfBandLocked,</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>   assertGandalfSeatsFloor,</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> } from &#x27;./triage-band.mjs&#x27;;</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> import { createCommissionLedger } from &#x27;../seam/commission-ledger.mjs&#x27;;</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> import { runLiveRefutation, buildLiveRefuterAgent, DEFAULT_REFUTER_ROUTES, DRAFTER_FAMILY, REFUTER_FAMILY } from &#x27;./live-refuter.mjs&#x27;;</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> import { makeGeminiCliSeam, resolveGeminiModel } from &#x27;file:///C:/dev/trio/drivers/gemini-cli.mjs&#x27;;</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> import { loadModelFamilies, familyToDriverName, runAgent } from &#x27;file:///C:/dev/trio/drivers/index.mjs&#x27;;</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> </span>
+<span class="source-line" id="L40"><a href="#L40">40</a> const USAGE =</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>   &#x27;usage: node runtime/gandalf-run.mjs --live [--budget N] [--input &lt;file&gt;] [--output &lt;file&gt;] [--project &lt;dir&gt;]\n&#x27; +</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>   &#x27;       node runtime/gandalf-run.mjs [--input &lt;file&gt;] [--output &lt;file&gt;] [--cross-model] [--project &lt;dir&gt;]\n&#x27; +</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>   &#x27;       node runtime/gandalf-run.mjs --analyze --project &lt;dir&gt; --objective &quot;&lt;question&gt;&quot; [--depth LITE|FULL|SPIKE-FIRST] [--output &lt;file&gt;]\n&#x27; +</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   &#x27;       (--live: THE DEFAULT REAL PATH — dispatch cross-family refuters on the dashboard\&#x27;s non-drafter seat\n&#x27; +</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>   &#x27;        (review_family first; agy only when that family is gemini), mint claim-bound commissions, grade against\n&#x27; +</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   &#x27;        the shared ledger; GROUNDED becomes reachable.)\n&#x27; +</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   &#x27;       (grade mode: Tier-1 deterministic stamp only — every elevation floors at SPECULATIVE; use for\n&#x27; +</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>   &#x27;        offline/seat-down runs, honestly stamped cross_model:false)\n&#x27; +</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>   &#x27;       (--analyze mode: Scaled-Gandalf context-size router → single frontier pass for a SMALL target,\n&#x27; +</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   &#x27;        or shard→scout→map→reduce for a LARGE one; --depth locks @foundry/triage band knobs)\n&#x27; +</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>   &#x27;       (grade/live: with no --input, the raw draft is read from stdin; no --output → stdout)&#x27;;</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> </span>
+<span class="source-line" id="L53"><a href="#L53">53</a> /** Parse argv into { input, output, cross_model, project }. `--cross-model` is an INTENT flag only</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>  *  (W2b): it records that a cross-family attempt was REQUESTED; it does NOT force the output</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>  *  `cross_model` stamp or lift any tier ceiling — that stamp is DERIVED from genuine ledger-bound</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>  *  refutations inside applySeamPass. Throws on an unknown / malformed flag. */</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> /** Parse CLI argv (exported for E1 hermetics — production `main` is the only other caller). */</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> export function parseArgs(argv) {</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>   const opts = {</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     input: null,</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     output: null,</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>     cross_model: false,</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     project: null,</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>     analyze: false,</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>     objective: null,</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     live: false,</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>     budget: null,</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     depth: null,</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>     tier: null,</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>   };</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   for (let i = 0; i &lt; argv.length; i++) {</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>     const a = argv[i];</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>     if (a === &#x27;--input&#x27; || a === &#x27;-i&#x27;) {</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>       opts.input = argv[++i];</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>       if (opts.input === undefined) throw new Error(&#x27;--input requires a file path&#x27;);</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>     } else if (a === &#x27;--output&#x27; || a === &#x27;-o&#x27;) {</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>       opts.output = argv[++i];</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>       if (opts.output === undefined) throw new Error(&#x27;--output requires a file path&#x27;);</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     } else if (a === &#x27;--project&#x27; || a === &#x27;-p&#x27;) {</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>       opts.project = argv[++i];</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>       if (opts.project === undefined) throw new Error(&#x27;--project requires a directory path&#x27;);</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     } else if (a === &#x27;--objective&#x27; || a === &#x27;-q&#x27;) {</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>       opts.objective = argv[++i];</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>       if (opts.objective === undefined) throw new Error(&#x27;--objective requires a text argument&#x27;);</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     } else if (a === &#x27;--analyze&#x27;) {</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>       opts.analyze = true; // Scaled-Gandalf map-reduce mode (route by CONTEXT SIZE over a codebase)</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>     } else if (a === &#x27;--live&#x27;) {</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>       // C1 (2026-07-11): the LIVE cross-family path IS now CLI-reachable — the</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>       // always/stakes-gated cross-model rule stops requiring ad-hoc import glue.</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>       opts.live = true;</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     } else if (a === &#x27;--budget&#x27;) {</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>       const n = Number(argv[++i]);</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>       if (!Number.isInteger(n) || n &lt; 1) throw new Error(&#x27;--budget requires a positive integer&#x27;);</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>       opts.budget = n;</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>     } else if (a === &#x27;--depth&#x27;) {</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>       opts.depth = argv[++i];</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>       if (opts.depth === undefined) throw new Error(&#x27;--depth requires LITE|FULL|SPIKE-FIRST&#x27;);</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     } else if (a === &#x27;--tier&#x27;) {</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>       opts.tier = argv[++i];</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>       if (opts.tier === undefined) throw new Error(&#x27;--tier requires Heavy|Standard&#x27;);</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>     } else if (a === &#x27;--cross-model&#x27;) {</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>       opts.cross_model = true; // INTENT only — the output stamp is DERIVED, never set by this flag</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     } else if (a === &#x27;--help&#x27; || a === &#x27;-h&#x27;) {</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>       opts.help = true;</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     } else {</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>       throw new Error(`unknown argument ${JSON.stringify(a)}`);</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     }</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   return opts;</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> }</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> </span>
+<span class="source-line" id="L112"><a href="#L112">112</a> /**</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>  * L2 lock authority — pure resolve of maxShards/fusionPasses for the runMapReduce call object.</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>  *</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>  * When locked (any depth|tier lock input): band knobs are authoritative. Caller-supplied</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>  * maxShards/fusionPasses are ignored (unlock-only override). Values equal knobsForSkill via</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>  * resolveGandalfBand.</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>  *</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>  * When unlocked: caller caps pass through unchanged (null = pre-band uncapped baseline).</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>  *</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>  * @param {object} [o]</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>  * @param {?string} [o.depth]</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>  * @param {?string} [o.tier]</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>  * @param {object}  [o.env]</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>  * @param {?number} [o.maxShards]     unlock-only override</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>  * @param {?number} [o.fusionPasses]  unlock-only override</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>  * @param {string}  [o.userObjective]</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>  * @returns {{ locked: boolean, maxShards: number|null, fusionPasses: number|null, knobs: object|null, source: string|null }}</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>  */</span>
+<span class="source-line" id="L130"><a href="#L130">130</a> export function resolveConsumeKnobs({</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   depth = null,</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   tier = null,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   env = process.env,</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   maxShards = null,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>   fusionPasses = null,</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   userObjective = &#x27;&#x27;,</span>
+<span class="source-line" id="L137"><a href="#L137">137</a> } = {}) {</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   if (!isGandalfBandLocked({ depth, tier, env })) {</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>     return {</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>       locked: false,</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>       maxShards: maxShards == null ? null : maxShards,</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>       fusionPasses: fusionPasses == null ? null : fusionPasses,</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>       knobs: null,</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>       source: null,</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     };</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>   }</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   const band = resolveGandalfBand({</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     depth,</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     tier,</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     intake: { intent: userObjective, scope: depth === &#x27;LITE&#x27; ? &#x27;small&#x27; : &#x27;large&#x27; },</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     allowDefault: true,</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>     env,</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>   });</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>   // L4/L5 safety floor: refuse locked band-thin that zeros or omits seats.</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>   assertGandalfSeatsFloor(band.knobs);</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>   // Lock wins: never let caller maxShards/fusionPasses invert locked knobs (L2).</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>   const shards = band.knobs?.shards ?? null;</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>   const fusions = band.knobs?.fusionPasses ?? null;</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>   return {</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     locked: true,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     maxShards: shards,</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     fusionPasses: fusions,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     knobs: band.knobs ?? null,</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     source: band.source ?? null,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>   };</span>
+<span class="source-line" id="L166"><a href="#L166">166</a> }</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> </span>
+<span class="source-line" id="L168"><a href="#L168">168</a> /**</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>  * Run-capture for training (canonical standard: Skill Foundry AGENTS.md → &quot;Run capture&quot;).</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>  * One small machine-readable record per run under journal/runs/ — the Foundry&#x27;s training</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>  * feed. NEVER writes into the human NNNN namespace. Best-effort: a capture failure must</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>  * not fail the run it records.</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>  */</span>
+<span class="source-line" id="L174"><a href="#L174">174</a> export function writeRunRecord(record, { skillDir = resolve(dirname(fileURLToPath(import.meta.url)), &#x27;..&#x27;) } = {}) {</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   try {</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>     // Provenance discipline: capture is for REAL runs only. The test suite spawns</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     // this CLI, and those children inherit NODE_TEST_CONTEXT — skip capture there</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     // so mock runs never pollute the training feed (same rule as tidy-idy).</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     if (process.env.NODE_TEST_CONTEXT) return null;</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>     const dir = join(skillDir, &#x27;journal&#x27;, &#x27;runs&#x27;);</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     mkdirSync(dir, { recursive: true });</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     const started = record.started || new Date().toISOString();</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>     const id = `${started.replace(/[:.]/g, &#x27;-&#x27;)}-${Math.abs(Date.now() % 100000)}`;</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     const file = join(dir, `${id}.json`);</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>     writeFileSync(file, JSON.stringify({ skill: &#x27;gandalf&#x27;, ...record }, null, 2) + &#x27;\n&#x27;, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     return file;</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   } catch {</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>     return null; // capture is best-effort by design</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   }</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> }</span>
+<span class="source-line" id="L191"><a href="#L191">191</a> </span>
+<span class="source-line" id="L192"><a href="#L192">192</a> /** Read all of stdin synchronously as a UTF-8 string (fd 0). */</span>
+<span class="source-line" id="L193"><a href="#L193">193</a> function readStdin() {</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>   try {</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>     return readFileSync(0, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>   } catch (err) {</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     throw new Error(`could not read stdin: ${err.message}`);</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   }</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> }</span>
+<span class="source-line" id="L200"><a href="#L200">200</a> </span>
+<span class="source-line" id="L201"><a href="#L201">201</a> /** Grade a draft and return the conformant output, or null if it trips the canary (a genuinely</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>  *  malformed DRAFT still throws SeamPassInputError — that is an input problem, not a salvageable one). */</span>
+<span class="source-line" id="L203"><a href="#L203">203</a> function tryGrade(draft, cross_model, resolveCommission) {</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   try {</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>     const o = applySeamPass(draft, { cross_model, resolveCommission });</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>     assertIncrement1Conformant(o);</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>     return o;</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>   } catch (err) {</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     if (err instanceof SeamPassInputError) throw err;</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     return null; // a conformance trip on THIS shape — the caller degrades further</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   }</span>
+<span class="source-line" id="L212"><a href="#L212">212</a> }</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> </span>
+<span class="source-line" id="L214"><a href="#L214">214</a> /** Salvage the LARGEST conformant subset of a real (non-garbage) draft whose full form tripped the</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>  *  canary — a real cross-model/fused draft occasionally carries ONE item that trips a cap / rung-gated</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>  *  field / provenance rule. We never emit anything the canary rejects (every returned output is</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>  *  re-asserted); we simply refuse to lose the WHOLE read over one item. The output is honestly stamped</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>  *  `degraded:true` with a note; the per-shard reasoning narrative is preserved regardless of which</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>  *  structured items are dropped. Order of sacrifice (P0 2026-07-25): a SINGLE offending item first</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>  *  (preserving every other finding/elevation/nitpick), then a tail-shrink of one forward leg, then</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>  *  whole legs in increasing-value order, then finding subsets, then the minimal (empty-arrays) form. */</span>
+<span class="source-line" id="L222"><a href="#L222">222</a> function degradeToConformant(rawDraft, { cross_model, resolveCommission, reason }) {</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   const firstLine = String(reason || &#x27;conformance failure&#x27;).split(&#x27;\n&#x27;)[0];</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>   const note =</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     `\n\n[gandalf-host] Grading degraded: the full draft tripped a conformance canary (${firstLine}); ` +</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>     `the read was salvaged to the largest conformant subset (the reasoning narrative above is intact).`;</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>   const base = { ...rawDraft, reasoning: String(rawDraft.reasoning || &#x27;&#x27;) + note, degraded: true };</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>   const findings = Array.isArray(base.findings) ? base.findings.slice() : [];</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>   const nitpicks = Array.isArray(base.nitpicks) ? base.nitpicks.slice() : [];</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   const elevations = Array.isArray(base.elevations) ? base.elevations.slice() : [];</span>
+<span class="source-line" id="L231"><a href="#L231">231</a> </span>
+<span class="source-line" id="L232"><a href="#L232">232</a>   // 1) P0 2026-07-25 (journals 0276/0277): the common case is ONE offending item —</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>   //    drop just IT and preserve every other finding, elevation, and nitpick. The old</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   //    ladder sacrificed the ENTIRE elevations+nitpicks forward layer as its FIRST step,</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   //    which almost always conformed — so any single canary trip silently cost the whole</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   //    recommendation layer (deterministic, byte-identical, observed live twice on</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   //    --live runs; the expensive path returned strictly less advice than the cheap one).</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   let out;</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   for (const [legName, leg] of [[&#x27;nitpicks&#x27;, nitpicks], [&#x27;elevations&#x27;, elevations], [&#x27;findings&#x27;, findings]]) {</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>     for (let i = 0; i &lt; leg.length; i++) {</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>       out = tryGrade({ ...base, [legName]: leg.filter((_, j) =&gt; j !== i) }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>       if (out) return out;</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>     }</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>   }</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>   // 1b) multiple offenders in ONE forward leg (e.g. an over-cap overrun by &gt;1): shrink</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>   //     that leg from the tail while keeping the other legs whole.</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>   for (const [legName, leg] of [[&#x27;nitpicks&#x27;, nitpicks], [&#x27;elevations&#x27;, elevations]]) {</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     for (let keep = leg.length - 2; keep &gt;= 0; keep--) {</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>       out = tryGrade({ ...base, [legName]: leg.slice(0, keep) }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>       if (out) return out;</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>     }</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>   }</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>   // 2) cross-leg offenders: drop whole legs in INCREASING-value order — nitpicks, then</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   //    elevations, then both. (This was the old step 1; it is now a late resort.)</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>   out = tryGrade({ ...base, nitpicks: [] }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   if (out) return out;</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>   out = tryGrade({ ...base, elevations: [] }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>   if (out) return out;</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>   out = tryGrade({ ...base, nitpicks: [], elevations: [] }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>   if (out) return out;</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   // 3) the offending FINDING cases (with the forward legs already sacrificed):</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>   //    single offender, then a shrinking prefix (multiple/interacting offenders).</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>   for (let i = 0; i &lt; findings.length; i++) {</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>     out = tryGrade({ ...base, findings: findings.filter((_, j) =&gt; j !== i), nitpicks: [], elevations: [] }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>     if (out) return out;</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>   }</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>   for (let keep = findings.length - 1; keep &gt;= 0; keep--) {</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>     out = tryGrade({ ...base, findings: findings.slice(0, keep), nitpicks: [], elevations: [] }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     if (out) return out;</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>   }</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>   // 4) minimal conformant output (reasoning+verdict only) — empty item arrays always conform</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>   out = tryGrade({ ...base, findings: [], nitpicks: [], elevations: [] }, cross_model, resolveCommission);</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>   if (out) return out;</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>   // Unreachable in practice (the empty shape is conformant); stay honest if a seam ever breaks it.</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>   throw new Error(`gandalf-host: could not salvage a conformant output (${firstLine})`);</span>
+<span class="source-line" id="L276"><a href="#L276">276</a> }</span>
+<span class="source-line" id="L277"><a href="#L277">277</a> </span>
+<span class="source-line" id="L278"><a href="#L278">278</a> /** The host pipeline. Returns the conformant output object. Throws SeamPassInputError (malformed</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>  *  input); a real draft that trips the canary is DEGRADED to its largest conformant subset (never a</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>  *  whole-run crash over one item) — the returned output always passes the canary. */</span>
+<span class="source-line" id="L281"><a href="#L281">281</a> export function runHost(rawText, { cross_model = false, resolveCommission } = {}) {</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>   let rawDraft;</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>   try {</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     rawDraft = JSON.parse(rawText);</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>   } catch (err) {</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     throw new SeamPassInputError(`the input is not valid JSON: ${err.message}`);</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>   }</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>   // W2b: `cross_model` here is the caller INTENT flag only; the output stamp is DERIVED inside</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>   // applySeamPass from genuine ledger-bound refutations. `resolveCommission` defaults (inside</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   // applySeamPass) to the real commission-ledger resolver so the gate is ACTIVE in a real run; a</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>   // test may inject a stub. We thread `undefined` through untouched so that default applies.</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>   const output = applySeamPass(rawDraft, { cross_model, resolveCommission });</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>   // The host&#x27;s guarantee: never emit anything the canary set would reject. The seam pass is</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>   // conformant by construction for well-shaped items, but a real cross-model/fused draft can still</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>   // carry ONE item that trips the canary — degrade to the largest conformant subset (honestly</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>   // stamped) instead of losing the entire read.</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>   try {</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>     assertIncrement1Conformant(output);</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>     return output;</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>   } catch (err) {</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     if (err instanceof SeamPassInputError) throw err;</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>     return degradeToConformant(rawDraft, { cross_model, resolveCommission, reason: err.message });</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>   }</span>
+<span class="source-line" id="L304"><a href="#L304">304</a> }</span>
+<span class="source-line" id="L305"><a href="#L305">305</a> </span>
+<span class="source-line" id="L306"><a href="#L306">306</a> /** Finalize a graded output: return it if conformant, else degrade to the largest conformant subset.</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>  *  Shared by the Tier-1 (`runHost`) and W3 live (`runHostLive`) paths so both honour the &quot;never emit</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>  *  anything the canary rejects&quot; guarantee identically. */</span>
+<span class="source-line" id="L309"><a href="#L309">309</a> function finalizeConformant(rawDraft, output, { cross_model, resolveCommission }) {</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>   try {</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>     assertIncrement1Conformant(output);</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>     return output;</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>   } catch (err) {</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     if (err instanceof SeamPassInputError) throw err;</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     return degradeToConformant(rawDraft, { cross_model, resolveCommission, reason: err.message });</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>   }</span>
+<span class="source-line" id="L317"><a href="#L317">317</a> }</span>
+<span class="source-line" id="L318"><a href="#L318">318</a> </span>
+<span class="source-line" id="L319"><a href="#L319">319</a> /**</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>  * runHostLive — the W3 LIVE cross-family host pipeline (the sequenced follow-on Tier-1 could not run).</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>  *</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>  * THE ONE SHARED PER-RUN LEDGER (invariant 1): a single `createCommissionLedger()` is the sole ledger —</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>  * `runLiveRefutation` MINTS into `ledger.mintCommission` and `applySeamPass` RESOLVES via the SAME</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>  * `ledger.resolveCommission`. The minter and the gate can NEVER be on different ledger instances (that</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>  * would make every genuine cross-family mint a false negative). The mint binds each commission to the</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>  * exact elevation object the gate then reads (invariant 2), so a surviving, genuinely cross-family</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>  * refutation reaches GROUNDED with the DERIVED cross_model:true; a failed/absent refutation stays</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>  * SPECULATIVE (honest floor). Async because it dispatches real refuters.</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>  *</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>  * The live role-routed agent (refuter → Gemini, drafter → Claude) is built via buildLiveRefuterAgent</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>  * (routing guard enforced) unless an `agent` is injected (tests inject a stub). Likewise the ledger may</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>  * be injected for a reproducible fixture; otherwise a fresh per-run ledger is minted here.</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>  *</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>  * @param {string} rawText</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>  * @param {object} [o]</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>  * @param {boolean}[o.cross_model]           the caller INTENT flag (recorded only; the stamp is DERIVED)</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>  * @param {Function}[o.agent]                injected role-routed agent (tests); omit for the live agent</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>  * @param {object} [o.ledger]                injected shared ledger (tests); omit for a fresh per-run ledger</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>  * @param {object} [o.routes]                the route table (routing guard + live-agent build)</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>  * @param {string} [o.drafterFamily]</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>  * @param {string} [o.refuterFamily]</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>  * @param {number} [o.budget]</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>  * @param {Function}[o.log]</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>  * @returns {Promise&lt;{output:object, dispatch:object[], ledger:object}&gt;}</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>  */</span>
+<span class="source-line" id="L346"><a href="#L346">346</a> export async function runHostLive(rawText, {</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>   cross_model = false,</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>   agent,</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>   ledger: injectedLedger,</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>   routes,</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>   drafterFamily,</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>   refuterFamily = REFUTER_FAMILY,</span>
+<span class="source-line" id="L353"><a href="#L353">353</a>   budget,</span>
+<span class="source-line" id="L354"><a href="#L354">354</a>   log = () =&gt; {},</span>
+<span class="source-line" id="L355"><a href="#L355">355</a> } = {}) {</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>   let rawDraft;</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>   try {</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>     rawDraft = JSON.parse(rawText);</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>   } catch (err) {</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>     throw new SeamPassInputError(`the input is not valid JSON: ${err.message}`);</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>   }</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>   // INVARIANT 1: ONE shared per-run ledger for BOTH the minter and the gate.</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>   const ledger = injectedLedger || createCommissionLedger();</span>
+<span class="source-line" id="L364"><a href="#L364">364</a>   const resolveCommission = ledger.resolveCommission;</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>   // Live agent: omit routes/drafter → coding/review family prefs; tests pass explicit pins.</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>   const theAgent = agent || (await buildLiveRefuterAgent({ routes, drafterFamily, env: process.env }));</span>
+<span class="source-line" id="L367"><a href="#L367">367</a> </span>
+<span class="source-line" id="L368"><a href="#L368">368</a>   // Dispatch the live refuters and mint claim-bound commissions into the shared ledger.</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>   const { draft, dispatch } = await runLiveRefutation(rawDraft, {</span>
+<span class="source-line" id="L370"><a href="#L370">370</a>     agent: theAgent, ledger, routes, drafterFamily, refuterFamily, budget, log,</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>   });</span>
+<span class="source-line" id="L372"><a href="#L372">372</a> </span>
+<span class="source-line" id="L373"><a href="#L373">373</a>   // Grade the refuted draft against the SAME ledger&#x27;s resolver — cross_model / GROUNDED are DERIVED here.</span>
+<span class="source-line" id="L374"><a href="#L374">374</a>   const output = applySeamPass(draft, { cross_model, resolveCommission });</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>   const finalized = finalizeConformant(draft, output, { cross_model, resolveCommission });</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>   return { output: finalized, dispatch, ledger };</span>
+<span class="source-line" id="L377"><a href="#L377">377</a> }</span>
+<span class="source-line" id="L378"><a href="#L378">378</a> </span>
+<span class="source-line" id="L379"><a href="#L379">379</a> // ===========================================================================================</span>
+<span class="source-line" id="L380"><a href="#L380">380</a> // W4 (2026-07-05) — SCALED-GANDALF wiring: actually invoke scout + map-reduce from the CLI.</span>
+<span class="source-line" id="L381"><a href="#L381">381</a> //</span>
+<span class="source-line" id="L382"><a href="#L382">382</a> // Before W4 this entry imported ONLY runRouter (context-sizing) and NEVER invoked the big-repo</span>
+<span class="source-line" id="L383"><a href="#L383">383</a> // map-reduce engine — the scout/map/reduce pipeline was built but dead. `runScaledAnalysis` wires it</span>
+<span class="source-line" id="L384"><a href="#L384">384</a> // in and routes by CONTEXT SIZE:</span>
+<span class="source-line" id="L385"><a href="#L385">385</a> //   • a SMALL target → runMapReduce/decideTier returns &#x27;direct&#x27; → ONE frontier pass, NO scout, NO</span>
+<span class="source-line" id="L386"><a href="#L386">386</a> //     shard, NO map-reduce ceremony.</span>
+<span class="source-line" id="L387"><a href="#L387">387</a> //   • a LARGE target → shard → scout → map → reduce.</span>
+<span class="source-line" id="L388"><a href="#L388">388</a> // The size decision itself lives in ONE place (runMapReduce → decideTier); this wrapper adds the</span>
+<span class="source-line" id="L389"><a href="#L389">389</a> // CLEVER TWO-MODEL split on top of it.</span>
+<span class="source-line" id="L390"><a href="#L390">390</a> // ===========================================================================================</span>
+<span class="source-line" id="L391"><a href="#L391">391</a> </span>
+<span class="source-line" id="L392"><a href="#L392">392</a> /**</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>  * Scaled-Gandalf seat models from UNIVERSAL SEATING LAW (Anchor prefs).</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>  * - bulk MAP / scout → REVIEW_FAMILY (standard tier when that family is Gemini)</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>  * - REDUCE / synthesis → CODING_FAMILY (heavy tier when that family is Gemini)</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>  * Gemini models stay agy LABELS via resolveGeminiModel; other families leave model null</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>  * (CLI session / driver default). Never hardcode Claude/Gemini/Grok product IDs here.</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>  * @param {object} [env=process.env]</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>  * @returns {{ mapModel:?string, reduceModel:?string, mapDriver:string, reduceDriver:string, families:object }}</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>  */</span>
+<span class="source-line" id="L401"><a href="#L401">401</a> export function resolveScaledModels(env = process.env) {</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>   const families = loadModelFamilies(env);</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>   const mapDriver = familyToDriverName(families.review) || &#x27;gemini-cli&#x27;;</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>   const reduceDriver = familyToDriverName(families.coding) || &#x27;claude&#x27;;</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>   let mapModel = null;</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>   let reduceModel = null;</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>   if (mapDriver === &#x27;gemini-cli&#x27; || mapDriver.startsWith(&#x27;gemini&#x27;)) {</span>
+<span class="source-line" id="L408"><a href="#L408">408</a>     mapModel = resolveGeminiModel({ env: { ...env, TRIO_TIER: &#x27;standard&#x27; } });</span>
+<span class="source-line" id="L409"><a href="#L409">409</a>   }</span>
+<span class="source-line" id="L410"><a href="#L410">410</a>   if (reduceDriver === &#x27;gemini-cli&#x27; || reduceDriver.startsWith(&#x27;gemini&#x27;)) {</span>
+<span class="source-line" id="L411"><a href="#L411">411</a>     reduceModel = resolveGeminiModel({ env: { ...env, TRIO_TIER: &#x27;heavy&#x27; } });</span>
+<span class="source-line" id="L412"><a href="#L412">412</a>   }</span>
+<span class="source-line" id="L413"><a href="#L413">413</a>   return { mapModel, reduceModel, mapDriver, reduceDriver, families };</span>
+<span class="source-line" id="L414"><a href="#L414">414</a> }</span>
+<span class="source-line" id="L415"><a href="#L415">415</a> </span>
+<span class="source-line" id="L416"><a href="#L416">416</a> /**</span>
+<span class="source-line" id="L417"><a href="#L417">417</a>  * runScaledAnalysis — the Scaled-Gandalf map-reduce pipeline, wired to route by CONTEXT SIZE (via</span>
+<span class="source-line" id="L418"><a href="#L418">418</a>  * runMapReduce/decideTier) with the clever map=STANDARD / reduce=HEAVY split applied on top.</span>
+<span class="source-line" id="L419"><a href="#L419">419</a>  *</span>
+<span class="source-line" id="L420"><a href="#L420">420</a>  * A SMALL target is answered by a single frontier (HEAVY) pass (decideTier=&#x27;direct&#x27;) — no scout, no</span>
+<span class="source-line" id="L421"><a href="#L421">421</a>  * shard. A LARGE target shards → scouts (STANDARD) → maps (STANDARD) → reduces/synthesizes (HEAVY).</span>
+<span class="source-line" id="L422"><a href="#L422">422</a>  *</span>
+<span class="source-line" id="L423"><a href="#L423">423</a>  * `makeAgent(model, role)` is INJECTABLE so a deterministic test drives the whole pipeline with stub</span>
+<span class="source-line" id="L424"><a href="#L424">424</a>  * agents (no live agy); omit it for the live agy seam. Returns the raw map-reduce advisory prose (a</span>
+<span class="source-line" id="L425"><a href="#L425">425</a>  * PRE-STAGE — the canonical branded output is still the graded gandalf-advisor-1 envelope).</span>
+<span class="source-line" id="L426"><a href="#L426">426</a>  *</span>
+<span class="source-line" id="L427"><a href="#L427">427</a>  * @param {object} o</span>
+<span class="source-line" id="L428"><a href="#L428">428</a>  * @param {?string}  [o.projectDir]</span>
+<span class="source-line" id="L429"><a href="#L429">429</a>  * @param {Array|Object} o.payload            the codebase payload (path strings / {path,content} / dict)</span>
+<span class="source-line" id="L430"><a href="#L430">430</a>  * @param {string}   o.userObjective</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>  * @param {object}   [o.env=process.env]</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>  * @param {Function} [o.log]</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>  * @param {?Function}[o.makeAgent]            (model, role) =&gt; agentFn — injected for tests</span>
+<span class="source-line" id="L434"><a href="#L434">434</a>  * @param {?number}  [o.highContextLimit]</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>  * @param {number}   [o.concurrencyLimit=3]</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>  * @returns {Promise&lt;string&gt;}</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>  */</span>
+<span class="source-line" id="L438"><a href="#L438">438</a> export async function runScaledAnalysis({</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>   projectDir = null,</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>   payload,</span>
+<span class="source-line" id="L441"><a href="#L441">441</a>   userObjective,</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>   env = process.env,</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>   log = () =&gt; {},</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>   makeAgent = null,</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>   highContextLimit = null,</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>   concurrencyLimit = 3,</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>   depth = null,</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>   tier = null,</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>   maxShards = null,</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>   fusionPasses = null,</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>   /** Optional inject for hermetic E1–E4 call-object capture (production omits → live runMapReduce). */</span>
+<span class="source-line" id="L452"><a href="#L452">452</a>   mapReduceRunner = null,</span>
+<span class="source-line" id="L453"><a href="#L453">453</a> } = {}) {</span>
+<span class="source-line" id="L454"><a href="#L454">454</a>   // B2 L2: locked path forwards authoritative band knobs; unlocked keeps caller caps / null.</span>
+<span class="source-line" id="L455"><a href="#L455">455</a>   // Caller maxShards/fusionPasses cannot invert a lock (unlock-only override).</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>   const consume = resolveConsumeKnobs({</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>     depth,</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>     tier,</span>
+<span class="source-line" id="L459"><a href="#L459">459</a>     env,</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>     maxShards,</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>     fusionPasses,</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>     userObjective,</span>
+<span class="source-line" id="L463"><a href="#L463">463</a>   });</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>   const shards = consume.maxShards;</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>   const fusions = consume.fusionPasses;</span>
+<span class="source-line" id="L466"><a href="#L466">466</a>   if (consume.locked) {</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>     log(`gandalf band: depth=${consume.knobs?.depth} shards=${shards} fusionPasses=${fusions} source=${consume.source}`);</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>   }</span>
+<span class="source-line" id="L469"><a href="#L469">469</a> </span>
+<span class="source-line" id="L470"><a href="#L470">470</a>   const { mapModel, reduceModel, mapDriver, reduceDriver } = resolveScaledModels(env);</span>
+<span class="source-line" id="L471"><a href="#L471">471</a>   const target = projectDir || process.cwd();</span>
+<span class="source-line" id="L472"><a href="#L472">472</a>   const factory = makeAgent || ((model, role) =&gt; {</span>
+<span class="source-line" id="L473"><a href="#L473">473</a>     const driver = role === &#x27;reduce&#x27; ? reduceDriver : mapDriver;</span>
+<span class="source-line" id="L474"><a href="#L474">474</a>     // Gemini seats keep the dedicated agy seam; all other families use the prefs-routed runAgent.</span>
+<span class="source-line" id="L475"><a href="#L475">475</a>     if (driver === &#x27;gemini-cli&#x27; || String(driver).startsWith(&#x27;gemini&#x27;)) {</span>
+<span class="source-line" id="L476"><a href="#L476">476</a>       return makeGeminiCliSeam({ model, role, env, target, log }).agent;</span>
+<span class="source-line" id="L477"><a href="#L477">477</a>     }</span>
+<span class="source-line" id="L478"><a href="#L478">478</a>     return (prompt, opts = {}) =&gt; runAgent({</span>
+<span class="source-line" id="L479"><a href="#L479">479</a>       prompt,</span>
+<span class="source-line" id="L480"><a href="#L480">480</a>       schema: opts.schema,</span>
+<span class="source-line" id="L481"><a href="#L481">481</a>       label: opts.label || `gandalf:${role}`,</span>
+<span class="source-line" id="L482"><a href="#L482">482</a>       role: opts.role || role,</span>
+<span class="source-line" id="L483"><a href="#L483">483</a>       model: model || opts.model || null,</span>
+<span class="source-line" id="L484"><a href="#L484">484</a>       driver,</span>
+<span class="source-line" id="L485"><a href="#L485">485</a>       env: { ...env, CRUCIBLE_AGENT_LIVE: env.CRUCIBLE_AGENT_LIVE || &#x27;1&#x27; },</span>
+<span class="source-line" id="L486"><a href="#L486">486</a>       target,</span>
+<span class="source-line" id="L487"><a href="#L487">487</a>       log,</span>
+<span class="source-line" id="L488"><a href="#L488">488</a>     });</span>
+<span class="source-line" id="L489"><a href="#L489">489</a>   });</span>
+<span class="source-line" id="L490"><a href="#L490">490</a>   const mapAgent = factory(mapModel, &#x27;map&#x27;);       // REVIEW_FAMILY bulk reads</span>
+<span class="source-line" id="L491"><a href="#L491">491</a>   const reduceAgent = factory(reduceModel, &#x27;reduce&#x27;); // CODING_FAMILY synthesis</span>
+<span class="source-line" id="L492"><a href="#L492">492</a>   const invokeMapReduce = typeof mapReduceRunner === &#x27;function&#x27; ? mapReduceRunner : runMapReduce;</span>
+<span class="source-line" id="L493"><a href="#L493">493</a>   return invokeMapReduce({</span>
+<span class="source-line" id="L494"><a href="#L494">494</a>     projectDir,</span>
+<span class="source-line" id="L495"><a href="#L495">495</a>     payload,</span>
+<span class="source-line" id="L496"><a href="#L496">496</a>     userObjective,</span>
+<span class="source-line" id="L497"><a href="#L497">497</a>     env,</span>
+<span class="source-line" id="L498"><a href="#L498">498</a>     log,</span>
+<span class="source-line" id="L499"><a href="#L499">499</a>     agent: mapAgent,</span>
+<span class="source-line" id="L500"><a href="#L500">500</a>     reduceAgent,</span>
+<span class="source-line" id="L501"><a href="#L501">501</a>     highContextLimit,</span>
+<span class="source-line" id="L502"><a href="#L502">502</a>     concurrencyLimit,</span>
+<span class="source-line" id="L503"><a href="#L503">503</a>     maxShards: shards,</span>
+<span class="source-line" id="L504"><a href="#L504">504</a>     fusionPasses: fusions,</span>
+<span class="source-line" id="L505"><a href="#L505">505</a>   });</span>
+<span class="source-line" id="L506"><a href="#L506">506</a> }</span>
+<span class="source-line" id="L507"><a href="#L507">507</a> </span>
+<span class="source-line" id="L508"><a href="#L508">508</a> /**</span>
+<span class="source-line" id="L509"><a href="#L509">509</a>  * Collect a codebase payload (an array of repo-relative path strings) by walking `projectDir` and</span>
+<span class="source-line" id="L510"><a href="#L510">510</a>  * respecting the same gitignore/default ignores the context-sizer uses. Content is read lazily by the</span>
+<span class="source-line" id="L511"><a href="#L511">511</a>  * map-reduce runtime (it resolves string paths against projectDir), so this stays cheap.</span>
+<span class="source-line" id="L512"><a href="#L512">512</a>  * @param {string} projectDir</span>
+<span class="source-line" id="L513"><a href="#L513">513</a>  * @returns {string[]} repo-relative POSIX-ish path strings</span>
+<span class="source-line" id="L514"><a href="#L514">514</a>  */</span>
+<span class="source-line" id="L515"><a href="#L515">515</a> export function collectProjectPayload(projectDir) {</span>
+<span class="source-line" id="L516"><a href="#L516">516</a>   const patterns = getGitignorePatterns(projectDir);</span>
+<span class="source-line" id="L517"><a href="#L517">517</a>   const out = [];</span>
+<span class="source-line" id="L518"><a href="#L518">518</a>   const walk = (dir) =&gt; {</span>
+<span class="source-line" id="L519"><a href="#L519">519</a>     let entries;</span>
+<span class="source-line" id="L520"><a href="#L520">520</a>     try { entries = readdirSync(dir); } catch { return; }</span>
+<span class="source-line" id="L521"><a href="#L521">521</a>     for (const name of entries) {</span>
+<span class="source-line" id="L522"><a href="#L522">522</a>       const full = join(dir, name);</span>
+<span class="source-line" id="L523"><a href="#L523">523</a>       const rel = relative(projectDir, full);</span>
+<span class="source-line" id="L524"><a href="#L524">524</a>       let st;</span>
+<span class="source-line" id="L525"><a href="#L525">525</a>       try { st = statSync(full); } catch { continue; }</span>
+<span class="source-line" id="L526"><a href="#L526">526</a>       if (st.isDirectory()) {</span>
+<span class="source-line" id="L527"><a href="#L527">527</a>         if (isIgnored(rel, patterns, true)) continue;</span>
+<span class="source-line" id="L528"><a href="#L528">528</a>         walk(full);</span>
+<span class="source-line" id="L529"><a href="#L529">529</a>       } else if (st.isFile()) {</span>
+<span class="source-line" id="L530"><a href="#L530">530</a>         if (isIgnored(rel, patterns, false)) continue;</span>
+<span class="source-line" id="L531"><a href="#L531">531</a>         out.push(rel.replace(/\\/g, &#x27;/&#x27;));</span>
+<span class="source-line" id="L532"><a href="#L532">532</a>       }</span>
+<span class="source-line" id="L533"><a href="#L533">533</a>     }</span>
+<span class="source-line" id="L534"><a href="#L534">534</a>   };</span>
+<span class="source-line" id="L535"><a href="#L535">535</a>   walk(projectDir);</span>
+<span class="source-line" id="L536"><a href="#L536">536</a>   return out;</span>
+<span class="source-line" id="L537"><a href="#L537">537</a> }</span>
+<span class="source-line" id="L538"><a href="#L538">538</a> </span>
+<span class="source-line" id="L539"><a href="#L539">539</a> /**</span>
+<span class="source-line" id="L540"><a href="#L540">540</a>  * C2 (2026-07-11): grade a scaled-analysis report through the SAME honesty spine as</span>
+<span class="source-line" id="L541"><a href="#L541">541</a>  * every other run. The map-reduce used to ship RAW PROSE straight to the user — the</span>
+<span class="source-line" id="L542"><a href="#L542">542</a>  * one thing Gandalf exists to prevent (map-reduce.mjs&#x27;s own comment promised the</span>
+<span class="source-line" id="L543"><a href="#L543">543</a>  * seam-pass feedback that nothing performed). If the reduce seat emitted the</span>
+<span class="source-line" id="L544"><a href="#L544">544</a>  * RAW-DRAFT-CONTRACT JSON, grade it directly; otherwise wrap the prose in a minimal</span>
+<span class="source-line" id="L545"><a href="#L545">545</a>  * raw draft (reasoning = the report; zero self-assigned tiers) and grade THAT — the</span>
+<span class="source-line" id="L546"><a href="#L546">546</a>  * output is the stamped, canary-conformant envelope either way, honestly marked</span>
+<span class="source-line" id="L547"><a href="#L547">547</a>  * degraded (no live refuters ran on the scaled path).</span>
+<span class="source-line" id="L548"><a href="#L548">548</a>  */</span>
+<span class="source-line" id="L549"><a href="#L549">549</a> export function gradeScaledReport(report) {</span>
+<span class="source-line" id="L550"><a href="#L550">550</a>   const text = String(report);</span>
+<span class="source-line" id="L551"><a href="#L551">551</a>   let rawDraft = null;</span>
+<span class="source-line" id="L552"><a href="#L552">552</a>   try {</span>
+<span class="source-line" id="L553"><a href="#L553">553</a>     const parsed = JSON.parse(text);</span>
+<span class="source-line" id="L554"><a href="#L554">554</a>     if (parsed &amp;&amp; typeof parsed === &#x27;object&#x27; &amp;&amp; !Array.isArray(parsed)) rawDraft = parsed;</span>
+<span class="source-line" id="L555"><a href="#L555">555</a>   } catch { /* prose report — wrap it */ }</span>
+<span class="source-line" id="L556"><a href="#L556">556</a>   if (!rawDraft) {</span>
+<span class="source-line" id="L557"><a href="#L557">557</a>     rawDraft = {</span>
+<span class="source-line" id="L558"><a href="#L558">558</a>       reasoning: text,</span>
+<span class="source-line" id="L559"><a href="#L559">559</a>       verdict: &#x27;scaled analyze — see reasoning (map-reduce advisory prose, host-graded)&#x27;,</span>
+<span class="source-line" id="L560"><a href="#L560">560</a>       findings: [],</span>
+<span class="source-line" id="L561"><a href="#L561">561</a>       nitpicks: [],</span>
+<span class="source-line" id="L562"><a href="#L562">562</a>       elevations: [],</span>
+<span class="source-line" id="L563"><a href="#L563">563</a>     };</span>
+<span class="source-line" id="L564"><a href="#L564">564</a>   }</span>
+<span class="source-line" id="L565"><a href="#L565">565</a>   const output = runHost(JSON.stringify(rawDraft), { cross_model: false });</span>
+<span class="source-line" id="L566"><a href="#L566">566</a>   // Carry the map-reduce degradation stamp forward — never silently dropped.</span>
+<span class="source-line" id="L567"><a href="#L567">567</a>   output.degraded = true;</span>
+<span class="source-line" id="L568"><a href="#L568">568</a>   const stamp = report &amp;&amp; typeof report === &#x27;object&#x27; &amp;&amp; &#x27;stamp&#x27; in report ? report.stamp : null;</span>
+<span class="source-line" id="L569"><a href="#L569">569</a>   if (stamp) output.scaled_stamp = String(stamp);</span>
+<span class="source-line" id="L570"><a href="#L570">570</a>   return output;</span>
+<span class="source-line" id="L571"><a href="#L571">571</a> }</span>
+<span class="source-line" id="L572"><a href="#L572">572</a> </span>
+<span class="source-line" id="L573"><a href="#L573">573</a> /** The `--analyze` CLI path: build the codebase payload, run the Scaled-Gandalf pipeline (context-size</span>
+<span class="source-line" id="L574"><a href="#L574">574</a>  *  routed, clever two-model), grade the result through the seam pass (C2), and write the STAMPED</span>
+<span class="source-line" id="L575"><a href="#L575">575</a>  *  envelope to --output or stdout. Throws on failure so the caller emits an honest stderr reason and</span>
+<span class="source-line" id="L576"><a href="#L576">576</a>  *  a non-zero exit. */</span>
+<span class="source-line" id="L577"><a href="#L577">577</a> async function runAnalyzeMode(opts) {</span>
+<span class="source-line" id="L578"><a href="#L578">578</a>   const projectDir = resolve(opts.project || process.cwd());</span>
+<span class="source-line" id="L579"><a href="#L579">579</a>   const objective = opts.objective || &#x27;Provide a deep-think advisory review of this codebase.&#x27;;</span>
+<span class="source-line" id="L580"><a href="#L580">580</a>   const payload = collectProjectPayload(projectDir);</span>
+<span class="source-line" id="L581"><a href="#L581">581</a>   process.stderr.write(`gandalf-run: --analyze over ${payload.length} files in ${projectDir}\n`);</span>
+<span class="source-line" id="L582"><a href="#L582">582</a>   const report = await runScaledAnalysis({</span>
+<span class="source-line" id="L583"><a href="#L583">583</a>     projectDir,</span>
+<span class="source-line" id="L584"><a href="#L584">584</a>     payload,</span>
+<span class="source-line" id="L585"><a href="#L585">585</a>     userObjective: objective,</span>
+<span class="source-line" id="L586"><a href="#L586">586</a>     env: process.env,</span>
+<span class="source-line" id="L587"><a href="#L587">587</a>     log: (m) =&gt; process.stderr.write(`${m}\n`),</span>
+<span class="source-line" id="L588"><a href="#L588">588</a>     depth: opts.depth || null,</span>
+<span class="source-line" id="L589"><a href="#L589">589</a>     tier: opts.tier || null,</span>
+<span class="source-line" id="L590"><a href="#L590">590</a>   });</span>
+<span class="source-line" id="L591"><a href="#L591">591</a>   const graded = gradeScaledReport(report);</span>
+<span class="source-line" id="L592"><a href="#L592">592</a>   const serialized = `${JSON.stringify(graded, null, 2)}\n`;</span>
+<span class="source-line" id="L593"><a href="#L593">593</a>   if (opts.output) writeFileSync(opts.output, serialized, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L594"><a href="#L594">594</a>   else process.stdout.write(serialized);</span>
+<span class="source-line" id="L595"><a href="#L595">595</a> }</span>
+<span class="source-line" id="L596"><a href="#L596">596</a> </span>
+<span class="source-line" id="L597"><a href="#L597">597</a> async function main() {</span>
+<span class="source-line" id="L598"><a href="#L598">598</a>   let opts;</span>
+<span class="source-line" id="L599"><a href="#L599">599</a>   try {</span>
+<span class="source-line" id="L600"><a href="#L600">600</a>     opts = parseArgs(process.argv.slice(2));</span>
+<span class="source-line" id="L601"><a href="#L601">601</a>   } catch (err) {</span>
+<span class="source-line" id="L602"><a href="#L602">602</a>     process.stderr.write(`gandalf-run: ${err.message}\n${USAGE}\n`);</span>
+<span class="source-line" id="L603"><a href="#L603">603</a>     process.exitCode = 2;</span>
+<span class="source-line" id="L604"><a href="#L604">604</a>     return;</span>
+<span class="source-line" id="L605"><a href="#L605">605</a>   }</span>
+<span class="source-line" id="L606"><a href="#L606">606</a>   if (opts.help) {</span>
+<span class="source-line" id="L607"><a href="#L607">607</a>     process.stdout.write(`${USAGE}\n`);</span>
+<span class="source-line" id="L608"><a href="#L608">608</a>     return;</span>
+<span class="source-line" id="L609"><a href="#L609">609</a>   }</span>
+<span class="source-line" id="L610"><a href="#L610">610</a> </span>
+<span class="source-line" id="L611"><a href="#L611">611</a>   // W4: the SCALED-GANDALF analyze mode — actually invoke scout + map-reduce over a codebase, routed</span>
+<span class="source-line" id="L612"><a href="#L612">612</a>   // by context size (single frontier pass for a small target; shard→scout→map→reduce for a large one).</span>
+<span class="source-line" id="L613"><a href="#L613">613</a>   const started = new Date().toISOString();</span>
+<span class="source-line" id="L614"><a href="#L614">614</a>   const t0 = Date.now();</span>
+<span class="source-line" id="L615"><a href="#L615">615</a> </span>
+<span class="source-line" id="L616"><a href="#L616">616</a>   if (opts.analyze) {</span>
+<span class="source-line" id="L617"><a href="#L617">617</a>     try {</span>
+<span class="source-line" id="L618"><a href="#L618">618</a>       await runAnalyzeMode(opts);</span>
+<span class="source-line" id="L619"><a href="#L619">619</a>       writeRunRecord({</span>
+<span class="source-line" id="L620"><a href="#L620">620</a>         tier: &#x27;scaled-analyze&#x27;, started, ended: new Date().toISOString(),</span>
+<span class="source-line" id="L621"><a href="#L621">621</a>         input: `--project ${opts.project || process.cwd()} --objective ${JSON.stringify(opts.objective || &#x27;(default)&#x27;)}`,</span>
+<span class="source-line" id="L622"><a href="#L622">622</a>         params: { mode: &#x27;analyze&#x27; },</span>
+<span class="source-line" id="L623"><a href="#L623">623</a>         output: opts.output || &#x27;(stdout)&#x27;,</span>
+<span class="source-line" id="L624"><a href="#L624">624</a>         result: &#x27;analyze completed (see degraded stamp in the report)&#x27;,</span>
+<span class="source-line" id="L625"><a href="#L625">625</a>         cross_model: false, models: null, duration_s: Math.round((Date.now() - t0) / 1000), journal_ref: null,</span>
+<span class="source-line" id="L626"><a href="#L626">626</a>       });</span>
+<span class="source-line" id="L627"><a href="#L627">627</a>     } catch (err) {</span>
+<span class="source-line" id="L628"><a href="#L628">628</a>       process.stderr.write(`gandalf-run: --analyze failed — no output written.\n${err.message}\n`);</span>
+<span class="source-line" id="L629"><a href="#L629">629</a>       process.exitCode = 1;</span>
+<span class="source-line" id="L630"><a href="#L630">630</a>     }</span>
+<span class="source-line" id="L631"><a href="#L631">631</a>     return;</span>
+<span class="source-line" id="L632"><a href="#L632">632</a>   }</span>
+<span class="source-line" id="L633"><a href="#L633">633</a> </span>
+<span class="source-line" id="L634"><a href="#L634">634</a>   // Read the ARTIFACT under analysis. (2026-07-11: the old grade-mode &quot;router&quot; pass is</span>
+<span class="source-line" id="L635"><a href="#L635">635</a>   // DELETED — it token-sized the draft JSON, logged model choices, and mutated</span>
+<span class="source-line" id="L636"><a href="#L636">636</a>   // GEMINI_MODEL/TRIO_MODEL env in a mode that makes zero model calls: pure ceremony</span>
+<span class="source-line" id="L637"><a href="#L637">637</a>   // with a misleading log and an env side effect. --analyze keeps the real router.)</span>
+<span class="source-line" id="L638"><a href="#L638">638</a>   let rawText;</span>
+<span class="source-line" id="L639"><a href="#L639">639</a>   try {</span>
+<span class="source-line" id="L640"><a href="#L640">640</a>     rawText = opts.input ? readFileSync(opts.input, &#x27;utf8&#x27;) : readStdin();</span>
+<span class="source-line" id="L641"><a href="#L641">641</a>   } catch (err) {</span>
+<span class="source-line" id="L642"><a href="#L642">642</a>     process.stderr.write(`gandalf-run: could not read input: ${err.message}\n`);</span>
+<span class="source-line" id="L643"><a href="#L643">643</a>     process.exitCode = 2;</span>
+<span class="source-line" id="L644"><a href="#L644">644</a>     return;</span>
+<span class="source-line" id="L645"><a href="#L645">645</a>   }</span>
+<span class="source-line" id="L646"><a href="#L646">646</a> </span>
+<span class="source-line" id="L647"><a href="#L647">647</a>   let output, dispatch = null;</span>
+<span class="source-line" id="L648"><a href="#L648">648</a>   try {</span>
+<span class="source-line" id="L649"><a href="#L649">649</a>     if (opts.live) {</span>
+<span class="source-line" id="L650"><a href="#L650">650</a>       // C1: the LIVE cross-family path — refuters via agy, commissions minted into the</span>
+<span class="source-line" id="L651"><a href="#L651">651</a>       // shared ledger, cross_model/GROUNDED derived by the gate. HALTs honestly if agy</span>
+<span class="source-line" id="L652"><a href="#L652">652</a>       // is down (the seam throws; we write NOTHING and exit non-zero).</span>
+<span class="source-line" id="L653"><a href="#L653">653</a>       const live = await runHostLive(rawText, {</span>
+<span class="source-line" id="L654"><a href="#L654">654</a>         cross_model: true,</span>
+<span class="source-line" id="L655"><a href="#L655">655</a>         budget: opts.budget ?? undefined,</span>
+<span class="source-line" id="L656"><a href="#L656">656</a>         log: (m) =&gt; process.stderr.write(`${m}\n`),</span>
+<span class="source-line" id="L657"><a href="#L657">657</a>       });</span>
+<span class="source-line" id="L658"><a href="#L658">658</a>       output = live.output;</span>
+<span class="source-line" id="L659"><a href="#L659">659</a>       dispatch = live.dispatch;</span>
+<span class="source-line" id="L660"><a href="#L660">660</a>       const minted = dispatch.filter((d) =&gt; d.minted).length;</span>
+<span class="source-line" id="L661"><a href="#L661">661</a>       process.stderr.write(`gandalf-run: --live dispatched ${dispatch.length} refuter(s), ${minted} commission(s) minted\n`);</span>
+<span class="source-line" id="L662"><a href="#L662">662</a>     } else {</span>
+<span class="source-line" id="L663"><a href="#L663">663</a>       output = runHost(rawText, { cross_model: opts.cross_model });</span>
+<span class="source-line" id="L664"><a href="#L664">664</a>     }</span>
+<span class="source-line" id="L665"><a href="#L665">665</a>   } catch (err) {</span>
+<span class="source-line" id="L666"><a href="#L666">666</a>     // HONEST failure: malformed draft or a live-path error. Write NOTHING. Label revised</span>
+<span class="source-line" id="L667"><a href="#L667">667</a>     // 2026-08-25 (journal 0300, rule 9): the old blanket &quot;(agy down / non-attested)&quot; branded</span>
+<span class="source-line" id="L668"><a href="#L668">668</a>     // EVERY live error a substrate failure — twice misdiagnosing a budget stop as &quot;agy down&quot;.</span>
+<span class="source-line" id="L669"><a href="#L669">669</a>     // Read err.message; it names the actual cause. (Budget excess no longer halts at all —</span>
+<span class="source-line" id="L670"><a href="#L670">670</a>     // it pre-flights and floors; see live-refuter.mjs.)</span>
+<span class="source-line" id="L671"><a href="#L671">671</a>     const kind = err instanceof SeamPassInputError ? &#x27;malformed raw draft&#x27;</span>
+<span class="source-line" id="L672"><a href="#L672">672</a>       : opts.live ? `live refutation failed — ${err?.name || &#x27;error&#x27;} (read the message below; NOT necessarily agy)` : &#x27;conformance failure&#x27;;</span>
+<span class="source-line" id="L673"><a href="#L673">673</a>     process.stderr.write(`gandalf-run: ${kind} — no output written.\n${err.message}\n`);</span>
+<span class="source-line" id="L674"><a href="#L674">674</a>     process.exitCode = 1;</span>
+<span class="source-line" id="L675"><a href="#L675">675</a>     return;</span>
+<span class="source-line" id="L676"><a href="#L676">676</a>   }</span>
+<span class="source-line" id="L677"><a href="#L677">677</a> </span>
+<span class="source-line" id="L678"><a href="#L678">678</a>   const serialized = `${JSON.stringify(output, null, 2)}\n`;</span>
+<span class="source-line" id="L679"><a href="#L679">679</a>   if (opts.output) {</span>
+<span class="source-line" id="L680"><a href="#L680">680</a>     try {</span>
+<span class="source-line" id="L681"><a href="#L681">681</a>       writeFileSync(opts.output, serialized, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L682"><a href="#L682">682</a>     } catch (err) {</span>
+<span class="source-line" id="L683"><a href="#L683">683</a>       process.stderr.write(`gandalf-run: could not write output: ${err.message}\n`);</span>
+<span class="source-line" id="L684"><a href="#L684">684</a>       process.exitCode = 2;</span>
+<span class="source-line" id="L685"><a href="#L685">685</a>       return;</span>
+<span class="source-line" id="L686"><a href="#L686">686</a>     }</span>
+<span class="source-line" id="L687"><a href="#L687">687</a>   } else {</span>
+<span class="source-line" id="L688"><a href="#L688">688</a>     process.stdout.write(serialized);</span>
+<span class="source-line" id="L689"><a href="#L689">689</a>   }</span>
+<span class="source-line" id="L690"><a href="#L690">690</a> </span>
+<span class="source-line" id="L691"><a href="#L691">691</a>   writeRunRecord({</span>
+<span class="source-line" id="L692"><a href="#L692">692</a>     tier: opts.live ? &#x27;live-cross-family&#x27; : &#x27;tier1-deterministic&#x27;,</span>
+<span class="source-line" id="L693"><a href="#L693">693</a>     started, ended: new Date().toISOString(),</span>
+<span class="source-line" id="L694"><a href="#L694">694</a>     input: opts.input || &#x27;(stdin)&#x27;,</span>
+<span class="source-line" id="L695"><a href="#L695">695</a>     // P0 2026-07-25 (journal 0276): --live hardcodes cross_model:true into runHostLive, so the</span>
+<span class="source-line" id="L696"><a href="#L696">696</a>     // intent stamp must reflect it — recording opts.cross_model alone stamped intent:false on</span>
+<span class="source-line" id="L697"><a href="#L697">697</a>     // every --live run, corrupting the training feed for the highest-value runs.</span>
+<span class="source-line" id="L698"><a href="#L698">698</a>     params: { live: opts.live, budget: opts.budget, cross_model_intent: !!(opts.live || opts.cross_model) },</span>
+<span class="source-line" id="L699"><a href="#L699">699</a>     output: opts.output || &#x27;(stdout)&#x27;,</span>
+<span class="source-line" id="L700"><a href="#L700">700</a>     result: `graded: ${Array.isArray(output?.elevations) ? output.elevations.length : 0} elevation(s)` +</span>
+<span class="source-line" id="L701"><a href="#L701">701</a>       (dispatch ? `; refuters ${dispatch.length}, minted ${dispatch.filter((d) =&gt; d.minted).length}` : &#x27;&#x27;),</span>
+<span class="source-line" id="L702"><a href="#L702">702</a>     cross_model: output?.cross_model ?? false,</span>
+<span class="source-line" id="L703"><a href="#L703">703</a>     models: null,</span>
+<span class="source-line" id="L704"><a href="#L704">704</a>     duration_s: Math.round((Date.now() - t0) / 1000),</span>
+<span class="source-line" id="L705"><a href="#L705">705</a>     journal_ref: null,</span>
+<span class="source-line" id="L706"><a href="#L706">706</a>   });</span>
+<span class="source-line" id="L707"><a href="#L707">707</a> }</span>
+<span class="source-line" id="L708"><a href="#L708">708</a> </span>
+<span class="source-line" id="L709"><a href="#L709">709</a> // Run as a CLI when invoked directly (node runtime/gandalf-run.mjs). Importable for tests otherwise.</span>
+<span class="source-line" id="L710"><a href="#L710">710</a> // P0 2026-07-25 (journals 0275/0281/0283 + 0001-heavy-smoke): realpath + case-fold BOTH sides —</span>
+<span class="source-line" id="L711"><a href="#L711">711</a> // a junction/symlink path in argv (e.g. ~/.claude/skills junctions) never string-equals the</span>
+<span class="source-line" id="L712"><a href="#L712">712</a> // resolved module URL, so the CLI silently exited 0 writing NOTHING (the worst failure mode</span>
+<span class="source-line" id="L713"><a href="#L713">713</a> // for an honesty-first host). realpathSync collapses junctions; toLowerCase absorbs Windows</span>
+<span class="source-line" id="L714"><a href="#L714">714</a> // drive-letter/case variants.</span>
+<span class="source-line" id="L715"><a href="#L715">715</a> function invokedDirectly() {</span>
+<span class="source-line" id="L716"><a href="#L716">716</a>   const entry = process.argv[1];</span>
+<span class="source-line" id="L717"><a href="#L717">717</a>   if (!entry) return false;</span>
+<span class="source-line" id="L718"><a href="#L718">718</a>   try {</span>
+<span class="source-line" id="L719"><a href="#L719">719</a>     const canon = (p) =&gt; {</span>
+<span class="source-line" id="L720"><a href="#L720">720</a>       const abs = resolve(p);</span>
+<span class="source-line" id="L721"><a href="#L721">721</a>       let real = abs;</span>
+<span class="source-line" id="L722"><a href="#L722">722</a>       try { real = realpathSync(abs); } catch { /* keep abs (file may be a virtual path) */ }</span>
+<span class="source-line" id="L723"><a href="#L723">723</a>       return process.platform === &#x27;win32&#x27; ? real.toLowerCase() : real;</span>
+<span class="source-line" id="L724"><a href="#L724">724</a>     };</span>
+<span class="source-line" id="L725"><a href="#L725">725</a>     return canon(fileURLToPath(import.meta.url)) === canon(entry);</span>
+<span class="source-line" id="L726"><a href="#L726">726</a>   } catch {</span>
+<span class="source-line" id="L727"><a href="#L727">727</a>     return false;</span>
+<span class="source-line" id="L728"><a href="#L728">728</a>   }</span>
+<span class="source-line" id="L729"><a href="#L729">729</a> }</span>
+<span class="source-line" id="L730"><a href="#L730">730</a> if (invokedDirectly()) {</span>
+<span class="source-line" id="L731"><a href="#L731">731</a>   main().catch((err) =&gt; {</span>
+<span class="source-line" id="L732"><a href="#L732">732</a>     process.stderr.write(`gandalf-run: fatal — ${err?.message ?? err}\n`);</span>
+<span class="source-line" id="L733"><a href="#L733">733</a>     process.exitCode = 1;</span>
+<span class="source-line" id="L734"><a href="#L734">734</a>   });</span>
+<span class="source-line" id="L735"><a href="#L735">735</a> }</span>
+<span class="source-line" id="L736"><a href="#L736">736</a> </span>
+<span class="source-line" id="L737"><a href="#L737">737</a> export { main };</span></pre></main></body></html>

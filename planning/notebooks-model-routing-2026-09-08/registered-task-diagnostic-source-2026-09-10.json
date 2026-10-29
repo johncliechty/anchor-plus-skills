@@ -1,9 +1,0 @@
-{
-  "at": "2026-09-10T13:44:28.694303+00:00",
-  "status": "passed",
-  "sha256": "ab2599ff55f527f8b09ced1a6991a0c6948894288153b9b162e44ee8606e4f1c",
-  "prior_proof": "startup-resume-verified-source-2026-09-10.json",
-  "diagnostic_syntax": "passed",
-  "task_mutations": "none",
-  "in_memory_roundtrip": "no_mismatch_no_registration"
-}

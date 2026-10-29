@@ -1,0 +1,64 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Bind checks to the candidate · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="presentation" data-anchor-id="a-present-fold">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Bind checks to the candidate</h1>
+<p class="intro">A managed presentation needs sourced passing content checks for exact candidate and requirement digests. Unresolved feedback or stale foundations refuses presentation.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.629994+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/refinement-state.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\refinement-state.mjs · lines 780–831</p><pre>    case &#x27;present&#x27;: {
+      demand(operation.product_context_version===undefined || operation.product_context_version===1,
+        &#x27;INVALID_PRODUCT_CONTEXT_VERSION&#x27;,&#x27;Unsupported product applicability context.&#x27;);
+      const review = elegance(operation.elegance, &#x27;RC6&#x27;);
+      requireOpenRound(slice);
+      dependenciesCurrent(state, slice);
+      demand(slice.feedback.every(item =&gt; item.disposition !== &#x27;pending&#x27;),
+        &#x27;UNRESOLVED_FEEDBACK&#x27;, &#x27;Every feedback item needs an explicit disposition before presentation.&#x27;);
+      const presentationId = identifier(operation.presentation_id, &#x27;presentation_id&#x27;);
+      const requestId = identifier(operation.request_id, &#x27;request_id&#x27;);
+      demand(!Object.values(state.slices).some(item =&gt; item.presentations.some(p =&gt; p.id === presentationId)),
+        &#x27;PRESENTATION_EXISTS&#x27;, &#x27;Presentation IDs are immutable and globally unique.&#x27;);
+      demand(!Object.values(state.slices).some(item =&gt; item.review_requests.some(r =&gt; r.id === requestId)),
+        &#x27;REQUEST_EXISTS&#x27;, &#x27;Review request IDs are globally unique.&#x27;);
+      demand(nonempty(operation.source_message) &amp;&amp; nonempty(operation.purpose),
+        &#x27;REVIEW_REQUEST_SOURCE_REQUIRED&#x27;, &#x27;Presentation requires a source message and concrete review purpose.&#x27;);
+      const members = candidateMembers(slice);
+      const candidateDigest = refinementDigest(slice.candidate);
+      const requirementsDigest = refinementDigest(slice.requirements);
+      demand(Array.isArray(operation.checks) &amp;&amp; operation.checks.some(check =&gt; check.kind === &#x27;content&#x27;),
+        &#x27;CONTENT_REVIEW_REQUIRED&#x27;, &#x27;A sourced semantic content review is required for each presentation.&#x27;);
+      for (const check of operation.checks) {
+        demand(object(check) &amp;&amp; [&#x27;content&#x27;, &#x27;tests&#x27;].includes(check.kind) &amp;&amp;
+          check.outcome === &#x27;pass&#x27; &amp;&amp; nonempty(check.source),
+        &#x27;INVALID_CHECK&#x27;, &#x27;Checks must pass and identify their evidence source.&#x27;);
+        demand(check.candidate_digest === candidateDigest &amp;&amp; check.requirements_digest === requirementsDigest,
+          &#x27;STALE_CHECK&#x27;, &#x27;Checks must refer to the exact candidate and cumulative requirement state.&#x27;);
+      }
+      const presentation = {
+        id: presentationId, round: slice.round, at: state.last_event_at, generation: state.generation,
+        members, requirements_digest: requirementsDigest, candidate_digest: candidateDigest,
+        applicable_requirements_digest: refinementDigest(activeRequirements(slice)),
+        ...(operation.product_context_version===1 ? {product_context:{version:1,
+          requirements_digests:Object.fromEntries(slice.product_ids.map(id=&gt;[id,productRequirementsDigest(slice,id)]))}} : {}),
+        dependency_pins: clone(dependencyContext(slice)),
+        dependencies_digest: refinementDigest(dependencyContext(slice)),
+        feedback_count: slice.feedback.length, checks: clone(operation.checks),
+        elegance: review,
+      };
+      slice.presentations.push(presentation);
+      currentRound(slice).presentations.push(presentationId);
+      slice.checks.push(...clone(operation.checks).map(check =&gt; ({ ...check, presentation_id: presentationId })));
+      const request = {
+        id: requestId, step_id: slice.step_id, presentation_id: presentationId,
+        members: clone(members), source_message: operation.source_message,
+        purpose: operation.purpose, status: &#x27;pending&#x27;,
+      };
+      slice.review_requests.push(request);
+      slice.work_phase = &#x27;awaiting_review&#x27;;
+      recordElegance(slice, review, operation.action, state);
+      break;
+    }</pre>
+<p><a class="button" href="../source-pages/fold.html#L780">Open numbered source</a>
+<a href="../sources/fold.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/inspect">Apply findings and inspect exact output</a> · <a target="_top" href="../index.html#process/publish">Managed effort: freeze and present</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</span></p><p>Excerpt hash: <span class="path">5ade17c7054d96e56fa9528e71f2b99eb858e7629db978fa2e8cfbcc69bff11a</span></p></details></article></main></body></html>

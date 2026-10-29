@@ -1,0 +1,222 @@
+{
+  "schema": "ramanujan-higher-dim-verification-receipt/v1",
+  "study": "kb-architecture-study-2026-10-22-higher-dim-poincare",
+  "timestamp": "2026-10-22T21:40:00Z",
+  "elapsed_s": 0.0752,
+  "all_verified": true,
+  "claims": {
+    "claim_1_angular_crowding_vs_3d_sphere": {
+      "claim": "Angular Crowding in 2D Poincare Disk (B^2) vs. Orthogonal Uncrowding in 3D Sphere (B^3) & B^6",
+      "verified": true,
+      "lattice_shape": [
+        6,
+        4,
+        4
+      ],
+      "total_nodes": 96,
+      "geodesic_radius_rho": 2.2,
+      "min_pairwise_distance_b2": 0.0,
+      "min_pairwise_distance_b3": 0.30259301,
+      "min_pairwise_distance_b6_orthogonal_planes": 2.14057684,
+      "crowded_pairs_below_0_35_rad": {
+        "b2_disk": 168,
+        "b3_sphere": 8,
+        "b6_orthogonal": 0
+      },
+      "separation_gain_b3_vs_b2": 302593.0051
+    },
+    "claim_2_stereographic_isometry_and_subspace_slicing": {
+      "claim": "Dimension-Free Stereographic Isomorphism (L^d <-> B^d) & Totally Geodesic Subspace Projection",
+      "verified": true,
+      "dimensions_verified": [
+        2,
+        3,
+        4,
+        8,
+        16,
+        64
+      ],
+      "dimension_reports": [
+        {
+          "dimension_d": 2,
+          "max_roundtrip_l2_error": 1e-16,
+          "max_isometry_rel_error": 2.6e-15,
+          "max_hyperboloid_constraint_error": 7.1e-15,
+          "closest_point_projection_violations": 0
+        },
+        {
+          "dimension_d": 3,
+          "max_roundtrip_l2_error": 1e-16,
+          "max_isometry_rel_error": 1.2e-15,
+          "max_hyperboloid_constraint_error": 3.6e-15,
+          "closest_point_projection_violations": 0
+        },
+        {
+          "dimension_d": 4,
+          "max_roundtrip_l2_error": 1e-16,
+          "max_isometry_rel_error": 4.5e-15,
+          "max_hyperboloid_constraint_error": 5.3e-15,
+          "closest_point_projection_violations": 0
+        },
+        {
+          "dimension_d": 8,
+          "max_roundtrip_l2_error": 1e-16,
+          "max_isometry_rel_error": 4.7e-15,
+          "max_hyperboloid_constraint_error": 1.8e-15,
+          "closest_point_projection_violations": 0
+        },
+        {
+          "dimension_d": 16,
+          "max_roundtrip_l2_error": 1e-16,
+          "max_isometry_rel_error": 1.6e-15,
+          "max_hyperboloid_constraint_error": 1.8e-15,
+          "closest_point_projection_violations": 0
+        },
+        {
+          "dimension_d": 64,
+          "max_roundtrip_l2_error": 1e-16,
+          "max_isometry_rel_error": 1.3e-15,
+          "max_hyperboloid_constraint_error": 7e-16,
+          "closest_point_projection_violations": 0
+        }
+      ]
+    },
+    "claim_3_multidim_lorentz_stability": {
+      "claim": "Lorentz Numerical Stability Across Dimensions d in {2, 3, 4, 8, 16, 64} vs. B^d Collapse",
+      "verified": true,
+      "results_by_dimension": [
+        {
+          "dimension_d": 2,
+          "poincare_axis_collapse_depth": 20,
+          "poincare_diagonal_failure_depth": 19,
+          "poincare_rel_err_at_depth_19": 0.60678,
+          "poincare_rel_err_at_depth_20": 1.0,
+          "lorentz_rel_err_at_depth_19": 0.0,
+          "lorentz_rel_err_at_depth_600": 0.0
+        },
+        {
+          "dimension_d": 3,
+          "poincare_axis_collapse_depth": 20,
+          "poincare_diagonal_failure_depth": 18,
+          "poincare_rel_err_at_depth_19": 1.0,
+          "poincare_rel_err_at_depth_20": 1.0,
+          "lorentz_rel_err_at_depth_19": 1.6e-15,
+          "lorentz_rel_err_at_depth_600": 0.0
+        },
+        {
+          "dimension_d": 4,
+          "poincare_axis_collapse_depth": 20,
+          "poincare_diagonal_failure_depth": 19,
+          "poincare_rel_err_at_depth_19": 0.473676,
+          "poincare_rel_err_at_depth_20": 1.0,
+          "lorentz_rel_err_at_depth_19": 7e-16,
+          "lorentz_rel_err_at_depth_600": 0.0
+        },
+        {
+          "dimension_d": 8,
+          "poincare_axis_collapse_depth": 20,
+          "poincare_diagonal_failure_depth": 19,
+          "poincare_rel_err_at_depth_19": 0.63453,
+          "poincare_rel_err_at_depth_20": 1.0,
+          "lorentz_rel_err_at_depth_19": 1.8e-15,
+          "lorentz_rel_err_at_depth_600": 0.0
+        },
+        {
+          "dimension_d": 16,
+          "poincare_axis_collapse_depth": 20,
+          "poincare_diagonal_failure_depth": 19,
+          "poincare_rel_err_at_depth_19": 0.49255,
+          "poincare_rel_err_at_depth_20": 1.0,
+          "lorentz_rel_err_at_depth_19": 2.7e-15,
+          "lorentz_rel_err_at_depth_600": 0.0
+        },
+        {
+          "dimension_d": 64,
+          "poincare_axis_collapse_depth": 20,
+          "poincare_diagonal_failure_depth": 19,
+          "poincare_rel_err_at_depth_19": 0.498071,
+          "poincare_rel_err_at_depth_20": 1.0,
+          "lorentz_rel_err_at_depth_19": 2.2e-15,
+          "lorentz_rel_err_at_depth_600": 0.0
+        }
+      ]
+    },
+    "claim_4_shared_radius_vs_product_decoupling": {
+      "claim": "Shared-Radius Coupling in Single B^d vs. Depth Decoupling via Sheet-Lift / Product Manifold",
+      "verified": true,
+      "fixed_domain_radius_rho": 0.5,
+      "true_domain_geodesic_distance": 0.49459608,
+      "coupling_comparison": [
+        {
+          "rho_tool_b": 0.0,
+          "true_domain_distance": 0.49459608,
+          "joint_l4_ambient_distance": 0.49459608,
+          "joint_b4_domain_poincare_radius": 0.24491866,
+          "geodesic_projection_domain_distance": 0.49459608,
+          "sheet_lift_and_product_domain_distance": 0.49459608,
+          "sheet_lift_rel_error": 0.0
+        },
+        {
+          "rho_tool_b": 0.5,
+          "true_domain_distance": 0.49459608,
+          "joint_l4_ambient_distance": 0.69849941,
+          "joint_b4_domain_poincare_radius": 0.23240275,
+          "geodesic_projection_domain_distance": 0.469181,
+          "sheet_lift_and_product_domain_distance": 0.49459608,
+          "sheet_lift_rel_error": 0.0
+        },
+        {
+          "rho_tool_b": 1.5,
+          "true_domain_distance": 0.49459608,
+          "joint_l4_ambient_distance": 1.59694802,
+          "joint_b4_domain_poincare_radius": 0.15283925,
+          "geodesic_projection_domain_distance": 0.42707927,
+          "sheet_lift_and_product_domain_distance": 0.49459608,
+          "sheet_lift_rel_error": 0.0
+        },
+        {
+          "rho_tool_b": 2.5,
+          "true_domain_distance": 0.49459608,
+          "joint_l4_ambient_distance": 2.6035978,
+          "joint_b4_domain_poincare_radius": 0.07283574,
+          "geodesic_projection_domain_distance": 0.46018097,
+          "sheet_lift_and_product_domain_distance": 0.49459608,
+          "sheet_lift_rel_error": 0.0
+        },
+        {
+          "rho_tool_b": 3.5,
+          "true_domain_distance": 0.49459608,
+          "joint_l4_ambient_distance": 3.61291498,
+          "joint_b4_domain_poincare_radius": 0.02963966,
+          "geodesic_projection_domain_distance": 0.4837975,
+          "sheet_lift_and_product_domain_distance": 0.49459608,
+          "sheet_lift_rel_error": 0.0
+        },
+        {
+          "rho_tool_b": 4.5,
+          "true_domain_distance": 0.49459608,
+          "joint_l4_ambient_distance": 4.61731293,
+          "joint_b4_domain_poincare_radius": 0.01132394,
+          "geodesic_projection_domain_distance": 0.49384942,
+          "sheet_lift_and_product_domain_distance": 0.49459608,
+          "sheet_lift_rel_error": 0.0
+        }
+      ]
+    },
+    "claim_5_task_phase_selective_metric": {
+      "claim": "Task-Phase Selective Attention Metric Triangle Inequality & Phase Conditioning",
+      "verified": true,
+      "phases_verified": [
+        "ingest",
+        "compute",
+        "verify",
+        "emit",
+        "collaborate",
+        "balanced"
+      ],
+      "triples_tested": 3000,
+      "triangle_inequality_violations": 0,
+      "min_triangle_slack": 0.5304741918
+    }
+  }
+}

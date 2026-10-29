@@ -1,0 +1,69 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Persona to role to source · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="catalog" data-anchor-id="a-adapter-catalog">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Persona to role to source</h1>
+<p class="intro">Anchor expands Ecgberht into steward-project, steward-portfolio and steward-starchart. The current adapter maps these to Lamp, Cave and Star Chart content directories. This draft uses each profile&#x27;s canonical high-seat JPEG; the Foundry catalog has a separate cropped Ecgberht portfolio icon.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.531747+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/foundry_page.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: b2021f580d014f6ee3b0fdccd342a58e6dfb77120a917529423e1ad37c9ce322</p></aside>
+<p class="path">C:/dev/Anchor/foundry_page.py · lines 122–178</p><pre>def catalog():
+    foundry, skills_root, trio, steward = discovery_roots()
+    manifest = {str(Path(api._resolve_source(e.get(&#x27;source&#x27;))).resolve()): e
+                for e in api._load_manifest() if e.get(&#x27;source&#x27;)}
+    candidates = list(skills_root.glob(&#x27;*/SKILL.md&#x27;))
+    candidates.extend(trio / name / &#x27;SKILL.md&#x27; for name in (&#x27;crucible&#x27;, &#x27;foreman&#x27;, &#x27;researchPrime&#x27;))
+    candidates.append(steward / &#x27;SKILL.md&#x27;)
+    candidates.extend(Path(p) / &#x27;SKILL.md&#x27; for p in manifest)
+    rows, seen = [], set()
+    for path in candidates:
+        directory = path.parent.resolve()
+        if str(directory) in seen or not path.is_file() or not _allowed(path):
+            continue
+        seen.add(str(directory))
+        text = _text(path)
+        if directory.name.lower() == &#x27;templates&#x27; or _frontmatter(text, &#x27;foundry&#x27;).lower() == &#x27;false&#x27;:
+            continue
+        # agy-dispatch and Figure-Designer are explicitly excluded in the design;
+        # canonical frontmatter still needs the Foundry-owned follow-up.
+        if _key(directory.name) in (&#x27;agydispatch&#x27;, &#x27;figuredesigner&#x27;):
+            continue
+        entry = manifest.get(str(directory), {})
+        skill_id = &#x27;ecgberht&#x27; if directory == steward.resolve() else _key(directory.name)
+        human = api._parse_human_md(_text(directory / &#x27;HUMAN.md&#x27;))
+        parsed = api._parse_skill_md(text)
+        name = _frontmatter(text, &#x27;name&#x27;) or entry.get(&#x27;name&#x27;) or directory.name
+        if _key(name) == skill_id:
+            name = DISPLAY_NAMES.get(skill_id, name)
+        north = (_text(directory / &#x27;NORTH-STAR.md&#x27;).strip() or _section(text, &#x27;North Star&#x27;) or
+                 _text(directory / &#x27;VISION.md&#x27;).strip())
+        purpose = human[&#x27;oneSentence&#x27;] or parsed[&#x27;description&#x27;] or api._first_paragraph(parsed[&#x27;body&#x27;])
+        icon, icon_path = _icon(directory, text, skill_id)
+        rows.append({&#x27;id&#x27;: skill_id, &#x27;name&#x27;: name, &#x27;purpose&#x27;: purpose,
+                     &#x27;northStar&#x27;: north, &#x27;source&#x27;: str(directory), &#x27;ref&#x27;: entry.get(&#x27;ref&#x27;),
+                     &#x27;status&#x27;: entry.get(&#x27;status&#x27;), &#x27;inFoundryMap&#x27;: bool(entry),
+                     &#x27;icon&#x27;: icon, &#x27;iconPath&#x27;: icon_path, &#x27;role&#x27;: None,
+                     &#x27;walkthrough&#x27;: &#x27;unfinished&#x27;})
+    profile = anchor_settings.steward_profile()
+    steward_row = next((r for r in rows if r[&#x27;id&#x27;] == &#x27;ecgberht&#x27;), None)
+    if steward_row:
+        rows.remove(steward_row)
+        for role, label, art, purpose in (
+            (&#x27;project&#x27;, profile[&#x27;seal_name&#x27;], profile[&#x27;seal&#x27;],
+             &#x27;Keep one effort’s dialogue, decisions and delivery coherent.&#x27;),
+            (&#x27;portfolio&#x27;, profile[&#x27;high_seat_name&#x27;], profile[&#x27;high_seat&#x27;],
+             &#x27;Seat and coordinate initiatives across projects.&#x27;),
+            (&#x27;starchart&#x27;, profile[&#x27;campaign_name&#x27;], profile[&#x27;campaign_icon&#x27;],
+             &#x27;Explore goals and foresight, then hand approved work to the portfolio steward.&#x27;)):
+            rows.append({**steward_row, &#x27;id&#x27;: &#x27;steward-&#x27; + role,
+                         &#x27;name&#x27;: profile[&#x27;label&#x27;] + &#x27;-&#x27; + label, &#x27;role&#x27;: role,
+                         &#x27;purpose&#x27;: purpose, &#x27;icon&#x27;: &#x27;/brand/foundry-edge-ecgberhtportfolio.png&#x27;
+                         if role == &#x27;portfolio&#x27; and profile[&#x27;key&#x27;] == &#x27;ecgberht&#x27; else &#x27;/vendor/brand/&#x27; + art, &#x27;iconPath&#x27;: None})
+    rows.sort(key=lambda r: r[&#x27;name&#x27;].casefold())
+    return {&#x27;skills&#x27;: rows, &#x27;persona&#x27;: profile[&#x27;label&#x27;],
+            &#x27;walkthroughOrder&#x27;: [&#x27;researchprime&#x27;, &#x27;gandalf&#x27;, &#x27;steward-project&#x27;,
+                                 &#x27;steward-portfolio&#x27;, &#x27;steward-starchart&#x27;],
+            &#x27;contentRoot&#x27;: str(content_root()), &#x27;northStar&#x27;: api.load_north_star()}</pre>
+<p><a class="button" href="../source-pages/adapter.html#L122">Open numbered source</a>
+<a href="../sources/adapter.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/cave">Use Cave&#x27;s own dialogue</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">b2021f580d014f6ee3b0fdccd342a58e6dfb77120a917529423e1ad37c9ce322</span></p><p>Excerpt hash: <span class="path">7a200afa2056d17659f8e4cc396ed247a75c3948abf969996584c8bb701eab85</span></p></details></article></main></body></html>

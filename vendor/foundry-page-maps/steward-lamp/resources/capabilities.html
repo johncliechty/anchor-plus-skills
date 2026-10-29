@@ -1,0 +1,47 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Honest capability selection · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="capabilities" data-anchor-id="a-models-select_model">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Honest capability selection</h1>
+<p class="intro">select_model checks catalog ranking and supported effort and begins model_attested:false. Inspect actual provider/native metadata before claiming served-model or independent-family proof.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.633990+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/model_policy.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: e1009b05ea6c5636f64625410ff0aeaaf1a7a5ab84e6aff839422b26913b4142</p></aside>
+<p class="path">C:\dev\Anchor\model_policy.py · lines 120–154</p><pre>def select_model(family, catalog):
+    if family not in FAMILIES:
+        raise PolicyUnavailable(str(family), &quot;unknown model family&quot;)
+    rows = sorted(catalog, key=lambda item: item[&quot;rank&quot;])
+    if not rows:
+        raise PolicyUnavailable(family, &quot;no available model&quot;)
+    if family == &quot;chatgpt&quot; and len(rows) &gt; 1 and rows[0][&quot;rank&quot;] == rows[1][&quot;rank&quot;]:
+        raise PolicyUnavailable(family, &quot;latest model ranking is ambiguous; refresh subscription capabilities&quot;)
+    chosen = rows[0]
+    initial_model = chosen[&quot;model&quot;]
+    initial_evidence = chosen[&quot;evidence&quot;]
+    by_name = {row[&quot;model&quot;]: row for row in rows}
+    visited = set()
+    while chosen.get(&quot;upgrade&quot;):
+        target = chosen[&quot;upgrade&quot;]
+        if isinstance(target, dict):
+            target = target.get(&quot;model&quot;) or target.get(&quot;id&quot;)
+        if target in visited:
+            raise PolicyUnavailable(family, &quot;cyclic catalog upgrade metadata&quot;)
+        visited.add(chosen[&quot;model&quot;])
+        if target not in by_name:
+            raise PolicyUnavailable(family, &quot;recommended model upgrade is unavailable&quot;)
+        chosen = by_name[target]
+    try:
+        effort = highest_effort(chosen[&quot;efforts&quot;])
+    except ValueError as error:
+        raise PolicyUnavailable(family, str(error), code=&quot;unsupported_effort&quot;) from error
+    result = {&quot;policy_version&quot;: POLICY_VERSION, &quot;requested_policy&quot;: dict(DEFAULT_POLICY),
+              &quot;family&quot;: family, &quot;model&quot;: chosen[&quot;model&quot;], &quot;effort&quot;: effort,
+              &quot;selection_evidence&quot;: initial_evidence + (&quot;+provider_upgrade&quot; if initial_model != chosen[&quot;model&quot;] else &quot;&quot;), &quot;model_attested&quot;: False}
+    if not re.fullmatch(r&quot;[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}&quot;, result[&quot;model&quot;]):
+        raise PolicyUnavailable(family, &quot;catalog model identity has unsupported characters&quot;)
+    if initial_evidence == &quot;provider_catalog_order&quot;:
+        result[&quot;warning&quot;] = &quot;Provider-recommended catalog order; frontier ranking is not explicitly attested.&quot;
+    return result</pre>
+<p><a class="button" href="../source-pages/models.html#L120">Open numbered source</a>
+<a href="../sources/models.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/wake">Wake or resume the subscription session</a> · <a target="_top" href="../index.html#process/policy">Select capability and qualify actual service</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">e1009b05ea6c5636f64625410ff0aeaaf1a7a5ab84e6aff839422b26913b4142</span></p><p>Excerpt hash: <span class="path">2ac62340b02d0c948c699d4b844ff9225a7296e84252aaf53953894eb9ada417</span></p></details></article></main></body></html>

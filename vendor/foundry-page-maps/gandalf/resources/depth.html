@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Depth knobs and fusion passes · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="depth" data-anchor-id="a-depth">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Depth knobs and fusion passes</h1>
+<p class="intro">Locked LITE uses 2 shards/1 fusion; SPIKE-FIRST 4/2; FULL 8/2. These are depth knobs, not evidence of model quality or review rounds.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">foundry/triage/mapping.mjs · lines 166–185</p><pre>  gandalf: Object.freeze({
+    [DEPTH_BANDS.FULL]: Object.freeze({
+      shards: 8,
+      fusionPasses: 2,
+      seats: &#x27;frontier&#x27;,
+      ceremony: &#x27;full&#x27;,
+    }),
+    [DEPTH_BANDS.LITE]: Object.freeze({
+      shards: 2,
+      fusionPasses: 1,
+      seats: &#x27;standard&#x27;,
+      ceremony: &#x27;lite&#x27;,
+    }),
+    [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({
+      shards: 4,
+      fusionPasses: 2,
+      seats: &#x27;frontier&#x27;,
+      ceremony: &#x27;spike-first&#x27;,
+    }),
+  }),</pre>
+<p><a class="button" href="../source-pages/mapping.html#L166">Open numbered source</a>
+<a href="../sources/mapping.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/bands">Resolve depth locks and requested seats</a> · <a target="_top" href="../index.html#process/shard">Group sources and apply shard caps</a> · <a target="_top" href="../index.html#process/reduce">Model fuses the summaries</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">6886d7086f0b118e402851970d895432433b5e90f8ea3bbff1e221cbc7d2c755</span></p><p>Excerpt hash: <span class="path">1209e2d0db3e222b04ad8b3acdac718ae891ec3a0ebb04421dc646dbaa2174bf</span></p></details></article></main></body></html>

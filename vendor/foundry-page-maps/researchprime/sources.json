@@ -1,0 +1,240 @@
+[
+  {
+    "id": "skill",
+    "kind": "instructions",
+    "origin": "C:\\dev\\trio\\researchPrime\\SKILL.md",
+    "snapshot": "sources/skill.md",
+    "sha256": "33897bf9008f7c54e4f9bc5e3545fe8837b1d8dbcf36f403c67d56f00327c2a8"
+  },
+  {
+    "id": "human",
+    "kind": "instructions",
+    "origin": "C:\\dev\\trio\\researchPrime\\HUMAN.md",
+    "snapshot": "sources/human.md",
+    "sha256": "3d207a10200aa6e896a6790cb17bc6bcfcd7b187f7ace5c904fd52739005557a"
+  },
+  {
+    "id": "probe",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\contract.mjs",
+    "snapshot": "sources/probe.mjs",
+    "sha256": "305cdae479a16f3d87c88f2b91b928e18005a7f24a081ea242f841982bde60df"
+  },
+  {
+    "id": "plan",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\plan-gate.mjs",
+    "snapshot": "sources/plan.mjs",
+    "sha256": "a9b5e615eb65cde1d0cb50334d0f1bd48cb90c860e1e95904c2e2e5c4dde4e56"
+  },
+  {
+    "id": "two-gate",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\two-gate.mjs",
+    "snapshot": "sources/two-gate.mjs",
+    "sha256": "69af75f6feb58254135083dc40dc552a54711eb6967a5b89840a67dac0745ebb"
+  },
+  {
+    "id": "approval",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\approval-provider.mjs",
+    "snapshot": "sources/approval.mjs",
+    "sha256": "9069361698a8cc62a8222b8e7bce21d9dd72503bb0aa5c5f16756dc06bfbe6f1"
+  },
+  {
+    "id": "phase1",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\phase1.mjs",
+    "snapshot": "sources/phase1.mjs",
+    "sha256": "d9d535bfbf2dce32656f80a8642a60d507507ae8a043f13997b787b67a3c4448"
+  },
+  {
+    "id": "stakes",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\stakes.mjs",
+    "snapshot": "sources/stakes.mjs",
+    "sha256": "1636a05ea157090beff712555f8e5f4a0253978e9083c8f6a0e4a9c2c26c55cd"
+  },
+  {
+    "id": "intake",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\intake.mjs",
+    "snapshot": "sources/intake.mjs",
+    "sha256": "bbb2cdcaaa86838cc239c28c82f89ae1ecb0fc1fbe414b45c2d1946d58f05fa2"
+  },
+  {
+    "id": "budget-map",
+    "kind": "code",
+    "origin": "foundry/triage/mapping.mjs",
+    "snapshot": "sources/budget-map.mjs",
+    "sha256": "6886d7086f0b118e402851970d895432433b5e90f8ea3bbff1e221cbc7d2c755"
+  },
+  {
+    "id": "gate",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\gate-loader.mjs",
+    "snapshot": "sources/gate.mjs",
+    "sha256": "6e4a9db9022ea9cc2fc36520d209b61e53ba84c7e2f11b08360291727ea5d010"
+  },
+  {
+    "id": "runner",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\run-rounds.mjs",
+    "snapshot": "sources/runner.mjs",
+    "sha256": "d20de409aa9618ad05567f81027c024e70d9852a6c01990758311626a7b48bcf"
+  },
+  {
+    "id": "round",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\round.mjs",
+    "snapshot": "sources/round.mjs",
+    "sha256": "29de2810d55645d7bb6c893c678bd1a9b3e7661077350ab437dff396b963fcd8"
+  },
+  {
+    "id": "governor",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\governor.mjs",
+    "snapshot": "sources/governor.mjs",
+    "sha256": "1848e86c2fdd5964be30f4893130e7a72ed518a1c6f64d19525b983e3e7d9d72"
+  },
+  {
+    "id": "formal",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\formal-governor.mjs",
+    "snapshot": "sources/formal.mjs",
+    "sha256": "5d049d8b03aab33feb5829881e7f6753cfdadb508485cebf3ca7d99e1bd87dc3"
+  },
+  {
+    "id": "live",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\live-round-agent.mjs",
+    "snapshot": "sources/live.mjs",
+    "sha256": "ae6ca3ac193313927c45058f81f00bd5b48b59540d276ba49757aa1519e0cecc"
+  },
+  {
+    "id": "deliverable",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\deliverable.mjs",
+    "snapshot": "sources/deliverable.mjs",
+    "sha256": "9c6b345878eca35cf724fd94a50ce57563bf018a058fe0bb588f8350af41c2de"
+  },
+  {
+    "id": "origins",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\researchPrime\\bin\\verify-core.mjs",
+    "snapshot": "sources/origins.mjs",
+    "sha256": "7277be84cccad18788a012e3e4b40a0e5ee2f2de333d883ff263e3c738e56e85"
+  },
+  {
+    "id": "roster",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\crucible\\bin\\shark-tank.mjs",
+    "snapshot": "sources/roster.mjs",
+    "sha256": "5797bb62ef6540b2de74aed3d59ff628bc7e0cba97e11367b41fc3af6320eabe"
+  },
+  {
+    "id": "judge",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\crucible\\bin\\judge.mjs",
+    "snapshot": "sources/judge.mjs",
+    "sha256": "776fdb280b324dff39beda3b3162b75e4403e8706df66bdd2df92421c96d9141"
+  },
+  {
+    "id": "synth",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\crucible\\bin\\synthesizer.mjs",
+    "snapshot": "sources/synth.mjs",
+    "sha256": "c5bf2e7b20a22ce1da9abfb3c14e7f5ee235fd5e63153d87b3a7780b40a9ab45"
+  },
+  {
+    "id": "supervision",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\drivers\\swarm-lookin.mjs",
+    "snapshot": "sources/supervision.mjs",
+    "sha256": "e0b1cf4ac6a6d6ba12928097cfdaaac3ee506be257ecaa62b7e8bef7bb705db4"
+  },
+  {
+    "id": "rc6",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\drivers\\elegance-pass.mjs",
+    "snapshot": "sources/rc6.mjs",
+    "sha256": "63368df2435b4e2fe586eb7b18caa9a8f40c4dcd3fb80d957f03674e50fe136c"
+  },
+  {
+    "id": "drivers",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\drivers\\index.mjs",
+    "snapshot": "sources/drivers.mjs",
+    "sha256": "25dcc05d4cf14334b95226458f225ca2e96834f7cb10b2c12366a27cdd990a63"
+  },
+  {
+    "id": "policy",
+    "kind": "code",
+    "origin": "C:\\dev\\trio\\drivers\\model-policy.mjs",
+    "snapshot": "sources/policy.mjs",
+    "sha256": "c012f2b2ab9bed983d1c3c4204ad503c4c21da45b22ae3e97dd633af0f46e2c1"
+  },
+  {
+    "id": "prereg",
+    "kind": "data",
+    "origin": "C:\\dev\\trio\\researchPrime\\preregistration.json",
+    "snapshot": "sources/prereg.json",
+    "sha256": "b88e1ceb7c1245f8e4325fa25a791f49b1a0aa5c66f58607f514db49140d2d2e"
+  },
+  {
+    "id": "crucible",
+    "kind": "instructions",
+    "origin": "C:\\dev\\trio\\crucible\\SKILL.md",
+    "snapshot": "sources/crucible.md",
+    "sha256": "db6ac791ff4884ac84ea8c203e5bcb42a8772bc3b02bb178c591da46a7d5dca9"
+  },
+  {
+    "id": "foreman",
+    "kind": "instructions",
+    "origin": "C:\\dev\\trio\\foreman\\SKILL.md",
+    "snapshot": "sources/foreman.md",
+    "sha256": "827980c40f9c88a9e4efdfce9708ac79abaefe559b295f9710a0f60ac27d2f1f"
+  },
+  {
+    "id": "gandalf",
+    "kind": "instructions",
+    "origin": "skills/gandalf/SKILL.md",
+    "snapshot": "sources/gandalf.md",
+    "sha256": "32063ee4abef42aa66f97efa5ab8627405cdac71d288b799459585ad40c4262e"
+  },
+  {
+    "id": "literature",
+    "kind": "instructions",
+    "origin": "skills/literature-review/SKILL.md",
+    "snapshot": "sources/literature.md",
+    "sha256": "29f5b0b90d947966419026c7e818c7dcb2ccf9c563acffbb8a87cbe8011a4077"
+  },
+  {
+    "id": "candidate-plan",
+    "kind": "reference",
+    "origin": "planning/foundry-page-2026-10-02/PLAN.md",
+    "snapshot": "sources/candidate-plan.md",
+    "sha256": "803a8790579cb51c42c02c194fe4c365855cd8c2aa36ae4cba1584788f8a8293"
+  },
+  {
+    "id": "map-sources",
+    "kind": "reference",
+    "origin": "planning/foundry-page-2026-10-02/piaget-sphere/SOURCES.md",
+    "snapshot": "sources/map-sources.md",
+    "sha256": "261bf45b25d9251964b1eebfca84bdc2e57dec2ba0590ea75e5830e1041f5b44"
+  },
+  {
+    "id": "map-concept",
+    "kind": "reference",
+    "origin": "planning/foundry-page-2026-10-02/poincare-maps/CONCEPT.md",
+    "snapshot": "sources/map-concept.md",
+    "sha256": "31360248808efb671ee93ecaa970362f55538099ff65c569b9ceeb9aacc33944"
+  },
+  {
+    "id": "anchor-api",
+    "kind": "code",
+    "origin": "C:\\dev\\Anchor\\foundry_api.py",
+    "snapshot": "sources/anchor-api.py",
+    "sha256": "e39e19532f64ea320276fd37febf895c716c9f423bb76fbd8f1563c287b33bd7"
+  }
+]

@@ -1,0 +1,88 @@
+{
+  "resources": [
+    {
+      "id": "einstein-mat-skill-md",
+      "title": "Einstein Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "einstein-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "einstein-shared-tool-mapping",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "category": "tools",
+      "path": "foundry/triage/mapping.mjs",
+      "description": "Shared complexity band evaluator and model_prefs.json seating resolver."
+    },
+    {
+      "id": "einstein-shared-tool-foreman-lib",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "category": "tools",
+      "path": "foreman/bin/foreman-lib.mjs",
+      "description": "Shared Trio worktree durability, checkpoint, and CLI dispatch library."
+    },
+    {
+      "id": "einstein-peer-steward-project",
+      "title": "Project Steward (Lamp / Seal)",
+      "category": "skills",
+      "skill": "steward-project",
+      "description": "Coordinates multi-session study campaigns, learner dossiers, and progress tracking"
+    },
+    {
+      "id": "einstein-peer-ramanujan",
+      "title": "Ramanujan Mathematical Partner",
+      "category": "skills",
+      "skill": "ramanujan",
+      "description": "Verifies worked problem solutions, exact symbolic derivations, and proof steps"
+    },
+    {
+      "id": "einstein-peer-gandalf",
+      "title": "Gandalf Pedagogical Reviewer",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Audits beginner accessibility, cognitive load, and conceptual bridge clarity"
+    },
+    {
+      "id": "einstein-ref-teaching",
+      "title": "Reference: teaching.md",
+      "category": "references",
+      "path": "references/teaching.md",
+      "description": "Domain reference and knowledge-base specification (references/teaching.md)."
+    },
+    {
+      "id": "einstein-journal-0054-preserve-unchanged-slide-i",
+      "title": "Journal: 0054-preserve-unchanged-slide-image-hashes-across-refinements",
+      "category": "references",
+      "path": "journal/0054-preserve-unchanged-slide-image-hashes-across-refinements.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0054-preserve-unchanged-slide-image-hashes-across-refinements.md)."
+    },
+    {
+      "id": "einstein-journal-0053-shared-axis-density-captio",
+      "title": "Journal: 0053-shared-axis-density-caption-and-bin-scaling",
+      "category": "references",
+      "path": "journal/0053-shared-axis-density-caption-and-bin-scaling.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0053-shared-axis-density-caption-and-bin-scaling.md)."
+    },
+    {
+      "id": "einstein-journal-0052-stream-interruption-large-",
+      "title": "Journal: 0052-stream-interruption-large-deck-builder",
+      "category": "references",
+      "path": "journal/0052-stream-interruption-large-deck-builder.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0052-stream-interruption-large-deck-builder.md)."
+    },
+    {
+      "id": "einstein-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>plan · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>plan</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\plan-gate.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 a9b5e615eb65cde1d0cb50334d0f1bd48cb90c860e1e95904c2e2e5c4dde4e56</p></details>
+<p><a href="../sources/plan.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> #!/usr/bin/env node</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> // bin/plan-gate.mjs — wire researchPrime&#x27;s ACTUAL Phase-1 research plan through the</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // human two-gate approval (the &quot;report the plan one-shot; user APPROVEs / EDITs / ABORTs</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // before execution&quot; behavior).</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> //</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // Before this seam, the two-gate machine (bin/two-gate.mjs) only ever surfaced the generic</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // `planMatrix` boilerplate at Gate 2 — never the rich Phase-1 plan the requester actually</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // cares about. This module injects `buildResearchPlan` as the Gate-2 plan artifact so the</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // human approves the real thing: AXIS + candidate branches + best-in-class baselines +</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> // the deterministic stakes vector / governor tier / Oranges foresight receipt.</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> // The plan artifact is a PURE function of the operator&#x27;s frozen Phase-1 inputs (runPhase1 is</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // deterministic; no clock, no randomness), so the same inputs serialize to the same bytes and</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> // the same planHash — which is what the Gate-2 EDIT re-hash discipline and replay fixtures rely on.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> import readline from &#x27;node:readline/promises&#x27;;</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> import { fileURLToPath } from &#x27;node:url&#x27;;</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> import { runTwoGateMachine } from &#x27;./two-gate.mjs&#x27;;</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> import { runPhase1 } from &#x27;./phase1.mjs&#x27;;</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> import { deriveGovernorContract } from &#x27;./formal-governor.mjs&#x27;;</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> import { HaltError } from &#x27;./trio-core/contract-core.mjs&#x27;;</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> export const RESEARCH_PLAN_VERSION = &#x27;researchPrime-phase1/1&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> /**</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a>  * Build the rich Phase-1 research plan artifact the human approves at Gate 2.</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a>  * PURE function of `inputs` (runPhase1 is deterministic) → stable planHash.</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>  *</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>  * @param {{inputs: object}} args</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>  *   inputs: { objective|query, axis?, branches?, baselines?, stakes? }</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>  * @returns {object} the plan artifact (serialized + hashed by the two-gate machine)</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>  */</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> export function buildResearchPlan({ inputs } = {}) {</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>   const src = inputs || {};</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>   const objective = src.objective || src.query;</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>   if (typeof objective !== &#x27;string&#x27; || objective.length === 0) {</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>     throw new TypeError(&#x27;buildResearchPlan requires a non-empty objective&#x27;);</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>   }</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   const branches = Array.isArray(src.branches) ? src.branches : [];</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   const baselines = Array.isArray(src.baselines) ? src.baselines : [];</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>   const receipt = runPhase1({ stakes: src.stakes ?? {}, plan: { branches } });</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>   return {</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>     planVersion: RESEARCH_PLAN_VERSION,</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>     objective,</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>     axis: src.axis ?? null, // the load-bearing win-condition + what FALSIFIES a candidate</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>     branches, // candidate research branches</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>     baselines, // best-in-class baselines to beat</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>     tier: receipt.tier, // governor tier the Phase-3 loop scales by (projection of the stakes vector)</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>     stakes: receipt.stakes, // carries the verbatim declared vector (`raw`) + axis_tiers</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>     foresight: receipt.foresight, // Oranges receipt (dropped/reordered branch + counterfactual cost)</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>   };</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> }</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> /**</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>  * Run the two-gate human approval with the REAL Phase-1 plan at Gate 2.</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>  * Thin wrapper over runTwoGateMachine that injects `buildResearchPlan`.</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>  *</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>  * P0 2026-07-25 (journal 0004): the governance record now locks the REAL governor</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>  * contract (thresholds/tier/roundBudget via deriveGovernorContract), not the two-gate</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>  * `{hash:&#x27;mock-hash&#x27;}` placeholder — the placeholder short-circuited run-rounds&#x27;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a>  * `lockedGovernorOutput ||` and crashed at `thresholds.N`, breaking the documented</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>  * plan-gate → run-rounds happy path end-to-end. `provenance.inputsHash` mirrors to</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>  * `.hash` to satisfy the governance-record validator. An explicitly-passed</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>  * `opts.lockedGovernorOutput` still wins (tests / callers with their own lock).</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>  *</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>  * @param {object} inputs frozen Phase-1 inputs (see buildResearchPlan)</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>  * @param {object} opts   forwarded to runTwoGateMachine (runDir, prompts, approvalProvider, …)</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>  */</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> export async function runPlanReviewGate(inputs, opts = {}) {</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>   let lockedGovernorOutput = opts.lockedGovernorOutput;</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>   if (!lockedGovernorOutput) {</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>     const contract = deriveGovernorContract(inputs);</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>     lockedGovernorOutput = { ...contract, hash: contract.provenance.inputsHash };</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>   }</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>   return runTwoGateMachine(inputs, { ...opts, lockedGovernorOutput, buildPlan: buildResearchPlan });</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> }</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> </span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> // CLI: node bin/plan-gate.mjs &lt;planInputs.json&gt; [runDir]</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> // Presents the frozen Phase-1 plan to the operator at a TTY and records the</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> // hash-bound APPROVE/EDIT/ABORT decision as a durable governance record.</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a> </span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a> function renderPlan(plan) {</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>   const lines = [];</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>   lines.push(&#x27;──────────────────────────────────────────────────────────────&#x27;);</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>   lines.push(&#x27;  researchPrime — PHASE-1 PLAN (review before execution)&#x27;);</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>   lines.push(&#x27;──────────────────────────────────────────────────────────────&#x27;);</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>   lines.push(`  Objective : ${plan.objective}`);</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>   lines.push(`  AXIS      : ${plan.axis ?? &#x27;(none stated)&#x27;}`);</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>   lines.push(`  Stakes    : tier=${plan.tier}`);</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>   lines.push(&#x27;  Branches  :&#x27;);</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>   for (const b of plan.branches) lines.push(`    - ${typeof b === &#x27;string&#x27; ? b : JSON.stringify(b)}`);</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>   lines.push(&#x27;  Baselines to beat:&#x27;);</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>   for (const b of plan.baselines) lines.push(`    - ${typeof b === &#x27;string&#x27; ? b : JSON.stringify(b)}`);</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>   const dropped = plan.foresight?.dropped ?? plan.foresight?.dropped_or_reordered;</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>   lines.push(`  Foresight : ${plan.foresight?.stamp ?? JSON.stringify(dropped ?? plan.foresight ?? {})}`);</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>   lines.push(&#x27;──────────────────────────────────────────────────────────────&#x27;);</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>   return lines.join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a> }</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a> </span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a> async function askDecision(rl, label) {</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>   const answer = (await rl.question(`${label} — APPROVE / EDIT / ABORT? `)).trim().toUpperCase();</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   return [&#x27;APPROVE&#x27;, &#x27;EDIT&#x27;, &#x27;ABORT&#x27;].includes(answer) ? answer : &#x27;ABORT&#x27;;</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> }</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a> function invokedDirectly() {</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>   const entry = process.argv[1];</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>   if (!entry) return false;</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>   try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a> }</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a> </span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a> if (invokedDirectly()) {</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>   const [planFile, runDirArg] = process.argv.slice(2);</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>   if (!planFile) {</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>     console.error(&#x27;usage: node bin/plan-gate.mjs &lt;planInputs.json&gt; [runDir]&#x27;);</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>     process.exit(2);</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>   }</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>   const inputs = JSON.parse(fs.readFileSync(planFile, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>   const runDir = runDirArg || path.join(path.dirname(path.resolve(planFile)), &#x27;plan-gate-run&#x27;);</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>   fs.mkdirSync(runDir, { recursive: true });</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a> </span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>   runPlanReviewGate(inputs, {</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>     runDir,</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>     // Gate 1 = confirm scope/intake; Gate 2 = approve the rendered Phase-1 plan (the one-shot report).</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>     promptGate1: async () =&gt; askDecision(rl, `\nScope: ${inputs.objective || inputs.query}`),</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>     promptGate2: async ({ plan }) =&gt; {</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>       console.log(&#x27;\n&#x27; + renderPlan(plan));</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>       return askDecision(rl, &#x27;Plan&#x27;);</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>     },</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>   })</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>     .then((res) =&gt; {</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>       rl.close();</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>       console.log(`\n✔ Plan APPROVED. planHash=${res.planHash}`);</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>       console.log(`  governance record → ${path.join(runDir, &#x27;governance.json&#x27;)}`);</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>       process.exit(0);</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>     })</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>     .catch((err) =&gt; {</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>       rl.close();</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>       if (err instanceof HaltError || err.name === &#x27;HaltError&#x27;) {</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>         console.error(`\n✖ HALTED: ${err.message}`);</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>         process.exit(1);</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>       }</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>       console.error(err);</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>       process.exit(2);</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>     });</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> }</span></pre></main></body></html>

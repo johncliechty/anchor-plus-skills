@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Resume from the whole record · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="continuity" data-anchor-id="a-continuity">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Reusable material</p><h1>Resume from the whole record</h1>
+<p class="intro">Read dialogue, Face, Strip, roadmap and Deliverables. Preserve authorization and later pauses; verify uncertain action outcomes before replay.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630821+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\steward_engine.py · lines 49–116</p><pre>STAND_UP = (
+    &quot;Stand up as the steward for this campaign. Invoke the ecgberht skill now, &quot;
+    &quot;then follow its READ-BEFORE-PLAN law: open ECGBERHT.md (Face), roadmap.json, &quot;
+    &quot;strip.json, .ecgberht/conversation-log.json and the latest journal entries &quot;
+    &quot;before saying anything about the campaign. Then greet John with where the &quot;
+    &quot;campaign stands in a few plain sentences: goal, active step, what is waiting &quot;
+    &quot;on him, and your recommended next move with one line of why. &quot;
+    &quot;Do not start any work until he speaks.&quot;
+)
+
+# Re-asserted periodically (hourly, on the tick) so the deep steward law
+# survives compaction on a long session (audit gap #1). Short by design -
+# a nudge to re-read the record, not a full re-brief.
+REASSERT = (
+    &quot;(steward laws still in force - not John) You are Ecgberht, the steward of &quot;
+    &quot;this campaign. Before your next action, silently re-read ECGBERHT.md, &quot;
+    &quot;roadmap.json and strip.json so your campaign memory is current; keep those &quot;
+    &quot;files true, one question at a time, answer John last. Do not narrate this &quot;
+    &quot;re-read; just continue. If nothing is pending, reply HOLD.&quot;
+)
+
+# Sent instead of REASSERT when a parked session RESUMES (John, 2026-08-25:
+# &quot;when I start up the session, I need some context&quot;). The deterministic
+# pickup lines (_emit_resume_pickup) land instantly from the record; this
+# turn adds the model&#x27;s own two-sentence orientation in plain words.
+_CONTINUITY_PICKUP = &quot;Read the complete durable history and give a brief pickup. &quot;
+_CONTINUITY_RULES = (
+    &quot;Continue agreed &quot;
+    &quot;work under explicit, still-current authorization across session or provider &quot;
+    &quot;changes; do not require renewed approval solely for the pickup. Honor later &quot;
+    &quot;pauses, unresolved decisions, scope limits, and budgets. Ask only for &quot;
+    &quot;decisions, permissions, or required inputs that genuinely block the next &quot;
+    &quot;action; optional later materials do not block independent authorized work. &quot;
+    &quot;Do not replay completed actions; verify uncertain action outcomes before &quot;
+    &quot;repeating them. Existing authorization does not expand scope. If no &quot;
+    &quot;outstanding authorized task exists, ask John what to do next; do not invent &quot;
+    &quot;work or treat the pickup as a new effort.&quot;
+)
+RESUME_CONTINUITY = _CONTINUITY_PICKUP + _CONTINUITY_RULES
+
+_RESUME_REREAD = (
+    &quot;Silently re-read ECGBERHT.md, roadmap.json, strip.json, &quot;
+    &quot;DELIVERABLES.md (the register of things worth opening - keep it current &quot;
+    &quot;per its standing rule, and answer any &#x27;what have we produced?&#x27; from it) &quot;
+    &quot;and the complete durable history in .ecgberht/conversation-log.json, &quot;
+)
+_RESUME_PICKUP_ASK = (
+    &quot;then give John a SHORT &quot;
+    &quot;pickup - two or three plain sentences: where the campaign stands, the &quot;
+    &quot;last thing that happened, and what comes next. If a question is waiting &quot;
+    &quot;on him, restate it as the LAST line with enough context that he can &quot;
+    &quot;answer from your words alone. &quot;
+)
+_RESUME_ATTENTION = (
+    &quot; ATTENTION FLAG (2026-08-25, John saw &#x27;waiting on you&#x27; during a live &quot;
+    &quot;run): whenever you commission or observe background work - a &quot;
+    &quot;researchPrime/Foreman/Gandalf run, a long build - write &quot;
+    &quot;.ecgberht/attention.json {\&quot;state\&quot;: \&quot;working\&quot;, \&quot;reason\&quot;: &lt;what is &quot;
+    &quot;running, plain words&gt;} the moment it starts, and set it back to &quot;
+    &quot;quiet the moment it lands. In managed campaigns, pending_request from &quot;
+    &quot;refinement-update exclusively owns human wait; never stamp needs_you or &quot;
+    &quot;Face/Strip human_wait. Legacy unmanaged campaigns retain their wait flag.&quot;
+)
+RESUME_BRIEF = (
+    &quot;(engine resume - not John) You are Ecgberht, waking from a parked &quot;
+    &quot;session. &quot; + _RESUME_REREAD + _RESUME_PICKUP_ASK + RESUME_CONTINUITY + _RESUME_ATTENTION
+)
+</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L49">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/entry">Receive an effort invocation</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</span></p><p>Excerpt hash: <span class="path">f02947aec76c86ca7ec5ff9cade7c838ab1660ed6038622c9fd097f4548a342f</span></p></details></article></main></body></html>

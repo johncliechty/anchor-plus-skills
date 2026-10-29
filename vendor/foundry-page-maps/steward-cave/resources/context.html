@@ -1,0 +1,183 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Portfolio intake from records · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="context" data-anchor-id="a-gui-_high_seat_context">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Portfolio intake from records</h1>
+<p class="intro">Registry, project facts, sessions, health and Campaign references feed the page. Missing sources are best-effort gaps, not proof that everything is quiet.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.526345+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/anchor_gui.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: f33f3b26412c413f1b415bb44e39dc63b3e5dc5aef807c4bde5f09f6af0393dd</p></aside>
+<p class="path">C:/dev/Anchor/anchor_gui.py · lines 7783–7953</p><pre>def _high_seat_context():
+    &quot;&quot;&quot;Everything the High Seat page (W1b, 2026-09-26) is made of, read once per request: the
+    registry, each project&#x27;s steward record (home_rows), the ranked rows and the brief
+    (home_attention), the session registry, the health report, the Campaign record when it
+    exists. No model call, no bridge spawn. Best-effort at every seam.&quot;&quot;&quot;
+    import home_attention as _ha
+    import home_rows as _hr
+    import high_seat_page as _hsp
+    today, now = datetime.now().date(), datetime.now()
+    # ONE registry read for the page, partitioned in memory (live · parked · the Campaign)
+    try:
+        everything = list(_rnd.list_projects(include_archived=True, include_future=True, include_retired=True))
+    except Exception:
+        everything = []
+    entries = [e for e in everything if str(e.get(&quot;state&quot;) or &quot;active&quot;) not in (&quot;archived&quot;, &quot;future&quot;, &quot;retired&quot;)]
+    groups = {}
+    for e in sorted(entries, key=lambda x: (int(x.get(&quot;priority&quot;) or 2), str(x.get(&quot;name&quot;) or &quot;&quot;).lower())):
+        groups.setdefault(str(e.get(&quot;group&quot;) or &quot;&quot;).strip() or &quot;Ungrouped&quot;, []).append(e)
+    facts_list = _hr.all_project_facts(entries, today)
+    facts = {f[&quot;id&quot;]: f for f in facts_list}
+    try:
+        sessions = _sessreg.list_sessions()
+    except Exception:
+        sessions = []
+    hr = latest_health_report()
+    names = {e.get(&quot;id&quot;): e.get(&quot;name&quot;) or &quot;&quot; for e in entries}
+    rows = _ha.build_attention(tasks=[], sessions=sessions, health=(hr[0], hr[1]) if hr else None,
+                               today=today, now=now, project_names=names, projects=facts_list, limit=12)
+    try:   # the Cave&#x27;s Terminal (2026-10-02): the Terminal seat&#x27;s engine as the default, the plain terminals open now
+        default_cli = _aset.get_default_cli()
+    except Exception:
+        default_cli = &quot;claude&quot;
+    terms_open = sum(1 for r in sessions if r.get(&quot;plain&quot;) and r.get(&quot;status&quot;) == _sessreg.STATUS_RUNNING)
+    stew = _steward_ui()
+    bullets = _ha.brief_bullets(rows, facts_list, today=today, seat_name=stew[&quot;high_seat_name&quot;])
+    counts = _ha.rail_counts(sessions, rows, folders=len(groups), open_projects=len(entries))
+    live, _more = _ha.live_rows(sessions, names)
+    parked = [e for e in everything if e.get(&quot;state&quot;) == &quot;future&quot;]
+    try:
+        _p, tasks, _i = gather_all()
+        tasks_open = sum(1 for x in tasks if not x.get(&quot;done&quot;))
+    except Exception:
+        tasks_open = 0
+    # the Campaign: the project whose folder is &lt;workspace&gt;/Campaign (PLAN §3), read once
+    campaign, initiatives, seeds, seed_rows = None, [], 0, []
+    step_dates, relevance_override = {}, {}
+    try:
+        camp_dir = Path(_paths.data_dir()).resolve().parent / &quot;Campaign&quot;
+        entry = next((e for e in everything
+                      if e.get(&quot;folder_path&quot;) and Path(e[&quot;folder_path&quot;]).resolve() == camp_dir), None)
+        if entry and (camp_dir / &quot;roadmap.json&quot;).is_file():
+            from steward_cockpit.steward_campaign import read_map as _read_map
+            from steward_cockpit.campaign_parts import resolve_parts as _resolve
+            m = _read_map(str(camp_dir))
+            # the resolver reads the roadmaps home_rows already read this request
+            _cache = {(&quot;projection&quot;, str(f.get(&quot;folder&quot;) or &quot;&quot;)): f.get(&quot;projection&quot;)
+                      for f in facts_list if f.get(&quot;folder&quot;) and f.get(&quot;projection&quot;) is not None}
+            resolved = _resolve(m.get(&quot;steps&quot;) or [], cache=_cache, with_lead=True)   # a project part&#x27;s lead line feeds the initiative&#x27;s Status
+            initiatives = _hsp.campaign_initiatives(m.get(&quot;steps&quot;) or [], resolved)
+            _loose = _hsp.loose_initiative(m.get(&quot;steps&quot;) or [], resolved)     # a cockpit seated from the Candidates, in no goal yet (2026-10-02)
+            try:   # the Candidates&#x27; dates (2026-10-02): each step&#x27;s first and last event on the Campaign record
+                _evs = json.loads((camp_dir / &quot;roadmap.json&quot;).read_text(encoding=&quot;utf-8&quot;)).get(&quot;roadmap_events&quot;) or []
+                for _e in _evs:
+                    _sid, _at = str(_e.get(&quot;step_id&quot;) or &quot;&quot;), str(_e.get(&quot;at&quot;) or &quot;&quot;)[:10]
+                    if _sid and _at:
+                        _a, _b = step_dates.get(_sid, (&quot;&quot;, &quot;&quot;))
+                        step_dates[_sid] = (_a or _at, max(_b, _at))
+            except Exception:
+                pass
+            try:   # the steward&#x27;s own relevance scores, when it has written them
+                relevance_override = json.loads((camp_dir / &quot;.ecgberht&quot; / &quot;relevance.json&quot;).read_text(encoding=&quot;utf-8&quot;)) or {}
+            except Exception:
+                relevance_override = {}
+            if _loose:
+                initiatives.append(_loose)
+            campaign = {&quot;pid&quot;: entry.get(&quot;id&quot;), &quot;name&quot;: entry.get(&quot;name&quot;)}
+            try:
+                from steward_cockpit.campaign_seeds import read_seeds as _read_seeds
+                seed_rows = list(_read_seeds(camp_dir) or [])
+                seeds = len(seed_rows)
+            except Exception:
+                seeds = 0
+    except Exception:
+        campaign, initiatives, seeds, seed_rows = None, [], 0, []
+    # W2 of the steward revision (2026-09-28): THE HEAD is one act — his tiers order the day (the first Tier-1 part
+    # that needs him), else the oldest wait with its age; a lower-tier part due today leads only as the marked
+    # exception (his answer Q3); what closed since he last opened the page rides in the same sentence, gated on
+    # change (the page open is the `page_open` boundary, noted in presence). The rest of the brief folds under it.
+    head, overnight, last_open = None, [], None
+    working, pickup = _working_pids(entries, sessions), None     # the active set (2026-09-29): read before the head
+    try:
+        from steward_cockpit import presence as _pres
+        last_open = _pres.note_page_open()
+    except Exception:
+        last_open = None
+    try:
+        # closures after the real INSTANT of his previous page open, one per project and step (Grok W2)
+        overnight = [x for f in facts_list for x in (f.get(&quot;closed_recent&quot;) or ())
+                     if last_open is not None and isinstance(x.get(&quot;at&quot;), (int, float)) and x[&quot;at&quot;] &gt; float(last_open)]
+        head = _ha.head_act(initiatives, facts_list, today=today)
+        pickup = _ha.pick_up(initiatives, facts_list, working=working, today=today)
+        if head and not head.get(&quot;pid&quot;) and campaign:
+            head[&quot;pid&quot;] = str(campaign.get(&quot;pid&quot;) or &quot;&quot;)   # a native Campaign task opens the Campaign&#x27;s own card
+        if head and head.get(&quot;pid&quot;) and head.get(&quot;kind&quot;) != &quot;oldest-wait&quot;:
+            f = facts.get(head[&quot;pid&quot;]) if isinstance(facts, dict) else None
+            if f and f.get(&quot;effort&quot;):
+                head[&quot;effort&quot;] = str(f[&quot;effort&quot;])          # the effort the card reads, named in the sentence
+        bullets = [_ha.head_sentence(head, overnight=overnight, pickup=pickup)] + [b for b in bullets if not b.startswith(&quot;Nothing is waiting&quot;)][:4]
+    except Exception:
+        head = None
+    try:
+        prefs_html = render_model_prefs_controls(render_steward_control())
+    except Exception:
+        prefs_html = &quot;&quot;
+    capacity = _capacity_rows()
+    week = _hr.week_in_words(today)
+    try:
+        seats = [(p.get(&quot;pid&quot;), p.get(&quot;dir&quot;) or &quot;&quot;) for _g, p in (_hsp.seated(initiatives, &quot;active&quot;) + _hsp.seated(initiatives, &quot;deck&quot;)) if p.get(&quot;kind&quot;) in (&quot;project&quot;, &quot;effort&quot;) and p.get(&quot;pid&quot;)]
+        lights = _project_lights(everything, facts, working, seats=seats)      # W2e: every card&#x27;s light in his words; W2e-7: a seated card&#x27;s from its own cockpit
+    except Exception:
+        lights = {}
+    hs_turns, hs_stamp = [], &quot;&quot;
+    if campaign:
+        try:
+            hs_turns, _ = _conversation_turns(str(_campaign_dir()))
+            from steward_cockpit.steward_campaign import map_stamp as _map_stamp
+            hs_stamp = str(_map_stamp(str(_campaign_dir())))
+        except Exception:
+            hs_turns, hs_stamp = [], &quot;&quot;
+    nudge = lane = resume = None
+    resume_from = &quot;&quot;
+    if campaign:
+        def _derive_nudge(kinds):   # W3: ONE nudge at the page_open boundary, derived from the records; &quot;not now&quot; receipts honoured;
+            from steward_cockpit import nudges as _nudges     # a part the head&#x27;s own sentence leads with is never nudged too
+            cdir = str(_campaign_dir())
+            return _nudges.derive(initiatives, facts, seed_rows, working, today=today, strip_ages=_strip_ages(everything),
+                                  goal_last_at=_goal_last_at(cdir), dismissed=_nudges.read_dismissed(cdir), campaign_pid=str(campaign.get(&quot;pid&quot;) or &quot;&quot;),
+                                  head_lead=((head or {}).get(&quot;pid&quot;) or &quot;&quot;, (head or {}).get(&quot;part&quot;) or &quot;&quot;), kinds=kinds)
+        # one lane per item (John, 2026-10-03): a dated item is the interrupt lane at the top of the board, the panel
+        # nudge is the next of the other kinds - a dated item never shows twice
+        from steward_cockpit import nudges as _nudges_k
+        nudge = _nudge_or_log(&quot;high-seat&quot;, lambda: _derive_nudge(_nudges_k.NOT_DATED))
+        lane = _nudge_or_log(&quot;high-seat-lane&quot;, lambda: _derive_nudge({&quot;dated&quot;}))
+        try:
+            resume = _nudges_k.read_resume(str(_campaign_dir()), today=today)
+        except Exception:
+            resume = None
+        try:   # what he is on now, kept as the ready-to-resume note if he opens the lane&#x27;s item: the active initiatives
+            _on = [str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;a part&quot;).split(&quot; · &quot;)[0]
+                   for g, p in _hsp.seated([i for i in initiatives if i.get(&quot;status&quot;) not in (&quot;done&quot;, &quot;parked&quot;)], &quot;active&quot;)]
+            resume_from = (&quot;, &quot;.join(_on[:3]) + (&quot; and %d more&quot; % (len(_on) - 3) if len(_on) &gt; 3 else &quot;&quot;))[:240]
+        except Exception:
+            resume_from = &quot;&quot;
+    return {
+        &quot;today&quot;: today, &quot;today_str&quot;: now.strftime(&quot;%A, %B %d, %Y&quot;), &quot;week&quot;: week,
+        &quot;week_short&quot;: week.replace(&quot;this week &quot;, &quot;&quot;), &quot;brief_when&quot;: now.strftime(&quot;%H:%M · %A %d %B&quot;),
+        &quot;build&quot;: BUILD_ID, &quot;steward&quot;: stew, &quot;prefs_html&quot;: prefs_html,
+        &quot;auth_required&quot;: bool(_paths.expected_token()),     # R14: the page shows its login box when a token is required and none is held
+        &quot;entries&quot;: entries, &quot;groups&quot;: groups, &quot;facts&quot;: facts, &quot;rows&quot;: rows, &quot;bullets&quot;: bullets, &quot;head&quot;: head, &quot;overnight&quot;: overnight,
+        &quot;counts&quot;: counts, &quot;live&quot;: live, &quot;parked&quot;: parked, &quot;tasks_open&quot;: tasks_open,
+        &quot;default_cli&quot;: default_cli, &quot;terms_open&quot;: terms_open,
+        &quot;campaign_step_dates&quot;: step_dates, &quot;relevance_override&quot;: relevance_override if isinstance(relevance_override, dict) else {},
+        &quot;campaign&quot;: campaign, &quot;initiatives&quot;: initiatives, &quot;seeds&quot;: seeds, &quot;seed_rows&quot;: seed_rows,
+        &quot;capacity&quot;: capacity, &quot;working&quot;: working, &quot;pickup&quot;: pickup,
+        # 2026-10-02 (the SLOW samples: the folded list&#x27;s 25 tiles read sessions and usage on every load): built when he
+        # opens it - GET /api/high-seat/projects
+        &quot;projects_html&quot;: &#x27;&lt;p class=&quot;ptile-note&quot; id=&quot;ptileLoading&quot;&gt;the list opens when you press Show all&lt;/p&gt;&#x27;,
+        # W2c-2: the dialogue on the High Seat — the Campaign&#x27;s one conversation log and the record&#x27;s stamp
+        &quot;turns&quot;: hs_turns[-40:], &quot;n_turns&quot;: len(hs_turns), &quot;goal_names&quot;: {i[&quot;id&quot;]: i[&quot;name&quot;] for i in initiatives}, &quot;stamp&quot;: hs_stamp,
+        &quot;lights&quot;: lights, &quot;nudge&quot;: nudge, &quot;lane&quot;: lane, &quot;resume&quot;: resume, &quot;resume_from&quot;: resume_from,
+    }</pre>
+<p><a class="button" href="../source-pages/gui.html#L7783">Open numbered source</a>
+<a href="../sources/gui.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/intake">Read registry and compact project facts</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">f33f3b26412c413f1b415bb44e39dc63b3e5dc5aef807c4bde5f09f6af0393dd</span></p><p>Excerpt hash: <span class="path">d5e58e73413f49004b5c54375566e6b2f21b83179231c55682d3684649ca1165</span></p></details></article></main></body></html>

@@ -1,0 +1,130 @@
+{
+  "resources": [
+    {
+      "id": "foreman-mat-skill-md",
+      "title": "Foreman Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "foreman-mat-human-md",
+      "title": "Foreman Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "foreman-tool-bin-git-hygiene-mjs",
+      "title": "git-hygiene.mjs (bin/git-hygiene.mjs)",
+      "category": "tools",
+      "path": "bin/git-hygiene.mjs",
+      "description": "Executable .mjs module (521 LOC; key symbols: within, git, clearStaleIndexLock, isGitRepo)."
+    },
+    {
+      "id": "foreman-tool-bin-project-engine-mjs",
+      "title": "project-engine.mjs (bin/project-engine.mjs)",
+      "category": "tools",
+      "path": "bin/project-engine.mjs",
+      "description": "Executable .mjs module (579 LOC; key symbols: resolveContract, planResume, clearHaltedCheckpoint, runProject)."
+    },
+    {
+      "id": "foreman-tool-bin-run-live-mjs",
+      "title": "run-live.mjs (bin/run-live.mjs)",
+      "category": "tools",
+      "path": "bin/run-live.mjs",
+      "description": "Executable .mjs module (760 LOC; key symbols: flag, runPhases, writeJsonAtomic, finishRun)."
+    },
+    {
+      "id": "foreman-tool-bin-run-project-mjs",
+      "title": "run-project.mjs (bin/run-project.mjs)",
+      "category": "tools",
+      "path": "bin/run-project.mjs",
+      "description": "Executable .mjs module (194 LOC; key symbols: getFlag, getAll, stageCanonicalDemo, main)."
+    },
+    {
+      "id": "foreman-tool-bin-run-wave-mjs",
+      "title": "run-wave.mjs (bin/run-wave.mjs)",
+      "category": "tools",
+      "path": "bin/run-wave.mjs",
+      "description": "Executable .mjs module (99 LOC; key symbols: getFlag, getAll, main)."
+    },
+    {
+      "id": "foreman-tool-bin-wave-engine-mjs",
+      "title": "wave-engine.mjs (bin/wave-engine.mjs)",
+      "category": "tools",
+      "path": "bin/wave-engine.mjs",
+      "description": "Executable .mjs module (2612 LOC; key symbols: withAgentHeartbeat, stampWait, flushOpenPhases, failingTests)."
+    },
+    {
+      "id": "foreman-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "foreman-peer-crucible",
+      "title": "Crucible Production Planner",
+      "category": "skills",
+      "skill": "crucible",
+      "description": "Validates and executes frozen Stage-2 implementation plans and parallel orthogonal sub-waves (W.1..W.k) via locate-plan.mjs"
+    },
+    {
+      "id": "foreman-peer-aegis",
+      "title": "Aegis Deterministic AST Security Fast-Gate",
+      "category": "skills",
+      "skill": "aegis",
+      "description": "Runs zero-LLM 6-CWE static taint/sink security checks in the orchestrator fast-gate before diff review"
+    },
+    {
+      "id": "foreman-peer-anvil",
+      "title": "Anvil Structural & Contract Fast-Gate",
+      "category": "skills",
+      "skill": "anvil",
+      "description": "Verifies AST/CST structural integrity and interface contracts in the orchestrator fast-gate before single-pass cross-family diff review"
+    },
+    {
+      "id": "foreman-ref-lessons",
+      "title": "Foreman LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "foreman-ref-changelog",
+      "title": "Foreman CHANGELOG.md",
+      "category": "references",
+      "path": "CHANGELOG.md",
+      "description": "Accumulated operational lessons and historical evolution in CHANGELOG.md."
+    },
+    {
+      "id": "foreman-journal-sleep-feed-share-anchor-wallcloc",
+      "title": "Journal: SLEEP-FEED-share-anchor-wallclock-pointer",
+      "category": "references",
+      "path": "journal/SLEEP-FEED-share-anchor-wallclock-pointer.md",
+      "description": "Recorded operational run receipt and field lesson (journal/SLEEP-FEED-share-anchor-wallclock-pointer.md)."
+    },
+    {
+      "id": "foreman-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "foreman-journal-0139-parallel-subwave-execution-",
+      "title": "Journal: 0139-parallel-subwave-execution-and-deterministic-fast-gate",
+      "category": "references",
+      "path": "journal/0139-parallel-subwave-execution-and-deterministic-fast-gate.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0139-parallel-subwave-execution-and-deterministic-fast-gate.md)."
+    },
+    {
+      "id": "foreman-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

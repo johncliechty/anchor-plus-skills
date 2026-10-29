@@ -1,0 +1,137 @@
+{
+  "resources": [
+    {
+      "id": "financialanalyst-mat-skill-md",
+      "title": "Financial-Analyst Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "financialanalyst-mat-human-md",
+      "title": "Financial-Analyst Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "financialanalyst-mat-north-star-md",
+      "title": "Financial-Analyst Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "financialanalyst-mat-triage-block",
+      "title": "Financial-Analyst Universal Triage & Seating Block",
+      "category": "material",
+      "path": "foundry/triage/generated/financial-analyst.triage-block.md",
+      "description": "Generated Universal Seating Law & complexity triage protocol block."
+    },
+    {
+      "id": "financialanalyst-tool-compiler-excel-py",
+      "title": "compiler_excel.py (compiler_excel.py)",
+      "category": "tools",
+      "path": "compiler_excel.py",
+      "description": "Executable .py module (132 LOC; key symbols: get_column_letter, compile_to_excel, replace_match)."
+    },
+    {
+      "id": "financialanalyst-tool-compiler-python-py",
+      "title": "compiler_python.py (compiler_python.py)",
+      "category": "tools",
+      "path": "compiler_python.py",
+      "description": "Executable .py module (103 LOC; key symbols: compile_to_python_source, compile_to_python)."
+    },
+    {
+      "id": "financialanalyst-tool-graph-engine-py",
+      "title": "graph_engine.py (graph_engine.py)",
+      "category": "tools",
+      "path": "graph_engine.py",
+      "description": "Executable .py module (251 LOC; key symbols: __init__, value, dependency_ids, evaluate)."
+    },
+    {
+      "id": "financialanalyst-tool-agent-interface-py",
+      "title": "agent_interface.py (agent_interface.py)",
+      "category": "tools",
+      "path": "agent_interface.py",
+      "description": "Executable .py module (176 LOC; key symbols: __init__, load_template, set_input, get_value)."
+    },
+    {
+      "id": "financialanalyst-tool-bin-deal-chain-mjs",
+      "title": "deal-chain.mjs (bin/deal-chain.mjs)",
+      "category": "tools",
+      "path": "bin/deal-chain.mjs",
+      "description": "Executable .mjs module (102 LOC; key symbols: argOf, log, main)."
+    },
+    {
+      "id": "financialanalyst-tool-bin-deal-review-mjs",
+      "title": "deal-review.mjs (bin/deal-review.mjs)",
+      "category": "tools",
+      "path": "bin/deal-review.mjs",
+      "description": "Executable .mjs module (355 LOC; key symbols: trioUrl, resolveTrioRoot, normalizeNumber, extractSignificantNumbers)."
+    },
+    {
+      "id": "financialanalyst-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "financialanalyst-peer-ramanujan",
+      "title": "Ramanujan Exact-Arithmetic Certifier",
+      "category": "skills",
+      "skill": "ramanujan",
+      "description": "Verifies penny-exact Decimal waterfall tie-outs and IRR/NPV invariants"
+    },
+    {
+      "id": "financialanalyst-peer-gandalf",
+      "title": "Gandalf Deal-Structure Critic",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Adversarial review of cap-table dilution, liquidation preferences, and covenant risks"
+    },
+    {
+      "id": "financialanalyst-peer-legalbeagle",
+      "title": "Legal-Beagle Term-Sheet & Covenant Advisor",
+      "category": "skills",
+      "skill": "legalbeagle",
+      "description": "Cross-checks financial waterfall tiers against legal term-sheet provisions"
+    },
+    {
+      "id": "financialanalyst-ref-lessons",
+      "title": "Financial-Analyst LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "financialanalyst-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "financialanalyst-journal-0003-thin-chain-tieout-",
+      "title": "Journal: 0003-thin-chain-tieout-seam-receipts-exitcode",
+      "category": "references",
+      "path": "journal/0003-thin-chain-tieout-seam-receipts-exitcode.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0003-thin-chain-tieout-seam-receipts-exitcode.md)."
+    },
+    {
+      "id": "financialanalyst-journal-0002-cancer-human-capit",
+      "title": "Journal: 0002-cancer-human-capital-l7",
+      "category": "references",
+      "path": "journal/0002-cancer-human-capital-l7.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0002-cancer-human-capital-l7.md)."
+    },
+    {
+      "id": "financialanalyst-kb-portfolio-triage-and-band-ev",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

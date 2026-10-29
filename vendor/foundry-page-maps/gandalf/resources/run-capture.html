@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Machine capture implementation · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="run-capture" data-anchor-id="a-capture">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Machine capture implementation</h1>
+<p class="intro">Success paths write small run records, best-effort. models/journal_ref can be null; errors return before capture. This is not a complete activity or resource-access ledger.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/gandalf-run.mjs · lines 174–190</p><pre>export function writeRunRecord(record, { skillDir = resolve(dirname(fileURLToPath(import.meta.url)), &#x27;..&#x27;) } = {}) {
+  try {
+    // Provenance discipline: capture is for REAL runs only. The test suite spawns
+    // this CLI, and those children inherit NODE_TEST_CONTEXT — skip capture there
+    // so mock runs never pollute the training feed (same rule as tidy-idy).
+    if (process.env.NODE_TEST_CONTEXT) return null;
+    const dir = join(skillDir, &#x27;journal&#x27;, &#x27;runs&#x27;);
+    mkdirSync(dir, { recursive: true });
+    const started = record.started || new Date().toISOString();
+    const id = `${started.replace(/[:.]/g, &#x27;-&#x27;)}-${Math.abs(Date.now() % 100000)}`;
+    const file = join(dir, `${id}.json`);
+    writeFileSync(file, JSON.stringify({ skill: &#x27;gandalf&#x27;, ...record }, null, 2) + &#x27;\n&#x27;, &#x27;utf8&#x27;);
+    return file;
+  } catch {
+    return null; // capture is best-effort by design
+  }
+}</pre>
+<p><a class="button" href="../source-pages/cli.html#L174">Open numbered source</a>
+<a href="../sources/cli.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/interim">Join chunk summaries in memory</a> · <a target="_top" href="../index.html#process/capture">Capture the successful run best-effort</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">57f931bd4f1869a4e6ae831bc61e724dcae8ff18f5892bffc083f621b428bd5e</span></p><p>Excerpt hash: <span class="path">55dff4da6326599df3d02ea6556f08ce7e48b4c156d6f7abe7d0fdcb7affa2db</span></p></details></article></main></body></html>

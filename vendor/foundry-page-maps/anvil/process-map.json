@@ -1,0 +1,136 @@
+{
+  "qualification": "Source-anchored Anvil execution walkthrough (Ingest \u2192 KB Grounding \u2192 Functional Core \u2192 Adversarial Verification \u2192 Deliverable & Journal).",
+  "steps": [
+    {
+      "id": "step-1-ingest-triage",
+      "title": "1. Ingest, Scope & Universal Triage (Anvil)",
+      "kind": "program",
+      "role": "Imperative Shell (Ingest Boundary)",
+      "description": "Validates operator inputs, resolves complexity band and ~/.anchor/model_prefs.json seating, and loads Anvil context.",
+      "code": {
+        "path": "scripts/anvil_engine.py",
+        "symbol": "def _classify_stage"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# Anvil v2 \u2014 Programmatic Code Comprehension, Progressive Abstraction, Live Walkthrough & Software Beta-Reader Engine"
+      },
+      "resource_ids": [
+        "anvil-mat-skill-md",
+        "anvil-tool-scripts-anvil-engine-py"
+      ]
+    },
+    {
+      "id": "step-2-context-kb-load",
+      "title": "2. Knowledge Base, Dossier & Reference Grounding",
+      "kind": "program",
+      "role": "Librarian & Context Loader",
+      "description": "Reads prior journals, domain references, and project memory so Anvil never repeats cold-start discovery.",
+      "code": {
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode1_conceptual_buckets_and_process_map_with_ai_badges"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 1. Mission & Core Architecture"
+      },
+      "resource_ids": [
+        "anvil-ref-researchprime-code-rewriting-tools",
+        "anvil-journal-0007-dual-map-algorithm-math-to-co",
+        "anvil-mat-skill-md"
+      ]
+    },
+    {
+      "id": "step-3-core-execution",
+      "title": "3. Functional Core Execution & Domain Synthesis (Anvil)",
+      "kind": "model",
+      "role": "Primary Anvil Engine & Seat",
+      "description": "Executes the deterministic domain core and model-assisted synthesis for Anvil, transforming validated inputs into structured candidate artifacts.",
+      "code": {
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode2_single_block_drilldown_and_empirical_claim_runner"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "## 2. Programmatic CLI Usage (`scripts/anvil_engine.py`)"
+      },
+      "resource_ids": [
+        "anvil-tool-scripts-anvil-engine-py",
+        "anvil-tool-tests-test-anvil-engine-py",
+        "anvil-peer-gandalf"
+      ]
+    },
+    {
+      "id": "step-4-adversarial-verify",
+      "title": "4. Cross-Family Adversarial Verification & Quality Gate",
+      "kind": "review",
+      "role": "Cross-Family Verification Seat (Gandalf / researchPrime / Certifier)",
+      "description": "Runs deterministic invariant checks and cross-family adversarial review (stamping cross_model honestly) before any output is accepted.",
+      "code": {
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode3_remap_null_space_and_three_stage_pipeline_validation"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# 1. Full 5-Stage Orchestrator State Machine (writes .anvil/RUN-STATE.json & .anvil/manifest.json)"
+      },
+      "resource_ids": [
+        "anvil-peer-gandalf",
+        "anvil-peer-researchprime",
+        "anvil-ref-researchprime-code-rewriting-tools"
+      ]
+    },
+    {
+      "id": "step-5-emit-journal",
+      "title": "5. Deliverable Emission & Usage-Journal Receipt",
+      "kind": "terminal",
+      "role": "Imperative Shell (Emit & Journal Boundary)",
+      "description": "Atomically writes the verified Anvil deliverable, updates the run receipt in journal/runs/, and presents the human decision summary.",
+      "code": {
+        "path": "tests/test_anvil_engine.py",
+        "symbol": "def test_mode4_paper_to_code_enforces_native_mathml_and_rejects_raw_latex"
+      },
+      "instructions": {
+        "path": "SKILL.md",
+        "heading": "# 2. Mode 1 + Anvil v2 3-Level Progressive Map, Beta-Reader Panel & Walkthrough Trace"
+      },
+      "resource_ids": [
+        "anvil-mat-north-star-md",
+        "anvil-kb-portfolio-triage-and-band-eval"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "step-1-ingest-triage",
+      "to": "step-2-context-kb-load",
+      "label": "Inputs & seating validated"
+    },
+    {
+      "from": "step-2-context-kb-load",
+      "to": "step-3-core-execution",
+      "label": "KB & references grounded"
+    },
+    {
+      "from": "step-3-core-execution",
+      "to": "step-4-adversarial-verify",
+      "label": "Candidate artifact ready"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-3-core-execution",
+      "label": "Refinement required"
+    },
+    {
+      "from": "step-4-adversarial-verify",
+      "to": "step-5-emit-journal",
+      "label": "Verification gate passed"
+    }
+  ],
+  "exits": [
+    "Verified Anvil primary deliverable artifact",
+    "Honesty-stamped run receipt in journal/runs/<run_id>.json",
+    "Human-readable field lesson in journal/NNNN-<slug>.md when friction occurs"
+  ],
+  "deliverable": "Source-grounded, adversarially verified Anvil work product + machine run receipt."
+}

@@ -1,0 +1,172 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>two-gate · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>two-gate</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\two-gate.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 69af75f6feb58254135083dc40dc552a54711eb6967a5b89840a67dac0745ebb</p></details>
+<p><a href="../sources/two-gate.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/two-gate.mjs</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> import crypto from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> import { HaltError } from &#x27;./trio-core/contract-core.mjs&#x27;;</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> import { runIntake } from &#x27;./intake.mjs&#x27;;</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> import { planMatrix } from &#x27;./matrix-planner.mjs&#x27;;</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> import { validate, CURRENT_SCHEMA_VERSION } from &#x27;./governance.mjs&#x27;;</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> import { ApprovalProvider } from &#x27;./approval-provider.mjs&#x27;;</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> </span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> const MAX_EDITS = 3;</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> </span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> /**</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a>  * Validates the state machine preconditions to reach execution.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a>  * Both gate records must exist, hashes must match the actual artifacts, and decisions must be APPROVE.</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a>  * @param {string} runDir</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a>  * @param {string} triageHash </span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a>  * @param {string} planHash </span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a>  */</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> export function validateExecutionState(runDir, triageHash, planHash) {</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a>   const gate1Path = path.join(runDir, &#x27;gate1-record.json&#x27;);</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a>   const gate2Path = path.join(runDir, &#x27;gate2-record.json&#x27;);</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> </span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a>   if (!fs.existsSync(gate1Path)) throw new HaltError(&#x27;Execution blocked: Gate 1 record missing&#x27;);</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>   if (!fs.existsSync(gate2Path)) throw new HaltError(&#x27;Execution blocked: Gate 2 record missing&#x27;);</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a>   const gate1 = JSON.parse(fs.readFileSync(gate1Path, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a>   const gate2 = JSON.parse(fs.readFileSync(gate2Path, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> </span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a>   if (gate1.triageHash !== triageHash) {</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>     throw new HaltError(&#x27;Execution blocked: Gate 1 approval not bound to current triage artifact hash&#x27;);</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>   }</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>   if (gate2.planHash !== planHash) {</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>     throw new HaltError(&#x27;Execution blocked: Gate 2 approval not bound to current plan artifact hash&#x27;);</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   }</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>   if (gate1.gate1Decision !== &#x27;APPROVE&#x27;) {</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>     throw new HaltError(`Execution blocked: Gate 1 decision is ${gate1.gate1Decision}, expected APPROVE`);</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>   }</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>   if (gate2.gate2Decision !== &#x27;APPROVE&#x27;) {</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>     throw new HaltError(`Execution blocked: Gate 2 decision is ${gate2.gate2Decision}, expected APPROVE`);</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   }</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   </span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>   return true;</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> }</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> /**</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>  * Runs the two-gate process.</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>  */</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> export async function runTwoGateMachine(inputs, { runDir, promptGate1, promptGate2, maxEdits = MAX_EDITS, lockedGovernorOutput = { hash: &#x27;mock-hash&#x27; }, skill = &#x27;researchPrime&#x27;, onEditedScope, onEditedPlan, approvalProvider, buildPlan } = {}) {</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>   let providerIdentity = &#x27;TTY&#x27;;</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   if (approvalProvider) {</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>     providerIdentity = approvalProvider.authorize();</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>   }</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> </span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a>   // If non-interactive provider, auto-approve</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a>   if (providerIdentity !== &#x27;TTY&#x27;) {</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>     promptGate1 = async () =&gt; &#x27;APPROVE&#x27;;</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>     promptGate2 = async () =&gt; &#x27;APPROVE&#x27;;</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>   }</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> </span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>   try {</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>     let triageResult;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a>     let gate1Edits = 0;</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>     </span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>     // GATE 1</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>     while (true) {</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>       triageResult = await runIntake(inputs, { runDir, promptHuman: promptGate1 });</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>       if (triageResult.decision === &#x27;APPROVE&#x27;) {</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>         break;</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>       } else if (triageResult.decision === &#x27;EDIT&#x27;) {</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>         gate1Edits++;</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>         if (gate1Edits &gt; maxEdits) throw new HaltError(`Run halted at Gate 1: exceeded max EDIT cycles (${maxEdits})`);</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>         if (onEditedScope) inputs = await onEditedScope(inputs);</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>         continue;</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>       } else {</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>         // Should not be reached because runIntake throws on ABORT, but added for safety</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>         throw new HaltError(`Run halted at Gate 1 with decision ${triageResult.decision}`);</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>       }</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>     }</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> </span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>     // GATE 2</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>     let gate2Edits = 0;</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>     let planHash;</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>     let gate2Decision;</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>     </span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>     while (true) {</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>       // The artifact the human approves at Gate 2. Default = the generic deterministic</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>       // scope/evidence/adversarial/synthesis matrix (back-compat). A real researchPrime run</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>       // injects `buildPlan` (see bin/plan-gate.mjs) so Gate 2 approves the ACTUAL Phase-1</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>       // research plan — AXIS / candidate branches / stakes vector / foresight receipt — not</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>       // the boilerplate matrix. `buildPlan` MUST be a pure function of `inputs` so the same</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>       // inputs serialize to the same bytes and therefore the same planHash (EDIT re-hash + replay).</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>       const plan = buildPlan</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>         ? buildPlan({ inputs })</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>         : planMatrix({ objective: inputs.query || inputs.objective || &#x27;default objective&#x27; });</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>       const planStr = JSON.stringify(plan, null, 2);</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>       planHash = crypto.createHash(&#x27;sha256&#x27;).update(planStr).digest(&#x27;hex&#x27;);</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>       const planPath = path.join(runDir, `plan-${planHash}.json`);</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>       </span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>       fs.writeFileSync(planPath, planStr, &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>       if (promptGate2) {</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>         gate2Decision = await promptGate2({ planPath, planHash, plan });</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>       } else {</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>         gate2Decision = &#x27;APPROVE&#x27;;</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>       }</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> </span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>       fs.writeFileSync(path.join(runDir, &#x27;gate2-record.json&#x27;), JSON.stringify({</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>         planHash,</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>         gate2Decision</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>       }, null, 2), &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a> </span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>       if (gate2Decision === &#x27;APPROVE&#x27;) {</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>         break;</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>       } else if (gate2Decision === &#x27;EDIT&#x27;) {</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>         gate2Edits++;</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>         if (gate2Edits &gt; maxEdits) throw new HaltError(`Run halted at Gate 2: exceeded max EDIT cycles (${maxEdits})`);</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>         if (onEditedPlan) inputs = await onEditedPlan(inputs);</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>         continue;</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>       } else if (gate2Decision === &#x27;ABORT&#x27;) {</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>         throw new HaltError(`Run halted at Gate 2 with decision ABORT (Artifact: ${planHash})`);</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>       } else {</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>         throw new HaltError(`Run halted at Gate 2 with decision ${gate2Decision}`);</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>       }</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>     }</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a> </span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>     // Validate state machine reaches execution</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>     validateExecutionState(runDir, triageResult.triageHash, planHash);</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a> </span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>     if (approvalProvider) {</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>       approvalProvider.validateReplayBinding(triageResult.triageHash, planHash);</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>     }</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a> </span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>     // Emit canonical governance record</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>     const governanceRecord = {</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>       schemaVersion: CURRENT_SCHEMA_VERSION,</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>       triageHash: triageResult.triageHash,</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>       gate1Decision: triageResult.decision,</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>       planHash: planHash,</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>       gate2Decision: gate2Decision,</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>       lockedGovernorOutput: lockedGovernorOutput,</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>       hostApprovalProvider: providerIdentity,</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>       skill: skill</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>     };</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a> </span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>     validate(governanceRecord);</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a> </span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>     const govPath = path.join(runDir, &#x27;governance.json&#x27;);</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>     fs.writeFileSync(govPath, JSON.stringify(governanceRecord, null, 2), &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> </span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>     return { triageHash: triageResult.triageHash, planHash, governanceRecord };</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>   } catch (err) {</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>     if (err instanceof HaltError || err.name === &#x27;HaltError&#x27;) {</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>       const haltRecord = {</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>         status: &#x27;HALTED&#x27;,</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>         reason: err.message,</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>         timestamp: new Date().toISOString()</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>       };</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>       fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify(haltRecord, null, 2), &#x27;utf8&#x27;);</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>     }</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>     throw err;</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>   }</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a> }</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a> </span></pre></main></body></html>

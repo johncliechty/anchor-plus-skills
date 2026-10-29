@@ -1,0 +1,19 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Capability, conversation effort and service · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="model-capability" data-anchor-id="a-cockpit-_current_selection">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Capability, conversation effort and service</h1>
+<p class="intro">Current Anchor caps steward conversation effort at high by default, with latest capability discovery; general code-job terminals keep maximum. Explicit Setup quality and served-model proof are separate.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.533899+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: b31f75a1c121142bdad6c693f96ef9d300f68ff99378a7c98ab86e30aee8e321</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/steward_engine.py · lines 1138–1144</p><pre>    def _current_selection(self, settings, target):
+        &quot;&quot;&quot;The selection below, with the steward&#x27;s conversation effort capped (his word, 2026-10-05: &quot;it should be really
+        responsive&quot;; his yes to high, not maximum, for conversation turns - commissioned work keeps maximum: code jobs and
+        skill runs launch with their own policy). The cap is ANCHOR_STEWARD_EFFORT (default &quot;high&quot;); a workbench
+        terminal keeps the family&#x27;s highest. Lowering it is a model refresh that keeps the native session.&quot;&quot;&quot;
+        family, selection = self._current_selection_uncapped(settings, target)
+        return family, _cap_effort(selection, None if self.general else STEWARD_CONVERSATION_EFFORT)</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L1138">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/wake">Reuse the keyed persistent engine</a> · <a target="_top" href="../index.html#process/policy">Resolve family, capability and honest service</a> · <a target="_top" href="../index.html#process/halt">Report a qualified failure or gap</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">b31f75a1c121142bdad6c693f96ef9d300f68ff99378a7c98ab86e30aee8e321</span></p><p>Excerpt hash: <span class="path">e6e575c3e75a8d94bd352fc1728670a3b63aa6da22ad3199dca30ce8fe811c58</span></p></details></article></main></body></html>

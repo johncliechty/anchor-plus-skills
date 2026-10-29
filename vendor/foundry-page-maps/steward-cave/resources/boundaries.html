@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Speaking boundaries · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="boundaries" data-anchor-id="a-boundaries">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Operator material</p><h1>Speaking boundaries</h1>
+<p class="intro">The shared constant names page/card open, submitted turn, step close and run finish. The skill itself qualifies that routes do not universally read the constant at runtime.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.545077+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/boundaries.mjs</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: f024feeb982238361696b4b8cc3b37a7c34f2920cf43f8688b621888e64c9736</p></aside>
+<p class="path">C:/dev/Ecgberht/engine/boundaries.mjs · lines 1–20</p><pre>// The speaking boundaries — the named moments at which the steward may speak unprompted on the High Seat.
+//
+// W0 of the steward revision (2026-09-28; PLAN v1.0 §5). The review&#x27;s Superjump passes killed every &quot;prepare and
+// speak&quot; mechanism on an undefined &quot;another boundary&quot;; this list is the definition. Nothing reads it yet except
+// the tests and Anchor&#x27;s mirror (`steward_cockpit/boundaries.py`, kept identical by a test on both sides); W2 and
+// W3 read it. A moment that is not on this list is not a boundary: the steward prepares and waits.
+export const SPEAKING_BOUNDARIES = Object.freeze([
+  &#x27;page_open&#x27;,      // he opens the High Seat
+  &#x27;card_open&#x27;,      // he opens a project&#x27;s card on the High Seat
+  &#x27;turn_submitted&#x27;, // he submits a turn to the steward (the cockpit or the High Seat composer)
+  &#x27;step_closed&#x27;,    // a step closes on the record (an acceptance, a done)
+  &#x27;run_finished&#x27;,   // a commissioned run he launched has finished
+]);
+
+export const SPEAKING_BOUNDARIES_VERSION = 1;
+
+/** True when `moment` is one of the named boundaries (a string compare; never a fuzzy match). */
+export function isSpeakingBoundary(moment) {
+  return typeof moment === &#x27;string&#x27; &amp;&amp; SPEAKING_BOUNDARIES.includes(moment);
+}</pre>
+<p><a class="button" href="../source-pages/boundaries.html#L1">Open numbered source</a>
+<a href="../sources/boundaries.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/nudge">Derive a boundary suggestion</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">f024feeb982238361696b4b8cc3b37a7c34f2920cf43f8688b621888e64c9736</span></p><p>Excerpt hash: <span class="path">75f7e400e6e9a278e626f86ed3cc6285205dccc5ddfe19266b988d8399417d9e</span></p></details></article></main></body></html>

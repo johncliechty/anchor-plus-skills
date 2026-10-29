@@ -1,0 +1,95 @@
+{
+  "schema": "ecgberht-dispatch-table-seed-v0",
+  "spelling": "Ecgberht",
+  "description": "W4 dispatch matrix: phase × uncertainty × human_wait × cost → LITE|FULL|SPIKE|commission|refuse. Defaults bias LITE. SPIKE for unknown data shape. FULL only when cell says so. refuse when human_wait blocks or out-of-scope. capacity=unknown → LITE bias flag (never silent FULL green).",
+  "dimensions": ["phase", "uncertainty", "human_wait", "cost"],
+  "outcomes": ["LITE", "FULL", "SPIKE", "commission", "refuse"],
+  "bias": "LITE",
+  "capacity_rule": {
+    "when": "unknown",
+    "effect": ["rank_penalty", "LITE_bias_flag"],
+    "forbid": "silent_green"
+  },
+  "cells": [
+    {
+      "phase": "planning",
+      "uncertainty": "low",
+      "human_wait": "none",
+      "cost": "low",
+      "outcome": "LITE",
+      "why": "planning + low uncertainty + known shape → LITE bias"
+    },
+    {
+      "phase": "build",
+      "uncertainty": "low",
+      "human_wait": "none",
+      "cost": "low",
+      "outcome": "LITE",
+      "why": "build + low uncertainty → LITE"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "low",
+      "human_wait": "none",
+      "cost": "low",
+      "outcome": "LITE",
+      "why": "default LITE-biased cell"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "medium",
+      "human_wait": "none",
+      "cost": "low",
+      "outcome": "LITE",
+      "why": "medium uncertainty still LITE-biased"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "high",
+      "human_wait": "none",
+      "cost": "unknown_shape",
+      "outcome": "SPIKE",
+      "why": "unknown data shape → SPIKE first"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "any",
+      "human_wait": "none",
+      "cost": "unknown_shape",
+      "outcome": "SPIKE",
+      "why": "unknown data shape → SPIKE"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "high",
+      "human_wait": "none",
+      "cost": "high",
+      "outcome": "FULL",
+      "why": "high uncertainty + high cost → FULL (explicit cell only)"
+    },
+    {
+      "phase": "build",
+      "uncertainty": "low",
+      "human_wait": "none",
+      "cost": "high",
+      "outcome": "commission",
+      "why": "known build shape with high cost may commission specialist"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "any",
+      "human_wait": "blocked",
+      "cost": "any",
+      "outcome": "refuse",
+      "why": "human_wait blocks depth ceremony"
+    },
+    {
+      "phase": "any",
+      "uncertainty": "any",
+      "human_wait": "any",
+      "cost": "out_of_scope",
+      "outcome": "refuse",
+      "why": "out-of-scope refuses dispatch"
+    }
+  ]
+}

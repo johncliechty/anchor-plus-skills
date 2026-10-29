@@ -1,0 +1,68 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Page plan v1.1-candidate · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="candidate-plan" data-anchor-id="a030">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">References</p><h1>Page plan v1.1-candidate</h1>
+<p class="intro">Preserved source proposal: hierarchy, source cards, outline and display seams.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">reference · <span class="path">planning/foundry-page-2026-10-02/PLAN.md</span><br>Lines 186–239 · frozen source snapshot</p>
+<pre class="excerpt">**W5b. The Poincaré knowledge map, in his T2R cognitive-cell format** (the single definition; replaces v0.10&#x27;s chain; mockup v6;
+sources in `piaget-sphere/SOURCES.md`; Gandalf read `piaget-sphere/gandalf-read.json`, cross-family, 2 claims
+grounded, 1 refuted). Each Foundry skill is treated as one T2R cognitive cell, and its sphere is that cell&#x27;s
+per-cell knowledge store drawn as his BASE-BRAIN-SPEC defines it: hierarchy by radius, general at the apex/center,
+specific toward the rim.
+- **Center:** the skill&#x27;s focus questions (its question shapes; the North Star distilled). His &quot;most important
+  questions&quot; and the spec&#x27;s &quot;most general&quot; coincide here; importance below the center is shown by size, not radius.
+- **Rings:** expert domains (the cell&#x27;s experts: what its gate routes among) → methods and the skills it
+  commissions → tools and code → places to look and learned shards (references, constants, LESSONS, journal themes).
+- **Format on disk** (his PVB+P Kit concept-file shape, so the Foundry and the GWL brain share one format, minus the
+  learned parts): `knowledge/` in the skill folder with one file per concept (front-matter `id, name, tags,
+  parent_ids` (exactly one parent: a declared tree), `sibling_ids`, `ring` (must equal the node&#x27;s depth in the
+  tree), `facets`, `anchor` to a file or symbol);
+  `graph.json` is that declared tree (`root_clusters → children`, without the kit&#x27;s `centroid`), not the kit&#x27;s
+  GEO-derived analogy graph; and
+  `worldview.md` (the top-level partition). The kit&#x27;s `position` (ball coordinates the GEO worker owns and
+  overwrites) is omitted until the later learned-geometry stage; v1 radius and sector come only from the declared
+  tree. `tools/sphere-check.mjs` runs on page load and in the Foundry test gate and fails a node with no anchor, an
+  anchored source that is missing or changed since the node was checked (the node shows &quot;source changed&quot;), a
+  `parent_ids` / `graph.json` mismatch, a `ring` that disagrees with the node&#x27;s tree depth, or a radius or sector read
+  from anything but the tree (`position`, `ring`, a centroid).
+- **Several dimensions:** facet lenses over the one hierarchy (where it comes from: instructions / code / learned /
+  data; health: open weakness or code-vs-instructions disagreement; used by the process map; later certainty,
+  recency, cost). His &quot;a sphere, not a circle&quot; is carried by the radial hierarchy plus these facet lenses. A 3-D globe
+  is cut: in the research a 3-D viewer did worst and a globe hides half its nodes.
+- **Joined to the process map:** each FLOW.json step stores the ids of the sphere nodes it uses; clicking either lights the other. Run records
+  gain a &quot;steps run&quot; field copied from flags the engines already write (Gandalf e-2, grounded), which later gives
+  real usage weights (his routing ledger).
+- **Piaget learning cycle (later role) on the map** (his explicit ask, 2026-10-02: &quot;this is useful and I want to incorporate
+  this&quot;, mockup v3; no source document defines the stage rules, so they are his-to-review proposals): the development
+  view sits inside the sphere tile: the developmental stage (1 sensorimotor: instructions only or under 3 uses; 2
+  preoperational: used, nothing accommodated; 3 concrete operational: learns from experience; 4 formal operational:
+  also has a traced process map that agrees with its code) and three tallies from his records (tallies, not a measure of learning; John&#x27;s requested view, R10 G2 / R12 G1
+  declined): experiences =
+  the skill&#x27;s journal entries; disequilibria = the journal report&#x27;s weaknesses with their cited entries;
+  accommodations = sleep cycles, LESSONS promotions and CHANGELOG entries. The disequilibria awaiting accommodation =
+  the open weaknesses in the current report; Foundry home shows each skill&#x27;s stage and that number. This wave
+  does NOT attach journal prose to sphere nodes (Gandalf e-3: that mapping would be invented); the sphere tile lists
+  the open weaknesses with their entries, and a node shows a hotspot only when a weakness carries node ids that
+  sphere-check proves. The source card&#x27;s journal list comes only from such proven ids.
+  accommodation = sleep-cycle proposals to add, split, merge or move nodes, which
+  he approves. The sleep loop does not emit node edits today (Gandalf e-3 refuted: LESSONS are prose), so W5b adds
+  one structured field to the promotion record (`sphere_edits`). The disequilibrium signal stays the open weaknesses
+  until runs record a prediction; only then does it become his §P5 predict → act → compare loop
+  (&quot;Cognition-Inspired Architectures&quot; §P5).
+- **The sphere is the default view** (his word, 2026-10-02, after the evidence that people find a named item faster
+  in an outline): explore it like a library. Zoom with the wheel or buttons and drag to pan; click an expert domain to
+  enlarge that sector to the full circle, with a breadcrumb back; click a node for its **source card**: a call
+  number (skill › domain › ring › node), its shelf (folder), its instruction or code source with Open, the process
+  steps that use it, and journal entries only where a weakness names this node and sphere-check proves it (otherwise
+  no journal list). A search box above highlights matching nodes and lists
+  them; an Outline toggle gives the same hierarchy as a list for finding a named item. For the agents, the same
+  structure is the retrieval index; its geometry pays off once a skill&#x27;s knowledge reaches hundreds of nodes.
+- **v1 is the declared hierarchy, not learned geometry** (Aurora critique; T2R D3 defers Lorentz until depth &gt; 3).</pre>
+<div class="actions"><a class="button" href="../source-pages/candidate-plan.html#L186">Open numbered source at line 186</a>
+<a class="button secondary" href="../sources/candidate-plan.md" download>Download source</a></div>
+<h2>Where the process uses this</h2><p>Related library material; no automatic call is claimed.</p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">803a8790579cb51c42c02c194fe4c365855cd8c2aa36ae4cba1584788f8a8293</span></p>
+<p>Excerpt SHA-256 <span class="path">a6d1d18d9db8513c315198be81e198a8ee4a6964aab2be3660c5cb4a530de39f</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

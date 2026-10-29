@@ -1,0 +1,33 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Current Anchor discovery limits · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="adapter" data-anchor-id="a-adapter-_load_artifact">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Current Anchor discovery limits</h1>
+<p class="intro">Anchor searches steward-project/maps.json rather than steward-lamp/maps.json. Its canonical source allowlist also excludes Anchor engine and user-global originals. Follow-up belongs to Anchor.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.633136+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/foundry_page.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: a88cab160f5109ae1664004360ee84ee02e032aa4c0d39505dcc0d48792ef554</p></aside>
+<p class="path">C:\dev\Anchor\foundry_page.py · lines 174–194</p><pre>def _load_artifact(skill, names):
+    directory = Path(skill[&#x27;source&#x27;])
+    role = skill.get(&#x27;role&#x27;)
+    searches = [(content_root() / skill[&#x27;id&#x27;], names), (directory, names)]
+    if role:
+        searches = [(content_root() / skill[&#x27;id&#x27;], names),
+                    (directory, tuple(name.replace(&#x27;.json&#x27;, &#x27;.&#x27; + role + &#x27;.json&#x27;) for name in names)),
+                    (directory / &#x27;knowledge&#x27; / role, names)]
+    for base, file_names in searches:
+        for name in file_names:
+            path = base / name
+            if not path.is_file() or not _allowed(path):
+                continue
+            try:
+                data = json.loads(_text(path))
+                if not isinstance(data, (dict, list)):
+                    raise ValueError(&#x27;expected an object or array&#x27;)
+                return data, path, None
+            except (ValueError, TypeError) as exc:
+                return None, path, &#x27;Unreadable content: &#x27; + str(exc)
+    return None, None, None</pre>
+<p><a class="button" href="../source-pages/adapter.html#L174">Open numbered source</a>
+<a href="../sources/adapter.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p>Related Library material; no automatic call is claimed.</p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">a88cab160f5109ae1664004360ee84ee02e032aa4c0d39505dcc0d48792ef554</span></p><p>Excerpt hash: <span class="path">e4d22b5ba3db4432d6b1a0dc766229fbb4c9ec9731c5f9fdbcfac7b4c46ac528</span></p></details></article></main></body></html>

@@ -1,0 +1,121 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Accept a product; explicitly close · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="accept-close" data-anchor-id="a-accept-close">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Accept a product; explicitly close</h1>
+<p class="intro">Ordinary accept retains its historical meaning. Explicit complete_current can close only after all current members are individually accepted and guards pass; explicit close verifies the presented candidate.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.629994+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/refinement-state.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\refinement-state.mjs · lines 832–940</p><pre>    case &#x27;accept&#x27;: {
+      demand(operation.complete_current === undefined || typeof operation.complete_current === &#x27;boolean&#x27;,
+        &#x27;INVALID_COMPLETION_OPTION&#x27;, &#x27;complete_current must be Boolean.&#x27;);
+      const human = humanEvidence(operation.human);
+      const presentation = getPresentation(slice, operation.presentation_id);
+      if(operation.complete_current===true &amp;&amp; operation.member_product_id &amp;&amp; presentation.product_context) {
+        dependenciesCurrent(state,slice);
+        demand(productApplicable(slice,presentation,operation.member_product_id),&#x27;REQUIREMENTS_CHANGED&#x27;,
+          &#x27;The named product does not match its applicable cumulative requirements.&#x27;);
+      } else requireApplicablePresentation(state, slice, presentation);
+      let member = null;
+      if (operation.member_product_id !== undefined) {
+        member = presentation.members.find(item =&gt; item.product_id === operation.member_product_id);
+        demand(member, &#x27;UNKNOWN_PRESENTATION_MEMBER&#x27;, &#x27;The named product is absent from this presentation.&#x27;);
+        slice.accepted_members[member.product_id] = {
+          presentation_id: presentation.id, revision_id: member.revision_id,
+          human, generation: state.generation, at: state.last_event_at,
+        };
+      } else {
+        slice.accepted_presentation = presentation.id;
+      }
+      slice.acceptance_history.push({
+        presentation_id: presentation.id, member_product_id: member?.product_id ?? null,
+        human, generation: state.generation, at: state.last_event_at,
+      });
+      // Opt-in semantics for new events only: replay of earlier approvals stays unchanged.
+      // Each latest product decision must still apply to the exact current work.
+      if (operation.complete_current === true &amp;&amp; member &amp;&amp;
+          lastPresentation(slice)?.id === presentation.id &amp;&amp; presentation.round === slice.round &amp;&amp;
+          refinementDigest(slice.candidate) === presentation.candidate_digest &amp;&amp;
+          refinementDigest(slice.requirements) === presentation.requirements_digest &amp;&amp;
+          slice.feedback.length === presentation.feedback_count &amp;&amp;
+          slice.feedback.every(item =&gt; item.disposition !== &#x27;pending&#x27;)) {
+        const complete=Object.values(currentProductApprovals(slice)).every(Boolean);
+        if (complete) {
+          slice.accepted_presentation = presentation.id;
+          slice.closed_presentation = presentation.id;
+          slice.work_phase = &#x27;done&#x27;;
+          slice.closure_history.push({presentation_id:presentation.id, human,
+            source:&#x27;individual-acceptances&#x27;, generation:state.generation, at:state.last_event_at});
+          for (const request of slice.review_requests) if (request.presentation_id === presentation.id) {
+            request.status = &#x27;resolved&#x27;; request.resolved_generation = state.generation;
+          }
+        }
+      }
+      // Named historical acceptance is valid without completing a newer round.
+      break;
+    }
+    case &#x27;visual_companion&#x27;: {
+      const revision = slice.revisions[operation.revision_id];
+      demand(revision &amp;&amp; revision.hash === operation.source_hash, &#x27;PREVIEW_SOURCE_MISMATCH&#x27;,
+        &#x27;A visual companion must identify the exact preserved source revision.&#x27;);
+      demand(object(operation.preview) &amp;&amp; /^[a-f0-9]{64}$/.test(operation.preview.hash) &amp;&amp;
+        nonempty(operation.preview.path) &amp;&amp; operation.preview.path.toLowerCase().endsWith(&#x27;.pdf&#x27;) &amp;&amp;
+        nonempty(operation.evidence), &#x27;PREVIEW_EVIDENCE_REQUIRED&#x27;, &#x27;A PDF companion needs its digest and same-version evidence.&#x27;);
+      demand(!revision.visual_companion || refinementDigest(revision.visual_companion) ===
+        refinementDigest({...operation.preview,source_hash:operation.source_hash,evidence:operation.evidence}),
+        &#x27;PREVIEW_ALREADY_BOUND&#x27;, &#x27;A visual companion cannot silently replace an existing version binding.&#x27;);
+      revision.visual_companion = {...clone(operation.preview),source_hash:operation.source_hash,evidence:operation.evidence};
+      break;
+    }
+    case &#x27;view&#x27;: {
+      const presentation = getPresentation(slice, operation.presentation_id);
+      const request = slice.review_requests.find(item =&gt; item.id === operation.request_id);
+      demand(request &amp;&amp; request.presentation_id === presentation.id, &#x27;VIEW_REQUEST_MISMATCH&#x27;,
+        &#x27;A view receipt must name the request associated with the frozen presentation.&#x27;);
+      const member = presentation.members.find(item =&gt; item.product_id === operation.member_product_id);
+      demand(member &amp;&amp; operation.hash === member.hash, &#x27;VIEW_MEMBER_MISMATCH&#x27;,
+        &#x27;A view receipt must identify the exact frozen member and digest.&#x27;);
+      demand(nonempty(operation.session_id) &amp;&amp; operation.source === &#x27;cockpit-user-open&#x27;,
+        &#x27;INVALID_VIEW_SOURCE&#x27;, &#x27;A view receipt requires an explicit cockpit open and session ID.&#x27;);
+      slice.views.push({
+        step_id: slice.step_id, presentation_id: presentation.id, request_id: request.id,
+        member_product_id: member.product_id, revision_id: member.revision_id,
+        hash: member.hash, session_id: operation.session_id, source: operation.source,
+        generation: state.generation, at: state.last_event_at,
+      });
+      break;
+    }
+    case &#x27;close&#x27;: {
+      const human = humanEvidence(operation.human);
+      const presentation = getPresentation(slice, operation.presentation_id);
+      demand(lastPresentation(slice)?.id === presentation.id &amp;&amp; presentation.round === slice.round,
+        &#x27;NOT_CURRENT_PRESENTATION&#x27;, &#x27;Only the current round and latest presentation can be closed.&#x27;);
+      demand(slice.candidate &amp;&amp; refinementDigest(slice.candidate) === presentation.candidate_digest &amp;&amp;
+        refinementDigest(slice.requirements) === presentation.requirements_digest &amp;&amp;
+        slice.feedback.length === presentation.feedback_count,
+      &#x27;PRESENTATION_CHANGED&#x27;, &#x27;Current candidate or feedback changed after presentation.&#x27;);
+      demand(slice.feedback.every(item =&gt; item.disposition !== &#x27;pending&#x27;), &#x27;UNRESOLVED_FEEDBACK&#x27;,
+        &#x27;Unresolved feedback prevents closure.&#x27;);
+      requireApplicablePresentation(state, slice, presentation);
+      slice.accepted_presentation = presentation.id;
+      slice.closed_presentation = presentation.id;
+      slice.work_phase = &#x27;done&#x27;;
+      slice.acceptance_history.push({
+        presentation_id: presentation.id, member_product_id: null,
+        human, generation: state.generation, at: state.last_event_at,
+      });
+      slice.closure_history.push({
+        presentation_id: presentation.id, human, generation: state.generation, at: state.last_event_at,
+      });
+      for (const request of slice.review_requests) {
+        if (request.presentation_id === presentation.id) {
+          request.status = &#x27;resolved&#x27;;
+          request.resolved_generation = state.generation;
+        }
+      }
+      break;
+    }</pre>
+<p><a class="button" href="../source-pages/fold.html#L832">Open numbered source</a>
+<a href="../sources/fold.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/review">Review the distinct current product</a> · <a target="_top" href="../index.html#process/accept">Accept the applicable current product</a> · <a target="_top" href="../index.html#process/close">Explicit current-version close</a> · <a target="_top" href="../index.html#process/done">Requested boundary reached</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">babfc9950e485f0d44c1fd9b2cfe45ed804dad61ff6585193253a23ae7a88f0d</span></p><p>Excerpt hash: <span class="path">f6e18366e346a19d3a3ba77da086499f3870e7f74a3c715215ac83933d7d06a2</span></p></details></article></main></body></html>

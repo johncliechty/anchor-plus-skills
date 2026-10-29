@@ -1,0 +1,158 @@
+{
+  "resources": [
+    {
+      "id": "chekhov-mat-skill-md",
+      "title": "Chekhov Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "chekhov-mat-human-md",
+      "title": "Chekhov Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "chekhov-mat-description-md",
+      "title": "Chekhov Detailed Specification (DESCRIPTION.md)",
+      "category": "material",
+      "path": "DESCRIPTION.md",
+      "description": "Detailed capability specification and module breakdown."
+    },
+    {
+      "id": "chekhov-mat-implementation-plan-md",
+      "title": "Chekhov Implementation Plan (IMPLEMENTATION-PLAN.md)",
+      "category": "material",
+      "path": "IMPLEMENTATION-PLAN.md",
+      "description": "Wave-by-wave engineering plan and verification gates."
+    },
+    {
+      "id": "chekhov-tool-lib-engine-mjs",
+      "title": "engine.mjs (lib/engine.mjs)",
+      "category": "tools",
+      "path": "lib/engine.mjs",
+      "description": "Executable .mjs module (826 LOC; key symbols: judgeFor, closeIdeaJudge, readIdeaReplay, isRealTty)."
+    },
+    {
+      "id": "chekhov-tool-lib-index-mjs",
+      "title": "index.mjs (lib/index.mjs)",
+      "category": "tools",
+      "path": "lib/index.mjs",
+      "description": "Executable .mjs module (386 LOC; key symbols: entriesForUnit, ledgerPath, readCommitState, ledgerSourceWithin)."
+    },
+    {
+      "id": "chekhov-tool-lib-salvage-index-mjs",
+      "title": "salvage-index.mjs (lib/salvage-index.mjs)",
+      "category": "tools",
+      "path": "lib/salvage-index.mjs",
+      "description": "Executable .mjs module (144 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "chekhov-tool-planning-foundry-20260910-note-scop",
+      "title": "index.mjs (planning/foundry-20260910-note-scope/before/lib/index.mjs)",
+      "category": "tools",
+      "path": "planning/foundry-20260910-note-scope/before/lib/index.mjs",
+      "description": "Executable .mjs module (194 LOC; key symbols: ledgerPath, readCommitState, findSidecars, walk)."
+    },
+    {
+      "id": "chekhov-tool-bin-anchor-adapter-py",
+      "title": "anchor_adapter.py (bin/anchor_adapter.py)",
+      "category": "tools",
+      "path": "bin/anchor_adapter.py",
+      "description": "Executable .py module (201 LOC; key symbols: modules, identity, read_surfaces, publish_session_attention)."
+    },
+    {
+      "id": "chekhov-tool-bin-attention-adapter-mjs",
+      "title": "attention_adapter.mjs (bin/attention_adapter.mjs)",
+      "category": "tools",
+      "path": "bin/attention_adapter.mjs",
+      "description": "Executable .mjs module (143 LOC; key symbols: requireValue, eventTime, object, meaningful)."
+    },
+    {
+      "id": "chekhov-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "chekhov-peer-gandalf",
+      "title": "Gandalf Structural & Continuity Critic",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Deep-think developmental editing and continuity verification across story arcs"
+    },
+    {
+      "id": "chekhov-peer-researchprime",
+      "title": "researchPrime Historical & Domain Grounding",
+      "category": "skills",
+      "skill": "researchprime",
+      "description": "Verifies factual/historical world-building claims in the story ledger"
+    },
+    {
+      "id": "chekhov-peer-steward-project",
+      "title": "Project Steward (Lamp / Seal)",
+      "category": "skills",
+      "skill": "steward-project",
+      "description": "Maintains long-horizon authorial session memory and chapter deliverables"
+    },
+    {
+      "id": "chekhov-ref-author-style-profiles",
+      "title": "Reference: author-style-profiles.md",
+      "category": "references",
+      "path": "references/author-style-profiles.md",
+      "description": "Domain reference and knowledge-base specification (references/author-style-profiles.md)."
+    },
+    {
+      "id": "chekhov-ref-beta-reader-subagents",
+      "title": "Reference: beta-reader-subagents.md",
+      "category": "references",
+      "path": "references/beta-reader-subagents.md",
+      "description": "Domain reference and knowledge-base specification (references/beta-reader-subagents.md)."
+    },
+    {
+      "id": "chekhov-ref-chapter-refinement",
+      "title": "Reference: chapter-refinement.md",
+      "category": "references",
+      "path": "references/chapter-refinement.md",
+      "description": "Domain reference and knowledge-base specification (references/chapter-refinement.md)."
+    },
+    {
+      "id": "chekhov-ref-first-writing-session",
+      "title": "Reference: first-writing-session.md",
+      "category": "references",
+      "path": "references/first-writing-session.md",
+      "description": "Domain reference and knowledge-base specification (references/first-writing-session.md)."
+    },
+    {
+      "id": "chekhov-journal-0064-scene-protocol-continuity-a",
+      "title": "Journal: 0064-scene-protocol-continuity-and-voice-vitality-gate",
+      "category": "references",
+      "path": "journal/0064-scene-protocol-continuity-and-voice-vitality-gate.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0064-scene-protocol-continuity-and-voice-vitality-gate.md)."
+    },
+    {
+      "id": "chekhov-journal-0063-cold-reader-context-and-ant",
+      "title": "Journal: 0063-cold-reader-context-and-anti-compression-gate",
+      "category": "references",
+      "path": "journal/0063-cold-reader-context-and-anti-compression-gate.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0063-cold-reader-context-and-anti-compression-gate.md)."
+    },
+    {
+      "id": "chekhov-journal-0062-head-tracked-deliverables-a",
+      "title": "Journal: 0062-head-tracked-deliverables-and-first-mention-character-gate",
+      "category": "references",
+      "path": "journal/0062-head-tracked-deliverables-and-first-mention-character-gate.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0062-head-tracked-deliverables-and-first-mention-character-gate.md)."
+    },
+    {
+      "id": "chekhov-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

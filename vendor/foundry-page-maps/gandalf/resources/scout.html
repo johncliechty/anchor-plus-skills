@@ -1,0 +1,77 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Scout relevant files · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="scout" data-anchor-id="a-scout">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Scout relevant files</h1>
+<p class="intro">A reviewer-family model chooses include paths from a tree. A malformed reply falls back to the original payload; omitted paths are not proven irrelevant.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/scout.mjs · lines 135–199</p><pre>export async function runScoutPass({
+  projectDir,
+  userObjective,
+  agent = null,
+  env = process.env,
+  log = () =&gt; {}
+} = {}) {
+  try {
+    const treeText = generateTreeText(projectDir);
+
+    let activeAgent = agent;
+    if (!activeAgent) {
+      // W4 (2026-07-05): the scout is a lightweight, high-volume curation pass — it reads a whole tree
+      // to pick relevant paths — so it runs on the STANDARD (current, cheaper, high-context) agy LABEL,
+      // resolved via the TRIO_TIER ladder. NEVER a hardcoded API-style id (the old hardcoded default
+      // was a phantom id that live agy silently degrades to Flash anyway).
+      const model = env.GANDALF_SCOUT_MODEL || env.GEMINI_MODEL
+        || resolveGeminiModel({ env: { ...env, TRIO_TIER: &#x27;standard&#x27; } });
+      const seam = makeGeminiCliSeam({ model, env, log });
+      activeAgent = seam.agent;
+    }
+
+    const prompt = `You are an agentic codebase scout. You are given a directory tree structure of a codebase and the user&#x27;s objective.
+Your task is to identify and return a list of files or directories that are semantically relevant to the user&#x27;s objective and should be included in the context.
+
+User Objective:
+&quot;${userObjective}&quot;
+
+Codebase Directory Tree:
+\`\`\`
+${treeText}
+\`\`\`
+
+Respond with a JSON object containing an &quot;include&quot; key with an array of relative paths (files or directories) to include.`;
+
+    const schema = {
+      type: &#x27;object&#x27;,
+      properties: {
+        include: {
+          type: &#x27;array&#x27;,
+          items: { type: &#x27;string&#x27; }
+        }
+      },
+      required: [&#x27;include&#x27;]
+    };
+
+    const result = await activeAgent(prompt, { schema, label: &#x27;scout-pass&#x27; });
+    let includeList = null;
+
+    if (typeof result === &#x27;object&#x27; &amp;&amp; result !== null) {
+      includeList = result.include;
+    } else if (typeof result === &#x27;string&#x27;) {
+      const parsed = JSON.parse(result);
+      includeList = parsed.include;
+    }
+
+    if (Array.isArray(includeList)) {
+      return includeList;
+    }
+    throw new Error(&#x27;Scout model response did not contain an array under the &quot;include&quot; key.&#x27;);
+  } catch (err) {
+    log(`Scout pass error: ${err.message}`);
+    return null;
+  }
+}</pre>
+<p><a class="button" href="../source-pages/scout.html#L135">Open numbered source</a>
+<a href="../sources/scout.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/scout">Model selects relevant include paths</a> · <a target="_top" href="../index.html#process/scout-fallback">Keep payload on scout error</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">5a3d020301c3e8eac950777090ce0b69c605f71ca610a3a2dcff149e23bbed96</span></p><p>Excerpt hash: <span class="path">bc9b7895adecedcbc5b38c001d95f2eabc31d861953f52d9b755b73430106868</span></p></details></article></main></body></html>

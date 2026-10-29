@@ -1,0 +1,540 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>runner · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>runner</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\run-rounds.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 d20de409aa9618ad05567f81027c024e70d9852a6c01990758311626a7b48bcf</p></details>
+<p><a href="../sources/runner.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> #!/usr/bin/env node</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> // bin/run-rounds.mjs — THE canonical Phase-3 round driver (T9, 2026-07-11).</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> //</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // Promoted from the root-level run-ramanujan-round.mjs (which every real run had to</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // discover by archaeology — journal 0001 hand-rolled a ConPTY harness, the 2026-06-19</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // run role-played the engine&#x27;s rules in sub-agents instead of running the engine).</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // This is the documented operator path; the old filename remains as a thin shim.</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> //</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // Faithful ENGINE mode: fresh-context sub-agents produce the cognition (reviewer</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> // findings, Judge verdict, Synthesizer steer, debate); this driver replays those</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> // through the REAL trio gates (tallyFindings &gt;=2-agree, gateOneQuorum independence,</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> // the honest convergence tracker incl. the T8 CLEAN path, the suspiciously-dry</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // guard) and assembles the deliverable. No re-implemented gate logic.</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> // Usage:</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> //   node bin/run-rounds.mjs &lt;runDir&gt; [--max-rounds N]</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //     &lt;runDir&gt; holds round-&lt;N&gt;-input.json files:</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> //       { round, northStar, stakes:{...}|tier,</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //         reviews:[{reviewer,angle,lineage,findings:[{claim_id?,topic,severity,traces_to_north_star,message}]}],</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> //         adjudications:{ judge:{...}, synthesizer:{...}, debate:{...} } }   (replay mode)</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> //   RESEARCHPRIME_LIVE_ROUND=1  -&gt; reviewer/debate/judge seats go LIVE via family prefs</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> //     (agy down =&gt; honest HaltError, never silent self-review). Vacant reviews[]</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> //     SPAWN the G3 panel through that agent (journal 0057/0058) — do not paste.</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> //     Supplied non-vacant reviews still win (replay / resume). Artifact path on</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> //     the round input must be ABSOLUTE (journal 0002).</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> //   --max-rounds (default 8, env RESEARCHPRIME_MAX_ROUNDS): the HARD round budget — at</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> //     the cap the run stops with an honest NOT-CONVERGED state file; it never loops</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> //     unbounded and never fabricates convergence.</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> //</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> // Outputs in &lt;runDir&gt;: round-&lt;N&gt;-result.json per round; DELIVERABLE-ENGINE.json on</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> // convergence (dry OR clean, stamped); RUN-STATE.json always (resume = add the next</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> // round-input and re-run — every paid result is on disk, nothing is discarded).</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> </span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> import { runCriticalPathCheck } from &#x27;../../drivers/elegance-pass.mjs&#x27;;</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> import { fileURLToPath } from &#x27;node:url&#x27;;</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> import {</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>   makeConvergenceTracker,</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>   assessConvergenceHonesty,</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>   countUnresolvedHighSeverity,</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   isDryRound,</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   isEmptyRound,</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>   isVacantReviews,</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>   runPanelRound,</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>   normalizePanelFindings,</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>   countSurvivingPanel,</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>   DEFAULT_CHECKIN_MS,</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>   DEFAULT_DEAD_IDLE_MS,</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> } from &#x27;./round.mjs&#x27;;</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> import { runGovernedRound } from &#x27;./governor.mjs&#x27;;</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a> import { deriveGovernorContract } from &#x27;./formal-governor.mjs&#x27;;</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> import { assembleDeliverable, checkOutputConformance } from &#x27;./deliverable.mjs&#x27;;</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> import { calibrationVerdict } from &#x27;./rho-ledger.mjs&#x27;;</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> import { loadGate } from &#x27;./gate-loader.mjs&#x27;;</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> import { HaltError } from &#x27;./trio-core/contract-core.mjs&#x27;;</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> import {</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>   makeReachedFamilyTracker,</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>   instrumentRoundAgent,</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>   buildLiveRoundAgent,</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>   DEFAULT_ROUND_ROUTES,</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>   SINGLE_FAMILY_ROUTES,</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a> } from &#x27;./live-round-agent.mjs&#x27;;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> import { resolveBandRoundBudget } from &#x27;./intake.mjs&#x27;;</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> import { makeReliableAgent } from &#x27;../../drivers/reliability.mjs&#x27;;</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> </span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> function resolveRoundArtifact(inp, runDir) {</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>   const raw = inp?.artifact ?? inp?.artifactPath ?? inp?.artifact_path ?? null;</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>   if (typeof raw !== &#x27;string&#x27; || !raw.trim()) return null;</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>   const p = raw.trim();</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>   if (path.win32.isAbsolute(p) || path.posix.isAbsolute(p)) return p;</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>   const joined = path.resolve(runDir, p);</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>   if (path.win32.isAbsolute(joined) || path.posix.isAbsolute(joined)) return joined;</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>   return null;</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> }</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> function writeHaltRecord(runDir, reason, extra = {}) {</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>   try {</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>     fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify({</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>       status: &#x27;HALTED&#x27;, reason, timestamp: new Date().toISOString(), ...extra,</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>     }, null, 2));</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>   } catch { /* record is best-effort; the halt itself is the law */ }</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> }</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a> export async function runRounds(runDir, { maxRounds = null, env = process.env, log = console.log, agent: injectedAgent = null, spawnPanel = false } = {}) {</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>   const started = new Date().toISOString();</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>   const t0 = Date.now();</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a> </span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>   let governanceRecord;</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>   try {</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>     governanceRecord = loadGate(runDir);</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>   } catch (e) {</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>     if (e &amp;&amp; (e.name === &#x27;HaltError&#x27; || e instanceof Error)) {</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>       const haltRecord = {</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>         status: &#x27;HALTED&#x27;,</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>         reason: e.message,</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>         timestamp: new Date().toISOString()</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>       };</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>       fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify(haltRecord, null, 2));</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>     }</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>     throw e;</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>   }</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a> </span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>   const allInputs = fs.readdirSync(runDir)</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>     .filter((f) =&gt; /^round-\d+-input\.json$/.test(f))</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>     .sort((a, b) =&gt; parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]))</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>     .map((f) =&gt; JSON.parse(fs.readFileSync(path.join(runDir, f), &#x27;utf8&#x27;)));</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>   if (!allInputs.length) throw new Error(`no round-*-input.json found in ${runDir}`);</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>   // FIELD LAWS, mechanized (2026-08-25, John-ratified card — each of these burned a real</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>   // round as SKILL.md prose; now the engine HALTs loudly at load, one line, never a silent</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>   // auto-fix). Law 1: traces_to_north_star is the STRING &#x27;yes&#x27;/&#x27;no&#x27; — a boolean silently</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>   // demotes EVERY finding (2026-08-15). Law 2: pasted agy replies may arrive ```-fenced</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>   // ~1-in-6 (0052) — a fenced blob in an input field is a transcription defect, not data.</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>   // Law 3: any *path* field must be ABSOLUTE (0002 — agy&#x27;s CWD is never reliable).</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>   // (Hardening 2026-08-25: violations write HALT-RECORD.json like every other halt; the</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>   // fence law fires only on a WHOLE-string fence wrap — the pasted-blob signature — so a</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>   // finding message that merely QUOTES fenced code passes; the path law fires only on</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>   // filesystem-looking values (has a separator, no scheme) and accepts either OS&#x27;s</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>   // absolute form — trio run dirs replay cross-OS.)</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>   try {</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>     for (const input of allInputs) {</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>       const rn = input?.round ?? &#x27;?&#x27;;</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>       for (const rev of input?.reviews ?? []) {</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>         for (const f of rev?.findings ?? []) {</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>           const t = f?.traces_to_north_star;</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>           if (t !== &#x27;yes&#x27; &amp;&amp; t !== &#x27;no&#x27;) {</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>             throw new Error(`FIELD-LAW HALT round ${rn} reviewer ${rev?.reviewer ?? &#x27;?&#x27;} topic &quot;${f?.topic ?? &#x27;?&#x27;}&quot;: traces_to_north_star must be the STRING &#x27;yes&#x27; or &#x27;no&#x27;, got ${JSON.stringify(t)} — a non-string silently demotes every finding`);</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>           }</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>         }</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>       }</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>       const walk = (obj, at) =&gt; {</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>         if (obj == null) return;</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>         if (typeof obj === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>           const s = obj.trim();</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>           if (s.startsWith(&#x27;```&#x27;) &amp;&amp; s.endsWith(&#x27;```&#x27;) &amp;&amp; s.length &gt; 6) {</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>             throw new Error(`FIELD-LAW HALT round ${rn} at ${at}: value is a whole \`\`\`-fenced block — a fenced agy reply was pasted as data; strip the fence and re-run (journal 0052)`);</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>           }</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>           return;</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>         }</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>         if (Array.isArray(obj)) { obj.forEach((v, i) =&gt; walk(v, `${at}[${i}]`)); return; }</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>         if (typeof obj === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>           for (const [k, v] of Object.entries(obj)) {</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>             if (/path$/i.test(k) &amp;&amp; typeof v === &#x27;string&#x27; &amp;&amp; v</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>                 &amp;&amp; /[\\/]/.test(v) &amp;&amp; !/^[a-z][a-z0-9+.-]*:\/\//i.test(v)</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>                 &amp;&amp; !(path.win32.isAbsolute(v) || path.posix.isAbsolute(v))) {</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>               throw new Error(`FIELD-LAW HALT round ${rn} at ${at}.${k}: &quot;${v}&quot; is not an ABSOLUTE path — agy&#x27;s CWD is never reliable (journal 0002)`);</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>             }</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>             walk(v, `${at}.${k}`);</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>           }</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>         }</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>       };</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>       walk(input, `round-${rn}-input`);</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>     }</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>   } catch (e) {</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>     try {</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>       fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify({</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>         status: &#x27;HALTED&#x27;, reason: e.message, timestamp: new Date().toISOString(),</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>       }, null, 2));</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>     } catch { /* record is best-effort; the halt itself is the law */ }</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>     throw e;</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>   }</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a> </span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>   // P0 2026-07-25 (journal 0004): a legacy governance record carries the two-gate</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>   // placeholder `{hash:&#x27;mock-hash&#x27;}` with NO thresholds/tier — the old `||` short-</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>   // circuited on that truthy object and crashed at thresholds.N. A locked output is</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>   // only usable as the contract when it actually CARRIES the contract.</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>   const locked = governanceRecord.lockedGovernorOutput;</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>   const lockedUsable = !!(locked &amp;&amp; locked.thresholds &amp;&amp; locked.tier != null);</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>   if (locked &amp;&amp; !lockedUsable) {</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>     log(&#x27;!! governance lockedGovernorOutput carries no governor contract (legacy placeholder record) — deriving the contract from round-1 input&#x27;);</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>   }</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>   const contract = lockedUsable ? locked : deriveGovernorContract(allInputs[0]);</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>   const thresholds = contract.thresholds;</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>   const tier = contract.tier;</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a> </span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>   // Track B1 W3: sole resolver resolveBandRoundBudget — formal path is fail-closed</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>   // (missing/unlocked extension → HaltError, never source=default FULL knobs).</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>   // Cap precedence: explicit CLI maxRounds &gt; env RESEARCHPRIME_MAX_ROUNDS &gt; locked knobs.</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>   // includeAdjudication from extension knobs only (never argv).</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>   let band;</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>   try {</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>     band = resolveBandRoundBudget({</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>       runDir,</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>       maxRounds,</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>       env,</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>       failClosed: true,</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>       fallback: typeof contract.roundBudget === &#x27;number&#x27; ? contract.roundBudget : 8,</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>     });</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>   } catch (e) {</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>     if (e &amp;&amp; (e.name === &#x27;HaltError&#x27; || e instanceof HaltError || e instanceof Error)) {</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>       const haltRecord = {</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>         status: &#x27;HALTED&#x27;,</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>         reason: e.message,</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>         code: e.detail?.code ?? e.code ?? &#x27;BAND_BUDGET_HALT&#x27;,</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>         timestamp: new Date().toISOString(),</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>       };</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>       try {</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>         fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify(haltRecord, null, 2));</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>       } catch { /* best-effort HALT-RECORD */ }</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>     }</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>     throw e;</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>   }</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>   const cap = band.cap;</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>   const includeAdjudication = band.includeAdjudication;</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>   log(</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>     `band: cap=${cap} source=${band.source} includeAdjudication=${includeAdjudication}` +</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>       (band.knobs?.depth ? ` depth=${band.knobs.depth}` : &#x27;&#x27;),</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>   );</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a> </span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>   // The HARD budget: never process past the cap; say so loudly (no silent truncation).</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>   const inputs = allInputs.slice(0, cap);</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>   const capped = allInputs.length &gt; inputs.length;</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>   if (capped) log(`!! round budget: processing ${inputs.length}/${allInputs.length} inputs (--max-rounds ${cap})`);</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a> </span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>   function replayAgent(adj) {</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>     return async (_prompt, opts = {}) =&gt; {</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>       const role = opts.role || &#x27;other&#x27;;</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>       if (role === &#x27;judge&#x27;) return adj.judge ?? { decision: &#x27;NOT_CONVERGED&#x27;, reasons: [] };</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>       if (role === &#x27;synthesizer&#x27;) return adj.synthesizer ?? { lean: &#x27;unknown&#x27;, suggestions: [] };</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>       if (role === &#x27;debate&#x27;) return adj.debate ?? { survivor: null };</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>       return null;</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>     };</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>   }</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a> </span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>   const tracker = makeConvergenceTracker({ N: thresholds.N });</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>   const priorBlockerIds = new Set();</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>   const roundResults = [];</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>   let roundsToDry = null;</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a> </span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>   const reached = makeReachedFamilyTracker();</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>   const LIVE_ROUND = env.RESEARCHPRIME_LIVE_ROUND === &#x27;1&#x27;;</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>   const spawn = spawnPanel === true || LIVE_ROUND || env.RESEARCHPRIME_SPAWN_PANEL === &#x27;1&#x27;;</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>   let liveAgent = injectedAgent;</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>   if (!liveAgent &amp;&amp; LIVE_ROUND) {</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>     liveAgent = await buildLiveRoundAgent({ tracker: reached, env }); // prefs-aware (CODING/REVIEW_FAMILY)</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>   }</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   if (LIVE_ROUND) {</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>     log(&#x27;LIVE cross-family round: seats from coding/review family prefs (omit routes → ~/.anchor/model_prefs.json).&#x27;);</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>   }</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>   if (spawn) {</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>     log(&#x27;PANEL SPAWN on: vacant reviews[] will be filled by the G3 swarm (not pasted).&#x27;);</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>   }</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a> </span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>   for (const inp of inputs) {</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>     const agent = liveAgent</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>       ? liveAgent</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>       : instrumentRoundAgent({ agent: replayAgent(inp.adjudications ?? {}), routes: SINGLE_FAMILY_ROUTES, tracker: reached });</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>     let reviews = inp.reviews;</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>     let panelSpawned = false;</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>     let panelSource = null;</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>     if (spawn &amp;&amp; isVacantReviews(reviews)) {</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>       const sidecar = path.join(runDir, `round-${inp.round}-spawned-reviews.json`);</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>       if (fs.existsSync(sidecar)) {</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>         let saved;</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>         try { saved = JSON.parse(fs.readFileSync(sidecar, &#x27;utf8&#x27;)); } catch {</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>           writeHaltRecord(runDir, `PANEL SPAWN HALT: ${sidecar} is not valid JSON`);</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>           throw new HaltError(`PANEL SPAWN HALT: ${sidecar} is not valid JSON`);</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>         }</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>         if (!Array.isArray(saved?.reviews)) {</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>           writeHaltRecord(runDir, `PANEL SPAWN HALT: ${sidecar} missing reviews[]`);</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>           throw new HaltError(`PANEL SPAWN HALT: ${sidecar} missing reviews[]`);</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>         }</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>         try {</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>           reviews = saved.reviews.map((r) =&gt; ({</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>             ...r,</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>             findings: normalizePanelFindings(r?.findings),</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>           }));</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>         } catch (e) {</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>           writeHaltRecord(runDir, e.message);</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>           throw e;</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>         }</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>         if (countSurvivingPanel(reviews) === 0) {</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>           const msg = `PANEL SPAWN HALT round ${inp.round}: sidecar has zero surviving seats — not a dry round`;</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>           writeHaltRecord(runDir, msg);</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>           throw new HaltError(msg);</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>         }</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>         panelSpawned = true;</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>         panelSource = &#x27;sidecar&#x27;;</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>         log(`round ${inp.round}: panel loaded from sidecar (no re-spend)`);</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>       } else {</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>         const artifact = resolveRoundArtifact(inp, runDir);</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>         if (!artifact) {</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>           const msg = `PANEL SPAWN HALT round ${inp.round}: vacant reviews require an ABSOLUTE artifact path on the round input (artifact / artifactPath) — the swarm reads the file; it does not accept pasted findings (journals 0002, 0057, 0058)`;</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>           writeHaltRecord(runDir, msg);</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>           throw new HaltError(msg);</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>         }</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>         try {</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>           // Stamp REVIEW_FAMILY, never reached.families()[0] (sorted — would</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>           // label grok reviewers as claude and kill G9 / GATE-1). Claude</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>           // adversarial 2026-08-27.</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>           const reviewFam = String(env.REVIEW_FAMILY || env.ANCHOR_REVIEW_FAMILY || &#x27;&#x27;)</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>             .trim().toLowerCase() || null;</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>           const checkInMs = Number(env.RESEARCHPRIME_PANEL_CHECKIN_MS);</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>           const deadIdleMs = Number(env.RESEARCHPRIME_PANEL_DEAD_MS);</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>           const silentKillMs = Number(env.RESEARCHPRIME_PANEL_SILENT_KILL_MS);</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>           const panelAgent = makeReliableAgent({ agent, maxAttempts: 2 });</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>           reviews = await runPanelRound({</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>             agent: panelAgent,</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a>             round: inp.round,</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>             focus: inp.focus ?? null,</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>             artifact,</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>             northStar: inp.northStar ?? null,</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>             lineage: reviewFam,</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>             heartbeatDir: runDir,</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>             checkInMs: Number.isFinite(checkInMs) &amp;&amp; checkInMs &gt; 0 ? checkInMs : DEFAULT_CHECKIN_MS,</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>             silentKillMs: Number.isFinite(silentKillMs) &amp;&amp; silentKillMs &gt; 0 ? silentKillMs : undefined,</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>             deadIdleMs: Number.isFinite(deadIdleMs) &amp;&amp; deadIdleMs &gt; 0 ? deadIdleMs : DEFAULT_DEAD_IDLE_MS,</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a>           });</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>           if (!reviewFam) {</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a>             const fams = reached.families();</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>             if (fams.length === 1) {</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>               for (const r of reviews) if (!r.lineage) r.lineage = fams[0];</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>             }</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>           }</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>           if (countSurvivingPanel(reviews) === 0) {</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>             const faults = reviews.map((r) =&gt; r?.panel_fault || r?.note).filter(Boolean);</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>             const msg = `PANEL SPAWN HALT round ${inp.round}: zero surviving seats — ${faults.join(&#x27; | &#x27;) || &#x27;all abstained&#x27;} (hung/timeout seats abstain; a panel that looked at nothing is not a dry round)`;</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>             writeHaltRecord(runDir, msg);</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>             throw new HaltError(msg);</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>           }</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>         } catch (e) {</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>           writeHaltRecord(runDir, e.message);</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>           throw e;</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>         }</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>         panelSpawned = true;</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>         panelSource = &#x27;spawned&#x27;;</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>         fs.writeFileSync(sidecar, JSON.stringify({</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>           spawned: true,</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>           artifact,</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>           reviews,</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a>           timestamp: new Date().toISOString(),</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>         }, null, 2));</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a>         log(`round ${inp.round}: spawned G3 panel (${reviews.length} reviewers) → ${path.basename(sidecar)}`);</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>       }</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>     }</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>     // P0 2026-07-25 (T9): route through the GOVERNED round, not bare orchestrateRound.</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>     // The governor was computed + logged but gated nothing: judge/synthesizer were</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a>     // hard-true at every tier (SKILL.md:94&#x27;s &quot;tier low fires ZERO&quot; promise was false),</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>     // and the crit-4 zero-AXIS skip never ran. runGovernedRound is the already-built,</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a>     // already-tested wiring; the band&#x27;s includeAdjudication knob rides as a</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>     // tighten-only debate override (LITE can force debate off, never on).</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a>     const result = await runGovernedRound({</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>       agent,</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a>       stakes: tier,</span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a>       round: inp.round,</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a>       northStar: inp.northStar,</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a>       reviews,</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>       priorBlockerIds: [...priorBlockerIds],</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>       includeDebate: includeAdjudication,</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a>     });</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>     // A SKIPPED round (zero-AXIS) returns the pure tally without the orchestration</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>     // extras — derive dry/empty from the same predicates the tracker uses.</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a>     const dry = result.dry ?? isDryRound(result);</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a>     const empty = result.empty ?? isEmptyRound(result);</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a>     const obs = tracker.observe(result);</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a>     for (const b of result.tally.blockers) priorBlockerIds.add(b.id);</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>     // (2026-09-05) RC-6 at the round boundary — the one battery question a round may ask</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>     // (ELEGANCE.md Part II): a NEW blocker the North Star does not fail without is PARKED —</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a>     // dropped from the carried set (zero further spend) and said as one line the user reads.</span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a>     let parkedByRc6 = [];</span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a>     if (Array.isArray(result.tally.newBlockers) &amp;&amp; result.tally.newBlockers.length &amp;&amp; typeof agent === &#x27;function&#x27;) {</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>       try {</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>         const rc6 = await runCriticalPathCheck({</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>           items: result.tally.newBlockers.map((b) =&gt; ({ id: String(b.id), text: String(b.message || b.id) })),</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>           northStar: inp.northStar, agent, log,</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a>         });</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a>         parkedByRc6 = rc6.parked;</span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a>         for (const p of rc6.parked) priorBlockerIds.delete(p.id);</span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a>         for (const line of rc6.lines) log(line);</span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a>       } catch (e) {</span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a>         log(`!! RC-6 check failed (non-fatal — blockers carried as-is): ${e?.message || e}`);</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>       }</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a>     }</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a>     if (dry &amp;&amp; !empty &amp;&amp; roundsToDry == null) roundsToDry = obs.countedRounds;</span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a> </span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a>     const summary = {</span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a>       round: result.round,</span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a>       verdict: result.tally.verdict,</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>       dry,</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>       empty,</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>       panelSpawned,</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>       panelSource,</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a>       panelSize: panelSpawned ? (reviews?.length ?? 0) : null,</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>       panelSurviving: panelSpawned ? countSurvivingPanel(reviews) : null,</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a>       panelDegraded: panelSpawned ? countSurvivingPanel(reviews) &lt; (reviews?.length ?? 0) : false,</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a>       governor: {</span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a>         tier: result.tier,</span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a>         skipped: result.skipped === true,</span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a>         axisFindingCount: result.axisFindingCount,</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a>         reason: result.reason,</span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a>         policy: result.policy ? { synthesize: result.policy.synthesize, judge: result.policy.judge, debate: result.policy.debate } : null,</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a>       },</span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a>       newBlockers: result.tally.newBlockers.map((b) =&gt; ({ id: b.id, severity: b.severity, agreement: b.agreement, message: b.message })),</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>       allBlockers: result.tally.blockers.map((b) =&gt; b.id),</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>       parkedByRc6,</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a>       demoted: result.tally.demoted.map((d) =&gt; ({ id: d.id, message: d.message })),</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>       quorum: result.quorum ?? null,</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>       conflicts: result.conflicts ?? [],</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a>       debateFired: result.debate?.fired ?? false,</span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a>       judgeVerdict: result.judgeVerdict ?? null,</span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a>       direction: result.direction ?? null,</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a>       counts: result.counts,</span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a>       trackerState: obs,</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a>     };</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>     roundResults.push(result);</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>     fs.writeFileSync(path.join(runDir, `round-${result.round}-result.json`), JSON.stringify(summary, null, 2));</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>     log(`round ${result.round}: ${result.tally.verdict} | dry=${dry} empty=${empty}${result.skipped ? &#x27; | SKIPPED (zero-AXIS, crit-4)&#x27; : &#x27;&#x27;}${panelSpawned ? ` | panel=${panelSource}` : &#x27;&#x27;} | counts=${JSON.stringify(result.counts)} | newBlockers=${result.tally.newBlockers.length} | dryStreak=${obs.dryStreak}/${thresholds.N} emptyStreak=${obs.emptyStreak} | converged=${obs.converged}${obs.mode ? ` (${obs.mode})` : &#x27;&#x27;}`);</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>     if (obs.converged) break; // convergence reached — no need to consume further inputs</span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>   }</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a> </span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>   const finalState = tracker.state();</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>   const convergence = {</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a>     converged: finalState.converged,</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a>     mode: finalState.mode,                       // &#x27;dry&#x27; | &#x27;clean&#x27; | null — never conflated</span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a>     stamp: finalState.stamp,                     // the explicit CLEAN stamp when mode===&#x27;clean&#x27;</span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a>     dryStreak: finalState.dryStreak,</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a>     emptyStreak: finalState.emptyStreak,</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a>     countedRounds: finalState.countedRounds,</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a>     rounds: finalState.rounds,</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a>     N: thresholds.N,</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a>     roundBudget: cap,</span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a>     roundBudgetHit: capped &amp;&amp; !finalState.converged,</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>   };</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a> </span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a>   const substrateFamilies = reached.families().length ? reached.families() : [&#x27;claude&#x27;];</span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a>   const finalRound = roundResults[roundResults.length - 1];</span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a>   const unresolvedHigh = countUnresolvedHighSeverity(finalRound.tally.findings);</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a>   const honesty = assessConvergenceHonesty({</span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a>     stakesTier: tier,</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>     roundsToDry: roundsToDry ?? finalState.countedRounds,</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>     unresolvedHighSeverity: unresolvedHigh,</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a>     substrateFamilies,</span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>     thresholds,</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>   });</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a> </span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a>   log(`\nTIER=${tier} | convergence=${JSON.stringify(convergence)} | unresolvedHigh=${unresolvedHigh} | substrateFamilies=${JSON.stringify(substrateFamilies)}`);</span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a>   log(`HONESTY GUARD: ${JSON.stringify(honesty)}`);</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a> </span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a>   let deliverable = null;</span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a>   if (finalState.converged) {</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a>     // P0 2026-07-25: carry the REAL Wave-9 calibration verdict. Default mode is a pure</span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a>     // function of the final round&#x27;s reviewers (no ledger file needed) — hard-nulling it</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a>     // made every engine deliverable fail its own conformance contract (§ below).</span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a>     const calibration = calibrationVerdict({</span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>       reviewers: finalRound?.reviews ?? inputs[inputs.length - 1]?.reviews ?? [],</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>       useLedger: false,</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a>     });</span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>     deliverable = assembleDeliverable({</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>       mode: &#x27;engine&#x27;,</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a>       rounds: roundResults,</span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>       convergence,</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>       calibration,</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a>       substrateFamilies,</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a>       northStar: inputs[0].northStar,</span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a>     });</span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a>     // P0 2026-07-25: the engine&#x27;s OWN output-conformance gate, actually called — the</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a>     // canonical path used to write `verified:true` deliverables that this very check</span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a>     // rejects (missing calibration section), and nothing ever ran it. HALT loudly on</span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a>     // violation; never ship a deliverable the contract refuses.</span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a>     const conformance = checkOutputConformance(deliverable);</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a>     if (!conformance.ok) {</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a>       const haltRecord = {</span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a>         status: &#x27;HALTED&#x27;,</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a>         reason: &#x27;DELIVERABLE output-conformance violation (engine contract)&#x27;,</span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>         violations: conformance.violations,</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a>         timestamp: new Date().toISOString(),</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a>       };</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>       fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify(haltRecord, null, 2));</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>       throw new HaltError(</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>         `DELIVERABLE conformance violation: ${conformance.violations.join(&#x27; | &#x27;)}`,</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>         &#x27;the engine deliverable failed its own output contract — fix the assembly, never ship an unconformant deliverable&#x27;,</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>       );</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a>     }</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a>     const out = { deliverable, convergence, honesty, tier, thresholds, unresolvedHigh };</span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a>     fs.writeFileSync(path.join(runDir, &#x27;DELIVERABLE-ENGINE.json&#x27;), JSON.stringify(out, null, 2));</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>     log(`\nCONVERGED (${convergence.mode}). cross_model=${deliverable.cross_model} verified=${deliverable.verified} rho_mode=${calibration.mode}. Wrote DELIVERABLE-ENGINE.json (output-conformance OK)`);</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>   } else {</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>     log(capped</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a>       ? `\nROUND BUDGET HIT (${cap}) without convergence — honest stop; open blockers are in RUN-STATE.json (nothing discarded).`</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a>       : `\nNOT converged yet — need dryStreak ${thresholds.N} (or ${thresholds.N + 1} consecutive clean rounds); add the next round-input after fixing blockers and re-run.`);</span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a>   }</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a> </span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a>   // RUN-STATE.json: the durable state — this file IS the resume mechanism (SKILL.md&#x27;s</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a>   // honest durability story: round inputs/results on disk, re-run to continue).</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a>   const runState = {</span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a>     convergence, honesty, tier, thresholds, unresolvedHigh, substrateFamilies,</span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a>     openBlockers: [...priorBlockerIds],</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a>     processedRounds: roundResults.map((r) =&gt; r.round),</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>   };</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>   fs.writeFileSync(path.join(runDir, &#x27;RUN-STATE.json&#x27;), JSON.stringify(runState, null, 2));</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a> </span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>   // Run capture for training (Skill Foundry AGENTS.md &quot;Run capture&quot;) — best-effort.</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a>   // Skipped under the test runner (P2 2026-07-25): fixture runs must never pollute</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>   // the training feed (same rule as gandalf/tidy-idy).</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>   try {</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a>     if (env.NODE_TEST_CONTEXT || process.env.NODE_TEST_CONTEXT) return { convergence, honesty, tier, deliverable, runState };</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a>     const skillDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), &#x27;..&#x27;);</span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a>     const dir = path.join(skillDir, &#x27;journal&#x27;, &#x27;runs&#x27;);</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>     fs.mkdirSync(dir, { recursive: true });</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>     fs.writeFileSync(path.join(dir, `${started.replace(/[:.]/g, &#x27;-&#x27;)}-${Math.abs(Date.now() % 100000)}.json`),</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>       JSON.stringify({</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>         skill: &#x27;researchPrime&#x27;, tier: LIVE_ROUND ? &#x27;live-cross-family&#x27; : &#x27;replay&#x27;,</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>         started, ended: new Date().toISOString(),</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a>         input: runDir, params: { maxRounds: cap, live: LIVE_ROUND, spawnPanel: spawn, stakesTier: tier },</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>         output: finalState.converged ? path.join(runDir, &#x27;DELIVERABLE-ENGINE.json&#x27;) : path.join(runDir, &#x27;RUN-STATE.json&#x27;),</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>         result: finalState.converged ? `converged (${convergence.mode})` : (capped ? &#x27;round budget hit — honest stop&#x27; : &#x27;not converged — awaiting next round&#x27;),</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>         cross_model: deliverable?.cross_model ?? (substrateFamilies.length &gt; 1),</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>         models: substrateFamilies,</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>         duration_s: Math.round((Date.now() - t0) / 1000),</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a>         journal_ref: null,</span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a>       }, null, 2) + &#x27;\n&#x27;);</span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a>   } catch { /* capture is best-effort */ }</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a> </span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>   return { convergence, honesty, tier, deliverable, runState };</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a> }</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a> </span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a> // ---- CLI ----</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a> function invokedDirectly() {</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>   const entry = process.argv[1];</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>   if (!entry) return false;</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>   try { return path.resolve(fileURLToPath(import.meta.url)) === path.resolve(entry); } catch { return false; }</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a> }</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a> if (invokedDirectly()) {</span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a>   const argv = process.argv.slice(2);</span>
+<span class="source-line" id="L526"><a href="#L526" aria-label="Line 526">526</a>   const runDir = argv.find((a) =&gt; !a.startsWith(&#x27;--&#x27;));</span>
+<span class="source-line" id="L527"><a href="#L527" aria-label="Line 527">527</a>   const mrIdx = argv.indexOf(&#x27;--max-rounds&#x27;);</span>
+<span class="source-line" id="L528"><a href="#L528" aria-label="Line 528">528</a>   const maxRounds = mrIdx &gt;= 0 ? Number(argv[mrIdx + 1]) : null;</span>
+<span class="source-line" id="L529"><a href="#L529" aria-label="Line 529">529</a>   if (!runDir) { console.error(&#x27;usage: node bin/run-rounds.mjs &lt;runDir&gt; [--max-rounds N]&#x27;); process.exit(2); }</span>
+<span class="source-line" id="L530"><a href="#L530" aria-label="Line 530">530</a>   runRounds(runDir, { maxRounds }).catch((err) =&gt; {</span>
+<span class="source-line" id="L531"><a href="#L531" aria-label="Line 531">531</a>     console.error(`run-rounds: ${err?.message ?? err}`);</span>
+<span class="source-line" id="L532"><a href="#L532" aria-label="Line 532">532</a>     process.exit(1);</span>
+<span class="source-line" id="L533"><a href="#L533" aria-label="Line 533">533</a>   });</span>
+<span class="source-line" id="L534"><a href="#L534" aria-label="Line 534">534</a> }</span></pre></main></body></html>

@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>cli · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>cli</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: C:\dev\Ecgberht\bin\ecgberht.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 ba611386794fb73aad41e4574a2050b5ec98b894f218162fd0e14b073d340933</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.624809+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/bin/ecgberht.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: ba611386794fb73aad41e4574a2050b5ec98b894f218162fd0e14b073d340933</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> #!/usr/bin/env node</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> /**</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>  * Ecgberht CLI — closed verb surface only.</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>  * Usage: node bin/ecgberht.mjs &lt;verb&gt; [args...]</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>  * Unknown verbs → structured JSON refuse (exit 1). Never open plugin dispatch.</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>  */</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> </span>
+<span class="source-line" id="L8"><a href="#L8">8</a> import { main, isDirectInvocation } from &#x27;../engine/index.mjs&#x27;;</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> </span>
+<span class="source-line" id="L10"><a href="#L10">10</a> /**</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>  * CLI runner (importable for tests).</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>  * @param {string[]} argv</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>  * @param {{ write?: (s: string) =&gt; void, exit?: (code: number) =&gt; void }} [io]</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>  */</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> export function runCli(argv, io = {}) {</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>   const write = io.write ?? ((s) =&gt; process.stdout.write(s));</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>   const exit = io.exit ?? ((code) =&gt; process.exit(code));</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>   const result = main(argv);</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   const exitCode = result &amp;&amp; result.ok === true ? 0 : 1;</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   write(`${JSON.stringify(result, null, 2)}\n`);</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>   exit(exitCode);</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>   return { result, exitCode };</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> }</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> </span>
+<span class="source-line" id="L25"><a href="#L25">25</a> // Junction/symlink-safe (sleep cycle 2026-08-04, from gandalf journal 0275): the old</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> // guard compared resolve(argv[1]) against this module&#x27;s path, which are DIFFERENT</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> // STRINGS for the SAME FILE through a junction — so invoking via the registered skill</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> // path `~/.claude/skills/ecgberht/bin/...` exited 0 and printed NOTHING.</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> if (isDirectInvocation(process.argv[1], import.meta.url)) {</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>   runCli(process.argv.slice(2));</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> }</span></pre></main></body></html>

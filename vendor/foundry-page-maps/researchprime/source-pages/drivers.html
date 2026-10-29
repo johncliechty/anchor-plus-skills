@@ -1,0 +1,906 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>drivers · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>drivers</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\drivers\index.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 25dcc05d4cf14334b95226458f225ca2e96834f7cb10b2c12366a27cdd990a63</p></details>
+<p><a href="../sources/drivers.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // drivers/index.mjs — the pluggable model-backend registry + the single `runAgent`</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> // seam the trio engines call. One interface, swappable backends:</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> //</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> //   runAgent({ prompt, schema, freshContext, driver })</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> //</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // The backend is selected by (in order): an explicit `driver` argument, the</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // `TRIO_DRIVER` env var, else the default `&#x27;claude&#x27;`. Wave 4 ships only the Claude</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // backend (the existing `claude -p` behavior, untouched — the non-regression</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // guarantee); Wave 5 adds gemini/openai/grok by calling `registerDriver(...)`.</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> // A driver is `{ name, subAgentCapable, runAgent({ prompt, schema, freshContext }) }`.</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> // `runAgent` returns the model&#x27;s text by default, or a schema-validated object when</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // `schema` is supplied (every backend retries once, then fails honestly).</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> </span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> import { HaltError } from &#x27;../foreman/bin/foreman-lib.mjs&#x27;;</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> import { makeReliableAgent } from &#x27;./reliability.mjs&#x27;;</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> import { claudeDriver } from &#x27;./claude.mjs&#x27;;</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> import { loadPolicyPrefs, resolveModelPolicy, policyEnvironment } from &#x27;./model-policy.mjs&#x27;;</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> import { geminiCliDriver } from &#x27;./gemini-cli.mjs&#x27;;</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> import { geminiDriver } from &#x27;./gemini.mjs&#x27;;</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> import { openaiDriver } from &#x27;./openai.mjs&#x27;;</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> import { grokDriver } from &#x27;./grok.mjs&#x27;;</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> import { grokCliDriver } from &#x27;./grok-cli.mjs&#x27;;</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> import { chatgptCliDriver } from &#x27;./chatgpt-cli.mjs&#x27;;</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> import { openChatgptDataSession, DataSessionError } from &#x27;./chatgpt-session.mjs&#x27;;</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> export { DataSessionError } from &#x27;./chatgpt-session.mjs&#x27;;</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> import { normalizeRole, isVerificationRole, VERIFICATION_ROLES } from &#x27;./roles.mjs&#x27;;</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> import { PHYSICAL_RECEIPT_HOOK } from &#x27;./seat-contract.mjs&#x27;;</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> import { randomUUID } from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> </span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> /**</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a>  * Anchor attribution sink (Wave 2 S3). When Anchor spawned the process that runs</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>  * this seat, `ANCHOR_RECEIPTS_DIR` names a folder; every physical receipt that</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>  * carries a receipt object is dropped there as ONE small JSON file: the ids the</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>  * process inherited (project, effort dir, job, session), the seat&#x27;s own session,</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>  * family, served model, usage, cost. Anchor sweeps the folder through its usage</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a>  * seam. Best-effort: an observer must never break the seat.</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>  */</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> export function sinkAnchorReceipt(driver, opts, entry, env = process.env) {</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   const dir = env?.ANCHOR_RECEIPTS_DIR;</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   const rec = entry?.receipt;</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a>   if (!dir || !rec || typeof rec !== &#x27;object&#x27;) return null;</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>   try {</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>     const body = {</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>       at: new Date().toISOString().replace(/\.\d{3}Z$/, &#x27;Z&#x27;),</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>       kind: entry?.kind ?? null,</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>       family: rec.model_family || requestedFamilyForDriver(driver?.name),</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>       model_served: rec.model_served ?? null,</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>       model_attested: rec.model_attested === true,</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>       native_id: rec.thread_id ?? rec.session_id ?? null,</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>       usage: rec.usage &amp;&amp; typeof rec.usage === &#x27;object&#x27; ? rec.usage : null,</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>       cost_usd: typeof rec.cost_usd === &#x27;number&#x27; ? rec.cost_usd</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a>         : typeof rec.total_cost_usd === &#x27;number&#x27; ? rec.total_cost_usd : null,</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a>       duration_ms: typeof rec.duration_ms === &#x27;number&#x27; ? rec.duration_ms : null,</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a>       cwd: process.cwd(),</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>       env: {</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>         project_id: env.ANCHOR_PROJECT_ID || null,</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>         effort_dir: env.ANCHOR_EFFORT_DIR || null,</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>         job_id: env.ANCHOR_JOB_ID || null,</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>         session_id: env.ANCHOR_SESSION_ID || null,</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>       },</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a>     };</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>     fs.mkdirSync(dir, { recursive: true });</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>     const file = path.join(dir, `${randomUUID()}.json`);</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>     fs.writeFileSync(`${file}.part`, JSON.stringify(body));</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>     fs.renameSync(`${file}.part`, file);</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>     return file;</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>   } catch {</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>     return null;</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>   }</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> }</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a> const DEFAULT_DRIVER = process.env.ANTIGRAVITY_AGENT ? &#x27;gemini-cli&#x27; : &#x27;claude&#x27;;</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> </span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> // Roles whose seats are filled by REVIEW_FAMILY (adversarial / judge / check).</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> // Everything else defaults to CODING_FAMILY (code / reason / orchestrate).</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a> export const REVIEW_ROLES = VERIFICATION_ROLES;</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> export { normalizeRole, isVerificationRole, VERIFICATION_ROLES } from &#x27;./roles.mjs&#x27;;</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> </span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> /** Map a model family name (claude|gemini|grok|chatgpt) → registered trio driver name. */</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> export function familyToDriverName(family) {</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>   const f = String(family || &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>   if (f === &#x27;gemini&#x27;) return &#x27;gemini-cli&#x27;;</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>   // Subscription Grok Build CLI (`grok -p`) — NOT the raw xAI HTTP API (`grok` driver).</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>   if (f === &#x27;grok&#x27;) return &#x27;grok-cli&#x27;;</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>   // Subscription Codex CLI (`codex exec`) — NOT the raw OpenAI HTTP API (`openai` driver).</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>   if (f === &#x27;chatgpt&#x27; || f === &#x27;codex&#x27;) return &#x27;chatgpt-cli&#x27;;</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>   if (f === &#x27;claude&#x27; || !f) return &#x27;claude&#x27;;</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>   return null;</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a> }</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a> </span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a> /**</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>  * Read coding/review families from Anchor&#x27;s durable settings/mirror only.</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>  * Legacy process family variables are outputs for child compatibility, never</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>  * an input that may outrank or replace the user&#x27;s saved preference.</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>  */</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a> const VALID_MODEL_FAMILIES = new Set([&#x27;claude&#x27;, &#x27;gemini&#x27;, &#x27;grok&#x27;, &#x27;chatgpt&#x27;]);</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a> function readPrefsFile(file) {</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>   if (!file || !fs.existsSync(file)) return null;</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>   let raw;</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>   try {</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>     raw = JSON.parse(fs.readFileSync(file, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>   } catch (error) {</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>     throw new HaltError(</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>       `Anchor model preferences are unreadable: ${file}`,</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>       `repair the JSON preference store (${error.message}); family routing will not guess`,</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>     );</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>   }</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>   if (!raw || typeof raw !== &#x27;object&#x27; || Array.isArray(raw)) {</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>     throw new HaltError(</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>       `Anchor model preferences are invalid: ${file}`,</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>       &#x27;expected a JSON object; family routing will not guess&#x27;,</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>     );</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>   }</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>   for (const key of [&#x27;coding_family&#x27;, &#x27;review_family&#x27;]) {</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>     const value = raw[key];</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>     if (value !== undefined &amp;&amp; !VALID_MODEL_FAMILIES.has(String(value).trim().toLowerCase())) {</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>       throw new HaltError(</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>         `unknown ${key} &quot;${value}&quot; in ${file}`,</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>         `expected one of ${[...VALID_MODEL_FAMILIES].join(&#x27;|&#x27;)}`,</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>       );</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>     }</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>   }</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   return raw;</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a> }</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a> </span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> export function loadModelFamilies(env = process.env) {</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>   const prefs = loadPolicyPrefs(env);</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>   return { coding: prefs.coding_family, review: prefs.review_family,</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>     terminal: prefs.default_cli, cross_model: prefs.coding_family !== prefs.review_family,</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>     source: prefs.source, settings_revision: prefs.settings_revision,</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>     model_policy: prefs.model_policy };</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> }</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a> /**</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>  * Resolve driver name from Anchor coding/review family prefs for a role.</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>  * Explicit TRIO_DRIVER / opts.driver still win over this (callers apply order).</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>  * @returns {?string} registered driver name or null</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>  */</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a> export function resolveDriverFromFamilies(role, env = process.env) {</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>   const r = normalizeRole(</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>     role &amp;&amp; typeof role === &#x27;object&#x27; ? role : { role },</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>   );</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>   const fams = loadModelFamilies(env);</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>   const family = isVerificationRole({ role: r }) ? fams.review : fams.coding;</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>   return familyToDriverName(family);</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a> }</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> /** Open a caller-held, serial, read-only structured-data session. There is no</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>  * failover: unsupported family/capability is an honest refusal before any turn.</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>  * Data roles use the configured coding family; canonical verification roles refuse.</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>  * @returns {Promise&lt;{pid:number, threadId:string, request:Function, cancel:Function, close:Function}&gt;}</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>  */</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a> export async function createDataSession(options = {}) {</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>   const env = options.env ?? process.env;</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>   const role = normalizeRole(options);</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>   if (isVerificationRole({ role })) {</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>     throw new DataSessionError(&#x27;capability_unavailable&#x27;, &#x27;Verification roles cannot use persistent data sessions&#x27;);</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>   }</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>   if (options.capability !== undefined &amp;&amp; options.capability !== &#x27;read-only-data&#x27;) {</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>     throw new DataSessionError(&#x27;capability_unavailable&#x27;, &#x27;Only read-only-data sessions are supported&#x27;);</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>   }</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>   const driver = resolveDriverFromFamilies({ role }, env);</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>   if (options.driver &amp;&amp; options.driver !== driver) {</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>     throw new DataSessionError(&#x27;capability_unavailable&#x27;, &#x27;Data session driver must match the configured coding family&#x27;);</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>   }</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>   if (driver !== &#x27;chatgpt-cli&#x27;) {</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>     throw new DataSessionError(&#x27;capability_unavailable&#x27;, `Selected driver ${driver || &#x27;unknown&#x27;} does not support persistent read-only data sessions`);</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>   }</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>   // Real production seats resolve the common latest/highest policy before</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>   // spawning, then validate availability and effort against the child catalog.</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>   // An injected fake process keeps its hermetic resolver seam.</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>   const policy = options.spawnImpl ? {} : {</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>     policyEnvironment,</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>     policyResolver: (family, args) =&gt; {</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>       const selection = resolveModelPolicy(family, args);</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>       return { model: selection.model, effort: selection.effort, receipt: selection };</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>     },</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>   };</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>   return openChatgptDataSession({ ...options, role, env, ...policy });</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a> }</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a> </span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a> /**</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>  * Build an explicit role→{driver} route table from coding/review family prefs.</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>  * Used by live Crucible / researchPrime / Gandalf builders so seats honor the</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>  * dashboard knobs (and ~/.anchor/model_prefs.json) instead of hardcoding Claude.</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>  *</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>  * @param {object} [o]</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>  * @param {string[]} [o.codingRoles]  seats on CODING_FAMILY (plus `default`)</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>  * @param {string[]} [o.reviewRoles]  seats on REVIEW_FAMILY</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>  * @param {object}   [o.env]</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>  * @param {?string}  [o.reviewModel]  optional model pin on every review seat</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>  * @returns {{ routes: object, families: object, codingDriver: string, reviewDriver: string, drafterFamily: string, refuterFamily: string }}</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>  */</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a> export function buildRoutesFromFamilies({</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>   codingRoles = [&#x27;synthesizer&#x27;],</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>   reviewRoles = [...VERIFICATION_ROLES],</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>   env = process.env,</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>   reviewModel = null,</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a> } = {}) {</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>   const families = loadModelFamilies(env);</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>   const codingDriver = familyToDriverName(families.coding) || &#x27;claude&#x27;;</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>   const reviewDriver = familyToDriverName(families.review) || &#x27;claude&#x27;;</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>   const routes = { default: { driver: codingDriver } };</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>   for (const role of codingRoles) {</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>     const r = normalizeRole({ role });</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>     if (!r || r === &#x27;default&#x27;) continue;</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>     routes[r] = { driver: codingDriver };</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>   }</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>   for (const role of reviewRoles) {</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>     const r = normalizeRole({ role });</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>     if (!r) continue;</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>     const entry = { driver: reviewDriver };</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>     routes[r] = entry;</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>   }</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>   return {</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>     routes: Object.freeze({ ...routes }),</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>     families,</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>     codingDriver,</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>     reviewDriver,</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>     drafterFamily: families.coding,</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>     refuterFamily: families.review,</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>   };</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a> }</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a> </span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a> /**</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>  * Stamp TRIO_DRIVER_&lt;ROLE&gt; (and CODING_FAMILY / REVIEW_FAMILY) from prefs when</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>  * unset — so Foreman run-live and other env-driven seats pick up dashboard knobs</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>  * without a per-project models block. Never overwrites an explicit operator env.</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>  * @param {object} [env=process.env]</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>  * @returns {{ coding, review, cross_model }}</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>  */</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a> export function applyFamilyPrefsToEnv(env = process.env) {</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>   const fams = loadModelFamilies(env);</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>   const codingDrv = familyToDriverName(fams.coding) || &#x27;claude&#x27;;</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   const reviewDrv = familyToDriverName(fams.review) || &#x27;claude&#x27;;</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>   const roleMap = {</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>     EXECUTE: codingDrv,</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>     FIX: codingDrv,</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>     SYNTHESIZER: codingDrv,</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>     DEFAULT: codingDrv,</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>     REVIEW: reviewDrv,</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>     SHARK: reviewDrv,</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>     REVIEWER: reviewDrv,</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>     JUDGE: reviewDrv,</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>     DEBATE: reviewDrv,</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>     REFUTER: reviewDrv,</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>     GATE3: reviewDrv,</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>     VERIFY: reviewDrv,</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>     ATTACKER: reviewDrv,</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>     ANALYSIS: reviewDrv,</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>   };</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>   // Always stamp from Anchor prefs (overwrite stale setx TRIO_DRIVER_* pins).</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>   for (const [R, drv] of Object.entries(roleMap)) {</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>     env[`TRIO_DRIVER_${R}`] = drv;</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>   }</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>   env.CODING_FAMILY = fams.coding;</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>   env.REVIEW_FAMILY = fams.review;</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>   env.CROSS_MODEL = fams.cross_model ? &#x27;true&#x27; : &#x27;false&#x27;;</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>   return fams;</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a> }</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a> </span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a> /** name -&gt; driver object. Seeded with the always-present Claude default. */</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a> const REGISTRY = new Map([[claudeDriver.name, claudeDriver]]);</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a> </span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a> /**</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>  * Register (or replace) a backend. Wave 5&#x27;s gemini/openai/grok modules call this.</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>  * @param {{name:string, subAgentCapable?:boolean, runAgent:Function}} driver</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>  */</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a> export function registerDriver(driver) {</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>   if (!driver || typeof driver.name !== &#x27;string&#x27; || typeof driver.runAgent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>     throw new TypeError(&#x27;registerDriver requires a { name, runAgent } driver object&#x27;);</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>   }</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>   REGISTRY.set(driver.name, driver);</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>   return driver;</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a> }</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a> </span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a> // Wave 5: register the additive non-Claude backends. They live behind the same</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a> // `runAgent` interface and are selected by `TRIO_DRIVER` (the Claude default is</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a> // unaffected). Registering here (rather than self-registering on import) keeps the</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a> // registry&#x27;s contents explicit and order-stable for the capability matrix.</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a> // `gemini-cli` is the sub-agent-capable Gemini HOST backend (login-based `gemini -p`);</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a> // `gemini` remains the raw-HTTP API worker. Both register; they never collide on name.</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a> registerDriver(geminiCliDriver);</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a> registerDriver(geminiDriver);</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a> registerDriver(openaiDriver);</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a> registerDriver(grokDriver); // optional API-key HTTP backend (name: &#x27;grok&#x27;)</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a> registerDriver(grokCliDriver); // subscription CLI backend (name: &#x27;grok-cli&#x27;) — coding/review family default</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a> registerDriver(chatgptCliDriver); // subscription Codex CLI (name: &#x27;chatgpt-cli&#x27;) — ChatGPT login, never OPENAI_API_KEY</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a> </span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a> /** The backend names currently registered (default `claude` always present). */</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a> export function listDrivers() {</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>   return [...REGISTRY.keys()];</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a> }</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a> </span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a> /**</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>  * The capability matrix: one row per registered backend describing whether it can</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a>  * spawn real fresh sub-agent contexts (`subAgentCapable` — true only for the</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>  * CLI-spawning Claude backend; the raw-API backends approximate isolation with a</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>  * fresh stateless request) and HOW it produces structured output (CLI sub-agent</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>  * prompt vs JSON-mode / function-calling). Derived from the registered drivers so</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>  * a newly registered backend appears automatically.</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>  * @returns {{name:string, subAgentCapable:boolean, structuredOutput:string}[]}</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>  */</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a> export function capabilityMatrix() {</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>   return [...REGISTRY.values()].map((d) =&gt; ({</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a>     name: d.name,</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>     subAgentCapable: !!d.subAgentCapable,</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a>     structuredOutput: d.structuredOutput ?? &#x27;unknown&#x27;,</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>   }));</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a> }</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a> </span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a> /**</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>  * Resolve the active backend. Selection order: explicit `name` arg, then</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>  * `TRIO_DRIVER`, then the `claude` default. HALTs on an unknown name rather than</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>  * silently falling back, so a typo never quietly bills the wrong backend.</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>  * @param {?string} [name]</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>  * @param {object}  [env=process.env]</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>  */</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a> export function getDriver(name = null, env = process.env) {</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>   const key = name || env.TRIO_DRIVER || DEFAULT_DRIVER;</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>   const driver = REGISTRY.get(key);</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>   if (!driver) {</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>     throw new HaltError(</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>       `unknown trio driver &quot;${key}&quot;`,</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>       `registered drivers: ${listDrivers().join(&#x27;, &#x27;)}. Set TRIO_DRIVER to one of these (or leave it unset for the default &quot;${DEFAULT_DRIVER}&quot;).`,</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>     );</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>   }</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>   return driver;</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a> }</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a> </span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a> const RECEIPT_FAMILIES = new Set([&#x27;claude&#x27;, &#x27;gemini&#x27;, &#x27;grok&#x27;, &#x27;chatgpt&#x27;]);</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a> </span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a> function bounded(value, fallback = &#x27;&#x27;, max = 240) {</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>   const clean = String(value ?? &#x27;&#x27;).replace(/[\u0000-\u001f\u007f]/g, &#x27; &#x27;).trim();</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>   return (clean || fallback).slice(0, max);</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a> }</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a> </span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a> function errorInfo(code, message = &#x27;&#x27;) {</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>   return {</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a>     code: bounded(code, &#x27;seat_unavailable&#x27;),</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>     message: bounded(message, &#x27;&#x27;, 500),</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a>   };</span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a> }</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a> </span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a> function requestedFamilyForDriver(name) {</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>   const driverName = String(name || &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>   if (driverName === &#x27;claude&#x27;) return &#x27;claude&#x27;;</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a>   if (driverName === &#x27;gemini&#x27; || driverName.startsWith(&#x27;gemini-cli&#x27;)) return &#x27;gemini&#x27;;</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>   if (driverName === &#x27;grok&#x27; || driverName === &#x27;grok-cli&#x27;) return &#x27;grok&#x27;;</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>   if (driverName === &#x27;openai&#x27; || driverName === &#x27;chatgpt-cli&#x27;) return &#x27;chatgpt&#x27;;</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a>   return &#x27;unknown&#x27;;</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a> }</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a> </span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a> function requestedFor(driver, opts, entries = []) {</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>   const rawRequested = entries</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>     .map((entry) =&gt; entry?.receipt?.requested_model)</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a>     .find((value) =&gt; typeof value === &#x27;string&#x27; &amp;&amp; value.trim());</span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a>   const explicit = typeof opts.model === &#x27;string&#x27; &amp;&amp; opts.model.trim() ? opts.model : null;</span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a>   return {</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>     driver: bounded(driver.name, &#x27;unknown-driver&#x27;),</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>     family: requestedFamilyForDriver(driver.name),</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>     model: bounded(rawRequested ?? explicit, &#x27;&#x27;, 240) || null,</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>   };</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a> }</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a> </span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a> function servedFromRaw(raw, driverName, { accepted = false } = {}) {</span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a>   if (!raw || typeof raw !== &#x27;object&#x27;) return null;</span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a>   const nested = raw.served &amp;&amp; typeof raw.served === &#x27;object&#x27; ? raw.served : null;</span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a>   const familyValue = nested?.family ?? raw.model_family ?? null;</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>   const normalizedFamily = typeof familyValue === &#x27;string&#x27;</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a>     ? familyValue.trim().toLowerCase()</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a>     : null;</span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a>   const familyAttested = (nested?.family_attested === true || raw.family_attested === true)</span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a>     &amp;&amp; RECEIPT_FAMILIES.has(normalizedFamily);</span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a>   const modelValue = nested?.model ?? raw.model_served ?? null;</span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a>   const normalizedModel = typeof modelValue === &#x27;string&#x27; &amp;&amp; modelValue.trim()</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>     ? modelValue.trim().slice(0, 240)</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>     : null;</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>   const modelAttested = (nested?.model_attested === true || raw.model_attested === true)</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>     &amp;&amp; normalizedModel !== null;</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a>   if (!accepted &amp;&amp; !familyAttested &amp;&amp; !modelAttested) return null;</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>   return {</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a>     driver: bounded(nested?.driver ?? driverName, &#x27;unknown-driver&#x27;),</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a>     family: familyAttested ? normalizedFamily : null,</span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a>     model: modelAttested ? normalizedModel : null,</span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a>     family_attested: familyAttested,</span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a>     model_attested: modelAttested,</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a>   };</span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a> }</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a> </span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a> function normalizeTransportEntry(entry, ordinal, driverName, fallbackLabel) {</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>   const raw = entry?.receipt &amp;&amp; typeof entry.receipt === &#x27;object&#x27; ? entry.receipt : null;</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>   const kind = ordinal === 2 ? &#x27;schema_reprompt&#x27; : &#x27;initial&#x27;;</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a>   const label = bounded(entry?.label ?? raw?.label, fallbackLabel || &#x27;(unlabeled)&#x27;);</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>   let status = entry?.outcome;</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>   if (![&#x27;accepted&#x27;, &#x27;schema_rejected&#x27;, &#x27;seat_unavailable&#x27;, &#x27;aborted&#x27;].includes(status)) {</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a>     status = raw?.status === &#x27;aborted&#x27; || raw?.aborted === true</span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a>       ? &#x27;aborted&#x27;</span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a>       : raw?.ok === true</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a>         ? &#x27;accepted&#x27;</span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a>         : &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a>   }</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>   if (!raw) status = &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>   if (raw &amp;&amp; raw.ok !== true &amp;&amp; (status === &#x27;accepted&#x27; || status === &#x27;schema_rejected&#x27;)) {</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>     status = raw.status === &#x27;aborted&#x27; || raw.aborted === true ? &#x27;aborted&#x27; : &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>   }</span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>   const acceptedProvider = raw?.ok === true;</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a>   const served = servedFromRaw(raw, driverName, {</span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>     accepted: acceptedProvider &amp;&amp; (status === &#x27;accepted&#x27; || status === &#x27;schema_rejected&#x27;),</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>   });</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a>   let error = null;</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a>   if (status === &#x27;schema_rejected&#x27;) {</span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a>     error = errorInfo(&#x27;schema_nonconforming&#x27;, entry?.error || &#x27;provider reply did not conform to the requested schema&#x27;);</span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a>   } else if (status === &#x27;aborted&#x27;) {</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a>     error = errorInfo(&#x27;aborted&#x27;, raw?.error || entry?.error || &#x27;transport aborted&#x27;);</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a>   } else if (status === &#x27;seat_unavailable&#x27;) {</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a>     const code = raw ? (raw.status || &#x27;seat_unavailable&#x27;) : &#x27;missing_raw_receipt&#x27;;</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a>     error = errorInfo(code, raw?.error || entry?.error || (raw</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a>       ? &#x27;provider transport did not complete successfully&#x27;</span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a>       : &#x27;driver returned or threw without a physical transport receipt&#x27;));</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>   }</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a>   return {</span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a>     ordinal,</span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a>     kind,</span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a>     label,</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a>     ok: status === &#x27;accepted&#x27;,</span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a>     status,</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>     provider_status: raw?.kill_status === &#x27;kill_failed&#x27;</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>       ? &#x27;kill_failed&#x27;</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a>       : raw?.status != null</span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>         ? bounded(raw.status, &#x27;&#x27;, 240) || null</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>         : null,</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a>     served,</span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a>     error,</span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a>   };</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a> }</span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a> </span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a> const PHYSICAL_OUTCOMES = new Set([</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a>   &#x27;accepted&#x27;, &#x27;schema_rejected&#x27;, &#x27;seat_unavailable&#x27;, &#x27;aborted&#x27;,</span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a> ]);</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a> </span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a> function physicalSequenceError(entries, count) {</span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>   if (count &gt; 2) return `driver reported ${count} physical attempts; maximum is two`;</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>   for (const [index, entry] of entries.entries()) {</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a>     if (!entry || typeof entry !== &#x27;object&#x27; || !PHYSICAL_OUTCOMES.has(entry.outcome)) {</span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>       return `physical attempt ${index + 1} has an invalid outcome`;</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>     }</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a>   }</span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>   if (entries[0]?.kind !== &#x27;initial&#x27;) return &#x27;first physical attempt must be initial&#x27;;</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>   if (entries.length === 2) {</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a>     if (entries[0].outcome !== &#x27;schema_rejected&#x27;) {</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a>       return &#x27;a second physical attempt requires an initial schema_rejected outcome&#x27;;</span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a>     }</span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a>     if (entries[1].kind !== &#x27;schema_reprompt&#x27;) {</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a>       return &#x27;second physical attempt must be schema_reprompt&#x27;;</span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a>     }</span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a>   }</span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a>   return null;</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a> }</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a> </span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a> async function runDispatcherAttempt(driver, opts, ordinal, kind) {</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a>   const entries = [];</span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>   let physicalCount = 0;</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a>   let usedPhysicalHook = false;</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a>   let value;</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>   let thrown = null;</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>   if (opts.signal?.aborted) {</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>     entries.push({</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>       outcome: &#x27;aborted&#x27;, label: opts.label,</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>       receipt: { ok: false, status: &#x27;aborted&#x27;, aborted: true, error: &#x27;seat aborted before spawn&#x27; },</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a>     });</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a>     thrown = Object.assign(new Error(&#x27;seat aborted before spawn&#x27;), { aborted: true });</span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a>   } else {</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>     try {</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>       value = await driver.runAgent({</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>         ...opts,</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a>         onReceipt: undefined,</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a>         [PHYSICAL_RECEIPT_HOOK]: (entry) =&gt; {</span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a>           usedPhysicalHook = true;</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a>           physicalCount += 1;</span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a>           if (entries.length &lt; 2) entries.push(entry);</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a>           // Tee to a caller-supplied hook: the public trio.seat.v1 receipt keeps its</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a>           // exact-key shape (strict consumers validate it), so measured usage on the</span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a>           // raw physical receipt is only reachable through this opt-in channel.</span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a>           const callerHook = opts[PHYSICAL_RECEIPT_HOOK];</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a>           if (typeof callerHook === &#x27;function&#x27;) {</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>             try { callerHook(entry); } catch { /* observer must never break the seat */ }</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>           }</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a>           sinkAnchorReceipt(driver, opts, entry);</span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>         },</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a>       });</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>     } catch (error) {</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>       thrown = error;</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a>       if (entries.length === 0 &amp;&amp; error?.raw_receipt) {</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a>         entries.push({ receipt: error.raw_receipt, label: opts.label });</span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a>       }</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>     }</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>   }</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>   const contractError = usedPhysicalHook</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>     ? physicalSequenceError(entries, physicalCount)</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>     : null;</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a>   if (entries.length === 0) {</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>     entries.push({ receipt: null, label: opts.label, error: thrown?.message });</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>   }</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>   const requested = requestedFor(driver, opts, contractError ? [] : entries);</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>   const transportAttempts = contractError</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>     ? [{</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a>       ordinal: 1,</span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a>       kind: &#x27;initial&#x27;,</span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a>       label: bounded(opts.label, &#x27;(unlabeled)&#x27;),</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a>       ok: false,</span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>       status: &#x27;seat_unavailable&#x27;,</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a>       provider_status: null,</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a>       served: null,</span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a>       error: errorInfo(&#x27;invalid_physical_receipt_sequence&#x27;, contractError),</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a>     }]</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>     : entries.map((entry, index) =&gt; normalizeTransportEntry(</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>       entry,</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>       index + 1,</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a>       driver.name,</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a>       index === 0 ? opts.label : `${opts.label}#retry`,</span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a>     ));</span>
+<span class="source-line" id="L526"><a href="#L526" aria-label="Line 526">526</a>   const last = transportAttempts.at(-1);</span>
+<span class="source-line" id="L527"><a href="#L527" aria-label="Line 527">527</a>   const verification = isVerificationRole({ role: opts.role, label: opts.label });</span>
+<span class="source-line" id="L528"><a href="#L528" aria-label="Line 528">528</a>   let status;</span>
+<span class="source-line" id="L529"><a href="#L529" aria-label="Line 529">529</a>   let served = null;</span>
+<span class="source-line" id="L530"><a href="#L530" aria-label="Line 530">530</a>   let error = null;</span>
+<span class="source-line" id="L531"><a href="#L531" aria-label="Line 531">531</a>   if (contractError) {</span>
+<span class="source-line" id="L532"><a href="#L532" aria-label="Line 532">532</a>     status = &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L533"><a href="#L533" aria-label="Line 533">533</a>     error = errorInfo(&#x27;invalid_physical_receipt_sequence&#x27;, contractError);</span>
+<span class="source-line" id="L534"><a href="#L534" aria-label="Line 534">534</a>   } else if (thrown?.aborted || last.status === &#x27;aborted&#x27;) {</span>
+<span class="source-line" id="L535"><a href="#L535" aria-label="Line 535">535</a>     status = &#x27;aborted&#x27;;</span>
+<span class="source-line" id="L536"><a href="#L536" aria-label="Line 536">536</a>     error = errorInfo(&#x27;aborted&#x27;, thrown?.message || last.error?.message || &#x27;transport aborted&#x27;);</span>
+<span class="source-line" id="L537"><a href="#L537" aria-label="Line 537">537</a>   } else if (thrown) {</span>
+<span class="source-line" id="L538"><a href="#L538" aria-label="Line 538">538</a>     status = transportAttempts.length === 2</span>
+<span class="source-line" id="L539"><a href="#L539" aria-label="Line 539">539</a>       &amp;&amp; transportAttempts.every((attempt) =&gt; attempt.status === &#x27;schema_rejected&#x27;)</span>
+<span class="source-line" id="L540"><a href="#L540" aria-label="Line 540">540</a>       ? &#x27;schema_exhausted&#x27;</span>
+<span class="source-line" id="L541"><a href="#L541" aria-label="Line 541">541</a>       : &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L542"><a href="#L542" aria-label="Line 542">542</a>     error = errorInfo(</span>
+<span class="source-line" id="L543"><a href="#L543" aria-label="Line 543">543</a>       status === &#x27;schema_exhausted&#x27; ? &#x27;schema_nonconforming&#x27; : (thrown.seat_status || &#x27;seat_unavailable&#x27;),</span>
+<span class="source-line" id="L544"><a href="#L544" aria-label="Line 544">544</a>       thrown.message,</span>
+<span class="source-line" id="L545"><a href="#L545" aria-label="Line 545">545</a>     );</span>
+<span class="source-line" id="L546"><a href="#L546" aria-label="Line 546">546</a>   } else if (last.status !== &#x27;accepted&#x27;) {</span>
+<span class="source-line" id="L547"><a href="#L547" aria-label="Line 547">547</a>     status = transportAttempts.length === 2</span>
+<span class="source-line" id="L548"><a href="#L548" aria-label="Line 548">548</a>       &amp;&amp; transportAttempts.every((attempt) =&gt; attempt.status === &#x27;schema_rejected&#x27;)</span>
+<span class="source-line" id="L549"><a href="#L549" aria-label="Line 549">549</a>       ? &#x27;schema_exhausted&#x27;</span>
+<span class="source-line" id="L550"><a href="#L550" aria-label="Line 550">550</a>       : last.status === &#x27;aborted&#x27;</span>
+<span class="source-line" id="L551"><a href="#L551" aria-label="Line 551">551</a>         ? &#x27;aborted&#x27;</span>
+<span class="source-line" id="L552"><a href="#L552" aria-label="Line 552">552</a>         : &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L553"><a href="#L553" aria-label="Line 553">553</a>     error = errorInfo(last.error?.code || &#x27;seat_unavailable&#x27;, last.error?.message || &#x27;transport failed&#x27;);</span>
+<span class="source-line" id="L554"><a href="#L554" aria-label="Line 554">554</a>   } else if (verification &amp;&amp; !last.served?.family_attested) {</span>
+<span class="source-line" id="L555"><a href="#L555" aria-label="Line 555">555</a>     status = &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L556"><a href="#L556" aria-label="Line 556">556</a>     error = errorInfo(&#x27;served_unattested&#x27;, &#x27;verification requires an attested served family&#x27;);</span>
+<span class="source-line" id="L557"><a href="#L557" aria-label="Line 557">557</a>   } else {</span>
+<span class="source-line" id="L558"><a href="#L558" aria-label="Line 558">558</a>     // (John, 2026-09-05) a verification seat whose FAMILY is attested but whose served MODEL</span>
+<span class="source-line" id="L559"><a href="#L559" aria-label="Line 559">559</a>     // is not (the Codex CLI names no model; Grok plain output did not) is ACCEPTED with the</span>
+<span class="source-line" id="L560"><a href="#L560" aria-label="Line 560">560</a>     // honest stamp `model_attested:false` on its receipt — family independence is what a</span>
+<span class="source-line" id="L561"><a href="#L561" aria-label="Line 561">561</a>     // reviewer must prove; the model tier is stamped, never inferred. Said on the log so no</span>
+<span class="source-line" id="L562"><a href="#L562" aria-label="Line 562">562</a>     // run is blind to it. A family that cannot be attested still fails closed above.</span>
+<span class="source-line" id="L563"><a href="#L563" aria-label="Line 563">563</a>     if (verification &amp;&amp; !last.served?.model_attested) {</span>
+<span class="source-line" id="L564"><a href="#L564" aria-label="Line 564">564</a>       const say = typeof opts.log === &#x27;function&#x27; ? opts.log : () =&gt; {};</span>
+<span class="source-line" id="L565"><a href="#L565" aria-label="Line 565">565</a>       say(`⚠ ${opts.label ?? opts.role ?? &#x27;seat&#x27;}: ${driver.name} verification seat served family &quot;${last.served?.family ?? &#x27;?&#x27;}&quot; with an UNATTESTED model — accepted, stamped model_attested:false`);</span>
+<span class="source-line" id="L566"><a href="#L566" aria-label="Line 566">566</a>     }</span>
+<span class="source-line" id="L567"><a href="#L567" aria-label="Line 567">567</a>     status = transportAttempts.length === 2 ? &#x27;success_after_schema_reprompt&#x27; : &#x27;success&#x27;;</span>
+<span class="source-line" id="L568"><a href="#L568" aria-label="Line 568">568</a>     served = last.served;</span>
+<span class="source-line" id="L569"><a href="#L569" aria-label="Line 569">569</a>   }</span>
+<span class="source-line" id="L570"><a href="#L570" aria-label="Line 570">570</a>   const ok = status === &#x27;success&#x27; || status === &#x27;success_after_schema_reprompt&#x27;;</span>
+<span class="source-line" id="L571"><a href="#L571" aria-label="Line 571">571</a>   return {</span>
+<span class="source-line" id="L572"><a href="#L572" aria-label="Line 572">572</a>     value,</span>
+<span class="source-line" id="L573"><a href="#L573" aria-label="Line 573">573</a>     replay_safe: !contractError &amp;&amp; entries.length === 1 &amp;&amp; entries[0]?.receipt?.replay_safe === true,</span>
+<span class="source-line" id="L574"><a href="#L574" aria-label="Line 574">574</a>     attempt: {</span>
+<span class="source-line" id="L575"><a href="#L575" aria-label="Line 575">575</a>       ordinal,</span>
+<span class="source-line" id="L576"><a href="#L576" aria-label="Line 576">576</a>       kind,</span>
+<span class="source-line" id="L577"><a href="#L577" aria-label="Line 577">577</a>       requested,</span>
+<span class="source-line" id="L578"><a href="#L578" aria-label="Line 578">578</a>       ok,</span>
+<span class="source-line" id="L579"><a href="#L579" aria-label="Line 579">579</a>       status,</span>
+<span class="source-line" id="L580"><a href="#L580" aria-label="Line 580">580</a>       served: ok ? served : null,</span>
+<span class="source-line" id="L581"><a href="#L581" aria-label="Line 581">581</a>       transport_attempts: transportAttempts,</span>
+<span class="source-line" id="L582"><a href="#L582" aria-label="Line 582">582</a>       error: ok ? null : error,</span>
+<span class="source-line" id="L583"><a href="#L583" aria-label="Line 583">583</a>     },</span>
+<span class="source-line" id="L584"><a href="#L584" aria-label="Line 584">584</a>   };</span>
+<span class="source-line" id="L585"><a href="#L585" aria-label="Line 585">585</a> }</span>
+<span class="source-line" id="L586"><a href="#L586" aria-label="Line 586">586</a> </span>
+<span class="source-line" id="L587"><a href="#L587" aria-label="Line 587">587</a> export class ReceiptCallbackError extends Error {</span>
+<span class="source-line" id="L588"><a href="#L588" aria-label="Line 588">588</a>   constructor(cause, receipt) {</span>
+<span class="source-line" id="L589"><a href="#L589" aria-label="Line 589">589</a>     super(`Trio receipt callback failed: ${cause?.message ?? cause}`);</span>
+<span class="source-line" id="L590"><a href="#L590" aria-label="Line 590">590</a>     this.name = &#x27;ReceiptCallbackError&#x27;;</span>
+<span class="source-line" id="L591"><a href="#L591" aria-label="Line 591">591</a>     this.cause = cause;</span>
+<span class="source-line" id="L592"><a href="#L592" aria-label="Line 592">592</a>     this.receipt = receipt;</span>
+<span class="source-line" id="L593"><a href="#L593" aria-label="Line 593">593</a>   }</span>
+<span class="source-line" id="L594"><a href="#L594" aria-label="Line 594">594</a> }</span>
+<span class="source-line" id="L595"><a href="#L595" aria-label="Line 595">595</a> </span>
+<span class="source-line" id="L596"><a href="#L596" aria-label="Line 596">596</a> function failedSeatError(receipt) {</span>
+<span class="source-line" id="L597"><a href="#L597" aria-label="Line 597">597</a>   const error = new HaltError(</span>
+<span class="source-line" id="L598"><a href="#L598" aria-label="Line 598">598</a>     `trio seat ${receipt.status}: ${receipt.label}`,</span>
+<span class="source-line" id="L599"><a href="#L599" aria-label="Line 599">599</a>     receipt.error?.message || &#x27;inspect the attached trio.seat.v1 receipt&#x27;,</span>
+<span class="source-line" id="L600"><a href="#L600" aria-label="Line 600">600</a>   );</span>
+<span class="source-line" id="L601"><a href="#L601" aria-label="Line 601">601</a>   error.receipt = receipt;</span>
+<span class="source-line" id="L602"><a href="#L602" aria-label="Line 602">602</a>   error.aborted = receipt.status === &#x27;aborted&#x27;;</span>
+<span class="source-line" id="L603"><a href="#L603" aria-label="Line 603">603</a>   if (!error.aborted) error.seat_unavailable = true;</span>
+<span class="source-line" id="L604"><a href="#L604" aria-label="Line 604">604</a>   error.seat_status = receipt.status;</span>
+<span class="source-line" id="L605"><a href="#L605" aria-label="Line 605">605</a>   error.requested_model = receipt.requested.model;</span>
+<span class="source-line" id="L606"><a href="#L606" aria-label="Line 606">606</a>   error.served_model = null;</span>
+<span class="source-line" id="L607"><a href="#L607" aria-label="Line 607">607</a>   return error;</span>
+<span class="source-line" id="L608"><a href="#L608" aria-label="Line 608">608</a> }</span>
+<span class="source-line" id="L609"><a href="#L609" aria-label="Line 609">609</a> </span>
+<span class="source-line" id="L610"><a href="#L610" aria-label="Line 610">610</a> function finalizeReceipt({ opts, role, verification, requested, attempts, status, served, error }) {</span>
+<span class="source-line" id="L611"><a href="#L611" aria-label="Line 611">611</a>   return {</span>
+<span class="source-line" id="L612"><a href="#L612" aria-label="Line 612">612</a>     schema: &#x27;trio.seat.v1&#x27;,</span>
+<span class="source-line" id="L613"><a href="#L613" aria-label="Line 613">613</a>     ok: status === &#x27;success&#x27; || status === &#x27;success_after_failover&#x27;,</span>
+<span class="source-line" id="L614"><a href="#L614" aria-label="Line 614">614</a>     status,</span>
+<span class="source-line" id="L615"><a href="#L615" aria-label="Line 615">615</a>     label: bounded(opts.label, role || requested.driver || &#x27;(unlabeled)&#x27;),</span>
+<span class="source-line" id="L616"><a href="#L616" aria-label="Line 616">616</a>     role,</span>
+<span class="source-line" id="L617"><a href="#L617" aria-label="Line 617">617</a>     verification,</span>
+<span class="source-line" id="L618"><a href="#L618" aria-label="Line 618">618</a>     structured: !!opts.schema,</span>
+<span class="source-line" id="L619"><a href="#L619" aria-label="Line 619">619</a>     requested,</span>
+<span class="source-line" id="L620"><a href="#L620" aria-label="Line 620">620</a>     served,</span>
+<span class="source-line" id="L621"><a href="#L621" aria-label="Line 621">621</a>     attempts,</span>
+<span class="source-line" id="L622"><a href="#L622" aria-label="Line 622">622</a>     failover: {</span>
+<span class="source-line" id="L623"><a href="#L623" aria-label="Line 623">623</a>       allowed: !verification,</span>
+<span class="source-line" id="L624"><a href="#L624" aria-label="Line 624">624</a>       used: attempts.length &gt; 1,</span>
+<span class="source-line" id="L625"><a href="#L625" aria-label="Line 625">625</a>       blocked_reason: verification</span>
+<span class="source-line" id="L626"><a href="#L626" aria-label="Line 626">626</a>         ? &#x27;verification_seat&#x27;</span>
+<span class="source-line" id="L627"><a href="#L627" aria-label="Line 627">627</a>         : status === &#x27;seat_unavailable&#x27; &amp;&amp; attempts.length === 1</span>
+<span class="source-line" id="L628"><a href="#L628" aria-label="Line 628">628</a>           ? &#x27;no_capable_fallback&#x27;</span>
+<span class="source-line" id="L629"><a href="#L629" aria-label="Line 629">629</a>           : null,</span>
+<span class="source-line" id="L630"><a href="#L630" aria-label="Line 630">630</a>     },</span>
+<span class="source-line" id="L631"><a href="#L631" aria-label="Line 631">631</a>     error,</span>
+<span class="source-line" id="L632"><a href="#L632" aria-label="Line 632">632</a>   };</span>
+<span class="source-line" id="L633"><a href="#L633" aria-label="Line 633">633</a> }</span>
+<span class="source-line" id="L634"><a href="#L634" aria-label="Line 634">634</a> </span>
+<span class="source-line" id="L635"><a href="#L635" aria-label="Line 635">635</a> /**</span>
+<span class="source-line" id="L636"><a href="#L636" aria-label="Line 636">636</a>  * The single engine seam. Dispatches to the selected backend&#x27;s `runAgent`.</span>
+<span class="source-line" id="L637"><a href="#L637" aria-label="Line 637">637</a>  * @param {object}  opts</span>
+<span class="source-line" id="L638"><a href="#L638" aria-label="Line 638">638</a>  * @param {string}  opts.prompt</span>
+<span class="source-line" id="L639"><a href="#L639" aria-label="Line 639">639</a>  * @param {object}  [opts.schema]        JSON Schema; when present the reply is parsed/validated</span>
+<span class="source-line" id="L640"><a href="#L640" aria-label="Line 640">640</a>  * @param {boolean} [opts.freshContext]  request an isolated context (native for sub-agent-capable backends)</span>
+<span class="source-line" id="L641"><a href="#L641" aria-label="Line 641">641</a>  * @param {string}  [opts.driver]        explicit backend name (overrides TRIO_DRIVER)</span>
+<span class="source-line" id="L642"><a href="#L642" aria-label="Line 642">642</a>  * @param {string}  [opts.role]          explicit seat role; wins over label derivation</span>
+<span class="source-line" id="L643"><a href="#L643" aria-label="Line 643">643</a>  * @param {string}  [opts.label]         bounded diagnostic label and role fallback</span>
+<span class="source-line" id="L644"><a href="#L644" aria-label="Line 644">644</a>  * @param {string}  [opts.model]         requested model identity (never a served assertion)</span>
+<span class="source-line" id="L645"><a href="#L645" aria-label="Line 645">645</a>  * @param {AbortSignal} [opts.signal]    supervisor cancellation signal</span>
+<span class="source-line" id="L646"><a href="#L646" aria-label="Line 646">646</a>  * @param {Function} [opts.onReceipt]    awaited once with the successful final trio.seat.v1 receipt</span>
+<span class="source-line" id="L647"><a href="#L647" aria-label="Line 647">647</a>  * @returns {Promise&lt;any&gt;} model text, or the schema-validated object</span>
+<span class="source-line" id="L648"><a href="#L648" aria-label="Line 648">648</a>  */</span>
+<span class="source-line" id="L649"><a href="#L649" aria-label="Line 649">649</a> export async function runAgent(opts = {}) {</span>
+<span class="source-line" id="L650"><a href="#L650" aria-label="Line 650">650</a>   // Driver selection order (2026-07-22 — Anchor prefs are universal source of truth):</span>
+<span class="source-line" id="L651"><a href="#L651" aria-label="Line 651">651</a>   //   1. explicit opts.driver (per-call pin)</span>
+<span class="source-line" id="L652"><a href="#L652" aria-label="Line 652">652</a>   //   2. Anchor settings.json / ~/.anchor/model_prefs.json by role</span>
+<span class="source-line" id="L653"><a href="#L653" aria-label="Line 653">653</a>   //   3. TRIO_DRIVER_&lt;ROLE&gt; (legacy setx — only if prefs did not resolve)</span>
+<span class="source-line" id="L654"><a href="#L654" aria-label="Line 654">654</a>   //   4. TRIO_DRIVER / default claude</span>
+<span class="source-line" id="L655"><a href="#L655" aria-label="Line 655">655</a>   // Stale TRIO_DRIVER_SHARK=gemini-cli setx must NOT outrank Anchor coding/review knobs.</span>
+<span class="source-line" id="L656"><a href="#L656" aria-label="Line 656">656</a>   // Same-family coding+review is allowed; stamp cross_model from loadModelFamilies().</span>
+<span class="source-line" id="L657"><a href="#L657" aria-label="Line 657">657</a>   let name = opts.driver;</span>
+<span class="source-line" id="L658"><a href="#L658" aria-label="Line 658">658</a>   // Hermeticity guard (2026-07-25): an injected stub transport pins the matching</span>
+<span class="source-line" id="L659"><a href="#L659" aria-label="Line 659">659</a>   // backend. Host model-prefs (~/.anchor/model_prefs.json) must NEVER re-route a</span>
+<span class="source-line" id="L660"><a href="#L660" aria-label="Line 660">660</a>   // stubbed call to a live CLI — observed: driver-interface tests spawning real</span>
+<span class="source-line" id="L661"><a href="#L661" aria-label="Line 661">661</a>   // billable sessions when prefs resolved coding=grok (usage-leak class, 07-14).</span>
+<span class="source-line" id="L662"><a href="#L662" aria-label="Line 662">662</a>   if (!name) {</span>
+<span class="source-line" id="L663"><a href="#L663" aria-label="Line 663">663</a>     if (opts.runClaude) name = &#x27;claude&#x27;;</span>
+<span class="source-line" id="L664"><a href="#L664" aria-label="Line 664">664</a>     else if (opts.runGemini) name = &#x27;gemini-cli&#x27;;</span>
+<span class="source-line" id="L665"><a href="#L665" aria-label="Line 665">665</a>     else if (opts.runGrokCli) name = &#x27;grok-cli&#x27;;</span>
+<span class="source-line" id="L666"><a href="#L666" aria-label="Line 666">666</a>     else if (opts.runCodexCli) name = &#x27;chatgpt-cli&#x27;;</span>
+<span class="source-line" id="L667"><a href="#L667" aria-label="Line 667">667</a>   }</span>
+<span class="source-line" id="L668"><a href="#L668" aria-label="Line 668">668</a>   const activeEnv = opts.env ?? process.env;</span>
+<span class="source-line" id="L669"><a href="#L669" aria-label="Line 669">669</a>   const role = normalizeRole({ role: opts.role, label: opts.label });</span>
+<span class="source-line" id="L670"><a href="#L670" aria-label="Line 670">670</a>   // Explicit test/host stores must be valid even when a stub owns transport;</span>
+<span class="source-line" id="L671"><a href="#L671" aria-label="Line 671">671</a>   // validation does not reroute that stub or discover a live capability.</span>
+<span class="source-line" id="L672"><a href="#L672" aria-label="Line 672">672</a>   if (activeEnv.ANCHOR_DATA_DIR) loadPolicyPrefs(activeEnv);</span>
+<span class="source-line" id="L673"><a href="#L673" aria-label="Line 673">673</a>   const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli);</span>
+<span class="source-line" id="L674"><a href="#L674" aria-label="Line 674">674</a>   if (!injected &amp;&amp; (!name || [&#x27;claude&#x27;, &#x27;grok-cli&#x27;, &#x27;chatgpt-cli&#x27;, &#x27;gemini-cli&#x27;, &#x27;grok&#x27;, &#x27;openai&#x27;, &#x27;gemini&#x27;].includes(name))) {</span>
+<span class="source-line" id="L675"><a href="#L675" aria-label="Line 675">675</a>     name = resolveDriverFromFamilies({ role, label: opts.label }, activeEnv);</span>
+<span class="source-line" id="L676"><a href="#L676" aria-label="Line 676">676</a>   }</span>
+<span class="source-line" id="L677"><a href="#L677" aria-label="Line 677">677</a>   if (!name) {</span>
+<span class="source-line" id="L678"><a href="#L678" aria-label="Line 678">678</a>     name = resolveDriverFromFamilies({ role, label: opts.label }, activeEnv) || null;</span>
+<span class="source-line" id="L679"><a href="#L679" aria-label="Line 679">679</a>   }</span>
+<span class="source-line" id="L680"><a href="#L680" aria-label="Line 680">680</a>   if (!name &amp;&amp; role) {</span>
+<span class="source-line" id="L681"><a href="#L681" aria-label="Line 681">681</a>     const key = `TRIO_DRIVER_${role.toUpperCase().replace(/[^A-Z0-9]+/g, &#x27;_&#x27;)}`;</span>
+<span class="source-line" id="L682"><a href="#L682" aria-label="Line 682">682</a>     name = activeEnv[key] || null;</span>
+<span class="source-line" id="L683"><a href="#L683" aria-label="Line 683">683</a>   }</span>
+<span class="source-line" id="L684"><a href="#L684" aria-label="Line 684">684</a>   const driver = getDriver(name, activeEnv);</span>
+<span class="source-line" id="L685"><a href="#L685" aria-label="Line 685">685</a>   return dispatchWithFailover(driver, { ...opts, role });</span>
+<span class="source-line" id="L686"><a href="#L686" aria-label="Line 686">686</a> }</span>
+<span class="source-line" id="L687"><a href="#L687" aria-label="Line 687">687</a> </span>
+<span class="source-line" id="L688"><a href="#L688" aria-label="Line 688">688</a> /**</span>
+<span class="source-line" id="L689"><a href="#L689" aria-label="Line 689">689</a>  * Dispatch to a backend, applying the universal MODEL-INTEGRITY FAILOVER (John 2026-07-17):</span>
+<span class="source-line" id="L690"><a href="#L690" aria-label="Line 690">690</a>  * a NON-Claude seat that cannot deliver its ATTESTED requested model — silently substituted to a</span>
+<span class="source-line" id="L691"><a href="#L691" aria-label="Line 691">691</a>  * fallback (e.g. GPT-OSS, how a rate-limited OR auth-degraded agy manifests) or a transport</span>
+<span class="source-line" id="L692"><a href="#L692" aria-label="Line 692">692</a>  * failure — fails OVER to Claude ONE-NOTCH-BELOW-FRONTIER, honestly single-family</span>
+<span class="source-line" id="L693"><a href="#L693" aria-label="Line 693">693</a>  * (`cross_model:false`), with a loud flag, rather than running the seat BLIND on the wrong model.</span>
+<span class="source-line" id="L694"><a href="#L694" aria-label="Line 694">694</a>  * Used by BOTH `runAgent` AND `makeRoleRoutedAgent`, so EVERY trio+foundry call path inherits it.</span>
+<span class="source-line" id="L695"><a href="#L695" aria-label="Line 695">695</a>  * A Claude seat has nowhere better to fail over to, so it re-throws.</span>
+<span class="source-line" id="L696"><a href="#L696" aria-label="Line 696">696</a>  */</span>
+<span class="source-line" id="L697"><a href="#L697" aria-label="Line 697">697</a> function injectedTransportFor(name, opts) {</span>
+<span class="source-line" id="L698"><a href="#L698" aria-label="Line 698">698</a>   return { claude: opts.runClaude, &#x27;grok-cli&#x27;: opts.runGrokCli,</span>
+<span class="source-line" id="L699"><a href="#L699" aria-label="Line 699">699</a>     &#x27;chatgpt-cli&#x27;: opts.runCodexCli, &#x27;gemini-cli&#x27;: opts.runGemini }[name];</span>
+<span class="source-line" id="L700"><a href="#L700" aria-label="Line 700">700</a> }</span>
+<span class="source-line" id="L701"><a href="#L701" aria-label="Line 701">701</a> </span>
+<span class="source-line" id="L702"><a href="#L702" aria-label="Line 702">702</a> async function journalRouting(opts, event) {</span>
+<span class="source-line" id="L703"><a href="#L703" aria-label="Line 703">703</a>   const entry = { schema: &#x27;trio.model-routing.v1&#x27;, at: new Date().toISOString(),</span>
+<span class="source-line" id="L704"><a href="#L704" aria-label="Line 704">704</a>     label: bounded(opts.label, opts.role || &#x27;seat&#x27;), ...event };</span>
+<span class="source-line" id="L705"><a href="#L705" aria-label="Line 705">705</a>   if (typeof opts.onRoutingEvent === &#x27;function&#x27;) {</span>
+<span class="source-line" id="L706"><a href="#L706" aria-label="Line 706">706</a>     await opts.onRoutingEvent(entry);</span>
+<span class="source-line" id="L707"><a href="#L707" aria-label="Line 707">707</a>     return;</span>
+<span class="source-line" id="L708"><a href="#L708" aria-label="Line 708">708</a>   }</span>
+<span class="source-line" id="L709"><a href="#L709" aria-label="Line 709">709</a>   const env = opts.env ?? process.env;</span>
+<span class="source-line" id="L710"><a href="#L710" aria-label="Line 710">710</a>   const profile = env.USERPROFILE || env.HOME;</span>
+<span class="source-line" id="L711"><a href="#L711" aria-label="Line 711">711</a>   if (!profile) throw new HaltError(&#x27;Cannot journal model failover&#x27;, &#x27;configure a private profile or onRoutingEvent journal sink&#x27;);</span>
+<span class="source-line" id="L712"><a href="#L712" aria-label="Line 712">712</a>   const directory = path.join(profile, &#x27;.anchor&#x27;, &#x27;journal&#x27;, &#x27;runs&#x27;);</span>
+<span class="source-line" id="L713"><a href="#L713" aria-label="Line 713">713</a>   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });</span>
+<span class="source-line" id="L714"><a href="#L714" aria-label="Line 714">714</a>   fs.appendFileSync(path.join(directory, &#x27;model-routing.jsonl&#x27;), JSON.stringify(entry) + &#x27;\n&#x27;, { mode: 0o600 });</span>
+<span class="source-line" id="L715"><a href="#L715" aria-label="Line 715">715</a> }</span>
+<span class="source-line" id="L716"><a href="#L716" aria-label="Line 716">716</a> </span>
+<span class="source-line" id="L717"><a href="#L717" aria-label="Line 717">717</a> async function dispatchWithFailover(driver, opts) {</span>
+<span class="source-line" id="L718"><a href="#L718" aria-label="Line 718">718</a>   const role = normalizeRole({ role: opts.role, label: opts.label });</span>
+<span class="source-line" id="L719"><a href="#L719" aria-label="Line 719">719</a>   const verification = isVerificationRole({ role, label: opts.label });</span>
+<span class="source-line" id="L720"><a href="#L720" aria-label="Line 720">720</a>   const injected = !!(opts.runClaude || opts.runGemini || opts.runGrokCli || opts.runCodexCli);</span>
+<span class="source-line" id="L721"><a href="#L721" aria-label="Line 721">721</a>   const primary = await runDispatcherAttempt(driver, { ...opts, role }, 1, &#x27;primary&#x27;);</span>
+<span class="source-line" id="L722"><a href="#L722" aria-label="Line 722">722</a>   const attempts = [primary.attempt];</span>
+<span class="source-line" id="L723"><a href="#L723" aria-label="Line 723">723</a>   let current = primary;</span>
+<span class="source-line" id="L724"><a href="#L724" aria-label="Line 724">724</a>   let finalValue = primary.value;</span>
+<span class="source-line" id="L725"><a href="#L725" aria-label="Line 725">725</a>   let status = primary.attempt.ok ? &#x27;success&#x27; : &#x27;seat_unavailable&#x27;;</span>
+<span class="source-line" id="L726"><a href="#L726" aria-label="Line 726">726</a>   let served = primary.attempt.served;</span>
+<span class="source-line" id="L727"><a href="#L727" aria-label="Line 727">727</a>   let topError = primary.attempt.error;</span>
+<span class="source-line" id="L728"><a href="#L728" aria-label="Line 728">728</a>   if (!primary.attempt.ok) {</span>
+<span class="source-line" id="L729"><a href="#L729" aria-label="Line 729">729</a>     if (primary.attempt.status === &#x27;aborted&#x27; || opts.signal?.aborted) {</span>
+<span class="source-line" id="L730"><a href="#L730" aria-label="Line 730">730</a>       status = &#x27;aborted&#x27;;</span>
+<span class="source-line" id="L731"><a href="#L731" aria-label="Line 731">731</a>     } else if (verification) {</span>
+<span class="source-line" id="L732"><a href="#L732" aria-label="Line 732">732</a>       status = &#x27;verification_fail_closed&#x27;;</span>
+<span class="source-line" id="L733"><a href="#L733" aria-label="Line 733">733</a>     } else if (primary.replay_safe) {</span>
+<span class="source-line" id="L734"><a href="#L734" aria-label="Line 734">734</a>       // Only dashboard-selected families; executable presence grants no authority.</span>
+<span class="source-line" id="L735"><a href="#L735" aria-label="Line 735">735</a>       const prefs = loadModelFamilies(opts.env ?? process.env);</span>
+<span class="source-line" id="L736"><a href="#L736" aria-label="Line 736">736</a>       const ladder = [...new Set([prefs.coding, prefs.review, prefs.terminal].map(familyToDriverName))]</span>
+<span class="source-line" id="L737"><a href="#L737" aria-label="Line 737">737</a>         .filter(name =&gt; name &amp;&amp; name !== driver.name);</span>
+<span class="source-line" id="L738"><a href="#L738" aria-label="Line 738">738</a>       const log = typeof opts.log === &#x27;function&#x27; ? opts.log : () =&gt; {};</span>
+<span class="source-line" id="L739"><a href="#L739" aria-label="Line 739">739</a>       for (const name of ladder) {</span>
+<span class="source-line" id="L740"><a href="#L740" aria-label="Line 740">740</a>         if (opts.signal?.aborted) { status = &#x27;aborted&#x27;; break; }</span>
+<span class="source-line" id="L741"><a href="#L741" aria-label="Line 741">741</a>         if (injected &amp;&amp; !injectedTransportFor(name, opts)) continue; // hermetic seats never escape to a real CLI</span>
+<span class="source-line" id="L742"><a href="#L742" aria-label="Line 742">742</a>         const event = { action: &#x27;failover&#x27;, from: current.attempt.requested.driver,</span>
+<span class="source-line" id="L743"><a href="#L743" aria-label="Line 743">743</a>           to: name, reason: current.attempt.error?.code || &#x27;seat_unavailable&#x27;,</span>
+<span class="source-line" id="L744"><a href="#L744" aria-label="Line 744">744</a>           cross_model: false, settings_revision: prefs.settings_revision };</span>
+<span class="source-line" id="L745"><a href="#L745" aria-label="Line 745">745</a>         await journalRouting(opts, event); // durable BEFORE launching another seat</span>
+<span class="source-line" id="L746"><a href="#L746" aria-label="Line 746">746</a>         log(&#x27;MODEL FAILOVER: &#x27; + event.from + &#x27; -&gt; &#x27; + name + &#x27; (&#x27; + event.reason + &#x27;; cross_model:false). Journaled.&#x27;);</span>
+<span class="source-line" id="L747"><a href="#L747" aria-label="Line 747">747</a>         current = await runDispatcherAttempt(getDriver(name, opts.env ?? process.env), {</span>
+<span class="source-line" id="L748"><a href="#L748" aria-label="Line 748">748</a>           ...opts, role, driver: name, model: null, cross_model: false,</span>
+<span class="source-line" id="L749"><a href="#L749" aria-label="Line 749">749</a>         }, attempts.length + 1, &#x27;fallback&#x27;);</span>
+<span class="source-line" id="L750"><a href="#L750" aria-label="Line 750">750</a>         attempts.push(current.attempt);</span>
+<span class="source-line" id="L751"><a href="#L751" aria-label="Line 751">751</a>         finalValue = current.value;</span>
+<span class="source-line" id="L752"><a href="#L752" aria-label="Line 752">752</a>         topError = current.attempt.error;</span>
+<span class="source-line" id="L753"><a href="#L753" aria-label="Line 753">753</a>         if (current.attempt.ok) {</span>
+<span class="source-line" id="L754"><a href="#L754" aria-label="Line 754">754</a>           status = &#x27;success_after_failover&#x27;; served = current.attempt.served; topError = null; break;</span>
+<span class="source-line" id="L755"><a href="#L755" aria-label="Line 755">755</a>         }</span>
+<span class="source-line" id="L756"><a href="#L756" aria-label="Line 756">756</a>         if (current.attempt.status === &#x27;aborted&#x27;) { status = &#x27;aborted&#x27;; break; }</span>
+<span class="source-line" id="L757"><a href="#L757" aria-label="Line 757">757</a>         if (!current.replay_safe) break; // never replay uncertain work</span>
+<span class="source-line" id="L758"><a href="#L758" aria-label="Line 758">758</a>       }</span>
+<span class="source-line" id="L759"><a href="#L759" aria-label="Line 759">759</a>     }</span>
+<span class="source-line" id="L760"><a href="#L760" aria-label="Line 760">760</a>   }</span>
+<span class="source-line" id="L761"><a href="#L761" aria-label="Line 761">761</a>   if (!primary.attempt.ok &amp;&amp; status !== &#x27;success_after_failover&#x27;) {</span>
+<span class="source-line" id="L762"><a href="#L762" aria-label="Line 762">762</a>     await journalRouting(opts, { action: &#x27;halt&#x27;, driver: current.attempt.requested.driver,</span>
+<span class="source-line" id="L763"><a href="#L763" aria-label="Line 763">763</a>       reason: topError?.code || status, verification, replay_safe: current.replay_safe });</span>
+<span class="source-line" id="L764"><a href="#L764" aria-label="Line 764">764</a>   }</span>
+<span class="source-line" id="L765"><a href="#L765" aria-label="Line 765">765</a>   const receipt = finalizeReceipt({</span>
+<span class="source-line" id="L766"><a href="#L766" aria-label="Line 766">766</a>     opts, role, verification, requested: primary.attempt.requested,</span>
+<span class="source-line" id="L767"><a href="#L767" aria-label="Line 767">767</a>     attempts, status, served: status.startsWith(&#x27;success&#x27;) ? served : null, error: topError,</span>
+<span class="source-line" id="L768"><a href="#L768" aria-label="Line 768">768</a>   });</span>
+<span class="source-line" id="L769"><a href="#L769" aria-label="Line 769">769</a>   if (!receipt.ok) throw failedSeatError(receipt);</span>
+<span class="source-line" id="L770"><a href="#L770" aria-label="Line 770">770</a>   if (typeof opts.onReceipt === &#x27;function&#x27;) {</span>
+<span class="source-line" id="L771"><a href="#L771" aria-label="Line 771">771</a>     try { await opts.onReceipt(receipt); }</span>
+<span class="source-line" id="L772"><a href="#L772" aria-label="Line 772">772</a>     catch (error) { throw new ReceiptCallbackError(error, receipt); }</span>
+<span class="source-line" id="L773"><a href="#L773" aria-label="Line 773">773</a>   }</span>
+<span class="source-line" id="L774"><a href="#L774" aria-label="Line 774">774</a>   return finalValue;</span>
+<span class="source-line" id="L775"><a href="#L775" aria-label="Line 775">775</a> }</span>
+<span class="source-line" id="L776"><a href="#L776" aria-label="Line 776">776</a> </span>
+<span class="source-line" id="L777"><a href="#L777" aria-label="Line 777">777</a> /**</span>
+<span class="source-line" id="L778"><a href="#L778" aria-label="Line 778">778</a>  * Build a role-routed `agent(prompt, opts)` — the single missing primitive for mixed</span>
+<span class="source-line" id="L779"><a href="#L779" aria-label="Line 779">779</a>  * per-role model routing (2026-07): dispatch each call to a backend+model chosen by</span>
+<span class="source-line" id="L780"><a href="#L780" aria-label="Line 780">780</a>  * its role (from `opts.role`, else the label prefix before &#x27;:&#x27; / &#x27;#&#x27; / &#x27;.&#x27;).</span>
+<span class="source-line" id="L781"><a href="#L781" aria-label="Line 781">781</a>  *</span>
+<span class="source-line" id="L782"><a href="#L782" aria-label="Line 782">782</a>  *   makeRoleRoutedAgent({ routes: {</span>
+<span class="source-line" id="L783"><a href="#L783" aria-label="Line 783">783</a>  *     synthesizer: { driver: &#x27;claude&#x27;,     model: &#x27;claude-fable-5&#x27; },</span>
+<span class="source-line" id="L784"><a href="#L784" aria-label="Line 784">784</a>  *     judge:       { driver: &#x27;claude&#x27;,     model: &#x27;claude-fable-5&#x27; },</span>
+<span class="source-line" id="L785"><a href="#L785" aria-label="Line 785">785</a>  *     review:      { driver: &#x27;gemini-cli&#x27;, model: &#x27;gemini-3.1-pro&#x27; },</span>
+<span class="source-line" id="L786"><a href="#L786" aria-label="Line 786">786</a>  *     default:     { driver: &#x27;claude&#x27; },</span>
+<span class="source-line" id="L787"><a href="#L787" aria-label="Line 787">787</a>  *   }})</span>
+<span class="source-line" id="L788"><a href="#L788" aria-label="Line 788">788</a>  *</span>
+<span class="source-line" id="L789"><a href="#L789" aria-label="Line 789">789</a>  * Unrouted roles fall to `routes.default`, else the registry default. Extra opts</span>
+<span class="source-line" id="L790"><a href="#L790" aria-label="Line 790">790</a>  * (env/target/log/runClaude stubs) thread through to the backend&#x27;s runAgent.</span>
+<span class="source-line" id="L791"><a href="#L791" aria-label="Line 791">791</a>  * @param {object} [o]</span>
+<span class="source-line" id="L792"><a href="#L792" aria-label="Line 792">792</a>  * @param {Object&lt;string,{driver?:string,model?:string}&gt;} [o.routes]</span>
+<span class="source-line" id="L793"><a href="#L793" aria-label="Line 793">793</a>  * @returns {(prompt:string, opts?:object)=&gt;Promise&lt;any&gt;}</span>
+<span class="source-line" id="L794"><a href="#L794" aria-label="Line 794">794</a>  */</span>
+<span class="source-line" id="L795"><a href="#L795" aria-label="Line 795">795</a> export function makeRoleRoutedAgent({ routes = {}, ...baseOpts } = {}) {</span>
+<span class="source-line" id="L796"><a href="#L796" aria-label="Line 796">796</a>   return (prompt, o = {}) =&gt; {</span>
+<span class="source-line" id="L797"><a href="#L797" aria-label="Line 797">797</a>     const role = normalizeRole({ role: o.role, label: o.label });</span>
+<span class="source-line" id="L798"><a href="#L798" aria-label="Line 798">798</a>     const roleRoute = routes[role] || null;</span>
+<span class="source-line" id="L799"><a href="#L799" aria-label="Line 799">799</a>     // A generic coding default may never capture a canonical verification seat.</span>
+<span class="source-line" id="L800"><a href="#L800" aria-label="Line 800">800</a>     const route = roleRoute || (isVerificationRole({ role }) ? {} : (routes.default || {}));</span>
+<span class="source-line" id="L801"><a href="#L801" aria-label="Line 801">801</a>     // Prefs-first: coding/review family (Anchor) wins unless the route table was</span>
+<span class="source-line" id="L802"><a href="#L802" aria-label="Line 802">802</a>     // deliberately prefs-built (route.driver matches family) or caller pins model only.</span>
+<span class="source-line" id="L803"><a href="#L803" aria-label="Line 803">803</a>     // Explicit empty routes {} → pure prefs. Explicit routes with drivers (tests / same-family</span>
+<span class="source-line" id="L804"><a href="#L804" aria-label="Line 804">804</a>     // tables) still honor route.driver when present.</span>
+<span class="source-line" id="L805"><a href="#L805" aria-label="Line 805">805</a>     const activeEnv = baseOpts.env ?? process.env;</span>
+<span class="source-line" id="L806"><a href="#L806" aria-label="Line 806">806</a>     const fromFamily = resolveDriverFromFamilies({ role, label: o.label }, activeEnv);</span>
+<span class="source-line" id="L807"><a href="#L807" aria-label="Line 807">807</a>     return runAgent({</span>
+<span class="source-line" id="L808"><a href="#L808" aria-label="Line 808">808</a>       ...baseOpts,</span>
+<span class="source-line" id="L809"><a href="#L809" aria-label="Line 809">809</a>       prompt,</span>
+<span class="source-line" id="L810"><a href="#L810" aria-label="Line 810">810</a>       driver: roleRoute?.driver || (isVerificationRole({ role })</span>
+<span class="source-line" id="L811"><a href="#L811" aria-label="Line 811">811</a>         ? fromFamily</span>
+<span class="source-line" id="L812"><a href="#L812" aria-label="Line 812">812</a>         : (route.driver || fromFamily)) || null,</span>
+<span class="source-line" id="L813"><a href="#L813" aria-label="Line 813">813</a>       schema: o.schema,</span>
+<span class="source-line" id="L814"><a href="#L814" aria-label="Line 814">814</a>       label: o.label,</span>
+<span class="source-line" id="L815"><a href="#L815" aria-label="Line 815">815</a>       role,</span>
+<span class="source-line" id="L816"><a href="#L816" aria-label="Line 816">816</a>       model: o.model ?? route.model ?? null,</span>
+<span class="source-line" id="L817"><a href="#L817" aria-label="Line 817">817</a>       freshContext: true,</span>
+<span class="source-line" id="L818"><a href="#L818" aria-label="Line 818">818</a>       timeoutMs: o.timeoutMs ?? baseOpts.timeoutMs,</span>
+<span class="source-line" id="L819"><a href="#L819" aria-label="Line 819">819</a>       sandbox: o.sandbox ?? baseOpts.sandbox,</span>
+<span class="source-line" id="L820"><a href="#L820" aria-label="Line 820">820</a>       reasoningEffort: o.reasoningEffort ?? baseOpts.reasoningEffort,</span>
+<span class="source-line" id="L821"><a href="#L821" aria-label="Line 821">821</a>       orchestrationMode: o.orchestrationMode ?? baseOpts.orchestrationMode,</span>
+<span class="source-line" id="L822"><a href="#L822" aria-label="Line 822">822</a>       onReceipt: o.onReceipt ?? baseOpts.onReceipt,</span>
+<span class="source-line" id="L823"><a href="#L823" aria-label="Line 823">823</a>       signal: o.signal ?? baseOpts.signal,</span>
+<span class="source-line" id="L824"><a href="#L824" aria-label="Line 824">824</a>     });</span>
+<span class="source-line" id="L825"><a href="#L825" aria-label="Line 825">825</a>   };</span>
+<span class="source-line" id="L826"><a href="#L826" aria-label="Line 826">826</a> }</span>
+<span class="source-line" id="L827"><a href="#L827" aria-label="Line 827">827</a> </span>
+<span class="source-line" id="L828"><a href="#L828" aria-label="Line 828">828</a> /**</span>
+<span class="source-line" id="L829"><a href="#L829" aria-label="Line 829">829</a>  * Build Foreman&#x27;s `{ execute, review, fix }` driver routed through the registry —</span>
+<span class="source-line" id="L830"><a href="#L830" aria-label="Line 830">830</a>  * i.e. the foreman driver seam on top of the selected backend (default `claude`).</span>
+<span class="source-line" id="L831"><a href="#L831" aria-label="Line 831">831</a>  * Foreman&#x27;s `makeAgentDriver` already wraps an injected `agent()`; this is the</span>
+<span class="source-line" id="L832"><a href="#L832" aria-label="Line 832">832</a>  * registry-level way to obtain that seam so the foreman build path goes through the</span>
+<span class="source-line" id="L833"><a href="#L833" aria-label="Line 833">833</a>  * driver registry rather than calling `makeAgentDriver` directly.</span>
+<span class="source-line" id="L834"><a href="#L834" aria-label="Line 834">834</a>  *</span>
+<span class="source-line" id="L835"><a href="#L835" aria-label="Line 835">835</a>  * Two modes:</span>
+<span class="source-line" id="L836"><a href="#L836" aria-label="Line 836">836</a>  *   - inject `agent`  — route an existing, already-instrumented `agent()` through</span>
+<span class="source-line" id="L837"><a href="#L837" aria-label="Line 837">837</a>  *     the seam unchanged (used by `run-live.mjs`, whose live `claude -p` transport</span>
+<span class="source-line" id="L838"><a href="#L838" aria-label="Line 838">838</a>  *     carries bespoke status logging that must stay byte-for-byte equivalent).</span>
+<span class="source-line" id="L839"><a href="#L839" aria-label="Line 839">839</a>  *   - omit `agent`    — build the agent from the registry-selected backend, so</span>
+<span class="source-line" id="L840"><a href="#L840" aria-label="Line 840">840</a>  *     `TRIO_DRIVER` (or an explicit `driver`) chooses the model the build sub-agents</span>
+<span class="source-line" id="L841"><a href="#L841" aria-label="Line 841">841</a>  *     run on. Extra opts (e.g. an injected `runClaude` stub, `env`, `target`, `log`)</span>
+<span class="source-line" id="L842"><a href="#L842" aria-label="Line 842">842</a>  *     thread through to the backend&#x27;s `runAgent`.</span>
+<span class="source-line" id="L843"><a href="#L843" aria-label="Line 843">843</a>  * @param {object}   [opts]</span>
+<span class="source-line" id="L844"><a href="#L844" aria-label="Line 844">844</a>  * @param {string}   [opts.driver]      explicit backend name (overrides TRIO_DRIVER)</span>
+<span class="source-line" id="L845"><a href="#L845" aria-label="Line 845">845</a>  * @param {Function} [opts.agent]       pre-built `agent(prompt, opts)` to route as-is</span>
+<span class="source-line" id="L846"><a href="#L846" aria-label="Line 846">846</a>  * @param {object|false} [opts.reliability]  Wave-1 reliability-wrapper opts, or `false` to opt out</span>
+<span class="source-line" id="L847"><a href="#L847" aria-label="Line 847">847</a>  * @returns {Promise&lt;{execute:Function, review:Function, fix:Function}&gt;}</span>
+<span class="source-line" id="L848"><a href="#L848" aria-label="Line 848">848</a>  */</span>
+<span class="source-line" id="L849"><a href="#L849" aria-label="Line 849">849</a> export async function makeForemanDriver({ driver, agent, reliability, ...opts } = {}) {</span>
+<span class="source-line" id="L850"><a href="#L850" aria-label="Line 850">850</a>   const { makeAgentDriver } = await import(&#x27;../foreman/bin/wave-workflow.js&#x27;);</span>
+<span class="source-line" id="L851"><a href="#L851" aria-label="Line 851">851</a>   let seamAgent = agent;</span>
+<span class="source-line" id="L852"><a href="#L852" aria-label="Line 852">852</a>   // Provider key for the Wave-2 per-provider breaker: the selected backend&#x27;s name when</span>
+<span class="source-line" id="L853"><a href="#L853" aria-label="Line 853">853</a>   // we build the seam, else &#x27;injected&#x27; for an already-instrumented agent. A sick backend</span>
+<span class="source-line" id="L854"><a href="#L854" aria-label="Line 854">854</a>   // is then degraded under its OWN bucket, never globally.</span>
+<span class="source-line" id="L855"><a href="#L855" aria-label="Line 855">855</a>   let providerName = &#x27;injected&#x27;;</span>
+<span class="source-line" id="L856"><a href="#L856" aria-label="Line 856">856</a>   if (!seamAgent) {</span>
+<span class="source-line" id="L857"><a href="#L857" aria-label="Line 857">857</a>     const backend = getDriver(driver);</span>
+<span class="source-line" id="L858"><a href="#L858" aria-label="Line 858">858</a>     providerName = backend.name;</span>
+<span class="source-line" id="L859"><a href="#L859" aria-label="Line 859">859</a>     // Forward role + model to the backend so the per-role model tier (e.g.</span>
+<span class="source-line" id="L860"><a href="#L860" aria-label="Line 860">860</a>     // TRIO_MODEL_&lt;ROLE&gt;/TRIO_DRIVER_&lt;ROLE&gt;, resolved in the driver ladder) is actually</span>
+<span class="source-line" id="L861"><a href="#L861" aria-label="Line 861">861</a>     // reachable on the Foreman build path. A DESIGNATED role/model on makeForemanDriver</span>
+<span class="source-line" id="L862"><a href="#L862" aria-label="Line 862">862</a>     // (its own `opts`) WINS over the per-call wave step (`o`): when a caller builds a</span>
+<span class="source-line" id="L863"><a href="#L863" aria-label="Line 863">863</a>     // Foreman driver pinned to a seat — e.g. { driver, role:&#x27;judge&#x27;, model:&#x27;m&#x27; } — that</span>
+<span class="source-line" id="L864"><a href="#L864" aria-label="Line 864">864</a>     // designation must reach the backend, not be shadowed by the wave step&#x27;s own</span>
+<span class="source-line" id="L865"><a href="#L865" aria-label="Line 865">865</a>     // &#x27;execute&#x27;/&#x27;review&#x27;/&#x27;fix&#x27; role. Only when no designation is set does the per-call</span>
+<span class="source-line" id="L866"><a href="#L866" aria-label="Line 866">866</a>     // value flow through (the normal Foreman build path passes neither, so wave-step</span>
+<span class="source-line" id="L867"><a href="#L867" aria-label="Line 867">867</a>     // role/model behave exactly as before). Backends that ignore role/model (e.g. the</span>
+<span class="source-line" id="L868"><a href="#L868" aria-label="Line 868">868</a>     // Claude session-default driver) are unaffected either way.</span>
+<span class="source-line" id="L869"><a href="#L869" aria-label="Line 869">869</a>     seamAgent = (prompt, o = {}) =&gt; runAgent({</span>
+<span class="source-line" id="L870"><a href="#L870" aria-label="Line 870">870</a>       ...opts,</span>
+<span class="source-line" id="L871"><a href="#L871" aria-label="Line 871">871</a>       prompt,</span>
+<span class="source-line" id="L872"><a href="#L872" aria-label="Line 872">872</a>       driver: backend.name,</span>
+<span class="source-line" id="L873"><a href="#L873" aria-label="Line 873">873</a>       schema: o.schema,</span>
+<span class="source-line" id="L874"><a href="#L874" aria-label="Line 874">874</a>       label: o.label,</span>
+<span class="source-line" id="L875"><a href="#L875" aria-label="Line 875">875</a>       role: opts.role ?? o.role,</span>
+<span class="source-line" id="L876"><a href="#L876" aria-label="Line 876">876</a>       model: opts.model ?? o.model,</span>
+<span class="source-line" id="L877"><a href="#L877" aria-label="Line 877">877</a>       timeoutMs: o.timeoutMs ?? opts.timeoutMs,</span>
+<span class="source-line" id="L878"><a href="#L878" aria-label="Line 878">878</a>       onReceipt: o.onReceipt ?? opts.onReceipt,</span>
+<span class="source-line" id="L879"><a href="#L879" aria-label="Line 879">879</a>       signal: o.signal ?? opts.signal,</span>
+<span class="source-line" id="L880"><a href="#L880" aria-label="Line 880">880</a>       freshContext: true,</span>
+<span class="source-line" id="L881"><a href="#L881" aria-label="Line 881">881</a>     });</span>
+<span class="source-line" id="L882"><a href="#L882" aria-label="Line 882">882</a>   }</span>
+<span class="source-line" id="L883"><a href="#L883" aria-label="Line 883">883</a>   // Wave 1: apply the reliability wrapper at THIS agent-injection boundary (both the</span>
+<span class="source-line" id="L884"><a href="#L884" aria-label="Line 884">884</a>   // injected-agent and built-backend modes), so the Foreman build path gets typed</span>
+<span class="source-line" id="L885"><a href="#L885" aria-label="Line 885">885</a>   // retry + round-aware idempotency. Transparent on the success path; pass</span>
+<span class="source-line" id="L886"><a href="#L886" aria-label="Line 886">886</a>   // `reliability:false` to opt out.</span>
+<span class="source-line" id="L887"><a href="#L887" aria-label="Line 887">887</a>   //</span>
+<span class="source-line" id="L888"><a href="#L888" aria-label="Line 888">888</a>   // Wave 2: default a LIGHT per-provider breaker (keyed by the backend name) on so a</span>
+<span class="source-line" id="L889"><a href="#L889" aria-label="Line 889">889</a>   // sick provider degrades for the session instead of being hammered — still inert</span>
+<span class="source-line" id="L890"><a href="#L890" aria-label="Line 890">890</a>   // until N consecutive recoverable failures, so a healthy build is unaffected. The</span>
+<span class="source-line" id="L891"><a href="#L891" aria-label="Line 891">891</a>   // idle sliver + anti-laundering telemetry stay opt-in via the `reliability` config</span>
+<span class="source-line" id="L892"><a href="#L892" aria-label="Line 892">892</a>   // (live wiring of stdout-heartbeat / a telemetry sink is the runner&#x27;s job). Any of</span>
+<span class="source-line" id="L893"><a href="#L893" aria-label="Line 893">893</a>   // these can be overridden — or the breaker disabled with `reliability:{breaker:false}`.</span>
+<span class="source-line" id="L894"><a href="#L894" aria-label="Line 894">894</a>   const reliableSeam = reliability === false</span>
+<span class="source-line" id="L895"><a href="#L895" aria-label="Line 895">895</a>     ? seamAgent</span>
+<span class="source-line" id="L896"><a href="#L896" aria-label="Line 896">896</a>     : makeReliableAgent({ agent: seamAgent, provider: providerName, breaker: {}, ...(reliability || {}) });</span>
+<span class="source-line" id="L897"><a href="#L897" aria-label="Line 897">897</a>   return makeAgentDriver({ agent: reliableSeam });</span>
+<span class="source-line" id="L898"><a href="#L898" aria-label="Line 898">898</a> }</span>
+<span class="source-line" id="L899"><a href="#L899" aria-label="Line 899">899</a> </span>
+<span class="source-line" id="L900"><a href="#L900" aria-label="Line 900">900</a> export { claudeDriver, geminiCliDriver, geminiDriver, openaiDriver, grokDriver };</span></pre></main></body></html>

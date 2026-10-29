@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Look into a silent reviewer · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="supervision" data-anchor-id="a022">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Look into a silent reviewer</h1>
+<p class="intro">Heartbeat supervision distinguishes a productive seat from a silent or failed one.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\drivers\swarm-lookin.mjs</span><br>Lines 201–241 · frozen source snapshot</p>
+<pre class="excerpt">export async function superviseSeat({
+  run,
+  getTrail = () =&gt; null,
+  checkInMs = DEFAULT_CHECKIN_MS,
+  silentKillMs = DEFAULT_SILENT_KILL_MS,
+  deadIdleMs = DEFAULT_DEAD_IDLE_MS,
+  maxRespawn = DEFAULT_MAX_RESPAWN,
+  now = Date.now,
+  sleep = defaultSleep,
+  onCheckin = () =&gt; {},
+  onLookin = null,
+  northStar = null,
+  task = null,
+  strictAbortJoin = false,
+} = {}) {
+  if (typeof run !== &#x27;function&#x27;) throw new TypeError(&#x27;superviseSeat requires run()&#x27;);
+  const cap = Number.isInteger(maxRespawn) &amp;&amp; maxRespawn &gt;= 0 ? maxRespawn : DEFAULT_MAX_RESPAWN;
+  let lastErr = null;
+  for (let attempt = 0; attempt &lt;= cap; attempt++) {
+    const nudge = attempt === 0 ? null : composeLookinNudge({
+      northStar, task, trail: getTrail({ attempt: attempt - 1 }), silent: true,
+    });
+    const controller = strictAbortJoin ? new AbortController() : null;
+    const getAttemptTrail = () =&gt; getTrail({ attempt, nudge });
+    try {
+      return await superviseOnce({
+        run: () =&gt; run(strictAbortJoin
+          ? { attempt, nudge, signal: controller.signal }
+          : { attempt, nudge }),
+        getTrail: getAttemptTrail, checkInMs, silentKillMs, deadIdleMs,
+        now, sleep, onCheckin, onLookin, northStar, task,
+        strictAbortJoin, controller,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (err?.lookin_verdict !== &#x27;dead&#x27; || attempt &gt;= cap) throw err;
+      onCheckin({ verdict: &#x27;respawn&#x27;, attempt: attempt + 1, err: err.message });
+    }
+  }
+  throw lastErr;
+}</pre>
+<div class="actions"><a class="button" href="../source-pages/supervision.html#L201">Open numbered source at line 201</a>
+<a class="button secondary" href="../sources/supervision.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/supervise">Look in, retry or abstain</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">e0b1cf4ac6a6d6ba12928097cfdaaac3ee506be257ecaa62b7e8bef7bb705db4</span></p>
+<p>Excerpt SHA-256 <span class="path">e081dc1ae556d8ddb83ca37a94f78f7c70f43471171c817ee4becc8e088a0001</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

@@ -1,0 +1,116 @@
+{
+  "resources": [
+    {
+      "id": "anvil-mat-skill-md",
+      "title": "Anvil Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "anvil-mat-human-md",
+      "title": "Anvil Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "anvil-mat-north-star-md",
+      "title": "Anvil Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "anvil-tool-scripts-anvil-engine-py",
+      "title": "anvil_engine.py (scripts/anvil_engine.py)",
+      "category": "tools",
+      "path": "scripts/anvil_engine.py",
+      "description": "Executable .py module (2276 LOC; key symbols: _classify_stage, _detect_ai_interaction, _summarize_function, _scan_python_files)."
+    },
+    {
+      "id": "anvil-tool-tests-test-anvil-engine-py",
+      "title": "test_anvil_engine.py (tests/test_anvil_engine.py)",
+      "category": "tools",
+      "path": "tests/test_anvil_engine.py",
+      "description": "Executable .py module (227 LOC; key symbols: _make_sample_repo, test_mode1_conceptual_buckets_and_process_map_with_ai_badges, test_mode2_single_block_drilldown_and_empirical_claim_runner, test_mode3_remap_null_space_and_three_stage_pipeline_validation)."
+    },
+    {
+      "id": "anvil-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "anvil-shared-tool-mapping",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "category": "tools",
+      "path": "foundry/triage/mapping.mjs",
+      "description": "Shared complexity band evaluator and model_prefs.json seating resolver."
+    },
+    {
+      "id": "anvil-shared-tool-foreman-lib",
+      "title": "Foreman Durability & Sub-Agent Driver Library (foreman-lib.mjs)",
+      "category": "tools",
+      "path": "foreman/bin/foreman-lib.mjs",
+      "description": "Shared Trio worktree durability, checkpoint, and CLI dispatch library."
+    },
+    {
+      "id": "anvil-peer-gandalf",
+      "title": "Gandalf Deep-Think Advisor",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Adversarial verification of Functional Core / Imperative Shell remapping and Null Space cuts"
+    },
+    {
+      "id": "anvil-peer-researchprime",
+      "title": "researchPrime Empirical Validator",
+      "category": "skills",
+      "skill": "researchprime",
+      "description": "Grounds best-in-class CST rewriting tools and differential equivalence protocols"
+    },
+    {
+      "id": "anvil-peer-ramanujan",
+      "title": "Ramanujan Math Certifier",
+      "category": "skills",
+      "skill": "ramanujan",
+      "description": "Cross-checks Paper-to-Code native MathML formulas and numerical tolerances"
+    },
+    {
+      "id": "anvil-ref-researchprime-code-rewriting-tools",
+      "title": "Reference: RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "category": "references",
+      "path": "references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md",
+      "description": "Domain reference and knowledge-base specification (references/RESEARCHPRIME-CODE-REWRITING-TOOLS.md)."
+    },
+    {
+      "id": "anvil-journal-0007-dual-map-algorithm-math-to-co",
+      "title": "Journal: 0007-dual-map-algorithm-math-to-code-and-visual-glossary",
+      "category": "references",
+      "path": "journal/0007-dual-map-algorithm-math-to-code-and-visual-glossary.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0007-dual-map-algorithm-math-to-code-and-visual-glossary.md)."
+    },
+    {
+      "id": "anvil-journal-0006-anvil-v2-progressive-map-walk",
+      "title": "Journal: 0006-anvil-v2-progressive-map-walkthrough-and-beta-readers",
+      "category": "references",
+      "path": "journal/0006-anvil-v2-progressive-map-walkthrough-and-beta-readers.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0006-anvil-v2-progressive-map-walkthrough-and-beta-readers.md)."
+    },
+    {
+      "id": "anvil-journal-0005-einstein-gandalf-progressive-",
+      "title": "Journal: 0005-einstein-gandalf-progressive-report-organization",
+      "category": "references",
+      "path": "journal/0005-einstein-gandalf-progressive-report-organization.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0005-einstein-gandalf-progressive-report-organization.md)."
+    },
+    {
+      "id": "anvil-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

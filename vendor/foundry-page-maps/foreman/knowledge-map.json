@@ -1,0 +1,416 @@
+{
+  "nodes": [
+    {
+      "id": "foreman-root",
+      "name": "Foreman Knowledge & Execution Architecture",
+      "title": "Foreman Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "foreman-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "foreman-root"
+      ],
+      "ring": 1,
+      "resource_id": "foreman-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "foreman-root"
+      ],
+      "ring": 1,
+      "resource_id": "foreman-tool-bin-git-hygiene-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "foreman-root"
+      ],
+      "ring": 1,
+      "resource_id": "foreman-peer-crucible",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "foreman-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "foreman-root"
+      ],
+      "ring": 1,
+      "resource_id": "foreman-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-leaf-mat-1",
+      "name": "Foreman Agent & Execution Protocol (SKILL.md)",
+      "title": "Foreman Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "foreman-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-mat-2",
+      "name": "Foreman Human Guide (HUMAN.md)",
+      "title": "Foreman Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "foreman-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-1",
+      "name": "git-hygiene.mjs (bin/git-hygiene.mjs)",
+      "title": "git-hygiene.mjs (bin/git-hygiene.mjs)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-tool-bin-git-hygiene-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-2",
+      "name": "project-engine.mjs (bin/project-engine.mjs)",
+      "title": "project-engine.mjs (bin/project-engine.mjs)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-tool-bin-project-engine-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-3",
+      "name": "run-live.mjs (bin/run-live.mjs)",
+      "title": "run-live.mjs (bin/run-live.mjs)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-tool-bin-run-live-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-4",
+      "name": "run-project.mjs (bin/run-project.mjs)",
+      "title": "run-project.mjs (bin/run-project.mjs)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-tool-bin-run-project-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-5",
+      "name": "run-wave.mjs (bin/run-wave.mjs)",
+      "title": "run-wave.mjs (bin/run-wave.mjs)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-tool-bin-run-wave-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-6",
+      "name": "wave-engine.mjs (bin/wave-engine.mjs)",
+      "title": "wave-engine.mjs (bin/wave-engine.mjs)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-tool-bin-wave-engine-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "foreman-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "foreman-leaf-skill-1",
+      "name": "Crucible Production Planner",
+      "title": "Crucible Production Planner",
+      "parent_ids": [
+        "foreman-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-peer-crucible",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "foreman-leaf-skill-2",
+      "name": "Aegis Deterministic AST Security Fast-Gate",
+      "title": "Aegis Deterministic AST Security Fast-Gate",
+      "parent_ids": [
+        "foreman-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-peer-aegis",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "foreman-leaf-skill-3",
+      "name": "Anvil Structural & Contract Fast-Gate",
+      "title": "Anvil Structural & Contract Fast-Gate",
+      "parent_ids": [
+        "foreman-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-peer-anvil",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "foreman-leaf-ref-1",
+      "name": "Foreman LESSONS.md",
+      "title": "Foreman LESSONS.md",
+      "parent_ids": [
+        "foreman-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-leaf-ref-2",
+      "name": "Foreman CHANGELOG.md",
+      "title": "Foreman CHANGELOG.md",
+      "parent_ids": [
+        "foreman-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-ref-changelog",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-leaf-ref-3",
+      "name": "Journal: SLEEP-FEED-share-anchor-wallclock-pointer",
+      "title": "Journal: SLEEP-FEED-share-anchor-wallclock-pointer",
+      "parent_ids": [
+        "foreman-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-journal-sleep-feed-share-anchor-wallcloc",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-leaf-ref-4",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "foreman-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-leaf-ref-5",
+      "name": "Journal: 0139-parallel-subwave-execution-and-deterministic-fast-gate",
+      "title": "Journal: 0139-parallel-subwave-execution-and-deterministic-fast-gate",
+      "parent_ids": [
+        "foreman-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-journal-0139-parallel-subwave-execution-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "foreman-leaf-ref-6",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "foreman-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "foreman-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

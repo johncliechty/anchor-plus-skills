@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Logical task concurrency · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="fanout" data-anchor-id="a-concurrency">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Logical task concurrency</h1>
+<p class="intro">The map limiter defaults to 3; an environment override can raise it. It bounds logical tasks in this call, not all physical subprocesses or concurrent runs.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/map-reduce.mjs · lines 307–330</p><pre>export async function limitConcurrency(tasks, limit) {
+  let resolvedLimit = 3;
+  if (process.env.GANDALF_MAX_CONCURRENCY) {
+    const val = parseInt(process.env.GANDALF_MAX_CONCURRENCY, 10);
+    if (!isNaN(val)) resolvedLimit = val;
+  } else if (typeof limit === &#x27;number&#x27;) {
+    resolvedLimit = limit;
+  }
+  resolvedLimit = Math.max(1, resolvedLimit);
+
+  const results = [];
+  const executing = new Set();
+  for (const task of tasks) {
+    const p = Promise.resolve().then(() =&gt; task());
+    results.push(p);
+    executing.add(p);
+    const clean = () =&gt; executing.delete(p);
+    p.then(clean, clean);
+    if (executing.size &gt;= resolvedLimit) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}</pre>
+<p><a class="button" href="../source-pages/map.html#L307">Open numbered source</a>
+<a href="../sources/map.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/map">Review-family models read shard contents</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">e2a6402805c21a2c4f9d5f77d470c0150c8c8d1695bf639296136bc6bff04120</span></p><p>Excerpt hash: <span class="path">fccddf66fb4204912396c2e4a331f7de616cd15d66b20c28cf207459b258a316</span></p></details></article></main></body></html>

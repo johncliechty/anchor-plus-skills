@@ -1021,3 +1021,50 @@ def is_anchor_admin_edition(base_dir: Path | str | None = None) -> bool:
     host = (_socket.gethostname() or "").strip().upper()
     return host in ("PUTER", "GWL-SERVER")
 
+
+def ensure_hidden_subprocesses() -> None:
+    """Ensure all child processes spawned via subprocess.Popen / subprocess.run
+    by the live Anchor server on Windows run with CREATE_NO_WINDOW and a hidden
+    STARTUPINFO so console/PowerShell windows never flash on collaborator desktops."""
+    if os.name != "nt":
+        return
+    import inspect as _inspect
+    import subprocess as _subprocess
+
+    orig_popen = _subprocess.Popen
+    if getattr(orig_popen, "_anchor_hidden_wrapped", False):
+        return
+    try:
+        cflags_idx = list(_inspect.signature(orig_popen).parameters).index("creationflags")
+    except ValueError:
+        cflags_idx = -1
+
+    class _HiddenPopen(orig_popen):
+        _anchor_hidden_wrapped = True
+
+        def __init__(self, *args, **kwargs):
+            create_new_console = getattr(_subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+            no_win = getattr(_subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            if cflags_idx >= 0 and len(args) > cflags_idx:
+                pos = list(args)
+                cur_flags = int(pos[cflags_idx] or 0)
+                if not (cur_flags & create_new_console):
+                    pos[cflags_idx] = cur_flags | no_win
+                args = tuple(pos)
+            else:
+                cur_flags = int(kwargs.get("creationflags", 0) or 0)
+                if not (cur_flags & create_new_console):
+                    kwargs["creationflags"] = cur_flags | no_win
+            if kwargs.get("startupinfo") is None and not (cur_flags & create_new_console):
+                try:
+                    si = _subprocess.STARTUPINFO()
+                    si.dwFlags |= _subprocess.STARTF_USESHOWWINDOW
+                    si.wShowWindow = 0  # SW_HIDE
+                    kwargs["startupinfo"] = si
+                except Exception:
+                    pass
+            super().__init__(*args, **kwargs)
+
+    _subprocess.Popen = _HiddenPopen
+
+

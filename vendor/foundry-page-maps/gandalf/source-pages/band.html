@@ -1,0 +1,174 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>band · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>band</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/runtime/triage-band.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 a63478b89c70becb4c12f235ac744a45dc58631e0ca8346690f5828d0a2f4ed5</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Resolve @foundry/triage lock + knobs for Gandalf (Phase 2b band-thin + B2 L1).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> // LITE → fewer shards / one fusion; FULL → mapping table defaults; never unlocks silently</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // when a depth/tier lock input is present (fail-closed).</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> </span>
+<span class="source-line" id="L5"><a href="#L5">5</a> import {</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   recommendForSkill,</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   resolveSkillLock,</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   knobsAfterLock,</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> } from &#x27;file:///C:/dev/Skill%20Foundry/foundry/triage/entry-points.mjs&#x27;;</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> import { knobsForSkill } from &#x27;file:///C:/dev/Skill%20Foundry/foundry/triage/mapping.mjs&#x27;;</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> </span>
+<span class="source-line" id="L12"><a href="#L12">12</a> /**</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>  * First non-empty string token (trim). Empty / whitespace → null.</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>  * @param {unknown} value</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>  * @returns {string | null}</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>  */</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> export function nonEmptyToken(value) {</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>   if (value == null) return null;</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>   const s = typeof value === &#x27;string&#x27; ? value.trim() : String(value).trim();</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   return s ? s : null;</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> }</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23">23</a> /**</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>  * L1 depth chain — first non-empty wins:</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>  * explicit arg → GANDALF_DEPTH → FOUNDRY_TRIAGE_DEPTH</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>  * @param {{ depth?: unknown, env?: NodeJS.ProcessEnv | Record&lt;string, string|undefined&gt; }} [opts]</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>  * @returns {string | null}</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>  */</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> export function pickGandalfDepth({ depth = null, env = process.env } = {}) {</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>   const e = env &amp;&amp; typeof env === &#x27;object&#x27; ? env : {};</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>   return (</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>     nonEmptyToken(depth) ||</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>     nonEmptyToken(e.GANDALF_DEPTH) ||</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>     nonEmptyToken(e.FOUNDRY_TRIAGE_DEPTH) ||</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>     null</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>   );</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> }</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> </span>
+<span class="source-line" id="L39"><a href="#L39">39</a> /**</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>  * L1 tier chain — first non-empty wins:</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>  * explicit arg → GANDALF_TIER → FOUNDRY_TRIAGE_TIER</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>  * @param {{ tier?: unknown, env?: NodeJS.ProcessEnv | Record&lt;string, string|undefined&gt; }} [opts]</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>  * @returns {string | null}</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>  */</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> export function pickGandalfTier({ tier = null, env = process.env } = {}) {</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>   const e = env &amp;&amp; typeof env === &#x27;object&#x27; ? env : {};</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>   return (</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     nonEmptyToken(tier) ||</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>     nonEmptyToken(e.GANDALF_TIER) ||</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>     nonEmptyToken(e.FOUNDRY_TRIAGE_TIER) ||</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     null</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>   );</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> }</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> /**</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>  * Production lock trigger (L1): locked iff any of explicit depth|tier or the four</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>  * env names is set (non-empty after trim). GANDALF_MAX_SHARDS is never a lock.</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>  *</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>  * @param {{ depth?: unknown, tier?: unknown, env?: NodeJS.ProcessEnv | Record&lt;string, string|undefined&gt; }} [opts]</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>  * @returns {boolean}</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>  */</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> export function isGandalfBandLocked({ depth = null, tier = null, env = process.env } = {}) {</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>   return Boolean(pickGandalfDepth({ depth, env }) || pickGandalfTier({ tier, env }));</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> }</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66">66</a> /**</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>  * L4 exclusive unlock predicate — true iff ALL lock inputs are absent/empty:</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>  * no explicit depth|tier and none of the four lock envs. GANDALF_MAX_SHARDS is</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>  * never a lock input (unlocked may still carry a legacy env cap elsewhere).</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>  *</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>  * @param {{ depth?: unknown, tier?: unknown, env?: NodeJS.ProcessEnv | Record&lt;string, string|undefined&gt; }} [opts]</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>  * @returns {boolean}</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>  */</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> export function isGandalfBandUnlocked({ depth = null, tier = null, env = process.env } = {}) {</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>   return !isGandalfBandLocked({ depth, tier, env });</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> }</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> </span>
+<span class="source-line" id="L78"><a href="#L78">78</a> /**</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>  * Safety floor (L4/L5): seats must be present and non-empty. Refuse band-thin</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>  * knobs that zero or omit seats — never silently thin past the seats floor.</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>  *</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>  * @param {object | null | undefined} knobs</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>  * @returns {object} knobs (same reference) when valid</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>  * @throws {Error} when seats are missing, empty, or numeric zero</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>  */</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> export function assertGandalfSeatsFloor(knobs) {</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   if (!knobs || typeof knobs !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     throw new Error(&#x27;gandalf band-thin refused: knobs missing (seats floor)&#x27;);</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   }</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>   const seats = knobs.seats;</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   if (seats == null) {</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>     throw new Error(&#x27;gandalf band-thin refused: seats floor violated (seats missing)&#x27;);</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   if (typeof seats === &#x27;number&#x27; &amp;&amp; (!Number.isFinite(seats) || seats &lt;= 0)) {</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>     throw new Error(&#x27;gandalf band-thin refused: seats floor violated (seats zeroed)&#x27;);</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   }</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   if (typeof seats === &#x27;string&#x27; &amp;&amp; seats.trim() === &#x27;&#x27;) {</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     throw new Error(&#x27;gandalf band-thin refused: seats floor violated (seats empty)&#x27;);</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>   }</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>   if (Array.isArray(seats) &amp;&amp; seats.length === 0) {</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>     throw new Error(&#x27;gandalf band-thin refused: seats floor violated (seats empty)&#x27;);</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   }</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>   return knobs;</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> }</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106">106</a> /**</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>  * Resolve Gandalf band knobs from CLI / env / explicit lock.</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>  * Precedence (L1): explicit depth/tier → GANDALF_* → FOUNDRY_TRIAGE_* → recommend+confirm when allowDefault.</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>  * When any lock input is set, resolveSkillLock failures hard-fail (no advisory soft-pick).</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>  *</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>  * @param {object} [opts]</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>  * @param {string} [opts.depth]</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>  * @param {string} [opts.tier]</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>  * @param {object} [opts.intake]</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>  * @param {boolean} [opts.allowDefault=true]  when true, confirm recommended band if unlocked</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>  * @param {object} [opts.env]</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>  * @returns {{ knobs: object, lock: object|null, recommendation: object, source: string }}</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>  */</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> export function resolveGandalfBand({</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   depth = null,</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   tier = null,</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>   intake = {},</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>   allowDefault = true,</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>   env = process.env,</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> } = {}) {</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>   const d = pickGandalfDepth({ depth, env });</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>   const t = pickGandalfTier({ tier, env });</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   const hasLockInput = Boolean(d || t);</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> </span>
+<span class="source-line" id="L130"><a href="#L130">130</a>   const recommendation = recommendForSkill(&#x27;gandalf&#x27;, {</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>     ...intake,</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>     depth: d || undefined,</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>     tier: t || undefined,</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   });</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> </span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   if (hasLockInput || allowDefault) {</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     try {</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>       const resolved = resolveSkillLock(&#x27;gandalf&#x27;, {</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>         inputs: intake,</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>         confirmedDepth: d || recommendation.depth,</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>         confirmedTier: t || recommendation.tier,</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>         decision: &#x27;confirm&#x27;,</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>         recommendation,</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>       });</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>       // Lock path: refuse thinning that zeros seats (L4/L5 safety floor).</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>       if (hasLockInput) assertGandalfSeatsFloor(resolved.knobs);</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>       return {</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>         knobs: resolved.knobs,</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>         lock: resolved.lock,</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>         recommendation,</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>         source: hasLockInput ? &#x27;explicit&#x27; : &#x27;recommend-confirm&#x27;,</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>       };</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     } catch (err) {</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>       // Fail-closed on lock input: never soft-pick advisory / invent FULL.</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>       if (hasLockInput || !allowDefault) throw err;</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     }</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>   }</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159">159</a>   // Last resort advisory knobs (not a lock) — stamped unlocked for honesty.</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>   const knobs = knobsForSkill(&#x27;gandalf&#x27;, recommendation.depth, recommendation.tier);</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>   return {</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     knobs,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     lock: null,</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>     recommendation,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>     source: &#x27;advisory&#x27;,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>   };</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> }</span>
+<span class="source-line" id="L168"><a href="#L168">168</a> </span>
+<span class="source-line" id="L169"><a href="#L169">169</a> export { knobsForSkill, recommendForSkill, resolveSkillLock, knobsAfterLock };</span></pre></main></body></html>

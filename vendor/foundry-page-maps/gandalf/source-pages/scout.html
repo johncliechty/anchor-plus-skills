@@ -1,0 +1,233 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>scout · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>scout</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/runtime/scout.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 5a3d020301c3e8eac950777090ce0b69c605f71ca610a3a2dcff149e23bbed96</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> import { getGitignorePatterns, isIgnored } from &#x27;./context-sizer.mjs&#x27;;</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> import { makeGeminiCliSeam, resolveGeminiModel } from &#x27;file:///C:/dev/trio/drivers/gemini-cli.mjs&#x27;;</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> </span>
+<span class="source-line" id="L6"><a href="#L6">6</a> /**</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>  * Generates a lightweight, indented .txt tree representation of the codebase,</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>  * respecting standard gitignore patterns.</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>  *</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>  * @param {string} projectDir - The root directory of the project.</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>  * @returns {string} - Formatted directory tree text.</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>  */</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> export function generateTreeText(projectDir) {</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>   if (projectDir === null || projectDir === undefined || typeof projectDir !== &#x27;string&#x27;) {</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>     return &#x27;&#x27;;</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>   }</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>   const patterns = getGitignorePatterns(projectDir);</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>   const lines = [];</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20">20</a>   function traverse(currentDir, depth = 0) {</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>     let files;</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>     try {</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>       files = fs.readdirSync(currentDir);</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>     } catch {</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>       return; // Skip unreadable directories</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>     }</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> </span>
+<span class="source-line" id="L28"><a href="#L28">28</a>     // Sort alphabetically for deterministic tree structure</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>     files.sort();</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> </span>
+<span class="source-line" id="L31"><a href="#L31">31</a>     for (const file of files) {</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>       const fullPath = path.join(currentDir, file);</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>       const relPath = path.relative(projectDir, fullPath);</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>       </span>
+<span class="source-line" id="L35"><a href="#L35">35</a>       let stat;</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>       try {</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>         stat = fs.statSync(fullPath);</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>       } catch {</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>         continue; // Skip if stat fails</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>       }</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42">42</a>       const isDir = stat.isDirectory();</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>       if (isIgnored(relPath, patterns, isDir)) {</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>         continue;</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>       }</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47">47</a>       const indent = &#x27;  &#x27;.repeat(depth);</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>       if (isDir) {</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>         lines.push(`${indent}${file}/`);</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>         traverse(fullPath, depth + 1);</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>       } else {</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>         lines.push(`${indent}${file}`);</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>       }</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>     }</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>   }</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a>   traverse(projectDir);</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   return lines.join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> }</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61">61</a> /**</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>  * Helper to check if a file path is included in the Scout&#x27;s list of relative paths.</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>  * Supports exact file matches and directory prefix matches.</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>  *</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>  * @param {string} filePath - The relative path of the file to check.</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>  * @param {string[]} includeList - Array of paths/directories to include.</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>  * @returns {boolean} - True if the path is semantically included.</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>  */</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> export function isPathIncluded(filePath, includeList) {</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>   if (!Array.isArray(includeList)) return false;</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>   const normalizedFile = filePath.replace(/\\/g, &#x27;/&#x27;);</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73">73</a>   for (let item of includeList) {</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>     if (typeof item !== &#x27;string&#x27;) continue;</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>     const normalizedItem = item.replace(/\\/g, &#x27;/&#x27;);</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     if (normalizedFile === normalizedItem) {</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>       return true;</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     }</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> </span>
+<span class="source-line" id="L81"><a href="#L81">81</a>     // Directory prefix match (e.g., if &quot;src&quot; is in include list, &quot;src/index.js&quot; matches)</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     const dirPrefix = normalizedItem.endsWith(&#x27;/&#x27;) ? normalizedItem : normalizedItem + &#x27;/&#x27;;</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>     if (normalizedFile.startsWith(dirPrefix)) {</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>       return true;</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     }</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>   }</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   return false;</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> }</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90">90</a> /**</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>  * Filters the codebase payload to only include files and directories matching the include list.</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>  * Supports both:</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>  * - Array of objects: [ { path: &#x27;relative/path&#x27;, content: &#x27;...&#x27; }, ... ] (filters by `file.path`)</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>  * - Array of strings: [ &#x27;relative/path&#x27;, ... ] (filters by string value)</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>  * - Object dictionary: { &#x27;relative/path&#x27;: &#x27;content&#x27;, ... } (filters keys)</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>  *</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>  * @param {Array|Object} payload - The unfiltered codebase payload.</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>  * @param {string[]} includeList - The list of allowed relative paths.</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>  * @returns {Array|Object} - The pruned payload.</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>  */</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> export function prunePayload(payload, includeList) {</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>   if (!includeList || !Array.isArray(includeList)) {</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     return payload;</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>   }</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> </span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   if (Array.isArray(payload)) {</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     return payload.filter(file =&gt; {</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>       const filePath = typeof file === &#x27;string&#x27; ? file : file.path;</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>       return isPathIncluded(filePath, includeList);</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>     });</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>   } else if (payload &amp;&amp; typeof payload === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>     const pruned = {};</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     for (const [filePath, content] of Object.entries(payload)) {</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>       if (isPathIncluded(filePath, includeList)) {</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>         pruned[filePath] = content;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>       }</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     }</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     return pruned;</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   }</span>
+<span class="source-line" id="L120"><a href="#L120">120</a> </span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   return payload;</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> }</span>
+<span class="source-line" id="L123"><a href="#L123">123</a> </span>
+<span class="source-line" id="L124"><a href="#L124">124</a> /**</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>  * Calls the Scout model with the tree text and the objective, returning the list of paths to include.</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>  *</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>  * @param {object} params</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>  * @param {string} params.projectDir - Root project directory.</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>  * @param {string} params.userObjective - The user&#x27;s query or objective.</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>  * @param {Function} [params.agent] - Optional agent override (useful for mock testing).</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>  * @param {object} [params.env] - Process env override.</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>  * @param {Function} [params.log] - Log callback.</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>  * @returns {Promise&lt;string[]|null&gt;} - List of relative paths to include, or null on failure.</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>  */</span>
+<span class="source-line" id="L135"><a href="#L135">135</a> export async function runScoutPass({</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   projectDir,</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>   userObjective,</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   agent = null,</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>   env = process.env,</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>   log = () =&gt; {}</span>
+<span class="source-line" id="L141"><a href="#L141">141</a> } = {}) {</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>   try {</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     const treeText = generateTreeText(projectDir);</span>
+<span class="source-line" id="L144"><a href="#L144">144</a> </span>
+<span class="source-line" id="L145"><a href="#L145">145</a>     let activeAgent = agent;</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     if (!activeAgent) {</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>       // W4 (2026-07-05): the scout is a lightweight, high-volume curation pass — it reads a whole tree</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>       // to pick relevant paths — so it runs on the STANDARD (current, cheaper, high-context) agy LABEL,</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>       // resolved via the TRIO_TIER ladder. NEVER a hardcoded API-style id (the old hardcoded default</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>       // was a phantom id that live agy silently degrades to Flash anyway).</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>       const model = env.GANDALF_SCOUT_MODEL || env.GEMINI_MODEL</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>         || resolveGeminiModel({ env: { ...env, TRIO_TIER: &#x27;standard&#x27; } });</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>       const seam = makeGeminiCliSeam({ model, env, log });</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>       activeAgent = seam.agent;</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     }</span>
+<span class="source-line" id="L156"><a href="#L156">156</a> </span>
+<span class="source-line" id="L157"><a href="#L157">157</a>     const prompt = `You are an agentic codebase scout. You are given a directory tree structure of a codebase and the user&#x27;s objective.</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> Your task is to identify and return a list of files or directories that are semantically relevant to the user&#x27;s objective and should be included in the context.</span>
+<span class="source-line" id="L159"><a href="#L159">159</a> </span>
+<span class="source-line" id="L160"><a href="#L160">160</a> User Objective:</span>
+<span class="source-line" id="L161"><a href="#L161">161</a> &quot;${userObjective}&quot;</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> </span>
+<span class="source-line" id="L163"><a href="#L163">163</a> Codebase Directory Tree:</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> \`\`\`</span>
+<span class="source-line" id="L165"><a href="#L165">165</a> ${treeText}</span>
+<span class="source-line" id="L166"><a href="#L166">166</a> \`\`\`</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> </span>
+<span class="source-line" id="L168"><a href="#L168">168</a> Respond with a JSON object containing an &quot;include&quot; key with an array of relative paths (files or directories) to include.`;</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170">170</a>     const schema = {</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>       type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>       properties: {</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>         include: {</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>           type: &#x27;array&#x27;,</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>           items: { type: &#x27;string&#x27; }</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>         }</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>       },</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>       required: [&#x27;include&#x27;]</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     };</span>
+<span class="source-line" id="L180"><a href="#L180">180</a> </span>
+<span class="source-line" id="L181"><a href="#L181">181</a>     const result = await activeAgent(prompt, { schema, label: &#x27;scout-pass&#x27; });</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>     let includeList = null;</span>
+<span class="source-line" id="L183"><a href="#L183">183</a> </span>
+<span class="source-line" id="L184"><a href="#L184">184</a>     if (typeof result === &#x27;object&#x27; &amp;&amp; result !== null) {</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>       includeList = result.include;</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     } else if (typeof result === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>       const parsed = JSON.parse(result);</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>       includeList = parsed.include;</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>     }</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> </span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     if (Array.isArray(includeList)) {</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>       return includeList;</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     }</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     throw new Error(&#x27;Scout model response did not contain an array under the &quot;include&quot; key.&#x27;);</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>   } catch (err) {</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>     log(`Scout pass error: ${err.message}`);</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>     return null;</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>   }</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> }</span>
+<span class="source-line" id="L200"><a href="#L200">200</a> </span>
+<span class="source-line" id="L201"><a href="#L201">201</a> /**</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>  * High-level Scout pre-flight check wrapper.</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>  * Initiates the scout call and filters the payload. Gracefully falls back to the full payload on failure.</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>  *</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>  * @param {object} params</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>  * @param {string} params.projectDir - Root project directory.</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>  * @param {Array|Object} params.payload - Full payload.</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>  * @param {string} params.userObjective - User objective.</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>  * @param {Function} [params.agent] - Optional agent override.</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>  * @param {object} [params.env] - Process env override.</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>  * @param {Function} [params.log] - Log callback.</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>  * @returns {Promise&lt;Array|Object&gt;} - Filtered payload, or full payload on fallback.</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>  */</span>
+<span class="source-line" id="L214"><a href="#L214">214</a> export async function scoutAndFilter({</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>   projectDir,</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>   payload,</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   userObjective,</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>   agent = null,</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>   env = process.env,</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   log = () =&gt; {}</span>
+<span class="source-line" id="L221"><a href="#L221">221</a> } = {}) {</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   const includeList = await runScoutPass({ projectDir, userObjective, agent, env, log });</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   if (includeList === null) {</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     log(&#x27;Scout pass failed or returned malformed data. Gracefully falling back to full payload.&#x27;);</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>     return payload;</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>   }</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>   return prunePayload(payload, includeList);</span>
+<span class="source-line" id="L228"><a href="#L228">228</a> }</span></pre></main></body></html>

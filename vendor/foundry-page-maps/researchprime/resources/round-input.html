@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Round inputs and checkpoints · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="round-input" data-anchor-id="a010">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Round inputs and checkpoints</h1>
+<p class="intro">Actual review input fields, result files and the resume protocol used by the runner.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\run-rounds.mjs</span><br>Lines 85–113 · frozen source snapshot</p>
+<pre class="excerpt">export async function runRounds(runDir, { maxRounds = null, env = process.env, log = console.log, agent: injectedAgent = null, spawnPanel = false } = {}) {
+  const started = new Date().toISOString();
+  const t0 = Date.now();
+
+  let governanceRecord;
+  try {
+    governanceRecord = loadGate(runDir);
+  } catch (e) {
+    if (e &amp;&amp; (e.name === &#x27;HaltError&#x27; || e instanceof Error)) {
+      const haltRecord = {
+        status: &#x27;HALTED&#x27;,
+        reason: e.message,
+        timestamp: new Date().toISOString()
+      };
+      fs.writeFileSync(path.join(runDir, &#x27;HALT-RECORD.json&#x27;), JSON.stringify(haltRecord, null, 2));
+    }
+    throw e;
+  }
+
+  const allInputs = fs.readdirSync(runDir)
+    .filter((f) =&gt; /^round-\d+-input\.json$/.test(f))
+    .sort((a, b) =&gt; parseInt(a.match(/\d+/)[0]) - parseInt(b.match(/\d+/)[0]))
+    .map((f) =&gt; JSON.parse(fs.readFileSync(path.join(runDir, f), &#x27;utf8&#x27;)));
+  if (!allInputs.length) throw new Error(`no round-*-input.json found in ${runDir}`);
+
+  // FIELD LAWS, mechanized (2026-08-25, John-ratified card — each of these burned a real
+  // round as SKILL.md prose; now the engine HALTs loudly at load, one line, never a silent
+  // auto-fix). Law 1: traces_to_north_star is the STRING &#x27;yes&#x27;/&#x27;no&#x27; — a boolean silently
+  // demotes EVERY finding (2026-08-15). Law 2: pasted agy replies may arrive ```-fenced</pre>
+<div class="actions"><a class="button" href="../source-pages/runner.html#L85">Open numbered source at line 85</a>
+<a class="button secondary" href="../sources/runner.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/round-entry">Validation program entry</a> · <a target="_top" href="../index.html#process/panel-branch">Which review source?</a> · <a target="_top" href="../index.html#process/sidecar">Reuse a saved reviewer sidecar</a> · <a target="_top" href="../index.html#process/artifact">Resolve the reviewed artifact</a> · <a target="_top" href="../index.html#process/supplied">Use supplied reviewer findings</a> · <a target="_top" href="../index.html#process/correct">Correct before the next review</a> · <a target="_top" href="../index.html#process/capture">Retain run evidence</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">d20de409aa9618ad05567f81027c024e70d9852a6c01990758311626a7b48bcf</span></p>
+<p>Excerpt SHA-256 <span class="path">1a8417cdf5ddb926a18d741da64b8cd3079709f439cd910286606c249b3bb6c6</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

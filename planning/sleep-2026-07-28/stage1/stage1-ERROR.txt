@@ -1,7 +1,0 @@
-HaltError: human-lockable: Shark Tank is dry with no ≥2-agree BLOCKERs for 2 consecutive round(s) (sharks dry; no ≥2-agree BLOCKER/MAJOR — Judge/fresh-eyes may hold, but multi-Shark bar is met). Judge/fresh-eyes held model-side lock without multi-Shark substance. Best draft (2 round(s)) is attached — YOU are the convergence authority: approve to lock (approveMasterPlan with humanLockable loop), or challenge and re-run with additionalRounds to extend.
-    at haltForHuman (file:///C:/dev/trio/crucible/bin/crucible-lib.mjs:204:15)
-    at runMasterPlanLoop (file:///C:/dev/trio/crucible/bin/stage1.mjs:954:19)
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async withPhaseProgress (file:///C:/dev/trio/drivers/process-lifetime.mjs:209:20)
-    at async runStage1 (file:///C:/dev/trio/crucible/bin/stage1.mjs:1429:16)
-    at async file:///C:/dev/Anchor/planning/sleep-2026-07-28/stage0/_run-stage1.mjs:84:18

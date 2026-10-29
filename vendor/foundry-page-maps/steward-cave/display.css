@@ -1,0 +1,11 @@
+.rail select{width:100%;margin-top:.5rem}
+.rail a>span,.rail nav>span>span{display:inline;padding:0}
+.disk text{font-size:11px}
+.process-summary{border-left:3px solid #a99c72;padding:.7rem 1rem}
+.branch-index{overflow-x:auto}
+.branch-index table{width:100%;border-collapse:collapse}
+.branch-index td,.branch-index th{padding:.65rem;text-align:left;border-bottom:1px solid #393b40;vertical-align:top}
+.branches .anchor-link{display:block}
+.flow .step strong{white-space:normal}
+.source-line:target{background:#8b6c2c;color:#fff}
+@media(max-width:760px){.branch-index table{min-width:0;font-size:.88rem}.branch-index td{padding:.5rem}.branch-index th:nth-child(4),.branch-index td:nth-child(4){display:none}}

@@ -2,6 +2,18 @@
 
 ## v1.4.6 ? Aegis Foundry North Star & Shield Icon, Voice Dictate/Talk Mode, Email & Calendar Quick-Connect, and Collaborator Preset
 
+# Changelog
+
+## v1.4.7 — Collaborator Skill Foundry (All 19 Skills, Icons & Maps), Default YOLO Mode, Conversational Steward Settings + Session Reboot, Silent Subprocesses, and Admin Registration Sync
+
+- Bundles all 19 Foundry skill map sets (`library.json`, `process-map.json`, `knowledge-map.json`, `anvil.json`, `walkthrough.json`, `walkthrough-v2.json`, and `NORTH-STAR.md`) under `vendor/foundry-page-maps/` and syncs all 19 skill trees into `vendor/bundled-skills/`, updating `foundry_page.py` and `foundry_api.py` so collaborator machines display the complete 19-skill Foundry catalog on the left rail with icons, library cards, process maps, knowledge maps, and Anvil v2 maps out of the box (`0` validation issues).
+- Sets `STEWARD_FENCE` to `False` (`bypassPermissions` / YOLO mode) by default across AI Cockpits (matching all other providers in Anchor while keeping `SERVED_CODE_DENY` active inside Anchor's own codebase) so collaborators can read and write directly to their course, research, and OneDrive folders without fence friction.
+- Adds conversational runtime settings & permission control (`Engine._parse_runtime_setting_command()`, `Engine.configure_session()`, `POST /api/steward/configure_session`, and `tools/steward_settings.py`): telling the steward in the AI Cockpit to change permissions (YOLO / default / plan / fence), switch Claude model (`opus`, `sonnet`, `haiku`, `best`) or effort (`max`, `high`, `medium`, `low`), or reboot/restart Claude immediately applies and persists the setting, stops the active Claude Code process, and reboots the session (`--resume <session_id>`).
+- Eliminates flashing PowerShell/console windows on interactive collaborator desktops by installing `paths.ensure_hidden_subprocesses()` (`CREATE_NO_WINDOW` on Windows) in `anchor_gui.py` and passing `CREATE_NO_WINDOW` across `steward_engine.py`, `steward_campaign.py`, `tools/gitguard/gitguard.py`, and `vendor/foundry-tools/ft.py`.
+- Registers Merrill Liechty in the Anchor Admin Clearinghouse (`gwl_clearinghouse`) and updates `onboard_wizard.py:sync_applicant_signup_to_gwl_hub()` so collaborator Step 1 and Step 2 onboarding automatically syncs to `PUTER`.
+
+## v1.4.6 — Aegis Foundry North Star & Shield Icon, Voice Dictate/Talk Mode, Email & Calendar Quick-Connect, and Collaborator Preset
+
 - Locks the **Aegis** North Star (`NORTH-STAR.md`), human card (`HUMAN.md`), multi-stage execution protocol (`SKILL.md`), and complete Foundry process/knowledge/Anvil v2 maps (`0` validation issues), paired with the new Foundry-style **Aegis Shield Icon** (`vendor/brand/aegis-icon.jpg`).
 - Adds local speech-to-text transcription (`faster-whisper` `base.en` via `/api/voice/transcribe` with Web Speech API fallback) for **Dictate** and server-side Windows SAPI `.wav` synthesis (`/api/voice/tts`) for **Talk Mode**.
 - Adds the **Email & Calendar Quick-Connect** drawer (`#caveCommsConnectModal` + `/api/comms/setup_helper`) on Cave of Wonders and Step 6 of the 7-Step Onboarding & Setup Wizard (1-click classic Outlook COM verify, Google OAuth setup guide & credential upload, and live `/api/comms/sync_now`).

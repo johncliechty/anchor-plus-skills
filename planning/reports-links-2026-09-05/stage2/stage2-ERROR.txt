@@ -1,8 +1,0 @@
-HaltError: Stage-2 handoff BLOCKED: the well-formedness gate failed (exit 3) — HALT: pytest gate uses -q/--quiet — a gate the engine can NEVER pass as written
-      test command "python -m pytest tests/test_steward_deliverables.py tests/test_status_lookthrough_2026_09_04.py tests/test_cockpit_status_window_2026_09_03.py tests/test_reports_links_2026_09_05.py -q -p no:cacheprovider" (plan declaration) suppresses per-test events, but GREEN requires them (§5 anti-forgery: a summary line alone is refusable). Change the declaration to use `-v` (e.g. `pytest -v`) and re-run. Halting NOW, before any execute call is spent.
-      (Foreman refuses to guess — resolve the above and re-invoke.)
-    at haltForHuman (file:///C:/dev/trio/crucible/bin/crucible-lib.mjs:220:15)
-    at runHandoffGate (file:///C:/dev/trio/crucible/bin/stage2.mjs:639:11)
-    at runStage2 (file:///C:/dev/trio/crucible/bin/stage2.mjs:976:21)
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async file:///C:/dev/Anchor/planning/reports-links-2026-09-05/_run-crucible-lite.mjs:80:14

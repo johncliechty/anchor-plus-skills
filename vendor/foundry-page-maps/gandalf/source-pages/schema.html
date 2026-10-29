@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>schema · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>schema</h1>
+<p>contract · frozen exact bytes</p><p class="path">Original: skills/gandalf/schema/advisor-output.schema.json</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 5743b98557d221362c1b1bbe5ebec900871ef94e0a4d4f32f20a346a4ad3f4a1</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> {</span>
+<span class="source-line" id="L2"><a href="#L2">2</a>   &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,</span>
+<span class="source-line" id="L3"><a href="#L3">3</a>   &quot;$id&quot;: &quot;gandalf/advisor-output/1&quot;,</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>   &quot;title&quot;: &quot;Gandalf advisor output (Increment 1, committed typed schema)&quot;,</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>   &quot;description&quot;: &quot;The committed typed output schema for a Gandalf advisor run. Wave 1 (GATE-0) freezes the SHAPE; the deterministic canaries own shape + rung-consistency, label/semantic TRUTH is owned by the advisory layer (PRINCIPLE-D). Validated by a zero-dependency subset validator in test/harness.mjs (type, required, properties, items, enum, const, min/max, additionalProperties). additionalProperties is left open so later waves may add fields without a schema break.&quot;,</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   &quot;required&quot;: [&quot;schema_version&quot;, &quot;cross_model&quot;, &quot;degraded&quot;, &quot;reasoning&quot;, &quot;verdict&quot;, &quot;findings&quot;, &quot;nitpicks&quot;, &quot;elevations&quot;, &quot;risk_labels&quot;],</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   &quot;additionalProperties&quot;: true,</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   &quot;properties&quot;: {</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>     &quot;schema_version&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>     &quot;cross_model&quot;: { &quot;type&quot;: &quot;boolean&quot; },</span>
+<span class="source-line" id="L12"><a href="#L12">12</a>     &quot;degraded&quot;: { &quot;type&quot;: &quot;boolean&quot; },</span>
+<span class="source-line" id="L13"><a href="#L13">13</a>     &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Reasoning text — MUST precede &#x27;verdict&#x27; in key order (reasoning-before-verdict invariant).&quot; },</span>
+<span class="source-line" id="L14"><a href="#L14">14</a>     &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Overall verdict; may be &#x27;this is sound&#x27;.&quot; },</span>
+<span class="source-line" id="L15"><a href="#L15">15</a>     &quot;findings&quot;: {</span>
+<span class="source-line" id="L16"><a href="#L16">16</a>       &quot;type&quot;: &quot;array&quot;,</span>
+<span class="source-line" id="L17"><a href="#L17">17</a>       &quot;items&quot;: {</span>
+<span class="source-line" id="L18"><a href="#L18">18</a>         &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L19"><a href="#L19">19</a>         &quot;required&quot;: [&quot;id&quot;, &quot;rung&quot;, &quot;reasoning&quot;, &quot;verdict&quot;],</span>
+<span class="source-line" id="L20"><a href="#L20">20</a>         &quot;additionalProperties&quot;: true,</span>
+<span class="source-line" id="L21"><a href="#L21">21</a>         &quot;properties&quot;: {</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>           &quot;id&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>           &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] },</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>           &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>           &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>           &quot;kind&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;diagnose&quot;, &quot;situate&quot;, &quot;anticipate&quot;, &quot;nitpick&quot;] },</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>           &quot;severity&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;minor&quot;, &quot;major&quot;, &quot;critical&quot;] },</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>           &quot;degraded&quot;: { &quot;type&quot;: &quot;boolean&quot; },</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>           &quot;gandalf_core&quot;: {</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>             &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>             &quot;description&quot;: &quot;Diagnose-core provenance envelope (B5): proves a kind:&#x27;diagnose&#x27; finding came from the vetted diagnose core (PROTOCOL v2), not re-derived inline. Required on diagnose findings by the B5 canary (assertDiagnoseCoreProvenance); minted only via seam/diagnose-core.mjs.&quot;,</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>             &quot;properties&quot;: {</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>               &quot;protocol&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;The vetted diagnose-core protocol marker; must equal GANDALF_CORE_PROTOCOL (&#x27;PROTOCOL v2&#x27;).&quot; }</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>             }</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>           },</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>           &quot;subject_cardinality&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1, &quot;description&quot;: &quot;ANTICIPATE bounded-premortem cardinality (Wave 5 / B3): Gandalf&#x27;s Oranges-lens foresight reads a SINGLE effort, so on a kind:&#x27;anticipate&#x27; finding this must be 1. A value &gt; 1 is a multi-path read (Crucible&#x27;s engine) and FAILS B3 (assertBoundedPremortem).&quot; },</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>           &quot;future_state_condition&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;ANTICIPATE forward-looking field (Wave 5 / B9): a not-yet-present condition the anticipation surfaces. Required (with enabling_assumption) on a kind:&#x27;anticipate&#x27; finding by the B9 canary (assertForwardLooking); minted via seam/anticipate.mjs composeAnticipation.&quot; },</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>           &quot;enabling_assumption&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;ANTICIPATE forward-looking field (Wave 5 / B9): the assumption that would have to hold for the future_state_condition to arrive. Required (with future_state_condition) on a kind:&#x27;anticipate&#x27; finding by the B9 canary.&quot; }</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>         }</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>       }</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>     },</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>     &quot;nitpicks&quot;: {</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>       &quot;type&quot;: &quot;array&quot;,</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>       &quot;items&quot;: {</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>         &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>         &quot;required&quot;: [&quot;id&quot;, &quot;rung&quot;, &quot;reasoning&quot;, &quot;verdict&quot;],</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>         &quot;additionalProperties&quot;: true,</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>         &quot;properties&quot;: {</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>           &quot;id&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>           &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] },</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>           &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>           &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot; }</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>         }</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>       }</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>     },</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>     &quot;elevations&quot;: {</span>
+<span class="source-line" id="L57"><a href="#L57">57</a>       &quot;type&quot;: &quot;array&quot;,</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>       &quot;items&quot;: {</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>         &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>         &quot;required&quot;: [&quot;id&quot;, &quot;tier&quot;, &quot;value_if_true&quot;, &quot;reasoning&quot;, &quot;verdict&quot;],</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>         &quot;additionalProperties&quot;: true,</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         &quot;properties&quot;: {</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>           &quot;id&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>           &quot;tier&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;SPECULATIVE&quot;, &quot;PROMISING&quot;, &quot;GROUNDED&quot;] },</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>           &quot;value_if_true&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;] },</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>           &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] },</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>           &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>           &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot; },</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>           &quot;refutation_provenance&quot;: {</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>             &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>             &quot;description&quot;: &quot;The independent named-defeater refutation envelope (seam/refute.composeRefutationProvenance). W2a ADDITIVELY carries the cross-family provenance the commission-id ledger binds — drafter_family, refuter_family, result_digest. These are optional in W2a (emitted, not yet REQUIRED by vetElevationRefutation — that gate is W2b). additionalProperties stays open so the envelope&#x27;s existing fields (kind, defeater, independent, survived, refuter_commission_id) are unaffected.&quot;,</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>             &quot;additionalProperties&quot;: true,</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>             &quot;properties&quot;: {</span>
+<span class="source-line" id="L74"><a href="#L74">74</a>               &quot;drafter_family&quot;: { &quot;type&quot;: [&quot;string&quot;, &quot;null&quot;], &quot;description&quot;: &quot;W2a: the model family that authored the drafted claim under refutation.&quot; },</span>
+<span class="source-line" id="L75"><a href="#L75">75</a>               &quot;refuter_family&quot;: { &quot;type&quot;: [&quot;string&quot;, &quot;null&quot;], &quot;description&quot;: &quot;W2a: the model family that ran the independent refutation (cross-family when != drafter_family).&quot; },</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>               &quot;result_digest&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;W2a: a stable SHA-256 over the refuter&#x27;s defeater + verdict content — the tuple the minted commission-id is cryptographically bound to.&quot; }</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>             }</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>           }</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>         }</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>       }</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>     },</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     &quot;risk_labels&quot;: {</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>       &quot;type&quot;: &quot;array&quot;,</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>       &quot;items&quot;: {</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>         &quot;type&quot;: &quot;object&quot;,</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>         &quot;required&quot;: [&quot;leg&quot;, &quot;tier&quot;],</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>         &quot;additionalProperties&quot;: true,</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>         &quot;properties&quot;: {</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>           &quot;leg&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;diagnose&quot;, &quot;situate&quot;, &quot;anticipate&quot;] },</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>           &quot;tier&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;SPECULATIVE&quot;, &quot;PROMISING&quot;, &quot;GROUNDED&quot;] },</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>           &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] }</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>         }</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>       }</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     }</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   }</span>
+<span class="source-line" id="L96"><a href="#L96">96</a> }</span></pre></main></body></html>

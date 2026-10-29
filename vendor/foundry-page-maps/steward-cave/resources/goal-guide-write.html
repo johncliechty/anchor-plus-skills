@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Write a guide only when asked · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="goal-guide-write" data-anchor-id="a-acts-guide">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Human decisions</p><h1>Write a guide only when asked</h1>
+<p class="intro">The Campaign&#x27;s existing act writes the guide with its history. This display never calls it.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.535196+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/campaign_acts.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: ed472373bdca74e2fb45408acdfa1b2f9cf1a6aef3fc8e2c192c4f0213eb7161</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/campaign_acts.py · lines 612–623</p><pre>def guide(project, step, text):
+    &quot;&quot;&quot;W2d (2026-09-30): his revision of a goal&#x27;s guide from its place. The steward writes the guide on his word in the
+    conversation; this is his own hand on the file - written whole with a dated History line, committed. No undo: the
+    History line and the Campaign&#x27;s commits keep every version.&quot;&quot;&quot;
+    s = _step(project, step)
+    if not s or not _own_group(s):
+        return _no(&quot;no such goal&quot;)
+    from .steward_campaign import write_guide
+    r = write_guide(project, step, text, who=&quot;John&quot;)
+    if not r.get(&quot;ok&quot;):
+        return _no(str(r.get(&quot;error&quot;) or &quot;the guide was not written&quot;))
+    return _ok(&quot;the guide of %s revised \u2014 %s&quot; % (s.get(&quot;name&quot;), r.get(&quot;note&quot;) or &quot;written&quot;), undo=None, updated=r.get(&quot;updated&quot;))</pre>
+<p><a class="button" href="../source-pages/acts.html#L612">Open numbered source</a>
+<a href="../sources/acts.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p>Related Library material; no automatic call is claimed.</p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">ed472373bdca74e2fb45408acdfa1b2f9cf1a6aef3fc8e2c192c4f0213eb7161</span></p><p>Excerpt hash: <span class="path">d33a5d669fa2e037d01464f19bada1853adfec0d8af4e59542c7d8530b0ed4bf</span></p></details></article></main></body></html>

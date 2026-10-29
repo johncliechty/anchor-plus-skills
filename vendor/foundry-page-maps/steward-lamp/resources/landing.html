@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Check and reconcile before landing · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="landing" data-anchor-id="a-jobs-_land_under_lock">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Check and reconcile before landing</h1>
+<p class="intro">Finish checks the commissioned work. Landing merges newer HEAD in the job tree and repeats the check before the private-index lander; conflicts/failures preserve an unlanded handback.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.632747+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/code_jobs.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: ea9e29c9fa793dfc952a55b0019750d2b52056821c869f08b45021cd804d59f7</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\code_jobs.py · lines 303–327</p><pre>def _land_under_lock(job, _gs):
+    repo, wt = job[&quot;repo&quot;], job[&quot;worktree&quot;]
+    code, head, err = _git(repo, &quot;rev-parse&quot;, &quot;HEAD&quot;)
+    if code != 0:
+        return False, &quot;not landed: could not read %s HEAD (%s)&quot; % (repo, err[:120])
+    code, out, err = _git(wt, &quot;merge&quot;, &quot;--no-edit&quot;, head, timeout=600)       # the job&#x27;s own worktree: safe
+    if code != 0:
+        _git(wt, &quot;merge&quot;, &quot;--abort&quot;)
+        return False, &quot;not landed: the work conflicts with newer changes in %s; it waits on branch %s&quot; % (repo, job[&quot;branch&quot;])
+    if job.get(&quot;check&quot;):
+        try:
+            r = subprocess.run(job[&quot;check&quot;], cwd=wt, shell=True, capture_output=True, text=True, encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;, timeout=CHECK_TIMEOUT_S)
+            if r.returncode != 0:
+                return False, &quot;not landed: the check failed after bringing in newer changes; the work waits on branch %s&quot; % job[&quot;branch&quot;]
+        except Exception as e:
+            return False, &quot;not landed: the check could not run after integration (%s)&quot; % e
+    code, src, _ = _git(wt, &quot;rev-parse&quot;, &quot;HEAD&quot;)
+    code2, names, _ = _git(wt, &quot;diff&quot;, &quot;--name-only&quot;, head, src)
+    if code != 0 or code2 != 0:
+        return False, &quot;not landed: could not read the integrated change&quot;
+    land_files = [n for n in names.splitlines() if n.strip()]
+    if not land_files:
+        return False, &quot;nothing changed beyond what %s already has&quot; % repo
+    return _gs.land_locked(repo, src, land_files, &quot;Code job %s for the steward\n\n%s&quot; % (job[&quot;id&quot;], job[&quot;brief&quot;][:600]),
+                           who=&quot;code job &quot; + job[&quot;id&quot;], expect_head=head)</pre>
+<p><a class="button" href="../source-pages/jobs.html#L303">Open numbered source</a>
+<a href="../sources/jobs.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/check">Job finish checks and preserves failure</a> · <a target="_top" href="../index.html#process/land">Reconcile in the job tree and check again</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">ea9e29c9fa793dfc952a55b0019750d2b52056821c869f08b45021cd804d59f7</span></p><p>Excerpt hash: <span class="path">0ad0f95d11ac291dc6c126530199ab7529725311af4e34c5466f72dae58103d4</span></p></details></article></main></body></html>

@@ -1,0 +1,413 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>live · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>live</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/runtime/live-refuter.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 02d66c8e1f4966c2d784962de6cf66818a10f69205e93b1b014575dcd2a7b324</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf runtime host — the LIVE cross-family REFUTER orchestration (Wave W3).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // THE INTEGRATION POINT the deterministic gate never runs (seam/refute.mjs PRINCIPLE-D): the Tier-1</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // host (runtime/seam-pass.applySeamPass) can only ever floor every elevation to SPECULATIVE because</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // no INDEPENDENT named-defeater refuter actually ran — there was no live `agent()` seam and no minter.</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> // This module is that missing seam: for each high-value elevation that FIRES the refuter, it dispatches</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> // a REAL cross-family refuter (a Gemini `agy -p` sub-agent, drafter family = Claude) and, per genuine</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> // refutation, MINTS a claim-bound commission into the SAME per-run ledger applySeamPass resolves against.</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> // The result: a genuinely cross-family-refuted, surviving elevation reaches GROUNDED with cross_model:true</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> // — DERIVED from the unforgeable ledger, never self-asserted.</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> //</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> // THE FIVE LOAD-BEARING INVARIANTS (build task W3):</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //   1. ONE SHARED PER-RUN LEDGER. The minter mints into `ledger.mintCommission` and applySeamPass</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //      resolves via the SAME `ledger.resolveCommission`. A split ledger ⇒ every mint is a false</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //      negative (the gate can never authenticate an id it did not see minted). The host constructs</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //      ONE `createCommissionLedger()` and threads its resolver into applySeamPass.</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> //   2. MINT/GATE IDENTITY MATCH. The commission&#x27;s result_digest is CLAIM-BOUND (seam/refute.mjs</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> //      elevationIdentity = id + reasoning + what_would_refute_it). We mint on the EXACT elevation</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> //      object we place into the returned draft — the SAME object applySeamPass hands to the gate</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> //      (isCrossFamilyRefutation) BEFORE ensureItemKeys runs — so the two identities are byte-identical.</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> //   3. ROUTING GUARD (never self-review). The refuter role MUST resolve to a NON-drafter family. If it</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> //      would resolve to the drafter family (claude) or to routes.default=claude, we HALT — a drafter</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> //      grading its own draft earns no independent origin and can never cross the single-family ceiling.</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> //   4. HONEST-HALT. If the refuter errors / returns empty / agy is down (the W0 seam throws HaltError on</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> //      a non-attested / substituted rec), the elevation gets NO provenance ⇒ it stays SPECULATIVE and</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> //      cross_model is NOT lifted. `survived` must be an EXPLICIT refuter boolean, never defaulted true.</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> //   5. BOUNDED BUDGET. More firing elevations than the pre-registered budget R ⇒ HALT (assertRefuterBudget;</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> //      no silent drop of the excess).</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> //</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> // Stdlib + the shipped gandalf seams only. The trio role-routed agent is a LAZY dynamic import (live</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> // path only), so importing THIS module never loads the trio and never spawns a subprocess — the</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> // deterministic test injects a stub agent + a fixture ledger and exercises the full mint→gate path with</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> // zero live calls.</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> </span>
+<span class="source-line" id="L35"><a href="#L35">35</a> import {</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>   firesRefuter,</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>   REFUTER_BUDGET_R,</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>   assertRefuterBudget,</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>   isNamedDefeater,</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>   computeResultDigest,</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>   composeRefutationProvenance,</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> } from &#x27;../seam/refute.mjs&#x27;;</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> // NOTE (2026-08-31 Fable review): refuters are READ-ONLY verification seats (agy</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> // --readonly), so they CANNOT write the heartbeat file the swarm look-in supervisor</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> // reads — wired blind, superviseSeat killed healthy slow refuters at wall-clock and</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> // respawned a second paid call while the first still ran. The look-in (appendix +</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> // supervisor) is therefore unwired on this path; the driver&#x27;s own timeout bounds a</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> // hung seat. Re-wire only with a heartbeat channel a read-only seat can actually use.</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> </span>
+<span class="source-line" id="L50"><a href="#L50">50</a> /** The drafter family (who authored the drafted claims) and the refuter family (who runs the</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>  *  independent refutation) for the reference W3 topology: Claude drafts, Gemini refutes. */</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> export const DRAFTER_FAMILY = &#x27;claude&#x27;;</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> export const REFUTER_FAMILY = &#x27;gemini&#x27;;</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> /** Test/fixture only: historical Claude+Gemini table. Live production MUST omit routes</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>  *  (or call `buildDefaultRefuterRoutes`) so seats follow coding/review prefs — never pin Claude in launchers. */</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> export const DEFAULT_REFUTER_ROUTES = Object.freeze({</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   refuter: { driver: &#x27;gemini-cli&#x27;, model: &#x27;Gemini 3.1 Pro (High)&#x27; },</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>   default: { driver: &#x27;claude&#x27; },</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> });</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> </span>
+<span class="source-line" id="L62"><a href="#L62">62</a> /**</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>  * Prefs-aware Gandalf/Jumper route table: refuter → REVIEW_FAMILY; default/drafter → CODING_FAMILY.</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>  * Review model left unpinned so the gemini-cli TRIO_TIER ladder applies when family is gemini.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>  * @param {object} [env=process.env]</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>  */</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> export async function buildDefaultRefuterRoutes(env = process.env) {</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   const { buildRoutesFromFamilies } = await import(&#x27;file:///C:/dev/trio/drivers/index.mjs&#x27;);</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   return buildRoutesFromFamilies({</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>     env,</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>     codingRoles: [],</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>     reviewRoles: [&#x27;refuter&#x27;],</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>   });</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> }</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> </span>
+<span class="source-line" id="L76"><a href="#L76">76</a> /** The JSON-schema the refuter reply is asked to conform to: the NAMED defeater it attempted and an</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>  *  EXPLICIT survived verdict (never defaulted). `verdict` (free prose) is optional. */</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> export const REFUTER_REPLY_SCHEMA = {</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>   type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>   required: [&#x27;defeater&#x27;, &#x27;survived&#x27;],</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>   properties: {</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     defeater: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>     survived: { type: &#x27;boolean&#x27; },</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>     verdict: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   },</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> };</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> </span>
+<span class="source-line" id="L88"><a href="#L88">88</a> function isPlainObject(v) {</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   return v !== null &amp;&amp; typeof v === &#x27;object&#x27; &amp;&amp; !Array.isArray(v);</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> }</span>
+<span class="source-line" id="L91"><a href="#L91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92">92</a> /** Thrown by the routing guard when the refuter role would resolve to the DRAFTER family (self-review).</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>  *  A distinct, NAMED class so the caller/test can assert the run HALTS rather than silently self-reviewing</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>  *  on the drafter&#x27;s own model (which earns no independent cross-family origin). */</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> export class SelfRefutationHalt extends Error {</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   constructor(refuterFamily, drafterFamily, driver) {</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>     super(</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>       `self-refutation HALT: the refuter role resolves to driver ${JSON.stringify(driver)} (family ` +</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>       `${JSON.stringify(refuterFamily)}) which is the DRAFTER family ${JSON.stringify(drafterFamily)} — a ` +</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>       `verification/refuter role MUST resolve to a NON-drafter family (never self-review). Route the ` +</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>       `refuter role to a different model family (e.g. driver &#x27;gemini-cli&#x27;) or fix routes.default.`</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>     );</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>     this.name = &#x27;SelfRefutationHalt&#x27;;</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     this.refuter_family = refuterFamily;</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     this.drafter_family = drafterFamily;</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     this.driver = driver;</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   }</span>
+<span class="source-line" id="L108"><a href="#L108">108</a> }</span>
+<span class="source-line" id="L109"><a href="#L109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110">110</a> /** Map a trio driver name to its model FAMILY (the leading token — STRICT prefix, never a substring, so</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>  *  a label like &#x27;claude-...-gemini-fallback&#x27; stamps claude, not gemini). Returns null for an</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>  *  empty/unknown driver so the routing guard fails CLOSED (an unverifiable family is treated as unsafe). */</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> export function familyFromDriver(driver) {</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   const t = String(driver ?? &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>   if (!t) return null;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>   if (t.startsWith(&#x27;gemini&#x27;)) return &#x27;gemini&#x27;;</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>   if (t.startsWith(&#x27;claude&#x27;)) return &#x27;claude&#x27;;</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>   if (t.startsWith(&#x27;openai&#x27;) || t.startsWith(&#x27;gpt&#x27;)) return &#x27;openai&#x27;;</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>   if (t.startsWith(&#x27;grok&#x27;)) return &#x27;grok&#x27;;</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   return t.split(/[\s\-_]/)[0] || null;</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> }</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> </span>
+<span class="source-line" id="L123"><a href="#L123">123</a> /**</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>  * ROUTING GUARD (invariant 3). Assert the refuter role resolves to a NON-drafter family. The refuter role</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>  * resolves to `routes.refuter` (else `routes.default`); its driver&#x27;s family MUST differ from</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>  * `drafterFamily`. HALTs (SelfRefutationHalt) when it resolves to the drafter family OR to an</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>  * unverifiable/empty driver (fail closed) — never self-review. Returns the resolved refuter family on pass.</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>  * @param {{routes?:object, drafterFamily?:string}} [o]</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>  * @returns {string} the resolved refuter family</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>  */</span>
+<span class="source-line" id="L131"><a href="#L131">131</a> export function assertCrossFamilyRouting({ routes = {}, drafterFamily = DRAFTER_FAMILY } = {}) {</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   const route = (routes &amp;&amp; (routes.refuter || routes.default)) || {};</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   const driver = route.driver || null;</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>   const refuterFamily = familyFromDriver(driver);</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>   const drafter = String(drafterFamily ?? &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>   if (!refuterFamily || refuterFamily === drafter) {</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     throw new SelfRefutationHalt(refuterFamily, drafter, driver);</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>   }</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>   return refuterFamily;</span>
+<span class="source-line" id="L140"><a href="#L140">140</a> }</span>
+<span class="source-line" id="L141"><a href="#L141">141</a> </span>
+<span class="source-line" id="L142"><a href="#L142">142</a> /** The default refuter prompt: ask the independent (cross-family) refuter to ATTEMPT the elevation&#x27;s</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>  *  own named defeater and report, honestly, whether the claim SURVIVED it. Small by design (agy delivers</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>  *  the prompt via ARGV; keep it well under the ~32KB limit and let the refuter read files itself). */</span>
+<span class="source-line" id="L145"><a href="#L145">145</a> export function defaultRefutePrompt(elevation) {</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>   const claim = String(elevation?.verdict ?? elevation?.reasoning ?? &#x27;&#x27;).trim();</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>   const namedDefeater = String(elevation?.what_would_refute_it ?? &#x27;&#x27;).trim();</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>   return (</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     `You are an INDEPENDENT cross-family refuter. A drafter (a different model family) elevated this ` +</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     `suggestion as high-value:\n\n  CLAIM: ${claim}\n  REASONING: ${String(elevation?.reasoning ?? &#x27;&#x27;).trim()}\n\n` +</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     `The drafter named ONE concrete defeater that would falsify it:\n\n  NAMED DEFEATER: ${namedDefeater}\n\n` +</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>     `Genuinely ATTEMPT that named defeater against the claim. Do NOT rubber-stamp it. Then answer, as a ` +</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     `single raw JSON object, with:\n` +</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     `  - &quot;defeater&quot;: the concrete named defeater you actually attempted (a falsifying observation, NOT a ` +</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     `confidence word like &quot;likely&quot;/&quot;unlikely&quot;),\n` +</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     `  - &quot;survived&quot;: a boolean — true iff the claim SURVIVED your attempted defeater; false iff the ` +</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>     `defeater LANDED and breaks the claim,\n` +</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>     `  - &quot;verdict&quot;: one sentence explaining the outcome.\n` +</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     `Report survived HONESTLY — never default it to true.`</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>   );</span>
+<span class="source-line" id="L161"><a href="#L161">161</a> }</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> </span>
+<span class="source-line" id="L163"><a href="#L163">163</a> /** Read the refuter&#x27;s structured reply into `{ defeater, survived, verdict }`. Tolerant of the</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>  *  gemini-cli ABSTAIN shape (`{answerable:&#x27;no&#x27;,...}`) and of plain text — anything without an explicit</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>  *  boolean `survived` + a named `defeater` is rejected downstream (⇒ no provenance ⇒ SPECULATIVE). */</span>
+<span class="source-line" id="L166"><a href="#L166">166</a> export function extractRefuterVerdict(reply) {</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>   if (!isPlainObject(reply)) return { defeater: undefined, survived: undefined, verdict: undefined };</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   return { defeater: reply.defeater, survived: reply.survived, verdict: reply.verdict };</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> }</span>
+<span class="source-line" id="L170"><a href="#L170">170</a> </span>
+<span class="source-line" id="L171"><a href="#L171">171</a> /**</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>  * runLiveRefutation — dispatch a live cross-family refuter for each FIRING elevation and MINT a</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>  * claim-bound commission per genuine refutation into the SHARED per-run ledger.</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>  *</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>  * Returns a FRESH draft (the caller feeds it to applySeamPass with the SAME `ledger.resolveCommission`)</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>  * plus a per-elevation dispatch log. PURE w.r.t. the input `rawDraft` (never mutates it — every touched</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>  * elevation is a fresh copy). Each elevation the refuter genuinely runs on:</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>  *   • survived:true  ⇒ mint a cross-family commission, attach the refutation_provenance carrying its id,</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>  *     and REQUEST the GROUNDED tier (the gate still decides eligibility — labelTier only CAPS, so the</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>  *     request is required to reach GROUNDED, and the derived ledger check governs whether it is granted);</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>  *   • survived:false ⇒ the defeater LANDED ⇒ set rung REFUTED so the host drops it (only-REFUTED-drops);</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>  *   • refuter error / empty / no explicit survived / non-named defeater ⇒ NO provenance ⇒ the host floors</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>  *     it to SPECULATIVE (honest un-refuted floor). `survived` is NEVER defaulted true.</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>  *</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>  * @param {object} rawDraft                         the model&#x27;s raw draft ({reasoning, verdict, ..., elevations[]})</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>  * @param {object} o</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>  * @param {Function} o.agent                        the role-routed `agent(prompt, {role,label,schema})`</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>  * @param {object}   o.ledger                       the SHARED per-run commission ledger (createCommissionLedger())</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>  * @param {?object}  [o.routes]                     the route table — when present the routing guard runs</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>  * @param {string}   [o.drafterFamily=&#x27;claude&#x27;]</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>  * @param {string}   [o.refuterFamily=&#x27;gemini&#x27;]</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>  * @param {number}   [o.budget=REFUTER_BUDGET_R]    the bounded refuter budget R</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>  * @param {Function} [o.refutePrompt]               (elevation)=&gt;string prompt builder</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>  * @param {string}   [o.role=&#x27;refuter&#x27;]</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>  * @param {Function} [o.log]</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>  * @returns {Promise&lt;{draft:object, dispatch:object[]}&gt;}</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>  */</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> export async function runLiveRefutation(rawDraft, {</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   agent,</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   ledger,</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   routes = null,</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   drafterFamily = DRAFTER_FAMILY,</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   refuterFamily = REFUTER_FAMILY,</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   budget = REFUTER_BUDGET_R,</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   refutePrompt = defaultRefutePrompt,</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   role = &#x27;refuter&#x27;,</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   log = () =&gt; {},</span>
+<span class="source-line" id="L208"><a href="#L208">208</a> } = {}) {</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>   if (!isPlainObject(rawDraft)) {</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>     throw new TypeError(&#x27;runLiveRefutation: rawDraft must be a plain object&#x27;);</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   }</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   if (!ledger || typeof ledger.mintCommission !== &#x27;function&#x27; || typeof ledger.resolveCommission !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>     throw new TypeError(&#x27;runLiveRefutation: a shared commission ledger { mintCommission, resolveCommission } is required (invariant 1)&#x27;);</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>   }</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     throw new TypeError(&#x27;runLiveRefutation: an injected role-routed agent(prompt, opts) is required&#x27;);</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   }</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>   // INVARIANT 3 — routing guard: a refuter role must resolve to a NON-drafter family (never self-review).</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>   if (routes) assertCrossFamilyRouting({ routes, drafterFamily });</span>
+<span class="source-line" id="L220"><a href="#L220">220</a> </span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   const rawElevations = Array.isArray(rawDraft.elevations) ? rawDraft.elevations : [];</span>
+<span class="source-line" id="L222"><a href="#L222">222</a> </span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   // Which elevations FIRE the refuter (value-if-true ≥ HIGH OR severity ≥ major).</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>   const firing = [];</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>   rawElevations.forEach((e, i) =&gt; { if (isPlainObject(e) &amp;&amp; firesRefuter(e)) firing.push(i); });</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>   // INVARIANT 5, revised 2026-08-25 (John&#x27;s ruling — elegance card + cost amendment; journals</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>   // 0296/0298-0301: the frozen R=3 HALT fired on nearly every real read, was twice misread as</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>   // &quot;agy down&quot;, and shipped two avoidably-degraded deliverables). Cost is a PRE-FLIGHT</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>   // conversation, never a mid-run wall: excess firing elevations no longer HALT the run — the</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>   // top-R by value/severity get refuters; the excess ships UN-REFUTED and floors to SPECULATIVE</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>   // by the existing honest-floor invariant, each named in the dispatch log. Nothing is silently</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>   // dropped; paid-for output is never withheld (Gandalf&#x27;s own locked law). The runaway ceiling</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>   // (&gt;4×R) also finishes-and-stamps — it only escalates the log line.</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   let toRefute = firing;</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   let floored = [];</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   if (firing.length &gt; budget) {</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     const rank = (i) =&gt; {</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>       const e = rawElevations[i];</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>       const v = String(e?.value_if_true ?? &#x27;&#x27;).toLowerCase() === &#x27;high&#x27; ? 2 : 1;</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>       // 2026-08-25 review fix: &#x27;critical&#x27; outranks &#x27;major&#x27; (it scored 0 — criticals</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>       // were floored BEFORE majors under budget pressure, inverted priority).</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>       const sev = String(e?.severity ?? &#x27;&#x27;).toLowerCase();</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>       const s = sev === &#x27;critical&#x27; ? 2 : sev === &#x27;major&#x27; ? 1 : 0;</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>       return v * 10 + s;</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>     };</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>     const sorted = [...firing].sort((a, b) =&gt; rank(b) - rank(a) || a - b);</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>     toRefute = sorted.slice(0, budget).sort((a, b) =&gt; a - b);</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>     floored = sorted.slice(budget).sort((a, b) =&gt; a - b);</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>     const nameOf = (i) =&gt; rawElevations[i]?.id ?? `e${i}`;</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>     const ceiling = firing.length &gt; Math.max(12, 4 * budget) ? &#x27; RUNAWAY CEILING TRIPPED —&#x27; : &#x27;&#x27;;</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>     log(`refuter budget PRE-FLIGHT:${ceiling} ${firing.length} firing elevation(s) exceed budget ${budget} — FLOORING, not halting: refuting top ${budget} (${toRefute.map(nameOf).join(&#x27;, &#x27;)}); ${floored.length} ship SPECULATIVE un-refuted (${floored.map(nameOf).join(&#x27;, &#x27;)}). Re-run with --budget ${firing.length} to cover all.`);</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>   }</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>   const firingSet = new Set(toRefute);</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   const flooredSet = new Set(floored);</span>
+<span class="source-line" id="L255"><a href="#L255">255</a> </span>
+<span class="source-line" id="L256"><a href="#L256">256</a>   // B3 (2026-07-11): firing elevations are INDEPENDENT — each gets its own refuter</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>   // call, its own mint, its own provenance — so they dispatch CONCURRENTLY under a</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>   // bounded cap instead of the old for-await serialization (which made the refuter</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>   // leg the second-longest stage of every real run: N × tens of seconds, serial).</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>   // Cap default 2 (agy OOMs above ~3 concurrent — the crucible/researchPrime caps</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>   // encode the same host fact); GANDALF_REFUTER_CONCURRENCY overrides, ceiling 3.</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>   // Determinism: results are placed by INDEX, dispatch is sorted by index, and the</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>   // ledger mints in-process — output is order-independent of completion order.</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>   const capEnv = Number(process.env.GANDALF_REFUTER_CONCURRENCY);</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>   const cap = Math.min(3, Number.isFinite(capEnv) &amp;&amp; capEnv &gt; 0 ? capEnv : 2);</span>
+<span class="source-line" id="L266"><a href="#L266">266</a> </span>
+<span class="source-line" id="L267"><a href="#L267">267</a>   const refuteOne = async (i) =&gt; {</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>     const raw = rawElevations[i];</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     // INVARIANT 2 — the object the GATE will read. We mint on THIS exact object and place it in the</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     // returned draft, so elevationIdentity(bound) at mint === elevationIdentity(bound) at the gate.</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>     const bound = { ...raw };</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>     const label = `refuter:${raw.id ?? `e${i}`}`;</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>     try {</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>       const reply = await agent(refutePrompt(raw), { role, label, schema: REFUTER_REPLY_SCHEMA });</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>       const { defeater, survived, verdict } = extractRefuterVerdict(reply);</span>
+<span class="source-line" id="L276"><a href="#L276">276</a> </span>
+<span class="source-line" id="L277"><a href="#L277">277</a>       // INVARIANT 4 — survived must be an EXPLICIT boolean and defeater a NAMED concrete defeater;</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>       // anything else ⇒ NO provenance ⇒ the host floors the elevation to SPECULATIVE (honest floor).</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>       if (typeof survived !== &#x27;boolean&#x27; || !isNamedDefeater(defeater)) {</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>         return { index: i, bound, entry: { index: i, id: raw.id ?? null, minted: false, reason: &#x27;refuter returned no explicit survived boolean and/or no named concrete defeater&#x27; } };</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>       }</span>
+<span class="source-line" id="L282"><a href="#L282">282</a> </span>
+<span class="source-line" id="L283"><a href="#L283">283</a>       const v = (verdict === undefined || verdict === null || verdict === &#x27;&#x27;) ? null : String(verdict);</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>       // The digest the commission is bound to — computed over THIS bound elevation&#x27;s identity + the</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>       // refuter content. composeRefutationProvenance recomputes the SAME digest from the SAME args</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>       // (field parity: {defeater, survived, verdict} hashed == what the envelope stores), so the ledger</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>       // tuple&#x27;s result_digest === the provenance&#x27;s result_digest === the gate&#x27;s recomputed digest.</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>       const result_digest = computeResultDigest({ elevation: bound, defeater, survived, verdict: v });</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>       const commission_id = ledger.mintCommission({</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>         drafter_family: drafterFamily,</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>         refuter_family: refuterFamily,</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>         result_digest,</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>       });</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>       const provenance = composeRefutationProvenance({</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>         elevation: bound,</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>         defeater,</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>         survived,</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>         verdict: v,</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>         drafter_family: drafterFamily,</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>         refuter_family: refuterFamily,</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>         commission_id,</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>       });</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>       bound.refutation_provenance = provenance;</span>
+<span class="source-line" id="L304"><a href="#L304">304</a> </span>
+<span class="source-line" id="L305"><a href="#L305">305</a>       if (survived === false) {</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>         // The named defeater LANDED — the claim is refuted. Only-REFUTED-drops: the host will drop it.</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>         bound.rung = &#x27;REFUTED&#x27;;</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>       } else {</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>         // A surviving, cross-family refutation REQUESTS the GROUNDED tier; the gate (derived cross_family</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>         // eligibility from the shared ledger) is the sole authority that grants or caps it.</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>         bound.tier = &#x27;GROUNDED&#x27;;</span>
+<span class="source-line" id="L312"><a href="#L312">312</a>       }</span>
+<span class="source-line" id="L313"><a href="#L313">313</a>       return { index: i, bound, entry: { index: i, id: raw.id ?? null, minted: true, survived, commission_id } };</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     } catch (err) {</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>       // INVARIANT 4 (honest-HALT): the refuter errored / agy is down (W0 seam throws HaltError on a</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>       // non-attested / substituted rec) / empty reply. The elevation gets NO provenance ⇒ SPECULATIVE ⇒</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>       // cross_model NOT lifted. We NEVER fabricate a survived:true to manufacture a cross-family grant.</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>       log(`!! ${label}: refuter failed (${err?.message ?? err}) — elevation stays SPECULATIVE (no provenance minted)`);</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>       return { index: i, bound, entry: { index: i, id: raw.id ?? null, minted: false, reason: `refuter failed: ${err?.message ?? err}` } };</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>     }</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>   };</span>
+<span class="source-line" id="L322"><a href="#L322">322</a> </span>
+<span class="source-line" id="L323"><a href="#L323">323</a>   // Bounded pool: `cap` workers drain the firing queue; per-elevation failures are</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>   // handled INSIDE refuteOne (it never rejects), so one bad refuter cannot sink the batch.</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>   const queue = [...toRefute];</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>   const results = new Map(); // index -&gt; { bound, entry }</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>   await Promise.all(Array.from({ length: Math.min(cap, queue.length) }, async () =&gt; {</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>     while (queue.length) {</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>       const i = queue.shift();</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>       const r = await refuteOne(i);</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>       results.set(r.index, r);</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>     }</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>   }));</span>
+<span class="source-line" id="L334"><a href="#L334">334</a> </span>
+<span class="source-line" id="L335"><a href="#L335">335</a>   const outElevations = [];</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>   const dispatch = [];</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>   for (let i = 0; i &lt; rawElevations.length; i++) {</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>     const raw = rawElevations[i];</span>
+<span class="source-line" id="L339"><a href="#L339">339</a>     if (!isPlainObject(raw)) { outElevations.push(raw); continue; }</span>
+<span class="source-line" id="L340"><a href="#L340">340</a>     // Budget-floored elevations: fired but not refuted this run — recorded, never silent.</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>     if (flooredSet.has(i)) {</span>
+<span class="source-line" id="L342"><a href="#L342">342</a>       outElevations.push({ ...raw });</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>       dispatch.push({ index: i, id: raw.id ?? null, minted: false, reason: `budget floor (pre-flight): fired but not refuted this run — ships SPECULATIVE; re-run with --budget ${firing.length} to cover` });</span>
+<span class="source-line" id="L344"><a href="#L344">344</a>       continue;</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>     }</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     // Below-threshold elevations earn no refuter — pass a fresh copy through (the host floors them).</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>     if (!firingSet.has(i)) { outElevations.push({ ...raw }); continue; }</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>     const r = results.get(i);</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>     outElevations.push(r.bound);</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     dispatch.push(r.entry);</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>   }</span>
+<span class="source-line" id="L352"><a href="#L352">352</a> </span>
+<span class="source-line" id="L353"><a href="#L353">353</a>   return { draft: { ...rawDraft, elevations: outElevations }, dispatch };</span>
+<span class="source-line" id="L354"><a href="#L354">354</a> }</span>
+<span class="source-line" id="L355"><a href="#L355">355</a> </span>
+<span class="source-line" id="L356"><a href="#L356">356</a> /**</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>  * Build the LIVE role-routed agent from coding/review family prefs</span>
+<span class="source-line" id="L358"><a href="#L358">358</a>  * (refuter → REVIEW_FAMILY, drafter/default → CODING_FAMILY). Omit `routes` to honor prefs;</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>  * pass an explicit table to pin. Runs the routing guard FIRST so a self-review route can never</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>  * be built. ENV: forces CRUCIBLE_AGENT_LIVE=1. NOT called by the deterministic test.</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>  * @param {{routes?:object, drafterFamily?:string, env?:object}} [o]</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>  * @returns {Promise&lt;Function&gt;} the role-routed agent(prompt, opts)</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>  */</span>
+<span class="source-line" id="L364"><a href="#L364">364</a> /**</span>
+<span class="source-line" id="L365"><a href="#L365">365</a>  * The family that DRAFTED (2026-09-04, journal 0315): the session running this skill, not the</span>
+<span class="source-line" id="L366"><a href="#L366">366</a>  * dashboard&#x27;s coding family — a Claude Code session drafts as claude even when coding_family is</span>
+<span class="source-line" id="L367"><a href="#L367">367</a>  * chatgpt. Explicit `drafterFamily` wins; then GANDALF_DRAFTER_FAMILY; then a Claude Code host</span>
+<span class="source-line" id="L368"><a href="#L368">368</a>  * (CLAUDECODE set) is claude; else the coding family.</span>
+<span class="source-line" id="L369"><a href="#L369">369</a>  */</span>
+<span class="source-line" id="L370"><a href="#L370">370</a> export function resolveDrafterFamily({ drafterFamily, env = process.env, codingFamily } = {}) {</span>
+<span class="source-line" id="L371"><a href="#L371">371</a>   const pick = (v) =&gt; (typeof v === &#x27;string&#x27; &amp;&amp; v.trim() ? v.trim().toLowerCase() : null);</span>
+<span class="source-line" id="L372"><a href="#L372">372</a>   return pick(drafterFamily) || pick(env.GANDALF_DRAFTER_FAMILY) || (env.CLAUDECODE ? &#x27;claude&#x27; : null) || pick(codingFamily) || DRAFTER_FAMILY;</span>
+<span class="source-line" id="L373"><a href="#L373">373</a> }</span>
+<span class="source-line" id="L374"><a href="#L374">374</a> </span>
+<span class="source-line" id="L375"><a href="#L375">375</a> /**</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>  * The refuter seat under the dashboard&#x27;s rule (John, 2026-09-04): the configured family that is NOT</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>  * the drafter&#x27;s — review_family first (the check seat), then coding_family; null when every</span>
+<span class="source-line" id="L378"><a href="#L378">378</a>  * configured family is the drafter&#x27;s (the caller HALTs honestly — never self-refutation, never a</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>  * family nobody selected).</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>  */</span>
+<span class="source-line" id="L381"><a href="#L381">381</a> export function pickRefuterFamily({ families = {}, drafterFamily } = {}) {</span>
+<span class="source-line" id="L382"><a href="#L382">382</a>   const d = String(drafterFamily || &#x27;&#x27;).toLowerCase();</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>   for (const f of [families.review, families.coding]) {</span>
+<span class="source-line" id="L384"><a href="#L384">384</a>     const fam = String(f || &#x27;&#x27;).toLowerCase();</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>     if (fam &amp;&amp; fam !== d) return fam;</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>   }</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>   return null;</span>
+<span class="source-line" id="L388"><a href="#L388">388</a> }</span>
+<span class="source-line" id="L389"><a href="#L389">389</a> </span>
+<span class="source-line" id="L390"><a href="#L390">390</a> export async function buildLiveRefuterAgent({ routes, drafterFamily, env = process.env } = {}) {</span>
+<span class="source-line" id="L391"><a href="#L391">391</a>   const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import(&#x27;file:///C:/dev/trio/drivers/index.mjs&#x27;);</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>   const built = buildRoutesFromFamilies({</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>     env,</span>
+<span class="source-line" id="L394"><a href="#L394">394</a>     codingRoles: [],</span>
+<span class="source-line" id="L395"><a href="#L395">395</a>     reviewRoles: [&#x27;refuter&#x27;],</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>   });</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>   const resolvedDrafter = resolveDrafterFamily({ drafterFamily, env, codingFamily: built.families?.coding });</span>
+<span class="source-line" id="L398"><a href="#L398">398</a>   let resolvedRoutes = routes;</span>
+<span class="source-line" id="L399"><a href="#L399">399</a>   if (!resolvedRoutes) {</span>
+<span class="source-line" id="L400"><a href="#L400">400</a>     // (2026-09-04) refuter = the configured non-drafter family; review_family first.</span>
+<span class="source-line" id="L401"><a href="#L401">401</a>     const fam = pickRefuterFamily({ families: built.families || {}, drafterFamily: resolvedDrafter });</span>
+<span class="source-line" id="L402"><a href="#L402">402</a>     const drv = fam ? familyToDriverName(fam) : null;</span>
+<span class="source-line" id="L403"><a href="#L403">403</a>     resolvedRoutes = drv ? { ...built.routes, refuter: { driver: drv } } : built.routes;</span>
+<span class="source-line" id="L404"><a href="#L404">404</a>   }</span>
+<span class="source-line" id="L405"><a href="#L405">405</a>   // Fail-closed: a refuter that resolves to the drafter&#x27;s family is a self-refutation HALT.</span>
+<span class="source-line" id="L406"><a href="#L406">406</a>   assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });</span>
+<span class="source-line" id="L407"><a href="#L407">407</a>   return makeRoleRoutedAgent({ routes: resolvedRoutes, env: { ...env, CRUCIBLE_AGENT_LIVE: &#x27;1&#x27; } });</span>
+<span class="source-line" id="L408"><a href="#L408">408</a> }</span></pre></main></body></html>

@@ -61,18 +61,48 @@ def _text(path):
         return ''
 
 
+def _is_default_foundry_root():
+    return str(api.FOUNDRY_ROOT).replace('\\', '/').rstrip('/').lower() == 'c:/dev/skill foundry'
+
+
 def discovery_roots():
-    """Configured existing sources; no duplicate registry or model settings."""
+    """Configured existing sources; falls back to installed/bundled skills on collaborator PCs."""
     foundry = Path(api.FOUNDRY_ROOT)
+    skills = Path(api.SKILLS_ROOT)
     trio = Path(os.environ.get('FOUNDRY_TRIO_ROOT') or 'C:/dev/trio')
     steward = Path(os.environ.get('FOUNDRY_STEWARD_ROOT') or
                    (Path.home() / '.agents' / 'skills' / 'ecgberht'))
-    return foundry, Path(api.SKILLS_ROOT), trio, steward
+    if _is_default_foundry_root():
+        if not skills.is_dir():
+            for alt in (CODE_ROOT / 'vendor' / 'bundled-skills', CODE_ROOT.parent / 'skills'):
+                if alt.is_dir():
+                    skills = alt
+                    break
+        if not foundry.is_dir():
+            foundry = skills.parent if skills.name == 'skills' else skills
+        if not trio.is_dir() and not os.environ.get('FOUNDRY_TRIO_ROOT'):
+            trio = skills
+        if not steward.is_dir() and not os.environ.get('FOUNDRY_STEWARD_ROOT'):
+            for alt_st in (
+                CODE_ROOT / 'vendor' / 'bundled-skills' / 'ecgberht',
+                CODE_ROOT.parent / 'skills' / 'ecgberht',
+                Path.home() / '.claude' / 'skills' / 'ecgberht',
+            ):
+                if alt_st.is_dir():
+                    steward = alt_st
+                    break
+    return foundry, skills, trio, steward
 
 
 def content_root():
-    return Path(os.environ.get('FOUNDRY_PAGE_CONTENT_ROOT') or
-                (Path(api.FOUNDRY_ROOT) / 'Foundry page and knowledge maps'))
+    explicit = os.environ.get('FOUNDRY_PAGE_CONTENT_ROOT')
+    if explicit:
+        return Path(explicit)
+    primary = Path(api.FOUNDRY_ROOT) / 'Foundry page and knowledge maps'
+    if primary.is_dir() or not _is_default_foundry_root():
+        return primary
+    bundled = CODE_ROOT / 'vendor' / 'foundry-page-maps'
+    return bundled if bundled.is_dir() else primary
 
 
 def _inside(path, root):
@@ -85,6 +115,9 @@ def _inside(path, root):
 
 def _allowed(path):
     roots = (*discovery_roots(), content_root())
+    if _is_default_foundry_root():
+        roots = (*roots, CODE_ROOT.parent / 'skills', CODE_ROOT / 'vendor' / 'bundled-skills',
+                 CODE_ROOT / 'vendor' / 'foundry-page-maps')
     return any(_inside(path, root) for root in roots)
 
 
@@ -122,13 +155,18 @@ def _icon(directory, text, skill_id):
 
 def catalog():
     foundry, skills_root, trio, steward = discovery_roots()
-    manifest = {str(Path(api._resolve_source(e.get('source'))).resolve()): e
-                for e in api._load_manifest() if e.get('source')}
+    manifest = {}
+    manifest_by_id = {}
+    for e in api._load_manifest():
+        if e.get('source'):
+            resolved = str(Path(api._resolve_source(e.get('source'))).resolve())
+            manifest[resolved] = e
+            manifest_by_id[_key(e.get('id') or Path(resolved).name)] = e
     candidates = list(skills_root.glob('*/SKILL.md'))
     candidates.extend(trio / name / 'SKILL.md' for name in ('crucible', 'foreman', 'researchPrime'))
     candidates.append(steward / 'SKILL.md')
     candidates.extend(Path(p) / 'SKILL.md' for p in manifest)
-    rows, seen = [], set()
+    rows, seen, seen_ids = [], set(), set()
     for path in candidates:
         directory = path.parent.resolve()
         if str(directory) in seen or not path.is_file() or not _allowed(path):
@@ -141,8 +179,13 @@ def catalog():
         # canonical frontmatter still needs the Foundry-owned follow-up.
         if _key(directory.name) in ('agydispatch', 'figuredesigner'):
             continue
-        entry = manifest.get(str(directory), {})
+        if _key(directory.name) == 'ecgberht' and directory != steward.resolve():
+            continue
         skill_id = 'ecgberht' if directory == steward.resolve() else _key(directory.name)
+        if skill_id in seen_ids:
+            continue
+        seen_ids.add(skill_id)
+        entry = manifest.get(str(directory)) or (manifest_by_id.get(skill_id, {}) if _is_default_foundry_root() else {})
         human = api._parse_human_md(_text(directory / 'HUMAN.md'))
         parsed = api._parse_skill_md(text)
         name = _frontmatter(text, 'name') or entry.get('name') or directory.name
@@ -231,7 +274,22 @@ def _path(raw, directory, artifact_dir=None):
     if not path.is_absolute():
         if artifact_dir:
             candidates.append(artifact_dir / path)
-        candidates.extend([Path(api.FOUNDRY_ROOT) / path, discovery_roots()[2] / path])
+        foundry, skills_root, trio, _steward = discovery_roots()
+        candidates.extend([Path(api.FOUNDRY_ROOT) / path, trio / path, foundry / path, skills_root / path])
+        if _is_default_foundry_root():
+            b_root = CODE_ROOT / 'vendor' / 'bundled-skills'
+            b_skill_name = 'ecgberht' if directory.name.lower() == 'ecgberht' else directory.name
+            candidates.append(b_root / b_skill_name / path)
+            if raw.startswith('skills/'):
+                rel_skill = Path(raw[len('skills/'):])
+                candidates.extend([
+                    skills_root / rel_skill,
+                    b_root / rel_skill,
+                ])
+            candidates.extend([
+                b_root / path,
+                b_root / 'foundry' / path,
+            ])
     return next((p.resolve() for p in candidates if p.is_file() and _allowed(p)
                  and p.suffix.lower() in TEXT_TYPES and not any(
                      part.startswith('.') for part in p.relative_to(p.anchor).parts

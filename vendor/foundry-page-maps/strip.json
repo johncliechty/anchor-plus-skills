@@ -1,0 +1,1214 @@
+{
+ "schema": "ecgberht-strip-v0",
+ "project_id": "30ffba93f3614ce48aeda6252b74cf42",
+ "face_path": "ECGBERHT.md",
+ "as_of": "2026-10-07",
+ "phase": "planning",
+ "active_effort": "Paused for John's Anchor reboot (2026-10-06). researchPrime Refinement 2 is built and preserved on branch steward-job-20261006-105938-a28de8; its one failing phone check is diagnosed (tab render lags the tap because tabs switch via the page hash). Not landed, not live.",
+ "effort_status": "PENDING",
+ "tool_depth_cell": "LITE",
+ "human_wait": "",
+ "capacity": "unknown",
+ "negative_heartbeat": {
+  "no_attention_needed": false,
+  "why": null,
+  "until": null
+ },
+ "anti_starvation_age_days": 0,
+ "grasscatch": [],
+ "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+ "why_next": "John explicitly paused for his restart; resume only after his return. Cave landed; Star Chart remains unstarted. Source turn e208795b-9734-47a7-bb2d-70a9b8640041;",
+ "uncertainty_flags": [],
+ "instruments": [
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "phase": "planning",
+   "tool_depth_cell": "LITE",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "phase": "planning",
+   "tool_depth_cell": "LITE",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Scope recorded; work awaits its own cockpit discovery and review."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Scope recorded; work awaits its own cockpit discovery and review.",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "Resume the existing page mockup review before settling the candidate plan.",
+   "why_next": "Organization is complete; mockup feedback remains open and no new build is authorized.",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Organization is complete; mockup feedback remains open and no new build is authorized.",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "why_next": "The existing mockup still needs feedback before the candidate plan can be settled."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or",
+   "horizon_source_seq": 14,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John explicitly requested this organization and said let's go; Campaign turn 3c476265-7142-441c-a934-a7a37d5a1e98. Placement authorizes organization, not a software build or",
+   "horizon_source_seq": 15,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-04",
+   "source": "verb_update",
+   "next_recommended": "Review researchPrime purpose and navigation in mockup v7; then inspect its process map.",
+   "why_next": "John resumed mockup feedback; clarity of the first skill screen comes before reviewing map contents.",
+   "horizon_source_seq": null,
+   "horizon_focus": null
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-04",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John resumed mockup feedback; clarity of the first skill screen comes before reviewing map contents.",
+   "horizon_source_seq": 17,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Existing mockup v7 is directly openable from Current work after refresh and reopening; its first skill screen is presented for",
+   "horizon_source_seq": 17,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-05",
+   "source": "verb_update",
+   "next_recommended": "Decide on a plain researchPrime introduction; then review process-map contents.",
+   "why_next": "First-screen controls are readable; the technical North Star would benefit from a plain introduction.",
+   "horizon_source_seq": null,
+   "horizon_focus": null
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "First-screen controls are readable; the technical North Star would benefit from a plain introduction.",
+   "horizon_source_seq": 18,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-05",
+   "source": "verb_update",
+   "next_recommended": "Prepare researchPrime library and maps; integrate when the Anchor repository is free.",
+   "why_next": "John authorized this sequence; another Anchor job blocks integration but independent researchPrime preparation can proceed.",
+   "horizon_source_seq": null,
+   "horizon_focus": null
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "John authorized this sequence; another Anchor job blocks integration but independent researchPrime preparation can proceed.",
+   "horizon_source_seq": 18,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "John authorized this sequence; another Anchor job blocks integration but independent researchPrime preparation can proceed.",
+   "horizon_source_seq": 26,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is",
+   "horizon_source_seq": 33,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ],
+   "current_step_id": "gwl-walk-researchprime"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "John authorized integration, libraries and complete maps in researchPrime, Gandalf, Lamp, Cave of Wonders, Star Chart order; 07bfea64-62c7-4f42-a8d2-cf68e3e75833. Anchor is",
+   "horizon_source_seq": 34,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "researchPrime - library, knowledge map and; then Gandalf - library, knowledge map and process map",
+   "why_next": "Code job 20261004-191251-2cc7b3 finished with 28 passing tests; saved on branch a01a49f, not landed because landing is paused after an",
+   "horizon_source_seq": 40,
+   "horizon_focus": "gwl-walk-researchprime",
+   "horizon_steps": [
+    "gwl-walk-researchprime",
+    "gwl-walk-gandalf"
+   ],
+   "current_step_id": "gwl-walk-researchprime"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Anchor code job 20261004-191301-c36b42 finished; 17 targeted walkthrough tests passed. Commit 9392411 remains on its branch because landing is paused",
+   "horizon_source_seq": 42,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ],
+   "active_effort": "Both researchPrime Refinement 1 and Anchor page integration are built and saved on their coder branches. Their targeted checks passed; automatic landing remains paused, so the running Anchor client is unchanged.",
+   "current_step_id": "gwl-page"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Foundry page: existing candidate plan and mockup; then Process maps for the Foundry skills",
+   "why_next": "Anchor code job 20261004-191301-c36b42 finished; 17 targeted walkthrough tests passed. Commit 9392411 remains on its branch because landing is paused",
+   "horizon_source_seq": 44,
+   "horizon_focus": "gwl-page",
+   "horizon_steps": [
+    "gwl-page",
+    "gwl-process-maps"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Gandalf - library, knowledge map; then Steward: AI cockpit - Lamp / proposed Tarmac name",
+   "why_next": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance",
+   "horizon_source_seq": 50,
+   "horizon_focus": "gwl-walk-gandalf",
+   "horizon_steps": [
+    "gwl-walk-gandalf",
+    "gwl-walk-steward-lamp"
+   ],
+   "active_effort": "The new Foundry page and researchPrime Refinement 1 are safely landed and render after the restart. Preparing the authorized Gandalf Library and map population job; researchPrime remains open for independent feedback.",
+   "current_step_id": "gwl-walk-gandalf"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Gandalf - library, knowledge map; then Steward: AI cockpit - Lamp / proposed Tarmac name",
+   "why_next": "John resumed authorized population after the Anchor restart (38ec52d8-a881-4391-809d-bf7a44ec13a8). Both builds have safe-lander receipts and current source/render checks; researchPrime acceptance",
+   "horizon_source_seq": 52,
+   "horizon_focus": "gwl-walk-gandalf",
+   "horizon_steps": [
+    "gwl-walk-gandalf",
+    "gwl-walk-steward-lamp"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job",
+   "horizon_source_seq": 56,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ],
+   "current_step_id": "gwl-walk-steward-lamp"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "John settled the three persona names in turn 8b5e46a9-0cbb-407e-b78c-288326064a98 and requested a directly reviewable PDF in turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1. Gandalf job",
+   "horizon_source_seq": 58,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "The three Steward names are settled and the plan PDF is ready. Gandalf is built and checked; populate Lamp next",
+   "horizon_source_seq": 59,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ],
+   "active_effort": "Current plan PDF review copy 1 is available. researchPrime Refinement 1 and Gandalf Initial draft are landed and remain open for separate feedback. Prepare the authorized Aladdin-Lamp walkthrough next.",
+   "current_step_id": "gwl-walk-steward-lamp"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "The three Steward names are settled and the plan PDF is ready. Gandalf is built and checked; populate Lamp next",
+   "horizon_source_seq": 60,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Lamp - Library, knowledge; then Aladdin-Cave of Wonders - Library, knowledge map and process map",
+   "why_next": "Stargazer follows the skill documentation under the approved working plan.",
+   "horizon_source_seq": 63,
+   "horizon_focus": "gwl-walk-steward-lamp",
+   "horizon_steps": [
+    "gwl-walk-steward-lamp",
+    "gwl-walk-steward-cave"
+   ],
+   "active_effort": "researchPrime and Gandalf drafts are landed and open for separate feedback. Aladdin-Lamp Initial draft is preserved on its coder branch: the final source check failed, so repair and recheck that draft before landing.",
+   "current_step_id": "gwl-walk-steward-lamp"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+   "why_next": "John authorized integration and routine population. Connect the existing Lamp draft while the Cave documentation proceeds independently.",
+   "horizon_source_seq": 69,
+   "horizon_focus": "gwl-walk-steward-cave",
+   "horizon_steps": [
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+   ],
+   "active_effort": "The Lamp Initial draft is landed with 125 tests passing. Prepare Cave of Wonders next and repair Lamp opening through Anchor; researchPrime, Gandalf and Lamp retain separate feedback.",
+   "current_step_id": "gwl-walk-steward-cave"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-05",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+   "why_next": "John authorized integration and routine population. Connect the existing Lamp draft while the Cave documentation proceeds independently.",
+   "horizon_source_seq": 70,
+   "horizon_focus": "gwl-walk-steward-cave",
+   "horizon_steps": [
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-06",
+   "source": "verb_update",
+   "active_effort": "Cave of Wonders Initial draft is built with 51 Library resources and 38 process steps, but its post-merge check failed and it remains on the coder branch. Repair that candidate. Lamp and Anchor integration have landed; the running Anchor still awaits restart.",
+   "current_step_id": "gwl-walk-steward-cave"
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-06",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+   "why_next": "John authorized integration and routine population. Connect the existing Lamp draft while the Cave documentation proceeds independently.",
+   "horizon_source_seq": 73,
+   "horizon_focus": "gwl-walk-steward-cave",
+   "horizon_steps": [
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-06",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+   "why_next": "Preserve navigation groups and each independent review. Cave needs a post-merge repair before Star Chart; no acceptance or close.",
+   "horizon_source_seq": 77,
+   "horizon_focus": "gwl-walk-steward-cave",
+   "horizon_steps": [
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "update",
+   "as_of": "2026-10-06",
+   "source": "verb_update",
+   "next_recommended": "Paused for restart; Star Chart next after John returns.",
+   "why_next": "John requested a pause. Cave landed; preserve independent reviews and continue only after his return.",
+   "horizon_source_seq": null,
+   "horizon_focus": null,
+   "active_effort": "Paused at John's request for restart. Cave Initial draft is landed with 169 tests passing; Star Chart has not started. Earlier product reviews remain open."
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-06",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+   "why_next": "John requested a pause. Cave landed; preserve independent reviews and continue only after his return.",
+   "horizon_source_seq": 80,
+   "horizon_focus": "gwl-walk-steward-cave",
+   "horizon_steps": [
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+   ]
+  },
+  {
+   "_kind": "instrument",
+   "kind": "horizon",
+   "as_of": "2026-10-07",
+   "source": "verb_update:horizon",
+   "derived": true,
+   "next_recommended": "Aladdin-Cave of Wonders - Library,; then Aladdin-Star Chart - Library, knowledge map and process map",
+   "why_next": "John explicitly paused for his restart; resume only after his return. Cave landed; Star Chart remains unstarted. Source turn e208795b-9734-47a7-bb2d-70a9b8640041;",
+   "horizon_source_seq": 80,
+   "horizon_focus": "gwl-walk-steward-cave",
+   "horizon_steps": [
+    "gwl-walk-steward-cave",
+    "gwl-walk-steward-star-chart"
+   ]
+  }
+ ],
+ "receipts": [
+  {
+   "at": "2026-10-04T20:53:58Z",
+   "source": "engine",
+   "step_id": null,
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0003-overall-plan-status.md",
+   "entry_id": "0003-overall-plan-status",
+   "summary": "Foundry page and maps: overall plan explained - 2026-10-04"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T20:58:40Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T20:59:41Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T21:00:41Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-04",
+   "at": "2026-10-04T21:01:33Z",
+   "current_step_id": null,
+   "last_event_seq": 15,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-04T21:05:08Z",
+   "source": "engine",
+   "step_id": null,
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0004-mockup-v7-review-resumed.md",
+   "entry_id": "0004-mockup-v7-review-resumed",
+   "summary": "Foundry mockup v7 review resumed - 2026-10-04"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-05",
+   "at": "2026-10-05T00:37:17Z",
+   "current_step_id": null,
+   "last_event_seq": 17,
+   "last_event_at": "2026-10-04",
+   "last_event_kind": "status_flip",
+   "last_event_step_id": "gwl-page",
+   "presentation_id": null,
+   "active_effort": "Foundry page v1.1-candidate: existing mockup review remains open.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-05T01:42:10Z",
+   "source": "engine",
+   "step_id": "gwl-walk-researchprime",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0005-researchprime-refinement-1-handback.md",
+   "entry_id": "0005-researchprime-refinement-1-handback",
+   "summary": "researchPrime Refinement 1 handback - 2026-10-04"
+  },
+  {
+   "at": "2026-10-05T01:46:04Z",
+   "source": "engine",
+   "step_id": "gwl-page",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0006-anchor-foundry-integration-handback.md",
+   "entry_id": "0006-anchor-foundry-integration-handback",
+   "summary": "Anchor Foundry integration handback - 2026-10-04"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-05",
+   "at": "2026-10-05T19:01:08Z",
+   "current_step_id": "gwl-page",
+   "last_event_seq": 44,
+   "last_event_at": "2026-10-05",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-researchprime",
+   "presentation_id": null,
+   "active_effort": "Both researchPrime Refinement 1 and Anchor page integration are built and saved on their coder branches. Their targeted checks passed; automatic landing remains paused, so the running Anchor client is unchanged.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-05T19:15:35Z",
+   "source": "engine",
+   "step_id": "gwl-walk-gandalf",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0007-gandalf-population-after-restart.md",
+   "entry_id": "0007-gandalf-population-after-restart",
+   "summary": "Foundry restarted; Gandalf population resumed - 2026-10-05"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-05",
+   "at": "2026-10-05T19:17:43Z",
+   "current_step_id": "gwl-walk-gandalf",
+   "last_event_seq": 52,
+   "last_event_at": "2026-10-05",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-gandalf",
+   "presentation_id": null,
+   "active_effort": "The new Foundry page and researchPrime Refinement 1 are safely landed and render after the restart. Preparing the authorized Gandalf Library and map population job; researchPrime remains open for independent feedback.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-05T19:55:42Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-lamp",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0009-readable-plan-pdf-review-copy-1.md",
+   "entry_id": "0009-readable-plan-pdf-review-copy-1",
+   "summary": "**Date:** 2026-10-05; Aladdin, Ecgberht/Lamp steward."
+  },
+  {
+   "at": "2026-10-05T23:29:31Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-lamp",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0010-lamp-final-check-and-naming-handback.md",
+   "entry_id": "0010-lamp-final-check-and-naming-handback",
+   "summary": "Lamp final check and naming handback"
+  },
+  {
+   "at": "2026-10-05T23:52:22Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0011-lamp-landed-cave-and-anchor-handoff.md",
+   "entry_id": "0011-lamp-landed-cave-and-anchor-handoff",
+   "summary": "Lamp landed; Cave and Anchor handoff"
+  },
+  {
+   "at": "2026-10-06T00:30:07Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0012-anchor-lamp-integration-handback.md",
+   "entry_id": "0012-anchor-lamp-integration-handback",
+   "summary": "Anchor Lamp integration handback"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-06",
+   "at": "2026-10-06T00:48:54.261Z",
+   "current_step_id": "gwl-walk-steward-cave",
+   "last_event_seq": 80,
+   "last_event_at": "2026-10-06",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-steward-star-chart",
+   "presentation_id": null,
+   "active_effort": "Cave of Wonders Initial draft is built with 51 Library resources and 38 process steps, but its post-merge check failed and it remains on the coder branch. Repair that candidate. Lamp and Anchor integration have landed; the running Anchor still awaits restart.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-06T00:49:07Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "path": "journal/0014-cave-landed-pause-for-restart.md",
+   "entry_id": "0014-cave-landed-pause-for-restart",
+   "summary": "Cave landed; pause for restart"
+  },
+  {
+   "at": "2026-10-06T01:17:34Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a108a9-92d0-7400-8c62-3333611c6312",
+   "kind": "journal_update",
+   "entry_id": "engine-20261006T011734-provider_rollover",
+   "summary": "provider_rollover: chatgpt -> claude with a history handoff"
+  },
+  {
+   "at": "2026-10-06T16:53:42Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "2ffaaf7a-713a-4bf4-ac4d-4ac173bf958f",
+   "kind": "journal_update",
+   "path": "journal/0015-review-links-must-open-live-page.md",
+   "entry_id": "0015-review-links-must-open-live-page",
+   "summary": "Review links must open the live page"
+  },
+  {
+   "at": "2026-10-06T17:00:40Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "2ffaaf7a-713a-4bf4-ac4d-4ac173bf958f",
+   "kind": "journal_update",
+   "path": "journal/0016-researchprime-review-grade-b-refinement-2.md",
+   "entry_id": "0016-researchprime-review-grade-b-refinement-2",
+   "summary": "researchPrime Refinement 1 reviewed: grade B; Refinement 2 commissioned"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-06",
+   "at": "2026-10-06T18:25:58Z",
+   "current_step_id": "gwl-walk-steward-cave",
+   "last_event_seq": 80,
+   "last_event_at": "2026-10-06",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-steward-star-chart",
+   "presentation_id": null,
+   "active_effort": "Paused for John's Anchor reboot (2026-10-06). researchPrime Refinement 2 is built and preserved on branch steward-job-20261006-105938-a28de8; its one failing phone check is diagnosed (tab render lags the tap because tabs switch via the page hash). Not landed, not live.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-07T01:08:12Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0017-crucible-foreman-speed-brief.md",
+   "entry_id": "0017-crucible-foreman-speed-brief",
+   "summary": "0017 — brief received: why Crucible and Foreman take so long"
+  },
+  {
+   "at": "2026-10-07T02:06:04Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0018-researchprime-resume-after-access-repair.md",
+   "entry_id": "0018-researchprime-resume-after-access-repair",
+   "summary": "researchPrime continuation after access recovery"
+  },
+  {
+   "schema": "ecgberht-receipt-v0",
+   "kind": "leave",
+   "as_of": "2026-10-07",
+   "at": "2026-10-07T02:19:56Z",
+   "current_step_id": "gwl-walk-steward-cave",
+   "last_event_seq": 80,
+   "last_event_at": "2026-10-06",
+   "last_event_kind": "step_set",
+   "last_event_step_id": "gwl-walk-steward-star-chart",
+   "presentation_id": null,
+   "active_effort": "Paused for John's Anchor reboot (2026-10-06). researchPrime Refinement 2 is built and preserved on branch steward-job-20261006-105938-a28de8; its one failing phone check is diagnosed (tab render lags the tap because tabs switch via the page hash). Not landed, not live.",
+   "wait_ref": null,
+   "human_wait": "",
+   "_kind": "receipt"
+  },
+  {
+   "at": "2026-10-07T02:33:46Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0019-researchprime-pytest-path-parser-halt.md",
+   "entry_id": "0019-researchprime-pytest-path-parser-halt",
+   "summary": "researchPrime tests passed but Foreman rejected spaced paths"
+  },
+  {
+   "at": "2026-10-07T02:47:58Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0020-foreman-spaced-path-repair-commission.md",
+   "entry_id": "0020-foreman-spaced-path-repair-commission",
+   "summary": "Foreman reporting adjustment failed; parser repair required"
+  },
+  {
+   "at": "2026-10-07T02:49:12Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0021-foreman-parser-repair-startup-correction.md",
+   "entry_id": "0021-foreman-parser-repair-startup-correction",
+   "summary": "Parser repair stopped before coding; remove false dependency"
+  },
+  {
+   "at": "2026-10-07T03:20:54Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0022-foreman-parser-landed-resume-researchprime.md",
+   "entry_id": "0022-foreman-parser-landed-resume-researchprime",
+   "summary": "Foreman parser repair landed; resume researchPrime candidate"
+  },
+  {
+   "at": "2026-10-07T03:59:36Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0023-researchprime-landed-review-corrections.md",
+   "entry_id": "0023-researchprime-landed-review-corrections",
+   "summary": "researchPrime landed; actual review requires corrections"
+  },
+  {
+   "at": "2026-10-07T04:40:16Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0024-researchprime-corrections-landing-overlap.md",
+   "entry_id": "0024-researchprime-corrections-landing-overlap",
+   "summary": "Corrections passed; landing overlap and viewport findings remain"
+  },
+  {
+   "at": "2026-10-07T05:23:33Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0025-researchprime-viewport-landed-final-findings.md",
+   "entry_id": "0025-researchprime-viewport-landed-final-findings",
+   "summary": "Viewport corrections landed; three final findings remain"
+  },
+  {
+   "at": "2026-10-07T05:50:26Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0026-researchprime-regression-landed-legend-clause.md",
+   "entry_id": "0026-researchprime-regression-landed-legend-clause",
+   "summary": "Regression proof landed; source-opening sentence remains"
+  },
+  {
+   "at": "2026-10-07T06:07:36Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0027-researchprime-corrections-cleared-anchor-handoff.md",
+   "entry_id": "0027-researchprime-corrections-cleared-anchor-handoff",
+   "summary": "researchPrime corrections cleared; Anchor integration follows"
+  },
+  {
+   "at": "2026-10-07T07:06:06Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0028-anchor-landed-unactivated-review-repair.md",
+   "entry_id": "0028-anchor-landed-unactivated-review-repair",
+   "summary": "Anchor integration landed; activation and review repairs remain"
+  },
+  {
+   "at": "2026-10-07T08:02:00Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0029-anchor-repairs-landed-source-controls-remain.md",
+   "entry_id": "0029-anchor-repairs-landed-source-controls-remain",
+   "summary": "Anchor repairs landed; source controls still require correction"
+  },
+  {
+   "at": "2026-10-07T08:33:12Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0030-anchor-source-controls-cleared-activation-pending.md",
+   "entry_id": "0030-anchor-source-controls-cleared-activation-pending",
+   "summary": "Anchor source controls cleared; activation pending"
+  },
+  {
+   "at": "2026-10-07T13:05:25Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0032-restart-cancelled-live-check-continues.md",
+   "entry_id": "0032-restart-cancelled-live-check-continues",
+   "summary": "Our restart cancelled; live verification continues"
+  },
+  {
+   "at": "2026-10-07T13:10:36Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0033-external-activation-live-check-recommissioned.md",
+   "entry_id": "0033-external-activation-live-check-recommissioned",
+   "summary": "External activation; fresh live check"
+  },
+  {
+   "at": "2026-10-07T13:35:36Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0034-clickable-review-links-default.md",
+   "entry_id": "0034-clickable-review-links-default",
+   "summary": "Clickable reviews are the default delivery standard"
+  },
+  {
+   "at": "2026-10-07T13:42:22Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0035-live-check-passed-evidence-placement-halt.md",
+   "entry_id": "0035-live-check-passed-evidence-placement-halt",
+   "summary": "Live tests passed; evidence placement halted"
+  },
+  {
+   "at": "2026-10-07T13:50:36Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0036-live-audit-empty-input-recovery.md",
+   "entry_id": "0036-live-audit-empty-input-recovery",
+   "summary": "Live audit input recovery"
+  },
+  {
+   "at": "2026-10-07T14:18:56Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0037-live-evidence-and-link-proof-findings.md",
+   "entry_id": "0037-live-evidence-and-link-proof-findings",
+   "summary": "Actual live evidence and link proof"
+  },
+  {
+   "at": "2026-10-07T14:20:52Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0038-link-proof-startup-dependency-corrected.md",
+   "entry_id": "0038-link-proof-startup-dependency-corrected",
+   "summary": "Link-proof startup dependency"
+  },
+  {
+   "at": "2026-10-07T14:38:37Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0039-live-audit-timeout-input-bounded.md",
+   "entry_id": "0039-live-audit-timeout-input-bounded",
+   "summary": "Bound the live evidence audit input"
+  },
+  {
+   "at": "2026-10-07T15:01:19Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0040-live-review-source-corrections.md",
+   "entry_id": "0040-live-review-source-corrections",
+   "summary": "Live evidence review and source-view corrections"
+  },
+  {
+   "at": "2026-10-07T15:03:13Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0041-review-link-proof-residual-findings.md",
+   "entry_id": "0041-review-link-proof-residual-findings",
+   "summary": "Actual reading proof still incomplete"
+  },
+  {
+   "at": "2026-10-07T15:39:10Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0042-source-view-landed-links-follow.md",
+   "entry_id": "0042-source-view-landed-links-follow",
+   "summary": "Source-view repair landed; reading proof follows"
+  },
+  {
+   "at": "2026-10-07T16:33:29Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0043-review-instructions-require-reading-links.md",
+   "entry_id": "0043-review-instructions-require-reading-links",
+   "summary": "Review requests must carry clickable reading links"
+  },
+  {
+   "at": "2026-10-07T16:38:37Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0044-restart-drain-launch-hold.md",
+   "entry_id": "0044-restart-drain-launch-hold",
+   "summary": "Hold new launches for the external drained restart"
+  },
+  {
+   "at": "2026-10-07T16:49:41Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0045-restart-hold-lifted-live-verification-resumed.md",
+   "entry_id": "0045-restart-hold-lifted-live-verification-resumed",
+   "summary": "Restart hold lifted; verify the served page"
+  },
+  {
+   "at": "2026-10-07T16:54:10Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0046-review-link-fix-quota-halt-recovery.md",
+   "entry_id": "0046-review-link-fix-quota-halt-recovery",
+   "summary": "Review-link fix interrupted by subscription quota"
+  },
+  {
+   "at": "2026-10-07T16:57:31Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0047-activation-audit-unavailable-recovery-also-refused.md",
+   "entry_id": "0047-activation-audit-unavailable-recovery-also-refused",
+   "summary": "Live audit unavailable; credit recovery also refused"
+  },
+  {
+   "at": "2026-10-07T17:05:22Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0048-restarted-gemini-reviewer-live-check-resumed.md",
+   "entry_id": "0048-restarted-gemini-reviewer-live-check-resumed",
+   "summary": "Restarted service; live review resumes with selected Gemini"
+  },
+  {
+   "at": "2026-10-07T17:07:51Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0049-gandalf-unavailable-browser-evidence-path.md",
+   "entry_id": "0049-gandalf-unavailable-browser-evidence-path",
+   "summary": "Retire the unavailable audit path; collect browser evidence"
+  },
+  {
+   "at": "2026-10-07T17:34:00Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0050-live-packet-complete-register-overlap-recovery.md",
+   "entry_id": "0050-live-packet-complete-register-overlap-recovery",
+   "summary": "Live packet complete; register overlap blocked landing"
+  },
+  {
+   "at": "2026-10-07T17:50:18Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0051-live-packet-landed-status-writer-refused.md",
+   "entry_id": "0051-live-packet-landed-status-writer-refused",
+   "summary": "Live packet landed; reading route and status recovery follow"
+  },
+  {
+   "at": "2026-10-07T18:19:30Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0052-reading-link-placement-state-boundary.md",
+   "entry_id": "0052-reading-link-placement-state-boundary",
+   "summary": "Reading-link correction preserved; placement boundary repaired"
+  },
+  {
+   "at": "2026-10-07T18:29:22Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0053-packet-link-landed-panel-check-next.md",
+   "entry_id": "0053-packet-link-landed-panel-check-next",
+   "summary": "Packet link landed; verify the actual updated panel"
+  },
+  {
+   "at": "2026-10-07T18:53:35Z",
+   "source": "engine",
+   "step_id": "gwl-walk-steward-cave",
+   "session_id": "01a113cc-d22b-7c12-80cc-474bee2db815",
+   "kind": "journal_update",
+   "path": "journal/0054-deliverables-panel-click-verified.md",
+   "entry_id": "0054-deliverables-panel-click-verified",
+   "summary": "Actual Deliverables packet clicks verified after landing"
+  }
+ ],
+ "horizon_source_seq": 80,
+ "horizon_focus": "gwl-walk-steward-cave",
+ "current_step_id": "gwl-walk-steward-cave"
+}

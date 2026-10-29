@@ -13,9 +13,10 @@
 - You need research or deep critique rather than code execution
 
 ## What you get
-- Wave-by-wave execution: implement → test gate → adversarial review → fix → re-check
-- Orchestrator-run tests (agents can’t fake the pass/fail)
-- Auto-advance across waves; halt only on real blockers for you
+- Wave-by-wave (and **parallel orthogonal sub-wave `W.1`..`W.k`**) execution: implement → deterministic fast-gate (`pytest`/`node --test` + `Aegis` AST security + `Anvil` structural check) → single-pass cross-family diff review (on a green fast-gate) → fix → re-check
+- Parallel DAG dispatch for independent sub-waves with disjoint file write-sets so multi-subsystem builds don't bottleneck on serial cold starts
+- Orchestrator-run tests and AST gates (agents can’t fake the pass/fail)
+- Auto-advance immediately when the deterministic fast-gate is green and `BLOCKER == 0`; halt only on real blockers for you
 - Resume from checkpoint after a stop
 
 ## What it is not

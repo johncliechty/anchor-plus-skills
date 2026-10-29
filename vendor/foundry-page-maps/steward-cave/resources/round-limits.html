@@ -1,0 +1,308 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Actual turns, retries and stopping limits · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="round-limits" data-anchor-id="a-cockpit-_handle">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Operator material</p><h1>Actual turns, retries and stopping limits</h1>
+<p class="intro">The Node converse lane calls talk once and may plan once; it has no review-to-convergence loop. Persistent cockpit decision-shape correction is sent back once. Human-origin turns are capped at 15 tool calls by default, including effort mode; optional drive stops after 50 continuations. Specialist review caps belong to the commissioned skill.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.533899+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: b31f75a1c121142bdad6c693f96ef9d300f68ff99378a7c98ab86e30aee8e321</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/steward_engine.py · lines 2777–3072</p><pre>    def _handle(self, ev, proc):
+        if proc is not self.proc:
+            return   # event from a superseded process - drop it entirely
+        t = ev.get(&quot;type&quot;)
+        if self._submitted is not None and t in (&quot;assistant&quot;, &quot;stream_event&quot;, &quot;result&quot;):
+            self._ack_submitted(proc, ev)
+        if t == &quot;system&quot; and ev.get(&quot;subtype&quot;) == &quot;init&quot;:
+            if proc is not self.proc:
+                return
+            if not self._retain_native_session(_read_state_entry(self.skey())):
+                self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: &quot;Native session history could not be preserved; retaining the prior pointer&quot;})
+                self.broken = True
+                return
+            self.session_id = ev.get(&quot;session_id&quot;)
+            # init.model is configuration, not proof of what actually served.
+            _update_state(self.skey(), {&quot;session_id&quot;: self.session_id, &quot;cli&quot;: self.cli,
+                                      &quot;model_policy&quot;: self.model_selection})
+        elif t == &quot;usage_checkpoint&quot;:
+            self._record_usage_checkpoint(ev)
+        elif t == &quot;stream_event&quot;:
+            inner = ev.get(&quot;event&quot;, {})
+            if inner.get(&quot;type&quot;) == &quot;content_block_delta&quot;:
+                delta = inner.get(&quot;delta&quot;, {})
+                if delta.get(&quot;type&quot;) == &quot;text_delta&quot;:
+                    self.last_output = time.time()
+                    _tm = getattr(self, &quot;_timing&quot;, None)
+                    if _tm is not None and _tm.get(&quot;first_word&quot;) is None:
+                        _tm[&quot;first_word&quot;] = self.last_output
+                    self.turn_text += delta.get(&quot;text&quot;, &quot;&quot;)
+                    self._emit({&quot;t&quot;: &quot;delta&quot;, &quot;text&quot;: delta.get(&quot;text&quot;, &quot;&quot;),
+                                &quot;tick&quot;: self.in_tick})
+        elif t == &quot;assistant&quot;:
+            # tool activity is liveness too - keep the &quot;stuck&quot; light honest
+            # through a long tool-only turn (a Foreman/researchPrime wave)
+            self.last_output = time.time()
+            for block in ev.get(&quot;message&quot;, {}).get(&quot;content&quot;, []):
+                if block.get(&quot;type&quot;) == &quot;tool_use&quot;:
+                    self._turn_had_tools = True
+                    self._turn_tools = getattr(self, &quot;_turn_tools&quot;, 0) + 1
+                    if self._guard_turn(block):
+                        return
+                    inp = block.get(&quot;input&quot;) or {}
+                    fp = inp.get(&quot;file_path&quot;)
+                    # a Claude edit names one file_path; a Codex file_change names its paths
+                    touched = [p for p in (inp.get(&quot;paths&quot;) or []) if isinstance(p, str) and p.strip()] \
+                        if isinstance(inp.get(&quot;paths&quot;), list) else []
+                    if isinstance(fp, str) and fp.strip():
+                        touched.insert(0, fp)
+                    if block.get(&quot;name&quot;) in (&quot;Write&quot;, &quot;Edit&quot;, &quot;NotebookEdit&quot;, &quot;file_change&quot;):
+                        self._turn_wrote_files = True
+                        refs = getattr(self, &quot;_turn_output_refs&quot;, [])
+                        for path in touched:
+                            if path not in refs:
+                                refs.append(path)
+                        self._turn_output_refs = refs
+                        new = [p for p in touched if p not in self.files]
+                        if new:
+                            self.files.extend(new)
+                            _update_state(self.skey(), {&quot;files&quot;: self.files[-40:]})
+                    if getattr(self, &quot;_timing&quot;, None) is not None:
+                        self._timing[&quot;tools&quot;] = self._timing.get(&quot;tools&quot;, 0) + 1
+                    self._emit({&quot;t&quot;: &quot;tool&quot;,
+                                &quot;name&quot;: block.get(&quot;name&quot;, &quot;?&quot;),
+                                &quot;detail&quot;: _tool_detail(block),
+                                &quot;tick&quot;: self.in_tick})
+        elif t == &quot;result&quot;:
+            if not self._usage_result_allowed(ev):
+                return
+            if proc is not self.proc:
+                return   # re-check: a newer process must own this result
+            # (2026-09-04, John) a model session limit is TOLD, never swallowed:
+            # an error result is said in the pane with its text, a limit raises
+            # the flag so the High Seat says &quot;need you&quot; with the reason.
+            err_text = result_error_text(ev)
+            if self.model_selection:
+                actual = ev.get(&quot;model_served&quot;) if ev.get(&quot;model_attested&quot;) is True else None
+                source = ev.get(&quot;model_source&quot;) if isinstance(ev.get(&quot;model_source&quot;), str) else None
+                if self.cli == &quot;claude&quot; and not err_text:
+                    usage_models = ev.get(&quot;modelUsage&quot;)
+                    if isinstance(usage_models, dict) and len(usage_models) == 1:
+                        actual, source = next(iter(usage_models)), &quot;cli-recorded&quot;
+                requested = self.model_selection.get(&quot;model&quot;)
+                self.model_selection = {**self.model_selection, &quot;model_served&quot;: actual,
+                                        &quot;model_attested&quot;: bool(actual),
+                                        &quot;model_source&quot;: source if actual else None}
+                _update_state(self.skey(), {&quot;model_policy&quot;: self.model_selection})
+                if actual and requested and not _same_model(requested, actual):
+                    self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: f&quot;model served {actual} (requested {requested})&quot;})
+            if not err_text:
+                self._journal_changed_receipt()
+            if err_text:
+                limit = _campaign_limit(err_text)
+                self._model_limit = (&quot;model session limit: &quot; + err_text) if limit else &quot;&quot;
+                self._journal_receipt(&quot;turn_error&quot;, err_text)
+                hint = ev.get(&quot;stderr_hint&quot;)
+                tail_text = &quot;&quot;
+                if isinstance(hint, dict) and hint.get(&quot;kinds&quot;):
+                    tail_text = (&quot; | native diagnostics: &quot; + &quot;, &quot;.join(str(k) for k in hint[&quot;kinds&quot;][:4])
+                                 + f&quot; ({int(hint.get(&#x27;lines&#x27;) or 0)} lines, content withheld)&quot;)
+                self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: (&quot;MODEL LIMIT: &quot; if limit else
+                                                 &quot;the steward&#x27;s turn ended in an error: &quot;)
+                            + err_text + tail_text})
+                if limit:
+                    try:
+                        from steward_cockpit import steward_campaign as campaign
+                        campaign.write_attention(
+                            self.dir, &quot;needs_you&quot;, self._model_limit,
+                            failure_code=&quot;MODEL_LIMIT&quot;)
+                    except Exception:
+                        pass
+            accounting = self._record_usage_result(ev)
+            if not accounting:
+                return
+            cost, duration, turn_tokens = accounting[&quot;cost&quot;], accounting[&quot;duration&quot;], accounting[&quot;turn_tokens&quot;]
+            # pinned open question: scan the WHOLE final text for the last
+            # question-bearing sentence (not just a trailing &quot;?&quot;), so a
+            # question mid-paragraph still pins. Tick turns never pin.
+            txt = self.turn_text.strip()
+
+            was_tick = self.in_tick
+            completed_turn_id = f&quot;{self.cli}:{self.session_id}:{self.epoch}:{self.turns}&quot;
+            self._ledger_turn(ev, accounting, completed_turn_id)
+            producer_id = getattr(self, &quot;_refinement_producer_id&quot;, None)
+            # the goal&#x27;s tag rides THIS turn: read from the text that went to stdin for it (Grok W2: never a slot
+            # set at say(), which the next unrelated turn could wear)
+            _goal_tag = None if (was_tick or getattr(self, &quot;_turn_origin&quot;, &quot;&quot;) != &quot;human&quot;) else _goal_in(getattr(self, &quot;_last_submitted&quot;, &quot;&quot;))
+            history_saved = (not txt or was_tick or self._record_conversation(
+                &quot;steward&quot;, txt, turn_id=completed_turn_id, goal=_goal_tag))
+            if (producer_id and getattr(self, &quot;_turn_wrote_files&quot;, False) and not was_tick
+                    and (Path(self.dir) / &quot;roadmap.json&quot;).is_file()):
+                payload = {
+                    &quot;producer_kind&quot;: &quot;conversation&quot;, &quot;producer_id&quot;: producer_id,
+                    &quot;source_ref&quot;: &quot;Cockpit conversation &quot; + completed_turn_id,
+                    &quot;context&quot;: getattr(self, &quot;_refinement_dispatch_context&quot;, None),
+                    &quot;outputs&quot;: list(getattr(self, &quot;_turn_output_refs&quot;, [])),
+                    &quot;inventory_complete&quot;: False,
+                    &quot;terminal&quot;: &quot;failed&quot; if err_text else &quot;done&quot;,
+                }
+                with self._refinement_pending_lock:
+                    self._pending_refinement_handoffs[producer_id] = payload
+                    saved = _update_state(self.skey(), {
+                        &quot;pending_refinement_handoffs&quot;: self._pending_refinement_handoffs})
+                if not saved:
+                    self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: &quot;Refinement handoff persistence needs repair; automatic continuation is held.&quot;})
+            self._retry_refinement_handoffs()
+
+            # The complete result boundary is one arbitration transaction.
+            # Exactly one next writer wins: an already accepted human message,
+            # one machine nudge, auto-drive, or idle. Status I/O happens only
+            # after this decision, so it cannot open an overtaking window.
+            with self._lock:
+                if proc is not self.proc:
+                    return
+                pinned_now = False
+                question_attention = self._attention()
+                if question_attention.get(&quot;managed_refinement&quot;):
+                    self.open_question = &quot;&quot;
+                    self.open_question_kind = &quot;&quot;
+                if not was_tick:
+                    _all = [s.strip() for s in
+                            re.split(r&quot;(?&lt;=[.!?])\s+|\n+&quot;, txt)      # a line break ends a line such as &quot;Reversible: no&quot;
+                            if s.strip()]
+                    # two-lane step 2 (2026-10-05, Opus): a question waits on him only when the reply ENDS on it - a &quot;?&quot;
+                    # mid-reply (rhetorical, or answered in the next sentence) no longer paints orange
+                    sentences = [_all[-1]] if (_all and _all[-1].endswith(&quot;?&quot;)) else []
+                    if sentences and (not question_attention.get(&quot;managed_refinement&quot;) or
+                            question_attention.get(&quot;pending_request&quot;) or _has_recommendation(txt)):
+                        request = question_attention.get(&quot;pending_request&quot;) or {}
+                        step_id = request.get(&quot;step_id&quot;) or self._read_strip().get(&quot;current_step_id&quot;)
+                        prior = self.question_context if isinstance(self.question_context, dict) else None
+                        answered = self._answered_before(sentences[-1], step_id)
+                        if answered:
+                            # answered means retired: never pinned again; the steward is told once
+                            if not answered.get(&quot;reask_told_at&quot;):
+                                answered[&quot;reask_told_at&quot;] = time.time()
+                                _update_state(self.skey(), {&quot;question_history&quot;: self.question_history})
+                                self._reasked_answered = answered
+                        else:
+                            self.open_question = sentences[-1]
+                            self.open_question_kind = _question_kind(
+                                self.open_question)
+                            # the reshape re-ask keeps the decision&#x27;s identity; a changed
+                            # question while one is open names what it replaces
+                            origin_id = prior.get(&quot;id&quot;) if (prior and self._decision_nudged) else None
+                            replaced = (prior if (prior and not origin_id and prior.get(&quot;question&quot;) != self.open_question
+                                        and (prior.get(&quot;authorization_scope&quot;) or {}).get(&quot;step_id&quot;) == step_id) else None)
+                            self.question_context = save_question_context(self.open_question, txt,
+                                asked_at=time.time(), source_ref=&quot;Cockpit conversation&quot;,
+                                scope={&quot;request_id&quot;:request.get(&quot;id&quot;), &quot;step_id&quot;:step_id,
+                                       &quot;presentation_id&quot;:request.get(&quot;presentation_id&quot;),
+                                       &quot;source_turn_id&quot;:completed_turn_id,
+                                       &quot;work_digest&quot;:question_attention.get(&quot;work_digest&quot;)},
+                                origin_id=origin_id,
+                                what_changed=replaced.get(&quot;question&quot;) if replaced else None)
+                            pinned_now = True
+
+                _update_state(self.skey(), {
+                    # The outcome is the conclusion, not the opening of a long
+                    # reply. Pickup already applies its own display bound.
+                    &quot;last_text&quot;: txt[-240:],
+                    &quot;last_used&quot;: time.strftime(&quot;%Y-%m-%d %H:%M&quot;),
+                    &quot;cli&quot;: self.cli,
+                    &quot;open_question&quot;: self.open_question,
+                    &quot;open_question_kind&quot;: self.open_question_kind,
+                    &quot;question_context&quot;: self.question_context,
+                    &quot;epoch&quot;: self.epoch,
+                })
+                self.busy = False
+                self._record_timing(duration, was_tick)
+                if not err_text:
+                    self._stopped_mid_turn = False   # a turn that ended on its own: the tree is whole again
+                self._emit({&quot;t&quot;: &quot;turn_end&quot;,
+                            &quot;cost_usd&quot;: round(cost, 4) if cost is not None else None,
+                            &quot;cost_status&quot;: &quot;reported&quot; if cost is not None else &quot;unavailable&quot;,
+                            &quot;tokens&quot;: turn_tokens,
+                            &quot;duration_s&quot;: round(duration),
+                            &quot;tick&quot;: was_tick})
+                self.in_tick = self._ticks_pending &gt; 0
+                self._ticks_pending = max(0, self._ticks_pending - 1)
+
+                if not history_saved:
+                    self._hold_queue(&quot;conversation persistence failed; queued messages retained&quot;)
+                elif err_text:
+                    # Error turns never trigger answer nudges or auto-drive on
+                    # the exhausted provider. Only a confirmed unsubmitted/
+                    # rejected turn can replay the original message.
+                    if limit and not (self.fake or os.environ.get(&quot;STEWARD_COCKPIT_FAKE&quot;)):
+                        try:
+                            import anchor_settings
+                            settings = anchor_settings.get_launch_settings()
+                            excluded = set((self.policy_override or {}).get(&quot;failed_families&quot;) or [])
+                            excluded.add(self.cli)
+                            target, selection = self._select_available_policy(settings, self.cli, excluded=excluded)
+                            selection = _cap_effort(selection, None if self.general else STEWARD_CONVERSATION_EFFORT)
+                            if ev.get(&quot;replay_safe&quot;) is True and not self._turn_had_tools:
+                                seed = self._last_submitted
+                            else:
+                                self._journal_routing(action=&quot;replay_blocked&quot;, family=self.cli,
+                                    message=&quot;Interrupted action state is uncertain; original turn will not be replayed&quot;)
+                                seed = (&quot;The previous provider stopped mid-turn. Do not run tools or repeat prior actions. &quot;
+                                        &quot;Briefly explain that you are the available replacement provider, but the interrupted &quot;
+                                        &quot;turn needs confirmation before continuing. Preserve all queued user messages.&quot;)
+                            if self._rollover_locked(target, settings, seed):
+                                self._model_limit = &quot;&quot;
+                                return
+                        except (ValueError, RuntimeError) as exc:
+                            self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: &quot;Model failover stopped: &quot; + str(exc)})
+                    self._hold_queue(&quot;model turn failed; no automatic replay&quot;)
+                # Human ingress always outranks automatic retries/drive.
+                elif self.queue:
+                    self._deliver_next_queued_locked()
+                elif (self._human_asked and not txt and not was_tick
+                      and not self._answer_nudged and not self.general):
+                    self._answer_nudged = True
+                    self._human_asked = False
+                    self._send_locked(
+                        &quot;(interface - not John) You ended without answering &quot;
+                        &quot;John in words. Reply now in one or two plain &quot;
+                        &quot;sentences.&quot;)
+                elif (getattr(self, &quot;_reasked_answered&quot;, None) and not was_tick
+                      and not self.general):
+                    entry = self._reasked_answered
+                    self._reasked_answered = None
+                    when = time.strftime(&quot;%Y-%m-%d %H:%M&quot;, time.localtime(entry.get(&quot;answered_at&quot;) or 0))
+                    self._send_locked(
+                        &quot;(interface - not John) John already answered this question at &quot; + when
+                        + &quot;: \&quot;&quot; + str(entry.get(&quot;answer&quot;) or &quot;&quot;)[:300]
+                        + &quot;\&quot;. Do not ask it again; act on his answer.&quot;)
+                elif (pinned_now and txt and not was_tick
+                      and not self.general and not self._decision_nudged
+                      and not _has_recommendation(txt)):
+                    self._decision_nudged = True
+                    self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;tick&quot;: True,
+                                &quot;text&quot;: &quot;decision shape: asked without a &quot;
+                                        &quot;recommendation - sent back once&quot;})
+                    self._send_locked(
+                        &quot;(interface - not John) You put a decision to John &quot;
+                        &quot;without a recommendation. Re-ask it now in his shape, &quot;
+                        &quot;in plain words and nothing else: two or three &quot;
+                        &quot;sentences of context (assume he has been away and &quot;
+                        &quot;holds none of it), then what you RECOMMEND and one &quot;
+                        &quot;line of why, then the realistic alternatives as bullet &quot;
+                        &quot;lines, a phrase each with the trade-off, then the &quot;
+                        &quot;question as the LAST line, answerable in one word.&quot;)
+                else:
+                    if txt:
+                        self._human_asked = False
+                    self._maybe_drive_locked(was_tick, txt)
+                # R3 (Grok code F4): a code job&#x27;s coder is finished when its turn ended and nothing follows it (a
+                # failover that keeps working returned above; a queued or driven turn keeps it busy)
+                if self.on_turn_done is not None and not self.busy and not self.queue:
+                    self._fire_turn_done({&quot;text&quot;: txt, &quot;error&quot;: err_text or &quot;&quot;})
+
+            # Publish the post-arbitration truth (including a just-started
+            # queued/nudge/drive turn) without holding the stdin arbiter lock.
+            self._status_update(emit=True)</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L2777">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/size">Size the authorized request</a> · <a target="_top" href="../index.html#process/small">Small direct work under the guard</a> · <a target="_top" href="../index.html#process/independent">Apply the existing stakes/family rule</a> · <a target="_top" href="../index.html#process/stop">Honor stop, pause or bounded drive</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">b31f75a1c121142bdad6c693f96ef9d300f68ff99378a7c98ab86e30aee8e321</span></p><p>Excerpt hash: <span class="path">da549948d1aff820acfc5f63eb716831abfd4e9b24bd0541a9bd7eadd6c11f86</span></p></details></article></main></body></html>

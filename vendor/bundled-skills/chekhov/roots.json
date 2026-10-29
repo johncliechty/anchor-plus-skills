@@ -1,33 +1,33 @@
-{
-  "schema": "chekhov-roots-v1",
-  "note": "The four project roots, FIXED by the frozen plan (W1). chekhov roots initialises each as its own git repository, records the zip checksums here and marks the zips read-only. No Temp scratchpad path may ever appear in this file.",
-  "roots": {
-    "artificial-magi": {
-      "path": "<path> Magi",
-      "zip": "<path> Magi.zip"
-    },
-    "bright-heart": {
-      "path": "<path>",
-      "zip": "<path>"
-    },
-    "sing-for-the-dead": {
-      "path": "<path> Projects/Short Stories"
-    },
-    "essays": {
-      "path": "<path> Projects/Essays"
-    }
-  },
-  "zips": {
-    "bright-heart": {
-      "path": "<path>",
-      "sha256": "73b5b6894260995e6b01d1a325acfb4264bbdf855d1938295b09266a90ef785c",
-      "read_only": true
-    },
-    "artificial-magi": {
-      "path": "<path> Magi.zip",
-      "sha256": "82443ae396c549990e5bbdf9636fd27a28ad409c369c8feabf12f9a42d32ce01",
-      "read_only": true
-    }
-  },
-  "remote_visibility": "unknown"
-}
+{
+  "schema": "chekhov-roots-v1",
+  "note": "The four project roots, FIXED by the frozen plan (W1). chekhov roots initialises each as its own git repository, records the zip checksums here and marks the zips read-only. No Temp scratchpad path may ever appear in this file.",
+  "roots": {
+    "artificial-magi": {
+      "path": "<path> Magi",
+      "zip": "<path> Magi.zip"
+    },
+    "bright-heart": {
+      "path": "<path>",
+      "zip": "<path>"
+    },
+    "sing-for-the-dead": {
+      "path": "<path> Projects/Short Stories"
+    },
+    "essays": {
+      "path": "<path> Projects/Essays"
+    }
+  },
+  "zips": {
+    "bright-heart": {
+      "path": "<path>",
+      "sha256": "73b5b6894260995e6b01d1a325acfb4264bbdf855d1938295b09266a90ef785c",
+      "read_only": true
+    },
+    "artificial-magi": {
+      "path": "<path> Magi.zip",
+      "sha256": "82443ae396c549990e5bbdf9636fd27a28ad409c369c8feabf12f9a42d32ce01",
+      "read_only": true
+    }
+  },
+  "remote_visibility": "unknown"
+}

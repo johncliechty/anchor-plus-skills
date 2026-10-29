@@ -1,0 +1,158 @@
+{
+  "resources": [
+    {
+      "id": "jumper-mat-skill-md",
+      "title": "Jumper Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "jumper-mat-human-md",
+      "title": "Jumper Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "jumper-mat-north-star-md",
+      "title": "Jumper Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "jumper-mat-triage-block",
+      "title": "Jumper Universal Triage & Seating Block",
+      "category": "material",
+      "path": "foundry/triage/generated/jumper.triage-block.md",
+      "description": "Generated Universal Seating Law & complexity triage protocol block."
+    },
+    {
+      "id": "jumper-tool-bin-jumper-run-mjs",
+      "title": "jumper-run.mjs (bin/jumper-run.mjs)",
+      "category": "tools",
+      "path": "bin/jumper-run.mjs",
+      "description": "Executable .mjs module (999 LOC; key symbols: parseArgs, depthLockStep, assertPreRunKillGatesFloor, assertDepthFanOutNoConflict)."
+    },
+    {
+      "id": "jumper-tool-index-js",
+      "title": "index.js (index.js)",
+      "category": "tools",
+      "path": "index.js",
+      "description": "Executable .js module (2371 LOC; key symbols: combinedSignal, throwIfAborted, dispatchOrder, cloneDispatchSlots)."
+    },
+    {
+      "id": "jumper-tool-run-foreman-mjs",
+      "title": "run-foreman.mjs (run-foreman.mjs)",
+      "category": "tools",
+      "path": "run-foreman.mjs",
+      "description": "Executable .mjs module (40 LOC; key symbols: emit)."
+    },
+    {
+      "id": "jumper-tool-downsample-24-py",
+      "title": "_downsample_24.py (_downsample_24.py)",
+      "category": "tools",
+      "path": "_downsample_24.py",
+      "description": "Executable .py module (24 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "jumper-tool-eb-tau-gpt2-py",
+      "title": "_eb_tau_gpt2.py (_eb_tau_gpt2.py)",
+      "category": "tools",
+      "path": "_eb_tau_gpt2.py",
+      "description": "Executable .py module (163 LOC; key symbols: load, fro, cos, stage_eb)."
+    },
+    {
+      "id": "jumper-tool-phase3-out-py",
+      "title": "_phase3_out.py (_phase3_out.py)",
+      "category": "tools",
+      "path": "_phase3_out.py",
+      "description": "Executable .py module (194 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "jumper-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "jumper-peer-gandalf",
+      "title": "Gandalf Deep-Think Foundation",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Composes Gandalf first to diagnose root constraints before SCAMPER/TRIZ ideation"
+    },
+    {
+      "id": "jumper-peer-superjump",
+      "title": "Superjump Fit-Contract Ideation Engine",
+      "category": "skills",
+      "skill": "superjump",
+      "description": "Escalates high-stakes analogical transfers to full cross-family judged exploration"
+    },
+    {
+      "id": "jumper-peer-crucible",
+      "title": "Crucible Planning Handoff",
+      "category": "skills",
+      "skill": "crucible",
+      "description": "Turns surviving 3-gate kill-filter ideas into locked Stage-0 North Stars"
+    },
+    {
+      "id": "jumper-ref-lessons",
+      "title": "Jumper LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "jumper-ref-changelog",
+      "title": "Jumper CHANGELOG.md",
+      "category": "references",
+      "path": "CHANGELOG.md",
+      "description": "Accumulated operational lessons and historical evolution in CHANGELOG.md."
+    },
+    {
+      "id": "jumper-ref-improvement",
+      "title": "Reference: improvement.md",
+      "category": "references",
+      "path": "references/improvement.md",
+      "description": "Domain reference and knowledge-base specification (references/improvement.md)."
+    },
+    {
+      "id": "jumper-ref-journal-schema",
+      "title": "Reference: journal-schema.md",
+      "category": "references",
+      "path": "references/journal-schema.md",
+      "description": "Domain reference and knowledge-base specification (references/journal-schema.md)."
+    },
+    {
+      "id": "jumper-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "jumper-journal-0069-chapter3-lean-routing-failur",
+      "title": "Journal: 0069-chapter3-lean-routing-failure",
+      "category": "references",
+      "path": "journal/0069-chapter3-lean-routing-failure.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0069-chapter3-lean-routing-failure.md)."
+    },
+    {
+      "id": "jumper-journal-0068-mba-quiz1-two-oral-mechanism",
+      "title": "Journal: 0068-mba-quiz1-two-oral-mechanisms",
+      "category": "references",
+      "path": "journal/0068-mba-quiz1-two-oral-mechanisms.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0068-mba-quiz1-two-oral-mechanisms.md)."
+    },
+    {
+      "id": "jumper-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

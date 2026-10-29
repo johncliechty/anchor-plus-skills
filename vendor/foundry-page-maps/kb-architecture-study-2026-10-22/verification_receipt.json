@@ -1,0 +1,330 @@
+{
+  "schema": "ramanujan-verification-receipt/v1",
+  "study": "kb-architecture-study-2026-10-22",
+  "timestamp": "2026-10-22T19:40:00Z",
+  "elapsed_s": 0.1533,
+  "all_verified": true,
+  "claims": {
+    "claim_1_float64_boundary_collapse": {
+      "claim": "IEEE-754 Float64 Boundary Collapse in Poincare Ball vs. Lorentz Stability",
+      "verified": true,
+      "ieee754_collapse_threshold_rho": 38.1230949,
+      "poincare_significant_error_depth": 19,
+      "poincare_total_collapse_depth": 20,
+      "lorentz_max_rel_err_at_depth_600": 0.0,
+      "depth_table": [
+        {
+          "depth": 1,
+          "rho": 2.0,
+          "poincare_r": 0.7615941559557649,
+          "one_minus_r2": 0.41997434161402614,
+          "d_exact": 1.61371683,
+          "d_poincare": 1.61371683,
+          "rel_err_poincare": 0.0,
+          "rel_err_conformal_lambda": 0.0,
+          "d_lorentz": 1.61371683,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 5,
+          "rho": 10.0,
+          "poincare_r": 0.9999092042625951,
+          "one_minus_r2": 0.0001815832309438603,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.76274717,
+          "rel_err_poincare": 0.0,
+          "rel_err_conformal_lambda": 0.0,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 10,
+          "rho": 20.0,
+          "poincare_r": 0.9999999958776927,
+          "one_minus_r2": 8.244614546626394e-09,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.76274717,
+          "rel_err_poincare": 0.0,
+          "rel_err_conformal_lambda": 1e-08,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 14,
+          "rho": 28.0,
+          "poincare_r": 0.9999999999986171,
+          "one_minus_r2": 2.76578759894619e-12,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.76273308,
+          "rel_err_poincare": 7.99e-06,
+          "rel_err_conformal_lambda": 9.96e-06,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 15,
+          "rho": 30.0,
+          "poincare_r": 0.9999999999998128,
+          "one_minus_r2": 3.743672039036028e-13,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.76251188,
+          "rel_err_poincare": 0.00013348,
+          "rel_err_conformal_lambda": 0.00016637,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 16,
+          "rho": 32.0,
+          "poincare_r": 0.9999999999999747,
+          "one_minus_r2": 5.062616992290714e-14,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.76359883,
+          "rel_err_poincare": 0.00048314,
+          "rel_err_conformal_lambda": 0.0006023,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 17,
+          "rho": 34.0,
+          "poincare_r": 0.9999999999999966,
+          "one_minus_r2": 6.8833827526759706e-15,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.7570403,
+          "rel_err_poincare": 0.00323749,
+          "rel_err_conformal_lambda": 0.00403131,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 18,
+          "rho": 36.0,
+          "poincare_r": 0.9999999999999996,
+          "one_minus_r2": 8.881784197001252e-16,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.82515109,
+          "rel_err_poincare": 0.03540151,
+          "rel_err_conformal_lambda": 0.04462022,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 19,
+          "rho": 38.0,
+          "poincare_r": 0.9999999999999999,
+          "one_minus_r2": 2.220446049250313e-16,
+          "d_exact": 1.76274717,
+          "d_poincare": 1.0780273,
+          "rel_err_poincare": 0.38843907,
+          "rel_err_conformal_lambda": 0.43450411,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "FINITE"
+        },
+        {
+          "depth": 20,
+          "rho": 40.0,
+          "poincare_r": 1.0,
+          "one_minus_r2": 0.0,
+          "d_exact": 1.76274717,
+          "d_poincare": 0.0,
+          "rel_err_poincare": 1.0,
+          "rel_err_conformal_lambda": 1.0,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "COLLAPSED_ZERO_DENOM"
+        },
+        {
+          "depth": 25,
+          "rho": 50.0,
+          "poincare_r": 1.0,
+          "one_minus_r2": 0.0,
+          "d_exact": 1.76274717,
+          "d_poincare": 0.0,
+          "rel_err_poincare": 1.0,
+          "rel_err_conformal_lambda": 1.0,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "COLLAPSED_ZERO_DENOM"
+        },
+        {
+          "depth": 30,
+          "rho": 60.0,
+          "poincare_r": 1.0,
+          "one_minus_r2": 0.0,
+          "d_exact": 1.76274717,
+          "d_poincare": 0.0,
+          "rel_err_poincare": 1.0,
+          "rel_err_conformal_lambda": 1.0,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "COLLAPSED_ZERO_DENOM"
+        },
+        {
+          "depth": 40,
+          "rho": 80.0,
+          "poincare_r": 1.0,
+          "one_minus_r2": 0.0,
+          "d_exact": 1.76274717,
+          "d_poincare": 0.0,
+          "rel_err_poincare": 1.0,
+          "rel_err_conformal_lambda": 1.0,
+          "d_lorentz": 1.76274717,
+          "rel_err_lorentz": 0.0,
+          "poincare_status": "COLLAPSED_ZERO_DENOM"
+        }
+      ]
+    },
+    "claim_2_cycle_distortion": {
+      "claim": "Fundamental Group & Cycle Distortion Obstruction in Pure H^d vs. Product Manifold H^d x S^1",
+      "verified": true,
+      "cycle_comparison": [
+        {
+          "cycle_k": 4,
+          "h2_unit_edge_radius": 0.682666,
+          "h2_antipodal_distance": 1.365333,
+          "target_antipodal_distance": 2.0,
+          "h2_multiplicative_distortion": 1.464844,
+          "h2_avg_relative_error": 0.158667,
+          "h2_antipodal_matched_edge_stretch": 1.513374,
+          "s1_multiplicative_distortion": 1.0,
+          "s1_avg_relative_error": 0.0
+        },
+        {
+          "cycle_k": 6,
+          "h2_unit_edge_radius": 0.910894,
+          "h2_antipodal_distance": 1.821789,
+          "target_antipodal_distance": 3.0,
+          "h2_multiplicative_distortion": 1.646733,
+          "h2_avg_relative_error": 0.193989,
+          "h2_antipodal_matched_edge_stretch": 1.852701,
+          "s1_multiplicative_distortion": 1.0,
+          "s1_avg_relative_error": 0.0
+        },
+        {
+          "cycle_k": 8,
+          "h2_unit_edge_radius": 1.11551,
+          "h2_antipodal_distance": 2.23102,
+          "target_antipodal_distance": 4.0,
+          "h2_multiplicative_distortion": 1.792902,
+          "h2_avg_relative_error": 0.221411,
+          "h2_antipodal_matched_edge_stretch": 2.261904,
+          "s1_multiplicative_distortion": 1.0,
+          "s1_avg_relative_error": 0.0
+        },
+        {
+          "cycle_k": 12,
+          "h2_unit_edge_radius": 1.449593,
+          "h2_antipodal_distance": 2.899187,
+          "target_antipodal_distance": 6.0,
+          "h2_multiplicative_distortion": 2.069546,
+          "h2_avg_relative_error": 0.272353,
+          "h2_antipodal_matched_edge_stretch": 3.362323,
+          "s1_multiplicative_distortion": 1.0,
+          "s1_avg_relative_error": 0.0
+        },
+        {
+          "cycle_k": 16,
+          "h2_unit_edge_radius": 1.708948,
+          "h2_antipodal_distance": 3.417896,
+          "target_antipodal_distance": 8.0,
+          "h2_multiplicative_distortion": 2.340621,
+          "h2_avg_relative_error": 0.318179,
+          "h2_antipodal_matched_edge_stretch": 4.748155,
+          "s1_multiplicative_distortion": 1.0,
+          "s1_avg_relative_error": 0.0
+        },
+        {
+          "cycle_k": 24,
+          "h2_unit_edge_radius": 2.092835,
+          "h2_antipodal_distance": 4.18567,
+          "target_antipodal_distance": 12.0,
+          "h2_multiplicative_distortion": 2.866924,
+          "h2_avg_relative_error": 0.393478,
+          "h2_antipodal_matched_edge_stretch": 7.928346,
+          "s1_multiplicative_distortion": 1.0,
+          "s1_avg_relative_error": 0.0
+        }
+      ]
+    },
+    "claim_3_gromov_and_degree_calibration": {
+      "claim": "Gromov delta-Hyperbolicity & Degree-Calibrated Radial Placement",
+      "verified": true,
+      "gromov_delta_pure_tree": 0.0,
+      "gromov_delta_c8_cycle": 2.0,
+      "gromov_delta_foundry_composite_graph": 1.0,
+      "branching_profile": [
+        19,
+        8,
+        10
+      ],
+      "fixed_poincare_radii": [
+        0.438199,
+        0.735222,
+        0.887494
+      ],
+      "calibrated_poincare_radii": [
+        0.972878,
+        0.9991,
+        0.999976
+      ],
+      "min_sibling_hyperbolic_distance_fixed": [
+        0.355194,
+        0.132191,
+        0.03455
+      ],
+      "min_sibling_hyperbolic_distance_calibrated": [
+        4.978682,
+        7.653609,
+        10.334142
+      ]
+    },
+    "claim_4_product_metric_and_lorentz_knn": {
+      "claim": "Product Metric Triangle Inequality & Lorentz Inner-Product k-NN Equivalence",
+      "verified": true,
+      "triples_tested": 5000,
+      "triangle_inequality_violations": 0,
+      "min_triangle_slack": 0.5935746586,
+      "knn_candidates": 2000,
+      "knn_exact_rank_agreement": 1.0,
+      "geodesic_scan_ms": 1.5385,
+      "lorentz_dot_scan_ms": 1.4314
+    },
+    "claim_5_submodular_context_routing": {
+      "claim": "Submodular Tree-Knapsack Context Routing & Token Efficiency",
+      "verified": true,
+      "submodularity_pairs_tested": 2000,
+      "submodularity_violations": 0,
+      "token_budget": 1800,
+      "full_catalog_tokens": 10150,
+      "greedy_selected_nodes": [
+        0,
+        1,
+        2,
+        4
+      ],
+      "greedy_tokens_used": 1750,
+      "token_savings_pct": 82.76,
+      "greedy_utility": 4.421356,
+      "optimal_knapsack_utility": 4.421356,
+      "optimal_selected_nodes": [
+        0,
+        1,
+        2,
+        4
+      ],
+      "full_catalog_utility": 5.806126,
+      "greedy_vs_optimal_ratio": 1.0,
+      "theoretical_1_minus_1_over_e": 0.632121
+    }
+  }
+}

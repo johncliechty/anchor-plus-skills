@@ -11,7 +11,7 @@ import {
   JumperSelfReviewHalt,
   JumperCrossFamilyDegradeHalt,
 } from '../../jumper/index.js';
-import { runGate3Ping, writeRunRecord } from '../../jumper/bin/jumper-run.mjs';
+import { runGate3Ping, writeRunRecord, gate3PingOptionsFromEnv } from '../../jumper/bin/jumper-run.mjs';
 import { runSuperjump, refuseImplement } from '../index.js';
 import { reweight, parseWeightArg } from '../fit.mjs';
 import { renderReport } from '../report.mjs';
@@ -113,11 +113,22 @@ async function main() {
     process.exitCode = 1; return;
   }
 
+  let gate3ChannelDead = null;
   try {
-    await runGate3Ping({ ledger: seatingLedger, driver: seating.gate3DriverName, runAgent: trioRunAgent });
+    const pingOpts = gate3PingOptionsFromEnv(process.env);
+    await runGate3Ping({
+      ledger: seatingLedger,
+      driver: seating.gate3DriverName,
+      runAgent: trioRunAgent,
+      timeoutMs: pingOpts.timeoutMs,
+      attempts: pingOpts.attempts,
+    });
   } catch (err) {
-    process.stderr.write(`superjump-run: HALT (ping) — ${err?.name || err?.message}\n`);
-    process.exitCode = 1; return;
+    gate3ChannelDead = {
+      driver: seating.gate3DriverName,
+      reason: String(err?.message || err).slice(0, 200),
+    };
+    process.stderr.write(`superjump-run: gate-3 channel DEAD after retries — generating anyway; ideas will be UNJUDGED, never survivors.\n`);
   }
 
   const outputPath = opts.output || join(skillDir(), 'journal', 'runs', `${started.replace(/[:.]/g, '-')}-${randomUUID()}.json`);
@@ -133,6 +144,7 @@ async function main() {
       codingEffort: opts.effort === 'highest' ? 'highest' : 'auto',
       reviewEffort: 'highest',
       expectations: loadExpectations(),
+      gate3ChannelDead,
     });
     writeFileSync(outputPath.replace(/\.json$/i, '.md'), renderReport(result));
     writeRunRecord({

@@ -1,0 +1,233 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>governor · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>governor</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\governor.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 1848e86c2fdd5964be30f4893130e7a72ed518a1c6f64d19525b983e3e7d9d72</p></details>
+<p><a href="../sources/governor.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/governor.mjs — Wave 8 GOVERNOR WIRING + INCLUSION-TEST ENFORCEMENT (Phase D).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // MASTER-PLAN Phase D / IMPLEMENTATION-PLAN Wave 8 done-when: a LOW-stakes run fires ZERO</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // Synthesizer/Judge/debate sub-agents (call-count 0 via the Wave-7 spy seam) AND a HIGH-stakes run</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // fires call-count &gt; 0 (positive control); a zero-AXIS-finding round is provably skipped/demoted.</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> //</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // This module is the WIRING that the prior waves were built to drop into — it forks NOTHING:</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> //   - the stakes → governor tier comes from the Wave-4 adjudicated stakes vector (bin/stakes.mjs);</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> //   - the round&#x27;s adjudication layer (G4 Judge · active Synthesizer · G9 debate) and its call-count</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //     SPY SEAM come from the Wave-7 round orchestration (bin/round.mjs `orchestrateRound`);</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //   - the INCLUSION TEST (a finding that does not trace to the North Star / AXIS is DEMOTED and</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //     cannot hold the loop open) is the trio&#x27;s own, reused through `tallyFindings` (bin/round.mjs →</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> //     crucible/shark-tank.mjs). A round whose every finding is demoted serves the AXIS not at all,</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //     so it is the &quot;zero-AXIS-finding round&quot; the governor skips.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> //</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> // Two honesty levers meet here, both straight from the locked North Star (&quot;All scaled by the</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> // declared AXIS stakes&quot; · &quot;No element survives that doesn&#x27;t serve the AXIS&quot;):</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> //</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //   (1) STAKES SCALING (crit-2/crit-4 cost discipline). The persistent ACTIVE Deep-Think Synthesizer</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> //       is a &quot;medium+&quot; instrument (MASTER-PLAN North Star) and the separate Judge + conditional</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> //       debate ride with it. At tier `low` the governor EXCLUDES all three, so a low-stakes run pays</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> //       zero high-tier sub-agent cost; at `medium`/`high` it INCLUDES them. The tier itself is the</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> //       Wave-4 ADJUDICATED value (irreversible ⇒ ≥ medium, I6) — never the author&#x27;s casual word — so</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> //       the inclusion decision cannot be gamed down by under-declaring stakes.</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> //</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> //   (2) INCLUSION-TEST ENFORCEMENT (crit-4 &quot;zero-AXIS-finding rounds skipped&quot;). Independently of the</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> //       stakes tier, a round that surfaced NO finding tracing to the AXIS is SKIPPED — its expensive</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> //       adjudication never runs, because there is nothing AXIS-serving to adjudicate. This is the</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> //       load-bearing demotion: even a HIGH-stakes round is skipped when its findings are all</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> //       out-of-scope, so stakes can raise the ceiling but cannot manufacture work the AXIS doesn&#x27;t</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> //       justify.</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> //</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> // PURITY: `governorPolicy`, `resolveTier`, and the AXIS predicates are deterministic, side-effect</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> // free functions of their inputs. `runGovernedRound` decides the skip from the PURE trio tally</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> // BEFORE any sub-agent fires, so a skipped round provably makes zero high-tier agent calls.</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> import { adjudicateStakes, TIERS, tierAtLeast, tierRank } from &#x27;./stakes.mjs&#x27;;</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> import { orchestrateRound, tallyFindings } from &#x27;./round.mjs&#x27;;</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> import { loadGate } from &#x27;./gate-loader.mjs&#x27;; // satisfy static check</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a> import { TRIO_SURFACE } from &#x27;./engine.mjs&#x27;;</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> const { HaltError } = TRIO_SURFACE[&#x27;foreman-lib&#x27;];</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> </span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> // ── The inclusion policy: which high-tier sub-agents a tier admits ──────────────────────────────────</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> /**</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>  * The governor tier AT/ABOVE which the high-tier adjudication layer (Synthesizer/Judge/debate) is</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>  * INCLUDED. The Deep-Think Synthesizer is a &quot;medium+&quot; instrument per the locked North Star, and the</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>  * separate Judge + conditional debate ride with it. Below this floor (tier `low`) all three are</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>  * EXCLUDED — a low-stakes run fires zero of them (crit-4).</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>  */</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> export const ADJUDICATION_TIER_FLOOR = &#x27;medium&#x27;;</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a> </span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> /** The high-tier sub-agent roles the governor scales by stakes (the Wave-7 spy-seam roles). */</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> export const HIGH_TIER_AGENTS = Object.freeze([&#x27;synthesizer&#x27;, &#x27;judge&#x27;, &#x27;debate&#x27;]);</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> </span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> /** The literal stamp a round wears when the inclusion test demotes it (zero AXIS-serving findings). */</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> export const ZERO_AXIS_SKIP_STAMP =</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>   &#x27;round SKIPPED by the inclusion test — no finding traces to the North Star (AXIS), so nothing &#x27; +</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>   &#x27;serves the objective and the high-tier adjudication is not run (crit-4: zero-AXIS-finding rounds skipped)&#x27;;</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> </span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a> /**</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>  * Decide, from a governor tier, WHICH high-tier sub-agents are included this run (the inclusion</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>  * policy). At/above the adjudication floor (`medium`+) the Synthesizer/Judge/debate are all admitted;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a>  * below it (`low`) all three are excluded. `debate` being admitted only means it MAY fire — G9 stays</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>  * conditional on an actual cross-origin conflict downstream (bin/round.mjs).</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>  *</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>  * @param {string} tier  a governor tier from bin/stakes.mjs TIERS (&#x27;low&#x27; | &#x27;medium&#x27; | &#x27;high&#x27;)</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>  * @returns {{ tier:string, include:boolean, synthesize:boolean, judge:boolean, debate:boolean, reason:string }}</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>  */</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a> export function governorPolicy(tier) {</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>   if (tierRank(tier) &lt; 0) {</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>     throw new HaltError(</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a>       `governorPolicy: unknown governor tier ${JSON.stringify(tier)} — expected one of ${TIERS.join(&#x27;, &#x27;)}`,</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>     );</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>   }</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>   const include = tierAtLeast(tier, ADJUDICATION_TIER_FLOOR);</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>   const reason = include</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>     ? `tier=${tier} ≥ ${ADJUDICATION_TIER_FLOOR}: Synthesizer/Judge/debate INCLUDED (high-tier adjudication on)`</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>     : `tier=${tier} &lt; ${ADJUDICATION_TIER_FLOOR}: Synthesizer/Judge/debate EXCLUDED (low-stakes fires zero high-tier agents, crit-4)`;</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>   return { tier, include, synthesize: include, judge: include, debate: include, reason };</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> }</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> // ── Resolving a run&#x27;s governor tier from its stakes (vector OR a pre-projected tier) ────────────────</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> /**</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>  * Resolve a run&#x27;s governor tier. Accepts either an already-projected tier string (a value in</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>  * bin/stakes.mjs TIERS) or a raw declared STAKES VECTOR object, which it adjudicates through the</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>  * Wave-4 governor (`adjudicateStakes`) — so the I6 under-call guard (irreversible ⇒ tier ≥ medium)</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>  * is enforced HERE too, not bypassable by handing the governor a bare tier.</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>  *</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>  * @param {string|object} stakes  a TIER string, or a declared stakes-vector object</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>  * @returns {string} the governor tier</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>  */</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a> export function resolveTier(stakes) {</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>   if (typeof stakes === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>     if (tierRank(stakes) &lt; 0) {</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>       throw new HaltError(</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>         `resolveTier: unknown tier string ${JSON.stringify(stakes)} — expected one of ${TIERS.join(&#x27;, &#x27;)}`,</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>       );</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>     }</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>     return stakes;</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>   }</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>   if (stakes &amp;&amp; typeof stakes === &#x27;object&#x27; &amp;&amp; !Array.isArray(stakes)) {</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>     return adjudicateStakes(stakes).tier; // Wave-4 adjudication (I6 floor applied)</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>   }</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>   throw new HaltError(</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>     &#x27;resolveTier requires a governor tier string OR a declared stakes-vector object (Wave-4)&#x27;,</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   );</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> }</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> </span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a> // ── The inclusion test: which findings serve the AXIS (North Star) ──────────────────────────────────</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a> /**</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>  * The AXIS-SERVING findings of a round: the tally&#x27;s findings that PASSED the inclusion test (NOT</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>  * demoted). The trio tally marks a finding `demoted:true` exactly when it does not trace to the North</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>  * Star (`traces_to_north_star: &#x27;no&#x27;`), so the non-demoted set is precisely the findings that serve</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>  * the AXIS. Reused, not re-derived — the same inclusion test the Sharks already apply.</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>  *</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>  * @param {{findings?:Array&lt;{demoted?:boolean}&gt;}} tally  a `tallyFindings` result</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>  * @returns {Array&lt;object&gt;}</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>  */</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> export function axisServingFindings(tally) {</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>   const findings = Array.isArray(tally?.findings) ? tally.findings : [];</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>   return findings.filter((f) =&gt; !f?.demoted);</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a> }</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> </span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a> /**</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>  * Is this a ZERO-AXIS-FINDING round? True when NO finding serves the AXIS — either no findings at all</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>  * (an empty round) or every finding failed the inclusion test (all demoted / out-of-scope). Such a</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>  * round cannot justify the high-tier adjudication, so the governor skips it (crit-4).</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>  *</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>  * @param {object} tally  a `tallyFindings` result</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>  */</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a> export function isZeroAxisFindingRound(tally) {</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>   return axisServingFindings(tally).length === 0;</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a> }</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> </span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> // ── The governed round: stakes scaling + inclusion-test enforcement, over the Wave-7 round ───────────</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a> /**</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>  * Run ONE governed verification round: the Wave-8 wiring that gates the Wave-7 adjudication layer by</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>  * BOTH the stakes tier AND the inclusion test, exposing the same per-role call-count SPY SEAM.</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>  *</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>  * The decision order (and why):</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>  *   1. Resolve the governor tier (Wave-4 adjudication, I6 floor) and its inclusion policy.</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>  *   2. Compute the trio tally from the reviews — this is PURE (no sub-agent calls), so the skip</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>  *      decision is made BEFORE any high-tier agent could fire.</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>  *   3. INCLUSION TEST: if the round is zero-AXIS-finding, SKIP it — return counts {0,0,0} and the</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>  *      demotion stamp without invoking the adjudication layer at all (crit-4). This holds at EVERY</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>  *      tier, so even a high-stakes round is skipped when nothing serves the AXIS.</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>  *   4. Otherwise delegate to `orchestrateRound` with the tier&#x27;s inclusion flags. At tier `low` all</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>  *      three flags are false ⇒ the spy seam reports {0,0,0}; at `medium`/`high` they are true ⇒ the</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>  *      Synthesizer + Judge fire (and debate fires iff there is a cross-origin conflict), so the spy</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>  *      seam reports a positive count (the positive control).</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>  *</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>  * @param {object} o</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>  * @param {Function}      o.agent                  the injected agent seam (the spy); required</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>  * @param {string|object} o.stakes                 a governor tier OR a declared stakes vector (Wave 4)</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>  * @param {Array}         o.reviews                lineage-tagged per-reviewer reviews (the AXIS findings)</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>  * @param {number}        [o.round=1]</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>  * @param {?string}       [o.northStar=null]</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>  * @param {string[]}      [o.priorBlockerIds=[]]</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>  * @param {object}        [o.g8={enabled:false}]   G8 fusion options (default inert)</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>  * @returns {Promise&lt;object&gt;} { tier, policy, skipped, demoted, counts:{synthesizer,judge,debate}, tally, axisFindingCount, ... }</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>  */</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a> export async function runGovernedRound({</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>   agent,</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>   stakes,</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>   reviews,</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>   round = 1,</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>   northStar = null,</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>   priorBlockerIds = [],</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>   g8 = { enabled: false },</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>   // P0 2026-07-25: a TIGHTEN-ONLY band override (LITE triage&#x27;s includeAdjudication knob).</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>   // `false` forces the G9 debate off even where the tier admits it; it can never turn ON</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>   // what the tier excludes (the &amp;&amp; below), so the governor&#x27;s cost ceiling is preserved.</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>   includeDebate = null,</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a> } = {}) {</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>     throw new HaltError(&#x27;runGovernedRound requires an agent() function&#x27;, &#x27;pass the injected seam: { agent }&#x27;);</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>   }</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>   if (!Array.isArray(reviews)) {</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>     throw new HaltError(&quot;runGovernedRound requires a reviews[] array (the round&#x27;s AXIS findings)&quot;);</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>   }</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a> </span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>   const tier = resolveTier(stakes);</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>   const policy = governorPolicy(tier);</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a> </span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>   // PURE pre-flight: the trio tally + AXIS inclusion, computed with NO sub-agent calls. The skip</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>   // decision is therefore provably made before any high-tier agent could fire.</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>   const tally = tallyFindings(reviews, { priorBlockerIds });</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>   const axisFindingCount = axisServingFindings(tally).length;</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a> </span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>   // (3) Inclusion-test enforcement: a zero-AXIS-finding round is skipped/demoted at EVERY tier.</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>   if (isZeroAxisFindingRound(tally)) {</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>     return {</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>       round,</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>       tier,</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>       policy,</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>       skipped: true,</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>       demoted: true,</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>       reason: ZERO_AXIS_SKIP_STAMP,</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>       counts: { synthesizer: 0, judge: 0, debate: 0 },</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>       tally,</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>       axisFindingCount: 0,</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>       reviews,</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>     };</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>   }</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>   // (4) Stakes-scaled adjudication: delegate to the Wave-7 round with the tier&#x27;s inclusion flags. The</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>   // returned `counts` ARE the spy seam — {0,0,0} at low stakes, positive at medium/high.</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>   const result = await orchestrateRound({</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>     agent,</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>     round,</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>     northStar,</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>     reviews,</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>     priorBlockerIds,</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>     synthesize: policy.synthesize,</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>     judge: policy.judge,</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>     debate: policy.debate &amp;&amp; includeDebate !== false,</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>     g8,</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>   });</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a> </span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>   return { tier, policy, skipped: false, demoted: false, reason: policy.reason, axisFindingCount, ...result };</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a> }</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a> </span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a> // Re-export the composed pieces so a consumer/test reads the SAME governor + round surface the wiring</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a> // uses (one canonical tier projection, one canonical round orchestrator).</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a> export { adjudicateStakes, TIERS, tierAtLeast } from &#x27;./stakes.mjs&#x27;;</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a> export { orchestrateRound, tallyFindings } from &#x27;./round.mjs&#x27;;</span></pre></main></body></html>

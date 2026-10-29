@@ -1,0 +1,63 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Dry and clean stopping rules · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="convergence" data-anchor-id="a017">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Dry and clean stopping rules</h1>
+<p class="intro">The tracker uses distinct counters for a nonempty round with no new blockers and a genuinely empty round.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\round.mjs</span><br>Lines 153–201 · frozen source snapshot</p>
+<pre class="excerpt">export function makeConvergenceTracker({ N, cleanN = null } = {}) {
+  if (!Number.isInteger(N) || N &lt; 1) {
+    throw new HaltError(&#x27;makeConvergenceTracker: N must be an integer &gt;= 1 (the committed threshold)&#x27;);
+  }
+  const CLEAN_N = cleanN == null ? N + 1 : cleanN;
+  if (!Number.isInteger(CLEAN_N) || CLEAN_N &lt; 1) {
+    throw new HaltError(&#x27;makeConvergenceTracker: cleanN must be an integer &gt;= 1&#x27;);
+  }
+  let dryStreak = 0;
+  let emptyStreak = 0;
+  let rounds = 0;
+  let countedRounds = 0; // non-empty rounds — the only ones DRY convergence sees
+  const snapshot = (extra) =&gt; {
+    const dry = dryStreak &gt;= N;
+    const clean = emptyStreak &gt;= CLEAN_N;
+    return {
+      converged: dry || clean,
+      mode: dry ? &#x27;dry&#x27; : clean ? &#x27;clean&#x27; : null,
+      stamp: !dry &amp;&amp; clean ? CLEAN_CONVERGENCE_STAMP : null,
+      dryStreak, emptyStreak, rounds, countedRounds,
+      ...extra,
+    };
+  };
+  return {
+    /**
+     * Observe one completed round. Returns the post-observation state, including whether this round
+     * COUNTED toward DRY (non-empty) and whether the run has now CONVERGED (and in which MODE).
+     */
+    observe(round) {
+      rounds += 1;
+      if (isEmptyRound(round)) {
+        // I7: invisible to the DRY streak (not incremented, not reset) — but it ADVANCES the
+        // CLEAN streak: consecutive genuinely-empty rounds are themselves evidence.
+        emptyStreak += 1;
+        return snapshot({ counted: false, empty: true });
+      }
+      countedRounds += 1;
+      emptyStreak = 0; // findings appeared — a clean exit must re-earn its consecutive streak
+      if (isDryRound(round)) dryStreak += 1;
+      else dryStreak = 0;
+      return snapshot({ counted: true, empty: false });
+    },
+    state() {
+      return snapshot({});
+    },
+  };
+}
+
+// ── (c) suspiciously-dry → probe-or-dissent (I1) ───────────────────────────────────────────────────</pre>
+<div class="actions"><a class="button" href="../source-pages/round.html#L153">Open numbered source at line 153</a>
+<a class="button secondary" href="../sources/round.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/stop">Check the actual stopping rule</a> · <a target="_top" href="../index.html#process/pending">Stop without convergence</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">29de2810d55645d7bb6c893c678bd1a9b3e7661077350ab437dff396b963fcd8</span></p>
+<p>Excerpt SHA-256 <span class="path">e2548d6ff2fa4697138199c51932eb8ba4506b3d16df7263349be4352efd6587</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

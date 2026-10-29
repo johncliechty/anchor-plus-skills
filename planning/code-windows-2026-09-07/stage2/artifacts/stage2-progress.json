@@ -1,6 +1,0 @@
-{
-  "phase": "stage2-shark-tank",
-  "status": "error",
-  "ts": "2026-09-08T02:41:00.861Z",
-  "error": "trio seat seat_unavailable: synthesizer:direct:r1"
-}

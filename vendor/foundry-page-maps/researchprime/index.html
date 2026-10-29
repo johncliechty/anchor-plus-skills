@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>researchPrime Library & maps · Refinement 2</title>
+  <link rel="icon" href="assets/researchprime.jpg">
+  <link rel="stylesheet" href="display.css">
+  <script defer src="maps-data.js"></script>
+  <script defer src="adapter.js"></script>
+  <script defer src="flow-diagram.js"></script>
+  <script defer src="layer-library.js"></script>
+  <script defer src="display.js"></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to skill</a>
+  <header class="masthead"><img src="assets/anchor.png" alt="" width="30" height="30"><strong>Skill Foundry</strong>
+    <span class="brand"><img src="assets/gwl.svg" alt="" width="24" height="24">Ghost World Labs</span>
+    <span class="badge">Refinement 2 · for review</span></header>
+  <div class="shell">
+    <aside class="rail" aria-label="Approved walkthrough order"><h2>Skill walkthroughs</h2><p class="note">researchPrime first</p><div id="walkthrough"></div>
+      <details class="history"><summary>Preserved foundations</summary>
+        <p><a href="../../planning/foundry-page-2026-10-02/mockup/foundry-mockup.html">Original mockup v7</a></p>
+        <p><a href="resources/candidate-plan.html">Page plan v1.1-candidate</a></p>
+        <p><a href="refinement-1/maps.json">Refinement 1 data (preserved)</a></p>
+      </details></aside>
+    <main id="content" tabindex="-1">
+      <div class="head"><img class="big" src="assets/researchprime.jpg" alt="researchPrime icon" width="112" height="112">
+        <div><p class="eyebrow">Research you can examine</p><h1>researchPrime</h1>
+          <p class="intro">Investigate a difficult question, compare the evidence, and explain what is known and what remains uncertain.</p>
+          <div class="actions"><a class="button" data-resource="human-guide" href="resources/human-guide.html">Human guide</a>
+            <a class="button secondary" data-resource="purpose" href="resources/purpose.html">Original North Star</a></div></div></div>
+      <p class="review-note">Library and maps — Refinement 2, answering John's Refinement 1 review (grade B, 2026-10-06). This is a Foundry review surface; Anchor integration and human acceptance remain open.</p>
+      <nav class="tabs" aria-label="researchPrime sections">
+        <a href="#knowledge" data-tab="knowledge">Knowledge map</a><a href="#library" data-tab="library">Library</a>
+        <a href="#process" data-tab="process">Process map</a><a href="#differences" data-tab="differences">Instructions ↔ code</a>
+        <a href="#review" data-tab="review">Review record</a><a href="#handoff" data-tab="handoff">Anchor handoff</a>
+      </nav>
+      <div id="panel"></div>
+      <noscript><p><a href="resources/index.html">Open the complete Library without JavaScript</a>.</p></noscript>
+    </main>
+  </div>
+  <dialog id="resource-dialog" aria-label="Library resource">
+    <div class="drawer-head"><strong id="resource-title">Library resource</strong><a id="resource-new-tab" target="_blank" rel="noopener">Open separately ↗</a><button id="close-resource" aria-label="Close resource">Close ×</button></div>
+    <iframe id="resource-frame" title="Actual library resource"></iframe>
+  </dialog>
+</body>
+</html>

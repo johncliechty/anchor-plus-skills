@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Select validation stakes · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="stakes" data-anchor-id="a013">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Select validation stakes</h1>
+<p class="intro">Impact, reversibility and blast radius determine the stakes tier.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\stakes.mjs</span><br>Lines 90–131 · frozen source snapshot</p>
+<pre class="excerpt">export function adjudicateStakes(input) {
+  if (!input || typeof input !== &#x27;object&#x27; || Array.isArray(input)) {
+    throw new TypeError(&#x27;adjudicateStakes requires a stakes-vector object&#x27;);
+  }
+
+  // Per-axis tier contributions (only for axes the caller actually declared).
+  const axis_tiers = {};
+  for (const axis of STAKES_AXES) {
+    if (input[axis] !== undefined) axis_tiers[axis] = axisTier(axis, input[axis]);
+  }
+
+  // The author&#x27;s self-declaration alone (the number the under-call guard must beat).
+  const declared_tier = input.declared_stakes !== undefined
+    ? axisTier(&#x27;declared_stakes&#x27;, input.declared_stakes)
+    : &#x27;low&#x27;;
+
+  // Projection: the highest tier any declared axis justifies.
+  let tier = &#x27;low&#x27;;
+  for (const t of Object.values(axis_tiers)) tier = maxTier(tier, t);
+
+  // I6 under-call guard (defensive floor): irreversibility forces tier ≥ medium regardless of the
+  // axis map (so the floor survives even if the reversibility scale is ever re-tuned).
+  if (input.reversibility === &#x27;irreversible&#x27;) tier = maxTier(tier, IRREVERSIBLE_FLOOR);
+
+  // Record every axis (other than the author&#x27;s own declaration) that pushed the governor tier ABOVE
+  // the author&#x27;s declared tier, so a reviewer sees exactly WHY the governor over-rode the author.
+  // The canonical case is the irreversibility floor beating a `low` declaration (the under-call
+  // guard); the same loop also catches e.g. a `wide` blast_radius beating a `low` declaration.
+  const overrides = [];
+  for (const axis of STAKES_AXES) {
+    if (axis === &#x27;declared_stakes&#x27;) continue;
+    const at = axis_tiers[axis];
+    if (!at || tierRank(at) &lt;= tierRank(declared_tier)) continue;
+    const reason =
+      axis === &#x27;reversibility&#x27; &amp;&amp; input.reversibility === &#x27;irreversible&#x27;
+        ? `reversibility=&#x27;irreversible&#x27; forces tier ≥ ${IRREVERSIBLE_FLOOR} (I6 under-call guard)`
+        : `${axis}=&#x27;${input[axis]}&#x27; justifies tier ${at}, above the declared ${declared_tier}`;
+    overrides.push({ axis, from: declared_tier, to: at, reason });
+  }
+
+  const rationale =
+    `adjudicated governor tier=${tier} (declared=${declared_tier})` +</pre>
+<div class="actions"><a class="button" href="../source-pages/stakes.html#L90">Open numbered source at line 90</a>
+<a class="button secondary" href="../sources/stakes.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/scope-gate">Scope: approve, edit or abort</a> · <a target="_top" href="../index.html#process/governor">Apply stakes and relevance</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">1636a05ea157090beff712555f8e5f4a0253978e9083c8f6a0e4a9c2c26c55cd</span></p>
+<p>Excerpt SHA-256 <span class="path">602d90da88423da6a02380adc965831d5bed79d6a374144a75d4003f42fddb59</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

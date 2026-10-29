@@ -24,7 +24,7 @@ BARE = re.compile(r"[A-Za-z0-9_./:@=,+%^~-]+")
 GIT_ARG = re.compile(r"^(?:--output(?:=.*)?|-o.*|--output-directory.*|--ext-diff|--textconv|--exec(?:=.*)?|"
                      r"--upload-pack.*|--receive-pack.*|-c|--config-env.*|--no-index)$")
 ALLOWED = (
-    ("tool", re.compile(r"^python(?:\.exe)?$", re.I), re.compile(r"^(?:[A-Za-z]:/[^\"'\s]+/)?Anchor/tools/steward_(?:code_job|skill)\.py$", re.I)),
+    ("tool", re.compile(r"^python(?:\.exe)?$", re.I), re.compile(r"^(?:[A-Za-z]:/[^\"'\s]+/)?Anchor/tools/steward_(?:code_job|skill|settings)\.py$", re.I)),
     ("foundry_tool", re.compile(r"^python(?:\.exe)?$", re.I), re.compile(r"^(?:[A-Za-z]:/[^\"'\s]+/)?(?:Skill Foundry/|Anchor/vendor/)?foundry-tools/ft\.py$", re.I)),
     ("git", re.compile(r"^git$"), re.compile(r"^(?:status|log|diff|show)$")),
 )
@@ -50,7 +50,7 @@ def tokens(cmd):
             if j < 0:
                 return None
             body = cmd[i + 1:j]
-            if any(x in body for x in ("$", "`", "\\")):
+            if any(x in body for x in ("$", "`")) or body.endswith("\\"):
                 return None
             out.append((body, True))
             i = j + 1

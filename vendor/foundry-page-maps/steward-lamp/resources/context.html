@@ -1,0 +1,214 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Context-rich Node prompt · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="context" data-anchor-id="a-conversation-buildStewardPrompt">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Context-rich Node prompt</h1>
+<p class="intro">The optional Node converse lane includes confirmed kickoff, roadmap, active-step findings and history. It is distinct from Anchor&#x27;s persistent tool-enabled cockpit.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.625657+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/engine/steward-conversation.mjs</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 9496c7a4e1eea4e38c4f870fb594cb6aa20d958d896b10a495990831b9e07e7e</p></aside>
+<p class="path">C:\dev\Ecgberht\engine\steward-conversation.mjs · lines 588–789</p><pre>export function buildStewardPrompt(context = {}, utterance = &#x27;&#x27;, opts = {}) {
+  const instruction = opts.planning ? STEWARD_PLAN_INSTRUCTION : STEWARD_TALK_INSTRUCTION;
+  const lines = [instruction];
+  lines.push(&#x27;Discovery is adaptive: ask one consequential question at a time with context, why it matters, &#x27;
+    + &#x27;a recommendation and what its answer authorizes. Carry earlier answers forward from durable history. &#x27;
+    + &#x27;Usually three or four questions suffice; do not enforce a quota, a two-turn cutoff, or repeat known answers. &#x27;
+    + &#x27;Clarify shared versus group-specific deliverables, independent acceptance and essential prerequisites when relevant. &#x27;
+    + &#x27;Frame the plan when the intent is clear enough, retaining reversible assumptions and unresolved later choices.&#x27;);
+  // Gate 5 / Wave 3: on a THIN turn (turn &gt;= KICKOFF_THIN_PROPOSAL_BY_TURN of a sparse
+  // opening, nothing open or confirmed) the planning tier owes the smallest honest bundle.
+  // Deliberately CONDITIONAL, like every other block: no thin turn -&gt; no block -&gt; every
+  // recorded prompt stays byte-identical.
+  if (opts.planning &amp;&amp; opts.thin_turn) lines.push(&#x27;&#x27;, thinBundleInstruction(opts.thin_turn));
+  lines.push(&#x27;&#x27;, &#x27;--- CAMPAIGN CONTEXT ---&#x27;);
+
+  const n = context.narrative ?? {};
+  lines.push(`North star: ${nonEmptyOr(n.north_star, &#x27;(not set)&#x27;)}`);
+  lines.push(`Active effort: ${nonEmptyOr(n.active_effort, &#x27;(none)&#x27;)}`);
+  if (nonEmptyOr(n.human_wait, &#x27;&#x27;)) lines.push(`Waiting on John: ${n.human_wait}`);
+
+  const projection = Array.isArray(context.projection) ? context.projection : [];
+  const stepFindings = context.step_findings ?? {};
+  if (projection.length) {
+    lines.push(&#x27;&#x27;, &#x27;Confirmed roadmap steps (already written — do not re-propose these):&#x27;);
+    for (const step of projection) {
+      const sid = step.step_id ?? step.id;
+      const facts = Array.isArray(stepFindings[sid]) ? stepFindings[sid] : [];
+      lines.push(`- [${step.status ?? &#x27;unknown&#x27;}] ${step.name ?? step.step_id}`
+        + (facts.length ? ` · ${facts.length} finding${facts.length === 1 ? &#x27;&#x27; : &#x27;s&#x27;} on file` : &#x27;&#x27;));
+    }
+    // WHAT THE CAMPAIGN HAS LEARNED (conditional — absent when nothing fed).
+    // The glue John asked for: run findings inform the NEXT move, so the seat
+    // sees them where it reasons, not stashed in a report nobody re-reads.
+    const learned = [];
+    for (const step of projection) {
+      const sid = step.step_id ?? step.id;
+      const facts = Array.isArray(stepFindings[sid]) ? stepFindings[sid] : [];
+      for (const f of facts.slice(-4)) {
+        learned.push(`- [${sid}] ${f.finding}${f.source ? ` (${f.source})` : &#x27;&#x27;}`);
+      }
+    }
+    if (learned.length) {
+      lines.push(&#x27;&#x27;, &#x27;WHAT THE CAMPAIGN HAS LEARNED (from finished runs — use it to aim the next move):&#x27;);
+      lines.push(...learned.slice(0, 16));
+    }
+  } else {
+    lines.push(&#x27;&#x27;, &#x27;Confirmed roadmap steps: none yet.&#x27;);
+  }
+
+  const confirmedKickoff = context.confirmed_kickoff;
+  if (confirmedKickoff) {
+    lines.push(
+      &#x27;&#x27;,
+      `CONFIRMED KICKOFF v${confirmedKickoff.version} (authoritative intent):`,
+      `Goal: ${confirmedKickoff.goal}`,
+      `Work product: ${confirmedKickoff.work_product.name}`,
+      `Components: ${confirmedKickoff.work_product.components.map((c) =&gt; `${c.id}=${c.name}`).join(&#x27; · &#x27;)}`,
+      &#x27;Do not replace this confirmed version merely because a newer preview is open.&#x27;,
+    );
+  }
+
+  // LIVE RUNS ride the prompt so &quot;is it running?&quot; is answered from RECORDS,
+  // never guessed. Deliberately CONDITIONAL: no runs → no block → prompts
+  // without runs stay byte-identical (the recorded acceptance tape holds).
+  const runs = Array.isArray(context.commission_runs) ? context.commission_runs : [];
+  if (runs.length) {
+    lines.push(&#x27;&#x27;, &#x27;--- COMMISSIONED RUNS (host records — the truth about what is running) ---&#x27;);
+    for (const r of runs.slice(0, 5)) {
+      lines.push(
+        `- ${r.skill ?? &#x27;skill&#x27;} for step &#x27;${r.step_id ?? &#x27;?&#x27;}&#x27;: ${r.outcome}`
+        + (r.outcome === &#x27;running&#x27; ? ` (launched ${r.at ?? &#x27;?&#x27;} — a live session is working now)` : &#x27;&#x27;)
+        + (r.needs ? ` — waiting on John: ${r.needs}` : &#x27;&#x27;),
+      );
+    }
+    lines.push(
+      &#x27;Answer any &quot;is it running / what is happening&quot; question FROM THIS LIST.&#x27;,
+      &#x27;A running entry means the machinery genuinely launched it — never deny or&#x27;,
+      &#x27;re-propose a run this list already shows. John can watch a running session&#x27;,
+      &#x27;via its green Running strip in the chamber (&quot;Open the session&quot;).&#x27;,
+    );
+  }
+
+  // ONCE THE CAMPAIGN IS RUNNING the conversation changes shape: it stops being about
+  // the whole scaffolding and becomes about the step in hand. This is the difference
+  // between a one-shot planner and a steward — John asked for detail to get filled in
+  // by talking, step by step, rather than demanded up front.
+  const active = context.active_step;
+  if (active) {
+    const gaps = Array.isArray(context.step_gaps) ? context.step_gaps : [];
+    lines.push(
+      &#x27;&#x27;,
+      `THE STEP IN HAND: &quot;${active.name}&quot; (${active.status}).`,
+      active.done_when ? `Its done-when: ${active.done_when}` : &#x27;&#x27;,
+      active.oranges_annotations?.length
+        ? `Foresight already recorded for it: ${active.oranges_annotations.join(&#x27; · &#x27;)}`
+        : &#x27;&#x27;,
+      &#x27;Ask only for what THIS step needs to move — not for the whole campaign\&#x27;s detail.&#x27;,
+      &#x27;If it is finished, say what you think was learned and propose the next stage&#x27;,
+      &#x27;(set proposal.kind to &quot;next_stage&quot;).&#x27;,
+    );
+  }
+  const done = projection.filter((s) =&gt; s.status === &#x27;done&#x27;).length;
+  if (projection.length &amp;&amp; done === projection.length) {
+    lines.push(&#x27;&#x27;, &#x27;Every confirmed step is done — the campaign needs its next stage.&#x27;);
+  }
+
+  // The scaffolding-so-far. This is what makes turn N+1 a REFINEMENT rather than a
+  // restart — without it he would have to re-describe the project every time.
+  const open = context.open_proposal;
+  if (open &amp;&amp; open.kind === &#x27;kickoff_proposal&#x27;
+      &amp;&amp; Array.isArray(open.plan_entries) &amp;&amp; open.plan_entries.length) {
+    lines.push(
+      &#x27;&#x27;,
+      `KICKOFF SYNTHESIS v${open.version} (not confirmed — he is reacting to this):`,
+      `Goal: ${open.goal}`,
+      `Work product: ${open.work_product.name}`,
+      `Components: ${open.work_product.components.map((c) =&gt; `${c.id}=${c.name}`).join(&#x27; · &#x27;)}`,
+      `Plan entries: ${open.plan_entries.map((entry) =&gt; `${entry.id}=${entry.name}`).join(&#x27; · &#x27;)}`,
+      open.integration
+        ? `Integration: ${open.integration.summary} · proof: ${open.integration.proof.observable}`
+        : &#x27;Integration: not needed; this is a one-component effort.&#x27;,
+      &#x27;If he is refining it, return the WHOLE revised kickoff synthesis with the same stable IDs where meaning did not change.&#x27;,
+    );
+  } else if (open &amp;&amp; Array.isArray(open.steps) &amp;&amp; open.steps.length) {
+    lines.push(&#x27;&#x27;, &#x27;SCAFFOLDING YOU ALREADY PROPOSED (not yet confirmed — he is reacting to this):&#x27;);
+    open.steps.forEach((s, i) =&gt; {
+      lines.push(`${i + 1}. ${s.name}${s.done_when ? ` — done when: ${s.done_when}` : &#x27;&#x27;}`);
+    });
+    lines.push(
+      &#x27;If he is refining it, return the WHOLE revised scaffolding, not just the changed part.&#x27;,
+    );
+  }
+
+  // THE DURABLE HISTORY — earlier sessions, so the steward can explain how the plan got
+  // here rather than only what it currently is. Read for recall; never for state.
+  const history = Array.isArray(context.history) ? context.history : [];
+  if (history.length) {
+    lines.push(&#x27;&#x27;, &#x27;--- EARLIER CONVERSATION ON THIS PROJECT (history, not state) ---&#x27;);
+    for (const t of history) {
+      const who = t?.role === &#x27;steward&#x27; ? SPELLING : &#x27;John&#x27;;
+      const text = String(t?.text ?? &#x27;&#x27;).trim();
+      if (text) lines.push(`${who}${t.at ? ` [${String(t.at).slice(0, 10)}]` : &#x27;&#x27;}: ${text}`);
+    }
+    lines.push(
+      &#x27;That history is a RECORD OF WHAT WAS SAID, not the current plan. Where it &#x27;
+      + &#x27;disagrees with the confirmed roadmap above, the roadmap is right.&#x27;,
+    );
+  }
+  if (context.history_unreadable) {
+    lines.push(&#x27;&#x27;, &#x27;NOTE: the earlier conversation history could not be read. Say so if it matters.&#x27;);
+  }
+
+  // Turns from the live session the caller is holding — replayed for immediacy. They
+  // land in the durable log once the turn succeeds.
+  const turns = Array.isArray(opts.turns) ? opts.turns : [];
+  if (turns.length) {
+    lines.push(&#x27;&#x27;, &#x27;--- THIS SESSION SO FAR ---&#x27;);
+    for (const t of turns) {
+      const who = t?.role === &#x27;steward&#x27; ? SPELLING : &#x27;John&#x27;;
+      const text = String(t?.text ?? &#x27;&#x27;).trim();
+      if (text) lines.push(`${who}: ${text}`);
+    }
+  }
+
+  // THE ANSWER LAW (steward-e1 W2, E1). Deliberately CONDITIONAL — like the
+  // COMMISSIONED RUNS block above: no enforceable bound (or no question this
+  // turn) → no block → every existing prompt stays byte-identical and the
+  // recorded acceptance tapes hold. The ids are DETERMINISTIC (computed by
+  // the Anchor sibling&#x27;s committed bound, never here) — the seat answers the
+  // question; it never decides what counts as one.
+  const e1 = opts.e1;
+  const e1Questions = (e1 &amp;&amp; e1.enforceable === true &amp;&amp; Array.isArray(e1.questions))
+    ? e1.questions.filter((q) =&gt; q &amp;&amp; q.question_id) : [];
+  if (e1Questions.length) {
+    lines.push(
+      &#x27;&#x27;,
+      &#x27;--- ANSWER LAW (E1 — the ratified bound) ---&#x27;,
+      `John&#x27;s turn carries ${e1Questions.length} direct question(s), each with a machine id.`,
+      &#x27;&#x27;,
+      &#x27;THIS SUPERSEDES THE REPLY FORMAT ABOVE FOR THIS TURN. The reply format&#x27;,
+      &#x27;enumerates its keys and says &quot;reply with ONLY a JSON object&quot;, so a reply&#x27;,
+      &#x27;that honours it literally omits the key below and is then REFUSED — the&#x27;,
+      &#x27;answer you wrote is discarded and John sees a block instead of it. The&#x27;,
+      &#x27;object you return is the one described above WITH this key added:&#x27;,
+      &#x27;&#x27;,
+      &#x27;  &quot;answer_references&quot;: [{&quot;question_id&quot;: &quot;&lt;id, verbatim from the list below&gt;&quot;,&#x27;,
+      &#x27;                         &quot;answer_text&quot;: &quot;&lt;your explicit answer to that question&gt;&quot;}]&#x27;,
+      &#x27;&#x27;,
+      &#x27;One entry per id below, covering EVERY id. The engine structurally&#x27;,
+      &#x27;refuses to close a turn while any listed id lacks an answer-reference —&#x27;,
+      &#x27;never walk away from one. Answer the question in &quot;say&quot; as you normally&#x27;,
+      &#x27;would; answer_references is the machine-readable receipt, not a&#x27;,
+      &#x27;substitute for talking to him.&#x27;,
+    );
+    for (const q of e1Questions) {
+      lines.push(`- ${q.question_id}: &quot;${String(q.text ?? &#x27;&#x27;).trim()}&quot;`);
+    }
+  }
+
+  lines.push(&#x27;&#x27;, &#x27;--- JOHN JUST SAID ---&#x27;, String(utterance ?? &#x27;&#x27;).trim());
+  return lines.join(&#x27;\n&#x27;);
+}</pre>
+<p><a class="button" href="../source-pages/conversation.html#L588">Open numbered source</a>
+<a href="../sources/conversation.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/route">Optional Node control or converse</a> · <a target="_top" href="../index.html#process/context">Load Node context and construct its prompt</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">9496c7a4e1eea4e38c4f870fb594cb6aa20d958d896b10a495990831b9e07e7e</span></p><p>Excerpt hash: <span class="path">c0e7d52283e6e8313a3b360d2f90663bb95c4a96885b9b8fbe0070427543ee3b</span></p></details></article></main></body></html>

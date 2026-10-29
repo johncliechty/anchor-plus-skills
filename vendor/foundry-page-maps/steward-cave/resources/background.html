@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Long-lived background ownership · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="background" data-anchor-id="a-session-_watch_session">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Long-lived background ownership</h1>
+<p class="intro">Anchor&#x27;s watcher owns the commissioned session and its result. A disposable display or agent is not the background owner.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.537648+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/commission_session.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 4065cf2079ed2030a70a3e9a29b5acaaf384497b6d9df40a4a107985862fa268</p></aside>
+<p class="path">C:/dev/Anchor/commission_session.py · lines 484–513</p><pre>def _watch_session(folder, project_id, record, *, watch_only,
+                   read_fn=None, write_fn=None, runner_kwargs=None) -&gt; dict:
+    &quot;&quot;&quot;One watch: drive (or resume watching) the session, then bring the run
+    home through the bridge. Runs on the watcher thread.&quot;&quot;&quot;
+    session_id = record[&quot;session_id&quot;]
+    if read_fn is None or write_fn is None:
+        import terminal_session as _ts
+        read_fn = read_fn or _ts.read_since
+        write_fn = write_fn or _ts.input
+
+    kwargs = dict(DEFAULT_RUNNER_KWARGS) if runner_kwargs is None else dict(runner_kwargs)
+    try:
+        result = _cr.run_commissioned_session(
+            session_id,
+            WORK_TURN,
+            read_fn=read_fn,
+            write_fn=write_fn,
+            watch_only=watch_only,
+            **kwargs,
+        )
+    except Exception as exc:
+        # (2026-08-07 shark round) A runner exception used to kill the daemon
+        # thread SILENTLY — the record stranded &quot;running&quot; forever and John was
+        # never fetched. A dead watcher is a died run: report it honestly.
+        result = {&quot;outcome&quot;: &quot;died&quot;, &quot;ran&quot;: None, &quot;elapsed_s&quot;: None,
+                  &quot;transcript&quot;: &quot;&quot;, &quot;transcript_chars&quot;: 0,
+                  &quot;watcher_error&quot;: str(exc)[:300]}
+    return finish_run(folder, project_id, record, result,
+                      read_fn=read_fn, write_fn=write_fn,
+                      runner_kwargs=runner_kwargs)</pre>
+<p><a class="button" href="../source-pages/session.html#L484">Open numbered source</a>
+<a href="../sources/session.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/background">Own the watcher and return channel</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">4065cf2079ed2030a70a3e9a29b5acaaf384497b6d9df40a4a107985862fa268</span></p><p>Excerpt hash: <span class="path">aa8d57743478fba6c6f4088648a51a78eccbed8a968a6e80e348c243b81c7f23</span></p></details></article></main></body></html>

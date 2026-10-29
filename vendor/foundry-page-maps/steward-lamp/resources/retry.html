@@ -1,0 +1,50 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Recover observations without duplicate work · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="retry" data-anchor-id="a-cockpit-_retry_refinement_handoffs">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Recover observations without duplicate work</h1>
+<p class="intro">Persisted producer-handoff observations retry under a lock. Model failures hold queued words instead of blindly replaying ambiguous substantive actions.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630821+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\steward_engine.py · lines 3067–3104</p><pre>    def _retry_refinement_handoffs(self):
+        &quot;&quot;&quot;Drain one saved observation through the existing ledger, never under the stdin lock.&quot;&quot;&quot;
+        if not getattr(self, &quot;_pending_refinement_handoffs&quot;, {}):
+            return True
+        if not self._refinement_retry_lock.acquire(blocking=False):
+            return False
+        try:
+            with self._refinement_pending_lock:
+                if not self._pending_refinement_handoffs:
+                    return True
+                producer_id, payload = next(iter(self._pending_refinement_handoffs.items()))
+                # A failed session-state write must not silently orphan an observation.
+                if not _update_state(self.skey(), {
+                        &quot;pending_refinement_handoffs&quot;: self._pending_refinement_handoffs}):
+                    return False
+            from steward_cockpit.producer_handoff import record_handoff
+            try:
+                receipt = record_handoff(self.dir, **payload)
+            except Exception as exc:
+                receipt = {&quot;ok&quot;: False, &quot;error&quot;: &quot;handoff-recording-failed&quot;,
+                           &quot;detail&quot;: type(exc).__name__}
+            with self._refinement_pending_lock:
+                remaining = dict(self._pending_refinement_handoffs)
+                if receipt.get(&quot;ok&quot;):
+                    remaining.pop(producer_id, None)
+                acknowledged = _update_state(self.skey(), {
+                    &quot;pending_refinement_handoffs&quot;: remaining,
+                    &quot;refinement_handoff&quot;: receipt})
+                if acknowledged:
+                    self._pending_refinement_handoffs = remaining
+            error = (receipt.get(&quot;error&quot;) if not receipt.get(&quot;ok&quot;) else
+                     &quot;handoff-receipt-persistence-failed&quot; if not acknowledged else None)
+            if error and error != self._refinement_handoff_error:
+                self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: &quot;Work completed, but its refinement handoff needs repair: &quot; + str(error)})
+            self._refinement_handoff_error = error
+            return bool(receipt.get(&quot;ok&quot;) and acknowledged)
+        finally:
+            self._refinement_retry_lock.release()</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L3067">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/handoff">Preserve producer output for inspection</a> · <a target="_top" href="../index.html#process/retry">Recover observations; verify before replay</a> · <a target="_top" href="../index.html#process/halt">Named failure, pause or exhausted budget</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</span></p><p>Excerpt hash: <span class="path">a9ad5dcba354de02ac22bbf754e9cdc5cae1724f080ffcc1fdcaa2c850440239</span></p></details></article></main></body></html>

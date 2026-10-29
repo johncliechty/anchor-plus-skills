@@ -1,0 +1,1305 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>budget-map · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>budget-map</h1>
+<p class="note">Frozen code source · <span class="path">foundry/triage/mapping.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 6886d7086f0b118e402851970d895432433b5e90f8ea3bbff1e221cbc7d2c755</p></details>
+<p><a href="../sources/budget-map.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // Per-skill band → real-knob mapping tables (NS-01 / Waves 5–6).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // Locked process depth (and model tier where seats matter) must change real</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // engine knobs — rounds / reviewers / seats / prose ceremony — not just labels.</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // Inequality across FULL | LITE | SPIKE is tested for every mapped skill.</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> //</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // B3: BAND_MAPPINGS.jumper is the sole numeric truth for jumper depth →</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // {ideaRounds, killGates}. SPIKE is a first-class cell. killGates ≥ 3 is a</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // load-or-init hard floor (never clamp) — see assertJumperKillGatesFloor.</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> // Wave 5: trio (crucible, foreman, researchPrime) + sample (gandalf).</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> // Wave 6: full 11 (adds jumper, ramanujan, tidy-idy, zombie-hunter,</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> //         literature-review, financial-analyst, legal-beagle).</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> // Named consumption sites:</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> //   · crucible-wire.mjs  → crucibleKnobs / assessComplexity.bandKnobs</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //   · foreman-wire.mjs   → foremanKnobs → REVIEWERS_BY_DEPTH</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> //   · researchprime-wire → researchPrimeKnobs → intake extension payload</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //   · entry-points.mjs   → knobsForSkill for every manifest skill</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> //</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> // Non-goals: DPAPI/sealer; researchPrime governor module (byte-unchanged).</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> import {</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a>   ACCEPTED_DEPTH_SET,</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a>   DEPTH_BANDS,</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a>   DEPTH_BAND_VALUES,</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a>   MODEL_TIERS,</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a>   canonicalizeDepth,</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a>   isModelTier,</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a>   isProcessDepth,</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a>   normalizeDepth,</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a>   normalizeDepthStrict,</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a>   normalizeTier,</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> } from &#x27;./core.mjs&#x27;;</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> /** Hard floor — jumper killGates never thinned below this at any depth. */</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> export const JUMPER_KILL_GATES_MIN = 3;</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> </span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> /**</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>  * Hard floor — zombie-hunter reaperPasses never collapses below this at any depth.</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>  * LITE may be 1 pass but never 0 (Track B6 / REAPER_PASSES_MIN).</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>  */</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> export const REAPER_PASSES_MIN = 1;</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> /**</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>  * Depth-invariant safety floor for zombie-hunter (Track B6).</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>  * NOT a function of depth; never merged into depth-variable knobs as overridable fields.</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>  * requireProofOfDeath and abstain-by-default stay true at every depth.</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>  */</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a> export const ZOMBIE_HUNTER_SAFETY_FLOOR = Object.freeze({</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>   requireProofOfDeath: true,</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   abstainByDefault: true,</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> });</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> /**</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a>  * Depth-invariant safety floor for literature-review (Track B7).</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a>  * NOT a function of depth; never merged into depth-variable knobs as overridable fields.</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>  * Quote-grounding / one-call-per-paper claim extraction floors stay full-strength at every band.</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>  */</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> export const LIT_REVIEW_SAFETY_FLOOR = Object.freeze({</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>   requireQuoteGrounding: true,</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>   oneCallPerPaperExtraction: true,</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>   minGroundedClaimsPerPaper: 1,</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> });</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a> /** Named refuse: unknown process-depth token on literature-review resolve (refuse-closed). */</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> export const LIT_REVIEW_UNKNOWN_DEPTH = &#x27;LIT_REVIEW_UNKNOWN_DEPTH&#x27;;</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> /**</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>  * Named refuse: band locked (confirmedDepth / FOUNDRY_TRIAGE_DEPTH / lock) while caller</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>  * supplies snowballDepth or adversarialRounds that desync from live literatureReviewKnobs.</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>  */</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> export const LIT_REVIEW_PARTIAL_OVERRIDE_REFUSED = &#x27;LIT_REVIEW_PARTIAL_OVERRIDE_REFUSED&#x27;;</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> /** Floor field names that must never be thinned (false/0) on mapping rows. */</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> const LIT_REVIEW_FLOOR_FIELD_KEYS = Object.freeze([</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>   &#x27;requireQuoteGrounding&#x27;,</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>   &#x27;oneCallPerPaperExtraction&#x27;,</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>   &#x27;minGroundedClaimsPerPaper&#x27;,</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> ]);</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> </span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> /** Wave-5 surface stamp — asserted by the mapping / RP-intake suite. */</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> export const NS01_WAVE5_STAMP = &#x27;ns01-w5-rp-intake-mapping&#x27;;</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a> /**</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>  * All skills with a band → knobs table (Wave 6 = full NS-01 manifest of 11).</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>  * Order is stable for greps / fingerprints; not load order.</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>  */</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a> export const MAPPED_SKILLS = Object.freeze([</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>   &#x27;crucible&#x27;,</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>   &#x27;foreman&#x27;,</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>   &#x27;researchPrime&#x27;,</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>   &#x27;gandalf&#x27;,</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>   &#x27;jumper&#x27;,</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>   &#x27;ramanujan&#x27;,</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>   &#x27;tidy-idy&#x27;,</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>   &#x27;zombie-hunter&#x27;,</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>   &#x27;literature-review&#x27;,</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>   &#x27;financial-analyst&#x27;,</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>   &#x27;legal-beagle&#x27;,</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a> ]);</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a> /**</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>  * Per-skill, per-depth knob tables.</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>  * Values are intentional: LITE is strictly leaner than FULL on at least one</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>  * numeric knob; SPIKE keeps frontier seats (uncertain work) but may</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>  * differ on rounds/shards from FULL.</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>  *</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>  * @type {Readonly&lt;Record&lt;string, Readonly&lt;Record&lt;string, Readonly&lt;object&gt;&gt;&gt;&gt;&gt;}</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>  */</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a> export const BAND_MAPPINGS = Object.freeze({</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>   crucible: Object.freeze({</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>       sharkRounds: 3,</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>     }),</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>       sharkRounds: 1,</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>     }),</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>       sharkRounds: 2,</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>     }),</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>   }),</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>   foreman: Object.freeze({</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>       reviewers: 2,</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>     }),</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>       reviewers: 1,</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>     }),</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>       reviewers: 2,</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>     }),</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>   }),</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>   researchPrime: Object.freeze({</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>       maxRounds: 8,</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>       includeAdjudication: true,</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>     }),</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>       maxRounds: 2,</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>       includeAdjudication: false,</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a>     }),</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>       maxRounds: 4,</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>       includeAdjudication: true,</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>     }),</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>   }),</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>   gandalf: Object.freeze({</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>       shards: 8,</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>       fusionPasses: 2,</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>     }),</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>       shards: 2,</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>       fusionPasses: 1,</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>     }),</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>       shards: 4,</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>       fusionPasses: 2,</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>     }),</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>   }),</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>   // B3 sole numeric truth for jumper: LITE | SPIKE | FULL (SPIKE first-class).</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>   // ideaRounds: LITE &lt; FULL on live read. killGates ≥ JUMPER_KILL_GATES_MIN every row.</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>   jumper: Object.freeze({</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>       ideaRounds: 5,</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>       killGates: 3,</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>     }),</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>       ideaRounds: 2,</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>       killGates: 3,</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>     }),</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>     [DEPTH_BANDS.SPIKE]: Object.freeze({</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>       ideaRounds: 3,</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>       killGates: 3,</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>     }),</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>   }),</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>   // B4 sole numeric truth for ramanujan: LITE | SPIKE | FULL (canonical keys only).</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>   // verifyArms: LITE &lt; FULL on live read. certifier: LITE false; FULL/SPIKE true.</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>   ramanujan: Object.freeze({</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>       verifyArms: 3,</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>       certifier: true,</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>     }),</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>       verifyArms: 1,</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>       certifier: false,</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>     }),</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>     [DEPTH_BANDS.SPIKE]: Object.freeze({</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>       verifyArms: 2,</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>       certifier: true,</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>     }),</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>   }),</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>   &#x27;tidy-idy&#x27;: Object.freeze({</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>       debatePasses: 2,</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>       maxRemovalsPerBatch: 25,</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>     }),</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>       debatePasses: 1,</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>       maxRemovalsPerBatch: 10,</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>     }),</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>       debatePasses: 1,</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>       maxRemovalsPerBatch: 15,</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>     }),</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>   }),</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>   &#x27;zombie-hunter&#x27;: Object.freeze({</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>       reaperPasses: 3,</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>       requireProofOfDeath: true,</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>     }),</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>       reaperPasses: 1,</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>       requireProofOfDeath: true,</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>     }),</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>       reaperPasses: 2,</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>       requireProofOfDeath: true,</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>     }),</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>   }),</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>   &#x27;literature-review&#x27;: Object.freeze({</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>       snowballDepth: 3,</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>       adversarialRounds: 2,</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>     }),</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>       snowballDepth: 1,</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>       adversarialRounds: 1,</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>     }),</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>       snowballDepth: 2,</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>       adversarialRounds: 1,</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>     }),</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>   }),</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>   &#x27;financial-analyst&#x27;: Object.freeze({</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>       modelPasses: 3,</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>       tieOutRequired: true,</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>     }),</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>       modelPasses: 1,</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>       tieOutRequired: true,</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>     }),</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>       modelPasses: 2,</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>       tieOutRequired: true,</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>     }),</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a>   }),</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>   &#x27;legal-beagle&#x27;: Object.freeze({</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a>     [DEPTH_BANDS.FULL]: Object.freeze({</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>       reviewSeats: 3,</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>       citationLintRequired: true,</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>       ceremony: &#x27;full&#x27;,</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>     }),</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>     [DEPTH_BANDS.LITE]: Object.freeze({</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>       reviewSeats: 1,</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>       citationLintRequired: true,</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>       seats: &#x27;standard&#x27;,</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>       ceremony: &#x27;lite&#x27;,</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>     }),</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>     [DEPTH_BANDS.SPIKE_FIRST]: Object.freeze({</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>       reviewSeats: 2,</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>       citationLintRequired: true,</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>       seats: &#x27;frontier&#x27;,</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>       ceremony: &#x27;spike-first&#x27;,</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>     }),</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>   }),</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a> });</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a> </span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a> /**</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>  * Load-or-init hard floor for BAND_MAPPINGS.jumper killGates.</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a>  * Every depth row must expose integer killGates ≥ min. Never clamps — throws.</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>  * Used at module init on the live table; tests inject synthetic rows (B3-SC3-LOAD-ASSERT).</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>  *</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>  * @param {Readonly&lt;Record&lt;string, Readonly&lt;object&gt;&gt;&gt; | Record&lt;string, object&gt;} jumperTable</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>  * @param {{ min?: number }} [opts]</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a>  * @returns {true}</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>  */</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a> export function assertJumperKillGatesFloor(jumperTable, opts = {}) {</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>   const min = Number.isInteger(opts.min) ? opts.min : JUMPER_KILL_GATES_MIN;</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a>   if (!jumperTable || typeof jumperTable !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>     const err = new Error(&#x27;BAND_MAPPINGS.jumper missing or not an object&#x27;);</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a>     err.name = &#x27;JumperKillGatesFloorError&#x27;;</span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a>     err.code = &#x27;JUMPER_KILLGATES_FLOOR&#x27;;</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a>     throw err;</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a>   }</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>   const depths = Object.keys(jumperTable);</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>   if (depths.length === 0) {</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a>     const err = new Error(&#x27;BAND_MAPPINGS.jumper has no depth rows&#x27;);</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>     err.name = &#x27;JumperKillGatesFloorError&#x27;;</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>     err.code = &#x27;JUMPER_KILLGATES_FLOOR&#x27;;</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a>     throw err;</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a>   }</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a>   for (const depth of depths) {</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a>     const row = jumperTable[depth];</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>     const kg = row &amp;&amp; /** @type {{ killGates?: unknown }} */ (row).killGates;</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>     // Hard fail — never Math.max/clamp a thinned value up to the floor.</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a>     if (!Number.isInteger(kg) || /** @type {number} */ (kg) &lt; min) {</span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a>       const err = new Error(</span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a>         `BAND_MAPPINGS.jumper[${depth}].killGates must be integer ≥ ${min} ` +</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>           `(got ${JSON.stringify(kg)}); never clamp`,</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>       );</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>       err.name = &#x27;JumperKillGatesFloorError&#x27;;</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>       err.code = &#x27;JUMPER_KILLGATES_FLOOR&#x27;;</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a>       /** @type {any} */ (err).killGates = kg;</span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a>       /** @type {any} */ (err).min = min;</span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a>       throw err;</span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a>     }</span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a>   }</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>   return true;</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a> }</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a> </span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a> // Load-or-init: live jumper rows must satisfy the killGates floor (B3-SC3).</span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a> assertJumperKillGatesFloor(BAND_MAPPINGS.jumper);</span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a> </span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a> /**</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>  * Load-or-init invariants for BAND_MAPPINGS.ramanujan (Track B4 SC1/SC2).</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>  * Canonical row keys FULL|LITE|SPIKE only; LITE.certifier===false;</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>  * LITE.verifyArms &lt; FULL.verifyArms; every row integer verifyArms ≥ 1 + boolean certifier.</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>  * Never clamps — throws.</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a>  *</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>  * @param {Readonly&lt;Record&lt;string, Readonly&lt;object&gt;&gt;&gt; | Record&lt;string, object&gt;} [table]</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a>  * @returns {true}</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a>  */</span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a> export function assertRamanujanBandInvariants(table = BAND_MAPPINGS.ramanujan) {</span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a>   if (!table || typeof table !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a>     const err = new Error(&#x27;BAND_MAPPINGS.ramanujan missing or not an object&#x27;);</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a>     err.name = &#x27;RamanujanBandInvariantError&#x27;;</span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a>     err.code = &#x27;RAMANUJAN_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a>     throw err;</span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a>   }</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>   const keys = Object.keys(table);</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>   const allowed = new Set([&#x27;FULL&#x27;, &#x27;LITE&#x27;, &#x27;SPIKE&#x27;]);</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a>   if (keys.length !== 3 || keys.some((k) =&gt; !allowed.has(k))) {</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>     const err = new Error(</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>       `BAND_MAPPINGS.ramanujan keys must be exactly FULL|LITE|SPIKE (got ${JSON.stringify(keys)})`,</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a>     );</span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a>     err.name = &#x27;RamanujanBandInvariantError&#x27;;</span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a>     err.code = &#x27;RAMANUJAN_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a>     /** @type {any} */ (err).keys = keys;</span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a>     throw err;</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a>   }</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>   for (const depth of keys) {</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>     const row = table[depth];</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>     const verifyArms = row &amp;&amp; /** @type {{ verifyArms?: unknown }} */ (row).verifyArms;</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>     const certifier = row &amp;&amp; /** @type {{ certifier?: unknown }} */ (row).certifier;</span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>     if (!Number.isInteger(verifyArms) || /** @type {number} */ (verifyArms) &lt; 1) {</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a>       const err = new Error(</span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>         `BAND_MAPPINGS.ramanujan[${depth}].verifyArms must be integer ≥ 1 (got ${JSON.stringify(verifyArms)})`,</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>       );</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a>       err.name = &#x27;RamanujanBandInvariantError&#x27;;</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a>       err.code = &#x27;RAMANUJAN_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a>       throw err;</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a>     }</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a>     if (typeof certifier !== &#x27;boolean&#x27;) {</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a>       const err = new Error(</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a>         `BAND_MAPPINGS.ramanujan[${depth}].certifier must be boolean (got ${JSON.stringify(certifier)})`,</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a>       );</span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a>       err.name = &#x27;RamanujanBandInvariantError&#x27;;</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>       err.code = &#x27;RAMANUJAN_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a>       throw err;</span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a>     }</span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a>   }</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a>   const lite = /** @type {{ certifier?: unknown, verifyArms?: unknown }} */ (table.LITE);</span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a>   const full = /** @type {{ verifyArms?: unknown }} */ (table.FULL);</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>   if (lite.certifier !== false) {</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>     const err = new Error(</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a>       `BAND_MAPPINGS.ramanujan.LITE.certifier must be false (got ${JSON.stringify(lite.certifier)})`,</span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>     );</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>     err.name = &#x27;RamanujanBandInvariantError&#x27;;</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a>     err.code = &#x27;RAMANUJAN_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a>     throw err;</span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a>   }</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a>   if (</span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a>     !(</span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a>       Number.isInteger(lite.verifyArms) &amp;&amp;</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a>       Number.isInteger(full.verifyArms) &amp;&amp;</span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a>       /** @type {number} */ (lite.verifyArms) &lt; /** @type {number} */ (full.verifyArms)</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a>     )</span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a>   ) {</span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>     const err = new Error(</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>       `BAND_MAPPINGS.ramanujan LITE.verifyArms must be &lt; FULL.verifyArms ` +</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a>         `(got LITE=${JSON.stringify(lite.verifyArms)} FULL=${JSON.stringify(full.verifyArms)})`,</span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>     );</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>     err.name = &#x27;RamanujanBandInvariantError&#x27;;</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a>     err.code = &#x27;RAMANUJAN_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>     throw err;</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>   }</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a>   return true;</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a> }</span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a> </span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a> // Load-or-init: live ramanujan rows must satisfy B4 band invariants (SC1/SC2 floor).</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a> assertRamanujanBandInvariants(BAND_MAPPINGS.ramanujan);</span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a> </span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a> /**</span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a>  * Ceremony lean-ness ordinal for zombie-hunter load asserts / leanness checks.</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a>  * Lower = leaner. Unknown tokens → null (caller hard-fails).</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a>  *</span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a>  * @param {unknown} ceremonyOrLevel</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a>  * @returns {number | null}</span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>  */</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a> export function ceremonyLevelOrdinal(ceremonyOrLevel) {</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a>   if (ceremonyOrLevel == null) return null;</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>   const key = String(ceremonyOrLevel).trim().toLowerCase().replace(/_/g, &#x27;-&#x27;);</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>   if (key === &#x27;lite&#x27; || key === &#x27;light&#x27;) return 0;</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>   if (key === &#x27;spike-first&#x27; || key === &#x27;spike&#x27; || key === &#x27;spikefirst&#x27;) return 1;</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>   if (key === &#x27;full&#x27;) return 2;</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>   return null;</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a> }</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a> </span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a> /**</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>  * Load-or-init invariants for BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] (Track B6 W1).</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>  * Every row: requireProofOfDeath===true; integer reaperPasses ≥ REAPER_PASSES_MIN.</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>  * LITE.reaperPasses &lt; FULL.reaperPasses; LITE ceremony leaner than FULL.</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a>  * Never clamps — throws (a zero table cell fails load, not green after Math.max).</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a>  *</span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a>  * @param {Readonly&lt;Record&lt;string, Readonly&lt;object&gt;&gt;&gt; | Record&lt;string, object&gt;} [table]</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a>  * @param {{ min?: number }} [opts]</span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a>  * @returns {true}</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a>  */</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a> export function assertZombieHunterBandInvariants(</span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a>   table = BAND_MAPPINGS[&#x27;zombie-hunter&#x27;],</span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a>   opts = {},</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a> ) {</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>   const min = Number.isInteger(opts.min) ? opts.min : REAPER_PASSES_MIN;</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>   if (!table || typeof table !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a>     const err = new Error(&quot;BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] missing or not an object&quot;);</span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>     err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a>     err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>     throw err;</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>   }</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a>   const depths = Object.keys(table);</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a>   if (depths.length === 0) {</span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a>     const err = new Error(&quot;BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] has no depth rows&quot;);</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>     err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>     err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>     throw err;</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>   }</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>   for (const depth of depths) {</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a>     const row = table[depth];</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>     const reaperPasses =</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>       row &amp;&amp; /** @type {{ reaperPasses?: unknown }} */ (row).reaperPasses;</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>     const requireProofOfDeath =</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>       row &amp;&amp; /** @type {{ requireProofOfDeath?: unknown }} */ (row).requireProofOfDeath;</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>     // Hard fail — never Math.max/clamp a thinned reaperPasses up to the floor.</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a>     if (!Number.isInteger(reaperPasses) || /** @type {number} */ (reaperPasses) &lt; min) {</span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a>       const err = new Error(</span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a>         `BAND_MAPPINGS[&#x27;zombie-hunter&#x27;][${depth}].reaperPasses must be integer ≥ ${min} ` +</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a>           `(got ${JSON.stringify(reaperPasses)}); never clamp`,</span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>       );</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a>       err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a>       err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a>       /** @type {any} */ (err).reaperPasses = reaperPasses;</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>       /** @type {any} */ (err).min = min;</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>       throw err;</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>     }</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a>     if (requireProofOfDeath !== true) {</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a>       const err = new Error(</span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a>         `BAND_MAPPINGS[&#x27;zombie-hunter&#x27;][${depth}].requireProofOfDeath must be true ` +</span>
+<span class="source-line" id="L526"><a href="#L526" aria-label="Line 526">526</a>           `(got ${JSON.stringify(requireProofOfDeath)}); never clamp green`,</span>
+<span class="source-line" id="L527"><a href="#L527" aria-label="Line 527">527</a>       );</span>
+<span class="source-line" id="L528"><a href="#L528" aria-label="Line 528">528</a>       err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L529"><a href="#L529" aria-label="Line 529">529</a>       err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L530"><a href="#L530" aria-label="Line 530">530</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L531"><a href="#L531" aria-label="Line 531">531</a>       throw err;</span>
+<span class="source-line" id="L532"><a href="#L532" aria-label="Line 532">532</a>     }</span>
+<span class="source-line" id="L533"><a href="#L533" aria-label="Line 533">533</a>   }</span>
+<span class="source-line" id="L534"><a href="#L534" aria-label="Line 534">534</a>   const lite = /** @type {{ reaperPasses?: unknown, ceremony?: unknown }} */ (table.LITE);</span>
+<span class="source-line" id="L535"><a href="#L535" aria-label="Line 535">535</a>   const full = /** @type {{ reaperPasses?: unknown, ceremony?: unknown }} */ (table.FULL);</span>
+<span class="source-line" id="L536"><a href="#L536" aria-label="Line 536">536</a>   if (!lite || !full) {</span>
+<span class="source-line" id="L537"><a href="#L537" aria-label="Line 537">537</a>     const err = new Error(</span>
+<span class="source-line" id="L538"><a href="#L538" aria-label="Line 538">538</a>       &quot;BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] must expose LITE and FULL rows for leanness asserts&quot;,</span>
+<span class="source-line" id="L539"><a href="#L539" aria-label="Line 539">539</a>     );</span>
+<span class="source-line" id="L540"><a href="#L540" aria-label="Line 540">540</a>     err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L541"><a href="#L541" aria-label="Line 541">541</a>     err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L542"><a href="#L542" aria-label="Line 542">542</a>     throw err;</span>
+<span class="source-line" id="L543"><a href="#L543" aria-label="Line 543">543</a>   }</span>
+<span class="source-line" id="L544"><a href="#L544" aria-label="Line 544">544</a>   if (</span>
+<span class="source-line" id="L545"><a href="#L545" aria-label="Line 545">545</a>     !(</span>
+<span class="source-line" id="L546"><a href="#L546" aria-label="Line 546">546</a>       Number.isInteger(lite.reaperPasses) &amp;&amp;</span>
+<span class="source-line" id="L547"><a href="#L547" aria-label="Line 547">547</a>       Number.isInteger(full.reaperPasses) &amp;&amp;</span>
+<span class="source-line" id="L548"><a href="#L548" aria-label="Line 548">548</a>       /** @type {number} */ (lite.reaperPasses) &lt; /** @type {number} */ (full.reaperPasses)</span>
+<span class="source-line" id="L549"><a href="#L549" aria-label="Line 549">549</a>     )</span>
+<span class="source-line" id="L550"><a href="#L550" aria-label="Line 550">550</a>   ) {</span>
+<span class="source-line" id="L551"><a href="#L551" aria-label="Line 551">551</a>     const err = new Error(</span>
+<span class="source-line" id="L552"><a href="#L552" aria-label="Line 552">552</a>       `BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] LITE.reaperPasses must be &lt; FULL.reaperPasses ` +</span>
+<span class="source-line" id="L553"><a href="#L553" aria-label="Line 553">553</a>         `(got LITE=${JSON.stringify(lite.reaperPasses)} FULL=${JSON.stringify(full.reaperPasses)})`,</span>
+<span class="source-line" id="L554"><a href="#L554" aria-label="Line 554">554</a>     );</span>
+<span class="source-line" id="L555"><a href="#L555" aria-label="Line 555">555</a>     err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L556"><a href="#L556" aria-label="Line 556">556</a>     err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L557"><a href="#L557" aria-label="Line 557">557</a>     throw err;</span>
+<span class="source-line" id="L558"><a href="#L558" aria-label="Line 558">558</a>   }</span>
+<span class="source-line" id="L559"><a href="#L559" aria-label="Line 559">559</a>   const liteOrd = ceremonyLevelOrdinal(lite.ceremony);</span>
+<span class="source-line" id="L560"><a href="#L560" aria-label="Line 560">560</a>   const fullOrd = ceremonyLevelOrdinal(full.ceremony);</span>
+<span class="source-line" id="L561"><a href="#L561" aria-label="Line 561">561</a>   if (liteOrd == null || fullOrd == null || !(liteOrd &lt; fullOrd)) {</span>
+<span class="source-line" id="L562"><a href="#L562" aria-label="Line 562">562</a>     const err = new Error(</span>
+<span class="source-line" id="L563"><a href="#L563" aria-label="Line 563">563</a>       `BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] LITE ceremony must be leaner than FULL ` +</span>
+<span class="source-line" id="L564"><a href="#L564" aria-label="Line 564">564</a>         `(got LITE=${JSON.stringify(lite.ceremony)} FULL=${JSON.stringify(full.ceremony)})`,</span>
+<span class="source-line" id="L565"><a href="#L565" aria-label="Line 565">565</a>     );</span>
+<span class="source-line" id="L566"><a href="#L566" aria-label="Line 566">566</a>     err.name = &#x27;ZombieHunterBandInvariantError&#x27;;</span>
+<span class="source-line" id="L567"><a href="#L567" aria-label="Line 567">567</a>     err.code = &#x27;ZOMBIE_HUNTER_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L568"><a href="#L568" aria-label="Line 568">568</a>     throw err;</span>
+<span class="source-line" id="L569"><a href="#L569" aria-label="Line 569">569</a>   }</span>
+<span class="source-line" id="L570"><a href="#L570" aria-label="Line 570">570</a>   return true;</span>
+<span class="source-line" id="L571"><a href="#L571" aria-label="Line 571">571</a> }</span>
+<span class="source-line" id="L572"><a href="#L572" aria-label="Line 572">572</a> </span>
+<span class="source-line" id="L573"><a href="#L573" aria-label="Line 573">573</a> // Load-or-init: live zombie-hunter rows must satisfy B6 band invariants (W1 floor).</span>
+<span class="source-line" id="L574"><a href="#L574" aria-label="Line 574">574</a> assertZombieHunterBandInvariants(BAND_MAPPINGS[&#x27;zombie-hunter&#x27;]);</span>
+<span class="source-line" id="L575"><a href="#L575" aria-label="Line 575">575</a> </span>
+<span class="source-line" id="L576"><a href="#L576" aria-label="Line 576">576</a> /**</span>
+<span class="source-line" id="L577"><a href="#L577" aria-label="Line 577">577</a>  * Load-or-init invariants for BAND_MAPPINGS[&#x27;literature-review&#x27;] (Track B7 W1).</span>
+<span class="source-line" id="L578"><a href="#L578" aria-label="Line 578">578</a>  * Every row: integer snowballDepth ≥ 1, integer adversarialRounds ≥ 0.</span>
+<span class="source-line" id="L579"><a href="#L579" aria-label="Line 579">579</a>  * SC2 leaner soft-assert (no remap): LITE.snowballDepth &lt; FULL.snowballDepth</span>
+<span class="source-line" id="L580"><a href="#L580" aria-label="Line 580">580</a>  *   || LITE.adversarialRounds &lt; FULL.adversarialRounds.</span>
+<span class="source-line" id="L581"><a href="#L581" aria-label="Line 581">581</a>  * Hard-fail if a row embeds floor fields as false/0 (never Math.max/clamp-to-green).</span>
+<span class="source-line" id="L582"><a href="#L582" aria-label="Line 582">582</a>  *</span>
+<span class="source-line" id="L583"><a href="#L583" aria-label="Line 583">583</a>  * @param {Readonly&lt;Record&lt;string, Readonly&lt;object&gt;&gt;&gt; | Record&lt;string, object&gt;} [table]</span>
+<span class="source-line" id="L584"><a href="#L584" aria-label="Line 584">584</a>  * @returns {true}</span>
+<span class="source-line" id="L585"><a href="#L585" aria-label="Line 585">585</a>  */</span>
+<span class="source-line" id="L586"><a href="#L586" aria-label="Line 586">586</a> export function assertLiteratureReviewBandInvariants(</span>
+<span class="source-line" id="L587"><a href="#L587" aria-label="Line 587">587</a>   table = BAND_MAPPINGS[&#x27;literature-review&#x27;],</span>
+<span class="source-line" id="L588"><a href="#L588" aria-label="Line 588">588</a> ) {</span>
+<span class="source-line" id="L589"><a href="#L589" aria-label="Line 589">589</a>   if (!table || typeof table !== &#x27;object&#x27;) {</span>
+<span class="source-line" id="L590"><a href="#L590" aria-label="Line 590">590</a>     const err = new Error(&quot;BAND_MAPPINGS[&#x27;literature-review&#x27;] missing or not an object&quot;);</span>
+<span class="source-line" id="L591"><a href="#L591" aria-label="Line 591">591</a>     err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L592"><a href="#L592" aria-label="Line 592">592</a>     err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L593"><a href="#L593" aria-label="Line 593">593</a>     throw err;</span>
+<span class="source-line" id="L594"><a href="#L594" aria-label="Line 594">594</a>   }</span>
+<span class="source-line" id="L595"><a href="#L595" aria-label="Line 595">595</a>   const depths = Object.keys(table);</span>
+<span class="source-line" id="L596"><a href="#L596" aria-label="Line 596">596</a>   if (depths.length === 0) {</span>
+<span class="source-line" id="L597"><a href="#L597" aria-label="Line 597">597</a>     const err = new Error(&quot;BAND_MAPPINGS[&#x27;literature-review&#x27;] has no depth rows&quot;);</span>
+<span class="source-line" id="L598"><a href="#L598" aria-label="Line 598">598</a>     err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L599"><a href="#L599" aria-label="Line 599">599</a>     err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L600"><a href="#L600" aria-label="Line 600">600</a>     throw err;</span>
+<span class="source-line" id="L601"><a href="#L601" aria-label="Line 601">601</a>   }</span>
+<span class="source-line" id="L602"><a href="#L602" aria-label="Line 602">602</a>   for (const depth of depths) {</span>
+<span class="source-line" id="L603"><a href="#L603" aria-label="Line 603">603</a>     const row = table[depth];</span>
+<span class="source-line" id="L604"><a href="#L604" aria-label="Line 604">604</a>     const snowballDepth =</span>
+<span class="source-line" id="L605"><a href="#L605" aria-label="Line 605">605</a>       row &amp;&amp; /** @type {{ snowballDepth?: unknown }} */ (row).snowballDepth;</span>
+<span class="source-line" id="L606"><a href="#L606" aria-label="Line 606">606</a>     const adversarialRounds =</span>
+<span class="source-line" id="L607"><a href="#L607" aria-label="Line 607">607</a>       row &amp;&amp; /** @type {{ adversarialRounds?: unknown }} */ (row).adversarialRounds;</span>
+<span class="source-line" id="L608"><a href="#L608" aria-label="Line 608">608</a>     // Hard fail — never Math.max/clamp a thinned snowballDepth up to 1.</span>
+<span class="source-line" id="L609"><a href="#L609" aria-label="Line 609">609</a>     if (!Number.isInteger(snowballDepth) || /** @type {number} */ (snowballDepth) &lt; 1) {</span>
+<span class="source-line" id="L610"><a href="#L610" aria-label="Line 610">610</a>       const err = new Error(</span>
+<span class="source-line" id="L611"><a href="#L611" aria-label="Line 611">611</a>         `BAND_MAPPINGS[&#x27;literature-review&#x27;][${depth}].snowballDepth must be integer ≥ 1 ` +</span>
+<span class="source-line" id="L612"><a href="#L612" aria-label="Line 612">612</a>           `(got ${JSON.stringify(snowballDepth)}); never clamp`,</span>
+<span class="source-line" id="L613"><a href="#L613" aria-label="Line 613">613</a>       );</span>
+<span class="source-line" id="L614"><a href="#L614" aria-label="Line 614">614</a>       err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L615"><a href="#L615" aria-label="Line 615">615</a>       err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L616"><a href="#L616" aria-label="Line 616">616</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L617"><a href="#L617" aria-label="Line 617">617</a>       /** @type {any} */ (err).snowballDepth = snowballDepth;</span>
+<span class="source-line" id="L618"><a href="#L618" aria-label="Line 618">618</a>       throw err;</span>
+<span class="source-line" id="L619"><a href="#L619" aria-label="Line 619">619</a>     }</span>
+<span class="source-line" id="L620"><a href="#L620" aria-label="Line 620">620</a>     if (!Number.isInteger(adversarialRounds) || /** @type {number} */ (adversarialRounds) &lt; 0) {</span>
+<span class="source-line" id="L621"><a href="#L621" aria-label="Line 621">621</a>       const err = new Error(</span>
+<span class="source-line" id="L622"><a href="#L622" aria-label="Line 622">622</a>         `BAND_MAPPINGS[&#x27;literature-review&#x27;][${depth}].adversarialRounds must be integer ≥ 0 ` +</span>
+<span class="source-line" id="L623"><a href="#L623" aria-label="Line 623">623</a>           `(got ${JSON.stringify(adversarialRounds)}); never clamp`,</span>
+<span class="source-line" id="L624"><a href="#L624" aria-label="Line 624">624</a>       );</span>
+<span class="source-line" id="L625"><a href="#L625" aria-label="Line 625">625</a>       err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L626"><a href="#L626" aria-label="Line 626">626</a>       err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L627"><a href="#L627" aria-label="Line 627">627</a>       /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L628"><a href="#L628" aria-label="Line 628">628</a>       /** @type {any} */ (err).adversarialRounds = adversarialRounds;</span>
+<span class="source-line" id="L629"><a href="#L629" aria-label="Line 629">629</a>       throw err;</span>
+<span class="source-line" id="L630"><a href="#L630" aria-label="Line 630">630</a>     }</span>
+<span class="source-line" id="L631"><a href="#L631" aria-label="Line 631">631</a>     // Floor fields must never be thinned on mapping rows (false/0 → hard fail).</span>
+<span class="source-line" id="L632"><a href="#L632" aria-label="Line 632">632</a>     const bag = /** @type {Record&lt;string, unknown&gt;} */ (row || {});</span>
+<span class="source-line" id="L633"><a href="#L633" aria-label="Line 633">633</a>     for (const key of LIT_REVIEW_FLOOR_FIELD_KEYS) {</span>
+<span class="source-line" id="L634"><a href="#L634" aria-label="Line 634">634</a>       if (!(key in bag)) continue;</span>
+<span class="source-line" id="L635"><a href="#L635" aria-label="Line 635">635</a>       const v = bag[key];</span>
+<span class="source-line" id="L636"><a href="#L636" aria-label="Line 636">636</a>       if (v === false || v === 0) {</span>
+<span class="source-line" id="L637"><a href="#L637" aria-label="Line 637">637</a>         const err = new Error(</span>
+<span class="source-line" id="L638"><a href="#L638" aria-label="Line 638">638</a>           `BAND_MAPPINGS[&#x27;literature-review&#x27;][${depth}].${key} must not be false/0 ` +</span>
+<span class="source-line" id="L639"><a href="#L639" aria-label="Line 639">639</a>             `(got ${JSON.stringify(v)}); floor lives on LIT_REVIEW_SAFETY_FLOOR only`,</span>
+<span class="source-line" id="L640"><a href="#L640" aria-label="Line 640">640</a>         );</span>
+<span class="source-line" id="L641"><a href="#L641" aria-label="Line 641">641</a>         err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L642"><a href="#L642" aria-label="Line 642">642</a>         err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L643"><a href="#L643" aria-label="Line 643">643</a>         /** @type {any} */ (err).depth = depth;</span>
+<span class="source-line" id="L644"><a href="#L644" aria-label="Line 644">644</a>         /** @type {any} */ (err).field = key;</span>
+<span class="source-line" id="L645"><a href="#L645" aria-label="Line 645">645</a>         /** @type {any} */ (err).value = v;</span>
+<span class="source-line" id="L646"><a href="#L646" aria-label="Line 646">646</a>         throw err;</span>
+<span class="source-line" id="L647"><a href="#L647" aria-label="Line 647">647</a>       }</span>
+<span class="source-line" id="L648"><a href="#L648" aria-label="Line 648">648</a>     }</span>
+<span class="source-line" id="L649"><a href="#L649" aria-label="Line 649">649</a>   }</span>
+<span class="source-line" id="L650"><a href="#L650" aria-label="Line 650">650</a>   const lite =</span>
+<span class="source-line" id="L651"><a href="#L651" aria-label="Line 651">651</a>     /** @type {{ snowballDepth?: unknown, adversarialRounds?: unknown }} */ (table.LITE);</span>
+<span class="source-line" id="L652"><a href="#L652" aria-label="Line 652">652</a>   const full =</span>
+<span class="source-line" id="L653"><a href="#L653" aria-label="Line 653">653</a>     /** @type {{ snowballDepth?: unknown, adversarialRounds?: unknown }} */ (table.FULL);</span>
+<span class="source-line" id="L654"><a href="#L654" aria-label="Line 654">654</a>   if (!lite || !full) {</span>
+<span class="source-line" id="L655"><a href="#L655" aria-label="Line 655">655</a>     const err = new Error(</span>
+<span class="source-line" id="L656"><a href="#L656" aria-label="Line 656">656</a>       &quot;BAND_MAPPINGS[&#x27;literature-review&#x27;] must expose LITE and FULL rows for leaner asserts&quot;,</span>
+<span class="source-line" id="L657"><a href="#L657" aria-label="Line 657">657</a>     );</span>
+<span class="source-line" id="L658"><a href="#L658" aria-label="Line 658">658</a>     err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L659"><a href="#L659" aria-label="Line 659">659</a>     err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L660"><a href="#L660" aria-label="Line 660">660</a>     throw err;</span>
+<span class="source-line" id="L661"><a href="#L661" aria-label="Line 661">661</a>   }</span>
+<span class="source-line" id="L662"><a href="#L662" aria-label="Line 662">662</a>   // SC2 leaner soft-assert — never remap/rewrite cells to invent leanness.</span>
+<span class="source-line" id="L663"><a href="#L663" aria-label="Line 663">663</a>   const leaner =</span>
+<span class="source-line" id="L664"><a href="#L664" aria-label="Line 664">664</a>     (Number.isInteger(lite.snowballDepth) &amp;&amp;</span>
+<span class="source-line" id="L665"><a href="#L665" aria-label="Line 665">665</a>       Number.isInteger(full.snowballDepth) &amp;&amp;</span>
+<span class="source-line" id="L666"><a href="#L666" aria-label="Line 666">666</a>       /** @type {number} */ (lite.snowballDepth) &lt; /** @type {number} */ (full.snowballDepth)) ||</span>
+<span class="source-line" id="L667"><a href="#L667" aria-label="Line 667">667</a>     (Number.isInteger(lite.adversarialRounds) &amp;&amp;</span>
+<span class="source-line" id="L668"><a href="#L668" aria-label="Line 668">668</a>       Number.isInteger(full.adversarialRounds) &amp;&amp;</span>
+<span class="source-line" id="L669"><a href="#L669" aria-label="Line 669">669</a>       /** @type {number} */ (lite.adversarialRounds) &lt;</span>
+<span class="source-line" id="L670"><a href="#L670" aria-label="Line 670">670</a>         /** @type {number} */ (full.adversarialRounds));</span>
+<span class="source-line" id="L671"><a href="#L671" aria-label="Line 671">671</a>   if (!leaner) {</span>
+<span class="source-line" id="L672"><a href="#L672" aria-label="Line 672">672</a>     const err = new Error(</span>
+<span class="source-line" id="L673"><a href="#L673" aria-label="Line 673">673</a>       `BAND_MAPPINGS[&#x27;literature-review&#x27;] LITE must be leaner than FULL on snowballDepth ` +</span>
+<span class="source-line" id="L674"><a href="#L674" aria-label="Line 674">674</a>         `or adversarialRounds (got LITE snowball=${JSON.stringify(lite.snowballDepth)} ` +</span>
+<span class="source-line" id="L675"><a href="#L675" aria-label="Line 675">675</a>         `rounds=${JSON.stringify(lite.adversarialRounds)}; FULL snowball=${JSON.stringify(full.snowballDepth)} ` +</span>
+<span class="source-line" id="L676"><a href="#L676" aria-label="Line 676">676</a>         `rounds=${JSON.stringify(full.adversarialRounds)}); never remap`,</span>
+<span class="source-line" id="L677"><a href="#L677" aria-label="Line 677">677</a>     );</span>
+<span class="source-line" id="L678"><a href="#L678" aria-label="Line 678">678</a>     err.name = &#x27;LiteratureReviewBandInvariantError&#x27;;</span>
+<span class="source-line" id="L679"><a href="#L679" aria-label="Line 679">679</a>     err.code = &#x27;LIT_REVIEW_BAND_INVARIANT&#x27;;</span>
+<span class="source-line" id="L680"><a href="#L680" aria-label="Line 680">680</a>     throw err;</span>
+<span class="source-line" id="L681"><a href="#L681" aria-label="Line 681">681</a>   }</span>
+<span class="source-line" id="L682"><a href="#L682" aria-label="Line 682">682</a>   return true;</span>
+<span class="source-line" id="L683"><a href="#L683" aria-label="Line 683">683</a> }</span>
+<span class="source-line" id="L684"><a href="#L684" aria-label="Line 684">684</a> </span>
+<span class="source-line" id="L685"><a href="#L685" aria-label="Line 685">685</a> // Load-or-init: live literature-review rows must satisfy B7 band invariants (W1 floor + leaner).</span>
+<span class="source-line" id="L686"><a href="#L686" aria-label="Line 686">686</a> assertLiteratureReviewBandInvariants(BAND_MAPPINGS[&#x27;literature-review&#x27;]);</span>
+<span class="source-line" id="L687"><a href="#L687" aria-label="Line 687">687</a> </span>
+<span class="source-line" id="L688"><a href="#L688" aria-label="Line 688">688</a> /**</span>
+<span class="source-line" id="L689"><a href="#L689" aria-label="Line 689">689</a>  * Normalize skill id (case/alias tolerant for the full mapped set).</span>
+<span class="source-line" id="L690"><a href="#L690" aria-label="Line 690">690</a>  * @param {unknown} skill</span>
+<span class="source-line" id="L691"><a href="#L691" aria-label="Line 691">691</a>  * @returns {string | null}</span>
+<span class="source-line" id="L692"><a href="#L692" aria-label="Line 692">692</a>  */</span>
+<span class="source-line" id="L693"><a href="#L693" aria-label="Line 693">693</a> export function normalizeMappedSkill(skill) {</span>
+<span class="source-line" id="L694"><a href="#L694" aria-label="Line 694">694</a>   if (typeof skill !== &#x27;string&#x27; || !skill.trim()) return null;</span>
+<span class="source-line" id="L695"><a href="#L695" aria-label="Line 695">695</a>   const key = skill.trim().toLowerCase().replace(/_/g, &#x27;-&#x27;);</span>
+<span class="source-line" id="L696"><a href="#L696" aria-label="Line 696">696</a>   if (key === &#x27;crucible&#x27;) return &#x27;crucible&#x27;;</span>
+<span class="source-line" id="L697"><a href="#L697" aria-label="Line 697">697</a>   if (key === &#x27;foreman&#x27;) return &#x27;foreman&#x27;;</span>
+<span class="source-line" id="L698"><a href="#L698" aria-label="Line 698">698</a>   if (key === &#x27;researchprime&#x27; || key === &#x27;research-prime&#x27;) return &#x27;researchPrime&#x27;;</span>
+<span class="source-line" id="L699"><a href="#L699" aria-label="Line 699">699</a>   if (key === &#x27;gandalf&#x27;) return &#x27;gandalf&#x27;;</span>
+<span class="source-line" id="L700"><a href="#L700" aria-label="Line 700">700</a>   if (key === &#x27;jumper&#x27;) return &#x27;jumper&#x27;;</span>
+<span class="source-line" id="L701"><a href="#L701" aria-label="Line 701">701</a>   if (key === &#x27;ramanujan&#x27;) return &#x27;ramanujan&#x27;;</span>
+<span class="source-line" id="L702"><a href="#L702" aria-label="Line 702">702</a>   if (key === &#x27;tidy-idy&#x27; || key === &#x27;tidyidy&#x27; || key === &#x27;tidy&#x27;) return &#x27;tidy-idy&#x27;;</span>
+<span class="source-line" id="L703"><a href="#L703" aria-label="Line 703">703</a>   if (key === &#x27;zombie-hunter&#x27; || key === &#x27;zombiehunter&#x27; || key === &#x27;zombie&#x27;) {</span>
+<span class="source-line" id="L704"><a href="#L704" aria-label="Line 704">704</a>     return &#x27;zombie-hunter&#x27;;</span>
+<span class="source-line" id="L705"><a href="#L705" aria-label="Line 705">705</a>   }</span>
+<span class="source-line" id="L706"><a href="#L706" aria-label="Line 706">706</a>   if (key === &#x27;literature-review&#x27; || key === &#x27;literaturereview&#x27; || key === &#x27;lit-review&#x27;) {</span>
+<span class="source-line" id="L707"><a href="#L707" aria-label="Line 707">707</a>     return &#x27;literature-review&#x27;;</span>
+<span class="source-line" id="L708"><a href="#L708" aria-label="Line 708">708</a>   }</span>
+<span class="source-line" id="L709"><a href="#L709" aria-label="Line 709">709</a>   if (key === &#x27;financial-analyst&#x27; || key === &#x27;financialanalyst&#x27; || key === &#x27;fin-analyst&#x27;) {</span>
+<span class="source-line" id="L710"><a href="#L710" aria-label="Line 710">710</a>     return &#x27;financial-analyst&#x27;;</span>
+<span class="source-line" id="L711"><a href="#L711" aria-label="Line 711">711</a>   }</span>
+<span class="source-line" id="L712"><a href="#L712" aria-label="Line 712">712</a>   if (key === &#x27;legal-beagle&#x27; || key === &#x27;legalbeagle&#x27; || key === &#x27;legal&#x27;) return &#x27;legal-beagle&#x27;;</span>
+<span class="source-line" id="L713"><a href="#L713" aria-label="Line 713">713</a>   return null;</span>
+<span class="source-line" id="L714"><a href="#L714" aria-label="Line 714">714</a> }</span>
+<span class="source-line" id="L715"><a href="#L715" aria-label="Line 715">715</a> </span>
+<span class="source-line" id="L716"><a href="#L716" aria-label="Line 716">716</a> /**</span>
+<span class="source-line" id="L717"><a href="#L717" aria-label="Line 717">717</a>  * Resolve knobs for a skill + locked (or free-form) depth + optional tier.</span>
+<span class="source-line" id="L718"><a href="#L718" aria-label="Line 718">718</a>  * Tier overlays `seats` when provided (Heavy → frontier, Standard → standard)</span>
+<span class="source-line" id="L719"><a href="#L719" aria-label="Line 719">719</a>  * without erasing other depth knobs. Unknown skill/depth → null.</span>
+<span class="source-line" id="L720"><a href="#L720" aria-label="Line 720">720</a>  *</span>
+<span class="source-line" id="L721"><a href="#L721" aria-label="Line 721">721</a>  * @param {unknown} skill</span>
+<span class="source-line" id="L722"><a href="#L722" aria-label="Line 722">722</a>  * @param {unknown} depth</span>
+<span class="source-line" id="L723"><a href="#L723" aria-label="Line 723">723</a>  * @param {unknown} [tier]</span>
+<span class="source-line" id="L724"><a href="#L724" aria-label="Line 724">724</a>  * @returns {Readonly&lt;object&gt; | null}</span>
+<span class="source-line" id="L725"><a href="#L725" aria-label="Line 725">725</a>  */</span>
+<span class="source-line" id="L726"><a href="#L726" aria-label="Line 726">726</a> export function knobsForSkill(skill, depth, tier) {</span>
+<span class="source-line" id="L727"><a href="#L727" aria-label="Line 727">727</a>   const skillId = normalizeMappedSkill(skill);</span>
+<span class="source-line" id="L728"><a href="#L728" aria-label="Line 728">728</a>   if (!skillId) return null;</span>
+<span class="source-line" id="L729"><a href="#L729" aria-label="Line 729">729</a>   const table = BAND_MAPPINGS[skillId];</span>
+<span class="source-line" id="L730"><a href="#L730" aria-label="Line 730">730</a>   if (!table) return null;</span>
+<span class="source-line" id="L731"><a href="#L731" aria-label="Line 731">731</a>   // Canonicalize first so SPIKE-FIRST locks and SPIKE operator tokens hit the SPIKE row.</span>
+<span class="source-line" id="L732"><a href="#L732" aria-label="Line 732">732</a>   const d =</span>
+<span class="source-line" id="L733"><a href="#L733" aria-label="Line 733">733</a>     canonicalizeDepth(depth) ??</span>
+<span class="source-line" id="L734"><a href="#L734" aria-label="Line 734">734</a>     (isProcessDepth(depth) ? /** @type {string} */ (depth) : normalizeDepth(depth));</span>
+<span class="source-line" id="L735"><a href="#L735" aria-label="Line 735">735</a>   if (!d) return null;</span>
+<span class="source-line" id="L736"><a href="#L736" aria-label="Line 736">736</a>   const row = table[d] ?? (d === DEPTH_BANDS.SPIKE ? table[&#x27;SPIKE-FIRST&#x27;] : null);</span>
+<span class="source-line" id="L737"><a href="#L737" aria-label="Line 737">737</a>   if (!row) return null;</span>
+<span class="source-line" id="L738"><a href="#L738" aria-label="Line 738">738</a> </span>
+<span class="source-line" id="L739"><a href="#L739" aria-label="Line 739">739</a>   const base = { ...row, skill: skillId, depth: d === &#x27;SPIKE-FIRST&#x27; ? DEPTH_BANDS.SPIKE : d };</span>
+<span class="source-line" id="L740"><a href="#L740" aria-label="Line 740">740</a>   const t = isModelTier(tier) ? tier : normalizeTier(tier);</span>
+<span class="source-line" id="L741"><a href="#L741" aria-label="Line 741">741</a>   if (t) {</span>
+<span class="source-line" id="L742"><a href="#L742" aria-label="Line 742">742</a>     base.tier = t;</span>
+<span class="source-line" id="L743"><a href="#L743" aria-label="Line 743">743</a>     // Visible tier overlay: Heavy keeps/raises frontier seats; Standard leans standard.</span>
+<span class="source-line" id="L744"><a href="#L744" aria-label="Line 744">744</a>     // Does not silently invent a lock — caller must already hold a lock to apply knobs.</span>
+<span class="source-line" id="L745"><a href="#L745" aria-label="Line 745">745</a>     if (t === MODEL_TIERS.STANDARD) base.seats = &#x27;standard&#x27;;</span>
+<span class="source-line" id="L746"><a href="#L746" aria-label="Line 746">746</a>     else if (t === MODEL_TIERS.HEAVY) base.seats = &#x27;frontier&#x27;;</span>
+<span class="source-line" id="L747"><a href="#L747" aria-label="Line 747">747</a>   }</span>
+<span class="source-line" id="L748"><a href="#L748" aria-label="Line 748">748</a>   return Object.freeze(base);</span>
+<span class="source-line" id="L749"><a href="#L749" aria-label="Line 749">749</a> }</span>
+<span class="source-line" id="L750"><a href="#L750" aria-label="Line 750">750</a> </span>
+<span class="source-line" id="L751"><a href="#L751" aria-label="Line 751">751</a> /** Named site: Crucible Stage-0 / Shark fan-out. */</span>
+<span class="source-line" id="L752"><a href="#L752" aria-label="Line 752">752</a> export function crucibleKnobs(depth, tier) {</span>
+<span class="source-line" id="L753"><a href="#L753" aria-label="Line 753">753</a>   return knobsForSkill(&#x27;crucible&#x27;, depth, tier);</span>
+<span class="source-line" id="L754"><a href="#L754" aria-label="Line 754">754</a> }</span>
+<span class="source-line" id="L755"><a href="#L755" aria-label="Line 755">755</a> </span>
+<span class="source-line" id="L756"><a href="#L756" aria-label="Line 756">756</a> /** Named site: Foreman inherit reviewer fan-out. */</span>
+<span class="source-line" id="L757"><a href="#L757" aria-label="Line 757">757</a> export function foremanKnobs(depth, tier) {</span>
+<span class="source-line" id="L758"><a href="#L758" aria-label="Line 758">758</a>   return knobsForSkill(&#x27;foreman&#x27;, depth, tier);</span>
+<span class="source-line" id="L759"><a href="#L759" aria-label="Line 759">759</a> }</span>
+<span class="source-line" id="L760"><a href="#L760" aria-label="Line 760">760</a> </span>
+<span class="source-line" id="L761"><a href="#L761" aria-label="Line 761">761</a> /** Named site: researchPrime intake extension payload. */</span>
+<span class="source-line" id="L762"><a href="#L762" aria-label="Line 762">762</a> export function researchPrimeKnobs(depth, tier) {</span>
+<span class="source-line" id="L763"><a href="#L763" aria-label="Line 763">763</a>   return knobsForSkill(&#x27;researchPrime&#x27;, depth, tier);</span>
+<span class="source-line" id="L764"><a href="#L764" aria-label="Line 764">764</a> }</span>
+<span class="source-line" id="L765"><a href="#L765" aria-label="Line 765">765</a> </span>
+<span class="source-line" id="L766"><a href="#L766" aria-label="Line 766">766</a> /** Named site: Gandalf (engine + Wave-6 entry/prose). */</span>
+<span class="source-line" id="L767"><a href="#L767" aria-label="Line 767">767</a> export function gandalfKnobs(depth, tier) {</span>
+<span class="source-line" id="L768"><a href="#L768" aria-label="Line 768">768</a>   return knobsForSkill(&#x27;gandalf&#x27;, depth, tier);</span>
+<span class="source-line" id="L769"><a href="#L769" aria-label="Line 769">769</a> }</span>
+<span class="source-line" id="L770"><a href="#L770" aria-label="Line 770">770</a> </span>
+<span class="source-line" id="L771"><a href="#L771" aria-label="Line 771">771</a> /** Named site: Jumper. */</span>
+<span class="source-line" id="L772"><a href="#L772" aria-label="Line 772">772</a> export function jumperKnobs(depth, tier) {</span>
+<span class="source-line" id="L773"><a href="#L773" aria-label="Line 773">773</a>   return knobsForSkill(&#x27;jumper&#x27;, depth, tier);</span>
+<span class="source-line" id="L774"><a href="#L774" aria-label="Line 774">774</a> }</span>
+<span class="source-line" id="L775"><a href="#L775" aria-label="Line 775">775</a> </span>
+<span class="source-line" id="L776"><a href="#L776" aria-label="Line 776">776</a> /**</span>
+<span class="source-line" id="L777"><a href="#L777" aria-label="Line 777">777</a>  * Sole resolve path for jumper depth → ideaRounds / killGates (B3 SC1).</span>
+<span class="source-line" id="L778"><a href="#L778" aria-label="Line 778">778</a>  *</span>
+<span class="source-line" id="L779"><a href="#L779" aria-label="Line 779">779</a>  * Pipeline (locked):</span>
+<span class="source-line" id="L780"><a href="#L780" aria-label="Line 780">780</a>  *   1. normalizeDepth (strict) → canonical LITE | SPIKE | FULL (aliases → SPIKE)</span>
+<span class="source-line" id="L781"><a href="#L781" aria-label="Line 781">781</a>  *   2. read **only** BAND_MAPPINGS.jumper via jumperKnobs (no path-local map)</span>
+<span class="source-line" id="L782"><a href="#L782" aria-label="Line 782">782</a>  *   3. assert killGates ≥ JUMPER_KILL_GATES_MIN (never clamp)</span>
+<span class="source-line" id="L783"><a href="#L783" aria-label="Line 783">783</a>  *   4. return { depth, ideaRounds, killGates }</span>
+<span class="source-line" id="L784"><a href="#L784" aria-label="Line 784">784</a>  *</span>
+<span class="source-line" id="L785"><a href="#L785" aria-label="Line 785">785</a>  * Tier is intentionally not accepted: ideaRounds/killGates are depth-only</span>
+<span class="source-line" id="L786"><a href="#L786" aria-label="Line 786">786</a>  * (B3-SC1-TIER-INERT). Unknown depth hard-fails with accepted set named.</span>
+<span class="source-line" id="L787"><a href="#L787" aria-label="Line 787">787</a>  *</span>
+<span class="source-line" id="L788"><a href="#L788" aria-label="Line 788">788</a>  * @param {unknown} depth</span>
+<span class="source-line" id="L789"><a href="#L789" aria-label="Line 789">789</a>  * @returns {Readonly&lt;{ depth: string, ideaRounds: number, killGates: number }&gt;}</span>
+<span class="source-line" id="L790"><a href="#L790" aria-label="Line 790">790</a>  */</span>
+<span class="source-line" id="L791"><a href="#L791" aria-label="Line 791">791</a> export function resolveJumperDepthKnobs(depth) {</span>
+<span class="source-line" id="L792"><a href="#L792" aria-label="Line 792">792</a>   // Hard-fail unknown so production CLI can exit≠0 with accepted set on stderr.</span>
+<span class="source-line" id="L793"><a href="#L793" aria-label="Line 793">793</a>   const d = normalizeDepthStrict(depth);</span>
+<span class="source-line" id="L794"><a href="#L794" aria-label="Line 794">794</a>   // Sole table read — jumperKnobs → knobsForSkill(&#x27;jumper&#x27;) → BAND_MAPPINGS.jumper.</span>
+<span class="source-line" id="L795"><a href="#L795" aria-label="Line 795">795</a>   const knobs = jumperKnobs(d);</span>
+<span class="source-line" id="L796"><a href="#L796" aria-label="Line 796">796</a>   if (!knobs) {</span>
+<span class="source-line" id="L797"><a href="#L797" aria-label="Line 797">797</a>     const err = new Error(</span>
+<span class="source-line" id="L798"><a href="#L798" aria-label="Line 798">798</a>       `BAND_MAPPINGS.jumper has no row for depth ${JSON.stringify(d)}; ` +</span>
+<span class="source-line" id="L799"><a href="#L799" aria-label="Line 799">799</a>         `accepted: ${ACCEPTED_DEPTH_SET.join(&#x27; | &#x27;)}`,</span>
+<span class="source-line" id="L800"><a href="#L800" aria-label="Line 800">800</a>     );</span>
+<span class="source-line" id="L801"><a href="#L801" aria-label="Line 801">801</a>     err.name = &#x27;UnknownDepthError&#x27;;</span>
+<span class="source-line" id="L802"><a href="#L802" aria-label="Line 802">802</a>     err.code = &#x27;TRIAGE_UNKNOWN_DEPTH&#x27;;</span>
+<span class="source-line" id="L803"><a href="#L803" aria-label="Line 803">803</a>     /** @type {any} */ (err).accepted = [...ACCEPTED_DEPTH_SET];</span>
+<span class="source-line" id="L804"><a href="#L804" aria-label="Line 804">804</a>     throw err;</span>
+<span class="source-line" id="L805"><a href="#L805" aria-label="Line 805">805</a>   }</span>
+<span class="source-line" id="L806"><a href="#L806" aria-label="Line 806">806</a>   const ideaRounds = /** @type {{ ideaRounds?: unknown }} */ (knobs).ideaRounds;</span>
+<span class="source-line" id="L807"><a href="#L807" aria-label="Line 807">807</a>   const killGates = /** @type {{ killGates?: unknown }} */ (knobs).killGates;</span>
+<span class="source-line" id="L808"><a href="#L808" aria-label="Line 808">808</a>   // Per-resolve floor — never Math.max/clamp a thinned value.</span>
+<span class="source-line" id="L809"><a href="#L809" aria-label="Line 809">809</a>   if (!Number.isInteger(killGates) || /** @type {number} */ (killGates) &lt; JUMPER_KILL_GATES_MIN) {</span>
+<span class="source-line" id="L810"><a href="#L810" aria-label="Line 810">810</a>     const err = new Error(</span>
+<span class="source-line" id="L811"><a href="#L811" aria-label="Line 811">811</a>       `jumper killGates for ${d} must be integer ≥ ${JUMPER_KILL_GATES_MIN} ` +</span>
+<span class="source-line" id="L812"><a href="#L812" aria-label="Line 812">812</a>         `(got ${JSON.stringify(killGates)}); never clamp`,</span>
+<span class="source-line" id="L813"><a href="#L813" aria-label="Line 813">813</a>     );</span>
+<span class="source-line" id="L814"><a href="#L814" aria-label="Line 814">814</a>     err.name = &#x27;JumperKillGatesFloorError&#x27;;</span>
+<span class="source-line" id="L815"><a href="#L815" aria-label="Line 815">815</a>     err.code = &#x27;JUMPER_KILLGATES_FLOOR&#x27;;</span>
+<span class="source-line" id="L816"><a href="#L816" aria-label="Line 816">816</a>     /** @type {any} */ (err).depth = d;</span>
+<span class="source-line" id="L817"><a href="#L817" aria-label="Line 817">817</a>     /** @type {any} */ (err).killGates = killGates;</span>
+<span class="source-line" id="L818"><a href="#L818" aria-label="Line 818">818</a>     throw err;</span>
+<span class="source-line" id="L819"><a href="#L819" aria-label="Line 819">819</a>   }</span>
+<span class="source-line" id="L820"><a href="#L820" aria-label="Line 820">820</a>   if (!Number.isInteger(ideaRounds) || /** @type {number} */ (ideaRounds) &lt; 1) {</span>
+<span class="source-line" id="L821"><a href="#L821" aria-label="Line 821">821</a>     const err = new Error(</span>
+<span class="source-line" id="L822"><a href="#L822" aria-label="Line 822">822</a>       `jumper ideaRounds for ${d} must be a positive integer (got ${JSON.stringify(ideaRounds)})`,</span>
+<span class="source-line" id="L823"><a href="#L823" aria-label="Line 823">823</a>     );</span>
+<span class="source-line" id="L824"><a href="#L824" aria-label="Line 824">824</a>     err.name = &#x27;JumperIdeaRoundsError&#x27;;</span>
+<span class="source-line" id="L825"><a href="#L825" aria-label="Line 825">825</a>     err.code = &#x27;JUMPER_IDEA_ROUNDS&#x27;;</span>
+<span class="source-line" id="L826"><a href="#L826" aria-label="Line 826">826</a>     /** @type {any} */ (err).depth = d;</span>
+<span class="source-line" id="L827"><a href="#L827" aria-label="Line 827">827</a>     throw err;</span>
+<span class="source-line" id="L828"><a href="#L828" aria-label="Line 828">828</a>   }</span>
+<span class="source-line" id="L829"><a href="#L829" aria-label="Line 829">829</a>   return Object.freeze({</span>
+<span class="source-line" id="L830"><a href="#L830" aria-label="Line 830">830</a>     depth: d,</span>
+<span class="source-line" id="L831"><a href="#L831" aria-label="Line 831">831</a>     ideaRounds: /** @type {number} */ (ideaRounds),</span>
+<span class="source-line" id="L832"><a href="#L832" aria-label="Line 832">832</a>     killGates: /** @type {number} */ (killGates),</span>
+<span class="source-line" id="L833"><a href="#L833" aria-label="Line 833">833</a>   });</span>
+<span class="source-line" id="L834"><a href="#L834" aria-label="Line 834">834</a> }</span>
+<span class="source-line" id="L835"><a href="#L835" aria-label="Line 835">835</a> </span>
+<span class="source-line" id="L836"><a href="#L836" aria-label="Line 836">836</a> /** Named site: Ramanujan. */</span>
+<span class="source-line" id="L837"><a href="#L837" aria-label="Line 837">837</a> export function ramanujanKnobs(depth, tier) {</span>
+<span class="source-line" id="L838"><a href="#L838" aria-label="Line 838">838</a>   return knobsForSkill(&#x27;ramanujan&#x27;, depth, tier);</span>
+<span class="source-line" id="L839"><a href="#L839" aria-label="Line 839">839</a> }</span>
+<span class="source-line" id="L840"><a href="#L840" aria-label="Line 840">840</a> </span>
+<span class="source-line" id="L841"><a href="#L841" aria-label="Line 841">841</a> /**</span>
+<span class="source-line" id="L842"><a href="#L842" aria-label="Line 842">842</a>  * Sole resolve path for ramanujan depth → verifyArms / certifier (Track B4 SC1).</span>
+<span class="source-line" id="L843"><a href="#L843" aria-label="Line 843">843</a>  *</span>
+<span class="source-line" id="L844"><a href="#L844" aria-label="Line 844">844</a>  * Pipeline (locked):</span>
+<span class="source-line" id="L845"><a href="#L845" aria-label="Line 845">845</a>  *   1. normalizeDepthStrict → canonical LITE | SPIKE | FULL (SPIKE aliases → SPIKE)</span>
+<span class="source-line" id="L846"><a href="#L846" aria-label="Line 846">846</a>  *   2. read **only** BAND_MAPPINGS.ramanujan via ramanujanKnobs → knobsForSkill</span>
+<span class="source-line" id="L847"><a href="#L847" aria-label="Line 847">847</a>  *      (no path-local map; no silent FULL fallback)</span>
+<span class="source-line" id="L848"><a href="#L848" aria-label="Line 848">848</a>  *   3. assert integer verifyArms ≥ 1 and boolean certifier</span>
+<span class="source-line" id="L849"><a href="#L849" aria-label="Line 849">849</a>  *   4. return Object.freeze({ depth, verifyArms, certifier })</span>
+<span class="source-line" id="L850"><a href="#L850" aria-label="Line 850">850</a>  *</span>
+<span class="source-line" id="L851"><a href="#L851" aria-label="Line 851">851</a>  * Tier is intentionally not accepted: verifyArms/certifier are depth-only</span>
+<span class="source-line" id="L852"><a href="#L852" aria-label="Line 852">852</a>  * (tier env alone must never arm the certifier — B4 SC4).</span>
+<span class="source-line" id="L853"><a href="#L853" aria-label="Line 853">853</a>  *</span>
+<span class="source-line" id="L854"><a href="#L854" aria-label="Line 854">854</a>  * @param {unknown} depth</span>
+<span class="source-line" id="L855"><a href="#L855" aria-label="Line 855">855</a>  * @returns {Readonly&lt;{ depth: string, verifyArms: number, certifier: boolean }&gt;}</span>
+<span class="source-line" id="L856"><a href="#L856" aria-label="Line 856">856</a>  */</span>
+<span class="source-line" id="L857"><a href="#L857" aria-label="Line 857">857</a> export function resolveRamanujanDepthKnobs(depth) {</span>
+<span class="source-line" id="L858"><a href="#L858" aria-label="Line 858">858</a>   // Hard-fail unknown so production paths never invent FULL / silent fallback.</span>
+<span class="source-line" id="L859"><a href="#L859" aria-label="Line 859">859</a>   const d = normalizeDepthStrict(depth);</span>
+<span class="source-line" id="L860"><a href="#L860" aria-label="Line 860">860</a>   // Sole table read — ramanujanKnobs → knobsForSkill(&#x27;ramanujan&#x27;) → BAND_MAPPINGS.ramanujan.</span>
+<span class="source-line" id="L861"><a href="#L861" aria-label="Line 861">861</a>   const knobs = ramanujanKnobs(d);</span>
+<span class="source-line" id="L862"><a href="#L862" aria-label="Line 862">862</a>   if (!knobs) {</span>
+<span class="source-line" id="L863"><a href="#L863" aria-label="Line 863">863</a>     const err = new Error(</span>
+<span class="source-line" id="L864"><a href="#L864" aria-label="Line 864">864</a>       `BAND_MAPPINGS.ramanujan has no row for depth ${JSON.stringify(d)}; ` +</span>
+<span class="source-line" id="L865"><a href="#L865" aria-label="Line 865">865</a>         `accepted: ${ACCEPTED_DEPTH_SET.join(&#x27; | &#x27;)}`,</span>
+<span class="source-line" id="L866"><a href="#L866" aria-label="Line 866">866</a>     );</span>
+<span class="source-line" id="L867"><a href="#L867" aria-label="Line 867">867</a>     err.name = &#x27;UnknownDepthError&#x27;;</span>
+<span class="source-line" id="L868"><a href="#L868" aria-label="Line 868">868</a>     err.code = &#x27;TRIAGE_UNKNOWN_DEPTH&#x27;;</span>
+<span class="source-line" id="L869"><a href="#L869" aria-label="Line 869">869</a>     /** @type {any} */ (err).accepted = [...ACCEPTED_DEPTH_SET];</span>
+<span class="source-line" id="L870"><a href="#L870" aria-label="Line 870">870</a>     throw err;</span>
+<span class="source-line" id="L871"><a href="#L871" aria-label="Line 871">871</a>   }</span>
+<span class="source-line" id="L872"><a href="#L872" aria-label="Line 872">872</a>   const verifyArms = /** @type {{ verifyArms?: unknown }} */ (knobs).verifyArms;</span>
+<span class="source-line" id="L873"><a href="#L873" aria-label="Line 873">873</a>   const certifier = /** @type {{ certifier?: unknown }} */ (knobs).certifier;</span>
+<span class="source-line" id="L874"><a href="#L874" aria-label="Line 874">874</a>   if (!Number.isInteger(verifyArms) || /** @type {number} */ (verifyArms) &lt; 1) {</span>
+<span class="source-line" id="L875"><a href="#L875" aria-label="Line 875">875</a>     const err = new Error(</span>
+<span class="source-line" id="L876"><a href="#L876" aria-label="Line 876">876</a>       `ramanujan verifyArms for ${d} must be integer ≥ 1 (got ${JSON.stringify(verifyArms)})`,</span>
+<span class="source-line" id="L877"><a href="#L877" aria-label="Line 877">877</a>     );</span>
+<span class="source-line" id="L878"><a href="#L878" aria-label="Line 878">878</a>     err.name = &#x27;RamanujanVerifyArmsError&#x27;;</span>
+<span class="source-line" id="L879"><a href="#L879" aria-label="Line 879">879</a>     err.code = &#x27;RAMANUJAN_VERIFY_ARMS&#x27;;</span>
+<span class="source-line" id="L880"><a href="#L880" aria-label="Line 880">880</a>     /** @type {any} */ (err).depth = d;</span>
+<span class="source-line" id="L881"><a href="#L881" aria-label="Line 881">881</a>     /** @type {any} */ (err).verifyArms = verifyArms;</span>
+<span class="source-line" id="L882"><a href="#L882" aria-label="Line 882">882</a>     throw err;</span>
+<span class="source-line" id="L883"><a href="#L883" aria-label="Line 883">883</a>   }</span>
+<span class="source-line" id="L884"><a href="#L884" aria-label="Line 884">884</a>   if (typeof certifier !== &#x27;boolean&#x27;) {</span>
+<span class="source-line" id="L885"><a href="#L885" aria-label="Line 885">885</a>     const err = new Error(</span>
+<span class="source-line" id="L886"><a href="#L886" aria-label="Line 886">886</a>       `ramanujan certifier for ${d} must be boolean (got ${JSON.stringify(certifier)})`,</span>
+<span class="source-line" id="L887"><a href="#L887" aria-label="Line 887">887</a>     );</span>
+<span class="source-line" id="L888"><a href="#L888" aria-label="Line 888">888</a>     err.name = &#x27;RamanujanCertifierError&#x27;;</span>
+<span class="source-line" id="L889"><a href="#L889" aria-label="Line 889">889</a>     err.code = &#x27;RAMANUJAN_CERTIFIER_TYPE&#x27;;</span>
+<span class="source-line" id="L890"><a href="#L890" aria-label="Line 890">890</a>     /** @type {any} */ (err).depth = d;</span>
+<span class="source-line" id="L891"><a href="#L891" aria-label="Line 891">891</a>     /** @type {any} */ (err).certifier = certifier;</span>
+<span class="source-line" id="L892"><a href="#L892" aria-label="Line 892">892</a>     throw err;</span>
+<span class="source-line" id="L893"><a href="#L893" aria-label="Line 893">893</a>   }</span>
+<span class="source-line" id="L894"><a href="#L894" aria-label="Line 894">894</a>   return Object.freeze({</span>
+<span class="source-line" id="L895"><a href="#L895" aria-label="Line 895">895</a>     depth: d,</span>
+<span class="source-line" id="L896"><a href="#L896" aria-label="Line 896">896</a>     verifyArms: /** @type {number} */ (verifyArms),</span>
+<span class="source-line" id="L897"><a href="#L897" aria-label="Line 897">897</a>     certifier: /** @type {boolean} */ (certifier),</span>
+<span class="source-line" id="L898"><a href="#L898" aria-label="Line 898">898</a>   });</span>
+<span class="source-line" id="L899"><a href="#L899" aria-label="Line 899">899</a> }</span>
+<span class="source-line" id="L900"><a href="#L900" aria-label="Line 900">900</a> </span>
+<span class="source-line" id="L901"><a href="#L901" aria-label="Line 901">901</a> /** Named site: Tidy-Idy. */</span>
+<span class="source-line" id="L902"><a href="#L902" aria-label="Line 902">902</a> export function tidyIdyKnobs(depth, tier) {</span>
+<span class="source-line" id="L903"><a href="#L903" aria-label="Line 903">903</a>   return knobsForSkill(&#x27;tidy-idy&#x27;, depth, tier);</span>
+<span class="source-line" id="L904"><a href="#L904" aria-label="Line 904">904</a> }</span>
+<span class="source-line" id="L905"><a href="#L905" aria-label="Line 905">905</a> </span>
+<span class="source-line" id="L906"><a href="#L906" aria-label="Line 906">906</a> /** Named site: Zombie-Hunter. */</span>
+<span class="source-line" id="L907"><a href="#L907" aria-label="Line 907">907</a> export function zombieHunterKnobs(depth, tier) {</span>
+<span class="source-line" id="L908"><a href="#L908" aria-label="Line 908">908</a>   return knobsForSkill(&#x27;zombie-hunter&#x27;, depth, tier);</span>
+<span class="source-line" id="L909"><a href="#L909" aria-label="Line 909">909</a> }</span>
+<span class="source-line" id="L910"><a href="#L910" aria-label="Line 910">910</a> </span>
+<span class="source-line" id="L911"><a href="#L911" aria-label="Line 911">911</a> /**</span>
+<span class="source-line" id="L912"><a href="#L912" aria-label="Line 912">912</a>  * Sole resolve path for zombie-hunter depth → reaperPasses / ceremonyLevel (Track B6 W1).</span>
+<span class="source-line" id="L913"><a href="#L913" aria-label="Line 913">913</a>  *</span>
+<span class="source-line" id="L914"><a href="#L914" aria-label="Line 914">914</a>  * Pipeline (locked):</span>
+<span class="source-line" id="L915"><a href="#L915" aria-label="Line 915">915</a>  *   1. normalizeDepthStrict → canonical LITE | SPIKE | FULL (SPIKE aliases → SPIKE)</span>
+<span class="source-line" id="L916"><a href="#L916" aria-label="Line 916">916</a>  *   2. read **only** BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] via zombieHunterKnobs → knobsForSkill</span>
+<span class="source-line" id="L917"><a href="#L917" aria-label="Line 917">917</a>  *      (no path-local map; no silent Math.max clamp)</span>
+<span class="source-line" id="L918"><a href="#L918" aria-label="Line 918">918</a>  *   3. assert integer reaperPasses ≥ REAPER_PASSES_MIN; ceremony present</span>
+<span class="source-line" id="L919"><a href="#L919" aria-label="Line 919">919</a>  *   4. return Object.freeze({ depth, reaperPasses, ceremonyLevel })</span>
+<span class="source-line" id="L920"><a href="#L920" aria-label="Line 920">920</a>  *      — depth-variable knobs only; never includes writable requireProofOfDeath / abstainByDefault</span>
+<span class="source-line" id="L921"><a href="#L921" aria-label="Line 921">921</a>  *</span>
+<span class="source-line" id="L922"><a href="#L922" aria-label="Line 922">922</a>  * Safety fields live on ZOMBIE_HUNTER_SAFETY_FLOOR (depth-invariant), not this profile.</span>
+<span class="source-line" id="L923"><a href="#L923" aria-label="Line 923">923</a>  * Tier is intentionally not accepted: reaperPasses/ceremonyLevel are depth-only.</span>
+<span class="source-line" id="L924"><a href="#L924" aria-label="Line 924">924</a>  *</span>
+<span class="source-line" id="L925"><a href="#L925" aria-label="Line 925">925</a>  * @param {unknown} depth</span>
+<span class="source-line" id="L926"><a href="#L926" aria-label="Line 926">926</a>  * @returns {Readonly&lt;{ depth: string, reaperPasses: number, ceremonyLevel: string }&gt;}</span>
+<span class="source-line" id="L927"><a href="#L927" aria-label="Line 927">927</a>  */</span>
+<span class="source-line" id="L928"><a href="#L928" aria-label="Line 928">928</a> export function resolveZombieHunterDepthKnobs(depth) {</span>
+<span class="source-line" id="L929"><a href="#L929" aria-label="Line 929">929</a>   // Hard-fail unknown so production paths never invent FULL / silent fallback here.</span>
+<span class="source-line" id="L930"><a href="#L930" aria-label="Line 930">930</a>   const d = normalizeDepthStrict(depth);</span>
+<span class="source-line" id="L931"><a href="#L931" aria-label="Line 931">931</a>   // Sole table read — zombieHunterKnobs → knobsForSkill(&#x27;zombie-hunter&#x27;) → BAND_MAPPINGS.</span>
+<span class="source-line" id="L932"><a href="#L932" aria-label="Line 932">932</a>   const knobs = zombieHunterKnobs(d);</span>
+<span class="source-line" id="L933"><a href="#L933" aria-label="Line 933">933</a>   if (!knobs) {</span>
+<span class="source-line" id="L934"><a href="#L934" aria-label="Line 934">934</a>     const err = new Error(</span>
+<span class="source-line" id="L935"><a href="#L935" aria-label="Line 935">935</a>       `BAND_MAPPINGS[&#x27;zombie-hunter&#x27;] has no row for depth ${JSON.stringify(d)}; ` +</span>
+<span class="source-line" id="L936"><a href="#L936" aria-label="Line 936">936</a>         `accepted: ${ACCEPTED_DEPTH_SET.join(&#x27; | &#x27;)}`,</span>
+<span class="source-line" id="L937"><a href="#L937" aria-label="Line 937">937</a>     );</span>
+<span class="source-line" id="L938"><a href="#L938" aria-label="Line 938">938</a>     err.name = &#x27;UnknownDepthError&#x27;;</span>
+<span class="source-line" id="L939"><a href="#L939" aria-label="Line 939">939</a>     err.code = &#x27;TRIAGE_UNKNOWN_DEPTH&#x27;;</span>
+<span class="source-line" id="L940"><a href="#L940" aria-label="Line 940">940</a>     /** @type {any} */ (err).accepted = [...ACCEPTED_DEPTH_SET];</span>
+<span class="source-line" id="L941"><a href="#L941" aria-label="Line 941">941</a>     throw err;</span>
+<span class="source-line" id="L942"><a href="#L942" aria-label="Line 942">942</a>   }</span>
+<span class="source-line" id="L943"><a href="#L943" aria-label="Line 943">943</a>   const reaperPasses = /** @type {{ reaperPasses?: unknown }} */ (knobs).reaperPasses;</span>
+<span class="source-line" id="L944"><a href="#L944" aria-label="Line 944">944</a>   const ceremony = /** @type {{ ceremony?: unknown }} */ (knobs).ceremony;</span>
+<span class="source-line" id="L945"><a href="#L945" aria-label="Line 945">945</a>   // Per-resolve floor — never Math.max/clamp a thinned value up to REAPER_PASSES_MIN.</span>
+<span class="source-line" id="L946"><a href="#L946" aria-label="Line 946">946</a>   if (!Number.isInteger(reaperPasses) || /** @type {number} */ (reaperPasses) &lt; REAPER_PASSES_MIN) {</span>
+<span class="source-line" id="L947"><a href="#L947" aria-label="Line 947">947</a>     const err = new Error(</span>
+<span class="source-line" id="L948"><a href="#L948" aria-label="Line 948">948</a>       `zombie-hunter reaperPasses for ${d} must be integer ≥ ${REAPER_PASSES_MIN} ` +</span>
+<span class="source-line" id="L949"><a href="#L949" aria-label="Line 949">949</a>         `(got ${JSON.stringify(reaperPasses)}); never clamp`,</span>
+<span class="source-line" id="L950"><a href="#L950" aria-label="Line 950">950</a>     );</span>
+<span class="source-line" id="L951"><a href="#L951" aria-label="Line 951">951</a>     err.name = &#x27;ZombieHunterReaperPassesError&#x27;;</span>
+<span class="source-line" id="L952"><a href="#L952" aria-label="Line 952">952</a>     err.code = &#x27;ZOMBIE_HUNTER_REAPER_PASSES&#x27;;</span>
+<span class="source-line" id="L953"><a href="#L953" aria-label="Line 953">953</a>     /** @type {any} */ (err).depth = d;</span>
+<span class="source-line" id="L954"><a href="#L954" aria-label="Line 954">954</a>     /** @type {any} */ (err).reaperPasses = reaperPasses;</span>
+<span class="source-line" id="L955"><a href="#L955" aria-label="Line 955">955</a>     throw err;</span>
+<span class="source-line" id="L956"><a href="#L956" aria-label="Line 956">956</a>   }</span>
+<span class="source-line" id="L957"><a href="#L957" aria-label="Line 957">957</a>   if (typeof ceremony !== &#x27;string&#x27; || ceremonyLevelOrdinal(ceremony) == null) {</span>
+<span class="source-line" id="L958"><a href="#L958" aria-label="Line 958">958</a>     const err = new Error(</span>
+<span class="source-line" id="L959"><a href="#L959" aria-label="Line 959">959</a>       `zombie-hunter ceremony for ${d} must be a known ceremony token ` +</span>
+<span class="source-line" id="L960"><a href="#L960" aria-label="Line 960">960</a>         `(got ${JSON.stringify(ceremony)})`,</span>
+<span class="source-line" id="L961"><a href="#L961" aria-label="Line 961">961</a>     );</span>
+<span class="source-line" id="L962"><a href="#L962" aria-label="Line 962">962</a>     err.name = &#x27;ZombieHunterCeremonyError&#x27;;</span>
+<span class="source-line" id="L963"><a href="#L963" aria-label="Line 963">963</a>     err.code = &#x27;ZOMBIE_HUNTER_CEREMONY&#x27;;</span>
+<span class="source-line" id="L964"><a href="#L964" aria-label="Line 964">964</a>     /** @type {any} */ (err).depth = d;</span>
+<span class="source-line" id="L965"><a href="#L965" aria-label="Line 965">965</a>     throw err;</span>
+<span class="source-line" id="L966"><a href="#L966" aria-label="Line 966">966</a>   }</span>
+<span class="source-line" id="L967"><a href="#L967" aria-label="Line 967">967</a>   // Depth-variable knobs only — ceremony → ceremonyLevel normalize; no safety fields.</span>
+<span class="source-line" id="L968"><a href="#L968" aria-label="Line 968">968</a>   return Object.freeze({</span>
+<span class="source-line" id="L969"><a href="#L969" aria-label="Line 969">969</a>     depth: d,</span>
+<span class="source-line" id="L970"><a href="#L970" aria-label="Line 970">970</a>     reaperPasses: /** @type {number} */ (reaperPasses),</span>
+<span class="source-line" id="L971"><a href="#L971" aria-label="Line 971">971</a>     ceremonyLevel: ceremony,</span>
+<span class="source-line" id="L972"><a href="#L972" aria-label="Line 972">972</a>   });</span>
+<span class="source-line" id="L973"><a href="#L973" aria-label="Line 973">973</a> }</span>
+<span class="source-line" id="L974"><a href="#L974" aria-label="Line 974">974</a> </span>
+<span class="source-line" id="L975"><a href="#L975" aria-label="Line 975">975</a> /**</span>
+<span class="source-line" id="L976"><a href="#L976" aria-label="Line 976">976</a>  * Alias of resolveZombieHunterDepthKnobs — frozen depth-variable-only profile helper.</span>
+<span class="source-line" id="L977"><a href="#L977" aria-label="Line 977">977</a>  * @param {unknown} depth</span>
+<span class="source-line" id="L978"><a href="#L978" aria-label="Line 978">978</a>  * @returns {Readonly&lt;{ depth: string, reaperPasses: number, ceremonyLevel: string }&gt;}</span>
+<span class="source-line" id="L979"><a href="#L979" aria-label="Line 979">979</a>  */</span>
+<span class="source-line" id="L980"><a href="#L980" aria-label="Line 980">980</a> export function zombieHunterKnobProfile(depth) {</span>
+<span class="source-line" id="L981"><a href="#L981" aria-label="Line 981">981</a>   return resolveZombieHunterDepthKnobs(depth);</span>
+<span class="source-line" id="L982"><a href="#L982" aria-label="Line 982">982</a> }</span>
+<span class="source-line" id="L983"><a href="#L983" aria-label="Line 983">983</a> </span>
+<span class="source-line" id="L984"><a href="#L984" aria-label="Line 984">984</a> /**</span>
+<span class="source-line" id="L985"><a href="#L985" aria-label="Line 985">985</a>  * Sole production reader for literature-review depth-variable knobs (Track B7 W1).</span>
+<span class="source-line" id="L986"><a href="#L986" aria-label="Line 986">986</a>  * Returns frozen knobs-only shape — never includes LIT_REVIEW_SAFETY_FLOOR keys.</span>
+<span class="source-line" id="L987"><a href="#L987" aria-label="Line 987">987</a>  * Sole table path: knobsForSkill(&#x27;literature-review&#x27;) → BAND_MAPPINGS[&#x27;literature-review&#x27;].</span>
+<span class="source-line" id="L988"><a href="#L988" aria-label="Line 988">988</a>  *</span>
+<span class="source-line" id="L989"><a href="#L989" aria-label="Line 989">989</a>  * @param {unknown} depth</span>
+<span class="source-line" id="L990"><a href="#L990" aria-label="Line 990">990</a>  * @param {unknown} [tier] accepted for seat overlay consistency with knobsForSkill; seats only</span>
+<span class="source-line" id="L991"><a href="#L991" aria-label="Line 991">991</a>  * @returns {Readonly&lt;{</span>
+<span class="source-line" id="L992"><a href="#L992" aria-label="Line 992">992</a>  *   depth: string,</span>
+<span class="source-line" id="L993"><a href="#L993" aria-label="Line 993">993</a>  *   snowballDepth: number,</span>
+<span class="source-line" id="L994"><a href="#L994" aria-label="Line 994">994</a>  *   adversarialRounds: number,</span>
+<span class="source-line" id="L995"><a href="#L995" aria-label="Line 995">995</a>  *   ceremony: string,</span>
+<span class="source-line" id="L996"><a href="#L996" aria-label="Line 996">996</a>  *   seats: string,</span>
+<span class="source-line" id="L997"><a href="#L997" aria-label="Line 997">997</a>  *   skill: &#x27;literature-review&#x27;,</span>
+<span class="source-line" id="L998"><a href="#L998" aria-label="Line 998">998</a>  * }&gt; | null}</span>
+<span class="source-line" id="L999"><a href="#L999" aria-label="Line 999">999</a>  */</span>
+<span class="source-line" id="L1000"><a href="#L1000" aria-label="Line 1000">1000</a> export function literatureReviewKnobs(depth, tier) {</span>
+<span class="source-line" id="L1001"><a href="#L1001" aria-label="Line 1001">1001</a>   const raw = knobsForSkill(&#x27;literature-review&#x27;, depth, tier);</span>
+<span class="source-line" id="L1002"><a href="#L1002" aria-label="Line 1002">1002</a>   if (!raw) return null;</span>
+<span class="source-line" id="L1003"><a href="#L1003" aria-label="Line 1003">1003</a>   const r = /** @type {Record&lt;string, unknown&gt;} */ (raw);</span>
+<span class="source-line" id="L1004"><a href="#L1004" aria-label="Line 1004">1004</a>   // Knobs-only: depth-variable fields. Explicit pick omits any floor keys if a row ever embeds them.</span>
+<span class="source-line" id="L1005"><a href="#L1005" aria-label="Line 1005">1005</a>   return Object.freeze({</span>
+<span class="source-line" id="L1006"><a href="#L1006" aria-label="Line 1006">1006</a>     depth: /** @type {string} */ (r.depth),</span>
+<span class="source-line" id="L1007"><a href="#L1007" aria-label="Line 1007">1007</a>     snowballDepth: /** @type {number} */ (r.snowballDepth),</span>
+<span class="source-line" id="L1008"><a href="#L1008" aria-label="Line 1008">1008</a>     adversarialRounds: /** @type {number} */ (r.adversarialRounds),</span>
+<span class="source-line" id="L1009"><a href="#L1009" aria-label="Line 1009">1009</a>     ceremony: /** @type {string} */ (r.ceremony),</span>
+<span class="source-line" id="L1010"><a href="#L1010" aria-label="Line 1010">1010</a>     seats: /** @type {string} */ (r.seats),</span>
+<span class="source-line" id="L1011"><a href="#L1011" aria-label="Line 1011">1011</a>     skill: /** @type {&#x27;literature-review&#x27;} */ (&#x27;literature-review&#x27;),</span>
+<span class="source-line" id="L1012"><a href="#L1012" aria-label="Line 1012">1012</a>   });</span>
+<span class="source-line" id="L1013"><a href="#L1013" aria-label="Line 1013">1013</a> }</span>
+<span class="source-line" id="L1014"><a href="#L1014" aria-label="Line 1014">1014</a> </span>
+<span class="source-line" id="L1015"><a href="#L1015" aria-label="Line 1015">1015</a> /**</span>
+<span class="source-line" id="L1016"><a href="#L1016" aria-label="Line 1016">1016</a>  * First non-empty string token (trim). Empty / whitespace → null.</span>
+<span class="source-line" id="L1017"><a href="#L1017" aria-label="Line 1017">1017</a>  * @param {unknown} value</span>
+<span class="source-line" id="L1018"><a href="#L1018" aria-label="Line 1018">1018</a>  * @returns {string | null}</span>
+<span class="source-line" id="L1019"><a href="#L1019" aria-label="Line 1019">1019</a>  */</span>
+<span class="source-line" id="L1020"><a href="#L1020" aria-label="Line 1020">1020</a> function litReviewNonEmptyToken(value) {</span>
+<span class="source-line" id="L1021"><a href="#L1021" aria-label="Line 1021">1021</a>   if (value == null) return null;</span>
+<span class="source-line" id="L1022"><a href="#L1022" aria-label="Line 1022">1022</a>   const s = typeof value === &#x27;string&#x27; ? value.trim() : String(value).trim();</span>
+<span class="source-line" id="L1023"><a href="#L1023" aria-label="Line 1023">1023</a>   return s ? s : null;</span>
+<span class="source-line" id="L1024"><a href="#L1024" aria-label="Line 1024">1024</a> }</span>
+<span class="source-line" id="L1025"><a href="#L1025" aria-label="Line 1025">1025</a> </span>
+<span class="source-line" id="L1026"><a href="#L1026" aria-label="Line 1026">1026</a> /**</span>
+<span class="source-line" id="L1027"><a href="#L1027" aria-label="Line 1027">1027</a>  * Normalize literature-review depth or throw LIT_REVIEW_UNKNOWN_DEPTH (refuse-closed).</span>
+<span class="source-line" id="L1028"><a href="#L1028" aria-label="Line 1028">1028</a>  * No silent FULL fallback that claims lock.</span>
+<span class="source-line" id="L1029"><a href="#L1029" aria-label="Line 1029">1029</a>  *</span>
+<span class="source-line" id="L1030"><a href="#L1030" aria-label="Line 1030">1030</a>  * @param {unknown} value</span>
+<span class="source-line" id="L1031"><a href="#L1031" aria-label="Line 1031">1031</a>  * @returns {string}</span>
+<span class="source-line" id="L1032"><a href="#L1032" aria-label="Line 1032">1032</a>  */</span>
+<span class="source-line" id="L1033"><a href="#L1033" aria-label="Line 1033">1033</a> export function normalizeLiteratureReviewDepthStrict(value) {</span>
+<span class="source-line" id="L1034"><a href="#L1034" aria-label="Line 1034">1034</a>   try {</span>
+<span class="source-line" id="L1035"><a href="#L1035" aria-label="Line 1035">1035</a>     return normalizeDepthStrict(value);</span>
+<span class="source-line" id="L1036"><a href="#L1036" aria-label="Line 1036">1036</a>   } catch (cause) {</span>
+<span class="source-line" id="L1037"><a href="#L1037" aria-label="Line 1037">1037</a>     const err = new Error(</span>
+<span class="source-line" id="L1038"><a href="#L1038" aria-label="Line 1038">1038</a>       `literature-review unknown process depth ${JSON.stringify(value)}; ` +</span>
+<span class="source-line" id="L1039"><a href="#L1039" aria-label="Line 1039">1039</a>         `accepted: ${ACCEPTED_DEPTH_SET.join(&#x27; | &#x27;)}`,</span>
+<span class="source-line" id="L1040"><a href="#L1040" aria-label="Line 1040">1040</a>     );</span>
+<span class="source-line" id="L1041"><a href="#L1041" aria-label="Line 1041">1041</a>     err.name = &#x27;LiteratureReviewUnknownDepthError&#x27;;</span>
+<span class="source-line" id="L1042"><a href="#L1042" aria-label="Line 1042">1042</a>     err.code = LIT_REVIEW_UNKNOWN_DEPTH;</span>
+<span class="source-line" id="L1043"><a href="#L1043" aria-label="Line 1043">1043</a>     /** @type {any} */ (err).accepted = [...ACCEPTED_DEPTH_SET];</span>
+<span class="source-line" id="L1044"><a href="#L1044" aria-label="Line 1044">1044</a>     /** @type {any} */ (err).value = value;</span>
+<span class="source-line" id="L1045"><a href="#L1045" aria-label="Line 1045">1045</a>     /** @type {any} */ (err).cause = cause;</span>
+<span class="source-line" id="L1046"><a href="#L1046" aria-label="Line 1046">1046</a>     throw err;</span>
+<span class="source-line" id="L1047"><a href="#L1047" aria-label="Line 1047">1047</a>   }</span>
+<span class="source-line" id="L1048"><a href="#L1048" aria-label="Line 1048">1048</a> }</span>
+<span class="source-line" id="L1049"><a href="#L1049" aria-label="Line 1049">1049</a> </span>
+<span class="source-line" id="L1050"><a href="#L1050" aria-label="Line 1050">1050</a> /**</span>
+<span class="source-line" id="L1051"><a href="#L1051" aria-label="Line 1051">1051</a>  * Build partial-override refuse error (band locked + desynced explicit knobs).</span>
+<span class="source-line" id="L1052"><a href="#L1052" aria-label="Line 1052">1052</a>  * @param {string} field</span>
+<span class="source-line" id="L1053"><a href="#L1053" aria-label="Line 1053">1053</a>  * @param {unknown} got</span>
+<span class="source-line" id="L1054"><a href="#L1054" aria-label="Line 1054">1054</a>  * @param {unknown} expected</span>
+<span class="source-line" id="L1055"><a href="#L1055" aria-label="Line 1055">1055</a>  * @param {string} band</span>
+<span class="source-line" id="L1056"><a href="#L1056" aria-label="Line 1056">1056</a>  * @returns {Error}</span>
+<span class="source-line" id="L1057"><a href="#L1057" aria-label="Line 1057">1057</a>  */</span>
+<span class="source-line" id="L1058"><a href="#L1058" aria-label="Line 1058">1058</a> export function literatureReviewPartialOverrideError(field, got, expected, band) {</span>
+<span class="source-line" id="L1059"><a href="#L1059" aria-label="Line 1059">1059</a>   const err = new Error(</span>
+<span class="source-line" id="L1060"><a href="#L1060" aria-label="Line 1060">1060</a>     `literature-review partial override refused while triage lock is advertised: ` +</span>
+<span class="source-line" id="L1061"><a href="#L1061" aria-label="Line 1061">1061</a>       `${field}=${JSON.stringify(got)} desyncs from literatureReviewKnobs(${JSON.stringify(band)}) ` +</span>
+<span class="source-line" id="L1062"><a href="#L1062" aria-label="Line 1062">1062</a>       `expected ${JSON.stringify(expected)}; freestyle requires no FOUNDRY_TRIAGE_DEPTH / confirmedDepth lock`,</span>
+<span class="source-line" id="L1063"><a href="#L1063" aria-label="Line 1063">1063</a>   );</span>
+<span class="source-line" id="L1064"><a href="#L1064" aria-label="Line 1064">1064</a>   err.name = &#x27;LiteratureReviewPartialOverrideError&#x27;;</span>
+<span class="source-line" id="L1065"><a href="#L1065" aria-label="Line 1065">1065</a>   err.code = LIT_REVIEW_PARTIAL_OVERRIDE_REFUSED;</span>
+<span class="source-line" id="L1066"><a href="#L1066" aria-label="Line 1066">1066</a>   /** @type {any} */ (err).field = field;</span>
+<span class="source-line" id="L1067"><a href="#L1067" aria-label="Line 1067">1067</a>   /** @type {any} */ (err).got = got;</span>
+<span class="source-line" id="L1068"><a href="#L1068" aria-label="Line 1068">1068</a>   /** @type {any} */ (err).expected = expected;</span>
+<span class="source-line" id="L1069"><a href="#L1069" aria-label="Line 1069">1069</a>   /** @type {any} */ (err).band = band;</span>
+<span class="source-line" id="L1070"><a href="#L1070" aria-label="Line 1070">1070</a>   return err;</span>
+<span class="source-line" id="L1071"><a href="#L1071" aria-label="Line 1071">1071</a> }</span>
+<span class="source-line" id="L1072"><a href="#L1072" aria-label="Line 1072">1072</a> </span>
+<span class="source-line" id="L1073"><a href="#L1073" aria-label="Line 1073">1073</a> /**</span>
+<span class="source-line" id="L1074"><a href="#L1074" aria-label="Line 1074">1074</a>  * Resolve literature-review band + knobs + floor (Track B7 W1 control plane).</span>
+<span class="source-line" id="L1075"><a href="#L1075" aria-label="Line 1075">1075</a>  *</span>
+<span class="source-line" id="L1076"><a href="#L1076" aria-label="Line 1076">1076</a>  * Precedence (band only — first match wins after normalize):</span>
+<span class="source-line" id="L1077"><a href="#L1077" aria-label="Line 1077">1077</a>  *   1. options.confirmedDepth / options.depth / intake lock depth</span>
+<span class="source-line" id="L1078"><a href="#L1078" aria-label="Line 1078">1078</a>  *   2. process.env.FOUNDRY_TRIAGE_DEPTH (or opts.env)</span>
+<span class="source-line" id="L1079"><a href="#L1079" aria-label="Line 1079">1079</a>  *   3. process.env.LITREVIEW_TRIAGE_DEPTH</span>
+<span class="source-line" id="L1080"><a href="#L1080" aria-label="Line 1080">1080</a>  *   4. missing → mapped FULL with source &#x27;default-full&#x27; (finite knobs, not a soft lock claim)</span>
+<span class="source-line" id="L1081"><a href="#L1081" aria-label="Line 1081">1081</a>  *</span>
+<span class="source-line" id="L1082"><a href="#L1082" aria-label="Line 1082">1082</a>  * Unknown token → LIT_REVIEW_UNKNOWN_DEPTH (refuse-closed).</span>
+<span class="source-line" id="L1083"><a href="#L1083" aria-label="Line 1083">1083</a>  * When band is locked (rank 1–2 or lock stamp) and caller supplies snowballDepth /</span>
+<span class="source-line" id="L1084"><a href="#L1084" aria-label="Line 1084">1084</a>  * adversarialRounds that differ from literatureReviewKnobs(band) →</span>
+<span class="source-line" id="L1085"><a href="#L1085" aria-label="Line 1085">1085</a>  * LIT_REVIEW_PARTIAL_OVERRIDE_REFUSED.</span>
+<span class="source-line" id="L1086"><a href="#L1086" aria-label="Line 1086">1086</a>  *</span>
+<span class="source-line" id="L1087"><a href="#L1087" aria-label="Line 1087">1087</a>  * @param {object} [opts]</span>
+<span class="source-line" id="L1088"><a href="#L1088" aria-label="Line 1088">1088</a>  * @param {unknown} [opts.confirmedDepth]</span>
+<span class="source-line" id="L1089"><a href="#L1089" aria-label="Line 1089">1089</a>  * @param {unknown} [opts.depth]</span>
+<span class="source-line" id="L1090"><a href="#L1090" aria-label="Line 1090">1090</a>  * @param {unknown} [opts.snowballDepth] explicit freestyle / desync probe</span>
+<span class="source-line" id="L1091"><a href="#L1091" aria-label="Line 1091">1091</a>  * @param {unknown} [opts.adversarialRounds] explicit freestyle / desync probe</span>
+<span class="source-line" id="L1092"><a href="#L1092" aria-label="Line 1092">1092</a>  * @param {object} [opts.triageLock]</span>
+<span class="source-line" id="L1093"><a href="#L1093" aria-label="Line 1093">1093</a>  * @param {object} [opts.lock]</span>
+<span class="source-line" id="L1094"><a href="#L1094" aria-label="Line 1094">1094</a>  * @param {object} [opts.intake]</span>
+<span class="source-line" id="L1095"><a href="#L1095" aria-label="Line 1095">1095</a>  * @param {NodeJS.ProcessEnv | Record&lt;string, string | undefined&gt;} [opts.env]</span>
+<span class="source-line" id="L1096"><a href="#L1096" aria-label="Line 1096">1096</a>  * @returns {Readonly&lt;{</span>
+<span class="source-line" id="L1097"><a href="#L1097" aria-label="Line 1097">1097</a>  *   source: string,</span>
+<span class="source-line" id="L1098"><a href="#L1098" aria-label="Line 1098">1098</a>  *   band: string,</span>
+<span class="source-line" id="L1099"><a href="#L1099" aria-label="Line 1099">1099</a>  *   reason: string,</span>
+<span class="source-line" id="L1100"><a href="#L1100" aria-label="Line 1100">1100</a>  *   knobs: Readonly&lt;{</span>
+<span class="source-line" id="L1101"><a href="#L1101" aria-label="Line 1101">1101</a>  *     depth: string,</span>
+<span class="source-line" id="L1102"><a href="#L1102" aria-label="Line 1102">1102</a>  *     snowballDepth: number,</span>
+<span class="source-line" id="L1103"><a href="#L1103" aria-label="Line 1103">1103</a>  *     adversarialRounds: number,</span>
+<span class="source-line" id="L1104"><a href="#L1104" aria-label="Line 1104">1104</a>  *     ceremony: string,</span>
+<span class="source-line" id="L1105"><a href="#L1105" aria-label="Line 1105">1105</a>  *     seats: string,</span>
+<span class="source-line" id="L1106"><a href="#L1106" aria-label="Line 1106">1106</a>  *     skill: &#x27;literature-review&#x27;,</span>
+<span class="source-line" id="L1107"><a href="#L1107" aria-label="Line 1107">1107</a>  *   }&gt;,</span>
+<span class="source-line" id="L1108"><a href="#L1108" aria-label="Line 1108">1108</a>  *   floor: typeof LIT_REVIEW_SAFETY_FLOOR,</span>
+<span class="source-line" id="L1109"><a href="#L1109" aria-label="Line 1109">1109</a>  * }&gt;}</span>
+<span class="source-line" id="L1110"><a href="#L1110" aria-label="Line 1110">1110</a>  */</span>
+<span class="source-line" id="L1111"><a href="#L1111" aria-label="Line 1111">1111</a> export function resolveLiteratureReviewBand({</span>
+<span class="source-line" id="L1112"><a href="#L1112" aria-label="Line 1112">1112</a>   confirmedDepth = null,</span>
+<span class="source-line" id="L1113"><a href="#L1113" aria-label="Line 1113">1113</a>   depth = null,</span>
+<span class="source-line" id="L1114"><a href="#L1114" aria-label="Line 1114">1114</a>   snowballDepth = undefined,</span>
+<span class="source-line" id="L1115"><a href="#L1115" aria-label="Line 1115">1115</a>   adversarialRounds = undefined,</span>
+<span class="source-line" id="L1116"><a href="#L1116" aria-label="Line 1116">1116</a>   triageLock = null,</span>
+<span class="source-line" id="L1117"><a href="#L1117" aria-label="Line 1117">1117</a>   lock = null,</span>
+<span class="source-line" id="L1118"><a href="#L1118" aria-label="Line 1118">1118</a>   intake = null,</span>
+<span class="source-line" id="L1119"><a href="#L1119" aria-label="Line 1119">1119</a>   env = process.env,</span>
+<span class="source-line" id="L1120"><a href="#L1120" aria-label="Line 1120">1120</a> } = {}) {</span>
+<span class="source-line" id="L1121"><a href="#L1121" aria-label="Line 1121">1121</a>   /** @type {string | null} */</span>
+<span class="source-line" id="L1122"><a href="#L1122" aria-label="Line 1122">1122</a>   let picked = null;</span>
+<span class="source-line" id="L1123"><a href="#L1123" aria-label="Line 1123">1123</a>   /** @type {string} */</span>
+<span class="source-line" id="L1124"><a href="#L1124" aria-label="Line 1124">1124</a>   let source = &#x27;default-full&#x27;;</span>
+<span class="source-line" id="L1125"><a href="#L1125" aria-label="Line 1125">1125</a>   /** @type {string} */</span>
+<span class="source-line" id="L1126"><a href="#L1126" aria-label="Line 1126">1126</a>   let reason = &#x27;no depth pin; mapped FULL default (finite knobs, not a lock claim)&#x27;;</span>
+<span class="source-line" id="L1127"><a href="#L1127" aria-label="Line 1127">1127</a>   /** @type {boolean} */</span>
+<span class="source-line" id="L1128"><a href="#L1128" aria-label="Line 1128">1128</a>   let bandLocked = false;</span>
+<span class="source-line" id="L1129"><a href="#L1129" aria-label="Line 1129">1129</a> </span>
+<span class="source-line" id="L1130"><a href="#L1130" aria-label="Line 1130">1130</a>   const confirmedPin = litReviewNonEmptyToken(confirmedDepth) || litReviewNonEmptyToken(depth);</span>
+<span class="source-line" id="L1131"><a href="#L1131" aria-label="Line 1131">1131</a>   if (confirmedPin) {</span>
+<span class="source-line" id="L1132"><a href="#L1132" aria-label="Line 1132">1132</a>     picked = confirmedPin;</span>
+<span class="source-line" id="L1133"><a href="#L1133" aria-label="Line 1133">1133</a>     source = &#x27;confirmed-depth&#x27;;</span>
+<span class="source-line" id="L1134"><a href="#L1134" aria-label="Line 1134">1134</a>     reason = `confirmedDepth/depth pin ${JSON.stringify(confirmedPin)}`;</span>
+<span class="source-line" id="L1135"><a href="#L1135" aria-label="Line 1135">1135</a>     bandLocked = true;</span>
+<span class="source-line" id="L1136"><a href="#L1136" aria-label="Line 1136">1136</a>   }</span>
+<span class="source-line" id="L1137"><a href="#L1137" aria-label="Line 1137">1137</a> </span>
+<span class="source-line" id="L1138"><a href="#L1138" aria-label="Line 1138">1138</a>   if (picked == null) {</span>
+<span class="source-line" id="L1139"><a href="#L1139" aria-label="Line 1139">1139</a>     const explicit = triageLock ?? lock ?? null;</span>
+<span class="source-line" id="L1140"><a href="#L1140" aria-label="Line 1140">1140</a>     if (explicit != null &amp;&amp; typeof explicit === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L1141"><a href="#L1141" aria-label="Line 1141">1141</a>       const bag = /** @type {Record&lt;string, unknown&gt;} */ (explicit);</span>
+<span class="source-line" id="L1142"><a href="#L1142" aria-label="Line 1142">1142</a>       const lockDepth =</span>
+<span class="source-line" id="L1143"><a href="#L1143" aria-label="Line 1143">1143</a>         litReviewNonEmptyToken(bag.depth) ||</span>
+<span class="source-line" id="L1144"><a href="#L1144" aria-label="Line 1144">1144</a>         (bag.locked === true ? litReviewNonEmptyToken(bag.depth) : null);</span>
+<span class="source-line" id="L1145"><a href="#L1145" aria-label="Line 1145">1145</a>       if (lockDepth) {</span>
+<span class="source-line" id="L1146"><a href="#L1146" aria-label="Line 1146">1146</a>         picked = lockDepth;</span>
+<span class="source-line" id="L1147"><a href="#L1147" aria-label="Line 1147">1147</a>         source = &#x27;lock-record&#x27;;</span>
+<span class="source-line" id="L1148"><a href="#L1148" aria-label="Line 1148">1148</a>         reason = `lock/triageLock depth ${JSON.stringify(lockDepth)}`;</span>
+<span class="source-line" id="L1149"><a href="#L1149" aria-label="Line 1149">1149</a>         bandLocked = true;</span>
+<span class="source-line" id="L1150"><a href="#L1150" aria-label="Line 1150">1150</a>       }</span>
+<span class="source-line" id="L1151"><a href="#L1151" aria-label="Line 1151">1151</a>     }</span>
+<span class="source-line" id="L1152"><a href="#L1152" aria-label="Line 1152">1152</a>   }</span>
+<span class="source-line" id="L1153"><a href="#L1153" aria-label="Line 1153">1153</a> </span>
+<span class="source-line" id="L1154"><a href="#L1154" aria-label="Line 1154">1154</a>   if (picked == null &amp;&amp; intake != null &amp;&amp; typeof intake === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L1155"><a href="#L1155" aria-label="Line 1155">1155</a>     const bag = /** @type {Record&lt;string, unknown&gt;} */ (intake);</span>
+<span class="source-line" id="L1156"><a href="#L1156" aria-label="Line 1156">1156</a>     if (bag.lock != null &amp;&amp; typeof bag.lock === &#x27;object&#x27;) {</span>
+<span class="source-line" id="L1157"><a href="#L1157" aria-label="Line 1157">1157</a>       const lockBag = /** @type {Record&lt;string, unknown&gt;} */ (bag.lock);</span>
+<span class="source-line" id="L1158"><a href="#L1158" aria-label="Line 1158">1158</a>       const lockDepth = litReviewNonEmptyToken(lockBag.depth);</span>
+<span class="source-line" id="L1159"><a href="#L1159" aria-label="Line 1159">1159</a>       if (lockDepth) {</span>
+<span class="source-line" id="L1160"><a href="#L1160" aria-label="Line 1160">1160</a>         picked = lockDepth;</span>
+<span class="source-line" id="L1161"><a href="#L1161" aria-label="Line 1161">1161</a>         source = &#x27;lock-record&#x27;;</span>
+<span class="source-line" id="L1162"><a href="#L1162" aria-label="Line 1162">1162</a>         reason = `intake.lock depth ${JSON.stringify(lockDepth)}`;</span>
+<span class="source-line" id="L1163"><a href="#L1163" aria-label="Line 1163">1163</a>         bandLocked = true;</span>
+<span class="source-line" id="L1164"><a href="#L1164" aria-label="Line 1164">1164</a>       }</span>
+<span class="source-line" id="L1165"><a href="#L1165" aria-label="Line 1165">1165</a>     }</span>
+<span class="source-line" id="L1166"><a href="#L1166" aria-label="Line 1166">1166</a>     if (picked == null) {</span>
+<span class="source-line" id="L1167"><a href="#L1167" aria-label="Line 1167">1167</a>       const intakeDepth =</span>
+<span class="source-line" id="L1168"><a href="#L1168" aria-label="Line 1168">1168</a>         litReviewNonEmptyToken(bag.confirmedDepth) || litReviewNonEmptyToken(bag.depth);</span>
+<span class="source-line" id="L1169"><a href="#L1169" aria-label="Line 1169">1169</a>       if (intakeDepth) {</span>
+<span class="source-line" id="L1170"><a href="#L1170" aria-label="Line 1170">1170</a>         picked = intakeDepth;</span>
+<span class="source-line" id="L1171"><a href="#L1171" aria-label="Line 1171">1171</a>         source = &#x27;confirmed-depth&#x27;;</span>
+<span class="source-line" id="L1172"><a href="#L1172" aria-label="Line 1172">1172</a>         reason = `intake confirmedDepth/depth ${JSON.stringify(intakeDepth)}`;</span>
+<span class="source-line" id="L1173"><a href="#L1173" aria-label="Line 1173">1173</a>         bandLocked = true;</span>
+<span class="source-line" id="L1174"><a href="#L1174" aria-label="Line 1174">1174</a>       }</span>
+<span class="source-line" id="L1175"><a href="#L1175" aria-label="Line 1175">1175</a>     }</span>
+<span class="source-line" id="L1176"><a href="#L1176" aria-label="Line 1176">1176</a>   }</span>
+<span class="source-line" id="L1177"><a href="#L1177" aria-label="Line 1177">1177</a> </span>
+<span class="source-line" id="L1178"><a href="#L1178" aria-label="Line 1178">1178</a>   const e = env &amp;&amp; typeof env === &#x27;object&#x27; ? env : {};</span>
+<span class="source-line" id="L1179"><a href="#L1179" aria-label="Line 1179">1179</a>   if (picked == null) {</span>
+<span class="source-line" id="L1180"><a href="#L1180" aria-label="Line 1180">1180</a>     const foundry = litReviewNonEmptyToken(</span>
+<span class="source-line" id="L1181"><a href="#L1181" aria-label="Line 1181">1181</a>       /** @type {Record&lt;string, unknown&gt;} */ (e).FOUNDRY_TRIAGE_DEPTH,</span>
+<span class="source-line" id="L1182"><a href="#L1182" aria-label="Line 1182">1182</a>     );</span>
+<span class="source-line" id="L1183"><a href="#L1183" aria-label="Line 1183">1183</a>     if (foundry) {</span>
+<span class="source-line" id="L1184"><a href="#L1184" aria-label="Line 1184">1184</a>       picked = foundry;</span>
+<span class="source-line" id="L1185"><a href="#L1185" aria-label="Line 1185">1185</a>       source = &#x27;foundry-triage-depth&#x27;;</span>
+<span class="source-line" id="L1186"><a href="#L1186" aria-label="Line 1186">1186</a>       reason = `FOUNDRY_TRIAGE_DEPTH=${JSON.stringify(foundry)}`;</span>
+<span class="source-line" id="L1187"><a href="#L1187" aria-label="Line 1187">1187</a>       // Rank-2 portfolio lock — partial override refused while advertised.</span>
+<span class="source-line" id="L1188"><a href="#L1188" aria-label="Line 1188">1188</a>       bandLocked = true;</span>
+<span class="source-line" id="L1189"><a href="#L1189" aria-label="Line 1189">1189</a>     }</span>
+<span class="source-line" id="L1190"><a href="#L1190" aria-label="Line 1190">1190</a>   }</span>
+<span class="source-line" id="L1191"><a href="#L1191" aria-label="Line 1191">1191</a>   if (picked == null) {</span>
+<span class="source-line" id="L1192"><a href="#L1192" aria-label="Line 1192">1192</a>     const skillLocal = litReviewNonEmptyToken(</span>
+<span class="source-line" id="L1193"><a href="#L1193" aria-label="Line 1193">1193</a>       /** @type {Record&lt;string, unknown&gt;} */ (e).LITREVIEW_TRIAGE_DEPTH,</span>
+<span class="source-line" id="L1194"><a href="#L1194" aria-label="Line 1194">1194</a>     );</span>
+<span class="source-line" id="L1195"><a href="#L1195" aria-label="Line 1195">1195</a>     if (skillLocal) {</span>
+<span class="source-line" id="L1196"><a href="#L1196" aria-label="Line 1196">1196</a>       picked = skillLocal;</span>
+<span class="source-line" id="L1197"><a href="#L1197" aria-label="Line 1197">1197</a>       source = &#x27;litreview-triage-depth&#x27;;</span>
+<span class="source-line" id="L1198"><a href="#L1198" aria-label="Line 1198">1198</a>       reason = `LITREVIEW_TRIAGE_DEPTH=${JSON.stringify(skillLocal)}`;</span>
+<span class="source-line" id="L1199"><a href="#L1199" aria-label="Line 1199">1199</a>       // Rank-3 skill pin — not FOUNDRY lock advertising; freestyle still allowed off-gate.</span>
+<span class="source-line" id="L1200"><a href="#L1200" aria-label="Line 1200">1200</a>       bandLocked = false;</span>
+<span class="source-line" id="L1201"><a href="#L1201" aria-label="Line 1201">1201</a>     }</span>
+<span class="source-line" id="L1202"><a href="#L1202" aria-label="Line 1202">1202</a>   }</span>
+<span class="source-line" id="L1203"><a href="#L1203" aria-label="Line 1203">1203</a> </span>
+<span class="source-line" id="L1204"><a href="#L1204" aria-label="Line 1204">1204</a>   const depthToken = picked || &#x27;FULL&#x27;;</span>
+<span class="source-line" id="L1205"><a href="#L1205" aria-label="Line 1205">1205</a>   if (picked == null) {</span>
+<span class="source-line" id="L1206"><a href="#L1206" aria-label="Line 1206">1206</a>     source = &#x27;default-full&#x27;;</span>
+<span class="source-line" id="L1207"><a href="#L1207" aria-label="Line 1207">1207</a>     reason = &#x27;no depth pin; mapped FULL default (finite knobs, not a lock claim)&#x27;;</span>
+<span class="source-line" id="L1208"><a href="#L1208" aria-label="Line 1208">1208</a>     bandLocked = false;</span>
+<span class="source-line" id="L1209"><a href="#L1209" aria-label="Line 1209">1209</a>   }</span>
+<span class="source-line" id="L1210"><a href="#L1210" aria-label="Line 1210">1210</a> </span>
+<span class="source-line" id="L1211"><a href="#L1211" aria-label="Line 1211">1211</a>   // Unknown → refuse-closed (LIT_REVIEW_UNKNOWN_DEPTH); never silent FULL that claims lock.</span>
+<span class="source-line" id="L1212"><a href="#L1212" aria-label="Line 1212">1212</a>   const band = normalizeLiteratureReviewDepthStrict(depthToken);</span>
+<span class="source-line" id="L1213"><a href="#L1213" aria-label="Line 1213">1213</a>   const knobs = literatureReviewKnobs(band);</span>
+<span class="source-line" id="L1214"><a href="#L1214" aria-label="Line 1214">1214</a>   if (!knobs) {</span>
+<span class="source-line" id="L1215"><a href="#L1215" aria-label="Line 1215">1215</a>     const err = new Error(</span>
+<span class="source-line" id="L1216"><a href="#L1216" aria-label="Line 1216">1216</a>       `BAND_MAPPINGS[&#x27;literature-review&#x27;] has no row for depth ${JSON.stringify(band)}; ` +</span>
+<span class="source-line" id="L1217"><a href="#L1217" aria-label="Line 1217">1217</a>         `accepted: ${ACCEPTED_DEPTH_SET.join(&#x27; | &#x27;)}`,</span>
+<span class="source-line" id="L1218"><a href="#L1218" aria-label="Line 1218">1218</a>     );</span>
+<span class="source-line" id="L1219"><a href="#L1219" aria-label="Line 1219">1219</a>     err.name = &#x27;LiteratureReviewUnknownDepthError&#x27;;</span>
+<span class="source-line" id="L1220"><a href="#L1220" aria-label="Line 1220">1220</a>     err.code = LIT_REVIEW_UNKNOWN_DEPTH;</span>
+<span class="source-line" id="L1221"><a href="#L1221" aria-label="Line 1221">1221</a>     /** @type {any} */ (err).accepted = [...ACCEPTED_DEPTH_SET];</span>
+<span class="source-line" id="L1222"><a href="#L1222" aria-label="Line 1222">1222</a>     /** @type {any} */ (err).band = band;</span>
+<span class="source-line" id="L1223"><a href="#L1223" aria-label="Line 1223">1223</a>     throw err;</span>
+<span class="source-line" id="L1224"><a href="#L1224" aria-label="Line 1224">1224</a>   }</span>
+<span class="source-line" id="L1225"><a href="#L1225" aria-label="Line 1225">1225</a> </span>
+<span class="source-line" id="L1226"><a href="#L1226" aria-label="Line 1226">1226</a>   // Partial-override refuse while lock is advertised (rank 1–2 / lock stamp).</span>
+<span class="source-line" id="L1227"><a href="#L1227" aria-label="Line 1227">1227</a>   if (bandLocked) {</span>
+<span class="source-line" id="L1228"><a href="#L1228" aria-label="Line 1228">1228</a>     if (snowballDepth !== undefined &amp;&amp; snowballDepth !== null) {</span>
+<span class="source-line" id="L1229"><a href="#L1229" aria-label="Line 1229">1229</a>       const got = Number(snowballDepth);</span>
+<span class="source-line" id="L1230"><a href="#L1230" aria-label="Line 1230">1230</a>       if (!(Number.isInteger(got) &amp;&amp; got === knobs.snowballDepth)) {</span>
+<span class="source-line" id="L1231"><a href="#L1231" aria-label="Line 1231">1231</a>         throw literatureReviewPartialOverrideError(</span>
+<span class="source-line" id="L1232"><a href="#L1232" aria-label="Line 1232">1232</a>           &#x27;snowballDepth&#x27;,</span>
+<span class="source-line" id="L1233"><a href="#L1233" aria-label="Line 1233">1233</a>           snowballDepth,</span>
+<span class="source-line" id="L1234"><a href="#L1234" aria-label="Line 1234">1234</a>           knobs.snowballDepth,</span>
+<span class="source-line" id="L1235"><a href="#L1235" aria-label="Line 1235">1235</a>           band,</span>
+<span class="source-line" id="L1236"><a href="#L1236" aria-label="Line 1236">1236</a>         );</span>
+<span class="source-line" id="L1237"><a href="#L1237" aria-label="Line 1237">1237</a>       }</span>
+<span class="source-line" id="L1238"><a href="#L1238" aria-label="Line 1238">1238</a>     }</span>
+<span class="source-line" id="L1239"><a href="#L1239" aria-label="Line 1239">1239</a>     if (adversarialRounds !== undefined &amp;&amp; adversarialRounds !== null) {</span>
+<span class="source-line" id="L1240"><a href="#L1240" aria-label="Line 1240">1240</a>       const got = Number(adversarialRounds);</span>
+<span class="source-line" id="L1241"><a href="#L1241" aria-label="Line 1241">1241</a>       if (!(Number.isInteger(got) &amp;&amp; got === knobs.adversarialRounds)) {</span>
+<span class="source-line" id="L1242"><a href="#L1242" aria-label="Line 1242">1242</a>         throw literatureReviewPartialOverrideError(</span>
+<span class="source-line" id="L1243"><a href="#L1243" aria-label="Line 1243">1243</a>           &#x27;adversarialRounds&#x27;,</span>
+<span class="source-line" id="L1244"><a href="#L1244" aria-label="Line 1244">1244</a>           adversarialRounds,</span>
+<span class="source-line" id="L1245"><a href="#L1245" aria-label="Line 1245">1245</a>           knobs.adversarialRounds,</span>
+<span class="source-line" id="L1246"><a href="#L1246" aria-label="Line 1246">1246</a>           band,</span>
+<span class="source-line" id="L1247"><a href="#L1247" aria-label="Line 1247">1247</a>         );</span>
+<span class="source-line" id="L1248"><a href="#L1248" aria-label="Line 1248">1248</a>       }</span>
+<span class="source-line" id="L1249"><a href="#L1249" aria-label="Line 1249">1249</a>     }</span>
+<span class="source-line" id="L1250"><a href="#L1250" aria-label="Line 1250">1250</a>   }</span>
+<span class="source-line" id="L1251"><a href="#L1251" aria-label="Line 1251">1251</a> </span>
+<span class="source-line" id="L1252"><a href="#L1252" aria-label="Line 1252">1252</a>   return Object.freeze({</span>
+<span class="source-line" id="L1253"><a href="#L1253" aria-label="Line 1253">1253</a>     source,</span>
+<span class="source-line" id="L1254"><a href="#L1254" aria-label="Line 1254">1254</a>     band,</span>
+<span class="source-line" id="L1255"><a href="#L1255" aria-label="Line 1255">1255</a>     reason,</span>
+<span class="source-line" id="L1256"><a href="#L1256" aria-label="Line 1256">1256</a>     knobs,</span>
+<span class="source-line" id="L1257"><a href="#L1257" aria-label="Line 1257">1257</a>     floor: LIT_REVIEW_SAFETY_FLOOR,</span>
+<span class="source-line" id="L1258"><a href="#L1258" aria-label="Line 1258">1258</a>   });</span>
+<span class="source-line" id="L1259"><a href="#L1259" aria-label="Line 1259">1259</a> }</span>
+<span class="source-line" id="L1260"><a href="#L1260" aria-label="Line 1260">1260</a> </span>
+<span class="source-line" id="L1261"><a href="#L1261" aria-label="Line 1261">1261</a> /** Named site: Financial-Analyst (prose host; knobs = ceremony only until NS-03). */</span>
+<span class="source-line" id="L1262"><a href="#L1262" aria-label="Line 1262">1262</a> export function financialAnalystKnobs(depth, tier) {</span>
+<span class="source-line" id="L1263"><a href="#L1263" aria-label="Line 1263">1263</a>   return knobsForSkill(&#x27;financial-analyst&#x27;, depth, tier);</span>
+<span class="source-line" id="L1264"><a href="#L1264" aria-label="Line 1264">1264</a> }</span>
+<span class="source-line" id="L1265"><a href="#L1265" aria-label="Line 1265">1265</a> </span>
+<span class="source-line" id="L1266"><a href="#L1266" aria-label="Line 1266">1266</a> /** Named site: Legal-Beagle (prose host; knobs = ceremony only until NS-02). */</span>
+<span class="source-line" id="L1267"><a href="#L1267" aria-label="Line 1267">1267</a> export function legalBeagleKnobs(depth, tier) {</span>
+<span class="source-line" id="L1268"><a href="#L1268" aria-label="Line 1268">1268</a>   return knobsForSkill(&#x27;legal-beagle&#x27;, depth, tier);</span>
+<span class="source-line" id="L1269"><a href="#L1269" aria-label="Line 1269">1269</a> }</span>
+<span class="source-line" id="L1270"><a href="#L1270" aria-label="Line 1270">1270</a> </span>
+<span class="source-line" id="L1271"><a href="#L1271" aria-label="Line 1271">1271</a> /**</span>
+<span class="source-line" id="L1272"><a href="#L1272" aria-label="Line 1272">1272</a>  * JSON-stable fingerprint of knobs for inequality tests (order-independent enough).</span>
+<span class="source-line" id="L1273"><a href="#L1273" aria-label="Line 1273">1273</a>  * @param {unknown} knobs</span>
+<span class="source-line" id="L1274"><a href="#L1274" aria-label="Line 1274">1274</a>  * @returns {string}</span>
+<span class="source-line" id="L1275"><a href="#L1275" aria-label="Line 1275">1275</a>  */</span>
+<span class="source-line" id="L1276"><a href="#L1276" aria-label="Line 1276">1276</a> export function knobsFingerprint(knobs) {</span>
+<span class="source-line" id="L1277"><a href="#L1277" aria-label="Line 1277">1277</a>   if (!knobs || typeof knobs !== &#x27;object&#x27;) return &#x27;&#x27;;</span>
+<span class="source-line" id="L1278"><a href="#L1278" aria-label="Line 1278">1278</a>   const o = /** @type {Record&lt;string, unknown&gt;} */ (knobs);</span>
+<span class="source-line" id="L1279"><a href="#L1279" aria-label="Line 1279">1279</a>   const keys = Object.keys(o).sort();</span>
+<span class="source-line" id="L1280"><a href="#L1280" aria-label="Line 1280">1280</a>   const sorted = {};</span>
+<span class="source-line" id="L1281"><a href="#L1281" aria-label="Line 1281">1281</a>   for (const k of keys) sorted[k] = o[k];</span>
+<span class="source-line" id="L1282"><a href="#L1282" aria-label="Line 1282">1282</a>   return JSON.stringify(sorted);</span>
+<span class="source-line" id="L1283"><a href="#L1283" aria-label="Line 1283">1283</a> }</span>
+<span class="source-line" id="L1284"><a href="#L1284" aria-label="Line 1284">1284</a> </span>
+<span class="source-line" id="L1285"><a href="#L1285" aria-label="Line 1285">1285</a> /**</span>
+<span class="source-line" id="L1286"><a href="#L1286" aria-label="Line 1286">1286</a>  * True when two bands produce unequal knobs for a skill (NS criterion 6).</span>
+<span class="source-line" id="L1287"><a href="#L1287" aria-label="Line 1287">1287</a>  * @param {string} skill</span>
+<span class="source-line" id="L1288"><a href="#L1288" aria-label="Line 1288">1288</a>  * @param {string} depthA</span>
+<span class="source-line" id="L1289"><a href="#L1289" aria-label="Line 1289">1289</a>  * @param {string} depthB</span>
+<span class="source-line" id="L1290"><a href="#L1290" aria-label="Line 1290">1290</a>  * @returns {boolean}</span>
+<span class="source-line" id="L1291"><a href="#L1291" aria-label="Line 1291">1291</a>  */</span>
+<span class="source-line" id="L1292"><a href="#L1292" aria-label="Line 1292">1292</a> export function bandsInequal(skill, depthA, depthB) {</span>
+<span class="source-line" id="L1293"><a href="#L1293" aria-label="Line 1293">1293</a>   const a = knobsForSkill(skill, depthA);</span>
+<span class="source-line" id="L1294"><a href="#L1294" aria-label="Line 1294">1294</a>   const b = knobsForSkill(skill, depthB);</span>
+<span class="source-line" id="L1295"><a href="#L1295" aria-label="Line 1295">1295</a>   if (!a || !b) return false;</span>
+<span class="source-line" id="L1296"><a href="#L1296" aria-label="Line 1296">1296</a>   return knobsFingerprint(a) !== knobsFingerprint(b);</span>
+<span class="source-line" id="L1297"><a href="#L1297" aria-label="Line 1297">1297</a> }</span>
+<span class="source-line" id="L1298"><a href="#L1298" aria-label="Line 1298">1298</a> </span>
+<span class="source-line" id="L1299"><a href="#L1299" aria-label="Line 1299">1299</a> export { DEPTH_BANDS, DEPTH_BAND_VALUES, MODEL_TIERS };</span></pre></main></body></html>

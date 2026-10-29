@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>A plain terminal is a separate lane · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="terminal" data-anchor-id="a-gui-handle_cave_terminal">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>A plain terminal is a separate lane</h1>
+<p class="intro">The Cave&#x27;s terminal opens the selected engine as an ordinary terminal. It is not the Cave steward conversation or automatic skill commission.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.526345+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/anchor_gui.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: f33f3b26412c413f1b415bb44e39dc63b3e5dc5aef807c4bde5f09f6af0393dd</p></aside>
+<p class="path">C:/dev/Anchor/anchor_gui.py · lines 8215–8238</p><pre>def handle_cave_terminal(handler, path, body):
+    &quot;&quot;&quot;POST /api/cave/terminal {backend} - a PLAIN terminal on the Cave of Wonders (his word, 2026-10-02: &quot;just a
+    terminal ... you can choose which engine ... the default of the terminal engine ... it will open to dev ... it
+    just doesn&#x27;t have the steward skill running in it&quot;). The engine&#x27;s own interactive CLI in the workspace root (the
+    __dashboard__ project&#x27;s folder, C:/dev): no worktree, no seed, nothing written back into the tree (plain=True
+    holds every shell guard), never the project&#x27;s remembered engine. The Workbench it replaces is retired.&quot;&quot;&quot;
+    backend = str((body or {}).get(&quot;backend&quot;) or &quot;&quot;).strip() or _aset.get_default_cli()
+    if backend not in _CAVE_TERM_ENGINES:
+        handler._send_json({&quot;ok&quot;: False, &quot;error&quot;: &quot;unknown engine&quot;}, 400)
+        return
+    try:
+        n = 1 + sum(1 for r in _sessreg.list_sessions() if r.get(&quot;plain&quot;) and r.get(&quot;status&quot;) == _sessreg.STATUS_RUNNING)
+    except Exception:
+        n = 1
+    try:
+        rec = _termsess.start_session(&quot;__dashboard__&quot;, &quot;general&quot;, backend=backend,
+                                      label=&quot;Terminal %d&quot; % n, plain=True)
+    except _termsess.TerminalSessionError as exc:
+        handler._send_json({&quot;ok&quot;: False, &quot;error&quot;: str(exc)}, 400)
+        return
+    except Exception as exc:       # e.g. the spawn cap: said, never a hang
+        handler._send_json({&quot;ok&quot;: False, &quot;error&quot;: str(exc) or exc.__class__.__name__}, 409)
+        return
+    handler._send_json({&quot;ok&quot;: True, &quot;session&quot;: _cave_term_row(rec)})</pre>
+<p><a class="button" href="../source-pages/gui.html#L8215">Open numbered source</a>
+<a href="../sources/gui.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p>Related Library material; no automatic call is claimed.</p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">f33f3b26412c413f1b415bb44e39dc63b3e5dc5aef807c4bde5f09f6af0393dd</span></p><p>Excerpt hash: <span class="path">012785086eb01955856718d583ff587ce95cac718f59984d25099727b5156c19</span></p></details></article></main></body></html>

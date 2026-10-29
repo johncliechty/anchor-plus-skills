@@ -13,10 +13,10 @@
 - The ask is a one-line task or a tiny fix that doesn’t need a multi-stage plan
 
 ## What you get
-- Stage 0: a North Star you lock (success criteria, non-goals, risks)
-- Stage 1: a Master Plan you approve
-- Stage 2: a wave-by-wave implementation plan ready for Foreman
-- Adversarial “Shark Tank” review so weak ideas die before build time
+- Stage 0: a North Star you lock (success criteria, non-goals, risks — always shown in full on screen)
+- Stage 1: a Master Plan you approve — including **Multi-Level Adversarial Matrix Mode (`--matrix-fast-track`)**, which decomposes complex systems into parallel dimension studies (`researchPrime` + `Gandalf`) and an explicit **6-Layer Adversarial Review Matrix (`L0–L5`: Failure Mode, Severity, Concrete Mitigation)** that converges in 1 bounded pass instead of stalling in 20–30 sequential CLI subprocess spawns
+- Stage 2: a wave-by-wave (and orthogonal sub-wave `W.1`..`W.k`) implementation plan validated deterministically by `locate-plan.mjs` and ready for Foreman
+- Adversarial “Shark Tank” or `L0–L5` Matrix review so weak ideas die before build time (with delta-only `120s` re-review if $\ge 2$ reviewers prove an unmitigated `BLOCKER`)
 
 ## What it is not
 - Not a code builder (that’s Foreman)

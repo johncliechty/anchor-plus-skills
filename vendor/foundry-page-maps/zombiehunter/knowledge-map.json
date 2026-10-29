@@ -1,0 +1,470 @@
+{
+  "nodes": [
+    {
+      "id": "zombiehunter-root",
+      "name": "Zombie-Hunter Knowledge & Execution Architecture",
+      "title": "Zombie-Hunter Knowledge & Execution Architecture",
+      "parent_ids": [],
+      "ring": 0,
+      "resource_id": "zombiehunter-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "zombiehunter-branch-mission",
+      "name": "Core Mission, North Star & Protocol",
+      "title": "Core Mission, North Star & Protocol",
+      "parent_ids": [
+        "zombiehunter-root"
+      ],
+      "ring": 1,
+      "resource_id": "zombiehunter-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-branch-tools",
+      "name": "Programmatic Tools & Engine Modules",
+      "title": "Programmatic Tools & Engine Modules",
+      "parent_ids": [
+        "zombiehunter-root"
+      ],
+      "ring": 1,
+      "resource_id": "zombiehunter-tool-src-classify-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-branch-skills",
+      "name": "Connected Peer Skills & Composition",
+      "title": "Connected Peer Skills & Composition",
+      "parent_ids": [
+        "zombiehunter-root"
+      ],
+      "ring": 1,
+      "resource_id": "zombiehunter-peer-foreman",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "zombiehunter-branch-references",
+      "name": "Knowledge Base Sources, References & Journals",
+      "title": "Knowledge Base Sources, References & Journals",
+      "parent_ids": [
+        "zombiehunter-root"
+      ],
+      "ring": 1,
+      "resource_id": "zombiehunter-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-mat-1",
+      "name": "Zombie-Hunter Agent & Execution Protocol (SKILL.md)",
+      "title": "Zombie-Hunter Agent & Execution Protocol (SKILL.md)",
+      "parent_ids": [
+        "zombiehunter-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-mat-skill-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-mat-2",
+      "name": "Zombie-Hunter Human Guide (HUMAN.md)",
+      "title": "Zombie-Hunter Human Guide (HUMAN.md)",
+      "parent_ids": [
+        "zombiehunter-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-mat-human-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-mat-3",
+      "name": "Zombie-Hunter Locked North Star (NORTH-STAR.md)",
+      "title": "Zombie-Hunter Locked North Star (NORTH-STAR.md)",
+      "parent_ids": [
+        "zombiehunter-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-mat-north-star-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-mat-4",
+      "name": "Zombie-Hunter Detailed Specification (DESCRIPTION.md)",
+      "title": "Zombie-Hunter Detailed Specification (DESCRIPTION.md)",
+      "parent_ids": [
+        "zombiehunter-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-mat-description-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-mat-5",
+      "name": "Zombie-Hunter Operator Runbook (OPERATOR-RUNBOOK.md)",
+      "title": "Zombie-Hunter Operator Runbook (OPERATOR-RUNBOOK.md)",
+      "parent_ids": [
+        "zombiehunter-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-mat-operator-runbook-md",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-mat-6",
+      "name": "Zombie-Hunter Universal Triage & Seating Block",
+      "title": "Zombie-Hunter Universal Triage & Seating Block",
+      "parent_ids": [
+        "zombiehunter-branch-mission"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-mat-triage-block",
+      "facets": [
+        "Reusable material",
+        "instructions"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-1",
+      "name": "classify.js (src/classify.js)",
+      "title": "classify.js (src/classify.js)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-tool-src-classify-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-2",
+      "name": "daemon.js (src/daemon.js)",
+      "title": "daemon.js (src/daemon.js)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-tool-src-daemon-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-3",
+      "name": "engine-leg.js (src/engine-leg.js)",
+      "title": "engine-leg.js (src/engine-leg.js)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-tool-src-engine-leg-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-4",
+      "name": "bulk-approvals.js (src/bulk-approvals.js)",
+      "title": "bulk-approvals.js (src/bulk-approvals.js)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-tool-src-bulk-approvals-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-5",
+      "name": "ceremony-emit.mjs (src/ceremony-emit.mjs)",
+      "title": "ceremony-emit.mjs (src/ceremony-emit.mjs)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-tool-src-ceremony-emit-mjs",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-6",
+      "name": "discovery.js (src/discovery.js)",
+      "title": "discovery.js (src/discovery.js)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-tool-src-discovery-js",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-tool-7",
+      "name": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "parent_ids": [
+        "zombiehunter-branch-tools"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-shared-tool-anvil-engine",
+      "facets": [
+        "Tools",
+        "code"
+      ],
+      "process_ids": [
+        "step-1-ingest-triage",
+        "step-3-core-execution"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-skill-1",
+      "name": "Foreman Process Lease Registry",
+      "title": "Foreman Process Lease Registry",
+      "parent_ids": [
+        "zombiehunter-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-peer-foreman",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-skill-2",
+      "name": "Portfolio Steward (Cave / High Seat)",
+      "title": "Portfolio Steward (Cave / High Seat)",
+      "parent_ids": [
+        "zombiehunter-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-peer-steward-portfolio",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-skill-3",
+      "name": "Gandalf Safety-Gate Auditor",
+      "title": "Gandalf Safety-Gate Auditor",
+      "parent_ids": [
+        "zombiehunter-branch-skills"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-peer-gandalf",
+      "facets": [
+        "Other skills",
+        "composition"
+      ],
+      "process_ids": [
+        "step-3-core-execution",
+        "step-4-adversarial-verify"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-ref-1",
+      "name": "Zombie-Hunter LESSONS.md",
+      "title": "Zombie-Hunter LESSONS.md",
+      "parent_ids": [
+        "zombiehunter-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-ref-lessons",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-ref-2",
+      "name": "Journal: README",
+      "title": "Journal: README",
+      "parent_ids": [
+        "zombiehunter-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-journal-readme",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-ref-3",
+      "name": "Journal: 0010-investigate-slim-self-observe",
+      "title": "Journal: 0010-investigate-slim-self-observe",
+      "parent_ids": [
+        "zombiehunter-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-journal-0010-investigate-slim-self-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-ref-4",
+      "name": "Journal: 0009-investigate-slim-keep-supervised-claude",
+      "title": "Journal: 0009-investigate-slim-keep-supervised-claude",
+      "parent_ids": [
+        "zombiehunter-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-journal-0009-investigate-slim-keep-",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    },
+    {
+      "id": "zombiehunter-leaf-ref-5",
+      "name": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "parent_ids": [
+        "zombiehunter-branch-references"
+      ],
+      "ring": 2,
+      "resource_id": "zombiehunter-kb-portfolio-triage-and-band-eval",
+      "facets": [
+        "References",
+        "knowledge-base"
+      ],
+      "process_ids": [
+        "step-2-context-kb-load",
+        "step-5-emit-journal"
+      ]
+    }
+  ]
+}

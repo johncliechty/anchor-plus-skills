@@ -1,0 +1,229 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>parts · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>parts</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/steward_cockpit/campaign_parts.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 dcbb09da3b5c44dd2a6c36c2a82d7a5f208de8c221836dc0edb365e5bcc51ada</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.534809+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/campaign_parts.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: dcbb09da3b5c44dd2a6c36c2a82d7a5f208de8c221836dc0edb365e5bcc51ada</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;campaign_parts — resolve a roadmap step&#x27;s ``ref`` against the record it points at.</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> W0b of the High Seat plan (2026-09-26). A Campaign part is a step whose ``ref`` names</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> another record: ``project:&lt;pid&gt;`` · ``step:&lt;pid&gt;/&lt;sid&gt;`` · ``deliverable:&lt;pid&gt;/&lt;row&gt;`` ·</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> ``calendar:&lt;id&gt;``. The Campaign never copies or writes the target&#x27;s date or state; this</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> module READS them, once per distinct target per request (the ``cache`` dict the caller</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> passes), and names a broken reference instead of inventing anything.</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> </span>
+<span class="source-line" id="L9"><a href="#L9">9</a> Pure apart from file reads; never raises on odd input; no model, no bridge spawn.</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> from __future__ import annotations</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> </span>
+<span class="source-line" id="L13"><a href="#L13">13</a> import json</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> from pathlib import Path</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> from urllib.parse import unquote</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> </span>
+<span class="source-line" id="L17"><a href="#L17">17</a> REF_KINDS = (&quot;project&quot;, &quot;step&quot;, &quot;deliverable&quot;, &quot;calendar&quot;, &quot;effort&quot;)   # effort:&lt;pid&gt;/&lt;dir&gt; — one cockpit within a project (2026-09-30)</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> _OPEN = (&quot;proposed&quot;, &quot;planned&quot;, &quot;active&quot;, &quot;waiting&quot;)</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> </span>
+<span class="source-line" id="L20"><a href="#L20">20</a> </span>
+<span class="source-line" id="L21"><a href="#L21">21</a> def parse_ref(ref):</span>
+<span class="source-line" id="L22"><a href="#L22">22</a>     &quot;&quot;&quot;``&#x27;step:abc/lec3&#x27;`` → ``{&quot;kind&quot;,&quot;pid&quot;,&quot;sub&quot;}``; None when malformed.&quot;&quot;&quot;</span>
+<span class="source-line" id="L23"><a href="#L23">23</a>     s = str(ref or &quot;&quot;).strip()</span>
+<span class="source-line" id="L24"><a href="#L24">24</a>     if &quot;:&quot; not in s:</span>
+<span class="source-line" id="L25"><a href="#L25">25</a>         return None</span>
+<span class="source-line" id="L26"><a href="#L26">26</a>     kind, rest = s.split(&quot;:&quot;, 1)</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>     rest = rest.strip()</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>     if kind not in REF_KINDS or not rest or any(ch.isspace() for ch in rest):</span>
+<span class="source-line" id="L29"><a href="#L29">29</a>         return None</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>     if kind in (&quot;step&quot;, &quot;deliverable&quot;, &quot;effort&quot;):</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>         if &quot;/&quot; not in rest:</span>
+<span class="source-line" id="L32"><a href="#L32">32</a>             return None</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>         pid, sub = rest.split(&quot;/&quot;, 1)</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>         if not pid or not sub:</span>
+<span class="source-line" id="L35"><a href="#L35">35</a>             return None</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>         if kind == &quot;effort&quot;:</span>
+<span class="source-line" id="L37"><a href="#L37">37</a>             # Stored refs have no literal whitespace; effort folders commonly do.</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>             # Decode once, then let resolve_ref enforce the one-directory boundary.</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>             try:</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>                 sub = unquote(sub, errors=&quot;strict&quot;)</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>             except UnicodeError:</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>                 return None</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>         return {&quot;kind&quot;: kind, &quot;pid&quot;: pid, &quot;sub&quot;: sub}</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>     if kind == &quot;calendar&quot;:</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>         return {&quot;kind&quot;: kind, &quot;pid&quot;: &quot;&quot;, &quot;sub&quot;: rest}</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>     return {&quot;kind&quot;: kind, &quot;pid&quot;: rest, &quot;sub&quot;: &quot;&quot;}</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> </span>
+<span class="source-line" id="L48"><a href="#L48">48</a> </span>
+<span class="source-line" id="L49"><a href="#L49">49</a> def _default_lookup(pid):</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>     &quot;&quot;&quot;The registry entry for the full id, nothing looser (a prefix would bind whichever project has it).&quot;&quot;&quot;</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     try:</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>         import rnd_registry as _rnd</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>         return _rnd.get_project(pid) or None</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>     except Exception:</span>
+<span class="source-line" id="L55"><a href="#L55">55</a>         return None</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58">58</a> def _cached(cache, key, fn):</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     if key in cache:</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>         return cache[key]</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     try:</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>         v = fn()</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     except Exception:</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>         v = None</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>     cache[key] = v</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     return v</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> </span>
+<span class="source-line" id="L68"><a href="#L68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69">69</a> def _projection(folder, cache):</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>     def read():</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>         d = json.loads((Path(folder) / &quot;roadmap.json&quot;).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>         return d.get(&quot;roadmap_projection&quot;) or []</span>
+<span class="source-line" id="L73"><a href="#L73">73</a>     return _cached(cache, (&quot;projection&quot;, str(folder)), read)</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a> </span>
+<span class="source-line" id="L76"><a href="#L76">76</a> def _summary(folder, cache):</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     def read():</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>         d = json.loads((Path(folder) / &quot;.ecgberht&quot; / &quot;status-summary.json&quot;).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>         return d if isinstance(d, dict) else {}</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>     return _cached(cache, (&quot;summary&quot;, str(folder)), read) or {}</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> </span>
+<span class="source-line" id="L82"><a href="#L82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83">83</a> def _strip_wait(folder, cache):</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>     def read():</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>         d = json.loads((Path(folder) / &quot;strip.json&quot;).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>         return str(d.get(&quot;human_wait&quot;) or &quot;&quot;).strip()</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>     return _cached(cache, (&quot;wait&quot;, str(folder)), read) or &quot;&quot;</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> </span>
+<span class="source-line" id="L89"><a href="#L89">89</a> </span>
+<span class="source-line" id="L90"><a href="#L90">90</a> def _register(folder, cache):</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     def read():</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>         from .steward_campaign import _read_deliverables</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>         return (_read_deliverables(str(folder)) or {}).get(&quot;items&quot;) or []</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>     return _cached(cache, (&quot;register&quot;, str(folder)), read) or []</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> </span>
+<span class="source-line" id="L96"><a href="#L96">96</a> </span>
+<span class="source-line" id="L97"><a href="#L97">97</a> def _nearest_due(steps):</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     dues = sorted(str(s.get(&quot;due&quot;)) for s in steps or ()</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>                   if isinstance(s, dict) and s.get(&quot;due&quot;) and s.get(&quot;status&quot;) in _OPEN)</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>     return dues[0] if dues else &quot;&quot;</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> </span>
+<span class="source-line" id="L102"><a href="#L102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103">103</a> def resolve_ref(ref, cache=None, lookup=None, with_lead=False):</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     &quot;&quot;&quot;One part → ``{&quot;ref&quot;,&quot;kind&quot;,&quot;pid&quot;,&quot;name&quot;,&quot;what&quot;,&quot;state&quot;,&quot;date&quot;,&quot;href&quot;,&quot;lead&quot;,&quot;broken&quot;,&quot;gap&quot;}``.&quot;&quot;&quot;</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     cache = cache if isinstance(cache, dict) else {}</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     lookup = lookup or _default_lookup</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>     out = {&quot;ref&quot;: str(ref or &quot;&quot;), &quot;kind&quot;: &quot;&quot;, &quot;pid&quot;: &quot;&quot;, &quot;name&quot;: &quot;&quot;, &quot;what&quot;: &quot;&quot;, &quot;state&quot;: &quot;&quot;,</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>            &quot;date&quot;: &quot;&quot;, &quot;href&quot;: &quot;&quot;, &quot;lead&quot;: &quot;&quot;, &quot;broken&quot;: True, &quot;gap&quot;: &quot;&quot;}</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>     p = parse_ref(ref)</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>     if not p:</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>         out[&quot;gap&quot;] = &quot;not a reference the Campaign knows (project: · step: · deliverable: · calendar: · effort:)&quot;</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>         return out</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>     out[&quot;kind&quot;] = p[&quot;kind&quot;]</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>     if p[&quot;kind&quot;] == &quot;calendar&quot;:</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>         out[&quot;gap&quot;] = &quot;calendar not connected&quot;</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>         return out</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     entry = _cached(cache, (&quot;entry&quot;, p[&quot;pid&quot;]), lambda: lookup(p[&quot;pid&quot;]))</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     if not entry or not entry.get(&quot;folder_path&quot;):</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>         out[&quot;pid&quot;] = p[&quot;pid&quot;]</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>         out[&quot;gap&quot;] = &quot;no project with id %s&quot; % p[&quot;pid&quot;]</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>         return out</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     folder = entry[&quot;folder_path&quot;]</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>     out[&quot;pid&quot;] = str(entry.get(&quot;id&quot;) or p[&quot;pid&quot;])</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     out[&quot;name&quot;] = str(entry.get(&quot;name&quot;) or out[&quot;pid&quot;][:8])</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>     steps = _projection(folder, cache)</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     if p[&quot;kind&quot;] == &quot;project&quot;:</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>         out[&quot;href&quot;] = &quot;/project/%s&quot; % out[&quot;pid&quot;]</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>         # the same fact the home&#x27;s rows use: the strip&#x27;s human wait, else the last status&#x27;s &quot;waiting on you&quot;</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>         wait = _strip_wait(folder, cache)</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>         if not wait:</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>             plan = _summary(folder, cache).get(&quot;plan&quot;)</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>             wait = &quot; &quot;.join(str((plan or {}).get(&quot;waiting_on_you&quot;) or &quot;&quot;).split()) if isinstance(plan, dict) else &quot;&quot;</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>             wait = (wait[:88].rstrip() + &quot;…&quot;) if len(wait) &gt; 90 else wait</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>         out[&quot;state&quot;] = (&quot;waiting on you: &quot; + wait) if wait else &quot;&quot;</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>         out[&quot;date&quot;] = _nearest_due(steps)</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>         out[&quot;broken&quot;] = False</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>     elif p[&quot;kind&quot;] == &quot;effort&quot;:</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>         # one cockpit within the project (2026-09-30): the effort directory with its own Face; its light is the</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>         # ONE attention flag the steward writes; its date the nearest due of its own roadmap</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>         from pathlib import Path as _P</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>         from urllib.parse import quote as _q</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>         eff = _P(folder) / p[&quot;sub&quot;]</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>         sub_ = str(p[&quot;sub&quot;])</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>         try:</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>             inside = eff.resolve().parent == _P(folder).resolve()</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>         except OSError:</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>             inside = False</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>         if sub_ in (&quot;.&quot;, &quot;..&quot;) or &quot;\\&quot; in sub_ or &quot;/&quot; in sub_ or not inside:</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>             out[&quot;gap&quot;] = &quot;an effort is one directory inside %s, not &#x27;%s&#x27;&quot; % (out[&quot;name&quot;], sub_)      # Grok&#x27;s read of W2b: never a path out of the project</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>             return out</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>         if not (eff / &quot;ECGBERHT.md&quot;).is_file():</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>             out[&quot;gap&quot;] = &quot;no effort &#x27;%s&#x27; in %s&quot; % (p[&quot;sub&quot;], out[&quot;name&quot;])</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>             return out</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>         title = p[&quot;sub&quot;]</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>         try:</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>             for ln in (eff / &quot;ECGBERHT.md&quot;).read_text(encoding=&quot;utf-8&quot;, errors=&quot;replace&quot;).splitlines()[:40]:</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>                 if ln.startswith(&quot;# &quot;):</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>                     heading = ln[2:].strip()</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>                     if heading and not heading.lower().startswith(&quot;ecgberht&quot;):</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>                         title = heading</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>                     break</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>         except OSError:</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>             pass</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>         out[&quot;what&quot;] = title</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>         out[&quot;dir&quot;] = sub_</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>         out[&quot;name&quot;] = &quot;%s · %s&quot; % (out[&quot;name&quot;], title)</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>         out[&quot;href&quot;] = &quot;/project/%s?dir=%s&quot; % (out[&quot;pid&quot;], _q(p[&quot;sub&quot;]))</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>         try:</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>             import json as _json</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>             att = _json.loads((eff / &quot;.ecgberht&quot; / &quot;attention.json&quot;).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>         except Exception:</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>             att = {}</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>         state = str((att or {}).get(&quot;state&quot;) or &quot;&quot;).lower() if isinstance(att, dict) else &quot;&quot;</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>         reason = &quot; &quot;.join(str((att or {}).get(&quot;reason&quot;) or &quot;&quot;).split()) if isinstance(att, dict) else &quot;&quot;</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>         reason = (reason[:88].rstrip() + &quot;…&quot;) if len(reason) &gt; 90 else reason</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>         out[&quot;state&quot;] = (&quot;waiting on you: &quot; + reason) if state == &quot;needs_you&quot; else ((state.replace(&quot;_&quot;, &quot; &quot;) + ((&quot;: &quot; + reason) if reason else &quot;&quot;)) if state else &quot;&quot;)</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>         out[&quot;date&quot;] = _nearest_due(_projection(str(eff), cache))</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>         out[&quot;broken&quot;] = False</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     elif p[&quot;kind&quot;] == &quot;step&quot;:</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>         st = next((s for s in steps or () if isinstance(s, dict) and s.get(&quot;id&quot;) == p[&quot;sub&quot;]), None)</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>         if st is None:</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>             out[&quot;gap&quot;] = (&quot;no step &#x27;%s&#x27; in %s&quot; % (p[&quot;sub&quot;], out[&quot;name&quot;])) if steps is not None \</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>                 else (&quot;%s has no readable plan&quot; % out[&quot;name&quot;])</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>             return out</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>         out[&quot;href&quot;] = &quot;/project/%s&quot; % out[&quot;pid&quot;]</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>         out[&quot;what&quot;] = str(st.get(&quot;name&quot;) or p[&quot;sub&quot;])</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>         out[&quot;state&quot;] = str(st.get(&quot;status&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>         # W1 (2026-09-28): the TARGET&#x27;s own status, typed, so the Campaign&#x27;s open/next reads the referenced step&#x27;s</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>         # truth and never the wrapper&#x27;s status alone (Grok&#x27;s live replay: a done target stayed &quot;next&quot;)</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>         out[&quot;target_status&quot;] = str(st.get(&quot;status&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>         if st.get(&quot;waiting_on&quot;) and st.get(&quot;status&quot;) in (&quot;waiting&quot;, &quot;parked&quot;):</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>             out[&quot;state&quot;] += &quot; · &quot; + str(st.get(&quot;waiting_on&quot;))</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>         out[&quot;date&quot;] = str(st.get(&quot;due&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>         out[&quot;broken&quot;] = False</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>     elif p[&quot;kind&quot;] == &quot;deliverable&quot;:</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>         items = _register(folder, cache)</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>         if not p[&quot;sub&quot;].isdigit():</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>             out[&quot;gap&quot;] = &quot;a deliverable part names a row number (deliverable:&lt;pid&gt;/&lt;n&gt;); &#x27;%s&#x27; is not one&quot; % p[&quot;sub&quot;]</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>             return out</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>         n = int(p[&quot;sub&quot;])</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>         it = items[n - 1] if 1 &lt;= n &lt;= len(items) else None</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>         if it is None:</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>             out[&quot;gap&quot;] = &quot;no row %d in %s&#x27;s register (%d rows)&quot; % (n, out[&quot;name&quot;], len(items))</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>             return out</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>         out[&quot;what&quot;] = str(it.get(&quot;what&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>         out[&quot;href&quot;] = str(it.get(&quot;route&quot;) or &quot;&quot;) or &quot;/project/%s&quot; % out[&quot;pid&quot;]</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>         out[&quot;state&quot;] = &quot;current&quot; if it.get(&quot;is_current&quot;) else &quot;&quot;</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>         out[&quot;broken&quot;] = False</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>     if with_lead and not out[&quot;broken&quot;]:</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>         out[&quot;lead&quot;] = str(_summary(folder, cache).get(&quot;lead_line&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     return out</span>
+<span class="source-line" id="L212"><a href="#L212">212</a> </span>
+<span class="source-line" id="L213"><a href="#L213">213</a> </span>
+<span class="source-line" id="L214"><a href="#L214">214</a> def resolve_parts(steps, cache=None, lookup=None, with_lead=False):</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     &quot;&quot;&quot;Every step carrying ``ref`` → ``{step_id: resolved}``. Steps without ``ref`` are skipped.&quot;&quot;&quot;</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     cache = cache if isinstance(cache, dict) else {}</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     out = {}</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     for s in steps or ():</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>         try:</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>             if isinstance(s, dict) and s.get(&quot;ref&quot;) and s.get(&quot;id&quot;):</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>                 out[str(s[&quot;id&quot;])] = resolve_ref(s[&quot;ref&quot;], cache=cache, lookup=lookup, with_lead=with_lead)</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>         except Exception:</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>             continue</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>     return out</span></pre></main></body></html>

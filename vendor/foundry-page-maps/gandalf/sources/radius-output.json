@@ -1,0 +1,57 @@
+{
+  "schema_version": "gandalf-advisor-1",
+  "cross_model": true,
+  "cross_model_requested": true,
+  "degraded": false,
+  "reasoning": "The prior actual Gandalf live review found an answer-bearing radius-card front. That defect is now corrected: the front shows only the given center1/2 and radius1/4; the computed interval is reserved for reveal. General mathematics and all36hints passed separate independent refutation. This final commission checks the concrete correction, not a duplicate whole-pack review.",
+  "verdict": "The radius-card correction appears to restore unaided recall; independently attempt the same leak before closing the finding.",
+  "findings": [
+    {
+      "id": "d1",
+      "rung": "CLAIMED",
+      "kind": "diagnose",
+      "severity": "minor",
+      "gandalf_core": {
+        "protocol": "PROTOCOL v2"
+      },
+      "reasoning": "The final frontPicture branch for radius shows a center point and a given radius, with no drawn solution interval. See student/assets/cards.js and reviews/r3-radius-check.json.",
+      "verdict": "Retain givens-only fronts for calculation questions."
+    }
+  ],
+  "nitpicks": [],
+  "elevations": [
+    {
+      "id": "e1",
+      "rung": "CLAIMED",
+      "value_if_true": "high",
+      "severity": "major",
+      "what_would_refute_it": "Show a specific initial, navigation, retry or mode-change state where the radius card displays its computed interval, upper endpoint3/4 or endpoint-membership answer before the student requests reveal. Given center1/2 and radius1/4 are permitted; the solution interval is not.",
+      "refutation_provenance": {
+        "kind": "independent-named-defeater",
+        "defeater": "Unrevealed radius card after #radius load, Previous/Next return, Retry, Recall↔Choice switch, hashchange onto radius, or Hide-after-Reveal shows computed interval (1/4,3/4), upper endpoint 3/4, or endpoint-membership before Reveal.",
+        "survived": true,
+        "verdict": "Those paths all reset revealed and call frontPicture, which has empty rows, ticks 0/1/2/1, given center 1/2 and radius 1/4, and no 3/4; picture(true) with B(1/2,1/4)=(1/4,3/4) and the explanation appear only after Reveal (choice-mode stems list candidates, they do not restore the solution diagram).",
+        "drafter_family": "claude",
+        "refuter_family": "gemini",
+        "result_digest": "617e77df8ae7691f3010c25ceaa3de26c68a7abcbe3582d5847fd10d02b80993",
+        "refuter_commission_id": "gcl1.eyJkcmFmdGVyX2ZhbWlseSI6ImNsYXVkZSIsInJlZnV0ZXJfZmFtaWx5IjoiZ2VtaW5pIiwicmVzdWx0X2RpZ2VzdCI6IjYxN2U3N2RmOGFlNzY5MWYzMDEwYzI1Y2VhYTNkZTI2YzY4YTdhYmNiZTM1ODJkNTg0N2ZkMTBkMDJiODA5OTMifQ.c81c8a18df3252c401e52a91dd0d99e161f07cc9ca9d83d565f612ad557bcb05"
+      },
+      "tier": "GROUNDED",
+      "cross_family_refuted": true,
+      "reasoning": "Read ONLY C:/dev/Skill Foundry/planning/Einstein/pilot/student/assets/cards.js, student/cards.html, reviews/r3-radius-check.json and reviews/r3-gandalf.json as needed. No shell, edits or tests. Prior review found radius front labelled both computed endpoints. The frontPicture special case now shows only a given center1/2 and radius1/4, with no interval rows; reveal uses the solution diagram. Inspect mode/reset/hash paths to see whether computed answer returns before reveal. The number1/4 is itself a given radius and coincidentally the lower endpoint; its mere presence is not a leak. Do not repeat the mathematics or completepack review; this commission closes the concrete prior defect.",
+      "verdict": "The repaired radius card allows unaided recall: its unrevealed front shows only supplied center/radius, while the computed interval and endpoint-membership answer appear only after reveal."
+    }
+  ],
+  "risk_labels": [
+    {
+      "leg": "diagnose",
+      "tier": "PROMISING",
+      "rung": "CLAIMED"
+    }
+  ],
+  "kill_log": {
+    "findings": [],
+    "nitpicks": [],
+    "elevations": []
+  }
+}

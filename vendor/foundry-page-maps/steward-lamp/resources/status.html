@@ -1,0 +1,87 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Status and render acknowledgement · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="status" data-anchor-id="a-cockpit-_status_update">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Tools</p><h1>Status and render acknowledgement</h1>
+<p class="intro">The ticker composes and emits the cockpit pane&#x27;s status. Current code also records queue wait, first word and turn timing. Render acknowledgement records delivery separately; saved bytes and timing alone do not prove John saw them.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.630821+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/steward_engine.py</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</p></aside>
+<p class="path">C:\dev\Anchor\steward_cockpit\steward_engine.py · lines 3199–3273</p><pre>    def _status_update(self, emit=True):
+        &quot;&quot;&quot;The 10-minute status OF RECORD — deterministic, two-part,
+        zero-model (the audit&#x27;s &#x27;status treatment A&#x27; grown to commissioned
+        runs). TOP: what is running now. BOTTOM: where the whole plan
+        stands. Persisted to &lt;cdir&gt;/.ecgberht/status-summary.json — the
+        UNIVERSAL file both the cockpit&#x27;s right pane and the main-dashboard
+        project tile read — and (emit=True) sent as a &#x27;status&#x27; event the
+        client routes to the status pane only, never the conversation.&quot;&quot;&quot;
+        if self.general:
+            return False
+        # Compose, persist, and emit one generation under one lock. A ticker
+        # and a result boundary can request status concurrently; neither may
+        # overwrite or replay an older truth after the newer one.
+        with self._status_lock:
+            try:
+                from steward_cockpit import steward_campaign as campaign
+                status = campaign.compose_status(self.dir, self.state())
+            except Exception as exc:
+                self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;tick&quot;: True,
+                            &quot;text&quot;: &quot;status compose failed: &quot;
+                                    + type(exc).__name__})
+                return False
+            # (2026-09-04, John) a commissioned run that STOPPED — a model
+            # session limit above all — must reach him, never just stop: flip a
+            # flag still saying &quot;working&quot; to needs_you with the run&#x27;s reason,
+            # so the High Seat and the rail say &quot;need you&quot;, and say it once here.
+            try:
+                flipped = campaign.raise_halt_attention(self.dir, status)
+                if flipped:
+                    self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;text&quot;: &quot;STOPPED: &quot; + flipped[&quot;reason&quot;]})
+                    status = campaign.compose_status(self.dir, self.state())
+            except Exception:
+                pass
+
+            persisted = False
+            tmp = None
+            try:
+                f = Path(self.dir) / &quot;.ecgberht&quot; / &quot;status-summary.json&quot;
+                f.parent.mkdir(parents=True, exist_ok=True)
+                tmp = f.with_name(
+                    f.name + &quot;.%s.%s.tmp&quot; %
+                    (os.getpid(), threading.get_ident()))
+                tmp.write_text(json.dumps(status, indent=2) + &quot;\n&quot;,
+                               encoding=&quot;utf-8&quot;)
+                os.replace(tmp, f)
+                persisted = True
+            except Exception as exc:
+                self._emit({&quot;t&quot;: &quot;sys&quot;, &quot;tick&quot;: True,
+                            &quot;text&quot;: &quot;status persistence failed: &quot;
+                                    + type(exc).__name__})
+            finally:
+                if tmp is not None:
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+            # Notification-budget counter (2026-08-25 elegance S-batch, B6
+            # bar): count each transition INTO needs_you per local day.
+            try:
+                cur = str(((status.get(&quot;plan&quot;) or {}).get(&quot;attention&quot;)) or &quot;&quot;)
+                prev = getattr(self, &quot;_last_attention_state&quot;, None)
+                self._last_attention_state = cur
+                if cur == &quot;needs_you&quot; and prev not in (None, &quot;needs_you&quot;):
+                    self._delivery_patch(lambda d: d.update(
+                        pings={&quot;date&quot;: time.strftime(&quot;%Y-%m-%d&quot;),
+                               &quot;count&quot;: (
+                                   d.get(&quot;pings&quot;, {}).get(&quot;count&quot;, 0) + 1
+                                   if d.get(&quot;pings&quot;, {}).get(&quot;date&quot;)
+                                   == time.strftime(&quot;%Y-%m-%d&quot;) else 1)}))
+            except Exception:
+                pass
+            if emit:
+                self._emit({&quot;t&quot;: &quot;status&quot;, &quot;status&quot;: status})
+            return persisted</pre>
+<p><a class="button" href="../source-pages/cockpit.html#L3199">Open numbered source</a>
+<a href="../sources/cockpit.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/status">Compose a status generation</a> · <a target="_top" href="../index.html#process/ack">Record the client render acknowledgement</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">26972336141e3d9fa4050bc152648f6bd0f3faf39559c10d6db056f8c755006a</span></p><p>Excerpt hash: <span class="path">121a102132facb5310c0e9275ae65570a8f1f9acdc9f8f3d16945b1153644694</span></p></details></article></main></body></html>

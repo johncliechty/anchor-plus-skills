@@ -1,0 +1,321 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>nudges · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Cave of Wonders Library</a><h1>nudges</h1>
+<p>code · exact captured bytes</p><p class="path">Original: C:/dev/Anchor/steward_cockpit/nudges.py</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 3264f9e5ce97635a1c4ded19ed7fb48b37e1d65954f949ebf0c388de3ffcf76a</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.535959+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/nudges.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 3264f9e5ce97635a1c4ded19ed7fb48b37e1d65954f949ebf0c388de3ffcf76a</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> &quot;&quot;&quot;W3 of the active set — the steward steps in (PLAN v1.3.2 fits 8–9, 2026-10-01).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> </span>
+<span class="source-line" id="L3"><a href="#L3">3</a> ONE nudge at a speaking boundary, derived from the records alone — never a model turn, never a write — in his words,</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> with its receipt (the fact it read) and one-click acts. The kinds, in the order one wins:</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> </span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   dated      a dated part due within three days in a goal he is NOT working in now (&quot;Excuse me: … is due tomorrow&quot;)</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   deck_wait  an initiative that waits on him and is only on deck (&quot;… waits on you and is only on deck — make it active?&quot;)</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   starving   a Tier-1 goal untouched for a week, a Tier-2 for two (&quot;… untouched for 12 days — put one of its cockpits on deck?&quot;)</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   seed       a seed that reads like a goal (&quot;the seed &#x27;…&#x27; reads like a goal — make it one?&quot;)</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>   free       nothing active and something on deck (&quot;A free moment: … is on deck — make it active?&quot;)</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> </span>
+<span class="source-line" id="L12"><a href="#L12">12</a> &quot;Not now&quot; is a receipt kept in the Campaign&#x27;s own folder (``.ecgberht/nudges.json``) that silences THAT nudge until its</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> fact changes: the key names the kind, the subject and the fact, so a new date, a new wait, another week of silence or</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> another seed is a new nudge. Never twice for the same fact; never more than one at a boundary; nothing moves without</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> his click or his word (the acts are the Campaign&#x27;s own: seat, promote, not_now).</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> &quot;&quot;&quot;</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> from __future__ import annotations</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19">19</a> import hashlib</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> import json</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> import os</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> import re</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> import time</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> from datetime import date, datetime, timedelta</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> from pathlib import Path</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27">27</a> STARVE_DAYS = {1: 7, 2: 14}</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> NOT_DATED = frozenset({&quot;deck_wait&quot;, &quot;starving&quot;, &quot;seed&quot;, &quot;free&quot;})     # every kind but the interrupt lane&#x27;s (2026-10-03)</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> DATED_WINDOW_DAYS = 3</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> NUDGES_FILE = &quot;.ecgberht/nudges.json&quot;</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> RESUME_FILE = &quot;.ecgberht/resume.json&quot;      # the interrupt lane&#x27;s ready-to-resume note (2026-10-03)</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> RESUME_DAYS = 2</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> PREMORTEM_FILE = &quot;.ecgberht/premortem.json&quot;   # the Star Chart&#x27;s premortem asks (2026-10-03)</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> _SEED_VERBS = re.compile(r&quot;\b(finish|ship|write|launch|build|publish|get|teach|run|deliver|submit|complete|start|set up|create|design|draft)\b&quot;, re.I)</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> </span>
+<span class="source-line" id="L36"><a href="#L36">36</a> </span>
+<span class="source-line" id="L37"><a href="#L37">37</a> def _iso(d):</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>     if isinstance(d, date):</span>
+<span class="source-line" id="L39"><a href="#L39">39</a>         return d</span>
+<span class="source-line" id="L40"><a href="#L40">40</a>     try:</span>
+<span class="source-line" id="L41"><a href="#L41">41</a>         return datetime.strptime(str(d)[:10], &quot;%Y-%m-%d&quot;).date()</span>
+<span class="source-line" id="L42"><a href="#L42">42</a>     except Exception:</span>
+<span class="source-line" id="L43"><a href="#L43">43</a>         return None</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45">45</a> </span>
+<span class="source-line" id="L46"><a href="#L46">46</a> def when_words(d, today):</span>
+<span class="source-line" id="L47"><a href="#L47">47</a>     &quot;&quot;&quot;&#x27;today&#x27; · &#x27;tomorrow&#x27; · &#x27;Fri, Oct 3&#x27; — the date as he says it.&quot;&quot;&quot;</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>     if d == today:</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>         return &quot;today&quot;</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>     if d == today + timedelta(days=1):</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>         return &quot;tomorrow&quot;</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>     return d.strftime(&quot;%a, %b %d&quot;).replace(&quot; 0&quot;, &quot; &quot;)</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> </span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> def _open(p):</span>
+<span class="source-line" id="L56"><a href="#L56">56</a>     return isinstance(p, dict) and not p.get(&quot;done&quot;) and not p.get(&quot;closed&quot;) and str(p.get(&quot;status&quot;) or &quot;&quot;).lower() not in (&quot;done&quot;, &quot;parked&quot;, &quot;cancelled&quot;, &quot;dropped&quot;)</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> </span>
+<span class="source-line" id="L58"><a href="#L58">58</a> </span>
+<span class="source-line" id="L59"><a href="#L59">59</a> def fact_key(kind, subject, fact):</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     &quot;&quot;&quot;The receipt&#x27;s key: the kind, the subject and the fact it read — a changed fact is a new nudge.&quot;&quot;&quot;</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     h = hashlib.sha1((&quot;%s|%s|%s&quot; % (kind, subject, fact)).encode(&quot;utf-8&quot;)).hexdigest()[:12]</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>     return &quot;%s:%s:%s&quot; % (kind, str(subject)[:40], h)</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> </span>
+<span class="source-line" id="L64"><a href="#L64">64</a> </span>
+<span class="source-line" id="L65"><a href="#L65">65</a> def _goals_at_hand(initiatives, working):</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>     &quot;&quot;&quot;The goals he is working in now: those with an ACTIVE initiative, or a cockpit with a live session.&quot;&quot;&quot;</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>     at_hand = set()</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>     for i in initiatives or ():</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>         for p in i.get(&quot;parts&quot;) or ():</span>
+<span class="source-line" id="L70"><a href="#L70">70</a>             if p.get(&quot;seat&quot;) == &quot;active&quot; or (p.get(&quot;pid&quot;) and p[&quot;pid&quot;] in (working or set())):</span>
+<span class="source-line" id="L71"><a href="#L71">71</a>                 at_hand.add(i[&quot;id&quot;])</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>     return at_hand</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> </span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a> def derive(initiatives, facts=None, seeds=None, working=None, today=None, strip_ages=None, goal_last_at=None,</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>            dismissed=None, scope_goal=None, campaign_pid=&quot;&quot;, head_lead=None, kinds=None):</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>     &quot;&quot;&quot;The one nudge for this boundary, or None. ``scope_goal`` narrows it to one goal&#x27;s conversation (the Campaign</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>     page&#x27;s place): only that goal&#x27;s dated parts, deck waits and starvation; seeds and the free moment belong to the</span>
+<span class="source-line" id="L79"><a href="#L79">79</a>     High Seat&#x27;s brief. ``dismissed`` is the receipts file read (``read_dismissed``). ``head_lead`` is (pid, part name)</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>     of the brief&#x27;s own lead sentence: a part the head already names is never nudged too (Grok W3, RC-3). ``kinds``</span>
+<span class="source-line" id="L81"><a href="#L81">81</a>     limits the candidates to those kinds (None = all): one lane per item (John, 2026-10-03) - the Cave&#x27;s interrupt lane</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>     asks for ``{&quot;dated&quot;}``, its panel and the Star Chart&#x27;s goal places for the rest, so a dated item shows once.&quot;&quot;&quot;</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>     today = today or date.today()</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>     inits = [i for i in initiatives or () if isinstance(i, dict) and i.get(&quot;status&quot;) not in (&quot;done&quot;, &quot;parked&quot;)]</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>     if scope_goal:</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>         inits = [i for i in inits if i.get(&quot;id&quot;) == scope_goal]</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>     dismissed = dismissed or {}</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     working = working or set()</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>     seeds = [s for s in (seeds if isinstance(seeds, (list, tuple)) else ()) if isinstance(s, dict)]   # rows, never a count</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>     at_hand = _goals_at_hand(initiatives, working)</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>     lead_pid, lead_part = (str(head_lead[0] or &quot;&quot;), str(head_lead[1] or &quot;&quot;)) if isinstance(head_lead, (list, tuple)) and len(head_lead) == 2 else (&quot;&quot;, &quot;&quot;)</span>
+<span class="source-line" id="L92"><a href="#L92">92</a> </span>
+<span class="source-line" id="L93"><a href="#L93">93</a>     def _is_lead(p):</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>         name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;&quot;)</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>         return bool((lead_pid and p.get(&quot;pid&quot;) == lead_pid) or (lead_part and name == lead_part))</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>     cands = []</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> </span>
+<span class="source-line" id="L98"><a href="#L98">98</a>     def add(kind, subject, fact, text, why, acts, goal=None, rank=0):</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>         key = fact_key(kind, subject, fact)</span>
+<span class="source-line" id="L100"><a href="#L100">100</a>         if (kinds is not None and kind not in kinds) or key in dismissed:</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>             return</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>         cands.append({&quot;kind&quot;: kind, &quot;key&quot;: key, &quot;fact&quot;: str(fact), &quot;text&quot;: text, &quot;why&quot;: why, &quot;acts&quot;: acts, &quot;goal&quot;: goal, &quot;rank&quot;: rank})</span>
+<span class="source-line" id="L103"><a href="#L103">103</a> </span>
+<span class="source-line" id="L104"><a href="#L104">104</a>     # 1. a dated thing near while he is elsewhere</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>     best = None</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>     for i in inits:</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>         for p in i.get(&quot;parts&quot;) or ():</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>             if not _open(p) or p.get(&quot;broken&quot;):</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>                 continue</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>             d = _iso(p.get(&quot;date&quot;))</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>             if d is None or d &lt; today or (d - today).days &gt; DATED_WINDOW_DAYS:</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>                 continue</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>             if not scope_goal and i[&quot;id&quot;] in at_hand:</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>                 continue      # his own goal at hand: the head says it, not a nudge</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>             if best is None or d &lt; best[0]:</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>                 best = (d, i, p)</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     if best:</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>         d, i, p = best</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>         name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;a part&quot;)</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>         # in the goal&#x27;s own place the goal is already open on screen: no link to it (Grok W3)</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>         opens = [{&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s?open=%s&quot; % (campaign_pid, i[&quot;id&quot;]), &quot;label&quot;: &quot;open the goal&quot;}] if campaign_pid and not scope_goal else []</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>         if p.get(&quot;pid&quot;):</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>             opens.insert(0, {&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s&quot; % p[&quot;pid&quot;], &quot;label&quot;: &quot;open the cockpit&quot;})</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>         add(&quot;dated&quot;, p.get(&quot;id&quot;) or name, d.isoformat(),</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>             &quot;Excuse me: %s is due %s (%s).&quot; % (name, when_words(d, today), i.get(&quot;name&quot;) or &quot;a goal&quot;),</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>             &quot;the part&#x27;s date on the Campaign record: %s&quot; % d.isoformat(), opens, goal=i[&quot;id&quot;], rank=1)</span>
+<span class="source-line" id="L127"><a href="#L127">127</a> </span>
+<span class="source-line" id="L128"><a href="#L128">128</a>     # 2. an initiative that needs him and is only on deck - unless the head&#x27;s own sentence already leads with it</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>     for i in inits:</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>         for p in i.get(&quot;parts&quot;) or ():</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>             if _open(p) and p.get(&quot;seat&quot;) == &quot;deck&quot; and p.get(&quot;needs_you&quot;) and not _is_lead(p):</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>                 wait = re.sub(r&quot;^waiting on you[:\s]*&quot;, &quot;&quot;, str(p.get(&quot;state&quot;) or &quot;&quot;), flags=re.I).strip(&quot; .&quot;) or &quot;a wait&quot;</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>                 name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;it&quot;)</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>                 add(&quot;deck_wait&quot;, p.get(&quot;id&quot;), wait,</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>                     &quot;%s waits on you and is only on deck — make it active?&quot; % name,</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>                     &quot;its record: needs you · %s&quot; % wait[:120],</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>                     [{&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: p.get(&quot;id&quot;), &quot;seat&quot;: &quot;active&quot;, &quot;label&quot;: &quot;make it active&quot;}] + ([{&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s&quot; % p[&quot;pid&quot;], &quot;label&quot;: &quot;open&quot;}] if p.get(&quot;pid&quot;) else []),</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>                     goal=i[&quot;id&quot;], rank=2)</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>                 break</span>
+<span class="source-line" id="L140"><a href="#L140">140</a> </span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     # 3. a top goal starving</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     for i in inits:</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>         tier = i.get(&quot;tier&quot;)</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>         if tier not in STARVE_DAYS or i[&quot;id&quot;] in at_hand:</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>             continue</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>         ages = [int((strip_ages or {}).get(p.get(&quot;pid&quot;), 0) or 0) for p in i.get(&quot;parts&quot;) or () if p.get(&quot;pid&quot;)]</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>         age = max(ages) if ages else 0</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>         last = (goal_last_at or {}).get(i[&quot;id&quot;])</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>         if not age and last:</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>             try:</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>                 age = (today - _iso(last)).days if _iso(last) else 0</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>             except Exception:</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>                 age = 0</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>         if age &gt;= STARVE_DAYS[tier]:</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>             # the cockpit offered is the one whose age was quoted when it is unseated, else the first unseated (Grok W3)</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>             unseated = [p for p in i.get(&quot;parts&quot;) or () if _open(p) and p.get(&quot;kind&quot;) in (&quot;project&quot;, &quot;effort&quot;) and not p.get(&quot;seat&quot;)]</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>             unseated.sort(key=lambda p: -int((strip_ages or {}).get(p.get(&quot;pid&quot;), 0) or 0))</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>             cockpit = unseated[0] if unseated else None</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>             acts = ([{&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: cockpit.get(&quot;id&quot;), &quot;seat&quot;: &quot;deck&quot;, &quot;label&quot;: &quot;put %s on deck&quot; % str(cockpit.get(&quot;target&quot;) or cockpit.get(&quot;text&quot;) or &quot;it&quot;)[:40]}] if cockpit else [])</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>             if campaign_pid:</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>                 acts.append({&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s?open=%s&quot; % (campaign_pid, i[&quot;id&quot;]), &quot;label&quot;: &quot;open the goal&quot;})</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>             add(&quot;starving&quot;, i[&quot;id&quot;], age // 7,</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>                 &quot;%s is a Tier-%d goal untouched for %d days — %s&quot; % (i.get(&quot;name&quot;) or &quot;a goal&quot;, tier, age, &quot;put one of its cockpits on deck?&quot; if cockpit else &quot;pick it up?&quot;),</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>                 &quot;the strip&#x27;s anti_starvation_age_days of its cockpits, else the days since its last turn: %d&quot; % age, acts, goal=i[&quot;id&quot;], rank=3)</span>
+<span class="source-line" id="L165"><a href="#L165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166">166</a>     if not scope_goal:</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>         # 4. a seed that reads like a goal</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>         for s in seeds or ():</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>             text = &quot; &quot;.join(str(s.get(&quot;text&quot;) or &quot;&quot;).split())</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>             words = text.split()</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>             if len(words) &gt;= 6 and not text.endswith(&quot;?&quot;) and (_SEED_VERBS.search(text) or re.search(r&quot;\bby\b&quot;, text, re.I)):</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>                 add(&quot;seed&quot;, s.get(&quot;id&quot;), s.get(&quot;id&quot;),</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>                     &quot;the seed ‘%s’ reads like a goal — make it one?&quot; % (text[:90] + (&quot;…&quot; if len(text) &gt; 90 else &quot;&quot;)),</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>                     &quot;a seed on the Campaign&#x27;s strip, %d words with a verb&quot; % len(words),</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>                     [{&quot;act&quot;: &quot;promote&quot;, &quot;seed&quot;: s.get(&quot;id&quot;), &quot;tier&quot;: 2, &quot;area&quot;: &quot;&quot;, &quot;done_when&quot;: text[:200], &quot;label&quot;: &quot;make it a goal (tier 2)&quot;}] + ([{&quot;act&quot;: &quot;open&quot;, &quot;href&quot;: &quot;/project/%s&quot; % campaign_pid, &quot;label&quot;: &quot;open the seeds&quot;}] if campaign_pid else []),</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>                     rank=4)</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>                 break</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>         # 5. a free moment: nothing active, something on deck - never the part whose deck wait he already put off</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>         # (that would be the same &quot;make it active?&quot; twice)</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>         put_off = {k.split(&quot;:&quot;, 2)[1] for k in dismissed if k.startswith(&quot;deck_wait:&quot;)}</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>         active = [p for i in inits for p in i.get(&quot;parts&quot;) or () if _open(p) and p.get(&quot;seat&quot;) == &quot;active&quot;]</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>         deck = sorted([(i, p) for i in inits for p in i.get(&quot;parts&quot;) or () if _open(p) and p.get(&quot;seat&quot;) == &quot;deck&quot; and str(p.get(&quot;id&quot;))[:40] not in put_off and not _is_lead(p)],</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>                       key=lambda t: (t[1].get(&quot;seat_order&quot;) if isinstance(t[1].get(&quot;seat_order&quot;), int) else 999))</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>         if not active and deck:</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>             i, p = deck[0]</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>             name = str(p.get(&quot;target&quot;) or p.get(&quot;text&quot;) or &quot;it&quot;)</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>             add(&quot;free&quot;, p.get(&quot;id&quot;), p.get(&quot;id&quot;),</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>                 &quot;A free moment: %s is on deck (%s) — make it active?&quot; % (name, i.get(&quot;name&quot;) or &quot;a goal&quot;),</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>                 &quot;nothing is active; the top of On deck&quot;, [{&quot;act&quot;: &quot;seat&quot;, &quot;step&quot;: p.get(&quot;id&quot;), &quot;seat&quot;: &quot;active&quot;, &quot;label&quot;: &quot;make it active&quot;}], goal=i[&quot;id&quot;], rank=5)</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> </span>
+<span class="source-line" id="L191"><a href="#L191">191</a>     if not cands:</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>         return None</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>     cands.sort(key=lambda c: c[&quot;rank&quot;])</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>     return cands[0]</span>
+<span class="source-line" id="L195"><a href="#L195">195</a> </span>
+<span class="source-line" id="L196"><a href="#L196">196</a> </span>
+<span class="source-line" id="L197"><a href="#L197">197</a> def _path(campaign_dir):</span>
+<span class="source-line" id="L198"><a href="#L198">198</a>     return Path(campaign_dir) / NUDGES_FILE</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> </span>
+<span class="source-line" id="L200"><a href="#L200">200</a> </span>
+<span class="source-line" id="L201"><a href="#L201">201</a> def read_dismissed(campaign_dir):</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>     &quot;&quot;&quot;The &#x27;not now&#x27; receipts: {key: {at, fact, text}}; empty when none.&quot;&quot;&quot;</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>     try:</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>         d = json.loads(_path(campaign_dir).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>         return d if isinstance(d, dict) else {}</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>     except Exception:</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>         return {}</span>
+<span class="source-line" id="L208"><a href="#L208">208</a> </span>
+<span class="source-line" id="L209"><a href="#L209">209</a> </span>
+<span class="source-line" id="L210"><a href="#L210">210</a> def dismiss(campaign_dir, key, fact=&quot;&quot;, text=&quot;&quot;):</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     &quot;&quot;&quot;His &#x27;not now&#x27;: a receipt that silences that nudge until its fact changes. Written whole, never raises.&quot;&quot;&quot;</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>     key = str(key or &quot;&quot;).strip()</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>     if not key or len(key) &gt; 120 or &quot;/&quot; in key or &quot;\\&quot; in key:</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;no such nudge&quot;}</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     d = read_dismissed(campaign_dir)</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     d[key] = {&quot;at&quot;: time.strftime(&quot;%Y-%m-%d %H:%M&quot;), &quot;fact&quot;: str(fact or &quot;&quot;)[:200], &quot;text&quot;: str(text or &quot;&quot;)[:240]}</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     try:</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>         p = _path(campaign_dir); p.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>         tmp = p.with_suffix(&quot;.json.tmp&quot;); tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False), encoding=&quot;utf-8&quot;); os.replace(str(tmp), str(p))</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>     except OSError as e:</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;the receipt could not be kept: %s&quot; % e}</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>     return {&quot;ok&quot;: True, &quot;key&quot;: key}</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> </span>
+<span class="source-line" id="L224"><a href="#L224">224</a> </span>
+<span class="source-line" id="L225"><a href="#L225">225</a> def undismiss(campaign_dir, key):</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>     d = read_dismissed(campaign_dir)</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>     if str(key) not in d:</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;that nudge was not silenced&quot;}</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>     d.pop(str(key), None)</span>
+<span class="source-line" id="L230"><a href="#L230">230</a>     try:</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>         p = _path(campaign_dir); tmp = p.with_suffix(&quot;.json.tmp&quot;); tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False), encoding=&quot;utf-8&quot;); os.replace(str(tmp), str(p))</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>     except OSError as e:</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;the receipt could not be dropped: %s&quot; % e}</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>     return {&quot;ok&quot;: True, &quot;key&quot;: str(key)}</span>
+<span class="source-line" id="L235"><a href="#L235">235</a> </span>
+<span class="source-line" id="L236"><a href="#L236">236</a> </span>
+<span class="source-line" id="L237"><a href="#L237">237</a> # ── the interrupt lane&#x27;s ready-to-resume note (John, 2026-10-03: the lane lives on the Cave of Wonders) ─────────────</span>
+<span class="source-line" id="L238"><a href="#L238">238</a> # When he opens a dated item from the lane, what he was on is kept as one line; the Cave shows it at the top of the</span>
+<span class="source-line" id="L239"><a href="#L239">239</a> # panel (&quot;You were on: ...&quot;) until he clears it or two days pass. One note at a time; never raises.</span>
+<span class="source-line" id="L240"><a href="#L240">240</a> </span>
+<span class="source-line" id="L241"><a href="#L241">241</a> def write_resume(campaign_dir, note, switched_to=&quot;&quot;):</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     note = &quot; &quot;.join(str(note or &quot;&quot;).split())[:240]</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>     if not note:</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;nothing to keep&quot;}</span>
+<span class="source-line" id="L245"><a href="#L245">245</a>     d = {&quot;at&quot;: time.strftime(&quot;%Y-%m-%d %H:%M&quot;), &quot;note&quot;: note, &quot;switched_to&quot;: &quot; &quot;.join(str(switched_to or &quot;&quot;).split())[:160]}</span>
+<span class="source-line" id="L246"><a href="#L246">246</a>     try:</span>
+<span class="source-line" id="L247"><a href="#L247">247</a>         p = Path(campaign_dir) / RESUME_FILE; p.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L248"><a href="#L248">248</a>         tmp = p.with_suffix(&quot;.json.tmp&quot;); tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False), encoding=&quot;utf-8&quot;); os.replace(str(tmp), str(p))</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>     except OSError as e:</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;the note could not be kept: %s&quot; % e}</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>     return {&quot;ok&quot;: True, **d}</span>
+<span class="source-line" id="L252"><a href="#L252">252</a> </span>
+<span class="source-line" id="L253"><a href="#L253">253</a> </span>
+<span class="source-line" id="L254"><a href="#L254">254</a> def read_resume(campaign_dir, today=None):</span>
+<span class="source-line" id="L255"><a href="#L255">255</a>     &quot;&quot;&quot;The note, or None when there is none or it is older than RESUME_DAYS.&quot;&quot;&quot;</span>
+<span class="source-line" id="L256"><a href="#L256">256</a>     try:</span>
+<span class="source-line" id="L257"><a href="#L257">257</a>         d = json.loads((Path(campaign_dir) / RESUME_FILE).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>     except Exception:</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>         return None</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>     if not isinstance(d, dict) or not d.get(&quot;note&quot;):</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>         return None</span>
+<span class="source-line" id="L262"><a href="#L262">262</a>     at = _iso(str(d.get(&quot;at&quot;) or &quot;&quot;)[:10])</span>
+<span class="source-line" id="L263"><a href="#L263">263</a>     if at and ((today or date.today()) - at).days &gt; RESUME_DAYS:</span>
+<span class="source-line" id="L264"><a href="#L264">264</a>         return None</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>     return d</span>
+<span class="source-line" id="L266"><a href="#L266">266</a> </span>
+<span class="source-line" id="L267"><a href="#L267">267</a> </span>
+<span class="source-line" id="L268"><a href="#L268">268</a> def clear_resume(campaign_dir):</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>     was = read_resume(campaign_dir)</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>     try:</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>         (Path(campaign_dir) / RESUME_FILE).unlink()</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>     except FileNotFoundError:</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>         pass</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>     except OSError as e:</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>         return {&quot;ok&quot;: False, &quot;error&quot;: &quot;the note could not be cleared: %s&quot; % e}</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>     return {&quot;ok&quot;: True, &quot;was&quot;: was}</span>
+<span class="source-line" id="L277"><a href="#L277">277</a> </span>
+<span class="source-line" id="L278"><a href="#L278">278</a> </span>
+<span class="source-line" id="L279"><a href="#L279">279</a> # ── the Star Chart&#x27;s premortem (2026-10-03): asked once when a goal is made or its pace slips later ──────────────────</span>
+<span class="source-line" id="L280"><a href="#L280">280</a> # {goal_id: {at, reason}}; the ask stands on the goal&#x27;s card until he answers (the answer goes into the goal&#x27;s guide)</span>
+<span class="source-line" id="L281"><a href="#L281">281</a> # or says not now. Never raises.</span>
+<span class="source-line" id="L282"><a href="#L282">282</a> </span>
+<span class="source-line" id="L283"><a href="#L283">283</a> def _pm_read(campaign_dir):</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>     try:</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>         d = json.loads((Path(campaign_dir) / PREMORTEM_FILE).read_text(encoding=&quot;utf-8&quot;))</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>         return d if isinstance(d, dict) else {}</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     except Exception:</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>         return {}</span>
+<span class="source-line" id="L289"><a href="#L289">289</a> </span>
+<span class="source-line" id="L290"><a href="#L290">290</a> </span>
+<span class="source-line" id="L291"><a href="#L291">291</a> def _pm_write(campaign_dir, d):</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>     try:</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>         p = Path(campaign_dir) / PREMORTEM_FILE; p.parent.mkdir(parents=True, exist_ok=True)</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>         tmp = p.with_suffix(&quot;.json.tmp&quot;); tmp.write_text(json.dumps(d, indent=1, ensure_ascii=False), encoding=&quot;utf-8&quot;); os.replace(str(tmp), str(p))</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>         return True</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>     except OSError:</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>         return False</span>
+<span class="source-line" id="L298"><a href="#L298">298</a> </span>
+<span class="source-line" id="L299"><a href="#L299">299</a> </span>
+<span class="source-line" id="L300"><a href="#L300">300</a> def read_premortems(campaign_dir):</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>     return _pm_read(campaign_dir)</span>
+<span class="source-line" id="L302"><a href="#L302">302</a> </span>
+<span class="source-line" id="L303"><a href="#L303">303</a> </span>
+<span class="source-line" id="L304"><a href="#L304">304</a> def ask_premortem(campaign_dir, goal_id, reason):</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>     goal_id = str(goal_id or &quot;&quot;).strip()</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>     if not goal_id or &quot;/&quot; in goal_id or &quot;\\&quot; in goal_id:</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>         return False</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     d = _pm_read(campaign_dir)</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>     d[goal_id] = {&quot;at&quot;: time.strftime(&quot;%Y-%m-%d %H:%M&quot;), &quot;reason&quot;: &quot; &quot;.join(str(reason or &quot;&quot;).split())[:160]}</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>     return _pm_write(campaign_dir, d)</span>
+<span class="source-line" id="L311"><a href="#L311">311</a> </span>
+<span class="source-line" id="L312"><a href="#L312">312</a> </span>
+<span class="source-line" id="L313"><a href="#L313">313</a> def close_premortem(campaign_dir, goal_id):</span>
+<span class="source-line" id="L314"><a href="#L314">314</a>     d = _pm_read(campaign_dir)</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>     was = d.pop(str(goal_id), None)</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>     return was if _pm_write(campaign_dir, d) else None</span></pre></main></body></html>

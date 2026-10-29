@@ -1,0 +1,491 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>foreman · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Aladdin-Lamp Library</a><h1>foreman</h1>
+<p>other skill · frozen exact bytes</p><p class="path">Original: C:\dev\trio\foreman\SKILL.md</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 827980c40f9c88a9e4efdfce9708ac79abaefe559b295f9710a0f60ac27d2f1f</p></details>
+<aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.642959+00:00</time></p><p class="path">Captured from: C:/dev/trio/foreman/SKILL.md</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: 827980c40f9c88a9e4efdfce9708ac79abaefe559b295f9710a0f60ac27d2f1f</p></aside><pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> ---</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> name: foreman</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> description: &gt;-</span>
+<span class="source-line" id="L4"><a href="#L4">4</a>   Autonomous multi-wave build orchestrator. Invoke inside a project folder that</span>
+<span class="source-line" id="L5"><a href="#L5">5</a>   has frozen design + implementation-plan docs to drive each wave/sprint/section</span>
+<span class="source-line" id="L6"><a href="#L6">6</a>   to done via fresh-context sub-agents in an EXECUTE -&gt; ADVERSARIAL-REVIEW -&gt; FIX</span>
+<span class="source-line" id="L7"><a href="#L7">7</a>   -&gt; RE-REVIEW loop, auto-advancing across waves and halting only on a defined</span>
+<span class="source-line" id="L8"><a href="#L8">8</a>   blocker set. STATUS (2026-08-24): PRODUCTION — ~15 real builds shipped; the</span>
+<span class="source-line" id="L9"><a href="#L9">9</a>   ground-truth test gate is run by the orchestrator (a Node process), never by a</span>
+<span class="source-line" id="L10"><a href="#L10">10</a>   sub-agent. One consolidated status block lives in the body below; verified</span>
+<span class="source-line" id="L11"><a href="#L11">11</a>   currency lives in the foundry PLAN.md, never in this line.</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> ---</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> </span>
+<span class="source-line" id="L14"><a href="#L14">14</a> ## North Star (LOCKED — John, 2026-08-25)</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> </span>
+<span class="source-line" id="L16"><a href="#L16">16</a> Given a frozen plan, Foreman drives every wave to verified done — fresh-context executors, adversarial review, ground-truth gates run by the orchestrator, never a sub-agent — halting only on defined blockers and never burning the user&#x27;s attention between gates.</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> </span>
+<span class="source-line" id="L18"><a href="#L18">18</a> </span>
+<span class="source-line" id="L19"><a href="#L19">19</a> &lt;!-- ELEGANCE-LAW v2 --&gt;</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> ## The Elegance Law (locked by John — binding on this skill)</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22">22</a> Canonical text: `Skill Foundry/ELEGANCE.md`. Applies to ANY agent running this</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> skill on ANY host. If this block and a longer procedure below disagree, this</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> block wins.</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> </span>
+<span class="source-line" id="L26"><a href="#L26">26</a> 1. **Approvals are ≤200 words** — what changes in his world, the recommendation,</span>
+<span class="source-line" id="L27"><a href="#L27">27</a>    the one thing that gets worse. The artifact stays on disk and is named, not</span>
+<span class="source-line" id="L28"><a href="#L28">28</a>    pasted. An approval obtained with a longer block is VOID.</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> 2. **Summaries are ≤150 words** — goal in one line, done / not done, ≤3 findings</span>
+<span class="source-line" id="L30"><a href="#L30">30</a>    ranked by consequence, the single next decision. Never rounds, waves, seats,</span>
+<span class="source-line" id="L31"><a href="#L31">31</a>    stamps, gate counts, or file inventories.</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> 3. **Default to the lightest band, without asking.** A heavier tier requires the</span>
+<span class="source-line" id="L33"><a href="#L33">33</a>    first status line to NAME its trigger: irreversible or externally visible,</span>
+<span class="source-line" id="L34"><a href="#L34">34</a>    inputs unconverged, a prior failure in this exact area, or he asked for it.</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> 4. **Needed-because line.** Any element he did not request carries one line:</span>
+<span class="source-line" id="L36"><a href="#L36">36</a>    &quot;Needed because ___; dropping it costs ___.&quot; No line, no element.</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> 5. **Show a cut.** ONE dry round ends a review loop — never a streak. Every plan</span>
+<span class="source-line" id="L38"><a href="#L38">38</a>    names something it removed; &quot;nothing cut&quot; is said aloud.</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> </span>
+<span class="source-line" id="L40"><a href="#L40">40</a> **THE VERIFICATION LAW** (added 2026-08-15 after its FOURTH recurrence — each of</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> the first three was written into a journal and recurred anyway):</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> </span>
+<span class="source-line" id="L43"><a href="#L43">43</a> 6. **Verify the claim you actually made, on the surface he actually uses.**</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>    &quot;It&#x27;s live / fixed / renders&quot; is a claim about HIS screen. That the server</span>
+<span class="source-line" id="L45"><a href="#L45">45</a>    emits new bytes, that a build exited zero, or that assertions passed are</span>
+<span class="source-line" id="L46"><a href="#L46">46</a>    claims about something else. Render it and look at it.</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> 7. **A symptom reported twice retires the first explanation.** Test the</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>    hypothesis; never repeat it. An explanation that makes his report false</span>
+<span class="source-line" id="L49"><a href="#L49">49</a>    (&quot;it&#x27;s your cache&quot;, &quot;it&#x27;s a data issue&quot;) needs MORE evidence, not less.</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> 8. **Prefer a mechanism to an instruction.** If the same instruction is given</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>    every session, the instruction is the defect — build what removes it.</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> 9. **A correction that lives only in a journal or a memory has not been made.**</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>    Promote it to where it is loaded BEFORE the work starts.</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> </span>
+<span class="source-line" id="L55"><a href="#L55">55</a> **Two laws these serve.** A gate that cannot see what the user sees is not a gate</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> — structure diffs are lints, and must be labelled as lints. And a guardrail is</span>
+<span class="source-line" id="L57"><a href="#L57">57</a> never the whole product of a turn — if enforcement withholds output he already</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> paid for, show it anyway.</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> &lt;!-- ELEGANCE-V2.1 addendum --&gt;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a> **What elegance IS (researchPrime-vetted, 2026-08-15):** the largest result</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> carried by the least machinery its user can actually hold — every element</span>
+<span class="source-line" id="L62"><a href="#L62">62</a> forced by an INDEPENDENT citable need, nothing present the objective does not</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> pay for. Earned by iteration, never by skipping work: as simple as the task</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> allows, no simpler than a single datum permits.</span>
+<span class="source-line" id="L65"><a href="#L65">65</a> </span>
+<span class="source-line" id="L66"><a href="#L66">66</a> **The Rabbit-Catcher (canonical battery: `ELEGANCE.md` Part II, ships with</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> the bundle):** the steering seat runs the full RC battery at PLAN APPROVAL</span>
+<span class="source-line" id="L68"><a href="#L68">68</a> and on any NEW mid-run element; round boundaries ask only RC-6 (&quot;still on the</span>
+<span class="source-line" id="L69"><a href="#L69">69</a> critical path?&quot;). Uncertain ⇒ PARK the element (zero further spend) + one</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> batched line in the next block the user already reads — never silent pursuit,</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> never ad-hoc interruption. Needs and hazards must be independent of their</span>
+<span class="source-line" id="L72"><a href="#L72">72</a> proposer (no self-authored justification records); malleability work is</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> never cut as &quot;unused capability&quot;; guards are judged by RC-G, never by</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> retirement. Verdicts: KEEP / HOLD (with written trigger or budget) / CUT</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> (logged).</span>
+<span class="source-line" id="L76"><a href="#L76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77">77</a> **THE SPEAKING LAW (John, 2026-08-16 — ELEGANCE.md Part III):** every ask,</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> HALT, or summary this skill puts to the user describes the DECISION, never</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> the machinery (a gate ask took FOUR attempts because it kept narrating waves</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> and gates); a few plain sentences carrying the two-three details that matter</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> + where the full detail lives; genuinely complicated content goes in NUMBERED</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> BATCHES, one at a time, each ending &quot;OK so far?&quot;; no seat/stamp/gate</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> vocabulary in the sentence the user must read; every ask ends with a question</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> answerable in one word AND carries a recommendation (what you would choose +</span>
+<span class="source-line" id="L85"><a href="#L85">85</a> one line of why + alternatives when the choice has them + &quot;or tell me</span>
+<span class="source-line" id="L86"><a href="#L86">86</a> something else&quot; — options are a convenience, never a cage).</span>
+<span class="source-line" id="L87"><a href="#L87">87</a> **Engine-enforced since 2026-09-05 (John):** after every wave&#x27;s gate is GREEN and the reviewers converge, the driver&#x27;s `elegance` seat runs the Rabbit-Catcher over the wave&#x27;s changed files (steering seat judges, review seat attacks); a CUT confirmed by the second seat is one fix iteration that removes the element and re-proves GREEN before GO; HOLDs ride EXECUTION-LOG.md as Grasscatcher lines; record: `.foreman/wave-N-elegance.md` (`bin/wave-workflow.js` `elegance`, `bin/wave-engine.mjs`).</span>
+<span class="source-line" id="L88"><a href="#L88">88</a> &lt;!-- /ELEGANCE-V2.1 --&gt;</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> &lt;!-- /ELEGANCE-LAW --&gt;</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> </span>
+<span class="source-line" id="L91"><a href="#L91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92">92</a> &gt; **Humans:** read `HUMAN.md` first. This file is the agent/engine protocol.</span>
+<span class="source-line" id="L93"><a href="#L93">93</a> </span>
+<span class="source-line" id="L94"><a href="#L94">94</a> # Foreman</span>
+<span class="source-line" id="L95"><a href="#L95">95</a> </span>
+<span class="source-line" id="L96"><a href="#L96">96</a> Autonomous multi-wave build orchestrator (working title &quot;code-execution-organizer&quot;).</span>
+<span class="source-line" id="L97"><a href="#L97">97</a> Foreman is a Claude Code **skill** invoked in a project folder. Given that</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> project&#x27;s *frozen* design + implementation-plan docs, it drives each</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> wave/sprint/section to done through fresh-context sub-agents, auto-advances to</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> the next wave, keeps the tree clean, prints running commentary, and **halts only</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> on a defined blocker set**.</span>
+<span class="source-line" id="L102"><a href="#L102">102</a> </span>
+<span class="source-line" id="L103"><a href="#L103">103</a> &gt; **Tier definition (Heavy vs regular · stakes-gated cross-model · seat mapping) + invocation</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> &gt; discipline (zero deliberation · the LOCKED global status table · run capture):** canonical in</span>
+<span class="source-line" id="L105"><a href="#L105">105</a> &gt; `AGENTS.md` (Foundry root on the author host; your install root in a distributed bundle) → &quot;Skill tiers&quot; / &quot;Invocation discipline&quot; / &quot;Run capture&quot;.</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> &gt; Trio build tier: `TRIO_TIER=heavy|standard` (standard is the build default). Do not re-define</span>
+<span class="source-line" id="L107"><a href="#L107">107</a> &gt; or deliberate any of it.</span>
+<span class="source-line" id="L108"><a href="#L108">108</a> </span>
+<span class="source-line" id="L109"><a href="#L109">109</a> &gt; **Status (2026-08-24, consolidated — the ONE status block; verified currency lives in</span>
+<span class="source-line" id="L110"><a href="#L110">110</a> &gt; `Skill Foundry/PLAN.md`): PRODUCTION — ~15 real builds shipped** (aurora,</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> &gt; researchPrime-upgrade, ramanujan, the Anchor rearchitecture 20/20 waves, most Foundry</span>
+<span class="source-line" id="L112"><a href="#L112">112</a> &gt; skills). Suite: `node --test &quot;test/*.test.mjs&quot;` (the bare directory form false-fails on</span>
+<span class="source-line" id="L113"><a href="#L113">113</a> &gt; fixture subdirs). The ground-truth gate is orchestrator-run (unforgeable); the JUDGE is a</span>
+<span class="source-line" id="L114"><a href="#L114">114</a> &gt; pure function, not an agent. Operationally hardened through 2026-07: async gate with</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> &gt; per-minute heartbeat + on-disk plan rebind each iteration; classified gate timeouts</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> &gt; (`[taxonomy:gate-timeout]`, child-tree kill, never a fake RED); per-wave scoped gates</span>
+<span class="source-line" id="L117"><a href="#L117">117</a> &gt; (0086); halt taxonomy prefixes on every reason; `review:degraded` honest seat-dropping</span>
+<span class="source-line" id="L118"><a href="#L118">118</a> &gt; (gate stays ground truth §5); EXECUTION-LOG.md orchestrator-appended on every GO.</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> &gt; **Halt recovery:** `--clear-halt` on a vacuous halt is REFUSED unless code landed;</span>
+<span class="source-line" id="L120"><a href="#L120">120</a> &gt; `--clear-halt --force` re-enters EXECUTE with eyes open; a PLAN-AMENDMENT clear</span>
+<span class="source-line" id="L121"><a href="#L121">121</a> &gt; re-enters EXECUTE at iteration 0; resume re-proves GREEN.</span>
+<span class="source-line" id="L122"><a href="#L122">122</a> &gt; **NEVER run `git clean -fd` in a Foreman workspace** — two total-project-loss</span>
+<span class="source-line" id="L123"><a href="#L123">123</a> &gt; events (journals 0013/0042). Non-convergence uses `git stash` (recoverable);</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> &gt; untracked deliverables are exactly what `git clean` destroys.</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> </span>
+<span class="source-line" id="L126"><a href="#L126">126</a> ## What Foreman is / is NOT</span>
+<span class="source-line" id="L127"><a href="#L127">127</a> </span>
+<span class="source-line" id="L128"><a href="#L128">128</a> - **Is:** a loop that takes a frozen plan and drives it to done wave by wave —</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>   EXECUTE -&gt; ADVERSARIAL-REVIEW -&gt; FIX -&gt; RE-REVIEW until convergence, then</span>
+<span class="source-line" id="L130"><a href="#L130">130</a>   auto-advance, with logging, hygiene, commits, and running commentary. **(built — see `bin/`)**</span>
+<span class="source-line" id="L131"><a href="#L131">131</a> - **Is NOT:** a planner. It never invents requirements, refactors for taste</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   outside the plan, or makes reserved architectural calls — those are **halts**.</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>   This anti-scope-creep contract is its most important property.</span>
+<span class="source-line" id="L134"><a href="#L134">134</a> </span>
+<span class="source-line" id="L135"><a href="#L135">135</a> ## Topology (the load-bearing rule)</span>
+<span class="source-line" id="L136"><a href="#L136">136</a> </span>
+<span class="source-line" id="L137"><a href="#L137">137</a> Do **not** parallelize code-writing — coding is the least-parallelizable task and</span>
+<span class="source-line" id="L138"><a href="#L138">138</a> parallel coders make conflicting implicit decisions (Anthropic + Cognition both</span>
+<span class="source-line" id="L139"><a href="#L139">139</a> agree; see `research1-out/.../01-report.md` F1/F2).</span>
+<span class="source-line" id="L140"><a href="#L140">140</a> </span>
+<span class="source-line" id="L141"><a href="#L141">141</a> | Phase | Topology |</span>
+<span class="source-line" id="L142"><a href="#L142">142</a> |---|---|</span>
+<span class="source-line" id="L143"><a href="#L143">143</a> | EXECUTE | single-threaded linear agent per wave; compress when long |</span>
+<span class="source-line" id="L144"><a href="#L144">144</a> | REVIEW | `REVIEWER_COUNT` (default 2) independent reviewers, **CONCURRENT** (default on), read-only, prompted to refute; **stakes-gated** — ordinary clean mid-run waves run 1, the full panel runs on the terminal wave / after fix iterations / `FOREMAN_FULL_REVIEW=1`; skipped entirely on RED intermediate iterations (the gate artifact IS the fix guidance) |</span>
+<span class="source-line" id="L145"><a href="#L145">145</a> | FIX | single-threaded linear agent |</span>
+<span class="source-line" id="L146"><a href="#L146">146</a> | JUDGE | a PURE FUNCTION (0 model calls); the **orchestrator-run ground-truth gate dominates** (§5) |</span>
+<span class="source-line" id="L147"><a href="#L147">147</a> </span>
+<span class="source-line" id="L148"><a href="#L148">148</a> `REVIEWER_COUNT` is one config var (default 2) — never hard-coded.</span>
+<span class="source-line" id="L149"><a href="#L149">149</a> Independence comes from separate sub-agent calls, never multi-persona-in-one-generation.</span>
+<span class="source-line" id="L150"><a href="#L150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151">151</a> ---</span>
+<span class="source-line" id="L152"><a href="#L152">152</a> </span>
+<span class="source-line" id="L153"><a href="#L153">153</a> ## §4 — Invocation / contract (the confirmation flow)</span>
+<span class="source-line" id="L154"><a href="#L154">154</a> </span>
+<span class="source-line" id="L155"><a href="#L155">155</a> On invocation, Foreman resolves the contract and **states it back for the user</span>
+<span class="source-line" id="L156"><a href="#L156">156</a> to confirm before building**. The deterministic, no-guess part is implemented in</span>
+<span class="source-line" id="L157"><a href="#L157">157</a> `bin/locate-plan.mjs` (which uses `bin/foreman-lib.mjs`):</span>
+<span class="source-line" id="L158"><a href="#L158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159">159</a> ```</span>
+<span class="source-line" id="L160"><a href="#L160">160</a> node foreman/bin/locate-plan.mjs [projectDir]      # human-readable contract</span>
+<span class="source-line" id="L161"><a href="#L161">161</a> node foreman/bin/locate-plan.mjs --json [projectDir]</span>
+<span class="source-line" id="L162"><a href="#L162">162</a> ```</span>
+<span class="source-line" id="L163"><a href="#L163">163</a> </span>
+<span class="source-line" id="L164"><a href="#L164">164</a> Exit codes: `0` contract resolved · `3` HALT-for-human · `2` internal error.</span>
+<span class="source-line" id="L165"><a href="#L165">165</a> </span>
+<span class="source-line" id="L166"><a href="#L166">166</a> 1. **Project folder** (cwd) is the project proxy.</span>
+<span class="source-line" id="L167"><a href="#L167">167</a> 2. **Frozen docs** — locate + state back the *description*, *implementation</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>    plan*, and *execution log*. Resolution is no-guess:</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>    - an explicit `foreman.config.json` `{ &quot;docs&quot;: {...} }` wins; else</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>    - a case-insensitive heuristic glob over top-level `*.md`.</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>    - **0 candidates for a role -&gt; HALT (missing).** **&gt;1 candidate -&gt; HALT</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>      (ambiguous; ask, never pick).** Foreman never guesses which file is the plan.</span>
+<span class="source-line" id="L173"><a href="#L173">173</a> 3. **Wave parsing** — waves are read from an explicit `## Wave N` heading</span>
+<span class="source-line" id="L174"><a href="#L174">174</a>    (`## Sprint N` / `## Section N` accepted as aliases) in the plan doc. Headings</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>    inside code fences are ignored. Wave numbers must be **contiguous 1..N**.</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>    - **No parseable wave structure -&gt; HALT.** Foreman never infers wave boundaries.</span>
+<span class="source-line" id="L177"><a href="#L177">177</a> 4. **Test discovery** — the build+test (gate) command, from the plan first</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>    (`test-command:` / `build-and-test:` / `gate-command:` line), else the project</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>    manifest (`package.json` `scripts.test` -&gt; `npm test`; `pyproject.toml` with</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>    pytest -&gt; `pytest`).</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>    - **No ground-truth test command found -&gt; HALT** (&quot;no ground truth -&gt; cannot gate&quot;).</span>
+<span class="source-line" id="L182"><a href="#L182">182</a> 5. **Project-DONE definition** — DONE = the last parsed wave GREEN (via the</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>    orchestrator-run gate) **and** any plan-level acceptance gate met. Foreman</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>    emits a final-state verdict and stops; it does **not** loop past the last wave.</span>
+<span class="source-line" id="L185"><a href="#L185">185</a> 6. **Budget** — `{max waves this run, max fix-iters/wave (default 4), max</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>    wall-clock}`; the Workflow `budget` token target is a secondary guard. **(enforced as a hard pre-flight gate)**</span>
+<span class="source-line" id="L187"><a href="#L187">187</a> 7. **Ambiguity gate (the linchpin).** Before acting, each execute/review agent</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>    must emit `answerable-from-frozen-docs: yes/no + cited plan line`. A `no` is a</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>    **HALT** (§6.4), never an autonomous decision. This is what makes &quot;no</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>    babysitting&quot; possible without scope creep. **(implemented: the execute/review</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>    agent prompts emit the gate; the engine cannot weaken it.)**</span>
+<span class="source-line" id="L192"><a href="#L192">192</a> </span>
+<span class="source-line" id="L193"><a href="#L193">193</a> ---</span>
+<span class="source-line" id="L194"><a href="#L194">194</a> </span>
+<span class="source-line" id="L195"><a href="#L195">195</a> ## §5 — Judge arbitration + the trusted ground-truth gate (reward-hacking fix)</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> </span>
+<span class="source-line" id="L197"><a href="#L197">197</a> **Evidence precedence:** OBSERVED test/command output -&gt; reproduced execution</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> data -&gt; directly-read authoritative source -&gt; theory/argument.</span>
+<span class="source-line" id="L199"><a href="#L199">199</a> </span>
+<span class="source-line" id="L200"><a href="#L200">200</a> - **The gate is run by the orchestrator, not by a sub-agent.** The deterministic</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   Workflow step executes the build+test command, captures exit code + stdout/stderr</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   to a **gate-artifact file that sub-agents cannot write**; the judge reads only</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   that artifact. Sub-agent-pasted &quot;command output&quot; in a wave log is **never** the</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   gate of record. (Closes the forge-the-output hole.) **(implemented in `bin/wave-engine.mjs` `runGate`)**</span>
+<span class="source-line" id="L205"><a href="#L205">205</a> - **Anti-test-weakening:** snapshot the test inventory + assertion/skip count at</span>
+<span class="source-line" id="L206"><a href="#L206">206</a>   wave start. A wave that reduces test count/coverage or adds `skip`/`xfail`</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   without an explicit plan citation is an **automatic HALT**, not a downgradeable</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>   finding.</span>
+<span class="source-line" id="L209"><a href="#L209">209</a> - **Vacuous-GREEN guard:** if the GREEN gate does not execute any artifact this</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>   wave changed (coverage-of-changed-files check), it is **not** a GO — HALT as</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>   &quot;gate proves nothing about this wave.&quot;</span>
+<span class="source-line" id="L212"><a href="#L212">212</a> - **Judge rules:** a GREEN gate outranks reviewer prose; to block GREEN a</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>   reviewer must produce a **failing repro command + output**. The orchestrator&#x27;s</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>   readiness guard may HALT on missing required tests; the judge may not override</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>   passing real output with argument.</span>
+<span class="source-line" id="L216"><a href="#L216">216</a> - **Current-wave readiness:** explicitly declared required test files (including</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>   `**Deliverables:** ... Test file test/wNN-name.test.mjs with ids: ...`) must</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>   exist after execute and before GO, including resume with a proven ledger.</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>   Unrelated source fixes and an older passing suite do not meet this source gate.</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>   Documentation, spec, example and fixture references are not test declarations.</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>   The bounded declaration grammar accepts `Test file &lt;path&gt;` at a sentence or</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   semicolon clause start, after an optional bullet/Deliverables label, or following</span>
+<span class="source-line" id="L223"><a href="#L223">223</a>   an add/create/implement/write/deliver/provide directive or `Replace ... with`.</span>
+<span class="source-line" id="L224"><a href="#L224">224</a>   `required`/`new` modifiers are supported. Bare paths, including Deliverables</span>
+<span class="source-line" id="L225"><a href="#L225">225</a>   bullets, do not create required-test declarations; fenced examples are ignored.</span>
+<span class="source-line" id="L226"><a href="#L226">226</a>   A `[taxonomy:missing-required-tests]` halt supports `--resume --clear-halt --force`</span>
+<span class="source-line" id="L227"><a href="#L227">227</a>   to re-enter EXECUTE at iteration 0 while preserving the prior ledger. Missing</span>
+<span class="source-line" id="L228"><a href="#L228">228</a>   tests still HALT; fresh gate and review are required before GO. Without force,</span>
+<span class="source-line" id="L229"><a href="#L229">229</a>   clear-halt keeps the ordinary gate re-entry and cannot skip this readiness guard.</span>
+<span class="source-line" id="L230"><a href="#L230">230</a> - **Anti-sycophancy:** reviewers run read-only, are prompted to **refute**, cite</span>
+<span class="source-line" id="L231"><a href="#L231">231</a>   `file:line` or `command+output`; a **BLOCKER requires &gt;=2 independent reviewers</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>   to agree**.</span>
+<span class="source-line" id="L233"><a href="#L233">233</a> - **Finding identity:** every finding carries a stable id (`file:line + rule`);</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>   convergence = zero open BLOCKER/MAJOR with verified closure; a fix that closes</span>
+<span class="source-line" id="L235"><a href="#L235">235</a>   A but opens B is tracked to prevent false convergence / oscillation.</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   The established wave-wide `wave-not-implemented` rule alone combines citations</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>   across files; retain every original reviewer/repro and count each reviewer once.</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   Orchestrator-owned `.foreman/wave-N-review-I.json` records expected, completed</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   and failed seats, bounded originals, merged evidence and decision before elegance.</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>   A round-specific copy preserves prior evidence when resume repeats an iteration.</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>   A pending round has no approval; a degraded round names missing votes explicitly.</span>
+<span class="source-line" id="L242"><a href="#L242">242</a> </span>
+<span class="source-line" id="L243"><a href="#L243">243</a> ---</span>
+<span class="source-line" id="L244"><a href="#L244">244</a> </span>
+<span class="source-line" id="L245"><a href="#L245">245</a> ## §5b — The DELTA-COVERAGE gate (`bin/delta-coverage-gate.mjs`, journal 0091)</span>
+<span class="source-line" id="L246"><a href="#L246">246</a> </span>
+<span class="source-line" id="L247"><a href="#L247">247</a> **A wave that adds a SURFACE and ships zero tests is a BLOCKER, not a nit.**</span>
+<span class="source-line" id="L248"><a href="#L248">248</a> </span>
+<span class="source-line" id="L249"><a href="#L249">249</a> Why this is its own gate: a green suite is not evidence that a wave is covered.</span>
+<span class="source-line" id="L250"><a href="#L250">250</a> Foreman built a subsystem GREEN that delivered **8 HTTP routes, 13 functions and</span>
+<span class="source-line" id="L251"><a href="#L251">251</a> ~670 lines with not one test file mentioning it** — and the existing suite stayed</span>
+<span class="source-line" id="L252"><a href="#L252">252</a> green *precisely because* the new code was untested. So &quot;0 tests for 670 new lines&quot;</span>
+<span class="source-line" id="L253"><a href="#L253">253</a> and &quot;full coverage&quot; produced the same verdict. Six real defects were found later,</span>
+<span class="source-line" id="L254"><a href="#L254">254</a> by reading.</span>
+<span class="source-line" id="L255"><a href="#L255">255</a> </span>
+<span class="source-line" id="L256"><a href="#L256">256</a> **Enforced in engine (journal 0092):** after vacuous-GREEN passes and before</span>
+<span class="source-line" id="L257"><a href="#L257">257</a> `finishGo`, `wave-engine.mjs` runs `checkDeltaCoverage` on the wave&#x27;s changed</span>
+<span class="source-line" id="L258"><a href="#L258">258</a> files + test-file text; writes `.foreman/wave-N-delta-coverage.json`; **HALTs**</span>
+<span class="source-line" id="L259"><a href="#L259">259</a> when a surface is uncovered. Soft-skip only on unexpected throw (never silent</span>
+<span class="source-line" id="L260"><a href="#L260">260</a> suppress of a real fail). Sibling of Crucible&#x27;s property-gate emit (0080/0081).</span>
+<span class="source-line" id="L261"><a href="#L261">261</a> </span>
+<span class="source-line" id="L262"><a href="#L262">262</a> Run `checkDeltaCoverage({changedFiles, testMentions})` per wave:</span>
+<span class="source-line" id="L263"><a href="#L263">263</a> </span>
+<span class="source-line" id="L264"><a href="#L264">264</a> 1. **Delta, not percentage.** The unit is *what this wave added*. A global coverage</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>    % is gameable and stays comfortably green while an entire subsystem is bare —</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>    which is exactly how this happened. An unrelated test in the same wave does not</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>    satisfy the gate.</span>
+<span class="source-line" id="L268"><a href="#L268">268</a> 2. **Surfaces are:** HTTP routes, handlers, CLI verbs, persistence paths, frontend</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>    entry points. Adding one obliges a test that *names* it.</span>
+<span class="source-line" id="L270"><a href="#L270">270</a> 3. **Honor the repo&#x27;s own convention.** Where a repo has stub gates</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>    (`tests/test_&lt;subsystem&gt;_&lt;wave&gt;.py`), a new subsystem without one is an</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>    INCOMPLETE wave — check for the convention rather than assuming a global suite.</span>
+<span class="source-line" id="L273"><a href="#L273">273</a> 4. **Emit the wire-up assertions by default** for any wave adding routes (static</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>    text checks, no server boot — roughly five tests): every route reaches a handler</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>    that exists; every handler is reachable; every endpoint the frontend calls is</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>    declared; every route carries its expected auth policy; each failure path returns</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>    its documented status code and text.</span>
+<span class="source-line" id="L278"><a href="#L278">278</a> 5. **Failure-path tests assert the USER-VISIBLE TEXT,** not just a non-crash. The</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>    recurring defect in this family of work is a *confident wrong answer* — &quot;no</span>
+<span class="source-line" id="L280"><a href="#L280">280</a>    projects&quot;, &quot;queue 0&quot; — which a happy-path test cannot see.</span>
+<span class="source-line" id="L281"><a href="#L281">281</a> 6. **No fixed-rate poller against an endpoint that spawns a process** — it ships with</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>    visibility gating and failure backoff, or it does not ship.</span>
+<span class="source-line" id="L283"><a href="#L283">283</a> </span>
+<span class="source-line" id="L284"><a href="#L284">284</a> ## §6 — Halt-for-human conditions (the only things that wake you)</span>
+<span class="source-line" id="L285"><a href="#L285">285</a> </span>
+<span class="source-line" id="L286"><a href="#L286">286</a> 1. Budget / iter / wall-clock cap.</span>
+<span class="source-line" id="L287"><a href="#L287">287</a> 2. Verdict **NO-GO**.</span>
+<span class="source-line" id="L288"><a href="#L288">288</a> 3. **Non-convergence** (`MAX_ITERS`, default 4, no GO) — `git stash`/branch the</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>    failed attempt and record the ref so the tree is left clean and recoverable.</span>
+<span class="source-line" id="L290"><a href="#L290">290</a> 4. **Ambiguity / new-requirement / plan-deviation** — any</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>    `answerable-from-docs: no` (§4.7), or a wave diff with no traceable plan basis.</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>    - **`PLAN-AMENDMENT-PROPOSAL` (sub-type).** When a build-time discovery shows</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>      the *frozen plan itself* is wrong/incomplete for the current wave (an</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>      assumption falsified, an API not behaving as the plan assumed) — distinct</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>      from mere ambiguity above — a review/execute agent may attach a concrete</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>      proposed resolution: a **proposed diff** to the plan doc **plus a rationale**.</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>      This is **still a HALT** — no silent re-planning. Foreman records the proposal</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>      in the checkpoint `pending_action` for one-click human approval; on approval +</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>      resume the bounded amendment is applied (or recorded as applied) and the wave</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>      continues. The human stays in the loop and must approve before any plan change</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>      takes effect; the §4.7 ambiguity gate and every §5 guard are unchanged. F3</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>      only attaches a resolution to a halt that would otherwise be bare.</span>
+<span class="source-line" id="L303"><a href="#L303">303</a> 5. **Unrecoverable error** — can&#x27;t verify a load-bearing claim; repo in bad</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>    state; an irreversible action&#x27;s gates didn&#x27;t both verify; invalid/torn</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>    checkpoint on resume (§8).</span>
+<span class="source-line" id="L306"><a href="#L306">306</a> 6. **Test-integrity / vacuous-GREEN** halts (§5).</span>
+<span class="source-line" id="L307"><a href="#L307">307</a> </span>
+<span class="source-line" id="L308"><a href="#L308">308</a> On every halt: write the checkpoint (§8) with the **exact recommended next</span>
+<span class="source-line" id="L309"><a href="#L309">309</a> action** in `pending_action`. In Phase 0, the `bin` CLIs signal a HALT with</span>
+<span class="source-line" id="L310"><a href="#L310">310</a> **exit code 3** and a `HALT: &lt;reason&gt;` line on stderr.</span>
+<span class="source-line" id="L311"><a href="#L311">311</a> </span>
+<span class="source-line" id="L312"><a href="#L312">312</a> ---</span>
+<span class="source-line" id="L313"><a href="#L313">313</a> </span>
+<span class="source-line" id="L314"><a href="#L314">314</a> ## §8 — State, durability, resume (zero context bloat)</span>
+<span class="source-line" id="L315"><a href="#L315">315</a> </span>
+<span class="source-line" id="L316"><a href="#L316">316</a> - Sub-agents communicate via **file paths**, never by dumping transcripts into</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>   the orchestrator. **(implemented)**</span>
+<span class="source-line" id="L318"><a href="#L318">318</a> - **Per-wave logs + gate artifact:** the orchestrator-written gate artifact is</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>   `.foreman/wave-&lt;n&gt;-gate.json` (`written_by:&quot;orchestrator&quot;`); the judge reads</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>   only that. **(implemented)**</span>
+<span class="source-line" id="L321"><a href="#L321">321</a> - **Canonical checkpoint `foreman-checkpoint.json`** (project root). Schema</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>   (implemented in `bin/foreman-lib.mjs`, exercised by `bin/checkpoint.mjs`):</span>
+<span class="source-line" id="L323"><a href="#L323">323</a> </span>
+<span class="source-line" id="L324"><a href="#L324">324</a>   | field | type | notes |</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>   |---|---|---|</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>   | `plan_path` | string | absolute path to the plan doc |</span>
+<span class="source-line" id="L327"><a href="#L327">327</a>   | `current_wave` | number | 1..N |</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>   | `total_waves` | number | parsed count |</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>   | `intra_wave_step` | string | `execute`\|`review`\|`fix`\|`judge`\|`gate`\|`done` |</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>   | `iteration` | number | fix&lt;-&gt;review iteration within the wave |</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>   | `reviewer_count` | number | default 2 |</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>   | `budget_remaining` | object | `{waves, fix_iters, wall_clock_min}` |</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>   | `last_verdict` | string\|null | `GO`\|`NO-GO`\|`HALT`\|null |</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>   | `last_commit` | string\|null | HEAD at last checkpoint |</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>   | `open_findings` | array | `[{id, severity, file, line, rule, status}]` |</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>   | `pending_action` | string\|null | exact recommended next action on halt |</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>   | `stash_ref` | string\|null | non-convergence stash/branch ref |</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>   | `status` | string | `running`\|`halted`\|`done` |</span>
+<span class="source-line" id="L339"><a href="#L339">339</a> </span>
+<span class="source-line" id="L340"><a href="#L340">340</a> - **Atomic writes:** serialize -&gt; write `&lt;file&gt;.tmp` -&gt; `fsync` -&gt; atomic</span>
+<span class="source-line" id="L341"><a href="#L341">341</a>   `rename` over the destination. A torn write can never replace a valid file.</span>
+<span class="source-line" id="L342"><a href="#L342">342</a> - **On resume, if the JSON is invalid (torn) or breaches the schema -&gt; HALT.**</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>   Never best-effort-parse a torn file.</span>
+<span class="source-line" id="L344"><a href="#L344">344</a> - **Resume reconciliation (Phase 2):** compare `git rev-parse HEAD` to</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>   checkpoint `last_commit`; if HEAD is ahead, adopt HEAD and skip the re-commit</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>   (prevents double-apply). Intra-wave resume uses `intra_wave_step`.</span>
+<span class="source-line" id="L347"><a href="#L347">347</a> </span>
+<span class="source-line" id="L348"><a href="#L348">348</a> CLI (Phase 0):</span>
+<span class="source-line" id="L349"><a href="#L349">349</a> </span>
+<span class="source-line" id="L350"><a href="#L350">350</a> ```</span>
+<span class="source-line" id="L351"><a href="#L351">351</a> node foreman/bin/checkpoint.mjs new &lt;file&gt; --plan &lt;path&gt; --waves &lt;N&gt; [--reviewers K]</span>
+<span class="source-line" id="L352"><a href="#L352">352</a> node foreman/bin/checkpoint.mjs read &lt;file&gt;          # HALT (exit 3) on torn/invalid</span>
+<span class="source-line" id="L353"><a href="#L353">353</a> node foreman/bin/checkpoint.mjs roundtrip &lt;file&gt; --plan &lt;path&gt; --waves &lt;N&gt;</span>
+<span class="source-line" id="L354"><a href="#L354">354</a> node foreman/bin/checkpoint.mjs dashboard &lt;file&gt;     # render §10 block</span>
+<span class="source-line" id="L355"><a href="#L355">355</a> ```</span>
+<span class="source-line" id="L356"><a href="#L356">356</a> </span>
+<span class="source-line" id="L357"><a href="#L357">357</a> ---</span>
+<span class="source-line" id="L358"><a href="#L358">358</a> </span>
+<span class="source-line" id="L359"><a href="#L359">359</a> ## §10 — Running commentary (best-effort telemetry)</span>
+<span class="source-line" id="L360"><a href="#L360">360</a> </span>
+<span class="source-line" id="L361"><a href="#L361">361</a> Suppress sub-agent transcripts; narrate via `log()` / status line. Token %,</span>
+<span class="source-line" id="L362"><a href="#L362">362</a> context fill, and rate-window status are **best-effort with graceful fallback**</span>
+<span class="source-line" id="L363"><a href="#L363">363</a> (the harness exposes no live quota API; window status is derived reactively from</span>
+<span class="source-line" id="L364"><a href="#L364">364</a> observed 429s, e.g. `window: OK` / `throttled @ HH:MM`). Rendered by</span>
+<span class="source-line" id="L365"><a href="#L365">365</a> `renderDashboard()` in `bin/foreman-lib.mjs`:</span>
+<span class="source-line" id="L366"><a href="#L366">366</a> </span>
+<span class="source-line" id="L367"><a href="#L367">367</a> (Sample dashboard rendering moved to `HUMAN.md` — 2026-08-24 elegance sweep.)</span>
+<span class="source-line" id="L368"><a href="#L368">368</a> </span>
+<span class="source-line" id="L369"><a href="#L369">369</a> ---</span>
+<span class="source-line" id="L370"><a href="#L370">370</a> </span>
+<span class="source-line" id="L371"><a href="#L371">371</a> ## Files in this skill</span>
+<span class="source-line" id="L372"><a href="#L372">372</a> </span>
+<span class="source-line" id="L373"><a href="#L373">373</a> **Engine (Node — the orchestrator + gate live here, never in a sub-agent):**</span>
+<span class="source-line" id="L374"><a href="#L374">374</a> - `bin/foreman-lib.mjs` — parsers + state primitives: `locateDocs`, `parseWaves`,</span>
+<span class="source-line" id="L375"><a href="#L375">375</a>   `discoverTestCommand`, `projectDoneDefinition`, checkpoint schema + atomic</span>
+<span class="source-line" id="L376"><a href="#L376">376</a>   `writeCheckpointAtomic`/`readCheckpoint`, `makeBudget`, `renderDashboard`.</span>
+<span class="source-line" id="L377"><a href="#L377">377</a>   Recoverable refusals throw `HaltError`.</span>
+<span class="source-line" id="L378"><a href="#L378">378</a> - `bin/wave-engine.mjs` — the one-wave engine (`runWave`): EXECUTE -&gt; orchestrator</span>
+<span class="source-line" id="L379"><a href="#L379">379</a>   GATE -&gt; sequential REVIEWERS -&gt; JUDGE -&gt; bounded FIX -&gt; re-gate, with all §5</span>
+<span class="source-line" id="L380"><a href="#L380">380</a>   guards (real-tests-ran GREEN predicate, anti-weakening, vacuous-GREEN, finding</span>
+<span class="source-line" id="L381"><a href="#L381">381</a>   identity). Language-aware gate for Node `--test` and `python -m pytest -v`.</span>
+<span class="source-line" id="L382"><a href="#L382">382</a> - `bin/project-engine.mjs` — multi-wave auto-advance (`runProject`): ascending</span>
+<span class="source-line" id="L383"><a href="#L383">383</a>   truth-gated advance, project-DONE, budget pre-flight, wave/intra-wave/git resume.</span>
+<span class="source-line" id="L384"><a href="#L384">384</a> - `bin/delta-coverage-gate.mjs` — §5b: classifies a wave&#x27;s changed files, flags any</span>
+<span class="source-line" id="L385"><a href="#L385">385</a>   SURFACE (route / handler / CLI verb / persistence path / frontend entry) that no</span>
+<span class="source-line" id="L386"><a href="#L386">386</a>   test names, and returns a **BLOCKER**. Pure predicates over a file list — no git</span>
+<span class="source-line" id="L387"><a href="#L387">387</a>   spawn. `renderDeltaCoverageRequirement()` emits the wave text. **Wired into the</span>
+<span class="source-line" id="L388"><a href="#L388">388</a>   live GO path** in `wave-engine.mjs` (journal **0092**).</span>
+<span class="source-line" id="L389"><a href="#L389">389</a> - `bin/git-hygiene.mjs` — §9 git hygiene: dedicated work branch, commit-only-on-GO,</span>
+<span class="source-line" id="L390"><a href="#L390">390</a>   dirty-tree HALT, repo-boundary containment, crash reconciliation. Never pushes.</span>
+<span class="source-line" id="L391"><a href="#L391">391</a> - `bin/wave-workflow.js` — the production driver seam: `makeAgentDriver({agent})`</span>
+<span class="source-line" id="L392"><a href="#L392">392</a>   turns an injected `agent()` (Workflow `agent()`, the Agent tool, or a headless</span>
+<span class="source-line" id="L393"><a href="#L393">393</a>   `claude -p` child) into the engine&#x27;s {execute, review, fix} steps.</span>
+<span class="source-line" id="L394"><a href="#L394">394</a> - `bin/drivers/scripted-driver.mjs` — deterministic no-LLM driver used by the tests.</span>
+<span class="source-line" id="L395"><a href="#L395">395</a> - `bin/locate-plan.mjs`, `bin/checkpoint.mjs`, `bin/run-wave.mjs`,</span>
+<span class="source-line" id="L396"><a href="#L396">396</a>   `bin/run-project.mjs` — CLIs (contract resolver, checkpoint IO, single-wave and</span>
+<span class="source-line" id="L397"><a href="#L397">397</a>   whole-project runners).</span>
+<span class="source-line" id="L398"><a href="#L398">398</a> </span>
+<span class="source-line" id="L399"><a href="#L399">399</a> **Why a Node process, not a Workflow script (design finding L):** a Workflow-tool</span>
+<span class="source-line" id="L400"><a href="#L400">400</a> script has no filesystem/process access, but §5 requires the orchestrator to spawn</span>
+<span class="source-line" id="L401"><a href="#L401">401</a> the test command and write a gate artifact sub-agents cannot forge. So the</span>
+<span class="source-line" id="L402"><a href="#L402">402</a> orchestrator + gate + state live in this Node engine; the Workflow tool / sub-agents</span>
+<span class="source-line" id="L403"><a href="#L403">403</a> drive only the model steps via the `agent()` seam.</span>
+<span class="source-line" id="L404"><a href="#L404">404</a> </span>
+<span class="source-line" id="L405"><a href="#L405">405</a> **Tests &amp; fixtures:** `test/*.test.mjs` (106 passing), `fixtures/canonical-project/`</span>
+<span class="source-line" id="L406"><a href="#L406">406</a> (Node, ships red), `fixtures/py-canonical/` (pytest, ships red), and the</span>
+<span class="source-line" id="L407"><a href="#L407">407</a> `test/neg-*` HALT cases.</span>
+<span class="source-line" id="L408"><a href="#L408">408</a> </span>
+<span class="source-line" id="L409"><a href="#L409">409</a> ## How to invoke</span>
+<span class="source-line" id="L410"><a href="#L410">410</a> </span>
+<span class="source-line" id="L411"><a href="#L411">411</a> &gt; **⏱ STATUS UPDATES TO CHAT — the launch pattern that makes the 10-min rule actually fire</span>
+<span class="source-line" id="L412"><a href="#L412">412</a> &gt; (2026-07-11 fix).** A Foreman build runs for hours. If a driving session launches the engine as a</span>
+<span class="source-line" id="L413"><a href="#L413">413</a> &gt; BLOCKING foreground call, the session is frozen for the whole run and CANNOT post updates — that is</span>
+<span class="source-line" id="L414"><a href="#L414">414</a> &gt; why status cadence silently goes dark. So whenever a Claude session drives a build:</span>
+<span class="source-line" id="L415"><a href="#L415">415</a> &gt; 1. **Launch the engine in the BACKGROUND** (Bash `run_in_background: true` — or `go.ps1` spawned</span>
+<span class="source-line" id="L416"><a href="#L416">416</a> &gt;    detached), NEVER a foreground call. The launch returns immediately and the session stays free.</span>
+<span class="source-line" id="L417"><a href="#L417">417</a> &gt; 2. **Arm the cadence at launch** — `ScheduleWakeup` (~600s) or `/loop 10m`, the moment the run starts.</span>
+<span class="source-line" id="L418"><a href="#L418">418</a> &gt; 3. **Each tick, relay — shell-free:** the engine writes the LOCKED Status table to</span>
+<span class="source-line" id="L419"><a href="#L419">419</a> &gt;    `&lt;projectDir&gt;/_foreman-status.log` at t=0, every ~10 min, and on halt/done. READ its tail with the</span>
+<span class="source-line" id="L420"><a href="#L420">420</a> &gt;    Read tool (never spawn a shell) and POST the latest status to chat in the LOCKED Status-table format —</span>
+<span class="source-line" id="L421"><a href="#L421">421</a> &gt;    canonical definition in ONE place: the canonical `AGENTS.md` → &quot;Long-run progress updates&quot;</span>
+<span class="source-line" id="L422"><a href="#L422">422</a> &gt;    (`[HH:MM]` header · Effort/Doing/Status/Tests/Blocker/Procs/**Journal** rows · ETA + To do footer).</span>
+<span class="source-line" id="L423"><a href="#L423">423</a> &gt;    The **Journal** row (mandatory, `none` when empty) recaps everything journaled since the last tick —</span>
+<span class="source-line" id="L424"><a href="#L424">424</a> &gt;    the engine log is the data source; the SESSION composes the Journal row from `journal/`.</span>
+<span class="source-line" id="L425"><a href="#L425">425</a> &gt;    The chat window is the PRIMARY channel (global AGENTS.md); the log is the data source.</span>
+<span class="source-line" id="L426"><a href="#L426">426</a> &gt; 4. **Stop the cadence** when the checkpoint `status` flips to `halted`/`done`, or the background task</span>
+<span class="source-line" id="L427"><a href="#L427">427</a> &gt;    notifies completion. The engine&#x27;s own timer is the fallback if the session misses a tick — but only</span>
+<span class="source-line" id="L428"><a href="#L428">428</a> &gt;    the session can reach chat, so the background+relay pattern is mandatory, not optional.</span>
+<span class="source-line" id="L429"><a href="#L429">429</a> </span>
+<span class="source-line" id="L430"><a href="#L430">430</a> 1. **Resolve the contract first.** From the project folder, run</span>
+<span class="source-line" id="L431"><a href="#L431">431</a>    `node &lt;skill&gt;/bin/locate-plan.mjs .`. If it prints `HALT:` (exit 3), fix the</span>
+<span class="source-line" id="L432"><a href="#L432">432</a>    named problem (add the missing doc, add `## Wave N` headings, declare a</span>
+<span class="source-line" id="L433"><a href="#L433">433</a>    `test-command:`) and re-invoke — Foreman never proceeds on a guessed contract.</span>
+<span class="source-line" id="L434"><a href="#L434">434</a> 2. **Dry-run the engine deterministically** (no LLM, reproducible) with the</span>
+<span class="source-line" id="L435"><a href="#L435">435</a>    scripted driver: `node &lt;skill&gt;/bin/run-project.mjs &lt;projectDir&gt;` (add `--git`</span>
+<span class="source-line" id="L436"><a href="#L436">436</a>    for commit-on-GO, `--max-waves`/`--max-wallclock-sec` for a budget cap,</span>
+<span class="source-line" id="L437"><a href="#L437">437</a>    `--resume` to continue from a checkpoint).</span>
+<span class="source-line" id="L438"><a href="#L438">438</a> 3. **Drive it with live sub-agents** using the robust wrapper script:</span>
+<span class="source-line" id="L439"><a href="#L439">439</a>    `powershell -File &lt;skill&gt;/bin/go.ps1 -Project &lt;projectDir&gt; [-Resume]`</span>
+<span class="source-line" id="L440"><a href="#L440">440</a>    The script automatically handles stale locks and executes through the backend registry (every subscription driver: `claude`, `chatgpt-cli`, `grok-cli`, `gemini-cli`). Seats come from the **Anchor dashboard** (`coding_family` → execute/fix, `review_family` → review; Anchor data-dir `settings.json` → `~/.anchor/model_prefs.json`) — a `TRIO_DRIVER` env is a per-run override, never the source. The wrapper also requires `$env:CRUCIBLE_AGENT_LIVE=&quot;1&quot;` to allow live billable agents.</span>
+<span class="source-line" id="L441"><a href="#L441">441</a> 4. **Per-role model routing (the coding family codes, the review family reviews — whatever the dashboard selects; 2026-09-04).**</span>
+<span class="source-line" id="L442"><a href="#L442">442</a>    The dashboard prefs seat every role by default. To pin MODELS per role for one project, add a `&quot;models&quot;` block to the project&#x27;s `foreman.config.json` (the example shows a gemini review seat; use the driver of the family the dashboard selects):</span>
+<span class="source-line" id="L443"><a href="#L443">443</a>    ```json</span>
+<span class="source-line" id="L444"><a href="#L444">444</a>    { &quot;models&quot;: { &quot;execute&quot;: &quot;claude:claude-fable-5&quot;, &quot;fix&quot;: &quot;claude:claude-fable-5&quot;, &quot;review&quot;: &quot;gemini-cli:gemini-3.1-pro&quot; } }</span>
+<span class="source-line" id="L445"><a href="#L445">445</a>    ```</span>
+<span class="source-line" id="L446"><a href="#L446">446</a>    `run-live.mjs` exports each entry as per-role env (`CLAUDE_MODEL_&lt;ROLE&gt;` for claude;</span>
+<span class="source-line" id="L447"><a href="#L447">447</a>    `TRIO_DRIVER_&lt;ROLE&gt;` + `TRIO_MODEL_&lt;ROLE&gt;` for another backend) and both driver</span>
+<span class="source-line" id="L448"><a href="#L448">448</a>    ladders resolve them (`resolveClaudeModel` / `resolveGeminiModel`; explicit env</span>
+<span class="source-line" id="L449"><a href="#L449">449</a>    always wins over config). The run header logs the resolved routing</span>
+<span class="source-line" id="L450"><a href="#L450">450</a>    (`model routing: execute=… · review=… · fix=…`) and every call&#x27;s served model is</span>
+<span class="source-line" id="L451"><a href="#L451">451</a>    attested per SR-5 — check both when verifying a routing change.</span>
+<span class="source-line" id="L452"><a href="#L452">452</a> </span>
+<span class="source-line" id="L453"><a href="#L453">453</a> ## Standing rules (sleep-cycle promotion 2026-08-15 — journals 0093/0099/0100/0101)</span>
+<span class="source-line" id="L454"><a href="#L454">454</a> </span>
+<span class="source-line" id="L455"><a href="#L455">455</a> - **A GO with `last_commit: null` HALTs.** The EXECUTION-LOG append is part of</span>
+<span class="source-line" id="L456"><a href="#L456">456</a>   the GO transaction, not a courtesy; a checkpoint from a foreign project is</span>
+<span class="source-line" id="L457"><a href="#L457">457</a>   refused, never adopted; the gate refutes the reviewer — a reviewer verdict</span>
+<span class="source-line" id="L458"><a href="#L458">458</a>   that contradicts the orchestrator gate loses. (0093)</span>
+<span class="source-line" id="L459"><a href="#L459">459</a> - **A test that enters through a different door than the human proves the</span>
+<span class="source-line" id="L460"><a href="#L460">460</a>   wrong thing.** §5b proves a new surface HAS a test; it does not prove the</span>
+<span class="source-line" id="L461"><a href="#L461">461</a>   surface is REACHABLE from the user&#x27;s entry point — check reachability when</span>
+<span class="source-line" id="L462"><a href="#L462">462</a>   the wave&#x27;s deliverable is user-facing. (0099, open engine work)</span>
+<span class="source-line" id="L463"><a href="#L463">463</a> - **`--clear-halt` clears a STATE, not a defect.** Its refusal check is a</span>
+<span class="source-line" id="L464"><a href="#L464">464</a>   regex on halt text, not proof the remedy landed — clearing without landing</span>
+<span class="source-line" id="L465"><a href="#L465">465</a>   the named remedy re-buys the same halt. (0100)</span>
+<span class="source-line" id="L466"><a href="#L466">466</a> - **The gate command must be a TEST RUNNER that emits counts.** A declared</span>
+<span class="source-line" id="L467"><a href="#L467">467</a>   gate that cannot count tests gates nothing; name the remedy in the halt</span>
+<span class="source-line" id="L468"><a href="#L468">468</a>   text. (0088 crucible / 0101)</span>
+<span class="source-line" id="L469"><a href="#L469">469</a> </span>
+<span class="source-line" id="L470"><a href="#L470">470</a> ## Usage journal (sleep-loop feed — append after every REAL run)</span>
+<span class="source-line" id="L471"><a href="#L471">471</a> </span>
+<span class="source-line" id="L472"><a href="#L472">472</a> At the end of any real (non-test) run of this skill, append ONE entry to</span>
+<span class="source-line" id="L473"><a href="#L473">473</a> `journal/` in this skill folder as `NNNN-&lt;slug&gt;.md` (next number = **max(existing NNNN)+1 over the WHOLE directory** — gandalf accumulated 32 colliding ids because sessions read the low numbers as the frontier; APPEND-ONLY —</span>
+<span class="source-line" id="L474"><a href="#L474">474</a> a correction is a new entry, never an edit). Keep it under ~15 lines, honest over</span>
+<span class="source-line" id="L475"><a href="#L475">475</a> polished, with the 7 canonical fields (see the Skill Foundry&#x27;s</span>
+<span class="source-line" id="L476"><a href="#L476">476</a> `planning/portfolio-program/src/journal.mjs`): id, skill, situation, context,</span>
+<span class="source-line" id="L477"><a href="#L477">477</a> observation, outcome (worked | friction | failed | refused), provenance</span>
+<span class="source-line" id="L478"><a href="#L478">478</a> (genuine-execution | seeded — only genuine-execution corroborates).</span>
+<span class="source-line" id="L479"><a href="#L479">479</a> No journal entries → the sleep loop has nothing to learn from.</span>
+<span class="source-line" id="L480"><a href="#L480">480</a> </span>
+<span class="source-line" id="L481"><a href="#L481">481</a> **Auto-capture (2026-07-11):** `bin/run-live.mjs` now writes the machine-readable training</span>
+<span class="source-line" id="L482"><a href="#L482">482</a> record to `journal/runs/&lt;ts&gt;.json` AUTOMATICALLY at the end of every run (project, params,</span>
+<span class="source-line" id="L483"><a href="#L483">483</a> per-wave outcomes, halt reason, tier, duration — the AGENTS.md &quot;Run capture&quot; standard) and</span>
+<span class="source-line" id="L484"><a href="#L484">484</a> emits the LOCKED global Status table to the status log at t=0, every ~10 min, and at</span>
+<span class="source-line" id="L485"><a href="#L485">485</a> completion. The human NNNN entry above is for LESSONS — write one when a run taught you</span>
+<span class="source-line" id="L486"><a href="#L486">486</a> something; the mechanical record is already handled.</span></pre></main></body></html>

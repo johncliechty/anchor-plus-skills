@@ -1,0 +1,218 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ledger · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>ledger</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/seam/commission-ledger.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 fd70fdcdcf11ce5e5d02fa199a619c708852c2b78a5249a5e5eb7f15859e207b</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf advisor — the unforgeable orchestrator-minted commission-id LEDGER (Wave W2a).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // THE MECHANISM the anti-laundering honor-system scaffold (seam/anti-laundering.mjs) was waiting</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // for. In Increment 1 `resolveCommissionId` could only ever return UNRESOLVABLE_NO_LEDGER — there</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // was no oracle of authenticity, so the content-binding canaries B2&#x27; (a forged / unresolvable</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> // commission-id FAILS) and B7&#x27; (a commissioned result is BOUND to the id that produced it) were</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> // stamped BLOCKED-this-cycle and NON-GATING. This module is the real ledger: an orchestrator-minted,</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> // cryptographically-bound commission-id that a random / forged / tampered id can NEVER satisfy.</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> //</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> // Modeled on ramanujan&#x27;s Wave-4/Wave-9 artifact mint (src/adjudication.mjs `computeNonce` /</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> // `mintArtifact` / `consumeArtifact`): the id is bound to its CONTENT by a keyed hash, and resolve</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> // re-derives that binding from the presented bytes to confirm authenticity — a forged or cross-claim</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> // id fails the re-derivation. Two independent guarantees make an id unforgeable:</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //   1. CONTENT-BINDING (HMAC). The id embeds the canonical tuple and an HMAC-SHA256 signature over it</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //      keyed by a per-run secret. Tamper any field (a different result_digest) and the signature no</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //      longer verifies. Fabricate a random id and it carries no valid signature. Neither can be</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> //      produced without the mint&#x27;s secret.</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> //   2. MINTED-THIS-RUN (ledger membership). resolve additionally requires the id to have actually</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> //      been minted by THIS ledger this run — an id from a different run/secret is rejected even if it</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> //      were otherwise well-formed. This is the durable &quot;orchestrator-minted, resolvable&quot; property.</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> //</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> // Stdlib-only (node:crypto), deterministic-testable: within one process, mint-&gt;resolve round-trips</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> // exactly; a forged/random/tampered/cross-ledger id deterministically resolves to null.</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> //</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> // Public surface:</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> //   COMMISSION_ID_PREFIX               — the versioned id prefix (&#x27;gcl1&#x27;)</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> //   canonicalCommissionTuple(tuple)    — the exact bytes the signature binds (fixed key order)</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> //   createCommissionLedger({secret?})  — an isolated ledger { mintCommission, resolveCommission, ... }</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> //   mintCommission(tuple)              — mint on the module-default per-run ledger</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> //   resolveCommission(id)              — resolve on the module-default per-run ledger</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> //   resetLedger()                      — clear + rotate the module-default ledger for cross-run reuse</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> </span>
+<span class="source-line" id="L33"><a href="#L33">33</a> import crypto from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> </span>
+<span class="source-line" id="L35"><a href="#L35">35</a> /** The versioned commission-id prefix (gandalf-commission-ledger v1). */</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> export const COMMISSION_ID_PREFIX = &#x27;gcl1&#x27;;</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38">38</a> // The segment delimiter. A literal &#x27;.&#x27; is absent from the base64url alphabet (A-Za-z0-9-_), from the</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> // lowercase-hex signature (0-9a-f), and from the prefix &#x27;gcl1&#x27;, so an id splits back into its three</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> // parts unambiguously.</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> const SEP = &#x27;.&#x27;;</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> </span>
+<span class="source-line" id="L43"><a href="#L43">43</a> function isNonEmptyString(v) {</span>
+<span class="source-line" id="L44"><a href="#L44">44</a>   return typeof v === &#x27;string&#x27; &amp;&amp; v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> }</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> </span>
+<span class="source-line" id="L47"><a href="#L47">47</a> /** The canonical, stable serialization of the bound tuple (FIXED key order) — the exact bytes the</span>
+<span class="source-line" id="L48"><a href="#L48">48</a>  *  HMAC signs, so mint and resolve agree byte-for-byte regardless of caller key order. Pure. */</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> export function canonicalCommissionTuple({ drafter_family, refuter_family, result_digest } = {}) {</span>
+<span class="source-line" id="L50"><a href="#L50">50</a>   return JSON.stringify({</span>
+<span class="source-line" id="L51"><a href="#L51">51</a>     drafter_family: String(drafter_family),</span>
+<span class="source-line" id="L52"><a href="#L52">52</a>     refuter_family: String(refuter_family),</span>
+<span class="source-line" id="L53"><a href="#L53">53</a>     result_digest: String(result_digest),</span>
+<span class="source-line" id="L54"><a href="#L54">54</a>   });</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> }</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> function isWellFormedTuple(t) {</span>
+<span class="source-line" id="L58"><a href="#L58">58</a>   return (</span>
+<span class="source-line" id="L59"><a href="#L59">59</a>     t !== null &amp;&amp;</span>
+<span class="source-line" id="L60"><a href="#L60">60</a>     typeof t === &#x27;object&#x27; &amp;&amp;</span>
+<span class="source-line" id="L61"><a href="#L61">61</a>     !Array.isArray(t) &amp;&amp;</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>     isNonEmptyString(t.drafter_family) &amp;&amp;</span>
+<span class="source-line" id="L63"><a href="#L63">63</a>     isNonEmptyString(t.refuter_family) &amp;&amp;</span>
+<span class="source-line" id="L64"><a href="#L64">64</a>     isNonEmptyString(t.result_digest)</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>   );</span>
+<span class="source-line" id="L66"><a href="#L66">66</a> }</span>
+<span class="source-line" id="L67"><a href="#L67">67</a> </span>
+<span class="source-line" id="L68"><a href="#L68">68</a> function b64urlEncode(str) {</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   return Buffer.from(str, &#x27;utf8&#x27;).toString(&#x27;base64url&#x27;);</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> }</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> function b64urlDecode(str) {</span>
+<span class="source-line" id="L72"><a href="#L72">72</a>   return Buffer.from(str, &#x27;base64url&#x27;).toString(&#x27;utf8&#x27;);</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> }</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> </span>
+<span class="source-line" id="L75"><a href="#L75">75</a> function hmacHex(secret, msg) {</span>
+<span class="source-line" id="L76"><a href="#L76">76</a>   return crypto.createHmac(&#x27;sha256&#x27;, secret).update(msg, &#x27;utf8&#x27;).digest(&#x27;hex&#x27;);</span>
+<span class="source-line" id="L77"><a href="#L77">77</a> }</span>
+<span class="source-line" id="L78"><a href="#L78">78</a> </span>
+<span class="source-line" id="L79"><a href="#L79">79</a> /** Constant-time equality of two equal-length hex strings; false (never throws) on any mismatch of</span>
+<span class="source-line" id="L80"><a href="#L80">80</a>  *  type or length so a forged signature cannot leak timing OR crash resolve. */</span>
+<span class="source-line" id="L81"><a href="#L81">81</a> function timingSafeHexEqual(a, b) {</span>
+<span class="source-line" id="L82"><a href="#L82">82</a>   if (typeof a !== &#x27;string&#x27; || typeof b !== &#x27;string&#x27; || a.length !== b.length || a.length === 0) {</span>
+<span class="source-line" id="L83"><a href="#L83">83</a>     return false;</span>
+<span class="source-line" id="L84"><a href="#L84">84</a>   }</span>
+<span class="source-line" id="L85"><a href="#L85">85</a>   try {</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>     return crypto.timingSafeEqual(Buffer.from(a, &#x27;utf8&#x27;), Buffer.from(b, &#x27;utf8&#x27;));</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>   } catch {</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>     return false;</span>
+<span class="source-line" id="L89"><a href="#L89">89</a>   }</span>
+<span class="source-line" id="L90"><a href="#L90">90</a> }</span>
+<span class="source-line" id="L91"><a href="#L91">91</a> </span>
+<span class="source-line" id="L92"><a href="#L92">92</a> /**</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>  * Create an ISOLATED commission ledger backed by a per-run secret. Each ledger mints ids only its own</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>  * `resolveCommission` will honor (content-binding secret + minted-this-run membership). Pass an</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>  * explicit `secret` for a reproducible fixture; omit it for a fresh random per-run secret.</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>  *</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>  * @param {{secret?: string|Buffer}} [opts]</span>
+<span class="source-line" id="L98"><a href="#L98">98</a>  * @returns {{ mintCommission: Function, resolveCommission: Function, isMinted: Function, size: Function }}</span>
+<span class="source-line" id="L99"><a href="#L99">99</a>  */</span>
+<span class="source-line" id="L100"><a href="#L100">100</a> export function createCommissionLedger({ secret } = {}) {</span>
+<span class="source-line" id="L101"><a href="#L101">101</a>   let runSecret =</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>     secret != null</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>       ? Buffer.from(secret instanceof Buffer ? secret : String(secret), &#x27;utf8&#x27;)</span>
+<span class="source-line" id="L104"><a href="#L104">104</a>       : crypto.randomBytes(32);</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   const issued = new Set(); // ids minted by THIS ledger this run</span>
+<span class="source-line" id="L106"><a href="#L106">106</a> </span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   /**</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>    * Mint a commission-id CRYPTOGRAPHICALLY BOUND to (drafter_family, refuter_family, result_digest).</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>    * The id = `gcl1.base64url(canonicalTuple).HMAC-SHA256(secret, canonicalTuple)` — it cannot be</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>    * fabricated for a tuple without the mint&#x27;s secret. Throws on a malformed tuple (never mints a</span>
+<span class="source-line" id="L111"><a href="#L111">111</a>    * partial/forgeable id).</span>
+<span class="source-line" id="L112"><a href="#L112">112</a>    *</span>
+<span class="source-line" id="L113"><a href="#L113">113</a>    * @param {{drafter_family:string, refuter_family:string, result_digest:string}} tuple</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>    * @returns {string} the minted commission-id</span>
+<span class="source-line" id="L115"><a href="#L115">115</a>    */</span>
+<span class="source-line" id="L116"><a href="#L116">116</a>   function mintCommission({ drafter_family, refuter_family, result_digest } = {}) {</span>
+<span class="source-line" id="L117"><a href="#L117">117</a>     const tuple = { drafter_family, refuter_family, result_digest };</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>     if (!isWellFormedTuple(tuple)) {</span>
+<span class="source-line" id="L119"><a href="#L119">119</a>       throw new Error(</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>         &#x27;commission-ledger: mintCommission requires non-empty drafter_family, refuter_family, and result_digest strings&#x27;</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>       );</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>     }</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>     const payload = canonicalCommissionTuple(tuple);</span>
+<span class="source-line" id="L124"><a href="#L124">124</a>     const mac = hmacHex(runSecret, payload);</span>
+<span class="source-line" id="L125"><a href="#L125">125</a>     const id = `${COMMISSION_ID_PREFIX}${SEP}${b64urlEncode(payload)}${SEP}${mac}`;</span>
+<span class="source-line" id="L126"><a href="#L126">126</a>     issued.add(id);</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>     return id;</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>   }</span>
+<span class="source-line" id="L129"><a href="#L129">129</a> </span>
+<span class="source-line" id="L130"><a href="#L130">130</a>   /**</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>    * Resolve a commission-id to the tuple it is bound to, or `null` for any id this ledger did not</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>    * authentically mint. Returns null when the id is: not a string / wrong prefix / malformed; carries a</span>
+<span class="source-line" id="L133"><a href="#L133">133</a>    * signature that does not re-derive from its embedded tuple (a forged or TAMPERED id — e.g. a swapped</span>
+<span class="source-line" id="L134"><a href="#L134">134</a>    * result_digest); or was not minted by THIS ledger this run (a random or cross-run/cross-secret id).</span>
+<span class="source-line" id="L135"><a href="#L135">135</a>    *</span>
+<span class="source-line" id="L136"><a href="#L136">136</a>    * @param {string} id</span>
+<span class="source-line" id="L137"><a href="#L137">137</a>    * @returns {{drafter_family:string, refuter_family:string, result_digest:string} | null}</span>
+<span class="source-line" id="L138"><a href="#L138">138</a>    */</span>
+<span class="source-line" id="L139"><a href="#L139">139</a>   function resolveCommission(id) {</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>     if (typeof id !== &#x27;string&#x27; || id.length === 0) return null;</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>     const parts = id.split(SEP);</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>     if (parts.length !== 3 || parts[0] !== COMMISSION_ID_PREFIX) return null;</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>     let payload;</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>     try {</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>       payload = b64urlDecode(parts[1]);</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>     } catch {</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>       return null;</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>     }</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>     // (1) CONTENT-BINDING: re-derive the HMAC over the presented tuple bytes. A forged id or a tampered</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>     //     tuple (any field changed) yields a different signature and fails here.</span>
+<span class="source-line" id="L151"><a href="#L151">151</a>     const expectedMac = hmacHex(runSecret, payload);</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>     if (!timingSafeHexEqual(expectedMac, parts[2])) return null;</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>     // (2) MINTED-THIS-RUN: it must have actually been minted by THIS ledger (orchestrator-minted,</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     //     resolvable). An id from another run/secret is rejected even if otherwise well-formed.</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     if (!issued.has(id)) return null;</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     let tuple;</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>     try {</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>       tuple = JSON.parse(payload);</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     } catch {</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>       return null;</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     }</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>     if (!isWellFormedTuple(tuple)) return null;</span>
+<span class="source-line" id="L163"><a href="#L163">163</a>     return {</span>
+<span class="source-line" id="L164"><a href="#L164">164</a>       drafter_family: tuple.drafter_family,</span>
+<span class="source-line" id="L165"><a href="#L165">165</a>       refuter_family: tuple.refuter_family,</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>       result_digest: tuple.result_digest,</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>     };</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>   }</span>
+<span class="source-line" id="L169"><a href="#L169">169</a> </span>
+<span class="source-line" id="L170"><a href="#L170">170</a>   /** Predicate: was `id` minted by THIS ledger this run? Pure; never throws. */</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>   function isMinted(id) {</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>     return typeof id === &#x27;string&#x27; &amp;&amp; issued.has(id);</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>   }</span>
+<span class="source-line" id="L174"><a href="#L174">174</a> </span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   /** The number of ids minted by this ledger this run. */</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>   function size() {</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     return issued.size;</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>   }</span>
+<span class="source-line" id="L179"><a href="#L179">179</a> </span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   /** Reset the ledger for reuse across runs: clear the minted-this-run membership AND rotate the</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>    *  per-run secret. After reset(), every previously-minted id resolves to null (its signature no</span>
+<span class="source-line" id="L182"><a href="#L182">182</a>    *  longer re-derives under the new secret AND it is no longer in `issued`) — a clean per-run state</span>
+<span class="source-line" id="L183"><a href="#L183">183</a>    *  with no leak from the prior run. Pure side-effect on this closure; returns nothing. */</span>
+<span class="source-line" id="L184"><a href="#L184">184</a>   function reset() {</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>     issued.clear();</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>     runSecret = crypto.randomBytes(32);</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>   }</span>
+<span class="source-line" id="L188"><a href="#L188">188</a> </span>
+<span class="source-line" id="L189"><a href="#L189">189</a>   return { mintCommission, resolveCommission, isMinted, size, reset };</span>
+<span class="source-line" id="L190"><a href="#L190">190</a> }</span>
+<span class="source-line" id="L191"><a href="#L191">191</a> </span>
+<span class="source-line" id="L192"><a href="#L192">192</a> // The module-default ledger: a single per-run secret minted once at import (never persisted), so a</span>
+<span class="source-line" id="L193"><a href="#L193">193</a> // forged id from any other process/run cannot resolve here. Callers that need an isolated/reproducible</span>
+<span class="source-line" id="L194"><a href="#L194">194</a> // ledger use createCommissionLedger({ secret }).</span>
+<span class="source-line" id="L195"><a href="#L195">195</a> const _defaultLedger = createCommissionLedger();</span>
+<span class="source-line" id="L196"><a href="#L196">196</a> </span>
+<span class="source-line" id="L197"><a href="#L197">197</a> /** Mint a commission-id on the module-default per-run ledger. See createCommissionLedger().mintCommission. */</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> export function mintCommission(tuple) {</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   return _defaultLedger.mintCommission(tuple);</span>
+<span class="source-line" id="L200"><a href="#L200">200</a> }</span>
+<span class="source-line" id="L201"><a href="#L201">201</a> </span>
+<span class="source-line" id="L202"><a href="#L202">202</a> /** Resolve a commission-id on the module-default per-run ledger. See createCommissionLedger().resolveCommission. */</span>
+<span class="source-line" id="L203"><a href="#L203">203</a> export function resolveCommission(id) {</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   return _defaultLedger.resolveCommission(id);</span>
+<span class="source-line" id="L205"><a href="#L205">205</a> }</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207">207</a> /** Reset the module-default ledger (clear its minted-this-run set + rotate its secret) for any caller</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>  *  that must REUSE the singleton across runs without leaking a prior run&#x27;s minted ids. The runtime host</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>  *  (runtime/seam-pass.applySeamPass) does NOT rely on this — it instantiates a FRESH per-run ledger via</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>  *  createCommissionLedger() so there is no shared singleton state to leak. See createCommissionLedger().reset. */</span>
+<span class="source-line" id="L211"><a href="#L211">211</a> export function resetLedger() {</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>   _defaultLedger.reset();</span>
+<span class="source-line" id="L213"><a href="#L213">213</a> }</span></pre></main></body></html>

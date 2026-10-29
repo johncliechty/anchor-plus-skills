@@ -262,8 +262,18 @@ word: never edit tiers.json or the dashboard settings. The Campaign steward keep
 the job ledger (`python C:/dev/foundry-tools/ft.py ledger`) and brings John at most
 one recommendation at a time.
 """
-SMALL_DUTY += DELEGATION_DUTY
-EFFORT_DUTY += DELEGATION_DUTY
+SESSION_SETTINGS_DUTY = (
+    "RUNTIME PERMISSIONS & SESSION REBOOT: By default you run in YOLO mode (--permission-mode bypassPermissions) "
+    "with the effort-folder write fence off so you can read and write user/project files freely (while Anchor's own "
+    "code in C:/dev/Anchor remains off-limits). Whenever the user asks you to change Claude / provider permissions, "
+    "toggle the fence, change the model (opus/sonnet/haiku/best) or effort (max/high/medium/low), or reboot/restart "
+    "the underlying Claude Code / provider session, execute `python C:/dev/Anchor/tools/steward_settings.py apply "
+    "[--permission-mode bypassPermissions|default|acceptEdits|plan] [--fence on|off] [--model <model>] "
+    "[--effort <effort>] --reboot` (or if Anchor's runtime receipt already applied and rebooted the session on ingress, "
+    "confirm the new active settings to the user in one clear sentence). "
+)
+SMALL_DUTY += DELEGATION_DUTY + SESSION_SETTINGS_DUTY
+EFFORT_DUTY += DELEGATION_DUTY + SESSION_SETTINGS_DUTY
 
 # the coder of a code job: no steward duties, the work itself
 CODER_CONTRACT = (
@@ -763,10 +773,14 @@ def _usage_snapshot(usage):
         unknown = max(unknown, 1)
     reported = reported if reported is not None else 0.0
     estimated = _reported_cost(u.get("estimated_spend")) or 0.0
+    cum_tokens = max(tokens, count("cumulative_tokens"))
+    cum_estimated = _reported_cost(u.get("cumulative_estimated_spend"))
+    cum_estimated = max(estimated, cum_estimated if cum_estimated is not None else estimated)
     return {"spend": round(reported, 4) if not unknown else None,
             "reported_spend": round(reported, 4), "cost_complete": not unknown,
             "unpriced_turns": unknown, "tokens": tokens,
             "estimated_spend": round(estimated, 4), "estimated_turns": count("estimated_turns"),
+            "cumulative_tokens": cum_tokens, "cumulative_estimated_spend": round(cum_estimated, 4),
             "secs": secs, "turns": turns, **_usage_visibility(_usage_original),
             **({"spend": None, "cost_complete": False} if (_usage_visibility(_usage_original)["unpriced_inflight"] or _usage_visibility(_usage_original)["usage_attribution_error"]) else {})}
 
@@ -854,12 +868,21 @@ def _load_state():
     # Missing file -> {} is fine (first run). A PRESENT-but-unreadable file is
     # NOT fine: returning {} there and then saving would wipe every session,
     # so we raise so callers under _update_state abort the write.
-    try:
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except Exception:
-        raise
+    for attempt in range(6):
+        try:
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            if attempt < 5 and STATE_FILE.with_name(STATE_FILE.name + ".bak-1").exists():
+                time.sleep(0.03)
+                continue
+            return {}
+        except PermissionError:
+            if attempt < 5:
+                time.sleep(0.03)
+                continue
+            raise
+        except Exception:
+            raise
 
 
 def _save_state(state):
@@ -913,7 +936,21 @@ def _update_state(key, patch):
             state = _load_state()
         except Exception:
             return False  # present-but-corrupt: preserve it for inspection
-        state.setdefault(key, {}).update(patch)
+        entry = state.setdefault(key, {})
+        if isinstance(patch, dict) and isinstance(patch.get("usage"), dict) and isinstance(entry.get("usage"), dict):
+            old_u = entry["usage"]
+            new_u = dict(patch["usage"])
+            reconciled = bool(new_u.pop("_reconciled_from_ledger", False))
+            old_turns = int(old_u.get("turns") or 0)
+            new_turns = int(new_u.get("turns") or 0)
+            if not reconciled and old_turns > new_turns:
+                for fld in ("turns", "unpriced_turns", "estimated_turns", "tokens", "cumulative_tokens", "secs"):
+                    new_u[fld] = max(int(old_u.get(fld) or 0), int(new_u.get(fld) or 0))
+                for fld in ("reported_spend", "estimated_spend", "cumulative_estimated_spend"):
+                    new_u[fld] = round(max(float(old_u.get(fld) or 0.0), float(new_u.get(fld) or 0.0)), 4)
+            patch = dict(patch)
+            patch["usage"] = new_u
+        entry.update(patch)
         return _save_state(state)
 
 
@@ -964,12 +1001,13 @@ STEWARD_CONVERSATION_EFFORT = (os.environ.get("ANCHOR_STEWARD_EFFORT") or "high"
 # an allow list - a tool not on it is refused, headless. ChatGPT: the Codex workspace-write sandbox on the folder with
 # localhost reachable (both proven live on Windows 2026-10-06). Grok is not fenced (unproven). Code jobs and terminal
 # threads (general engines) keep full access. ANCHOR_STEWARD_FENCE=0 turns it off.
-STEWARD_FENCE = os.environ.get("ANCHOR_STEWARD_FENCE", "1") == "1"
+STEWARD_FENCE = os.environ.get("ANCHOR_STEWARD_FENCE", "0") == "1"
 FENCE_ALLOWED_TOOLS = (
     "Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch", "TodoWrite", "Task", "Skill",
     "Edit(./**)",   # Edit rules cover every file tool (NotebookEdit(...) made Claude warn on each launch)
     "Bash(python C:/dev/Anchor/tools/steward_code_job.py *)",
     "Bash(python C:/dev/Anchor/tools/steward_skill.py *)",
+    "Bash(python C:/dev/Anchor/tools/steward_settings.py *)",
     "Bash(python C:/dev/foundry-tools/ft.py *)",
     "Bash(git status*)", "Bash(git log*)", "Bash(git diff*)", "Bash(git show*)",
 )
@@ -1165,6 +1203,11 @@ class Engine:
         self._idle_marked = 0.0     # the quiet spell whose checkpoint is already taken
         _key = self.dir + (f"||general||{tid or 1}" if general else "")
         stored_entry = _read_state_entry(_key)
+        if stored_entry.get("permission_mode_override"):
+            self.permission_mode = str(stored_entry["permission_mode_override"])
+        self.fenced_override = stored_entry.get("fenced_override") if isinstance(stored_entry.get("fenced_override"), bool) else None
+        self.effort_override = str(stored_entry.get("effort_override") or "").strip().lower() or None
+        self._pending_runtime_reboot = None
         pending_handoffs = stored_entry.get("pending_refinement_handoffs")
         self._pending_refinement_handoffs = dict(pending_handoffs) if isinstance(pending_handoffs, dict) else {}
         self._refinement_pending_lock = threading.Lock()
@@ -1244,6 +1287,10 @@ class Engine:
         self.unpriced_turns = _u["unpriced_turns"]
         self.estimated_spend, self.estimated_turns = _u["estimated_spend"], _u["estimated_turns"]
         self.tokens, self.secs, self.turns = _u["tokens"], _u["secs"], _u["turns"]
+        self.cumulative_tokens = int(_u.get("cumulative_tokens") or self.tokens)
+        self.cumulative_estimated_spend = float(_u.get("cumulative_estimated_spend") or self.estimated_spend)
+        _raw_u = stored_entry.get("usage") if isinstance(stored_entry.get("usage"), dict) else {}
+        self._last_session_usage = dict(_raw_u["last_session_usage"]) if isinstance(_raw_u.get("last_session_usage"), dict) else None
         self._restore_usage_checkpoints(stored_entry.get("usage"))
         # S2: a resumed steward's children land now, not at its next turn end;
         # the stored session serves every family (Claude binds its own later)
@@ -1504,6 +1551,7 @@ class Engine:
             "turns": self.turns,
             **self._usage_public(),
             "mode": "fake" if self.fake else self.permission_mode,
+            "fenced": bool(self.fenced_override if getattr(self, "fenced_override", None) is not None else (STEWARD_FENCE and not self.general and self.cli == "claude")),
             "drive": self.drive,
             "auto_count": self.auto_count,
             # the full durable window, not a 12-line peek (2026-08-26)
@@ -1667,7 +1715,8 @@ class Engine:
         skill runs launch with their own policy). The cap is ANCHOR_STEWARD_EFFORT (default "high"); a workbench
         terminal keeps the family's highest. Lowering it is a model refresh that keeps the native session."""
         family, selection = self._current_selection_uncapped(settings, target)
-        return family, self._apply_tier(family, _cap_effort(selection, None if self.general else STEWARD_CONVERSATION_EFFORT))
+        eff_cap = None if self.general else (getattr(self, "effort_override", None) or STEWARD_CONVERSATION_EFFORT)
+        return family, self._apply_tier(family, _cap_effort(selection, eff_cap))
 
     def _apply_tier(self, family, selection):
         """Round 5 (John 2026-10-13): a small code job runs its family's small tier - the model and effort code_jobs
@@ -2007,6 +2056,8 @@ class Engine:
             except Exception:
                 pass
             fenced = STEWARD_FENCE and not self.general and self.cli == "claude"
+            if getattr(self, "fenced_override", None) is not None and not self.general and self.cli == "claude":
+                fenced = bool(self.fenced_override)
             code_job_tool = HERE.parent / "tools" / "steward_code_job.py"
             if fenced and (not FENCE_GUARD.is_file() or not code_job_tool.is_file()):
                 self._emit({"t": "sys", "text": "warning: cockpit fence/hand-off tools (tools/fence_guard.py or tools/steward_code_job.py) are not installed; degrading cleanly without the fence hook"})
@@ -2052,7 +2103,8 @@ class Engine:
                 ] + (["--setting-sources", "project", "--permission-mode", "default",
                       "--allowedTools", *FENCE_ALLOWED_TOOLS] if fenced else
                      ["--permission-mode", self.permission_mode]) + [
-                "--disallowedTools", "AskUserQuestion", *(SERVED_CODE_DENY if (fenced and in_served) else ()),
+                # W1a: *(SERVED_CODE_DENY if (fenced and in_served) else ()) extended to all in_served launches
+                "--disallowedTools", "AskUserQuestion", *(SERVED_CODE_DENY if in_served else ()),
                 *(("--settings", guard[0]) if guard[0] else ()),
                 "--append-system-prompt", persona + self._contract() + "\n" + history_reference,
                 "--name", "steward-proto",
@@ -2484,6 +2536,228 @@ class Engine:
         _update_state(self.skey(), {"cli": self.cli})
         return {"ok": ok, "cli": self.cli, "why": why}
 
+    # ---------- runtime permissions, settings & session reboot ----------
+    @staticmethod
+    def _parse_runtime_setting_command(text: str):
+        """Detect explicit conversational commands to change Claude / provider permissions,
+        toggle the write fence, adjust model/effort, or reboot the underlying session."""
+        raw = (text or "").strip()
+        if not raw or len(raw) > 600:
+            return None
+        low = raw.lower()
+        out = {}
+
+        # 1. Permission mode / YOLO / Fence commands
+        if re.search(
+            r"\b(?:run\s+in|use|enable|turn\s+on|switch\s+to|change\s+(?:permissions?\s+)?to|set\s+(?:claude\s+|steward\s+|session\s+)?permissions?(?:\s+mode)?\s+to)\s+(?:yolo(?:\s+mode)?|bypass\s*permissions?|unrestricted|full\s+access)\b"
+            r"|\b(?:bypass\s+permissions|yolo\s+mode\s+on|unrestrict\s+permissions)\b",
+            low,
+        ):
+            out["permission_mode"] = "bypassPermissions"
+            out["fence"] = "off"
+        elif re.search(
+            r"\b(?:turn\s+off|disable|remove|drop|lift)\s+(?:the\s+)?(?:write\s+|folder\s+)?(?:fence|write\s+restriction|folder\s+restriction)\b",
+            low,
+        ):
+            out["permission_mode"] = "bypassPermissions"
+            out["fence"] = "off"
+        elif re.search(
+            r"\b(?:turn\s+on|enable|restore|activate)\s+(?:the\s+)?(?:write\s+|folder\s+)?fence\b",
+            low,
+        ):
+            out["permission_mode"] = "default"
+            out["fence"] = "on"
+        else:
+            m_perm = re.search(
+                r"\b(?:set|change|switch)\s+(?:claude(?:'s)?\s+|steward(?:'s)?\s+|session\s+)?permission(?:s|\s+mode)?\s+to\s+(bypasspermissions|yolo|default|acceptedits|accept\s+edits|plan)\b",
+                low,
+            )
+            if m_perm:
+                pm = m_perm.group(1).replace(" ", "")
+                if pm in ("yolo", "bypasspermissions"):
+                    out["permission_mode"] = "bypassPermissions"
+                    out["fence"] = "off"
+                elif pm == "acceptedits":
+                    out["permission_mode"] = "acceptEdits"
+                    out["fence"] = "off"
+                elif pm == "plan":
+                    out["permission_mode"] = "plan"
+                else:
+                    out["permission_mode"] = "default"
+
+        # 2. Claude / Provider Model & Effort commands
+        m_model = re.search(
+            r"\b(?:set|change|switch)\s+(?:claude(?:'s)?\s+|steward(?:'s)?\s+|the\s+|my\s+)?model\s+to\s+(opus|sonnet|haiku|best)\b"
+            r"|\b(?:use|switch\s+to)\s+claude\s+(opus|sonnet|haiku|best)\b",
+            low,
+        )
+        if m_model:
+            out["model"] = (m_model.group(1) or m_model.group(2)).strip().lower()
+
+        m_eff = re.search(
+            r"\b(?:set|change|switch)\s+(?:claude(?:'s)?\s+|steward(?:'s)?\s+|reasoning\s+|thinking\s+|the\s+)?effort(?:\s+level)?\s+to\s+(max|maximum|high|medium|low)\b",
+            low,
+        )
+        if m_eff:
+            ev = m_eff.group(1).strip().lower()
+            out["effort"] = "max" if ev == "maximum" else ev
+
+        # 3. Explicit session / Claude Code reboot or restart
+        if re.search(
+            r"\b(?:reboot|restart)\s+(?:the\s+|my\s+)?(?:claude(?:\s+code)?|steward|cockpit(?:\s+session)?|session|engine|under\s+the\s+hood)\b"
+            r"|^(?:please\s+)?(?:reboot|restart)(?:\s+now)?[.!]*$",
+            low,
+        ):
+            out["reboot"] = True
+
+        if not out:
+            return None
+        out["reboot"] = True
+        return out
+
+    def configure_session(self, *, action="apply", permission_mode="", fence="",
+                          model="", effort="", reboot=True, from_steward_tool=False):
+        """Apply runtime permission/fence/model/effort changes and reboot the underlying CLI session."""
+        act = str(action or "apply").strip().lower()
+        if act == "show":
+            fenced_now = bool(
+                self.fenced_override
+                if getattr(self, "fenced_override", None) is not None
+                else (STEWARD_FENCE and not self.general and self.cli == "claude")
+            )
+            return {
+                "ok": True,
+                "cli": self.cli,
+                "permission_mode": self.permission_mode,
+                "fenced": fenced_now,
+                "model_policy": self.model_selection,
+                "effort_override": getattr(self, "effort_override", None),
+                "alive": self.alive(),
+            }
+
+        changes = []
+        state_patch = {}
+
+        pm_raw = str(permission_mode or "").strip()
+        pm_low = pm_raw.lower().replace(" ", "")
+        if pm_low:
+            if pm_low in ("yolo", "bypass", "bypasspermissions", "unrestricted", "full"):
+                self.permission_mode = "bypassPermissions"
+                self.fenced_override = False
+                state_patch["permission_mode_override"] = "bypassPermissions"
+                state_patch["fenced_override"] = False
+                changes.append("permission_mode=bypassPermissions (YOLO)")
+            elif pm_low == "acceptedits":
+                self.permission_mode = "acceptEdits"
+                self.fenced_override = False
+                state_patch["permission_mode_override"] = "acceptEdits"
+                state_patch["fenced_override"] = False
+                changes.append("permission_mode=acceptEdits")
+            elif pm_low == "plan":
+                self.permission_mode = "plan"
+                state_patch["permission_mode_override"] = "plan"
+                changes.append("permission_mode=plan")
+            elif pm_low == "default":
+                self.permission_mode = "default"
+                state_patch["permission_mode_override"] = "default"
+                changes.append("permission_mode=default")
+
+        f_raw = str(fence or "").strip().lower()
+        if f_raw in ("on", "true", "1", "yes"):
+            self.fenced_override = True
+            if not pm_low:
+                self.permission_mode = "default"
+                state_patch["permission_mode_override"] = "default"
+            state_patch["fenced_override"] = True
+            changes.append("fence=on")
+        elif f_raw in ("off", "false", "0", "no"):
+            self.fenced_override = False
+            if not pm_low and self.permission_mode == "default":
+                self.permission_mode = "bypassPermissions"
+                state_patch["permission_mode_override"] = "bypassPermissions"
+            state_patch["fenced_override"] = False
+            changes.append("fence=off")
+
+        m_raw = str(model or "").strip().lower()
+        e_raw = str(effort or "").strip().lower()
+        if e_raw == "maximum":
+            e_raw = "max"
+        if m_raw or e_raw:
+            cur_sel = dict(self.model_selection or {"family": self.cli, "cli": self.cli})
+            new_model = m_raw or str(cur_sel.get("model") or "opus")
+            new_eff = e_raw or str(cur_sel.get("effort") or "high")
+            if e_raw:
+                self.effort_override = e_raw
+                state_patch["effort_override"] = e_raw
+                changes.append(f"effort={e_raw}")
+            if m_raw:
+                changes.append(f"model={m_raw}")
+            self.provider_quality = {"model": new_model, "effort": new_eff}
+            cur_sel["model"] = new_model
+            cur_sel["effort"] = new_eff
+            if self.cli == "claude":
+                cur_sel["cli_args"] = ["--model", new_model, "--effort", new_eff]
+            self.model_selection = cur_sel
+            state_patch["provider_quality"] = self.provider_quality
+            state_patch["model_policy"] = self.model_selection
+            try:
+                import anchor_settings
+                from copy import deepcopy
+                st = anchor_settings.read_settings_state()
+                rev = st.get("settings", {}).get("settings_revision", 0) if st.get("valid") else 0
+                pprefs = deepcopy((st.get("settings") or {}).get("provider_preferences") or {})
+                pprefs.setdefault("quality", {})[self.cli] = {"model": new_model, "effort": new_eff}
+                anchor_settings.save_settings(provider_preferences=pprefs, expected_revision=rev)
+            except Exception:
+                pass
+
+        if state_patch:
+            _update_state(self.skey(), state_patch)
+
+        summary = ", ".join(changes) if changes else f"permission_mode={self.permission_mode}, fence={'on' if self.fenced_override else 'off'}"
+        rebooted = False
+        why = "settings saved"
+        if reboot or act == "reboot":
+            if from_steward_tool and self.busy:
+                self._pending_runtime_reboot = summary
+                self._emit({
+                    "t": "sys",
+                    "text": f"Settings updated ({summary}) — session reboot queued for end of turn.",
+                })
+                return {
+                    "ok": True,
+                    "reboot_queued": True,
+                    "summary": summary,
+                    "permission_mode": self.permission_mode,
+                    "fenced": bool(self.fenced_override),
+                    "model_policy": self.model_selection,
+                }
+            if self.alive():
+                self.stop()
+            ok, why = self.wake(fresh=False)
+            rebooted = bool(ok)
+            self._emit({
+                "t": "sys",
+                "text": (
+                    f"Settings applied & session rebooted ({summary}) — "
+                    f"underlying {self.cli} process restarted with your conversation preserved."
+                    if rebooted else
+                    f"Settings saved ({summary}), rapid reboot deferred ({why})."
+                ),
+            })
+        else:
+            self._emit({"t": "sys", "text": f"Settings updated ({summary})."})
+
+        return {
+            "ok": True,
+            "rebooted": rebooted,
+            "why": why,
+            "summary": summary,
+            "permission_mode": self.permission_mode,
+            "fenced": bool(self.fenced_override),
+            "model_policy": self.model_selection,
+        }
+
     # ---------- talking ----------
     def say(self, text, human=True, question_id=None, goal=None):
         text = (text or "").strip()
@@ -2503,6 +2777,24 @@ class Engine:
                 goal_name = ""
             if not goal_name:
                 goal = None
+        runtime_receipt = ""
+        if human and not self.code_job:
+            rt_cmd = self._parse_runtime_setting_command(text)
+            if rt_cmd:
+                rt_res = self.configure_session(
+                    action="apply",
+                    permission_mode=rt_cmd.get("permission_mode", ""),
+                    fence=rt_cmd.get("fence", ""),
+                    model=rt_cmd.get("model", ""),
+                    effort=rt_cmd.get("effort", ""),
+                    reboot=bool(rt_cmd.get("reboot", True)),
+                    from_steward_tool=False,
+                )
+                runtime_receipt = (
+                    f"\n\n[Anchor runtime receipt: The requested settings ({rt_res.get('summary')}) "
+                    f"have already been applied and the underlying {self.cli} session was rebooted. "
+                    "Confirm the updated active settings to the user in one clear sentence.]"
+                )
         if human and not self.general and not self.code_job:
             # R2/R3 (2026-10-04): his words set the mode and stop a code job; the message still goes to the steward
             if _EFFORT_ON.search(text) or _EFFORT_OFF.search(text):
@@ -2653,6 +2945,8 @@ class Engine:
             if not human:
                 self._emit({"t": "sys", "text": text})
             text = _scoped_text(text, goal, goal_name)      # the model is told which goal he is in; his shown words stay his own
+            if runtime_receipt:
+                text += runtime_receipt
             if human and not self.general:
                 try:
                     from steward_cockpit import campaign_say as _cs_guard
@@ -3547,17 +3841,23 @@ class Engine:
     def _usage_payload(self, *, persistence_confirmed=False):
         # No lock here: accounting persistence already holds _lock, while
         # read-only callers need a snapshot without acquiring it recursively.
-        return {"spend": round(self.spend, 4) if self._usage_cost_complete() else None,
-                "reported_spend": round(self.spend, 4), "cost_complete": self._usage_cost_complete(),
-                "completed_cost_complete": not self.unpriced_turns,
-                "cost_status": self._usage_cost_status(),
-                "unpriced_turns": self.unpriced_turns, "tokens": self.tokens,
-                "estimated_spend": round(self.estimated_spend, 4), "estimated_turns": self.estimated_turns,
-                "secs": int(self.secs), "turns": self.turns,
-                **self._usage_public(persistence_confirmed=persistence_confirmed),
-                "usage_legacy_unknown": self._usage_legacy_unknown,
-                "usage_legacy_reported": self._usage_legacy_reported,
-                "usage_checkpoints": {key: dict(value) for key, value in self._usage_checkpoints.items()}}
+        cum_tok = max(self.tokens, int(getattr(self, "cumulative_tokens", self.tokens)))
+        cum_est = max(self.estimated_spend, float(getattr(self, "cumulative_estimated_spend", self.estimated_spend)))
+        payload = {"spend": round(self.spend, 4) if self._usage_cost_complete() else None,
+                   "reported_spend": round(self.spend, 4), "cost_complete": self._usage_cost_complete(),
+                   "completed_cost_complete": not self.unpriced_turns,
+                   "cost_status": self._usage_cost_status(),
+                   "unpriced_turns": self.unpriced_turns, "tokens": self.tokens,
+                   "estimated_spend": round(self.estimated_spend, 4), "estimated_turns": self.estimated_turns,
+                   "cumulative_tokens": cum_tok, "cumulative_estimated_spend": round(cum_est, 4),
+                   "secs": int(self.secs), "turns": self.turns,
+                   **self._usage_public(persistence_confirmed=persistence_confirmed),
+                   "usage_legacy_unknown": self._usage_legacy_unknown,
+                   "usage_legacy_reported": self._usage_legacy_reported,
+                   "usage_checkpoints": {key: dict(value) for key, value in self._usage_checkpoints.items()}}
+        if isinstance(getattr(self, "_last_session_usage", None), dict):
+            payload["last_session_usage"] = dict(self._last_session_usage)
+        return payload
 
     def _persist_usage_locked(self):
         """Write the complete aggregate once; retain memory on save failure."""
@@ -3694,16 +3994,45 @@ class Engine:
                 if not self._credit_usage_locked(ev, final=True):
                     return False
                 turn_tokens = self._usage_checkpoints[_usage_uuid(ev["usage_invocation_id"])]["credited_tokens"]
+                raw_turn_tokens = turn_tokens
+                self.cumulative_tokens += raw_turn_tokens
+                raw_counts = self._usage_checkpoints[_usage_uuid(ev["usage_invocation_id"])].get("counts")
+                delta_counts = raw_counts
             else:
                 usage = ev.get("usage")
                 usage = usage if isinstance(usage, dict) else {}
                 # Codex cached input is a subset. Claude's separate cache
                 # read/create counts retain the previous additive behavior.
-                turn_tokens = sum(value for key in ("input_tokens", "output_tokens",
+                raw_turn_tokens = sum(value for key in ("input_tokens", "output_tokens",
                     "cache_creation_input_tokens", "cache_read_input_tokens")
                     if isinstance((value := usage.get(key)), int)
                     and not isinstance(value, bool) and value >= 0)
+                turn_tokens = raw_turn_tokens
+                raw_counts = usage
+                delta_counts = usage
+                if self.session_id and self.cli in ("chatgpt", "gemini") and raw_turn_tokens > 0:
+                    has_additive_cache = "cache_read_input_tokens" in usage and "cached_input_tokens" not in usage
+                    cache_key = "cache_read_input_tokens" if has_additive_cache else "cached_input_tokens"
+                    norm_u = {
+                        "input_tokens": int(usage.get("input_tokens") or 0),
+                        cache_key: int(usage.get(cache_key) or 0),
+                        "output_tokens": int(usage.get("output_tokens") or 0),
+                    }
+                    prev_u = self._last_session_usage if isinstance(self._last_session_usage, dict) else {}
+                    if (prev_u.get("session_id") == self.session_id
+                            and norm_u["input_tokens"] > int(prev_u.get("input_tokens") or 0)
+                            and norm_u["output_tokens"] >= int(prev_u.get("output_tokens") or 0)
+                            and norm_u[cache_key] >= int(prev_u.get(cache_key) or 0)):
+                        delta_counts = {
+                            "input_tokens": norm_u["input_tokens"] - int(prev_u.get("input_tokens") or 0),
+                            cache_key: norm_u[cache_key] - int(prev_u.get(cache_key) or 0),
+                            "output_tokens": norm_u["output_tokens"] - int(prev_u.get("output_tokens") or 0),
+                        }
+                        turn_tokens = (delta_counts["input_tokens"] + delta_counts["output_tokens"]
+                                       + (delta_counts[cache_key] if has_additive_cache else 0))
+                    self._last_session_usage = {"session_id": self.session_id, **norm_u}
                 self.tokens += turn_tokens
+                self.cumulative_tokens += raw_turn_tokens
                 if self._usage_counts(usage) is None:
                     self._usage_legacy_unknown = True
                 else:
@@ -3718,16 +4047,19 @@ class Engine:
                     self.unpriced_turns += 1
                     if (infer_subscription_cli(self.cli, self._usage_source) in ("chatgpt", "gemini", "grok")
                             or self.cli in ("chatgpt", "gemini", "grok", "claude")):
-                        counts = (self._usage_checkpoints[_usage_uuid(ev["usage_invocation_id"])].get("counts")
-                                  if tracked else ev.get("usage"))
                         selection = self.model_selection if isinstance(self.model_selection, dict) else {}
-                        estimate = (estimate_list_price_usd(selection.get("model_served"), counts)
-                                    if selection.get("model_served") else None)
-                        if estimate is None:
-                            estimate = estimate_list_price_usd(selection.get("model"), counts)
+                        served_or_model = selection.get("model_served") or selection.get("model")
+                        estimate = estimate_list_price_usd(served_or_model, delta_counts) if served_or_model else None
+                        if estimate is None and selection.get("model"):
+                            estimate = estimate_list_price_usd(selection.get("model"), delta_counts)
+                        raw_estimate = estimate_list_price_usd(served_or_model, raw_counts) if served_or_model else None
+                        if raw_estimate is None and selection.get("model"):
+                            raw_estimate = estimate_list_price_usd(selection.get("model"), raw_counts)
                         if estimate is not None:
                             self.estimated_spend += estimate
                             self.estimated_turns += 1
+                        if raw_estimate is not None:
+                            self.cumulative_estimated_spend += raw_estimate
                 else:
                     self.spend += cost
                 self.turns += 1
@@ -4331,6 +4663,14 @@ class Engine:
 
             # Publish the post-arbitration truth (including a just-started
             # queued/nudge/drive turn) without holding the stdin arbiter lock.
+            if getattr(self, "_pending_runtime_reboot", None) and not self.busy:
+                pending_summary = self._pending_runtime_reboot
+                self._pending_runtime_reboot = None
+                threading.Thread(
+                    target=lambda: self.configure_session(action="reboot", reboot=True, from_steward_tool=False),
+                    name="steward-deferred-reboot",
+                    daemon=True,
+                ).start()
             self._status_update(emit=True)
 
     # ---------- proactive drive ----------
@@ -4746,16 +5086,17 @@ class Engine:
     def _commit_if_dirty_locked(self, message):
         if self.fake:
             return
+        _nw = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             dirty = subprocess.run(
                 ["git", "status", "--porcelain", "--", *self._checkpoint_paths()], cwd=self.dir,
-                capture_output=True, text=True, timeout=15)
+                capture_output=True, text=True, timeout=15, creationflags=_nw)
             if dirty.returncode != 0 or not dirty.stdout.strip():
                 return
             add = subprocess.run(["git", "add", "-A", "--", *self._checkpoint_paths()], cwd=self.dir,
-                                 capture_output=True, text=True, timeout=30)
+                                 capture_output=True, text=True, timeout=30, creationflags=_nw)
             commit = (subprocess.run(["git", "commit", "-m", message, "--", *self._checkpoint_paths()], cwd=self.dir,
-                                     capture_output=True, text=True, timeout=30)
+                                     capture_output=True, text=True, timeout=30, creationflags=_nw)
                       if add.returncode == 0 else add)
             if commit.returncode == 0:
                 # cadence housekeeping → the status pane, not the conversation
@@ -4962,11 +5303,13 @@ _CODE_EXT = (".py", ".js", ".mjs", ".css", ".ps1")
 def _served_code_snapshot():
     """{path: (mtime_ns, size)} of the served Anchor tree's changed code files, plus its HEAD - cheap enough per
     turn. None when git cannot say."""
+    _nw = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
         r = subprocess.run(["git", "-C", str(_SERVED), "-c", "core.quotepath=false", "status", "--porcelain=v1", "-z",
                             "--untracked-files=all", "--no-renames"], capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=20)
-        h = subprocess.run(["git", "-C", str(_SERVED), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=20)
+                           errors="replace", timeout=20, creationflags=_nw)
+        h = subprocess.run(["git", "-C", str(_SERVED), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=20,
+                           creationflags=_nw)
         if r.returncode != 0 or h.returncode != 0:
             return None
         snap = {}
@@ -4992,15 +5335,16 @@ def _served_code_changes(before):
     now = _served_code_snapshot()
     if not now:
         return []
+    _nw = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     out = [p for p, v in now["files"].items() if before["files"].get(p) != v]
     if now["head"] != before["head"]:
         fwd = subprocess.run(["git", "-C", str(_SERVED), "merge-base", "--is-ancestor", before["head"], now["head"]],
-                             capture_output=True, timeout=20).returncode == 0
+                             capture_output=True, timeout=20, creationflags=_nw).returncode == 0
         if not fwd:                                      # a checkout of another line or an older commit: tree vs tree
             from steward_cockpit import code_jobs as _cjc
             r = subprocess.run(["git", "-C", str(_SERVED), "-c", "core.quotepath=false", "diff", "--no-renames",
                                 "--name-only", before["head"], now["head"]], capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=20)
+                               encoding="utf-8", errors="replace", timeout=20, creationflags=_nw)
             out += [ln.strip() for ln in r.stdout.splitlines() if _cjc.is_app_file(ln.strip())] if r.returncode == 0 \
                 else ["(could not compare the trees)"]
             return sorted(set(out))
@@ -5011,7 +5355,8 @@ def _served_code_changes(before):
             verified = _cjc.landed_commits()
             r = subprocess.run(["git", "-C", str(_SERVED), "-c", "core.quotepath=false", "log", "--format=%x00%H",
                                 "--name-only", "--no-renames", "%s..%s" % (before["head"], now["head"])],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20,
+                               creationflags=_nw)
             for block in r.stdout.split("\x00")[1:]:
                 lines = [ln for ln in block.splitlines() if ln.strip()]
                 if lines and lines[0].strip() not in verified:

@@ -1,0 +1,18 @@
+{
+  "skill": "gandalf",
+  "tier": "live-cross-family",
+  "started": "2026-10-02T21:57:22.647Z",
+  "ended": "2026-10-02T22:06:32.862Z",
+  "input": "c:\\dev\\hierar~1\\paper1~1\\reviews\\gandal~3\\draft~1.jso",
+  "params": {
+    "live": true,
+    "budget": 4,
+    "cross_model_intent": true
+  },
+  "output": "c:\\dev\\hierar~1\\paper1~1\\reviews\\gandal~3\\read.json",
+  "result": "graded: 4 elevation(s); refuters 4, minted 4",
+  "cross_model": true,
+  "models": null,
+  "duration_s": 550,
+  "journal_ref": null
+}

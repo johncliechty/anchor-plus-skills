@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Pick up On deck while Active runs · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="pickup" data-anchor-id="a-attention-pick_up">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Pick up On deck while Active runs</h1>
+<p class="intro">Offer the first On-deck initiative only when all active initiatives run or wait on someone else. A free hand in Active remains the next act.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.530988+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/home_attention.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: 65b33926f0dd8284cb0117959366e3ed6269e7c55bd3887801dde68822f3e96d</p></aside>
+<p class="path">C:/dev/Anchor/home_attention.py · lines 392–421</p><pre>def pick_up(initiatives, facts=None, working=None, today=None):
+    &quot;&quot;&quot;What to take up while Active runs (2026-09-30, his three levels): when Active is not empty, nothing in it needs
+    him and every active initiative is RUNNING (a live session on its project) or WAITING on someone else, the top
+    of ON DECK — his own pick-up list, in his order. None otherwise: an active initiative with a free hand is his
+    next act, not a pick-up; an empty Active has nothing to be &quot;while&quot; of; an empty deck offers nothing. The answer
+    says which active initiatives run and which wait, so the sentence can too.&quot;&quot;&quot;
+    from high_seat_page import seated, part_name
+    working = working or set()
+    inits = [i for i in initiatives or () if isinstance(i, dict)]
+    active = seated(inits, &quot;active&quot;)
+    if not active:
+        return None
+    running, waiting = [], []
+    for g, p in active:
+        if _part_open(p) and p.get(&quot;needs_you&quot;):
+            return None
+        if p.get(&quot;pid&quot;) and p[&quot;pid&quot;] in working:
+            running.append(part_name(p))
+        elif str(p.get(&quot;state&quot;) or &quot;&quot;).lower().startswith(&quot;waiting&quot;) or p.get(&quot;status&quot;) == &quot;waiting&quot;:
+            waiting.append(part_name(p))
+        else:
+            return None      # a free hand: that is his next act, not a pick-up
+    deck = seated(inits, &quot;deck&quot;)
+    if not deck:
+        return None
+    g, p = deck[0]
+    st = str(p.get(&quot;state&quot;) or &quot;&quot;)
+    what = re.sub(r&quot;^waiting on you:\s*&quot;, &quot;&quot;, st, flags=re.I).strip() if st.lower().startswith(&quot;waiting on you&quot;) else &quot;&quot;
+    return {&quot;initiative&quot;: part_name(p), &quot;goal&quot;: str(g.get(&quot;name&quot;) or &quot;&quot;), &quot;id&quot;: str(p.get(&quot;id&quot;) or &quot;&quot;), &quot;why&quot;: &quot;on deck&quot;, &quot;text&quot;: what,
+            &quot;pid&quot;: str(p.get(&quot;pid&quot;) or &quot;&quot;), &quot;active&quot;: [part_name(x) for _g, x in active], &quot;running&quot;: running, &quot;waiting&quot;: waiting}</pre>
+<p><a class="button" href="../source-pages/attention.html#L392">Open numbered source</a>
+<a href="../sources/attention.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/pickup">Offer pickup while Active runs</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">65b33926f0dd8284cb0117959366e3ed6269e7c55bd3887801dde68822f3e96d</span></p><p>Excerpt hash: <span class="path">5194640229aaa027f860825251ebd6bf14d4f507007c27716d1d02cb05031634</span></p></details></article></main></body></html>

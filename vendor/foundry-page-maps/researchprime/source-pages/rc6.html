@@ -1,0 +1,531 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>rc6 · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>rc6</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\drivers\elegance-pass.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 63368df2435b4e2fe586eb7b18caa9a8f40c4dcd3fb80d957f03674e50fe136c</p></details>
+<p><a href="../sources/rc6.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // drivers/elegance-pass.mjs — the Elegance pass + Rabbit-Catcher pass, ONE module for the trio.</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // John, 2026-09-05: &quot;an elegance pass and a rabbit catcher pass that are run after the crucible</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // plan gets built (along with an adversarial review of these). Then have an elegance and rabbit</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // catcher review after each wave of foreman.&quot; Decision (John, same day): CUT verdicts BLOCK in</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // Crucible (before anything is built) and in Foreman only when a SECOND seat confirms them.</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> //</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // The criterion is ELEGANCE.md Part II (Skill Foundry root; the canonical text). The battery</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // below is that text&#x27;s per-element questions, compact, with the same verdicts. Two seats:</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //   - the CATCHER runs the battery: the steering seat (role `synthesizer` → the dashboard&#x27;s</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //     coding family);</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //   - the ADVERSARY attacks the verdicts: the review seat (role `shark` → the review family).</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // Bounded by construction: one call each per hook, never recursive (a HOLD&#x27;s investigation is</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> // not itself batteried). Everything the seats say is data; the engines apply verdicts.</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> //</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> // Provenance is not the seat&#x27;s opinion. Every element&#x27;s claimed need is tagged</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //   `user-ratified` | `record` (a journal / incident / prior artifact) | `proposer-written` | `none`</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> // and a need whose only record is one the proposer wrote for this effort cannot earn KEEP</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> // (RC-1). The Foundry&#x27;s own 2026-09-05 failure: a LITE run integrated 7/7 ideas, each &quot;serving&quot;</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> // a criterion the planner had written that morning (crucible journal 0094).</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> </span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> /** The pass&#x27;s own typed failure — a seat that returned no judgeable JSON. */</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> export class ElegancePassError extends Error {</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a>   constructor(message) { super(message); this.name = &#x27;ElegancePassError&#x27;; }</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> }</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> export const ELEGANCE_PASS_VERSION = &#x27;elegance-pass/1 (ELEGANCE.md Part II, 2026-08-15; engine hooks 2026-09-05)&#x27;;</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> </span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> export const VERDICTS = Object.freeze([&#x27;KEEP&#x27;, &#x27;HOLD&#x27;, &#x27;CUT&#x27;]);</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> export const PROVENANCE = Object.freeze([&#x27;user-ratified&#x27;, &#x27;record&#x27;, &#x27;proposer-written&#x27;, &#x27;none&#x27;]);</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> </span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> /** The battery, compact. The canonical text is ELEGANCE.md Part II; this must not drift from it. */</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> export const RC_BATTERY = `</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> RC-1 Needed-because, with an INDEPENDENT citable need: what forces this element, named as a record</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a>   independent of the element&#x27;s proposer — it predates this effort, or carries the user&#x27;s authorship</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a>   or ratification, or is an incident/journal record. A record created in order to justify the</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a>   element (by the proposer, in this effort) does not count; packaging an element beside a</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a>   legitimately-needed sibling transfers nothing. No independent need ⇒ presumptive ⇒ CUT or park.</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> RC-2 Delete-and-check, objective named: what breaks if this is removed, for WHOM, against WHICH</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>   on-record objective. The only loss being an unexercised presumptive FEATURE ⇒ rabbit hole.</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>   Carve-out: malleability work (tests, seams, refactors, design investment) is never &quot;unexercised</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   capability&quot; — IF it ships no user-facing behaviour nobody asked for AND names the next concrete</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a>   change it cheapens (a change that passes RC-1 itself).</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> RC-3 Leverage: what disproportionately large consequence does this buy, and what does it let us</span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a>   DROP. A plan/process element that adds machinery while retiring none is presumed extraneous</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>   (guards are scored by RC-G instead).</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> RC-4 Whose simplicity: does this move complexity onto the user or maintainer? Cutting intrinsic</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>   complexity or interface-protecting depth is forbidden; only extraneous load is a target.</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> RC-5 Earned or premature, by written trigger: scaffolding is EARNED when it carries a written</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>   retirement trigger; a simplification is premature when it precedes the understanding it claims.</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> RC-6 Critical path: does the locked North Star FAIL without this, or merely feel less complete?</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   When uncertain: PARK it (zero further spend) and carry one line to the user — never pursue silently.</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a> RC-7 Tie-breaker only: elegance never overrides a requirement, a datum, or a failing test.</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a> RC-8 Wave count (Stage 2 only): a wave is a change a reviewer would want to see alone. Adjacent</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a>   waves that are ONE change merge, on the record: a parser without its renderer is invisible, a</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a>   module without its hooks is dead code, a backend that exists only for one link ships with the</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a>   link, a wave whose gate needs the NEXT wave&#x27;s change to be tested is the same change. Waves that</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>   touch different failure surfaces, or bury an irreversible / externally visible step beside a safe</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>   one, stay apart.</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> RC-G Guards (tests, gates, error handling, journals, run-records): forced by a NAMED hazard that</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>   obeys the same independence law (predates the proposal, the user named it, or its class has</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>   occurred on the record); the guard must actually SEE the failure it guards; its false-alarm cost</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>   is stated. A guard that cannot see what the user sees is theater.</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> Disposition — exactly one verdict per element: KEEP (independent need, no failing question);</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>   HOLD (something unresolved and NAMED: a written cure + retirement trigger, or an RC-6 uncertainty</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>   parked for the user&#x27;s one-line answer); CUT (no independent need, or a failing question with no</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>   cure — logged, so the cut is on the record).`;</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> /**</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>  * Normalize elements to `{ id, text, kind }`. `kind` is &#x27;element&#x27; | &#x27;guard&#x27; | &#x27;malleability&#x27;</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a>  * (tests/seams/refactors) — the seat may re-classify, but the caller&#x27;s hint rides along.</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a>  */</span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> export function normalizeElements(items) {</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>   const out = [];</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>   const list = Array.isArray(items) ? items : [];</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>   list.forEach((it, i) =&gt; {</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>     if (it === null || it === undefined) return;</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>     if (typeof it === &#x27;string&#x27;) {</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a>       const t = it.trim();</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>       if (t) out.push({ id: `E${i + 1}`, text: t, kind: &#x27;element&#x27; });</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>       return;</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>     }</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>     const text = String(it.text ?? it.title ?? &#x27;&#x27;).trim();</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>     if (!text) return;</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>     out.push({</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>       id: String(it.id ?? `E${i + 1}`),</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>       text,</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>       kind: [&#x27;element&#x27;, &#x27;guard&#x27;, &#x27;malleability&#x27;].includes(it.kind) ? it.kind : &#x27;element&#x27;,</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>       ...(it.detail ? { detail: String(it.detail).slice(0, 1200) } : {}),</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>     });</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>   });</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>   return out;</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a> }</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a> </span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a> const CATCHER_SCHEMA = {</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>   type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>   required: [&#x27;verdicts&#x27;],</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>   properties: {</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>     verdicts: {</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>       type: &#x27;array&#x27;,</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>       items: {</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>         type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>         required: [&#x27;id&#x27;, &#x27;verdict&#x27;, &#x27;need&#x27;, &#x27;provenance&#x27;, &#x27;rc2&#x27;, &#x27;needed_because&#x27;],</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>         properties: {</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a>           id: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>           verdict: { type: &#x27;string&#x27;, enum: [...VERDICTS] },</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>           need: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>           provenance: { type: &#x27;string&#x27;, enum: [...PROVENANCE] },</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>           rc2: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>           trigger: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>           needed_because: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>           failing: { type: &#x27;array&#x27;, items: { type: &#x27;string&#x27; } },</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a>         },</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a>       },</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a>     },</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>     nothing_cut_said_aloud: { type: &#x27;boolean&#x27; },</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a>   },</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a> };</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a> </span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> const ADVERSARY_SCHEMA = {</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>   type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>   required: [&#x27;disputes&#x27;],</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>   properties: {</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a>     disputes: {</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>       type: &#x27;array&#x27;,</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>       items: {</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>         type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>         required: [&#x27;id&#x27;, &#x27;disputed_verdict&#x27;, &#x27;reason&#x27;, &#x27;severity&#x27;],</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a>         properties: {</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>           id: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>           disputed_verdict: { type: &#x27;string&#x27;, enum: [...VERDICTS] },</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>           proposed_verdict: { type: &#x27;string&#x27;, enum: [...VERDICTS] },</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>           reason: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>           severity: { type: &#x27;string&#x27;, enum: [&#x27;BLOCKER&#x27;, &#x27;MAJOR&#x27;, &#x27;MINOR&#x27;] },</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>           trigger: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>         },</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>       },</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>     },</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>   },</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a> };</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a> </span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a> function provenanceBlock(provenance) {</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>   const p = provenance &amp;&amp; typeof provenance === &#x27;object&#x27; ? provenance : {};</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>   const lines = [];</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>   if (Array.isArray(p.userRatified) &amp;&amp; p.userRatified.length) {</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>     lines.push(&#x27;USER-RATIFIED records (a need citing one of these is independent):&#x27;);</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>     for (const r of p.userRatified) lines.push(`  - ${String(r).slice(0, 300)}`);</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>   }</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>   if (Array.isArray(p.records) &amp;&amp; p.records.length) {</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>     lines.push(&#x27;RECORDS on file (journals, incidents, prior artifacts):&#x27;);</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>     for (const r of p.records) lines.push(`  - ${String(r).slice(0, 300)}`);</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>   }</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>   if (Array.isArray(p.proposerWritten) &amp;&amp; p.proposerWritten.length) {</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>     lines.push(&#x27;PROPOSER-WRITTEN this effort (NOT independent — a need citing only these cannot earn KEEP):&#x27;);</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>     for (const r of p.proposerWritten) lines.push(`  - ${String(r).slice(0, 300)}`);</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>   }</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a>   return lines.join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a> }</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a> </span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a> function parseJsonReply(reply) {</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>   if (reply &amp;&amp; typeof reply === &#x27;object&#x27;) return reply;</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>   const text = String(reply ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>   const start = text.indexOf(&#x27;{&#x27;);</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>   const end = text.lastIndexOf(&#x27;}&#x27;);</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a>   if (start &lt; 0 || end &lt;= start) throw new ElegancePassError(&#x27;elegance pass: the seat returned no JSON object&#x27;);</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>   return JSON.parse(text.slice(start, end + 1));</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a> }</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a> </span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a> function coerceVerdicts(raw, elements) {</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>   const byId = new Map(elements.map((e) =&gt; [e.id, e]));</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>   const out = [];</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>   const seen = new Set();</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>   for (const v of Array.isArray(raw?.verdicts) ? raw.verdicts : []) {</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>     const id = String(v?.id ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>     if (!byId.has(id) || seen.has(id)) continue;</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>     seen.add(id);</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>     const verdict = VERDICTS.includes(v.verdict) ? v.verdict : &#x27;HOLD&#x27;;</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>     const provenance = PROVENANCE.includes(v.provenance) ? v.provenance : &#x27;none&#x27;;</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>     out.push({</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>       id,</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>       text: byId.get(id).text,</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>       kind: byId.get(id).kind,</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>       verdict: (verdict === &#x27;KEEP&#x27; &amp;&amp; (provenance === &#x27;proposer-written&#x27; || provenance === &#x27;none&#x27;))</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>         ? &#x27;HOLD&#x27; : verdict,   // RC-1: a KEEP without an independent need is not a KEEP</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>       need: String(v.need ?? &#x27;&#x27;).slice(0, 600),</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>       provenance,</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>       rc2: String(v.rc2 ?? &#x27;&#x27;).slice(0, 600),</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>       trigger: String(v.trigger ?? &#x27;&#x27;).slice(0, 300),</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>       needed_because: String(v.needed_because ?? &#x27;&#x27;).slice(0, 300),</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>       failing: Array.isArray(v.failing) ? v.failing.map(String).slice(0, 8) : [],</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>       downgraded_from_keep: verdict === &#x27;KEEP&#x27; &amp;&amp; (provenance === &#x27;proposer-written&#x27; || provenance === &#x27;none&#x27;),</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>     });</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>   }</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>   // an element the seat did not judge is HOLD (named: &quot;not judged&quot;), never silently KEEP</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>   for (const e of elements) {</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>     if (!seen.has(e.id)) {</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>       out.push({ id: e.id, text: e.text, kind: e.kind, verdict: &#x27;HOLD&#x27;, need: &#x27;&#x27;, provenance: &#x27;none&#x27;,</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>         rc2: &#x27;&#x27;, trigger: &#x27;the catcher did not judge this element — judge it before it is built&#x27;,</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>         needed_because: &#x27;&#x27;, failing: [&#x27;not judged&#x27;], downgraded_from_keep: false });</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>     }</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>   }</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>   return out;</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a> }</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a> </span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a> /**</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>  * The CATCHER: the steering seat runs the battery over the enumerated elements.</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>  * @param {object} o</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>  * @param {Array} o.elements   strings or {id,text,kind,detail}</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>  * @param {string} o.northStar</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>  * @param {string[]} [o.criteria]</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>  * @param {{userRatified?:string[], records?:string[], proposerWritten?:string[]}} [o.provenance]</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>  * @param {Function} o.agent   agent(prompt, {role,label,schema}) → object | JSON text</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>  * @param {string} [o.context] what is being judged (a plan phase list, a wave&#x27;s diff, …)</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>  */</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a> export async function runRabbitCatcher({ elements, northStar, criteria = [], provenance = {}, agent, context = &#x27;&#x27;, label = &#x27;rabbit-catcher&#x27;, log = () =&gt; {} } = {}) {</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>   if (typeof agent !== &#x27;function&#x27;) throw new ElegancePassError(&#x27;runRabbitCatcher requires an agent() seam&#x27;);</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>   const els = normalizeElements(elements);</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>   if (!els.length) return { version: ELEGANCE_PASS_VERSION, verdicts: [], keep: [], hold: [], cut: [], nothingCut: true, stamp: &#x27;no elements&#x27; };</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>   const prompt = [</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>     &#x27;You are the STEERING seat running the Elegance pass and the Rabbit-Catcher battery over an enumerated&#x27;,</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>     &#x27;list of plan/build elements. Judge each element with the battery below; give exactly one verdict each.&#x27;,</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>     &#x27;Cite the INDEPENDENT record that forces the element (RC-1) and tag its provenance honestly. A need that&#x27;,</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>     &#x27;exists only because the proposer wrote it for this effort is `proposer-written` and cannot earn KEEP.&#x27;,</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>     &#x27;Tests, seams and refactors are malleability work: judge them by the carve-out, never as &quot;unused&quot;.&#x27;,</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>     &#x27;A guard is judged by RC-G. When uncertain about the critical path (RC-6), HOLD with a one-line question&#x27;,</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>     &#x27;for the user — never KEEP by default. Return JSON only, matching the schema.&#x27;,</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>     `NORTH STAR:\n${String(northStar || &#x27;&#x27;).slice(0, 6000)}`,</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>     criteria.length ? `\nSUCCESS CRITERIA:\n${criteria.map((c, i) =&gt; `${i + 1}. ${String(c).slice(0, 500)}`).join(&#x27;\n&#x27;)}` : &#x27;&#x27;,</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>     provenanceBlock(provenance) ? `\nPROVENANCE:\n${provenanceBlock(provenance)}` : &#x27;&#x27;,</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>     context ? `\nWHAT IS BEING JUDGED: ${String(context).slice(0, 400)}` : &#x27;&#x27;,</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>     `\nTHE BATTERY:${RC_BATTERY}`,</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a>     &#x27;\nELEMENTS:&#x27;,</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>     ...els.map((e) =&gt; `- [${e.id}] (${e.kind}) ${e.text}${e.detail ? `\n    detail: ${e.detail}` : &#x27;&#x27;}`),</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>     &#x27;Output: {&quot;verdicts&quot;:[{&quot;id&quot;,&quot;verdict&quot;:&quot;KEEP|HOLD|CUT&quot;,&quot;need&quot;,&quot;provenance&quot;:&quot;user-ratified|record|proposer-written|none&quot;,&#x27;,</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>     &#x27;&quot;rc2&quot;,&quot;trigger&quot;,&quot;needed_because&quot;,&quot;failing&quot;:[&quot;RC-n&quot;,...]}], &quot;nothing_cut_said_aloud&quot;: boolean}&#x27;,</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   ].filter((s) =&gt; s !== &#x27;&#x27;).join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>   const reply = await agent(prompt, { role: &#x27;synthesizer&#x27;, label, schema: CATCHER_SCHEMA });</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>   const verdicts = coerceVerdicts(parseJsonReply(reply), els);</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>   const keep = verdicts.filter((v) =&gt; v.verdict === &#x27;KEEP&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>   const hold = verdicts.filter((v) =&gt; v.verdict === &#x27;HOLD&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>   const cut = verdicts.filter((v) =&gt; v.verdict === &#x27;CUT&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>   log(`elegance pass: ${els.length} element(s) → keep ${keep.length} · hold ${hold.length} · cut ${cut.length}` +</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>     (cut.length === 0 ? &#x27; · nothing cut (said aloud)&#x27; : &#x27;&#x27;));</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>   return { version: ELEGANCE_PASS_VERSION, verdicts, keep, hold, cut, nothingCut: cut.length === 0, stamp: &#x27;catcher&#x27; };</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a> }</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a> </span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a> /**</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>  * The ADVERSARY: the review seat attacks the verdicts. A CUT the adversary refutes is RESTORED to</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>  * HOLD (with the adversary&#x27;s trigger); a KEEP the adversary attacks with BLOCKER/MAJOR severity is</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>  * demoted to HOLD; a CUT the adversary confirms (or does not dispute) stays CUT.</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>  */</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a> export async function runRabbitCatcherAdversary({ catcher, elements, northStar, agent, label = &#x27;rabbit-catcher-adversary&#x27;, log = () =&gt; {} } = {}) {</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>   // (2026-09-07, crucible journal 0099) a KEEP whose need is USER-RATIFIED is not the proposer&#x27;s</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>   // own record — the user&#x27;s lock is the independent need — so a dispute is recorded but moves nothing.</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>   const userLocked = (v) =&gt; String(v?.provenance || &#x27;&#x27;).toLowerCase().startsWith(&#x27;user&#x27;);</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>   if (typeof agent !== &#x27;function&#x27;) throw new ElegancePassError(&#x27;runRabbitCatcherAdversary requires an agent() seam&#x27;);</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>   const verdicts = Array.isArray(catcher?.verdicts) ? catcher.verdicts : [];</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>   if (!verdicts.length) return { disputes: [], verdicts: [], confirmedCuts: [], restored: [], demoted: [] };</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>   const prompt = [</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>     &#x27;You are an independent ADVERSARIAL reviewer (a different model family from the steering seat) attacking&#x27;,</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>     &#x27;the verdicts of an Elegance / Rabbit-Catcher pass. Refute what is wrong: a KEEP whose cited need is not&#x27;,</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>     &#x27;independent of its proposer (RC-1), a CUT that surrenders a datum or removes malleability work that&#x27;,</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>     &#x27;names its next change (RC-2 carve-out), a HOLD with no trigger, a guard kept without a hazard that&#x27;,</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>     &#x27;meets the independence law (RC-G). Do not restate agreement; only disputes. Return JSON only.&#x27;,</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>     `NORTH STAR:\n${String(northStar || &#x27;&#x27;).slice(0, 4000)}`,</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>     `\nTHE BATTERY:${RC_BATTERY}`,</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>     &#x27;\nVERDICTS UNDER ATTACK:&#x27;,</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>     ...verdicts.map((v) =&gt; `- [${v.id}] ${v.verdict} — ${v.text}\n    need: ${v.need || &#x27;(none)&#x27;} [${v.provenance}]\n    rc2: ${v.rc2 || &#x27;(none)&#x27;}${v.trigger ? `\n    trigger: ${v.trigger}` : &#x27;&#x27;}`),</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>     &#x27;Output: {&quot;disputes&quot;:[{&quot;id&quot;,&quot;disputed_verdict&quot;:&quot;KEEP|HOLD|CUT&quot;,&quot;proposed_verdict&quot;:&quot;KEEP|HOLD|CUT&quot;,&quot;reason&quot;,&quot;severity&quot;:&quot;BLOCKER|MAJOR|MINOR&quot;,&quot;trigger&quot;}]}&#x27;,</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>   ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>   const reply = await agent(prompt, { role: &#x27;shark&#x27;, label, schema: ADVERSARY_SCHEMA });</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>   const raw = parseJsonReply(reply);</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>   const byId = new Map(verdicts.map((v) =&gt; [v.id, { ...v }]));</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>   const disputes = [];</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>   const restored = [];</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>   const demoted = [];</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>   for (const d of Array.isArray(raw?.disputes) ? raw.disputes : []) {</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>     const id = String(d?.id ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>     const v = byId.get(id);</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>     if (!v) continue;</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>     const severity = [&#x27;BLOCKER&#x27;, &#x27;MAJOR&#x27;, &#x27;MINOR&#x27;].includes(d.severity) ? d.severity : &#x27;MINOR&#x27;;</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>     const dispute = { id, disputed_verdict: v.verdict, proposed_verdict: VERDICTS.includes(d.proposed_verdict) ? d.proposed_verdict : &#x27;HOLD&#x27;,</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>       reason: String(d.reason ?? &#x27;&#x27;).slice(0, 600), severity, trigger: String(d.trigger ?? &#x27;&#x27;).slice(0, 300) };</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>     disputes.push(dispute);</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>     if (severity === &#x27;MINOR&#x27;) continue;   // a minor dispute is recorded, it moves nothing</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>     if (v.verdict === &#x27;CUT&#x27;) {</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>       v.verdict = &#x27;HOLD&#x27;; v.trigger = dispute.trigger || dispute.reason; v.restored_by_adversary = true; restored.push(id);</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>     } else if (v.verdict === &#x27;KEEP&#x27; &amp;&amp; !userLocked(v)) {</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>       v.verdict = &#x27;HOLD&#x27;; v.trigger = dispute.trigger || dispute.reason; v.demoted_by_adversary = true; demoted.push(id);</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>     }</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>   }</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>   const final = [...byId.values()];</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>   const confirmedCuts = final.filter((v) =&gt; v.verdict === &#x27;CUT&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>   log(`elegance adversary: ${disputes.length} dispute(s) → ${restored.length} cut(s) restored to HOLD, ${demoted.length} keep(s) demoted to HOLD, ${confirmedCuts.length} cut(s) confirmed`);</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>   return { disputes, verdicts: final, confirmedCuts, restored, demoted };</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a> }</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a> </span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a> /**</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>  * The whole pass: catcher, then adversary. `cuts` are CONFIRMED cuts (the adversary did not</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>  * refute them); the engines apply those. Never throws on an empty element list.</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>  */</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a> export async function runElegancePass({ elements, northStar, criteria, provenance, agent, context, log = () =&gt; {}, adversary = true } = {}) {</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>   const catcher = await runRabbitCatcher({ elements, northStar, criteria, provenance, agent, context, log });</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>   if (!catcher.verdicts.length) {</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a>     return { ...catcher, cuts: [], holds: [], keeps: [], disputes: [], markdown: renderElegancePass({ verdicts: [], disputes: [], context }) };</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>   }</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a>   let verdicts = catcher.verdicts;</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>   let disputes = [];</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>   if (adversary) {</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>     const adv = await runRabbitCatcherAdversary({ catcher, elements, northStar, agent, log });</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>     verdicts = adv.verdicts;</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>     disputes = adv.disputes;</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>   }</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>   const cuts = verdicts.filter((v) =&gt; v.verdict === &#x27;CUT&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>   const holds = verdicts.filter((v) =&gt; v.verdict === &#x27;HOLD&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>   const keeps = verdicts.filter((v) =&gt; v.verdict === &#x27;KEEP&#x27;).map((v) =&gt; v.id);</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>   return { version: ELEGANCE_PASS_VERSION, verdicts, disputes, cuts, holds, keeps, nothingCut: cuts.length === 0,</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>     markdown: renderElegancePass({ verdicts, disputes, context }) };</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a> }</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a> </span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a> /** The human-readable record — the &quot;show a cut&quot; line the Elegance Law demands is generated here. */</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a> export function renderElegancePass({ verdicts = [], disputes = [], context = &#x27;&#x27; } = {}) {</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>   const cuts = verdicts.filter((v) =&gt; v.verdict === &#x27;CUT&#x27;);</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>   const holds = verdicts.filter((v) =&gt; v.verdict === &#x27;HOLD&#x27;);</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>   const keeps = verdicts.filter((v) =&gt; v.verdict === &#x27;KEEP&#x27;);</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>   const lines = [</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>     `# Elegance pass — Rabbit-Catcher (${ELEGANCE_PASS_VERSION})`,</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>     context ? `**Judged:** ${context}` : &#x27;&#x27;,</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a>     `**Verdicts:** keep ${keeps.length} · hold ${holds.length} · cut ${cuts.length} · disputes ${disputes.length}`,</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>     cuts.length ? `**Cut:** ${cuts.map((v) =&gt; `[${v.id}] ${v.text}`).join(&#x27;; &#x27;)}` : &#x27;**Nothing cut** (said aloud).&#x27;,</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a>     &#x27;| id | verdict | element | need (provenance) | delete-and-check | trigger / needed-because |&#x27;,</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a>     &#x27;|---|---|---|---|---|---|&#x27;,</span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a>     ...verdicts.map((v) =&gt; `| ${v.id} | ${v.verdict}${v.restored_by_adversary ? &#x27; (restored)&#x27; : &#x27;&#x27;}${v.demoted_by_adversary ? &#x27; (demoted)&#x27; : &#x27;&#x27;}${v.downgraded_from_keep ? &#x27; (no independent need)&#x27; : &#x27;&#x27;} | ${cell(v.text)} | ${cell(v.need)} (${v.provenance}) | ${cell(v.rc2)} | ${cell(v.trigger || v.needed_because)} |`),</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>   ];</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a>   if (disputes.length) {</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>     lines.push(&#x27;&#x27;, &#x27;## Adversary disputes&#x27;, ...disputes.map((d) =&gt; `- [${d.id}] ${d.severity}: ${d.disputed_verdict} → ${d.proposed_verdict} — ${d.reason}`));</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a>   }</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>   return lines.filter((l) =&gt; l !== &#x27;&#x27; || true).join(&#x27;\n&#x27;) + &#x27;\n&#x27;;</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a> }</span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a> </span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a> function cell(s) {</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a>   return String(s ?? &#x27;&#x27;).replace(/\|/g, &#x27;\\|&#x27;).replace(/\s+/g, &#x27; &#x27;).slice(0, 220);</span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a> }</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a> </span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a> const RC6_SCHEMA = {</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a>   type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>   required: [&#x27;items&#x27;],</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a>   properties: {</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a>     items: {</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a>       type: &#x27;array&#x27;,</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a>       items: {</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>         type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>         required: [&#x27;id&#x27;, &#x27;critical&#x27;, &#x27;reason&#x27;],</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a>         properties: {</span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a>           id: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a>           critical: { type: &#x27;boolean&#x27; },</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>           reason: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>         },</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>       },</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>     },</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a>   },</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a> };</span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a> </span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a> /**</span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a>  * RC-6 only — the round-boundary question (ELEGANCE.md Part II: &quot;round boundaries ask only</span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a>  * RC-6&quot;). Over a list of open items (researchPrime blockers, open findings), the steering seat</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>  * answers &quot;does the locked North Star FAIL without resolving this, or merely feel less complete?&quot;.</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a>  * Items answered &quot;merely&quot; are PARKED: zero further spend, one line for the user</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a>  * (&quot;possible rabbit hole: … — pursue or drop?&quot;). One call; skipped when there is nothing open.</span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a>  *</span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a>  * @returns {Promise&lt;{ critical: string[], parked: Array&lt;{id, text, reason}&gt;, lines: string[] }&gt;}</span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a>  */</span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a> export async function runCriticalPathCheck({ items, northStar, agent, label = &#x27;rc6-critical-path&#x27;, log = () =&gt; {} } = {}) {</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>   const list = normalizeElements(items);</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>   if (!list.length) return { critical: [], parked: [], lines: [] };</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>   if (typeof agent !== &#x27;function&#x27;) throw new ElegancePassError(&#x27;runCriticalPathCheck requires an agent() seam&#x27;);</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>   const prompt = [</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a>     &#x27;You are the STEERING seat asking ONE question (RC-6, the critical-path question) about each open item:&#x27;,</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>     &#x27;does the locked North Star FAIL without resolving this item, or would the result merely feel less complete?&#x27;,</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a>     &#x27;Answer critical=true only when the North Star fails without it. A &quot;merely&quot; item is parked, never pursued&#x27;,</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a>     &#x27;silently. Return JSON only.&#x27;,</span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a>     &#x27;NORTH STAR:&#x27;,</span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a>     String(northStar || &#x27;&#x27;).slice(0, 4000),</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a>     &#x27;OPEN ITEMS:&#x27;,</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a>     ...list.map((e) =&gt; &#x27;- [&#x27; + e.id + &#x27;] &#x27; + e.text),</span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>     &#x27;Output: {&quot;items&quot;:[{&quot;id&quot;,&quot;critical&quot;:true|false,&quot;reason&quot;}]}&#x27;,</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>   ].join(String.fromCharCode(10));</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a>   const reply = await agent(prompt, { role: &#x27;synthesizer&#x27;, label, schema: RC6_SCHEMA });</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>   const raw = parseJsonReply(reply);</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>   const byId = new Map(list.map((e) =&gt; [e.id, e]));</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a>   const critical = [];</span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a>   const parked = [];</span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a>   const seen = new Set();</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a>   for (const it of Array.isArray(raw?.items) ? raw.items : []) {</span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a>     const id = String(it?.id ?? &#x27;&#x27;);</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a>     if (!byId.has(id) || seen.has(id)) continue;</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>     seen.add(id);</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>     if (it.critical === true) critical.push(id);</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>     else parked.push({ id, text: byId.get(id).text, reason: String(it.reason ?? &#x27;&#x27;).slice(0, 300) });</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>   }</span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>   for (const e of list) if (!seen.has(e.id)) critical.push(e.id);   // unjudged stays on the path (never silently parked)</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a>   const lines = parked.map((p) =&gt; &#x27;possible rabbit hole: [&#x27; + p.id + &#x27;] &#x27; + p.text.slice(0, 120) + &#x27; because &#x27; + (p.reason || &#x27;not on the critical path&#x27;) + &#x27; — pursue or drop?&#x27;);</span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>   log(&#x27;RC-6: &#x27; + list.length + &#x27; open item(s) → &#x27; + critical.length + &#x27; critical, &#x27; + parked.length + &#x27; parked&#x27;);</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>   return { critical, parked, lines };</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a> }</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a> </span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a> </span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a> // ---------------------------------------------------------------------------------------------</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a> // RC-8 — the wave-count question (John, 2026-09-05: seven emitted waves for three real changes went</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a> // through the element battery unchallenged; the battery judged elements, never the wave count).</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a> // The steering seat proposes merges of ADJACENT waves that are one change; the adversary (the other</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a> // family) disputes; only undisputed merges are applied by the caller. Pure over the reply.</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a> // ---------------------------------------------------------------------------------------------</span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a> const RC8_SCHEMA = {</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>   type: &#x27;object&#x27;, required: [&#x27;merges&#x27;],</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a>   properties: { merges: { type: &#x27;array&#x27;, items: {</span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a>     type: &#x27;object&#x27;, required: [&#x27;waves&#x27;, &#x27;reason&#x27;],</span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a>     properties: { waves: { type: &#x27;array&#x27;, items: { type: &#x27;number&#x27; } }, reason: { type: &#x27;string&#x27; } },</span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a>   } } },</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a> };</span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a> const RC8_DISPUTE_SCHEMA = {</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>   type: &#x27;object&#x27;, required: [&#x27;disputes&#x27;],</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>   properties: { disputes: { type: &#x27;array&#x27;, items: {</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a>     type: &#x27;object&#x27;, required: [&#x27;waves&#x27;, &#x27;severity&#x27;, &#x27;reason&#x27;],</span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>     properties: { waves: { type: &#x27;array&#x27;, items: { type: &#x27;number&#x27; } }, severity: { enum: [&#x27;BLOCKER&#x27;, &#x27;MAJOR&#x27;, &#x27;MINOR&#x27;] }, reason: { type: &#x27;string&#x27; } },</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>   } } },</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a> };</span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a> </span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a> /** A merge is a run of ≥2 distinct, ascending, ADJACENT 1-based wave numbers inside 1..n; runs never overlap (first wins). */</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a> export function normalizeWaveMerges(raw, n) {</span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a>   const out = [];</span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a>   const taken = new Set();</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a>   for (const m of Array.isArray(raw) ? raw : []) {</span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a>     const ws = Array.isArray(m?.waves) ? m.waves.map((x) =&gt; Number(x)).filter((x) =&gt; Number.isInteger(x)) : [];</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a>     if (ws.length &lt; 2) continue;</span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a>     const sorted = [...ws].sort((a, b) =&gt; a - b);</span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>     if (sorted[0] &lt; 1 || sorted[sorted.length - 1] &gt; n) continue;</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>     let adjacent = true;</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a>     for (let i = 1; i &lt; sorted.length; i++) if (sorted[i] !== sorted[i - 1] + 1) { adjacent = false; break; }</span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>     if (!adjacent || sorted.some((w) =&gt; taken.has(w))) continue;</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>     sorted.forEach((w) =&gt; taken.add(w));</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a>     out.push({ waves: sorted, reason: String(m?.reason ?? &#x27;&#x27;).slice(0, 400) });</span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>   }</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>   return out;</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a> }</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a> </span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a> function waveLine(w, i) {</span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a>   const dels = Array.isArray(w?.deliverables) ? w.deliverables.map((d) =&gt; String(d ?? &#x27;&#x27;).slice(0, 140)) : [];</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a>   return &#x27;[&#x27; + (i + 1) + &#x27;] &#x27; + String(w?.title ?? &#x27;&#x27;).slice(0, 160) +</span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a>     (w?.dependsOn ? &#x27; (depends on: &#x27; + String(w.dependsOn).slice(0, 80) + &#x27;)&#x27; : &#x27;&#x27;) +</span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a>     String.fromCharCode(10) + &#x27;    done-when: &#x27; + String(w?.doneWhen ?? &#x27;&#x27;).slice(0, 260) +</span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a>     (dels.length ? String.fromCharCode(10) + dels.map((d) =&gt; &#x27;    - &#x27; + d).join(String.fromCharCode(10)) : &#x27;&#x27;);</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a> }</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a> </span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a> /**</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a>  * RC-8 over a wave list. Returns `{ merges, confirmed, disputes, lines }` — `confirmed` are the merges</span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>  * no MAJOR/BLOCKER dispute touched. A list of fewer than two waves asks nothing.</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a>  */</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a> export async function runWaveCountCheck({ waves, northStar, agent, label = &#x27;rc8-wave-count&#x27;, log = () =&gt; {} } = {}) {</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>   const list = Array.isArray(waves) ? waves : [];</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>   if (list.length &lt; 2) return { merges: [], confirmed: [], disputes: [], lines: [] };</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>   if (typeof agent !== &#x27;function&#x27;) throw new ElegancePassError(&#x27;runWaveCountCheck requires an agent() seam&#x27;);</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>   const NL = String.fromCharCode(10);</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>   const shown = list.map(waveLine).join(NL);</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a>   const prompt = [</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a>     &#x27;You are the STEERING seat asking ONE question (RC-8, the wave-count question) about a wave decomposition:&#x27;,</span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a>     &#x27;is each wave a change a reviewer would want to see alone? Adjacent waves that are ONE change merge:&#x27;,</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>     &#x27;a parser without its renderer is invisible; a module without its hooks is dead code; a backend that&#x27;,</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>     &#x27;exists only for one link ships with the link; a wave whose gate needs the NEXT wave\&#x27;s change to be&#x27;,</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>     &#x27;TESTED is the same change. Do NOT merge waves that touch different failure surfaces, or that would&#x27;,</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a>     &#x27;bury an irreversible / externally visible step beside a safe one. Name only ADJACENT runs&#x27;,</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a>     &#x27;([n, n+1] or [n, n+1, n+2]); an empty list means every wave stands alone. Return JSON only.&#x27;,</span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a>     &#x27;NORTH STAR:&#x27;,</span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a>     String(northStar || &#x27;&#x27;).slice(0, 4000),</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a>     &#x27;WAVES:&#x27;,</span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a>     shown,</span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a>     &#x27;Output: {&quot;merges&quot;:[{&quot;waves&quot;:[n,m],&quot;reason&quot;}]}&#x27;,</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>   ].join(NL);</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>   const reply = await agent(prompt, { role: &#x27;synthesizer&#x27;, label, schema: RC8_SCHEMA });</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a>   const merges = normalizeWaveMerges(parseJsonReply(reply)?.merges, list.length);</span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>   let disputes = [];</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a>   if (merges.length) {</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>     const advPrompt = [</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>       &#x27;You are an independent ADVERSARIAL reviewer (a different model family from the steering seat) attacking&#x27;,</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a>       &#x27;proposed MERGES of waves in a decomposition (RC-8, the wave-count question). Refute a merge that would&#x27;,</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a>       &#x27;combine changes a reviewer must see separately: different failure surfaces; an irreversible or externally&#x27;,</span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a>       &#x27;visible step buried beside a safe one; a wave whose gate is meaningful alone and whose separate GREEN is&#x27;,</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>       &#x27;worth having. Do not restate agreement; only disputes. Return JSON only.&#x27;,</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>       &#x27;&#x27;,</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>       &#x27;NORTH STAR:&#x27;,</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>       String(northStar || &#x27;&#x27;).slice(0, 4000),</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>       &#x27;&#x27;,</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a>       &#x27;WAVES:&#x27;,</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>       shown,</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>       &#x27;&#x27;,</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>       &#x27;PROPOSED MERGES:&#x27;,</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>       ...merges.map((m) =&gt; &#x27;- waves &#x27; + m.waves.join(&#x27;+&#x27;) + &#x27; — &#x27; + m.reason),</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>       &#x27;&#x27;,</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a>       &#x27;Output: {&quot;disputes&quot;:[{&quot;waves&quot;:[n,m],&quot;severity&quot;:&quot;BLOCKER&quot;|&quot;MAJOR&quot;|&quot;MINOR&quot;,&quot;reason&quot;}]}&#x27;,</span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a>     ].join(NL);</span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a>     const advReply = await agent(advPrompt, { role: &#x27;shark&#x27;, label: label + &#x27;-adversary&#x27;, schema: RC8_DISPUTE_SCHEMA });</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a>     disputes = (parseJsonReply(advReply)?.disputes ?? []).filter((d) =&gt; Array.isArray(d?.waves)).map((d) =&gt; ({</span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>       waves: d.waves.map((x) =&gt; Number(x)).filter(Number.isInteger).sort((a, b) =&gt; a - b),</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a>       severity: [&#x27;BLOCKER&#x27;, &#x27;MAJOR&#x27;, &#x27;MINOR&#x27;].includes(d.severity) ? d.severity : &#x27;MINOR&#x27;,</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a>       reason: String(d.reason ?? &#x27;&#x27;).slice(0, 400),</span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a>     }));</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a>   }</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>   const blocked = (m) =&gt; disputes.some((d) =&gt; (d.severity === &#x27;BLOCKER&#x27; || d.severity === &#x27;MAJOR&#x27;) &amp;&amp; d.waves.some((w) =&gt; m.waves.includes(w)));</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>   const confirmed = merges.filter((m) =&gt; !blocked(m));</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>   const lines = confirmed.map((m) =&gt; &#x27;RC-8: merge waves &#x27; + m.waves.join(&#x27;+&#x27;) + &#x27; — &#x27; + (m.reason || &#x27;one change&#x27;));</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a>   log(&#x27;RC-8: &#x27; + list.length + &#x27; wave(s) → &#x27; + merges.length + &#x27; merge(s) proposed, &#x27; + disputes.length + &#x27; dispute(s), &#x27; + confirmed.length + &#x27; confirmed&#x27;);</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a>   return { merges, confirmed, disputes, lines };</span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a> }</span></pre></main></body></html>

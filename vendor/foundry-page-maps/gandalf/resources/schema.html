@@ -1,0 +1,108 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Final advisor JSON · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="schema" data-anchor-id="a-schema">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Reusable material</p><h1>Final advisor JSON</h1>
+<p class="intro">The gandalf-advisor-1 schema describes the actual result envelope. Current code also adds kill_log and scaled degradation qualifications.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/schema/advisor-output.schema.json · lines 1–96</p><pre>{
+  &quot;$schema&quot;: &quot;https://json-schema.org/draft/2020-12/schema&quot;,
+  &quot;$id&quot;: &quot;gandalf/advisor-output/1&quot;,
+  &quot;title&quot;: &quot;Gandalf advisor output (Increment 1, committed typed schema)&quot;,
+  &quot;description&quot;: &quot;The committed typed output schema for a Gandalf advisor run. Wave 1 (GATE-0) freezes the SHAPE; the deterministic canaries own shape + rung-consistency, label/semantic TRUTH is owned by the advisory layer (PRINCIPLE-D). Validated by a zero-dependency subset validator in test/harness.mjs (type, required, properties, items, enum, const, min/max, additionalProperties). additionalProperties is left open so later waves may add fields without a schema break.&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;required&quot;: [&quot;schema_version&quot;, &quot;cross_model&quot;, &quot;degraded&quot;, &quot;reasoning&quot;, &quot;verdict&quot;, &quot;findings&quot;, &quot;nitpicks&quot;, &quot;elevations&quot;, &quot;risk_labels&quot;],
+  &quot;additionalProperties&quot;: true,
+  &quot;properties&quot;: {
+    &quot;schema_version&quot;: { &quot;type&quot;: &quot;string&quot; },
+    &quot;cross_model&quot;: { &quot;type&quot;: &quot;boolean&quot; },
+    &quot;degraded&quot;: { &quot;type&quot;: &quot;boolean&quot; },
+    &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Reasoning text — MUST precede &#x27;verdict&#x27; in key order (reasoning-before-verdict invariant).&quot; },
+    &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Overall verdict; may be &#x27;this is sound&#x27;.&quot; },
+    &quot;findings&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;required&quot;: [&quot;id&quot;, &quot;rung&quot;, &quot;reasoning&quot;, &quot;verdict&quot;],
+        &quot;additionalProperties&quot;: true,
+        &quot;properties&quot;: {
+          &quot;id&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] },
+          &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;kind&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;diagnose&quot;, &quot;situate&quot;, &quot;anticipate&quot;, &quot;nitpick&quot;] },
+          &quot;severity&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;minor&quot;, &quot;major&quot;, &quot;critical&quot;] },
+          &quot;degraded&quot;: { &quot;type&quot;: &quot;boolean&quot; },
+          &quot;gandalf_core&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;description&quot;: &quot;Diagnose-core provenance envelope (B5): proves a kind:&#x27;diagnose&#x27; finding came from the vetted diagnose core (PROTOCOL v2), not re-derived inline. Required on diagnose findings by the B5 canary (assertDiagnoseCoreProvenance); minted only via seam/diagnose-core.mjs.&quot;,
+            &quot;properties&quot;: {
+              &quot;protocol&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;The vetted diagnose-core protocol marker; must equal GANDALF_CORE_PROTOCOL (&#x27;PROTOCOL v2&#x27;).&quot; }
+            }
+          },
+          &quot;subject_cardinality&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;minimum&quot;: 1, &quot;description&quot;: &quot;ANTICIPATE bounded-premortem cardinality (Wave 5 / B3): Gandalf&#x27;s Oranges-lens foresight reads a SINGLE effort, so on a kind:&#x27;anticipate&#x27; finding this must be 1. A value &gt; 1 is a multi-path read (Crucible&#x27;s engine) and FAILS B3 (assertBoundedPremortem).&quot; },
+          &quot;future_state_condition&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;ANTICIPATE forward-looking field (Wave 5 / B9): a not-yet-present condition the anticipation surfaces. Required (with enabling_assumption) on a kind:&#x27;anticipate&#x27; finding by the B9 canary (assertForwardLooking); minted via seam/anticipate.mjs composeAnticipation.&quot; },
+          &quot;enabling_assumption&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;ANTICIPATE forward-looking field (Wave 5 / B9): the assumption that would have to hold for the future_state_condition to arrive. Required (with future_state_condition) on a kind:&#x27;anticipate&#x27; finding by the B9 canary.&quot; }
+        }
+      }
+    },
+    &quot;nitpicks&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;required&quot;: [&quot;id&quot;, &quot;rung&quot;, &quot;reasoning&quot;, &quot;verdict&quot;],
+        &quot;additionalProperties&quot;: true,
+        &quot;properties&quot;: {
+          &quot;id&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] },
+          &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot; }
+        }
+      }
+    },
+    &quot;elevations&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;required&quot;: [&quot;id&quot;, &quot;tier&quot;, &quot;value_if_true&quot;, &quot;reasoning&quot;, &quot;verdict&quot;],
+        &quot;additionalProperties&quot;: true,
+        &quot;properties&quot;: {
+          &quot;id&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;tier&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;SPECULATIVE&quot;, &quot;PROMISING&quot;, &quot;GROUNDED&quot;] },
+          &quot;value_if_true&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;low&quot;, &quot;medium&quot;, &quot;high&quot;] },
+          &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] },
+          &quot;reasoning&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;verdict&quot;: { &quot;type&quot;: &quot;string&quot; },
+          &quot;refutation_provenance&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;description&quot;: &quot;The independent named-defeater refutation envelope (seam/refute.composeRefutationProvenance). W2a ADDITIVELY carries the cross-family provenance the commission-id ledger binds — drafter_family, refuter_family, result_digest. These are optional in W2a (emitted, not yet REQUIRED by vetElevationRefutation — that gate is W2b). additionalProperties stays open so the envelope&#x27;s existing fields (kind, defeater, independent, survived, refuter_commission_id) are unaffected.&quot;,
+            &quot;additionalProperties&quot;: true,
+            &quot;properties&quot;: {
+              &quot;drafter_family&quot;: { &quot;type&quot;: [&quot;string&quot;, &quot;null&quot;], &quot;description&quot;: &quot;W2a: the model family that authored the drafted claim under refutation.&quot; },
+              &quot;refuter_family&quot;: { &quot;type&quot;: [&quot;string&quot;, &quot;null&quot;], &quot;description&quot;: &quot;W2a: the model family that ran the independent refutation (cross-family when != drafter_family).&quot; },
+              &quot;result_digest&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;W2a: a stable SHA-256 over the refuter&#x27;s defeater + verdict content — the tuple the minted commission-id is cryptographically bound to.&quot; }
+            }
+          }
+        }
+      }
+    },
+    &quot;risk_labels&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;required&quot;: [&quot;leg&quot;, &quot;tier&quot;],
+        &quot;additionalProperties&quot;: true,
+        &quot;properties&quot;: {
+          &quot;leg&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;diagnose&quot;, &quot;situate&quot;, &quot;anticipate&quot;] },
+          &quot;tier&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;SPECULATIVE&quot;, &quot;PROMISING&quot;, &quot;GROUNDED&quot;] },
+          &quot;rung&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;enum&quot;: [&quot;REFUTED&quot;, &quot;UNVERIFIED&quot;, &quot;CLAIMED&quot;, &quot;CORROBORATED&quot;, &quot;OBSERVED&quot;] }
+        }
+      }
+    }
+  }
+}</pre>
+<p><a class="button" href="../source-pages/schema.html#L1">Open numbered source</a>
+<a href="../sources/schema.json" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/seam">Apply seams and risk labels</a> · <a target="_top" href="../index.html#process/output">Write the final advisor envelope</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">5743b98557d221362c1b1bbe5ebec900871ef94e0a4d4f32f20a346a4ad3f4a1</span></p><p>Excerpt hash: <span class="path">51deaac41c8a0822b4ef1d5ea230a90068b5e20febb236da365c73c1b44168af</span></p></details></article></main></body></html>

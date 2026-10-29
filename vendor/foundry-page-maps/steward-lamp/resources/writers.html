@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Narrative, clocks and events · Aladdin-Lamp</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="writers" data-anchor-id="a-authority">
+<a target="_top" href="../index.html#library">← Aladdin-Lamp Library</a>
+<p class="eyebrow">Reusable material</p><h1>Narrative, clocks and events</h1>
+<p class="intro">Face holds narrative; Strip and roadmap append through their writers. Managed wait derives from pending requests; legacy campaigns retain their existing path.</p><p class="badge">Resource access frequency unknown</p>
+<p>Reusable need from the linked protocol or real example; resource access counts are not captured.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-05T23:40:42.623227+00:00</time></p><p class="path">Captured from: C:/dev/Ecgberht/SKILL.md</p><p>Code or instructions verified against the authoritative file by the final gate. On-disk source is not proof of activation in John&#x27;s running build.</p><p class="path">Capture SHA-256: a00dcde3f35f9a2ef9629a6f93d45277b07fd8a18dd4fa3601f787a2b7cbe709</p></aside>
+<p class="path">C:\dev\Ecgberht\SKILL.md · lines 519–562</p><pre>## Face + Strip write authority
+
+| Surface | Role | Write authority |
+|---------|------|-----------------|
+| **Face** | Human narrative / cold-start constitution | May rewrite north star, active effort and why-next; human-wait only in legacy unmanaged campaigns |
+| **Strip** | Typed instrument heartbeat | Append-only instruments/receipts; reject silent in-place clock rewrite |
+| **Proposal** | A correction set after an acceptance (2026-09-28) | Append-only `repair_proposal` event on the roadmap; applied ONLY by his `repair_resolve` (accepted) as receipted `step_set` events; never applied unattended |
+
+**Face fields only (no depth/grasscatch jargon on Face):** north star · active effort · why next; legacy unmanaged human wait. Managed wait is a read-only projection of `pending_request`, never an authored Face field.
+Markers: `schema/face-markers.json`. Template: `templates/ECGBERHT.md`.
+
+**Strip locked fields (`ecgberht-strip-v0`):** phase · active_effort · human_wait · capacity `known|unknown` · negative_heartbeat · grasscatch · uncertainty_flags · tool_depth_cell · next_recommended · why_next; since 2026-09-28 also wait_ref · current_step_id · horizon_source_seq · horizon_focus (all projected from the instruments — `STRIP_CLOCK_FIELDS`). Receipt kinds: heartbeat · leave.  
+Schema: `schema/strip.schema.json`. Templates: `templates/strip.json`, `templates/strip-fence.md`.
+
+### Heal law (enforced in engine helpers)
+
+| Rule | Meaning |
+|------|---------|
+| Face wins narrative | Human north-star / why-stakes / active-effort prose may be rewritten on Face |
+| Strip wins clocks | Instruments/receipts are **append-only**; silent in-place clock rewrite is **rejected** |
+| Crisis = explicit re-sync | `healResync({ explicit: true, … })` only — ambient chat cannot dual-write |
+| Silence = negative-heartbeat | Do not invent “all clear”; record `negative_heartbeat` |
+| Chat cannot invent truth | Claims must ground in Face or Strip surfaces |
+| Fence/schema drift | Repair Face fence text from Strip projection; **never** silently rewrite Strip history |
+
+Engine modules: `engine/write-authority.mjs`, `engine/heal.mjs`, `engine/face-strip.mjs`.
+
+### Campaign Roadmap (TW1 — engine truth)
+
+The Roadmap is engine truth via append-only events + a derived projection. Face prose is **never** the only step list.
+
+| Surface | Rule |
+|---------|------|
+| `roadmap_events[]` | Append-only history (`step_create` · `step_set` · `status_flip` · `commission_bind` · `goal_flip` · `kickoff_proposal` · `kickoff_confirm` · … — the list is `ROADMAP_EVENT_KINDS`, version 9 since 2026-09-28, which added `reorder` (his act; receipted; folds the step&#x27;s place), `repair_proposal` and `repair_resolve` (project-level; fold nothing)); prior entries never rewritten |
+| `roadmap_projection` | **Derived-only** execution list (`id, name, status, done_when, waiting_on, commissioned_as, part, gate`) plus confirmed kickoff references (`component_ids, end_to_end_slice, kickoff_version, kickoff_proposal_hash`); direct writes rejected |
+| Status flip | Requires a receipt (`who`/`why`) on the `status_flip` event — flip without receipt = refuse write / reject on validate |
+| Silent rewrite | Stored projection that disagrees with the event fold → structured reject (`roadmap_silent_rewrite`); **heal** rebuilds projection from events (events untouched) |
+| Face-only prose | `roadmap-show` / `status` return an **empty projection + honest gap** (`face_prose_only`) — steps are never invented from prose |
+
+**Single writer path (TW3 hook):** durable operations use `appendRoadmapEventThroughSpine` (including `roadmap-propose`, `roadmap-set` and `refinement-update`); `appendRoadmapEvent` supplies the pure fold. TW3 job lifecycle (commission propose/confirm; `queued → running → done | failed | orphaned | reaped`) binds through this same writer: `commission_bind` attaches a step to a commissioned job and receipted `status_flip` records ordinary step changes. A managed slice reaches Done through its explicit current-presentation close or guarded completion after all current products are individually accepted; job completion cannot bypass that boundary. No dual-write, second store or UI-only state. Contract constant: `ROADMAP_SINGLE_WRITER`.
+
+Statuses: `proposed | planned | active | waiting | done | parked`.  
+Module: `engine/roadmap.mjs` · schema: `schema/roadmap.schema.json` · template: `templates/roadmap.json` · fixture: `fixtures/roadmap-minimal.json` · file: `roadmap.json` at project root.
+</pre>
+<p><a class="button" href="../source-pages/skill.html#L519">Open numbered source</a>
+<a href="../sources/skill.md" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/writers">Write through the existing doors</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">a00dcde3f35f9a2ef9629a6f93d45277b07fd8a18dd4fa3601f787a2b7cbe709</span></p><p>Excerpt hash: <span class="path">b48c15a9970ec61564d1f0c5520ba843427f4ce38998cb2a8bfac9dc208360d2</span></p></details></article></main></body></html>

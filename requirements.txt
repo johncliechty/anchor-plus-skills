@@ -1,6 +1,0 @@
-flask
-Pillow
-# OPTIONAL (not part of stdlib-only core): the v3 ConPTY terminal subsystem.
-# Authoritative declaration is the pyproject `terminal` extra. Install with
-# `pip install .[terminal]`, or uncomment the next line on Windows hosts.
-# pywinpty>=2.0; sys_platform == 'win32'

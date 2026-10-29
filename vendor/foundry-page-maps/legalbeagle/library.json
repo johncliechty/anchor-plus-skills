@@ -1,0 +1,130 @@
+{
+  "resources": [
+    {
+      "id": "legalbeagle-mat-skill-md",
+      "title": "Legal-Beagle Agent & Execution Protocol (SKILL.md)",
+      "category": "material",
+      "path": "SKILL.md",
+      "description": "Canonical instructions, stage gates, invariants, and operator manual."
+    },
+    {
+      "id": "legalbeagle-mat-human-md",
+      "title": "Legal-Beagle Human Guide (HUMAN.md)",
+      "category": "material",
+      "path": "HUMAN.md",
+      "description": "Plain-English overview, when to invoke, workflow stages, and honest boundaries."
+    },
+    {
+      "id": "legalbeagle-mat-north-star-md",
+      "title": "Legal-Beagle Locked North Star (NORTH-STAR.md)",
+      "category": "material",
+      "path": "NORTH-STAR.md",
+      "description": "Locked mission objective, anti-drift contract, and acceptance criteria."
+    },
+    {
+      "id": "legalbeagle-mat-triage-block",
+      "title": "Legal-Beagle Universal Triage & Seating Block",
+      "category": "material",
+      "path": "foundry/triage/generated/legal-beagle.triage-block.md",
+      "description": "Generated Universal Seating Law & complexity triage protocol block."
+    },
+    {
+      "id": "legalbeagle-tool-bin-legal-round-mjs",
+      "title": "legal-round.mjs (bin/legal-round.mjs)",
+      "category": "tools",
+      "path": "bin/legal-round.mjs",
+      "description": "Executable .mjs module (302 LOC; key symbols: buildReceipt, sha, gateWord, trioUrl)."
+    },
+    {
+      "id": "legalbeagle-tool-src-citation-lint-js",
+      "title": "citation-lint.js (src/citation-lint.js)",
+      "category": "tools",
+      "path": "src/citation-lint.js",
+      "description": "Executable .js module (339 LOC; key symbols: norm, cleanCitationTail, extractCitations, escapeRegExp)."
+    },
+    {
+      "id": "legalbeagle-tool-test-citation-lint-test-js",
+      "title": "citation-lint.test.js (test/citation-lint.test.js)",
+      "category": "tools",
+      "path": "test/citation-lint.test.js",
+      "description": "Executable .js module (92 LOC; key symbols: module entrypoint)."
+    },
+    {
+      "id": "legalbeagle-tool-test-legal-round-test-mjs",
+      "title": "legal-round.test.mjs (test/legal-round.test.mjs)",
+      "category": "tools",
+      "path": "test/legal-round.test.mjs",
+      "description": "Executable .mjs module (213 LOC; key symbols: stubAgent, buildMiniDocxBuffer)."
+    },
+    {
+      "id": "legalbeagle-shared-tool-anvil-engine",
+      "title": "Anvil Programmatic AST & LibCST Engine (anvil_engine.py)",
+      "category": "tools",
+      "path": "skills/anvil/scripts/anvil_engine.py",
+      "description": "Shared 3-level progressive abstraction, Orange Split, and Functional Core remapping engine."
+    },
+    {
+      "id": "legalbeagle-shared-tool-mapping",
+      "title": "Foundry Universal Triage & Model Seating Engine (mapping.mjs)",
+      "category": "tools",
+      "path": "foundry/triage/mapping.mjs",
+      "description": "Shared complexity band evaluator and model_prefs.json seating resolver."
+    },
+    {
+      "id": "legalbeagle-peer-researchprime",
+      "title": "researchPrime Source-Grounded Verifier",
+      "category": "skills",
+      "skill": "researchprime",
+      "description": "Enforces strict anti-hallucination citation checks over provided legal corpora"
+    },
+    {
+      "id": "legalbeagle-peer-gandalf",
+      "title": "Gandalf Adversarial Risk Reviewer",
+      "category": "skills",
+      "skill": "gandalf",
+      "description": "Audits contract clauses for hidden liability, ambiguity, and counterparty asymmetry"
+    },
+    {
+      "id": "legalbeagle-peer-financialanalyst",
+      "title": "Financial-Analyst Deal Modeler",
+      "category": "skills",
+      "skill": "financialanalyst",
+      "description": "Aligns legal indemnity caps and waterfall clauses with quantitative deal models"
+    },
+    {
+      "id": "legalbeagle-ref-lessons",
+      "title": "Legal-Beagle LESSONS.md",
+      "category": "references",
+      "path": "LESSONS.md",
+      "description": "Accumulated operational lessons and historical evolution in LESSONS.md."
+    },
+    {
+      "id": "legalbeagle-journal-readme",
+      "title": "Journal: README",
+      "category": "references",
+      "path": "journal/README.md",
+      "description": "Recorded operational run receipt and field lesson (journal/README.md)."
+    },
+    {
+      "id": "legalbeagle-journal-0015-utah-title-75b-citation",
+      "title": "Journal: 0015-utah-title-75b-citation-lint-docx-and-cockpit-gate-hardening",
+      "category": "references",
+      "path": "journal/0015-utah-title-75b-citation-lint-docx-and-cockpit-gate-hardening.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0015-utah-title-75b-citation-lint-docx-and-cockpit-gate-hardening.md)."
+    },
+    {
+      "id": "legalbeagle-journal-0014-utah-title-75b-recodifi",
+      "title": "Journal: 0014-utah-title-75b-recodification-memory-hallucination",
+      "category": "references",
+      "path": "journal/0014-utah-title-75b-recodification-memory-hallucination.md",
+      "description": "Recorded operational run receipt and field lesson (journal/0014-utah-title-75b-recodification-memory-hallucination.md)."
+    },
+    {
+      "id": "legalbeagle-kb-portfolio-triage-and-band-eval",
+      "title": "Foundry Portfolio Triage & Complexity Band Evaluation",
+      "category": "references",
+      "path": "foundry/triage/docs/PORTFOLIO-TRIAGE-AND-BAND-EVAL.md",
+      "description": "Empirical calibration of skill tiers, model seating, and complexity bands across the portfolio."
+    }
+  ]
+}

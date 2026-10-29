@@ -1,0 +1,369 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>refute · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><a href="../index.html#library">← Gandalf Library</a><h1>refute</h1>
+<p>code · frozen exact bytes</p><p class="path">Original: skills/gandalf/seam/refute.mjs</p>
+<details><summary>Source identity</summary><p class="path">SHA-256 43385d09b5ccb28a8dd4a5abaf38eacffb07b9e0a38f9fcf0ba99be79e8f93c0</p></details>
+<pre class="full-source"><span class="source-line" id="L1"><a href="#L1">1</a> // Gandalf advisor — the REFUTATION-DISCIPLINE seam (Wave 4 / the NS4 honesty spine).</span>
+<span class="source-line" id="L2"><a href="#L2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3">3</a> // NS4: a &quot;vetted, value-adding suggestion&quot; must survive an INDEPENDENT named-defeater</span>
+<span class="source-line" id="L4"><a href="#L4">4</a> // refutation; only the REFUTED is dropped; nothing unverified is asserted as real. This</span>
+<span class="source-line" id="L5"><a href="#L5">5</a> // module is the single seam that decides, deterministically:</span>
+<span class="source-line" id="L6"><a href="#L6">6</a> //   • whether an elevation FIRES the refuter (value-if-true ≥ HIGH OR severity ≥ major, from</span>
+<span class="source-line" id="L7"><a href="#L7">7</a> //     prereg-constants.json) — only those earn an INDEPENDENT named-defeater refuter;</span>
+<span class="source-line" id="L8"><a href="#L8">8</a> //   • what counts as a NAMED CONCRETE DEFEATER vs a self-rated confidence word — the latter is</span>
+<span class="source-line" id="L9"><a href="#L9">9</a> //     NOT a refutation, so the B-honesty canary FAILS / auto-downgrades it;</span>
+<span class="source-line" id="L10"><a href="#L10">10</a> //   • the BOUNDED refuter budget R (=3): at the SEAM level assertRefuterBudget still throws</span>
+<span class="source-line" id="L11"><a href="#L11">11</a> //     (the unit tripwire), but the LIVE path (runtime/live-refuter.mjs) pre-flights and FLOORS</span>
+<span class="source-line" id="L12"><a href="#L12">12</a> //     excess — top-R refuted, the rest ship SPECULATIVE, each named (2026-08-25, John&#x27;s ruling:</span>
+<span class="source-line" id="L13"><a href="#L13">13</a> //     cost is a pre-flight conversation, never a mid-run wall); and</span>
+<span class="source-line" id="L14"><a href="#L14">14</a> //   • the honest un-refuted floor: a finding that did NOT earn an independent refutation ships</span>
+<span class="source-line" id="L15"><a href="#L15">15</a> //     SPECULATIVE carrying the &quot;no independent refutation ran&quot; stamp.</span>
+<span class="source-line" id="L16"><a href="#L16">16</a> //</span>
+<span class="source-line" id="L17"><a href="#L17">17</a> // Two honesty invariants are load-bearing here and are enforced at the deterministic gate</span>
+<span class="source-line" id="L18"><a href="#L18">18</a> // (test/harness.mjs `assertHonestRefutation` + `assertRefutationSeam`; the budget HALT is a</span>
+<span class="source-line" id="L19"><a href="#L19">19</a> // NAMED canary over `assertRefuterBudget`), label/semantic TRUTH staying the advisory layer&#x27;s</span>
+<span class="source-line" id="L20"><a href="#L20">20</a> // job (PRINCIPLE-D):</span>
+<span class="source-line" id="L21"><a href="#L21">21</a> //   • NAMED DEFEATER, NOT A CONFIDENCE WORD. An elevation stamped above SPECULATIVE must carry</span>
+<span class="source-line" id="L22"><a href="#L22">22</a> //     a named concrete defeater (`what_would_refute_it`) plus a `refutation_provenance` proving</span>
+<span class="source-line" id="L23"><a href="#L23">23</a> //     an independent refuter ran. A self-rated confidence word (&quot;very confident&quot;) is not a</span>
+<span class="source-line" id="L24"><a href="#L24">24</a> //     refutation — B-honesty FAILS it (auto-downgrade to SPECULATIVE + stamp).</span>
+<span class="source-line" id="L25"><a href="#L25">25</a> //   • BOUNDED BUDGET, NO SILENT DROP. The seam&#x27;s assertRefuterBudget throws on excess (unit</span>
+<span class="source-line" id="L26"><a href="#L26">26</a> //     tripwire); the live path FLOORS instead of halting — excess elevations ship SPECULATIVE</span>
+<span class="source-line" id="L27"><a href="#L27">27</a> //     with a NAMED dispatch entry each (never silently taking the first R, never killing the run).</span>
+<span class="source-line" id="L28"><a href="#L28">28</a> //</span>
+<span class="source-line" id="L29"><a href="#L29">29</a> // PRINCIPLE-D: the live refuter `agent()` spawn is NOT in the gate. This seam mints the typed</span>
+<span class="source-line" id="L30"><a href="#L30">30</a> // refutation ENVELOPE + the budget guard (the deterministic surface); actually dispatching the</span>
+<span class="source-line" id="L31"><a href="#L31">31</a> // independent refuter to the trio `agent()` seam is the integration point the gate never runs.</span>
+<span class="source-line" id="L32"><a href="#L32">32</a> //</span>
+<span class="source-line" id="L33"><a href="#L33">33</a> // Public surface:</span>
+<span class="source-line" id="L34"><a href="#L34">34</a> //   REFUTER_BUDGET_R                       — the bounded budget (=3, from prereg-constants.json)</span>
+<span class="source-line" id="L35"><a href="#L35">35</a> //   REFUTER_FIRING_THRESHOLD               — value-if-true / severity floor that fires a refuter</span>
+<span class="source-line" id="L36"><a href="#L36">36</a> //   firesRefuter(item)                     — does this elevation/finding earn an independent refuter?</span>
+<span class="source-line" id="L37"><a href="#L37">37</a> //   CONFIDENCE_WORDS / isConfidenceWord    — the self-rated confidence vocabulary (NOT a defeater)</span>
+<span class="source-line" id="L38"><a href="#L38">38</a> //   isNamedDefeater(text)                  — a populated, non-confidence-word concrete defeater</span>
+<span class="source-line" id="L39"><a href="#L39">39</a> //   REFUTATION_PROVENANCE_KIND             — the refutation_provenance envelope marker</span>
+<span class="source-line" id="L40"><a href="#L40">40</a> //   elevationIdentity(elevation)           — the stable claim-binding identity (id + reasoning + defeater</span>
+<span class="source-line" id="L41"><a href="#L41">41</a> //                                            + payload verdict/severity/value_if_true — every smuggle field)</span>
+<span class="source-line" id="L42"><a href="#L42">42</a> //   computeResultDigest({elevation,...})   — stable SHA-256 CLAIM-BOUND to the elevation identity + the</span>
+<span class="source-line" id="L43"><a href="#L43">43</a> //                                            refuter&#x27;s defeater+verdict content (W2a; replay-hardened)</span>
+<span class="source-line" id="L44"><a href="#L44">44</a> //   composeRefutationProvenance(stages)    — mint an independent named-defeater provenance envelope</span>
+<span class="source-line" id="L45"><a href="#L45">45</a> //                                            (W2a: also carries drafter_family / refuter_family / result_digest)</span>
+<span class="source-line" id="L46"><a href="#L46">46</a> //   isCrossFamilyRefutation(elev, resolve) — W2b: DERIVE cross-family (GROUNDED) eligibility from the</span>
+<span class="source-line" id="L47"><a href="#L47">47</a> //                                            ledger — authentic + family-distinct + digest-matched</span>
+<span class="source-line" id="L48"><a href="#L48">48</a> //   NOOP_COMMISSION_VERIFIER               — the inert default commission verifier for the W2a injection seam</span>
+<span class="source-line" id="L49"><a href="#L49">49</a> //   NO_INDEPENDENT_REFUTATION_STAMP        — the honest un-refuted-floor stamp string</span>
+<span class="source-line" id="L50"><a href="#L50">50</a> //   SPECULATIVE_TIER                       — the honest floor tier</span>
+<span class="source-line" id="L51"><a href="#L51">51</a> //   stampNoIndependentRefutation(finding)  — downgrade a finding to the stamped SPECULATIVE floor</span>
+<span class="source-line" id="L52"><a href="#L52">52</a> //   hasNoIndependentRefutationStamp(f)     — predicate: carries the honest un-refuted stamp</span>
+<span class="source-line" id="L53"><a href="#L53">53</a> //   vetElevationRefutation(elevation)      — keep the tier if honestly refuted, else auto-downgrade</span>
+<span class="source-line" id="L54"><a href="#L54">54</a> //   RefuterBudgetHalt                      — the HALT error class for an over-budget request</span>
+<span class="source-line" id="L55"><a href="#L55">55</a> //   assertRefuterBudget(requested[, R])    — throws RefuterBudgetHalt when requested &gt; R (no drop)</span>
+<span class="source-line" id="L56"><a href="#L56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57">57</a> import crypto from &#x27;node:crypto&#x27;;</span>
+<span class="source-line" id="L58"><a href="#L58">58</a> import CONSTANTS from &#x27;../prereg-constants.json&#x27; with { type: &#x27;json&#x27; };</span>
+<span class="source-line" id="L59"><a href="#L59">59</a> </span>
+<span class="source-line" id="L60"><a href="#L60">60</a> // --- self-contained helpers (the seam imports only the frozen constants) -------------------</span>
+<span class="source-line" id="L61"><a href="#L61">61</a> function isNonEmptyString(v) {</span>
+<span class="source-line" id="L62"><a href="#L62">62</a>   return typeof v === &#x27;string&#x27; &amp;&amp; v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L63"><a href="#L63">63</a> }</span>
+<span class="source-line" id="L64"><a href="#L64">64</a> function isNonEmpty(v) {</span>
+<span class="source-line" id="L65"><a href="#L65">65</a>   if (v === undefined || v === null) return false;</span>
+<span class="source-line" id="L66"><a href="#L66">66</a>   if (Array.isArray(v)) return v.length &gt; 0;</span>
+<span class="source-line" id="L67"><a href="#L67">67</a>   if (typeof v === &#x27;string&#x27;) return v.trim() !== &#x27;&#x27;;</span>
+<span class="source-line" id="L68"><a href="#L68">68</a>   if (typeof v === &#x27;object&#x27;) return Object.keys(v).length &gt; 0;</span>
+<span class="source-line" id="L69"><a href="#L69">69</a>   return true; // numbers, booleans</span>
+<span class="source-line" id="L70"><a href="#L70">70</a> }</span>
+<span class="source-line" id="L71"><a href="#L71">71</a> </span>
+<span class="source-line" id="L72"><a href="#L72">72</a> // --- the refuter-firing threshold (only high-value elevations earn an independent refuter) --</span>
+<span class="source-line" id="L73"><a href="#L73">73</a> /** The bounded refuter budget R, the single source of truth being prereg-constants.json. */</span>
+<span class="source-line" id="L74"><a href="#L74">74</a> export const REFUTER_BUDGET_R = CONSTANTS.refuter_budget_R;</span>
+<span class="source-line" id="L75"><a href="#L75">75</a> </span>
+<span class="source-line" id="L76"><a href="#L76">76</a> /** The refuter-firing threshold: an elevation earns an INDEPENDENT named-defeater refuter only</span>
+<span class="source-line" id="L77"><a href="#L77">77</a>  *  when value-if-true ≥ HIGH OR severity ≥ major. Sourced from prereg-constants.json so the</span>
+<span class="source-line" id="L78"><a href="#L78">78</a>  *  build-time frozen value is never re-typed (no drift). */</span>
+<span class="source-line" id="L79"><a href="#L79">79</a> export const REFUTER_FIRING_THRESHOLD = CONSTANTS.refuter_firing_threshold;</span>
+<span class="source-line" id="L80"><a href="#L80">80</a> </span>
+<span class="source-line" id="L81"><a href="#L81">81</a> // Ladders local to the seam (low → high); the harness mirrors these and asserts agreement.</span>
+<span class="source-line" id="L82"><a href="#L82">82</a> const VALUE_LADDER = [&#x27;low&#x27;, &#x27;medium&#x27;, &#x27;high&#x27;];</span>
+<span class="source-line" id="L83"><a href="#L83">83</a> const SEVERITY_LADDER = [&#x27;minor&#x27;, &#x27;major&#x27;, &#x27;critical&#x27;];</span>
+<span class="source-line" id="L84"><a href="#L84">84</a> </span>
+<span class="source-line" id="L85"><a href="#L85">85</a> /** Does `item` (an elevation or finding) FIRE the refuter — i.e. earn an independent</span>
+<span class="source-line" id="L86"><a href="#L86">86</a>  *  named-defeater refuter? True iff value_if_true ≥ the threshold floor OR severity ≥ the</span>
+<span class="source-line" id="L87"><a href="#L87">87</a>  *  threshold floor (from REFUTER_FIRING_THRESHOLD). Below the threshold, no refuter runs and</span>
+<span class="source-line" id="L88"><a href="#L88">88</a>  *  the finding ships SPECULATIVE with the no-independent-refutation stamp. Pure; never throws. */</span>
+<span class="source-line" id="L89"><a href="#L89">89</a> export function firesRefuter(item) {</span>
+<span class="source-line" id="L90"><a href="#L90">90</a>   if (item === null || typeof item !== &#x27;object&#x27;) return false;</span>
+<span class="source-line" id="L91"><a href="#L91">91</a>   const vFloor = VALUE_LADDER.indexOf(REFUTER_FIRING_THRESHOLD.value_if_true_at_least);</span>
+<span class="source-line" id="L92"><a href="#L92">92</a>   const sFloor = SEVERITY_LADDER.indexOf(REFUTER_FIRING_THRESHOLD.or_severity_at_least);</span>
+<span class="source-line" id="L93"><a href="#L93">93</a>   const vIdx = VALUE_LADDER.indexOf(item.value_if_true);</span>
+<span class="source-line" id="L94"><a href="#L94">94</a>   const sIdx = SEVERITY_LADDER.indexOf(item.severity);</span>
+<span class="source-line" id="L95"><a href="#L95">95</a>   const valueFires = vIdx !== -1 &amp;&amp; vFloor !== -1 &amp;&amp; vIdx &gt;= vFloor;</span>
+<span class="source-line" id="L96"><a href="#L96">96</a>   const severityFires = sIdx !== -1 &amp;&amp; sFloor !== -1 &amp;&amp; sIdx &gt;= sFloor;</span>
+<span class="source-line" id="L97"><a href="#L97">97</a>   return valueFires || severityFires;</span>
+<span class="source-line" id="L98"><a href="#L98">98</a> }</span>
+<span class="source-line" id="L99"><a href="#L99">99</a> </span>
+<span class="source-line" id="L100"><a href="#L100">100</a> // --- named concrete defeater vs self-rated confidence word ---------------------------------</span>
+<span class="source-line" id="L101"><a href="#L101">101</a> /** The self-rated confidence vocabulary. A `what_would_refute_it` whose WHOLE value (after</span>
+<span class="source-line" id="L102"><a href="#L102">102</a>  *  case/punctuation normalization) is one of these is a confidence SELF-RATING, not a named</span>
+<span class="source-line" id="L103"><a href="#L103">103</a>  *  concrete defeater — it names no falsifying observation, so it cannot vet an elevation. */</span>
+<span class="source-line" id="L104"><a href="#L104">104</a> export const CONFIDENCE_WORDS = new Set([</span>
+<span class="source-line" id="L105"><a href="#L105">105</a>   &#x27;likely&#x27;, &#x27;very likely&#x27;, &#x27;unlikely&#x27;, &#x27;very unlikely&#x27;, &#x27;probably&#x27;, &#x27;probably not&#x27;,</span>
+<span class="source-line" id="L106"><a href="#L106">106</a>   &#x27;possibly&#x27;, &#x27;plausibly&#x27;, &#x27;maybe&#x27;, &#x27;perhaps&#x27;, &#x27;confident&#x27;, &#x27;very confident&#x27;,</span>
+<span class="source-line" id="L107"><a href="#L107">107</a>   &#x27;fairly confident&#x27;, &#x27;high confidence&#x27;, &#x27;low confidence&#x27;, &#x27;medium confidence&#x27;,</span>
+<span class="source-line" id="L108"><a href="#L108">108</a>   &#x27;i am confident&#x27;, &#x27;i think&#x27;, &#x27;i believe&#x27;, &#x27;seems right&#x27;, &#x27;sounds right&#x27;,</span>
+<span class="source-line" id="L109"><a href="#L109">109</a>   &#x27;certain&#x27;, &#x27;uncertain&#x27;, &#x27;sure&#x27;, &#x27;not sure&#x27;, &#x27;doubtful&#x27;, &#x27;no doubt&#x27;,</span>
+<span class="source-line" id="L110"><a href="#L110">110</a>   &#x27;obviously&#x27;, &#x27;clearly&#x27;, &#x27;of course&#x27;, &#x27;trust me&#x27;, &#x27;nothing&#x27;, &#x27;none&#x27;,</span>
+<span class="source-line" id="L111"><a href="#L111">111</a> ]);</span>
+<span class="source-line" id="L112"><a href="#L112">112</a> </span>
+<span class="source-line" id="L113"><a href="#L113">113</a> function normalizeConfidence(text) {</span>
+<span class="source-line" id="L114"><a href="#L114">114</a>   return String(text).toLowerCase().replace(/[^a-z0-9 ]+/g, &#x27; &#x27;).replace(/\s+/g, &#x27; &#x27;).trim();</span>
+<span class="source-line" id="L115"><a href="#L115">115</a> }</span>
+<span class="source-line" id="L116"><a href="#L116">116</a> </span>
+<span class="source-line" id="L117"><a href="#L117">117</a> /** Is `text` a bare self-rated confidence word/phrase (and so NOT a refutation)? True iff the</span>
+<span class="source-line" id="L118"><a href="#L118">118</a>  *  whole normalized value is in CONFIDENCE_WORDS. Pure; never throws. */</span>
+<span class="source-line" id="L119"><a href="#L119">119</a> export function isConfidenceWord(text) {</span>
+<span class="source-line" id="L120"><a href="#L120">120</a>   if (typeof text !== &#x27;string&#x27;) return false;</span>
+<span class="source-line" id="L121"><a href="#L121">121</a>   const n = normalizeConfidence(text);</span>
+<span class="source-line" id="L122"><a href="#L122">122</a>   if (n === &#x27;&#x27;) return false;</span>
+<span class="source-line" id="L123"><a href="#L123">123</a>   return CONFIDENCE_WORDS.has(n);</span>
+<span class="source-line" id="L124"><a href="#L124">124</a> }</span>
+<span class="source-line" id="L125"><a href="#L125">125</a> </span>
+<span class="source-line" id="L126"><a href="#L126">126</a> /** Is `text` a NAMED CONCRETE DEFEATER? True iff it is populated AND is not a bare self-rated</span>
+<span class="source-line" id="L127"><a href="#L127">127</a>  *  confidence word. (Deterministic discriminator — judging the defeater&#x27;s actual concreteness</span>
+<span class="source-line" id="L128"><a href="#L128">128</a>  *  is the advisory layer&#x27;s job, PRINCIPLE-D; the gate rejects the un-falsifiable confidence</span>
+<span class="source-line" id="L129"><a href="#L129">129</a>  *  self-rating and requires the structural `refutation_provenance` alongside it.) Pure. */</span>
+<span class="source-line" id="L130"><a href="#L130">130</a> export function isNamedDefeater(text) {</span>
+<span class="source-line" id="L131"><a href="#L131">131</a>   if (!isNonEmptyString(text)) return false;</span>
+<span class="source-line" id="L132"><a href="#L132">132</a>   return !isConfidenceWord(text);</span>
+<span class="source-line" id="L133"><a href="#L133">133</a> }</span>
+<span class="source-line" id="L134"><a href="#L134">134</a> </span>
+<span class="source-line" id="L135"><a href="#L135">135</a> // --- the independent named-defeater refutation provenance envelope -------------------------</span>
+<span class="source-line" id="L136"><a href="#L136">136</a> /** The refutation_provenance envelope marker: an INDEPENDENT named-defeater refuter ran. */</span>
+<span class="source-line" id="L137"><a href="#L137">137</a> export const REFUTATION_PROVENANCE_KIND = &#x27;independent-named-defeater&#x27;;</span>
+<span class="source-line" id="L138"><a href="#L138">138</a> </span>
+<span class="source-line" id="L139"><a href="#L139">139</a> /** The STABLE identity of the elevation a refutation is bound to — the CLAIM-BINDING that closes the</span>
+<span class="source-line" id="L140"><a href="#L140">140</a>  *  cross-elevation REPLAY hole. A commission&#x27;s result_digest is bound to THIS identity, so a provenance</span>
+<span class="source-line" id="L141"><a href="#L141">141</a>  *  legitimately minted for elevation A cannot authenticate a FABRICATED elevation B: B has a different</span>
+<span class="source-line" id="L142"><a href="#L142">142</a>  *  `id` / `reasoning` / named defeater — OR a different SUBSTANTIVE PAYLOAD (`verdict` / `severity` /</span>
+<span class="source-line" id="L143"><a href="#L143">143</a>  *  `value_if_true`) — ⇒ a different identity ⇒ the gate&#x27;s recomputed digest no longer matches the ledger</span>
+<span class="source-line" id="L144"><a href="#L144">144</a>  *  tuple. The identity binds the elevation `id` PLUS EVERY substantive field a drafter could vary to</span>
+<span class="source-line" id="L145"><a href="#L145">145</a>  *  smuggle a false claim under a valid proof: its `reasoning`, its `what_would_refute_it` (the</span>
+<span class="source-line" id="L146"><a href="#L146">146</a>  *  named-defeater SUBJECT the finding is about), AND its payload `verdict` + `severity` + `value_if_true`</span>
+<span class="source-line" id="L147"><a href="#L147">147</a>  *  (the claim/rating a replay would try to fabricate under a genuine refutation&#x27;s provenance). Trimmed +</span>
+<span class="source-line" id="L148"><a href="#L148">148</a>  *  fixed key order so the SAME elevation yields the SAME identity at MINT and at GATE (any divergence</span>
+<span class="source-line" id="L149"><a href="#L149">149</a>  *  would either reopen the hole or cause a false negative). A non-object elevation ⇒ null (a digest over</span>
+<span class="source-line" id="L150"><a href="#L150">150</a>  *  &quot;no bound elevation&quot; — the pre-claim-binding shape, still self-consistent). Pure; never throws. */</span>
+<span class="source-line" id="L151"><a href="#L151">151</a> export function elevationIdentity(elevation) {</span>
+<span class="source-line" id="L152"><a href="#L152">152</a>   if (elevation === null || typeof elevation !== &#x27;object&#x27; || Array.isArray(elevation)) return null;</span>
+<span class="source-line" id="L153"><a href="#L153">153</a>   return {</span>
+<span class="source-line" id="L154"><a href="#L154">154</a>     id: isNonEmptyString(elevation.id) ? elevation.id.trim() : &#x27;&#x27;,</span>
+<span class="source-line" id="L155"><a href="#L155">155</a>     reasoning: isNonEmptyString(elevation.reasoning) ? elevation.reasoning.trim() : &#x27;&#x27;,</span>
+<span class="source-line" id="L156"><a href="#L156">156</a>     what_would_refute_it: isNonEmptyString(elevation.what_would_refute_it)</span>
+<span class="source-line" id="L157"><a href="#L157">157</a>       ? elevation.what_would_refute_it.trim()</span>
+<span class="source-line" id="L158"><a href="#L158">158</a>       : &#x27;&#x27;,</span>
+<span class="source-line" id="L159"><a href="#L159">159</a>     verdict: isNonEmptyString(elevation.verdict) ? elevation.verdict.trim() : &#x27;&#x27;,</span>
+<span class="source-line" id="L160"><a href="#L160">160</a>     severity: isNonEmptyString(elevation.severity) ? elevation.severity.trim() : &#x27;&#x27;,</span>
+<span class="source-line" id="L161"><a href="#L161">161</a>     value_if_true: isNonEmptyString(elevation.value_if_true) ? elevation.value_if_true.trim() : &#x27;&#x27;,</span>
+<span class="source-line" id="L162"><a href="#L162">162</a>   };</span>
+<span class="source-line" id="L163"><a href="#L163">163</a> }</span>
+<span class="source-line" id="L164"><a href="#L164">164</a> </span>
+<span class="source-line" id="L165"><a href="#L165">165</a> /** Compute the stable `result_digest` a refutation carries: a SHA-256 over the CLAIM-BOUND tuple —</span>
+<span class="source-line" id="L166"><a href="#L166">166</a>  *  the IDENTITY of the elevation being refuted (elevationIdentity: id + reasoning + named defeater) PLUS</span>
+<span class="source-line" id="L167"><a href="#L167">167</a>  *  the refuter&#x27;s CONTENT (its named defeater, its survived/broke verdict, and any verdict text).</span>
+<span class="source-line" id="L168"><a href="#L168">168</a>  *  Canonicalized (fixed key order, trimmed) so the SAME refutation of the SAME elevation always yields</span>
+<span class="source-line" id="L169"><a href="#L169">169</a>  *  the SAME digest — the value the unforgeable commission-id (seam/commission-ledger.mjs) is</span>
+<span class="source-line" id="L170"><a href="#L170">170</a>  *  cryptographically BOUND to (W2a; claim-bound in the REPLAY-close hardening). Because the digest now</span>
+<span class="source-line" id="L171"><a href="#L171">171</a>  *  binds the elevation identity, a commission minted for elevation A produces a digest bound to A; when</span>
+<span class="source-line" id="L172"><a href="#L172">172</a>  *  that provenance is copied onto a different elevation B, the gate recomputes over B&#x27;s identity and the</span>
+<span class="source-line" id="L173"><a href="#L173">173</a>  *  digest MISMATCHES ⇒ the replay is rejected. Stdlib-only; pure. */</span>
+<span class="source-line" id="L174"><a href="#L174">174</a> export function computeResultDigest({ elevation = null, defeater, survived = true, verdict = null } = {}) {</span>
+<span class="source-line" id="L175"><a href="#L175">175</a>   const canonical = JSON.stringify({</span>
+<span class="source-line" id="L176"><a href="#L176">176</a>     elevation: elevationIdentity(elevation),</span>
+<span class="source-line" id="L177"><a href="#L177">177</a>     defeater: isNonEmptyString(defeater) ? defeater.trim() : &#x27;&#x27;,</span>
+<span class="source-line" id="L178"><a href="#L178">178</a>     survived: survived === true,</span>
+<span class="source-line" id="L179"><a href="#L179">179</a>     verdict: verdict === undefined || verdict === null ? null : String(verdict),</span>
+<span class="source-line" id="L180"><a href="#L180">180</a>   });</span>
+<span class="source-line" id="L181"><a href="#L181">181</a>   return crypto.createHash(&#x27;sha256&#x27;).update(canonical, &#x27;utf8&#x27;).digest(&#x27;hex&#x27;);</span>
+<span class="source-line" id="L182"><a href="#L182">182</a> }</span>
+<span class="source-line" id="L183"><a href="#L183">183</a> </span>
+<span class="source-line" id="L184"><a href="#L184">184</a> /** Mint a typed refutation_provenance envelope — the deterministic surface of the bare refuter</span>
+<span class="source-line" id="L185"><a href="#L185">185</a>  *  `agent()` seam. It records the named concrete defeater that was tried and whether the elevation</span>
+<span class="source-line" id="L186"><a href="#L186">186</a>  *  survived it. W2a extends the envelope with the CROSS-FAMILY provenance the commission-id ledger</span>
+<span class="source-line" id="L187"><a href="#L187">187</a>  *  binds: `drafter_family` (who authored the drafted claim), `refuter_family` (who ran the</span>
+<span class="source-line" id="L188"><a href="#L188">188</a>  *  refutation), and `result_digest` (a stable hash of the refuter&#x27;s defeater + verdict content —</span>
+<span class="source-line" id="L189"><a href="#L189">189</a>  *  computeResultDigest). W2b also PERSISTS `verdict` so the digest re-derives faithfully from the</span>
+<span class="source-line" id="L190"><a href="#L190">190</a>  *  envelope&#x27;s own content (isCrossFamilyRefutation check (c)).</span>
+<span class="source-line" id="L191"><a href="#L191">191</a>  *</span>
+<span class="source-line" id="L192"><a href="#L192">192</a>  *  W2b: the envelope no longer HARDCODES `independent: true`. Independence in the cross-family sense</span>
+<span class="source-line" id="L193"><a href="#L193">193</a>  *  (the drafter and refuter are DIFFERENT model families, established against the unforgeable ledger)</span>
+<span class="source-line" id="L194"><a href="#L194">194</a>  *  is DERIVED at the vet seam (isCrossFamilyRefutation), never self-asserted here — a hardcoded</span>
+<span class="source-line" id="L195"><a href="#L195">195</a>  *  `independent:true` was exactly the self-stamp the anti-overclaim runtime gate replaces.</span>
+<span class="source-line" id="L196"><a href="#L196">196</a>  *  `commission_id` is the ledger id the orchestrator minted for this refutation; W2b resolves it.</span>
+<span class="source-line" id="L197"><a href="#L197">197</a>  *  Throws when the defeater is missing or is a bare confidence word. */</span>
+<span class="source-line" id="L198"><a href="#L198">198</a> export function composeRefutationProvenance({</span>
+<span class="source-line" id="L199"><a href="#L199">199</a>   elevation = null,</span>
+<span class="source-line" id="L200"><a href="#L200">200</a>   defeater,</span>
+<span class="source-line" id="L201"><a href="#L201">201</a>   survived = true,</span>
+<span class="source-line" id="L202"><a href="#L202">202</a>   verdict = null,</span>
+<span class="source-line" id="L203"><a href="#L203">203</a>   drafter_family = null,</span>
+<span class="source-line" id="L204"><a href="#L204">204</a>   refuter_family = null,</span>
+<span class="source-line" id="L205"><a href="#L205">205</a>   commission_id = null,</span>
+<span class="source-line" id="L206"><a href="#L206">206</a> } = {}) {</span>
+<span class="source-line" id="L207"><a href="#L207">207</a>   if (!isNamedDefeater(defeater)) {</span>
+<span class="source-line" id="L208"><a href="#L208">208</a>     throw new Error(&#x27;refute: composeRefutationProvenance requires a NAMED concrete defeater (a self-rated confidence word is not a refutation)&#x27;);</span>
+<span class="source-line" id="L209"><a href="#L209">209</a>   }</span>
+<span class="source-line" id="L210"><a href="#L210">210</a>   return {</span>
+<span class="source-line" id="L211"><a href="#L211">211</a>     kind: REFUTATION_PROVENANCE_KIND,</span>
+<span class="source-line" id="L212"><a href="#L212">212</a>     defeater: defeater.trim(),</span>
+<span class="source-line" id="L213"><a href="#L213">213</a>     survived: survived === true,</span>
+<span class="source-line" id="L214"><a href="#L214">214</a>     verdict: verdict === undefined || verdict === null ? null : verdict,</span>
+<span class="source-line" id="L215"><a href="#L215">215</a>     drafter_family: drafter_family ?? null,</span>
+<span class="source-line" id="L216"><a href="#L216">216</a>     refuter_family: refuter_family ?? null,</span>
+<span class="source-line" id="L217"><a href="#L217">217</a>     // CLAIM-BOUND: the digest binds the IDENTITY of `elevation` (the finding being refuted) so this</span>
+<span class="source-line" id="L218"><a href="#L218">218</a>     // provenance cannot be replayed onto a different elevation. The MINT path MUST pass the SAME</span>
+<span class="source-line" id="L219"><a href="#L219">219</a>     // elevation whose id/reasoning/what_would_refute_it the GATE (isCrossFamilyRefutation) will read.</span>
+<span class="source-line" id="L220"><a href="#L220">220</a>     result_digest: computeResultDigest({ elevation, defeater, survived, verdict }),</span>
+<span class="source-line" id="L221"><a href="#L221">221</a>     refuter_commission_id: commission_id,</span>
+<span class="source-line" id="L222"><a href="#L222">222</a>   };</span>
+<span class="source-line" id="L223"><a href="#L223">223</a> }</span>
+<span class="source-line" id="L224"><a href="#L224">224</a> </span>
+<span class="source-line" id="L225"><a href="#L225">225</a> // --- the honest un-refuted floor (ship SPECULATIVE + the stamp) ----------------------------</span>
+<span class="source-line" id="L226"><a href="#L226">226</a> /** The stamp a finding carries when no independent refuter established it. */</span>
+<span class="source-line" id="L227"><a href="#L227">227</a> export const NO_INDEPENDENT_REFUTATION_STAMP = &#x27;no independent refutation ran&#x27;;</span>
+<span class="source-line" id="L228"><a href="#L228">228</a> /** The honest floor tier — an un-refuted finding may not rise above it. */</span>
+<span class="source-line" id="L229"><a href="#L229">229</a> export const SPECULATIVE_TIER = &#x27;SPECULATIVE&#x27;;</span>
+<span class="source-line" id="L230"><a href="#L230">230</a> </span>
+<span class="source-line" id="L231"><a href="#L231">231</a> /** Downgrade `finding` to the honest SPECULATIVE floor and stamp it &quot;no independent refutation</span>
+<span class="source-line" id="L232"><a href="#L232">232</a>  *  ran&quot; — the explicit, non-silent route for a finding that did not earn an independent</span>
+<span class="source-line" id="L233"><a href="#L233">233</a>  *  named-defeater refutation. Returns a FRESH finding (existing keys keep insertion order, so a</span>
+<span class="source-line" id="L234"><a href="#L234">234</a>  *  reasoning-before-verdict finding stays reasoning-before-verdict). Throws on a non-object. */</span>
+<span class="source-line" id="L235"><a href="#L235">235</a> export function stampNoIndependentRefutation(finding) {</span>
+<span class="source-line" id="L236"><a href="#L236">236</a>   if (finding === null || typeof finding !== &#x27;object&#x27; || Array.isArray(finding)) {</span>
+<span class="source-line" id="L237"><a href="#L237">237</a>     throw new Error(&#x27;refute: stampNoIndependentRefutation target is not an object&#x27;);</span>
+<span class="source-line" id="L238"><a href="#L238">238</a>   }</span>
+<span class="source-line" id="L239"><a href="#L239">239</a>   return {</span>
+<span class="source-line" id="L240"><a href="#L240">240</a>     ...finding,</span>
+<span class="source-line" id="L241"><a href="#L241">241</a>     tier: SPECULATIVE_TIER,</span>
+<span class="source-line" id="L242"><a href="#L242">242</a>     no_independent_refutation: true,</span>
+<span class="source-line" id="L243"><a href="#L243">243</a>     refutation_stamp: NO_INDEPENDENT_REFUTATION_STAMP,</span>
+<span class="source-line" id="L244"><a href="#L244">244</a>   };</span>
+<span class="source-line" id="L245"><a href="#L245">245</a> }</span>
+<span class="source-line" id="L246"><a href="#L246">246</a> </span>
+<span class="source-line" id="L247"><a href="#L247">247</a> /** Predicate: does `finding` carry the honest un-refuted-floor stamp? Pure; never throws. */</span>
+<span class="source-line" id="L248"><a href="#L248">248</a> export function hasNoIndependentRefutationStamp(finding) {</span>
+<span class="source-line" id="L249"><a href="#L249">249</a>   return (</span>
+<span class="source-line" id="L250"><a href="#L250">250</a>     finding !== null &amp;&amp;</span>
+<span class="source-line" id="L251"><a href="#L251">251</a>     typeof finding === &#x27;object&#x27; &amp;&amp;</span>
+<span class="source-line" id="L252"><a href="#L252">252</a>     finding.no_independent_refutation === true &amp;&amp;</span>
+<span class="source-line" id="L253"><a href="#L253">253</a>     finding.refutation_stamp === NO_INDEPENDENT_REFUTATION_STAMP</span>
+<span class="source-line" id="L254"><a href="#L254">254</a>   );</span>
+<span class="source-line" id="L255"><a href="#L255">255</a> }</span>
+<span class="source-line" id="L256"><a href="#L256">256</a> </span>
+<span class="source-line" id="L257"><a href="#L257">257</a> /** The default commission verifier: a NO-OP that resolves nothing (returns null). With it, an</span>
+<span class="source-line" id="L258"><a href="#L258">258</a>  *  elevation can NEVER reach the cross-family tier (no ledger to authenticate its commission-id) —</span>
+<span class="source-line" id="L259"><a href="#L259">259</a>  *  the safe, conservative default when no real resolver is injected. The RUNTIME entry</span>
+<span class="source-line" id="L260"><a href="#L260">260</a>  *  (runtime/seam-pass.applySeamPass) injects the real ledger resolver</span>
+<span class="source-line" id="L261"><a href="#L261">261</a>  *  (seam/commission-ledger.resolveCommission) so the W2b gate is ACTIVE in a real run. Pure. */</span>
+<span class="source-line" id="L262"><a href="#L262">262</a> export const NOOP_COMMISSION_VERIFIER = () =&gt; null;</span>
+<span class="source-line" id="L263"><a href="#L263">263</a> </span>
+<span class="source-line" id="L264"><a href="#L264">264</a> /** W2b — DERIVE whether an elevation&#x27;s refutation is a GENUINE cross-family refutation, the SOLE gate</span>
+<span class="source-line" id="L265"><a href="#L265">265</a>  *  to the cross-family (GROUNDED) tier. TRUE iff the elevation&#x27;s `refutation_provenance` carries a</span>
+<span class="source-line" id="L266"><a href="#L266">266</a>  *  commission-id that, resolved against the injected ledger `resolveCommission`, is ALL of:</span>
+<span class="source-line" id="L267"><a href="#L267">267</a>  *    (a) AUTHENTIC     — resolveCommission(id) returns a non-null tuple (orchestrator-minted,</span>
+<span class="source-line" id="L268"><a href="#L268">268</a>  *                        unforgeable; a forged / unminted / tampered id resolves to null);</span>
+<span class="source-line" id="L269"><a href="#L269">269</a>  *    (b) FAMILY-DISTINCT — the resolved drafter_family !== refuter_family (a same-family &quot;refutation&quot;</span>
+<span class="source-line" id="L270"><a href="#L270">270</a>  *                        earns no independent origin, so it can never cross the single-family ceiling);</span>
+<span class="source-line" id="L271"><a href="#L271">271</a>  *    (c) DIGEST-MATCHED — the resolved result_digest === computeResultDigest over the elevation&#x27;s OWN</span>
+<span class="source-line" id="L272"><a href="#L272">272</a>  *                        IDENTITY (id + reasoning + named defeater) PLUS its refuter content (recomputed</span>
+<span class="source-line" id="L273"><a href="#L273">273</a>  *                        from the envelope&#x27;s defeater/survived/verdict — never a stored/self-reported</span>
+<span class="source-line" id="L274"><a href="#L274">274</a>  *                        digest), so the ledger entry is CLAIM-BOUND to THIS elevation. A provenance</span>
+<span class="source-line" id="L275"><a href="#L275">275</a>  *                        minted for elevation A, copied onto a fabricated elevation B, recomputes over</span>
+<span class="source-line" id="L276"><a href="#L276">276</a>  *                        B&#x27;s identity ⇒ mismatch ⇒ the cross-elevation REPLAY is rejected.</span>
+<span class="source-line" id="L277"><a href="#L277">277</a>  *  ANY failure ⇒ FALSE ⇒ the elevation cannot exceed the single-family PROMISING ceiling. The caller&#x27;s</span>
+<span class="source-line" id="L278"><a href="#L278">278</a>  *  `--cross-model` intent flag NEVER enters here — cross-family is DERIVED from the ledger, never</span>
+<span class="source-line" id="L279"><a href="#L279">279</a>  *  asserted. Pure; never throws (a throwing resolver is treated as a non-resolution ⇒ false). */</span>
+<span class="source-line" id="L280"><a href="#L280">280</a> export function isCrossFamilyRefutation(elevation, resolveCommission = NOOP_COMMISSION_VERIFIER) {</span>
+<span class="source-line" id="L281"><a href="#L281">281</a>   if (elevation === null || typeof elevation !== &#x27;object&#x27; || Array.isArray(elevation)) return false;</span>
+<span class="source-line" id="L282"><a href="#L282">282</a>   const prov = elevation.refutation_provenance;</span>
+<span class="source-line" id="L283"><a href="#L283">283</a>   if (prov === null || typeof prov !== &#x27;object&#x27; || Array.isArray(prov)) return false;</span>
+<span class="source-line" id="L284"><a href="#L284">284</a>   // The commission-id the orchestrator minted for this refutation (accept either envelope spelling).</span>
+<span class="source-line" id="L285"><a href="#L285">285</a>   const id = isNonEmptyString(prov.refuter_commission_id)</span>
+<span class="source-line" id="L286"><a href="#L286">286</a>     ? prov.refuter_commission_id</span>
+<span class="source-line" id="L287"><a href="#L287">287</a>     : (isNonEmptyString(prov.commission_id) ? prov.commission_id : null);</span>
+<span class="source-line" id="L288"><a href="#L288">288</a>   if (id === null) return false;</span>
+<span class="source-line" id="L289"><a href="#L289">289</a>   let resolved;</span>
+<span class="source-line" id="L290"><a href="#L290">290</a>   try {</span>
+<span class="source-line" id="L291"><a href="#L291">291</a>     resolved = typeof resolveCommission === &#x27;function&#x27; ? resolveCommission(id) : null;</span>
+<span class="source-line" id="L292"><a href="#L292">292</a>   } catch {</span>
+<span class="source-line" id="L293"><a href="#L293">293</a>     return false; // a resolver that throws is a non-resolution — never a cross-family grant</span>
+<span class="source-line" id="L294"><a href="#L294">294</a>   }</span>
+<span class="source-line" id="L295"><a href="#L295">295</a>   // (a) AUTHENTIC — the ledger returned a well-formed tuple for this id.</span>
+<span class="source-line" id="L296"><a href="#L296">296</a>   if (resolved === null || typeof resolved !== &#x27;object&#x27; || Array.isArray(resolved)) return false;</span>
+<span class="source-line" id="L297"><a href="#L297">297</a>   if (!isNonEmptyString(resolved.drafter_family) || !isNonEmptyString(resolved.refuter_family)) return false;</span>
+<span class="source-line" id="L298"><a href="#L298">298</a>   // (b) FAMILY-DISTINCT — drafter and refuter are different model families.</span>
+<span class="source-line" id="L299"><a href="#L299">299</a>   if (resolved.drafter_family === resolved.refuter_family) return false;</span>
+<span class="source-line" id="L300"><a href="#L300">300</a>   // (c) DIGEST-MATCHED — the ledger&#x27;s digest binds THIS refutation&#x27;s actual content AND THIS elevation&#x27;s</span>
+<span class="source-line" id="L301"><a href="#L301">301</a>   //     identity (recomputed here; never a stored/self-reported digest). Passing `elevation` claim-binds</span>
+<span class="source-line" id="L302"><a href="#L302">302</a>   //     the digest: a provenance minted for elevation A, copied onto elevation B, recomputes over B&#x27;s</span>
+<span class="source-line" id="L303"><a href="#L303">303</a>   //     identity (id + reasoning + named defeater) ⇒ mismatches the ledger tuple ⇒ the replay is rejected.</span>
+<span class="source-line" id="L304"><a href="#L304">304</a>   const recomputed = computeResultDigest({</span>
+<span class="source-line" id="L305"><a href="#L305">305</a>     elevation,</span>
+<span class="source-line" id="L306"><a href="#L306">306</a>     defeater: prov.defeater,</span>
+<span class="source-line" id="L307"><a href="#L307">307</a>     survived: prov.survived,</span>
+<span class="source-line" id="L308"><a href="#L308">308</a>     verdict: prov.verdict ?? null,</span>
+<span class="source-line" id="L309"><a href="#L309">309</a>   });</span>
+<span class="source-line" id="L310"><a href="#L310">310</a>   if (resolved.result_digest !== recomputed) return false;</span>
+<span class="source-line" id="L311"><a href="#L311">311</a>   return true;</span>
+<span class="source-line" id="L312"><a href="#L312">312</a> }</span>
+<span class="source-line" id="L313"><a href="#L313">313</a> </span>
+<span class="source-line" id="L314"><a href="#L314">314</a> /** Vet an elevation against the refutation discipline (the auto-downgrade path the &quot;FAILS /</span>
+<span class="source-line" id="L315"><a href="#L315">315</a>  *  auto-downgrades&quot; done-when names). If the elevation carries a NAMED concrete defeater AND a</span>
+<span class="source-line" id="L316"><a href="#L316">316</a>  *  `refutation_provenance` envelope, it earned its tier and is returned unchanged (fresh copy).</span>
+<span class="source-line" id="L317"><a href="#L317">317</a>  *  Otherwise it is auto-downgraded to the SPECULATIVE floor + the no-independent-refutation</span>
+<span class="source-line" id="L318"><a href="#L318">318</a>  *  stamp — never silently left over-claimed. Returns a FRESH object; throws on a non-object.</span>
+<span class="source-line" id="L319"><a href="#L319">319</a>  *</span>
+<span class="source-line" id="L320"><a href="#L320">320</a>  *  W2b GATE: a `resolveCommission` verifier is injected via `options` (the RUNTIME entry wires the</span>
+<span class="source-line" id="L321"><a href="#L321">321</a>  *  real ledger resolver; tests pass a stub). An honestly-refuted elevation keeps its tier, and its</span>
+<span class="source-line" id="L322"><a href="#L322">322</a>  *  CROSS-FAMILY eligibility is DERIVED here (isCrossFamilyRefutation) and stamped onto the returned</span>
+<span class="source-line" id="L323"><a href="#L323">323</a>  *  elevation as `cross_family_refuted` — the ONLY signal downstream (passElevation/applySeamPass) may</span>
+<span class="source-line" id="L324"><a href="#L324">324</a>  *  use to let the elevation reach the cross-family (GROUNDED) tier or to set the derived top-level</span>
+<span class="source-line" id="L325"><a href="#L325">325</a>  *  `cross_model`. With the default NOOP resolver (or a resolver that rejects the id), the elevation is</span>
+<span class="source-line" id="L326"><a href="#L326">326</a>  *  honestly refuted but NOT cross-family (`cross_family_refuted:false`) ⇒ capped at PROMISING. */</span>
+<span class="source-line" id="L327"><a href="#L327">327</a> export function vetElevationRefutation(elevation, options = {}) {</span>
+<span class="source-line" id="L328"><a href="#L328">328</a>   if (elevation === null || typeof elevation !== &#x27;object&#x27; || Array.isArray(elevation)) {</span>
+<span class="source-line" id="L329"><a href="#L329">329</a>     throw new Error(&#x27;refute: vetElevationRefutation target is not an object&#x27;);</span>
+<span class="source-line" id="L330"><a href="#L330">330</a>   }</span>
+<span class="source-line" id="L331"><a href="#L331">331</a>   const { resolveCommission = NOOP_COMMISSION_VERIFIER } = options;</span>
+<span class="source-line" id="L332"><a href="#L332">332</a>   const honestlyRefuted = isNamedDefeater(elevation.what_would_refute_it) &amp;&amp; isNonEmpty(elevation.refutation_provenance);</span>
+<span class="source-line" id="L333"><a href="#L333">333</a>   if (honestlyRefuted) {</span>
+<span class="source-line" id="L334"><a href="#L334">334</a>     // Cross-family (GROUNDED) eligibility is DERIVED from the unforgeable ledger — never asserted.</span>
+<span class="source-line" id="L335"><a href="#L335">335</a>     const cross_family_refuted = isCrossFamilyRefutation(elevation, resolveCommission);</span>
+<span class="source-line" id="L336"><a href="#L336">336</a>     return { ...elevation, cross_family_refuted };</span>
+<span class="source-line" id="L337"><a href="#L337">337</a>   }</span>
+<span class="source-line" id="L338"><a href="#L338">338</a>   return stampNoIndependentRefutation(elevation);</span>
+<span class="source-line" id="L339"><a href="#L339">339</a> }</span>
+<span class="source-line" id="L340"><a href="#L340">340</a> </span>
+<span class="source-line" id="L341"><a href="#L341">341</a> // --- the bounded refuter budget (HALT, never a silent drop) --------------------------------</span>
+<span class="source-line" id="L342"><a href="#L342">342</a> /** Thrown when more independent refuters are requested than the bounded budget R allows. A</span>
+<span class="source-line" id="L343"><a href="#L343">343</a>  *  distinct class so the budget canary can assert the run HALTS rather than silently dropping. */</span>
+<span class="source-line" id="L344"><a href="#L344">344</a> export class RefuterBudgetHalt extends Error {</span>
+<span class="source-line" id="L345"><a href="#L345">345</a>   constructor(requested, budget) {</span>
+<span class="source-line" id="L346"><a href="#L346">346</a>     super(</span>
+<span class="source-line" id="L347"><a href="#L347">347</a>       `refuter-budget HALT: ${requested} independent refuters requested but the bounded budget is R=${budget} — HALT for human (no silent drop; findings below the firing threshold ship SPECULATIVE with the &quot;${NO_INDEPENDENT_REFUTATION_STAMP}&quot; stamp)`</span>
+<span class="source-line" id="L348"><a href="#L348">348</a>     );</span>
+<span class="source-line" id="L349"><a href="#L349">349</a>     this.name = &#x27;RefuterBudgetHalt&#x27;;</span>
+<span class="source-line" id="L350"><a href="#L350">350</a>     this.requested = requested;</span>
+<span class="source-line" id="L351"><a href="#L351">351</a>     this.budget = budget;</span>
+<span class="source-line" id="L352"><a href="#L352">352</a>   }</span>
+<span class="source-line" id="L353"><a href="#L353">353</a> }</span>
+<span class="source-line" id="L354"><a href="#L354">354</a> </span>
+<span class="source-line" id="L355"><a href="#L355">355</a> /** Assert a refuter request stays within the bounded budget R. Returns `requested` when it is</span>
+<span class="source-line" id="L356"><a href="#L356">356</a>  *  within budget; throws RefuterBudgetHalt (the HALT path) when it exceeds R — the run HALTS,</span>
+<span class="source-line" id="L357"><a href="#L357">357</a>  *  it does NOT silently take the first R. Throws a plain Error on a non-count argument. */</span>
+<span class="source-line" id="L358"><a href="#L358">358</a> export function assertRefuterBudget(requested, R = REFUTER_BUDGET_R) {</span>
+<span class="source-line" id="L359"><a href="#L359">359</a>   if (!Number.isInteger(requested) || requested &lt; 0) {</span>
+<span class="source-line" id="L360"><a href="#L360">360</a>     throw new Error(`refute: assertRefuterBudget requires a non-negative integer count, got ${JSON.stringify(requested)}`);</span>
+<span class="source-line" id="L361"><a href="#L361">361</a>   }</span>
+<span class="source-line" id="L362"><a href="#L362">362</a>   if (requested &gt; R) throw new RefuterBudgetHalt(requested, R);</span>
+<span class="source-line" id="L363"><a href="#L363">363</a>   return requested;</span>
+<span class="source-line" id="L364"><a href="#L364">364</a> }</span></pre></main></body></html>

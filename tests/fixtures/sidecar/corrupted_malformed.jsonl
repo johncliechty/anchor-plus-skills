@@ -1,3 +1,0 @@
-{"type":"summary","summary":"Corrupted — a malformed/truncated JSON line","leafUuid":"1a2b3c4d-0004-4a00-8a00-0000000000c7"}
-{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"C:\\anon\\project-slug","sessionId":"1a2b3c4d-0004-4a00-8a00-000000000004","version":"1.0.0","gitBranch":"anon/branch","type":"user","message":{"role":"user","content":"turn 1"},"uuid":"1a2b3c4d-0004-4a00-8a00-0000000000u1","timestamp":"2026-07-11T18:00:00.000Z"}
-{"parentUuid":"1a2b3c4d-0004-4a00-8a00-0000000000u1","isSidechain":false,"userType":"external","type":"assistant","message":{"id":"msg_01Q00000000000000000QQ","type":"message","role":"assistant","model":"claude-opus-4-8","content":[{"type":"text","text":"truncated mid-record

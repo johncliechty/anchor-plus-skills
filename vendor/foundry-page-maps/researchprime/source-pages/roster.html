@@ -1,0 +1,582 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>roster · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>roster</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\crucible\bin\shark-tank.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 5797bb62ef6540b2de74aed3d59ff628bc7e0cba97e11367b41fc3af6320eabe</p></details>
+<p><a href="../sources/roster.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // shark-tank.mjs — Crucible&#x27;s adversarial review round (Wave 2).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // A Shark Tank is one round of adversarial review: three INDEPENDENT, fresh-</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // context Sharks (Skeptic / Contrarian / Analyst) are each handed the North Star</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // VERBATIM plus a rotated PM critique angle, and prompted to REFUTE the draft.</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // Their findings are then tallied into a single verdict.</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> //</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // REUSE, NOT REINVENT (per the project&#x27;s standing rule + MASTER-PLAN §6):</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> //   - The agent INJECTION contract mirrors Foreman&#x27;s `makeAgentDriver({ agent })`</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> //     (`wave-workflow.js`): the driver is built from the SAME Wave-1 `agent` seam</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> //     (`makeAgentSeam(...).agent`) you would hand Foreman. We define a Crucible</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //     `makeSharkDriver({ agent })` rather than calling Foreman&#x27;s `makeAgentDriver`</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> //     verbatim because its `review()` emits a Foreman-GATE-artifact prompt; the</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> //     more-specific Wave-2 requirement — &quot;each prompt embedding the North Star + a</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> //     rotated PM critique angle&quot; — needs a plan-level Shark prompt instead.</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> //   - The agreement TALLY reuses Foreman&#x27;s `collectFindings` (`wave-engine.mjs`)</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //     unchanged; Crucible only adds the cross-Shark id NORMALIZATION in front of</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> //     it (so ≥2-agree fires on the *same* issue even when Sharks word it</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //     differently) and the inclusion-test DEMOTION behind it.</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> //   - The finding schema extends Foreman&#x27;s `REVIEW_SCHEMA` with the Crucible</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> //     fields the round mechanic needs (`topic`, `traces_to_north_star`, `tag`).</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> </span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> import fs from &#x27;node:fs&#x27;;</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> import path from &#x27;node:path&#x27;;</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> import { lookinAppendix, superviseSeat } from &#x27;../../drivers/swarm-lookin.mjs&#x27;;</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> </span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> /** Wall-clock window a trail-less (read-only, one-shot) Shark seat may stay silent</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a>  *  before it is declared dead. Override: CRUCIBLE_SHARK_SEAT_WINDOW_MS. */</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> export const SHARK_SEAT_WINDOW_MS = 15 * 60 * 1000;</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> </span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> import { HaltError, REVIEW_SCHEMA } from &#x27;./crucible-lib.mjs&#x27;;</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> import { collectFindings } from &#x27;../../foreman/bin/wave-engine.mjs&#x27;;</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> </span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> // The Sharks and PM&#x27;s 8 critique angles (MASTER-PLAN §6).</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> </span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> /** The three fixed Shark roles (persona = the machinery each channels). */</span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> export const SHARK_ROLES = [</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a>   { role: &#x27;Skeptic&#x27;, persona: &#x27;Critic&#x27; },</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a>   { role: &#x27;Contrarian&#x27;, persona: &quot;Devil&#x27;s-Advocate&quot; },</span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a>   { role: &#x27;Analyst&#x27;, persona: &#x27;researchPrime&#x27; },</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> ];</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> /** PM&#x27;s 8 critique angles, rotated across Sharks/rounds for diverse pushback. */</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a> export const PM_CRITIQUE_ANGLES = [</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a>   &#x27;security&#x27;,</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a>   &#x27;frustrated-UX&#x27;,</span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a>   &#x27;operator&#x27;,</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>   &#x27;skeptical-researcher&#x27;,</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a>   &#x27;competitor&#x27;,</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   &#x27;bored-investor&#x27;,</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>   &#x27;future-maintainer&#x27;,</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>   &#x27;steel-man-the-premise&#x27;,</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a> ];</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a> </span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a> /**</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a>  * The critique angle a given Shark wears this round. Rotates across BOTH the</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a>  * Shark index and the round number so the same Shark sees fresh angles over a</span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a>  * multi-round loop and no angle is starved.</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>  */</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a> export function angleForShark(round, sharkIndex, roleCount = SHARK_ROLES.length) {</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>   const n = PM_CRITIQUE_ANGLES.length;</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a>   const rc = Math.max(1, Number(roleCount) || SHARK_ROLES.length);</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>   const i = ((round * rc + sharkIndex) % n + n) % n;</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>   return PM_CRITIQUE_ANGLES[i];</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a> }</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a> </span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a> // Finding schema — Foreman&#x27;s REVIEW_SCHEMA + Crucible round fields.</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> /**</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>  * Each Shark finding: a severity, a STABLE `topic` naming the issue (the cross-</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a>  * Shark convergence key — same issue ⇒ same topic), an inclusion-test verdict</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a>  * (`traces_to_north_star` + which criterion), and a scope tag. Extends Foreman&#x27;s</span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a>  * REVIEW_SCHEMA item shape rather than redefining it.</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>  */</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> export const SHARK_SCHEMA = {</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a>   type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a>   required: [&#x27;answerable&#x27;, &#x27;findings&#x27;],</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a>   properties: {</span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a>     answerable: { enum: [&#x27;yes&#x27;, &#x27;no&#x27;] },</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>     note: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>     findings: {</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a>       type: &#x27;array&#x27;,</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>       items: {</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>         type: &#x27;object&#x27;,</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>         required: [&#x27;severity&#x27;, &#x27;topic&#x27;, &#x27;traces_to_north_star&#x27;],</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>         properties: {</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>           severity: { enum: [&#x27;BLOCKER&#x27;, &#x27;MAJOR&#x27;, &#x27;MINOR&#x27;, &#x27;NIT&#x27;] },</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>           topic: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>           claim_id: { type: [&#x27;string&#x27;, &#x27;null&#x27;] },</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>           section: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>           tag: { enum: [&#x27;refinement&#x27;, &#x27;out-of-scope&#x27;] },</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>           traces_to_north_star: { enum: [&#x27;yes&#x27;, &#x27;no&#x27;] },</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>           criterion: { type: [&#x27;string&#x27;, &#x27;null&#x27;] },</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>           message: { type: &#x27;string&#x27; },</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>         },</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a>       },</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a>     },</span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a>   },</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a> };</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a> </span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a> // Cross-Shark finding identity (normalization).</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a> //</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a> // Foreman&#x27;s findingId is `file:line+rule` — right for code, wrong for plan-level</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a> // critique where two Sharks describe the SAME issue in different words. Crucible</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a> // keys identity on a NORMALIZED topic: lowercase, alphanumeric tokens, stopwords</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a> // dropped, then sorted — so &quot;North Star is ambiguous about scope&quot; and &quot;ambiguous</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a> // scope in the North Star&quot; collapse to one id and their ≥2 agreement actually</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a> // registers. Falls back to a Foreman-style location id only if a Shark omits a</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a> // topic.</span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a> </span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> const STOPWORDS = new Set([</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>   &#x27;the&#x27;, &#x27;a&#x27;, &#x27;an&#x27;, &#x27;is&#x27;, &#x27;are&#x27;, &#x27;was&#x27;, &#x27;be&#x27;, &#x27;being&#x27;, &#x27;been&#x27;, &#x27;of&#x27;, &#x27;to&#x27;, &#x27;about&#x27;,</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a>   &#x27;on&#x27;, &#x27;in&#x27;, &#x27;for&#x27;, &#x27;and&#x27;, &#x27;or&#x27;, &#x27;that&#x27;, &#x27;this&#x27;, &#x27;it&#x27;, &#x27;its&#x27;, &#x27;too&#x27;, &#x27;very&#x27;, &#x27;as&#x27;,</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a>   &#x27;by&#x27;, &#x27;at&#x27;, &#x27;not&#x27;, &#x27;no&#x27;, &#x27;but&#x27;, &#x27;with&#x27;, &#x27;should&#x27;, &#x27;must&#x27;, &#x27;need&#x27;, &#x27;needs&#x27;, &#x27;has&#x27;,</span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a>   &#x27;have&#x27;, &#x27;plan&#x27;, &#x27;draft&#x27;, &#x27;there&#x27;, &#x27;here&#x27;, &#x27;we&#x27;, &#x27;you&#x27;,</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a> ]);</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a> </span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> /** Canonicalize free text into an order- and wording-insensitive identity key. */</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a> export function normalizeTopic(s) {</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   const tokens = String(s ?? &#x27;&#x27;).toLowerCase().match(/[a-z0-9]+/g) || [];</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a>   const kept = tokens.filter((t) =&gt; t.length &gt; 1 &amp;&amp; !STOPWORDS.has(t));</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a>   return (kept.length ? kept : tokens).sort().join(&#x27;-&#x27;);</span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> }</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a> </span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a> /**</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>  * Canonicalize an EXPLICIT claim id (e.g. &quot;C3&quot;, &quot;claim-heartbeat-cadence&quot;). Unlike</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>  * `normalizeTopic` this preserves token ORDER — an id is an identifier, not prose.</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>  */</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a> function normalizeClaimId(v) {</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a>   if (v == null) return &#x27;&#x27;;</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>   return String(v).toLowerCase().replace(/[^a-z0-9]+/g, &#x27;-&#x27;).replace(/^-+|-+$/g, &#x27;&#x27;);</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a> }</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a> </span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a> /** The stable, cross-Shark normalized id for a finding. */</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a> export function normalizeFindingId(f) {</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>   // An EXPLICIT claim id BEATS the free-text topic slug. When the artifact under</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>   // review carries stable claim ids (researchPrime&#x27;s ledger), reviewers disputing</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>   // the same claim must converge on ONE identity even when their topic wording</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>   // differs — three reviewers slugging the same claim three ways each counted</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>   // agreement:1 and produced a real false-DRY (researchPrime journal 0001,</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>   // 2026-07-06). Identity precedence: claim_id &gt; topic &gt; location.</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>   const claimKey = normalizeClaimId(f.claim_id ?? f.claimId);</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a>   if (claimKey) return `claim:${claimKey}`;</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a>   const topicKey = normalizeTopic(f.topic);</span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a>   if (topicKey) return `topic:${topicKey}`;</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>   const scope = normalizeTopic(f.section || f.file) || &#x27;plan&#x27;;</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a>   const rule = normalizeTopic(f.rule || f.message) || &#x27;unspecified&#x27;;</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>   return `loc:${scope}::${rule}`;</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a> }</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a> </span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a> const SEV_RANK = { BLOCKER: 4, MAJOR: 3, MINOR: 2, NIT: 1 };</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a> const sevRank = (s) =&gt; SEV_RANK[String(s || &#x27;&#x27;).toUpperCase()] || 0;</span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a> </span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a> // Tally: normalize → reuse Foreman agreement count → inclusion-test demote →</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a> // ≥2-agree BLOCKER → dry-round.</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a> </span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a> /**</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>  * Merge per-Shark reviews into a single verdict.</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>  *</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>  * Steps:</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>  *  1. Assign each finding its cross-Shark normalized id and gather per-id facts</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>  *     (does ANY Shark trace it to the North Star, the max severity raised, which</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>  *     Sharks raised it, tags/criteria/messages).</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>  *  2. Reuse Foreman&#x27;s `collectFindings` for the dedup + agreement count.</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>  *  3. DEMOTE any finding that traces to no criterion (the inclusion test as a</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>  *     round mechanic) — demoted findings can never be BLOCKERs and cannot hold</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>  *     the loop open.</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>  *  4. A BLOCKER is a non-demoted BLOCKER/MAJOR with ≥2 Sharks agreeing.</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>  *  5. The round is DRY when there is no NEW BLOCKER (ids in `priorBlockerIds`</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>  *     are not new — anti-oscillation via the stable id).</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>  *</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>  * @param {Array&lt;{reviewer:string, findings:object[]}&gt;} reviews</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>  * @param {{priorBlockerIds?:string[]}} [o]</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>  */</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a> export function tallyFindings(reviews, { priorBlockerIds = [] } = {}) {</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>   const prior = new Set(priorBlockerIds);</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>   const extras = new Map();</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a> </span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a>   // (1) normalize ids + accumulate per-id facts.</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a>   const normReviews = reviews.map((rv) =&gt; ({</span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a>     ...rv,</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>     findings: (rv.findings || []).map((f) =&gt; {</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>       const id = normalizeFindingId(f);</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>       const e = extras.get(id) || {</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>         id, anyTraces: false, severity: &#x27;NIT&#x27;,</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>         roles: new Set(), tags: new Set(), criteria: new Set(),</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a>         messages: [], section: f.section || f.file || null,</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>       };</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>       if (String(f.traces_to_north_star).toLowerCase() === &#x27;yes&#x27;) e.anyTraces = true;</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>       if (sevRank(f.severity) &gt; sevRank(e.severity)) e.severity = String(f.severity).toUpperCase();</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>       if (rv.reviewer != null) e.roles.add(rv.reviewer);</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>       if (f.tag) e.tags.add(f.tag);</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>       if (f.criterion) e.criteria.add(f.criterion);</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>       if (f.message) e.messages.push(f.message);</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>       if (!e.section &amp;&amp; (f.section || f.file)) e.section = f.section || f.file;</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>       extras.set(id, e);</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a>       return { ...f, id };</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a>     }),</span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a>   }));</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a> </span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>   // (2) reuse Foreman&#x27;s agreement tally (dedup by id, count distinct reviewers).</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>   const merged = collectFindings(normReviews);</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a> </span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>   // (3,4,5) assemble Crucible findings with demotion + blocker + new flags.</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>   const findings = merged.map((m) =&gt; {</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>     const e = extras.get(m.id);</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>     const demoted = !e.anyTraces; // fails the inclusion test ⇒ cannot hold the loop open</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>     const severity = e.severity;</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>     const isBlocker = !demoted &amp;&amp; (severity === &#x27;BLOCKER&#x27; || severity === &#x27;MAJOR&#x27;) &amp;&amp; m.agreement &gt;= 2;</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>     return {</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>       id: m.id,</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>       severity,</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>       agreement: m.agreement,</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>       demoted,</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>       isBlocker,</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>       isNew: !prior.has(m.id),</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>       traces_to_north_star: e.anyTraces ? &#x27;yes&#x27; : &#x27;no&#x27;,</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>       tag: e.tags.has(&#x27;refinement&#x27;) ? &#x27;refinement&#x27; : ([...e.tags][0] || (demoted ? &#x27;out-of-scope&#x27; : null)),</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a>       criterion: [...e.criteria][0] || null,</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>       raisedBy: [...e.roles],</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>       section: e.section,</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>       message: e.messages[0] || null,</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>     };</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>   });</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a> </span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>   const blockers = findings.filter((f) =&gt; f.isBlocker);</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>   const newBlockers = blockers.filter((f) =&gt; f.isNew);</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>   const demoted = findings.filter((f) =&gt; f.demoted);</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>   const dry = newBlockers.length === 0;</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>   // Quorum floor (2026-07-17): a BLOCKER needs &gt;=2 Sharks to agree, so a round where fewer</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>   // than 2 reviewers returned a PARSEABLE review is INCONCLUSIVE — its &quot;dry&quot; would be a FALSE</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>   // convergence (no blocker could ever surface). Only an explicit abstain (answerable:&#x27;no&#x27; —</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>   // a rejected call or unparseable-after-retry reply) fails to count; a review present counts.</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a>   const answered = reviews.filter((r) =&gt; r &amp;&amp; r.answerable !== &#x27;no&#x27;).length;</span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>   const inconclusive = answered &lt; 2;</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>   return { findings, blockers, newBlockers, demoted, dry, inconclusive, answered, verdict: dry ? &#x27;DRY&#x27; : &#x27;BLOCKED&#x27; };</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a> }</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a> </span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a> // The Shark driver — built from the injected Wave-1 `agent` seam.</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a> </span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a> function sharkPrompt(role, angle, northStar, draft, research = null,</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>                      { priorBlockerIds = [], changelog = null, markdownFirst = false } = {}) {</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>   // Fresh researchPrime findings flow to the ANALYST Shark only (persona = researchPrime,</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>   // MASTER-PLAN §6) — the other Sharks stay deliberately context-fresh.</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>   const isAnalyst = role.persona === &#x27;researchPrime&#x27; || role.role === &#x27;Analyst&#x27;;</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>   const researchBlock = isAnalyst &amp;&amp; research</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>     ? [</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a>         ``,</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a>         `=== FRESH RESEARCH INPUT (researchPrime — you are the Analyst; weigh this evidence by quality) ===`,</span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a>         typeof research === &#x27;string&#x27; ? research : JSON.stringify(research),</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>         `=== END RESEARCH ===`,</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>       ]</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>     : [];</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>   // 2026-07 efficiency: tell each Shark what is ALREADY on the blocker register</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>   // and what the last revision changed, so its budget goes to NEW ground instead</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>   // of re-deriving known findings the tally will discard as not-new. Rigor is</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>   // unchanged: the Shark still reads the FULL draft and MAY re-raise anything it</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>   // believes is still unresolved (the register is orientation, not a muzzle).</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>   const registerBlock = priorBlockerIds.length</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>     ? [</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>         ``,</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>         `=== ALREADY ON THE BLOCKER REGISTER (known topics from prior rounds) ===`,</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>         ...priorBlockerIds.map((id) =&gt; `  - ${id}`),</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>         `These are KNOWN. A finding matching one of these ids counts as not-new in the`,</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>         `tally. Spend your effort on NEW failure modes — but if a register item is`,</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a>         `STILL unresolved in this draft, say so explicitly.`,</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>         `=== END REGISTER ===`,</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>       ]</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>     : [];</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>   const changelogBlock = changelog</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>     ? [</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>         ``,</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>         `=== WHAT THE LAST REVISION CHANGED (the reviser&#x27;s own changelog) ===`,</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a>         String(changelog),</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>         `=== END CHANGELOG ===`,</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>       ]</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>     : [];</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>   return [</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>     `You are the ${role.role} Shark (${role.persona}) in a Crucible Shark Tank — an`,</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>     `ADVERSARIAL review whose job is to REFUTE this draft, not to praise it. You have`,</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>     `fresh context: rely only on what is written below.`,</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>     ``,</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>     `=== THE NORTH STAR (verbatim — judge every finding against it) ===`,</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>     String(northStar),</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>     `=== END NORTH STAR ===`,</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>     ``,</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>     `Press hardest through this PM critique angle: ${angle}.`,</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>     ...researchBlock,</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>     ...registerBlock,</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a>     ...changelogBlock,</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>     ``,</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>     `For EVERY finding emit:`,</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>     `  - severity: BLOCKER | MAJOR | MINOR | NIT`,</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>     `  - topic: a SHORT, stable phrase naming the ISSUE itself (not your wording) so`,</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>     `    other Sharks naming the same issue converge on it`,</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>     `  - section: the part of the draft it targets`,</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>     `  - tag: refinement | out-of-scope`,</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a>     `  - traces_to_north_star: yes | no, and (when yes) which criterion`,</span>
+<span class="source-line" id="L309"><a href="#L309" aria-label="Line 309">309</a>     `  - message: the refutation`,</span>
+<span class="source-line" id="L310"><a href="#L310" aria-label="Line 310">310</a>     ...(markdownFirst ? [</span>
+<span class="source-line" id="L311"><a href="#L311" aria-label="Line 311">311</a>       ``,</span>
+<span class="source-line" id="L312"><a href="#L312" aria-label="Line 312">312</a>       `Because this draft is extremely large, DO NOT output a JSON object.`,</span>
+<span class="source-line" id="L313"><a href="#L313" aria-label="Line 313">313</a>       `Emit your review in strict Markdown format exactly like this:`,</span>
+<span class="source-line" id="L314"><a href="#L314" aria-label="Line 314">314</a>       `answerable: yes`,</span>
+<span class="source-line" id="L315"><a href="#L315" aria-label="Line 315">315</a>       `note: [optional context]`,</span>
+<span class="source-line" id="L316"><a href="#L316" aria-label="Line 316">316</a>       ``,</span>
+<span class="source-line" id="L317"><a href="#L317" aria-label="Line 317">317</a>       `## Finding 1`,</span>
+<span class="source-line" id="L318"><a href="#L318" aria-label="Line 318">318</a>       `severity: BLOCKER`,</span>
+<span class="source-line" id="L319"><a href="#L319" aria-label="Line 319">319</a>       `topic: [short phrase]`,</span>
+<span class="source-line" id="L320"><a href="#L320" aria-label="Line 320">320</a>       `section: [section name]`,</span>
+<span class="source-line" id="L321"><a href="#L321" aria-label="Line 321">321</a>       `tag: refinement`,</span>
+<span class="source-line" id="L322"><a href="#L322" aria-label="Line 322">322</a>       `traces_to_north_star: yes`,</span>
+<span class="source-line" id="L323"><a href="#L323" aria-label="Line 323">323</a>       `criterion: [criterion text]`,</span>
+<span class="source-line" id="L324"><a href="#L324" aria-label="Line 324">324</a>       `message: [your refutation]`,</span>
+<span class="source-line" id="L325"><a href="#L325" aria-label="Line 325">325</a>     ] : []),</span>
+<span class="source-line" id="L326"><a href="#L326" aria-label="Line 326">326</a>     ``,</span>
+<span class="source-line" id="L327"><a href="#L327" aria-label="Line 327">327</a>     `INCLUSION TEST: a finding that does not trace to a North-Star criterion`,</span>
+<span class="source-line" id="L328"><a href="#L328" aria-label="Line 328">328</a>     `(traces_to_north_star: no) is out-of-scope and will be DEMOTED — do not inflate`,</span>
+<span class="source-line" id="L329"><a href="#L329" aria-label="Line 329">329</a>     `its severity to keep the loop open.`,</span>
+<span class="source-line" id="L330"><a href="#L330" aria-label="Line 330">330</a>     ``,</span>
+<span class="source-line" id="L331"><a href="#L331" aria-label="Line 331">331</a>     `=== DRAFT UNDER REVIEW ===`,</span>
+<span class="source-line" id="L332"><a href="#L332" aria-label="Line 332">332</a>     String(draft),</span>
+<span class="source-line" id="L333"><a href="#L333" aria-label="Line 333">333</a>     `=== END DRAFT ===`,</span>
+<span class="source-line" id="L334"><a href="#L334" aria-label="Line 334">334</a>     ``,</span>
+<span class="source-line" id="L335"><a href="#L335" aria-label="Line 335">335</a>     lookinAppendix({ northStar }),</span>
+<span class="source-line" id="L336"><a href="#L336" aria-label="Line 336">336</a>   ].join(&#x27;\n&#x27;);</span>
+<span class="source-line" id="L337"><a href="#L337" aria-label="Line 337">337</a> }</span>
+<span class="source-line" id="L338"><a href="#L338" aria-label="Line 338">338</a> </span>
+<span class="source-line" id="L339"><a href="#L339" aria-label="Line 339">339</a> /**</span>
+<span class="source-line" id="L340"><a href="#L340" aria-label="Line 340">340</a>  * Best-effort recovery of Shark findings from a RAW-TEXT reply for large drafts</span>
+<span class="source-line" id="L341"><a href="#L341" aria-label="Line 341">341</a>  * where JSON serialization breaks.</span>
+<span class="source-line" id="L342"><a href="#L342" aria-label="Line 342">342</a>  */</span>
+<span class="source-line" id="L343"><a href="#L343" aria-label="Line 343">343</a> export function parseFindingsFromMarkdown(rawText) {</span>
+<span class="source-line" id="L344"><a href="#L344" aria-label="Line 344">344</a>   const findings = [];</span>
+<span class="source-line" id="L345"><a href="#L345" aria-label="Line 345">345</a>   let currentFinding = null;</span>
+<span class="source-line" id="L346"><a href="#L346" aria-label="Line 346">346</a>   let answerable = &#x27;yes&#x27;;</span>
+<span class="source-line" id="L347"><a href="#L347" aria-label="Line 347">347</a>   let note = &#x27;&#x27;;</span>
+<span class="source-line" id="L348"><a href="#L348" aria-label="Line 348">348</a> </span>
+<span class="source-line" id="L349"><a href="#L349" aria-label="Line 349">349</a>   // Handle literal \n and missing newlines before keywords</span>
+<span class="source-line" id="L350"><a href="#L350" aria-label="Line 350">350</a>   let normalizedText = String(rawText).replace(/\\n/g, &#x27;\n&#x27;);</span>
+<span class="source-line" id="L351"><a href="#L351" aria-label="Line 351">351</a>   normalizedText = normalizedText.replace(/\s+(?:\*\*)?(severity|topic|section|tag|traces_to_north_star|criterion|message|answerable|note)(?:\*\*)?[:\-]/gi, &#x27;\n$1:&#x27;);</span>
+<span class="source-line" id="L352"><a href="#L352" aria-label="Line 352">352</a> </span>
+<span class="source-line" id="L353"><a href="#L353" aria-label="Line 353">353</a>   const lines = normalizedText.split(/\r?\n/).map((l) =&gt; l.trim()).filter((l) =&gt; l.length &gt; 0);</span>
+<span class="source-line" id="L354"><a href="#L354" aria-label="Line 354">354</a>   for (const line of lines) {</span>
+<span class="source-line" id="L355"><a href="#L355" aria-label="Line 355">355</a>     let m;</span>
+<span class="source-line" id="L356"><a href="#L356" aria-label="Line 356">356</a>     if ((m = line.match(/^(?:##\s*)?(?:\*\*)?Finding[\s\d\:]*(.*)/i))) {</span>
+<span class="source-line" id="L357"><a href="#L357" aria-label="Line 357">357</a>       currentFinding = {</span>
+<span class="source-line" id="L358"><a href="#L358" aria-label="Line 358">358</a>         severity: &#x27;NIT&#x27;,</span>
+<span class="source-line" id="L359"><a href="#L359" aria-label="Line 359">359</a>         topic: m[1].trim() || &#x27;unnamed finding&#x27;,</span>
+<span class="source-line" id="L360"><a href="#L360" aria-label="Line 360">360</a>         section: &#x27;&#x27;,</span>
+<span class="source-line" id="L361"><a href="#L361" aria-label="Line 361">361</a>         tag: &#x27;refinement&#x27;,</span>
+<span class="source-line" id="L362"><a href="#L362" aria-label="Line 362">362</a>         traces_to_north_star: &#x27;yes&#x27;,</span>
+<span class="source-line" id="L363"><a href="#L363" aria-label="Line 363">363</a>         criterion: null,</span>
+<span class="source-line" id="L364"><a href="#L364" aria-label="Line 364">364</a>         message: &#x27;&#x27;</span>
+<span class="source-line" id="L365"><a href="#L365" aria-label="Line 365">365</a>       };</span>
+<span class="source-line" id="L366"><a href="#L366" aria-label="Line 366">366</a>       findings.push(currentFinding);</span>
+<span class="source-line" id="L367"><a href="#L367" aria-label="Line 367">367</a>     } else if (currentFinding) {</span>
+<span class="source-line" id="L368"><a href="#L368" aria-label="Line 368">368</a>       if ((m = line.match(/^(?:\*\*)?(severity|topic|section|tag|traces_to_north_star|criterion|message)(?:\*\*)?[:\-\s]+(.*)/i))) {</span>
+<span class="source-line" id="L369"><a href="#L369" aria-label="Line 369">369</a>         const key = m[1].toLowerCase();</span>
+<span class="source-line" id="L370"><a href="#L370" aria-label="Line 370">370</a>         const val = m[2].trim();</span>
+<span class="source-line" id="L371"><a href="#L371" aria-label="Line 371">371</a>         if (key === &#x27;severity&#x27;) currentFinding.severity = val.toUpperCase();</span>
+<span class="source-line" id="L372"><a href="#L372" aria-label="Line 372">372</a>         else if (key === &#x27;topic&#x27;) currentFinding.topic = val;</span>
+<span class="source-line" id="L373"><a href="#L373" aria-label="Line 373">373</a>         else if (key === &#x27;section&#x27;) currentFinding.section = val;</span>
+<span class="source-line" id="L374"><a href="#L374" aria-label="Line 374">374</a>         else if (key === &#x27;tag&#x27;) currentFinding.tag = val;</span>
+<span class="source-line" id="L375"><a href="#L375" aria-label="Line 375">375</a>         else if (key === &#x27;traces_to_north_star&#x27;) {</span>
+<span class="source-line" id="L376"><a href="#L376" aria-label="Line 376">376</a>            currentFinding.traces_to_north_star = val.toLowerCase().startsWith(&#x27;no&#x27;) ? &#x27;no&#x27; : &#x27;yes&#x27;;</span>
+<span class="source-line" id="L377"><a href="#L377" aria-label="Line 377">377</a>         }</span>
+<span class="source-line" id="L378"><a href="#L378" aria-label="Line 378">378</a>         else if (key === &#x27;criterion&#x27;) currentFinding.criterion = val;</span>
+<span class="source-line" id="L379"><a href="#L379" aria-label="Line 379">379</a>         else if (key === &#x27;message&#x27;) currentFinding.message = val;</span>
+<span class="source-line" id="L380"><a href="#L380" aria-label="Line 380">380</a>       }</span>
+<span class="source-line" id="L381"><a href="#L381" aria-label="Line 381">381</a>     } else {</span>
+<span class="source-line" id="L382"><a href="#L382" aria-label="Line 382">382</a>        if ((m = line.match(/^(?:\*\*)?answerable(?:\*\*)?[:\-\s]+(.*)/i))) {</span>
+<span class="source-line" id="L383"><a href="#L383" aria-label="Line 383">383</a>          answerable = m[1].trim().toLowerCase() === &#x27;no&#x27; ? &#x27;no&#x27; : &#x27;yes&#x27;;</span>
+<span class="source-line" id="L384"><a href="#L384" aria-label="Line 384">384</a>        } else if ((m = line.match(/^(?:\*\*)?note(?:\*\*)?[:\-\s]+(.*)/i))) {</span>
+<span class="source-line" id="L385"><a href="#L385" aria-label="Line 385">385</a>          note = m[1].trim();</span>
+<span class="source-line" id="L386"><a href="#L386" aria-label="Line 386">386</a>        }</span>
+<span class="source-line" id="L387"><a href="#L387" aria-label="Line 387">387</a>     }</span>
+<span class="source-line" id="L388"><a href="#L388" aria-label="Line 388">388</a>   }</span>
+<span class="source-line" id="L389"><a href="#L389" aria-label="Line 389">389</a>   return { answerable, note, findings };</span>
+<span class="source-line" id="L390"><a href="#L390" aria-label="Line 390">390</a> }</span>
+<span class="source-line" id="L391"><a href="#L391" aria-label="Line 391">391</a> </span>
+<span class="source-line" id="L392"><a href="#L392" aria-label="Line 392">392</a> /**</span>
+<span class="source-line" id="L393"><a href="#L393" aria-label="Line 393">393</a>  * Build a Shark driver from an injected `agent()` (Wave-1&#x27;s seam) — same</span>
+<span class="source-line" id="L394"><a href="#L394" aria-label="Line 394">394</a>  * injection contract as Foreman&#x27;s `makeAgentDriver({ agent })`.</span>
+<span class="source-line" id="L395"><a href="#L395" aria-label="Line 395">395</a>  * @param {{agent:(prompt:string,opts?:object)=&gt;Promise&lt;any&gt;}} deps</span>
+<span class="source-line" id="L396"><a href="#L396" aria-label="Line 396">396</a>  */</span>
+<span class="source-line" id="L397"><a href="#L397" aria-label="Line 397">397</a> export function makeSharkDriver({ agent } = {}) {</span>
+<span class="source-line" id="L398"><a href="#L398" aria-label="Line 398">398</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L399"><a href="#L399" aria-label="Line 399">399</a>     throw new HaltError(</span>
+<span class="source-line" id="L400"><a href="#L400" aria-label="Line 400">400</a>       &#x27;makeSharkDriver requires an agent() function&#x27;,</span>
+<span class="source-line" id="L401"><a href="#L401" aria-label="Line 401">401</a>       &#x27;pass the Wave-1 seam: makeSharkDriver({ agent: makeAgentSeam(...).agent })&#x27;,</span>
+<span class="source-line" id="L402"><a href="#L402" aria-label="Line 402">402</a>     );</span>
+<span class="source-line" id="L403"><a href="#L403" aria-label="Line 403">403</a>   }</span>
+<span class="source-line" id="L404"><a href="#L404" aria-label="Line 404">404</a>   return {</span>
+<span class="source-line" id="L405"><a href="#L405" aria-label="Line 405">405</a>     /** Run one Shark over the draft; returns a normalized per-Shark review. */</span>
+<span class="source-line" id="L406"><a href="#L406" aria-label="Line 406">406</a>     async review(role, { round = 0, northStar, draft, angle, research = null,</span>
+<span class="source-line" id="L407"><a href="#L407" aria-label="Line 407">407</a>                          priorBlockerIds = [], changelog = null }) {</span>
+<span class="source-line" id="L408"><a href="#L408" aria-label="Line 408">408</a>       const lens = angle ?? angleForShark(round, SHARK_ROLES.findIndex((r) =&gt; r.role === role.role));</span>
+<span class="source-line" id="L409"><a href="#L409" aria-label="Line 409">409</a>       </span>
+<span class="source-line" id="L410"><a href="#L410" aria-label="Line 410">410</a>       const markdownFirst = draft.length &gt; 20000;</span>
+<span class="source-line" id="L411"><a href="#L411" aria-label="Line 411">411</a> </span>
+<span class="source-line" id="L412"><a href="#L412" aria-label="Line 412">412</a>       // 2026-09-01 (Gate 5 Stage 2, Ecgberht): a Shark is a one-shot read-only seat</span>
+<span class="source-line" id="L413"><a href="#L413" aria-label="Line 413">413</a>       // with NO heartbeat trail, so the look-in supervisor&#x27;s &quot;silence is death&quot;</span>
+<span class="source-line" id="L414"><a href="#L414" aria-label="Line 414">414</a>       // degenerated into a 90s+60s WALL-CLOCK kill — every reviewer slower than</span>
+<span class="source-line" id="L415"><a href="#L415" aria-label="Line 415">415</a>       // ~3 min was declared dead (child left running, reply discarded) and the</span>
+<span class="source-line" id="L416"><a href="#L416" aria-label="Line 416">416</a>       // round reported DRY with 0/2 answerable. Stage 1 merely squeaked under it.</span>
+<span class="source-line" id="L417"><a href="#L417" aria-label="Line 417">417</a>       // A trail-less seat is given a window sized to a real review instead; the</span>
+<span class="source-line" id="L418"><a href="#L418" aria-label="Line 418">418</a>       // driver&#x27;s own per-call timeout stays the dead-process backstop.</span>
+<span class="source-line" id="L419"><a href="#L419" aria-label="Line 419">419</a>       const seatWindowMs = Number(process.env.CRUCIBLE_SHARK_SEAT_WINDOW_MS) &gt; 0</span>
+<span class="source-line" id="L420"><a href="#L420" aria-label="Line 420">420</a>         ? Number(process.env.CRUCIBLE_SHARK_SEAT_WINDOW_MS)</span>
+<span class="source-line" id="L421"><a href="#L421" aria-label="Line 421">421</a>         : SHARK_SEAT_WINDOW_MS;</span>
+<span class="source-line" id="L422"><a href="#L422" aria-label="Line 422">422</a>       const out = await superviseSeat({</span>
+<span class="source-line" id="L423"><a href="#L423" aria-label="Line 423">423</a>         run: () =&gt; agent(</span>
+<span class="source-line" id="L424"><a href="#L424" aria-label="Line 424">424</a>           sharkPrompt(role, lens, northStar, draft, research, { priorBlockerIds, changelog, markdownFirst }), {</span>
+<span class="source-line" id="L425"><a href="#L425" aria-label="Line 425">425</a>             label: `shark:${role.role}:r${round}`,</span>
+<span class="source-line" id="L426"><a href="#L426" aria-label="Line 426">426</a>             role: &#x27;shark&#x27;,</span>
+<span class="source-line" id="L427"><a href="#L427" aria-label="Line 427">427</a>             schema: markdownFirst ? undefined : SHARK_SCHEMA,</span>
+<span class="source-line" id="L428"><a href="#L428" aria-label="Line 428">428</a>           }),</span>
+<span class="source-line" id="L429"><a href="#L429" aria-label="Line 429">429</a>         checkInMs: seatWindowMs,</span>
+<span class="source-line" id="L430"><a href="#L430" aria-label="Line 430">430</a>         silentKillMs: 60 * 1000,</span>
+<span class="source-line" id="L431"><a href="#L431" aria-label="Line 431">431</a>         deadIdleMs: seatWindowMs,</span>
+<span class="source-line" id="L432"><a href="#L432" aria-label="Line 432">432</a>       });</span>
+<span class="source-line" id="L433"><a href="#L433" aria-label="Line 433">433</a> </span>
+<span class="source-line" id="L434"><a href="#L434" aria-label="Line 434">434</a>       let answerable, note, findings;</span>
+<span class="source-line" id="L435"><a href="#L435" aria-label="Line 435">435</a>       if (markdownFirst) {</span>
+<span class="source-line" id="L436"><a href="#L436" aria-label="Line 436">436</a>         const parsed = parseFindingsFromMarkdown(typeof out === &#x27;string&#x27; ? out : &#x27;&#x27;);</span>
+<span class="source-line" id="L437"><a href="#L437" aria-label="Line 437">437</a>         answerable = parsed.answerable;</span>
+<span class="source-line" id="L438"><a href="#L438" aria-label="Line 438">438</a>         note = parsed.note;</span>
+<span class="source-line" id="L439"><a href="#L439" aria-label="Line 439">439</a>         findings = parsed.findings;</span>
+<span class="source-line" id="L440"><a href="#L440" aria-label="Line 440">440</a>       } else {</span>
+<span class="source-line" id="L441"><a href="#L441" aria-label="Line 441">441</a>         answerable = out?.answerable ?? &#x27;yes&#x27;;</span>
+<span class="source-line" id="L442"><a href="#L442" aria-label="Line 442">442</a>         note = out?.note;</span>
+<span class="source-line" id="L443"><a href="#L443" aria-label="Line 443">443</a>         findings = Array.isArray(out?.findings) ? out.findings : [];</span>
+<span class="source-line" id="L444"><a href="#L444" aria-label="Line 444">444</a>       }</span>
+<span class="source-line" id="L445"><a href="#L445" aria-label="Line 445">445</a>       </span>
+<span class="source-line" id="L446"><a href="#L446" aria-label="Line 446">446</a>       return {</span>
+<span class="source-line" id="L447"><a href="#L447" aria-label="Line 447">447</a>         reviewer: role.role,</span>
+<span class="source-line" id="L448"><a href="#L448" aria-label="Line 448">448</a>         angle: lens,</span>
+<span class="source-line" id="L449"><a href="#L449" aria-label="Line 449">449</a>         answerable,</span>
+<span class="source-line" id="L450"><a href="#L450" aria-label="Line 450">450</a>         note,</span>
+<span class="source-line" id="L451"><a href="#L451" aria-label="Line 451">451</a>         findings,</span>
+<span class="source-line" id="L452"><a href="#L452" aria-label="Line 452">452</a>       };</span>
+<span class="source-line" id="L453"><a href="#L453" aria-label="Line 453">453</a>     },</span>
+<span class="source-line" id="L454"><a href="#L454" aria-label="Line 454">454</a>   };</span>
+<span class="source-line" id="L455"><a href="#L455" aria-label="Line 455">455</a> }</span>
+<span class="source-line" id="L456"><a href="#L456" aria-label="Line 456">456</a> </span>
+<span class="source-line" id="L457"><a href="#L457" aria-label="Line 457">457</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L458"><a href="#L458" aria-label="Line 458">458</a> // One full Shark-Tank round.</span>
+<span class="source-line" id="L459"><a href="#L459" aria-label="Line 459">459</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L460"><a href="#L460" aria-label="Line 460">460</a> </span>
+<span class="source-line" id="L461"><a href="#L461" aria-label="Line 461">461</a> /**</span>
+<span class="source-line" id="L462"><a href="#L462" aria-label="Line 462">462</a>  * Run all three Sharks over `draft`, tally a verdict, and (optionally) write the</span>
+<span class="source-line" id="L463"><a href="#L463" aria-label="Line 463">463</a>  * file-based round artifacts.</span>
+<span class="source-line" id="L464"><a href="#L464" aria-label="Line 464">464</a>  *</span>
+<span class="source-line" id="L465"><a href="#L465" aria-label="Line 465">465</a>  * @param {object} o</span>
+<span class="source-line" id="L466"><a href="#L466" aria-label="Line 466">466</a>  * @param {Function} o.agent                    Wave-1 agent seam</span>
+<span class="source-line" id="L467"><a href="#L467" aria-label="Line 467">467</a>  * @param {string}   o.northStar                embedded verbatim in every Shark prompt</span>
+<span class="source-line" id="L468"><a href="#L468" aria-label="Line 468">468</a>  * @param {string}   o.draft                    the artifact under review</span>
+<span class="source-line" id="L469"><a href="#L469" aria-label="Line 469">469</a>  * @param {number}  [o.round=0]</span>
+<span class="source-line" id="L470"><a href="#L470" aria-label="Line 470">470</a>  * @param {string[]}[o.priorBlockerIds=[]]      ids already blocking (anti-oscillation)</span>
+<span class="source-line" id="L471"><a href="#L471" aria-label="Line 471">471</a>  * @param {?(string|object)} [o.research=null]  researchPrime findings — embedded into the Analyst Shark only</span>
+<span class="source-line" id="L472"><a href="#L472" aria-label="Line 472">472</a>  * @param {?string} [o.artifactsDir=null]       when set, writes round artifacts there</span>
+<span class="source-line" id="L473"><a href="#L473" aria-label="Line 473">473</a>  * @param {Function}[o.log=()=&gt;{}]</span>
+<span class="source-line" id="L474"><a href="#L474" aria-label="Line 474">474</a>  * @returns {Promise&lt;object&gt;} the round verdict</span>
+<span class="source-line" id="L475"><a href="#L475" aria-label="Line 475">475</a>  */</span>
+<span class="source-line" id="L476"><a href="#L476" aria-label="Line 476">476</a> export async function runSharkTank({</span>
+<span class="source-line" id="L477"><a href="#L477" aria-label="Line 477">477</a>   agent,</span>
+<span class="source-line" id="L478"><a href="#L478" aria-label="Line 478">478</a>   northStar,</span>
+<span class="source-line" id="L479"><a href="#L479" aria-label="Line 479">479</a>   draft,</span>
+<span class="source-line" id="L480"><a href="#L480" aria-label="Line 480">480</a>   round = 0,</span>
+<span class="source-line" id="L481"><a href="#L481" aria-label="Line 481">481</a>   priorBlockerIds = [],</span>
+<span class="source-line" id="L482"><a href="#L482" aria-label="Line 482">482</a>   research = null,</span>
+<span class="source-line" id="L483"><a href="#L483" aria-label="Line 483">483</a>   changelog = null,</span>
+<span class="source-line" id="L484"><a href="#L484" aria-label="Line 484">484</a>   artifactsDir = null,</span>
+<span class="source-line" id="L485"><a href="#L485" aria-label="Line 485">485</a>   /** 2 = LITE concurrent pair; 3 = FULL (default). Floor 2 so ≥2-agree can still fire. */</span>
+<span class="source-line" id="L486"><a href="#L486" aria-label="Line 486">486</a>   sharkRoles = 3,</span>
+<span class="source-line" id="L487"><a href="#L487" aria-label="Line 487">487</a>   log = () =&gt; {},</span>
+<span class="source-line" id="L488"><a href="#L488" aria-label="Line 488">488</a> }) {</span>
+<span class="source-line" id="L489"><a href="#L489" aria-label="Line 489">489</a>   const driver = makeSharkDriver({ agent });</span>
+<span class="source-line" id="L490"><a href="#L490" aria-label="Line 490">490</a>   const n = Math.max(2, Math.min(SHARK_ROLES.length, Number(sharkRoles) || 3));</span>
+<span class="source-line" id="L491"><a href="#L491" aria-label="Line 491">491</a>   const roles = SHARK_ROLES.slice(0, n);</span>
+<span class="source-line" id="L492"><a href="#L492" aria-label="Line 492">492</a>   const angles = {};</span>
+<span class="source-line" id="L493"><a href="#L493" aria-label="Line 493">493</a>   const jobs = roles.map((role, i) =&gt; {</span>
+<span class="source-line" id="L494"><a href="#L494" aria-label="Line 494">494</a>     const angle = angleForShark(round, i, n);</span>
+<span class="source-line" id="L495"><a href="#L495" aria-label="Line 495">495</a>     angles[role.role] = angle;</span>
+<span class="source-line" id="L496"><a href="#L496" aria-label="Line 496">496</a>     return { role, angle };</span>
+<span class="source-line" id="L497"><a href="#L497" aria-label="Line 497">497</a>   });</span>
+<span class="source-line" id="L498"><a href="#L498" aria-label="Line 498">498</a>   // 2026-07 efficiency: the three fresh-context Sharks run CONCURRENTLY (the</span>
+<span class="source-line" id="L499"><a href="#L499" aria-label="Line 499">499</a>   // port of Foreman&#x27;s FOREMAN_CONCURRENT_REVIEW pattern — tallyFindings keys on</span>
+<span class="source-line" id="L500"><a href="#L500" aria-label="Line 500">500</a>   // normalized topic ids and is order-independent, and concurrency only</span>
+<span class="source-line" id="L501"><a href="#L501" aria-label="Line 501">501</a>   // strengthens independence). A REJECTED Shark maps to an abstain</span>
+<span class="source-line" id="L502"><a href="#L502" aria-label="Line 502">502</a>   // (answerable:&#x27;no&#x27;, zero findings) — never silently dropped — so the caller&#x27;s</span>
+<span class="source-line" id="L503"><a href="#L503" aria-label="Line 503">503</a>   // ambiguity handling sees it, exactly like Foreman&#x27;s mapping. Set</span>
+<span class="source-line" id="L504"><a href="#L504" aria-label="Line 504">504</a>   // CRUCIBLE_CONCURRENT_SHARKS=0 to restore the historical serial path.</span>
+<span class="source-line" id="L505"><a href="#L505" aria-label="Line 505">505</a>   let reviews;</span>
+<span class="source-line" id="L506"><a href="#L506" aria-label="Line 506">506</a>   if (process.env.CRUCIBLE_CONCURRENT_SHARKS !== &#x27;0&#x27;) {</span>
+<span class="source-line" id="L507"><a href="#L507" aria-label="Line 507">507</a>     const settled = await Promise.allSettled(jobs.map(({ role, angle }) =&gt;</span>
+<span class="source-line" id="L508"><a href="#L508" aria-label="Line 508">508</a>       driver.review(role, { round, northStar, draft, angle, research,</span>
+<span class="source-line" id="L509"><a href="#L509" aria-label="Line 509">509</a>                             priorBlockerIds, changelog })));</span>
+<span class="source-line" id="L510"><a href="#L510" aria-label="Line 510">510</a>     reviews = settled.map((s, i) =&gt; s.status === &#x27;fulfilled&#x27; ? s.value : {</span>
+<span class="source-line" id="L511"><a href="#L511" aria-label="Line 511">511</a>       reviewer: jobs[i].role.role,</span>
+<span class="source-line" id="L512"><a href="#L512" aria-label="Line 512">512</a>       angle: jobs[i].angle,</span>
+<span class="source-line" id="L513"><a href="#L513" aria-label="Line 513">513</a>       answerable: &#x27;no&#x27;,</span>
+<span class="source-line" id="L514"><a href="#L514" aria-label="Line 514">514</a>       note: `shark ${jobs[i].role.role} call rejected (${s.reason?.message || s.reason}) — abstain`,</span>
+<span class="source-line" id="L515"><a href="#L515" aria-label="Line 515">515</a>       findings: [],</span>
+<span class="source-line" id="L516"><a href="#L516" aria-label="Line 516">516</a>     });</span>
+<span class="source-line" id="L517"><a href="#L517" aria-label="Line 517">517</a>   } else {</span>
+<span class="source-line" id="L518"><a href="#L518" aria-label="Line 518">518</a>     reviews = [];</span>
+<span class="source-line" id="L519"><a href="#L519" aria-label="Line 519">519</a>     for (const { role, angle } of jobs) {</span>
+<span class="source-line" id="L520"><a href="#L520" aria-label="Line 520">520</a>       reviews.push(await driver.review(role, { round, northStar, draft, angle,</span>
+<span class="source-line" id="L521"><a href="#L521" aria-label="Line 521">521</a>                                                research, priorBlockerIds, changelog }));</span>
+<span class="source-line" id="L522"><a href="#L522" aria-label="Line 522">522</a>     }</span>
+<span class="source-line" id="L523"><a href="#L523" aria-label="Line 523">523</a>   }</span>
+<span class="source-line" id="L524"><a href="#L524" aria-label="Line 524">524</a> </span>
+<span class="source-line" id="L525"><a href="#L525" aria-label="Line 525">525</a>   const tally = tallyFindings(reviews, { priorBlockerIds });</span>
+<span class="source-line" id="L526"><a href="#L526" aria-label="Line 526">526</a>   const verdict = { round, ...tally, angles, reviews };</span>
+<span class="source-line" id="L527"><a href="#L527" aria-label="Line 527">527</a>   log(</span>
+<span class="source-line" id="L528"><a href="#L528" aria-label="Line 528">528</a>     `shark-tank round ${round}: ${verdict.verdict} — ${verdict.blockers.length} blocker(s), ` +</span>
+<span class="source-line" id="L529"><a href="#L529" aria-label="Line 529">529</a>     `${verdict.demoted.length} demoted, ${verdict.findings.length} finding(s)`,</span>
+<span class="source-line" id="L530"><a href="#L530" aria-label="Line 530">530</a>   );</span>
+<span class="source-line" id="L531"><a href="#L531" aria-label="Line 531">531</a> </span>
+<span class="source-line" id="L532"><a href="#L532" aria-label="Line 532">532</a>   if (artifactsDir) verdict.artifactPath = writeRoundArtifacts(artifactsDir, verdict);</span>
+<span class="source-line" id="L533"><a href="#L533" aria-label="Line 533">533</a>   return verdict;</span>
+<span class="source-line" id="L534"><a href="#L534" aria-label="Line 534">534</a> }</span>
+<span class="source-line" id="L535"><a href="#L535" aria-label="Line 535">535</a> </span>
+<span class="source-line" id="L536"><a href="#L536" aria-label="Line 536">536</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L537"><a href="#L537" aria-label="Line 537">537</a> // File-based verdict artifacts.</span>
+<span class="source-line" id="L538"><a href="#L538" aria-label="Line 538">538</a> // ---------------------------------------------------------------------------</span>
+<span class="source-line" id="L539"><a href="#L539" aria-label="Line 539">539</a> </span>
+<span class="source-line" id="L540"><a href="#L540" aria-label="Line 540">540</a> function renderSynthesis(verdict) {</span>
+<span class="source-line" id="L541"><a href="#L541" aria-label="Line 541">541</a>   const lines = [</span>
+<span class="source-line" id="L542"><a href="#L542" aria-label="Line 542">542</a>     `# Shark-Tank Round ${verdict.round} — ${verdict.verdict}`,</span>
+<span class="source-line" id="L543"><a href="#L543" aria-label="Line 543">543</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L544"><a href="#L544" aria-label="Line 544">544</a>     `- Verdict: **${verdict.verdict}** (${verdict.dry ? &#x27;dry round — no new BLOCKER&#x27; : `${verdict.newBlockers.length} new BLOCKER`})`,</span>
+<span class="source-line" id="L545"><a href="#L545" aria-label="Line 545">545</a>     `- Angles: ${Object.entries(verdict.angles).map(([r, a]) =&gt; `${r}=${a}`).join(&#x27;, &#x27;)}`,</span>
+<span class="source-line" id="L546"><a href="#L546" aria-label="Line 546">546</a>     `- Findings: ${verdict.findings.length} · Blockers: ${verdict.blockers.length} · Demoted (inclusion test): ${verdict.demoted.length}`,</span>
+<span class="source-line" id="L547"><a href="#L547" aria-label="Line 547">547</a>     &#x27;&#x27;,</span>
+<span class="source-line" id="L548"><a href="#L548" aria-label="Line 548">548</a>     &#x27;## Blocking (≥2 Sharks agree, traces to a criterion)&#x27;,</span>
+<span class="source-line" id="L549"><a href="#L549" aria-label="Line 549">549</a>   ];</span>
+<span class="source-line" id="L550"><a href="#L550" aria-label="Line 550">550</a>   if (verdict.blockers.length === 0) lines.push(&#x27;_none_&#x27;);</span>
+<span class="source-line" id="L551"><a href="#L551" aria-label="Line 551">551</a>   for (const f of verdict.blockers) {</span>
+<span class="source-line" id="L552"><a href="#L552" aria-label="Line 552">552</a>     lines.push(`- **${f.severity}** \`${f.id}\` — agree ${f.agreement} (${f.raisedBy.join(&#x27;, &#x27;)}) — ${f.message ?? &#x27;&#x27;}`);</span>
+<span class="source-line" id="L553"><a href="#L553" aria-label="Line 553">553</a>   }</span>
+<span class="source-line" id="L554"><a href="#L554" aria-label="Line 554">554</a>   lines.push(&#x27;&#x27;, &#x27;## Demoted (failed the inclusion test — cannot hold the loop open)&#x27;);</span>
+<span class="source-line" id="L555"><a href="#L555" aria-label="Line 555">555</a>   if (verdict.demoted.length === 0) lines.push(&#x27;_none_&#x27;);</span>
+<span class="source-line" id="L556"><a href="#L556" aria-label="Line 556">556</a>   for (const f of verdict.demoted) {</span>
+<span class="source-line" id="L557"><a href="#L557" aria-label="Line 557">557</a>     lines.push(`- ~~\`${f.id}\`~~ traces_to_north_star: no — ${f.message ?? &#x27;&#x27;}`);</span>
+<span class="source-line" id="L558"><a href="#L558" aria-label="Line 558">558</a>   }</span>
+<span class="source-line" id="L559"><a href="#L559" aria-label="Line 559">559</a>   return lines.join(&#x27;\n&#x27;) + &#x27;\n&#x27;;</span>
+<span class="source-line" id="L560"><a href="#L560" aria-label="Line 560">560</a> }</span>
+<span class="source-line" id="L561"><a href="#L561" aria-label="Line 561">561</a> </span>
+<span class="source-line" id="L562"><a href="#L562" aria-label="Line 562">562</a> /**</span>
+<span class="source-line" id="L563"><a href="#L563" aria-label="Line 563">563</a>  * Write the round&#x27;s verdict artifacts: a machine `verdict.json`, one file per</span>
+<span class="source-line" id="L564"><a href="#L564" aria-label="Line 564">564</a>  * Shark, and a human-readable `SYNTHESIS.md` (matching the existing</span>
+<span class="source-line" id="L565"><a href="#L565" aria-label="Line 565">565</a>  * `plans/debates/round-N/SYNTHESIS.md` convention). Returns the round dir.</span>
+<span class="source-line" id="L566"><a href="#L566" aria-label="Line 566">566</a>  */</span>
+<span class="source-line" id="L567"><a href="#L567" aria-label="Line 567">567</a> export function writeRoundArtifacts(baseDir, verdict) {</span>
+<span class="source-line" id="L568"><a href="#L568" aria-label="Line 568">568</a>   const roundDir = path.join(baseDir, `round-${verdict.round}`);</span>
+<span class="source-line" id="L569"><a href="#L569" aria-label="Line 569">569</a>   fs.mkdirSync(roundDir, { recursive: true });</span>
+<span class="source-line" id="L570"><a href="#L570" aria-label="Line 570">570</a>   fs.writeFileSync(path.join(roundDir, &#x27;verdict.json&#x27;), JSON.stringify(verdict, null, 2));</span>
+<span class="source-line" id="L571"><a href="#L571" aria-label="Line 571">571</a>   for (const rv of verdict.reviews) {</span>
+<span class="source-line" id="L572"><a href="#L572" aria-label="Line 572">572</a>     fs.writeFileSync(path.join(roundDir, `shark-${rv.reviewer}.json`), JSON.stringify(rv, null, 2));</span>
+<span class="source-line" id="L573"><a href="#L573" aria-label="Line 573">573</a>   }</span>
+<span class="source-line" id="L574"><a href="#L574" aria-label="Line 574">574</a>   fs.writeFileSync(path.join(roundDir, &#x27;SYNTHESIS.md&#x27;), renderSynthesis(verdict));</span>
+<span class="source-line" id="L575"><a href="#L575" aria-label="Line 575">575</a>   return roundDir;</span>
+<span class="source-line" id="L576"><a href="#L576" aria-label="Line 576">576</a> }</span></pre></main></body></html>

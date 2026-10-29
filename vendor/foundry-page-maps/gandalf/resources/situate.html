@@ -1,0 +1,58 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Situate without laundering evidence · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="situate" data-anchor-id="a-situate">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Reusable material</p><h1>Situate without laundering evidence</h1>
+<p class="intro">Require two relational correspondences and an outside-view base rate. Current host sets facts_verified:false and attaches a ResearchPrime handoff.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the documented workflow; access in real runs is not recorded.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/seam/situate.mjs · lines 164–209</p><pre>export function composeSituate({
+  id,
+  abstraction,
+  commission,
+  structure_map,
+  outside_view_base_rate,
+  reasoning,
+  verdict,
+  facts_verified = false,
+} = {}) {
+  if (!isNonEmptyString(id)) throw new Error(&#x27;situate: composeSituate requires an id&#x27;);
+  if (!isNonEmpty(abstraction)) throw new Error(&#x27;situate: composeSituate requires an S0 abstraction&#x27;);
+  if (commission === null || typeof commission !== &#x27;object&#x27;) {
+    throw new Error(&#x27;situate: composeSituate requires a researchPrime commission envelope&#x27;);
+  }
+  if (!isWellFormedStructureMap(structure_map)) {
+    throw new Error(&#x27;situate: composeSituate requires a structure-map with ≥2 answer-first relational correspondences&#x27;);
+  }
+  if (!isNonEmpty(outside_view_base_rate)) {
+    throw new Error(&#x27;situate: composeSituate requires an outside-view base rate&#x27;);
+  }
+
+  const independent = independentOriginCredit(commission);
+  const verified = facts_verified === true;
+  // No self-CORROBORATED: only an independent-origin commission lifts the rung above the cap.
+  const rung = independent &amp;&amp; verified ? &#x27;CORROBORATED&#x27; : SITUATE_SELF_MAX_RUNG;
+
+  const finding = {
+    id,
+    kind: SITUATE_KIND,
+    rung,
+    reasoning: isNonEmptyString(reasoning) ? reasoning : `SITUATE: structure-mapped against ${commission.question}.`,
+    verdict: isNonEmptyString(verdict) ? verdict : structure_map.answer,
+    s0_abstraction: abstraction,
+    researchprime_commission_id: commission.researchprime_commission_id ?? null,
+    independent_origin: independent,
+    structure_map,
+    outside_view_base_rate,
+    facts_verified: verified,
+  };
+  // Unverifiable facts are routed to a researchPrime verification handoff (never asserted real).
+  if (!verified) {
+    finding.needs_verification = `route to researchPrime: independently verify the structure-map correspondences and outside-view base rate for &#x27;${id}&#x27; (single-family substrate earns no independent-origin credit)`;
+  }
+  return finding;
+}</pre>
+<p><a class="button" href="../source-pages/situate.html#L164">Open numbered source</a>
+<a href="../sources/situate.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/seam">Apply seams and risk labels</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">bfca0d88698c3847fee7e911a7ce01572fe6844a2d385046f0aa9b6ed0d529a8</span></p><p>Excerpt hash: <span class="path">b0bda6f73c333371bee3aaf7fd4344e40b6b2515ad84f61110890c108c696050</span></p></details></article></main></body></html>

@@ -1,0 +1,314 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>live · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><a href="../index.html#library">← Library</a><h1>live</h1>
+<p class="note">Frozen code source · <span class="path">C:\dev\trio\researchPrime\bin\live-round-agent.mjs</span></p>
+<details><summary>Source identity</summary><p class="path">SHA-256 ae6ca3ac193313927c45058f81f00bd5b48b59540d276ba49757aa1519e0cecc</p></details>
+<p><a href="../sources/live.mjs" download>Download exact source</a></p><pre class="full-source"><span class="source-line" id="L1"><a href="#L1" aria-label="Line 1">1</a> // bin/live-round-agent.mjs — Wave W5 LIVE CROSS-FAMILY ROUND AGENT (the 5:1 verification split).</span>
+<span class="source-line" id="L2"><a href="#L2" aria-label="Line 2">2</a> //</span>
+<span class="source-line" id="L3"><a href="#L3" aria-label="Line 3">3</a> // THE MISSING SEAM. bin/round.mjs&#x27;s `orchestrateRound` takes an INJECTED `agent(prompt, opts)` and</span>
+<span class="source-line" id="L4"><a href="#L4" aria-label="Line 4">4</a> // dispatches its adjudication roles (reviewer / debate / judge / synthesizer) through it. Until now the</span>
+<span class="source-line" id="L5"><a href="#L5" aria-label="Line 5">5</a> // only live wiring (run-ramanujan-round.mjs) replayed a SINGLE-family Claude stub and HARD-CODED</span>
+<span class="source-line" id="L6"><a href="#L6" aria-label="Line 6">6</a> // `substrateFamilies: [&#x27;claude&#x27;]` — so a run could never honestly reach a second family, and the</span>
+<span class="source-line" id="L7"><a href="#L7" aria-label="Line 7">7</a> // suspiciously-dry guard (assessConvergenceHonesty) + the deliverable&#x27;s `cross_model` proxy were fed a</span>
+<span class="source-line" id="L8"><a href="#L8" aria-label="Line 8">8</a> // fabricated substrate list. This module is that missing wiring: it builds the round&#x27;s live `agent` via</span>
+<span class="source-line" id="L9"><a href="#L9" aria-label="Line 9">9</a> // the trio&#x27;s `makeRoleRoutedAgent` so the VERIFICATION roles route to a real cross-family (Gemini `agy</span>
+<span class="source-line" id="L10"><a href="#L10" aria-label="Line 10">10</a> // -p`) seat while the drafter/synthesizer/default stay on Claude — the machine-wide 5:1 split — and it</span>
+<span class="source-line" id="L11"><a href="#L11" aria-label="Line 11">11</a> // DERIVES `substrateFamilies` from the families ACTUALLY REACHED, never a hard-coded list.</span>
+<span class="source-line" id="L12"><a href="#L12" aria-label="Line 12">12</a> //</span>
+<span class="source-line" id="L13"><a href="#L13" aria-label="Line 13">13</a> // Reference topology proven live in Gandalf W3 (skills/gandalf/runtime/live-refuter.mjs): Claude drafts,</span>
+<span class="source-line" id="L14"><a href="#L14" aria-label="Line 14">14</a> // Gemini verifies; the verification role MUST resolve to a NON-drafter family (never self-review), and if</span>
+<span class="source-line" id="L15"><a href="#L15" aria-label="Line 15">15</a> // the cross-family backend is unavailable the W0 gemini-cli seam throws HaltError (non-attested /</span>
+<span class="source-line" id="L16"><a href="#L16" aria-label="Line 16">16</a> // substituted) so the round HALTs honestly instead of silently self-reviewing on Claude.</span>
+<span class="source-line" id="L17"><a href="#L17" aria-label="Line 17">17</a> //</span>
+<span class="source-line" id="L18"><a href="#L18" aria-label="Line 18">18</a> // THE FOUR LOAD-BEARING BEHAVIORS (build task W5):</span>
+<span class="source-line" id="L19"><a href="#L19" aria-label="Line 19">19</a> //   1. ROLE-ROUTED AGENT via makeRoleRoutedAgent — reviewer/shark/debate/judge → gemini-cli (model</span>
+<span class="source-line" id="L20"><a href="#L20" aria-label="Line 20">20</a> //      resolved by TRIO_TIER in the driver ladder), synthesizer/default → claude. The injected-agent</span>
+<span class="source-line" id="L21"><a href="#L21" aria-label="Line 21">21</a> //      SEAM is preserved: instrumentRoundAgent wraps ANY agent (a stub in tests, the live role-routed</span>
+<span class="source-line" id="L22"><a href="#L22" aria-label="Line 22">22</a> //      agent in production), so no live call is required to exercise the tracking + cap logic.</span>
+<span class="source-line" id="L23"><a href="#L23" aria-label="Line 23">23</a> //   2. substrateFamilies FROM REACHED BACKENDS — a per-run tracker records the distinct family of every</span>
+<span class="source-line" id="L24"><a href="#L24" aria-label="Line 24">24</a> //      dispatch that ACTUALLY RETURNED (attested). A run that genuinely reaches a Gemini reviewer/judge</span>
+<span class="source-line" id="L25"><a href="#L25" aria-label="Line 25">25</a> //      reports [&#x27;claude&#x27;,&#x27;gemini&#x27;]; a Gemini-absent (single-family) run honestly reports [&#x27;claude&#x27;].</span>
+<span class="source-line" id="L26"><a href="#L26" aria-label="Line 26">26</a> //   3. CONCURRENCY CAP — a counting semaphore bounds concurrent LIVE-GEMINI (agy) dispatches to</span>
+<span class="source-line" id="L27"><a href="#L27" aria-label="Line 27">27</a> //      RESEARCHPRIME_GEMINI_MAX_CONCURRENCY (default 2, hard ceiling 3: agy OOMs above ~3 concurrent).</span>
+<span class="source-line" id="L28"><a href="#L28" aria-label="Line 28">28</a> //      Only gemini-family calls are gated; Claude dispatches run unbounded.</span>
+<span class="source-line" id="L29"><a href="#L29" aria-label="Line 29">29</a> //   4. HONEST DEGRADE — a failed/unattested Gemini call throws (the W0 seam&#x27;s HaltError-on-non-attested)</span>
+<span class="source-line" id="L30"><a href="#L30" aria-label="Line 30">30</a> //      and is NOT recorded as reached and NOT retried onto Claude; it propagates so the round HALTs. The</span>
+<span class="source-line" id="L31"><a href="#L31" aria-label="Line 31">31</a> //      routing guard additionally refuses to even BUILD an agent whose verification role would resolve to</span>
+<span class="source-line" id="L32"><a href="#L32" aria-label="Line 32">32</a> //      the drafter family (fail-closed against self-review).</span>
+<span class="source-line" id="L33"><a href="#L33" aria-label="Line 33">33</a> //</span>
+<span class="source-line" id="L34"><a href="#L34" aria-label="Line 34">34</a> // Stdlib + the shipped researchPrime/trio seams only. The trio role-routed agent is a LAZY dynamic import</span>
+<span class="source-line" id="L35"><a href="#L35" aria-label="Line 35">35</a> // (live path only), so importing THIS module never loads the trio and never spawns a subprocess — the</span>
+<span class="source-line" id="L36"><a href="#L36" aria-label="Line 36">36</a> // deterministic test injects a stub agent and exercises the full routing / tracking / cap path with zero</span>
+<span class="source-line" id="L37"><a href="#L37" aria-label="Line 37">37</a> // live calls.</span>
+<span class="source-line" id="L38"><a href="#L38" aria-label="Line 38">38</a> </span>
+<span class="source-line" id="L39"><a href="#L39" aria-label="Line 39">39</a> import { TRIO_SURFACE } from &#x27;./engine.mjs&#x27;;</span>
+<span class="source-line" id="L40"><a href="#L40" aria-label="Line 40">40</a> const { HaltError } = TRIO_SURFACE[&#x27;foreman-lib&#x27;];</span>
+<span class="source-line" id="L41"><a href="#L41" aria-label="Line 41">41</a> </span>
+<span class="source-line" id="L42"><a href="#L42" aria-label="Line 42">42</a> /** Historical default drafter family (Claude). Live runs resolve drafter from CODING_FAMILY. */</span>
+<span class="source-line" id="L43"><a href="#L43" aria-label="Line 43">43</a> export const DRAFTER_FAMILY = &#x27;claude&#x27;;</span>
+<span class="source-line" id="L44"><a href="#L44" aria-label="Line 44">44</a> </span>
+<span class="source-line" id="L45"><a href="#L45" aria-label="Line 45">45</a> /** The VERIFICATION roles — round adversarial seats (bin/round.mjs): reviewer panel, Shark roster,</span>
+<span class="source-line" id="L46"><a href="#L46" aria-label="Line 46">46</a>  *  G9 debate, and context-free Judge. Prefs route these to REVIEW_FAMILY; Synthesizer steers on CODING_FAMILY. */</span>
+<span class="source-line" id="L47"><a href="#L47" aria-label="Line 47">47</a> export const VERIFICATION_ROLES = Object.freeze([&#x27;reviewer&#x27;, &#x27;shark&#x27;, &#x27;debate&#x27;, &#x27;judge&#x27;]);</span>
+<span class="source-line" id="L48"><a href="#L48" aria-label="Line 48">48</a> </span>
+<span class="source-line" id="L49"><a href="#L49" aria-label="Line 49">49</a> /** Test/fixture only: historical Claude+Gemini 5:1 table. Live production MUST omit</span>
+<span class="source-line" id="L50"><a href="#L50" aria-label="Line 50">50</a>  *  routes (or call `buildDefaultRoundRoutes`) so seats follow coding/review prefs. */</span>
+<span class="source-line" id="L51"><a href="#L51" aria-label="Line 51">51</a> export const DEFAULT_ROUND_ROUTES = Object.freeze({</span>
+<span class="source-line" id="L52"><a href="#L52" aria-label="Line 52">52</a>   reviewer: { driver: &#x27;gemini-cli&#x27; },</span>
+<span class="source-line" id="L53"><a href="#L53" aria-label="Line 53">53</a>   shark: { driver: &#x27;gemini-cli&#x27; },</span>
+<span class="source-line" id="L54"><a href="#L54" aria-label="Line 54">54</a>   debate: { driver: &#x27;gemini-cli&#x27; },</span>
+<span class="source-line" id="L55"><a href="#L55" aria-label="Line 55">55</a>   judge: { driver: &#x27;gemini-cli&#x27; },</span>
+<span class="source-line" id="L56"><a href="#L56" aria-label="Line 56">56</a>   synthesizer: { driver: &#x27;claude&#x27; },</span>
+<span class="source-line" id="L57"><a href="#L57" aria-label="Line 57">57</a>   default: { driver: &#x27;claude&#x27; },</span>
+<span class="source-line" id="L58"><a href="#L58" aria-label="Line 58">58</a> });</span>
+<span class="source-line" id="L59"><a href="#L59" aria-label="Line 59">59</a> </span>
+<span class="source-line" id="L60"><a href="#L60" aria-label="Line 60">60</a> /**</span>
+<span class="source-line" id="L61"><a href="#L61" aria-label="Line 61">61</a>  * Prefs-aware researchPrime route table: verification seats → REVIEW_FAMILY; synthesizer/default → CODING_FAMILY.</span>
+<span class="source-line" id="L62"><a href="#L62" aria-label="Line 62">62</a>  * @param {object} [env=process.env]</span>
+<span class="source-line" id="L63"><a href="#L63" aria-label="Line 63">63</a>  */</span>
+<span class="source-line" id="L64"><a href="#L64" aria-label="Line 64">64</a> export async function buildDefaultRoundRoutes(env = process.env) {</span>
+<span class="source-line" id="L65"><a href="#L65" aria-label="Line 65">65</a>   const { buildRoutesFromFamilies } = await import(&#x27;../../drivers/index.mjs&#x27;);</span>
+<span class="source-line" id="L66"><a href="#L66" aria-label="Line 66">66</a>   return buildRoutesFromFamilies({</span>
+<span class="source-line" id="L67"><a href="#L67" aria-label="Line 67">67</a>     env,</span>
+<span class="source-line" id="L68"><a href="#L68" aria-label="Line 68">68</a>     codingRoles: [&#x27;synthesizer&#x27;],</span>
+<span class="source-line" id="L69"><a href="#L69" aria-label="Line 69">69</a>     reviewRoles: [&#x27;reviewer&#x27;, &#x27;shark&#x27;, &#x27;debate&#x27;, &#x27;judge&#x27;],</span>
+<span class="source-line" id="L70"><a href="#L70" aria-label="Line 70">70</a>   });</span>
+<span class="source-line" id="L71"><a href="#L71" aria-label="Line 71">71</a> }</span>
+<span class="source-line" id="L72"><a href="#L72" aria-label="Line 72">72</a> </span>
+<span class="source-line" id="L73"><a href="#L73" aria-label="Line 73">73</a> /** The SINGLE-FAMILY (replay / degraded) route table: every role → Claude. Used by the offline replay</span>
+<span class="source-line" id="L74"><a href="#L74" aria-label="Line 74">74</a>  *  runner so its `substrateFamilies` is DERIVED ([&#x27;claude&#x27;]) from the reached backend, not hard-coded. */</span>
+<span class="source-line" id="L75"><a href="#L75" aria-label="Line 75">75</a> export const SINGLE_FAMILY_ROUTES = Object.freeze({ default: { driver: &#x27;claude&#x27; } });</span>
+<span class="source-line" id="L76"><a href="#L76" aria-label="Line 76">76</a> </span>
+<span class="source-line" id="L77"><a href="#L77" aria-label="Line 77">77</a> /** The env var + safe default + hard ceiling for the live-Gemini concurrency cap. agy OOMs above ~3</span>
+<span class="source-line" id="L78"><a href="#L78" aria-label="Line 78">78</a>  *  concurrent `agy -p` children, so the ceiling is 3 and the default is a conservative 2. */</span>
+<span class="source-line" id="L79"><a href="#L79" aria-label="Line 79">79</a> export const GEMINI_CAP_ENV = &#x27;RESEARCHPRIME_GEMINI_MAX_CONCURRENCY&#x27;;</span>
+<span class="source-line" id="L80"><a href="#L80" aria-label="Line 80">80</a> export const DEFAULT_GEMINI_CAP = 2;</span>
+<span class="source-line" id="L81"><a href="#L81" aria-label="Line 81">81</a> export const MAX_GEMINI_CAP = 3;</span>
+<span class="source-line" id="L82"><a href="#L82" aria-label="Line 82">82</a> </span>
+<span class="source-line" id="L83"><a href="#L83" aria-label="Line 83">83</a> /** Thrown when a VERIFICATION role would resolve to the DRAFTER family (self-review). A named HaltError</span>
+<span class="source-line" id="L84"><a href="#L84" aria-label="Line 84">84</a>  *  subclass so the engine treats it as a HALT-for-human and the caller/test can assert the run HALTs</span>
+<span class="source-line" id="L85"><a href="#L85" aria-label="Line 85">85</a>  *  rather than silently self-reviewing on the drafter&#x27;s own model (which earns no cross-family origin). */</span>
+<span class="source-line" id="L86"><a href="#L86" aria-label="Line 86">86</a> export class SelfReviewHalt extends HaltError {</span>
+<span class="source-line" id="L87"><a href="#L87" aria-label="Line 87">87</a>   constructor(role, resolvedFamily, drafterFamily, driver) {</span>
+<span class="source-line" id="L88"><a href="#L88" aria-label="Line 88">88</a>     super(</span>
+<span class="source-line" id="L89"><a href="#L89" aria-label="Line 89">89</a>       `self-review HALT: verification role ${JSON.stringify(role)} resolves to driver ${JSON.stringify(driver)} ` +</span>
+<span class="source-line" id="L90"><a href="#L90" aria-label="Line 90">90</a>         `(family ${JSON.stringify(resolvedFamily)}) which is the DRAFTER family ${JSON.stringify(drafterFamily)} — ` +</span>
+<span class="source-line" id="L91"><a href="#L91" aria-label="Line 91">91</a>         `a verification seat MUST resolve to a NON-drafter family (never self-review).`,</span>
+<span class="source-line" id="L92"><a href="#L92" aria-label="Line 92">92</a>       `route ${JSON.stringify(role)} to a cross-family backend (e.g. driver &#x27;gemini-cli&#x27;) or fix routes.default.`,</span>
+<span class="source-line" id="L93"><a href="#L93" aria-label="Line 93">93</a>     );</span>
+<span class="source-line" id="L94"><a href="#L94" aria-label="Line 94">94</a>     this.name = &#x27;SelfReviewHalt&#x27;;</span>
+<span class="source-line" id="L95"><a href="#L95" aria-label="Line 95">95</a>     this.role = role;</span>
+<span class="source-line" id="L96"><a href="#L96" aria-label="Line 96">96</a>     this.resolved_family = resolvedFamily;</span>
+<span class="source-line" id="L97"><a href="#L97" aria-label="Line 97">97</a>     this.drafter_family = drafterFamily;</span>
+<span class="source-line" id="L98"><a href="#L98" aria-label="Line 98">98</a>     this.driver = driver;</span>
+<span class="source-line" id="L99"><a href="#L99" aria-label="Line 99">99</a>   }</span>
+<span class="source-line" id="L100"><a href="#L100" aria-label="Line 100">100</a> }</span>
+<span class="source-line" id="L101"><a href="#L101" aria-label="Line 101">101</a> </span>
+<span class="source-line" id="L102"><a href="#L102" aria-label="Line 102">102</a> /** Map a trio driver name to its model FAMILY (the leading token — STRICT prefix, never a substring, so a</span>
+<span class="source-line" id="L103"><a href="#L103" aria-label="Line 103">103</a>  *  label like &#x27;claude-…-gemini-fallback&#x27; stamps claude, not gemini). Returns null for an empty/unknown</span>
+<span class="source-line" id="L104"><a href="#L104" aria-label="Line 104">104</a>  *  driver so the routing guard fails CLOSED (an unverifiable family is treated as unsafe). */</span>
+<span class="source-line" id="L105"><a href="#L105" aria-label="Line 105">105</a> export function familyFromDriver(driver) {</span>
+<span class="source-line" id="L106"><a href="#L106" aria-label="Line 106">106</a>   const t = String(driver ?? &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L107"><a href="#L107" aria-label="Line 107">107</a>   if (!t) return null;</span>
+<span class="source-line" id="L108"><a href="#L108" aria-label="Line 108">108</a>   if (t.startsWith(&#x27;gemini&#x27;)) return &#x27;gemini&#x27;;</span>
+<span class="source-line" id="L109"><a href="#L109" aria-label="Line 109">109</a>   if (t.startsWith(&#x27;claude&#x27;)) return &#x27;claude&#x27;;</span>
+<span class="source-line" id="L110"><a href="#L110" aria-label="Line 110">110</a>   if (t.startsWith(&#x27;openai&#x27;) || t.startsWith(&#x27;gpt&#x27;)) return &#x27;openai&#x27;;</span>
+<span class="source-line" id="L111"><a href="#L111" aria-label="Line 111">111</a>   if (t.startsWith(&#x27;grok&#x27;)) return &#x27;grok&#x27;;</span>
+<span class="source-line" id="L112"><a href="#L112" aria-label="Line 112">112</a>   return t.split(/[\s\-_]/)[0] || null;</span>
+<span class="source-line" id="L113"><a href="#L113" aria-label="Line 113">113</a> }</span>
+<span class="source-line" id="L114"><a href="#L114" aria-label="Line 114">114</a> </span>
+<span class="source-line" id="L115"><a href="#L115" aria-label="Line 115">115</a> /** The role KEY for an `agent(prompt, opts)` call — identical resolution to makeRoleRoutedAgent: `opts.role`</span>
+<span class="source-line" id="L116"><a href="#L116" aria-label="Line 116">116</a>  *  else the label prefix before &#x27;:&#x27; / &#x27;#&#x27; / &#x27;.&#x27; / whitespace, lowercased. */</span>
+<span class="source-line" id="L117"><a href="#L117" aria-label="Line 117">117</a> export function resolveRoleKey(opts = {}) {</span>
+<span class="source-line" id="L118"><a href="#L118" aria-label="Line 118">118</a>   return String(opts.role || opts.label || &#x27;&#x27;).split(/[:#.\s]/)[0].toLowerCase();</span>
+<span class="source-line" id="L119"><a href="#L119" aria-label="Line 119">119</a> }</span>
+<span class="source-line" id="L120"><a href="#L120" aria-label="Line 120">120</a> </span>
+<span class="source-line" id="L121"><a href="#L121" aria-label="Line 121">121</a> /** The FAMILY a given role resolves to under a route table (route[role] else route.default), via</span>
+<span class="source-line" id="L122"><a href="#L122" aria-label="Line 122">122</a>  *  familyFromDriver. Mirrors makeRoleRoutedAgent&#x27;s own selection so the wrapper&#x27;s bookkeeping matches the</span>
+<span class="source-line" id="L123"><a href="#L123" aria-label="Line 123">123</a>  *  backend actually chosen. Returns null when neither the role nor default names a resolvable driver. */</span>
+<span class="source-line" id="L124"><a href="#L124" aria-label="Line 124">124</a> export function familyFromRoute(routes = {}, role = &#x27;&#x27;) {</span>
+<span class="source-line" id="L125"><a href="#L125" aria-label="Line 125">125</a>   const route = routes[role] || routes.default || {};</span>
+<span class="source-line" id="L126"><a href="#L126" aria-label="Line 126">126</a>   return familyFromDriver(route.driver || null);</span>
+<span class="source-line" id="L127"><a href="#L127" aria-label="Line 127">127</a> }</span>
+<span class="source-line" id="L128"><a href="#L128" aria-label="Line 128">128</a> </span>
+<span class="source-line" id="L129"><a href="#L129" aria-label="Line 129">129</a> /**</span>
+<span class="source-line" id="L130"><a href="#L130" aria-label="Line 130">130</a>  * ROUTING GUARD (behavior 4, fail-closed). Assert EVERY verification role resolves to a NON-drafter</span>
+<span class="source-line" id="L131"><a href="#L131" aria-label="Line 131">131</a>  * family under `routes`. HALTs (SelfReviewHalt) the moment any verification seat would resolve to the</span>
+<span class="source-line" id="L132"><a href="#L132" aria-label="Line 132">132</a>  * drafter family OR to an unverifiable/empty driver — so a self-review agent can never even be built.</span>
+<span class="source-line" id="L133"><a href="#L133" aria-label="Line 133">133</a>  * @param {{routes?:object, drafterFamily?:string, roles?:string[]}} [o]</span>
+<span class="source-line" id="L134"><a href="#L134" aria-label="Line 134">134</a>  * @returns {Object&lt;string,string&gt;} role → resolved cross-family, on pass</span>
+<span class="source-line" id="L135"><a href="#L135" aria-label="Line 135">135</a>  */</span>
+<span class="source-line" id="L136"><a href="#L136" aria-label="Line 136">136</a> export function assertCrossFamilyRouting({ routes = {}, drafterFamily = DRAFTER_FAMILY, roles = VERIFICATION_ROLES } = {}) {</span>
+<span class="source-line" id="L137"><a href="#L137" aria-label="Line 137">137</a>   const drafter = String(drafterFamily ?? &#x27;&#x27;).trim().toLowerCase();</span>
+<span class="source-line" id="L138"><a href="#L138" aria-label="Line 138">138</a>   const resolved = {};</span>
+<span class="source-line" id="L139"><a href="#L139" aria-label="Line 139">139</a>   for (const role of roles) {</span>
+<span class="source-line" id="L140"><a href="#L140" aria-label="Line 140">140</a>     const route = routes[role] || routes.default || {};</span>
+<span class="source-line" id="L141"><a href="#L141" aria-label="Line 141">141</a>     const driver = route.driver || null;</span>
+<span class="source-line" id="L142"><a href="#L142" aria-label="Line 142">142</a>     const family = familyFromDriver(driver);</span>
+<span class="source-line" id="L143"><a href="#L143" aria-label="Line 143">143</a>     if (!family || family === drafter) {</span>
+<span class="source-line" id="L144"><a href="#L144" aria-label="Line 144">144</a>       throw new SelfReviewHalt(role, family, drafter, driver);</span>
+<span class="source-line" id="L145"><a href="#L145" aria-label="Line 145">145</a>     }</span>
+<span class="source-line" id="L146"><a href="#L146" aria-label="Line 146">146</a>     resolved[role] = family;</span>
+<span class="source-line" id="L147"><a href="#L147" aria-label="Line 147">147</a>   }</span>
+<span class="source-line" id="L148"><a href="#L148" aria-label="Line 148">148</a>   return resolved;</span>
+<span class="source-line" id="L149"><a href="#L149" aria-label="Line 149">149</a> }</span>
+<span class="source-line" id="L150"><a href="#L150" aria-label="Line 150">150</a> </span>
+<span class="source-line" id="L151"><a href="#L151" aria-label="Line 151">151</a> /** Resolve the live-Gemini concurrency cap: `RESEARCHPRIME_GEMINI_MAX_CONCURRENCY` clamped to [1, 3]</span>
+<span class="source-line" id="L152"><a href="#L152" aria-label="Line 152">152</a>  *  (agy OOMs above ~3), default 2. A non-integer / out-of-range env value falls back to the default. */</span>
+<span class="source-line" id="L153"><a href="#L153" aria-label="Line 153">153</a> export function resolveGeminiCap(env = process.env) {</span>
+<span class="source-line" id="L154"><a href="#L154" aria-label="Line 154">154</a>   const raw = Number.parseInt(env[GEMINI_CAP_ENV], 10);</span>
+<span class="source-line" id="L155"><a href="#L155" aria-label="Line 155">155</a>   if (!Number.isInteger(raw) || raw &lt; 1) return DEFAULT_GEMINI_CAP;</span>
+<span class="source-line" id="L156"><a href="#L156" aria-label="Line 156">156</a>   return Math.min(raw, MAX_GEMINI_CAP);</span>
+<span class="source-line" id="L157"><a href="#L157" aria-label="Line 157">157</a> }</span>
+<span class="source-line" id="L158"><a href="#L158" aria-label="Line 158">158</a> </span>
+<span class="source-line" id="L159"><a href="#L159" aria-label="Line 159">159</a> /**</span>
+<span class="source-line" id="L160"><a href="#L160" aria-label="Line 160">160</a>  * A minimal in-process counting semaphore (behavior 3). `acquire()` resolves once a slot is free (FIFO</span>
+<span class="source-line" id="L161"><a href="#L161" aria-label="Line 161">161</a>  * for waiters); `release()` frees a slot and admits the next waiter. No timers, no I/O — purely</span>
+<span class="source-line" id="L162"><a href="#L162" aria-label="Line 162">162</a>  * deterministic, so the concurrency cap is testable without any real subprocess.</span>
+<span class="source-line" id="L163"><a href="#L163" aria-label="Line 163">163</a>  * @param {number} max  slots (integer &gt;= 1)</span>
+<span class="source-line" id="L164"><a href="#L164" aria-label="Line 164">164</a>  */</span>
+<span class="source-line" id="L165"><a href="#L165" aria-label="Line 165">165</a> export function makeSemaphore(max) {</span>
+<span class="source-line" id="L166"><a href="#L166" aria-label="Line 166">166</a>   if (!Number.isInteger(max) || max &lt; 1) {</span>
+<span class="source-line" id="L167"><a href="#L167" aria-label="Line 167">167</a>     throw new TypeError(&#x27;makeSemaphore(max): max must be an integer &gt;= 1&#x27;);</span>
+<span class="source-line" id="L168"><a href="#L168" aria-label="Line 168">168</a>   }</span>
+<span class="source-line" id="L169"><a href="#L169" aria-label="Line 169">169</a>   let active = 0;</span>
+<span class="source-line" id="L170"><a href="#L170" aria-label="Line 170">170</a>   const waiters = [];</span>
+<span class="source-line" id="L171"><a href="#L171" aria-label="Line 171">171</a>   return {</span>
+<span class="source-line" id="L172"><a href="#L172" aria-label="Line 172">172</a>     acquire() {</span>
+<span class="source-line" id="L173"><a href="#L173" aria-label="Line 173">173</a>       return new Promise((resolve) =&gt; {</span>
+<span class="source-line" id="L174"><a href="#L174" aria-label="Line 174">174</a>         if (active &lt; max) { active += 1; resolve(); }</span>
+<span class="source-line" id="L175"><a href="#L175" aria-label="Line 175">175</a>         else waiters.push(resolve);</span>
+<span class="source-line" id="L176"><a href="#L176" aria-label="Line 176">176</a>       });</span>
+<span class="source-line" id="L177"><a href="#L177" aria-label="Line 177">177</a>     },</span>
+<span class="source-line" id="L178"><a href="#L178" aria-label="Line 178">178</a>     release() {</span>
+<span class="source-line" id="L179"><a href="#L179" aria-label="Line 179">179</a>       if (active &lt;= 0) return;</span>
+<span class="source-line" id="L180"><a href="#L180" aria-label="Line 180">180</a>       const next = waiters.shift();</span>
+<span class="source-line" id="L181"><a href="#L181" aria-label="Line 181">181</a>       if (next) next(); // hand the just-freed slot straight to the next waiter (active unchanged)</span>
+<span class="source-line" id="L182"><a href="#L182" aria-label="Line 182">182</a>       else active -= 1;</span>
+<span class="source-line" id="L183"><a href="#L183" aria-label="Line 183">183</a>     },</span>
+<span class="source-line" id="L184"><a href="#L184" aria-label="Line 184">184</a>     get active() { return active; },</span>
+<span class="source-line" id="L185"><a href="#L185" aria-label="Line 185">185</a>     get max() { return max; },</span>
+<span class="source-line" id="L186"><a href="#L186" aria-label="Line 186">186</a>   };</span>
+<span class="source-line" id="L187"><a href="#L187" aria-label="Line 187">187</a> }</span>
+<span class="source-line" id="L188"><a href="#L188" aria-label="Line 188">188</a> </span>
+<span class="source-line" id="L189"><a href="#L189" aria-label="Line 189">189</a> /**</span>
+<span class="source-line" id="L190"><a href="#L190" aria-label="Line 190">190</a>  * A per-run REACHED-FAMILY tracker (behavior 2). Records the distinct model families that ACTUALLY ran</span>
+<span class="source-line" id="L191"><a href="#L191" aria-label="Line 191">191</a>  * (an agent dispatch that returned attested). `families()` is the honest `substrateFamilies` the round /</span>
+<span class="source-line" id="L192"><a href="#L192" aria-label="Line 192">192</a>  * deliverable / suspiciously-dry guard consume — never a hard-coded list.</span>
+<span class="source-line" id="L193"><a href="#L193" aria-label="Line 193">193</a>  * @param {Iterable&lt;string&gt;} [seed=[]]  optional pre-seeded families (e.g. a known drafter)</span>
+<span class="source-line" id="L194"><a href="#L194" aria-label="Line 194">194</a>  */</span>
+<span class="source-line" id="L195"><a href="#L195" aria-label="Line 195">195</a> export function makeReachedFamilyTracker(seed = []) {</span>
+<span class="source-line" id="L196"><a href="#L196" aria-label="Line 196">196</a>   const reached = new Set();</span>
+<span class="source-line" id="L197"><a href="#L197" aria-label="Line 197">197</a>   const add = (f) =&gt; { if (f) reached.add(String(f).trim().toLowerCase()); };</span>
+<span class="source-line" id="L198"><a href="#L198" aria-label="Line 198">198</a>   for (const f of seed || []) add(f);</span>
+<span class="source-line" id="L199"><a href="#L199" aria-label="Line 199">199</a>   return {</span>
+<span class="source-line" id="L200"><a href="#L200" aria-label="Line 200">200</a>     note(family) { add(family); },</span>
+<span class="source-line" id="L201"><a href="#L201" aria-label="Line 201">201</a>     families() { return [...reached].sort(); },</span>
+<span class="source-line" id="L202"><a href="#L202" aria-label="Line 202">202</a>     has(family) { return reached.has(String(family ?? &#x27;&#x27;).trim().toLowerCase()); },</span>
+<span class="source-line" id="L203"><a href="#L203" aria-label="Line 203">203</a>     get size() { return reached.size; },</span>
+<span class="source-line" id="L204"><a href="#L204" aria-label="Line 204">204</a>   };</span>
+<span class="source-line" id="L205"><a href="#L205" aria-label="Line 205">205</a> }</span>
+<span class="source-line" id="L206"><a href="#L206" aria-label="Line 206">206</a> </span>
+<span class="source-line" id="L207"><a href="#L207" aria-label="Line 207">207</a> /**</span>
+<span class="source-line" id="L208"><a href="#L208" aria-label="Line 208">208</a>  * Wrap ANY injected `agent(prompt, opts)` so that, per dispatch:</span>
+<span class="source-line" id="L209"><a href="#L209" aria-label="Line 209">209</a>  *   • the call&#x27;s role → family is resolved from `routes` (matching makeRoleRoutedAgent&#x27;s own choice);</span>
+<span class="source-line" id="L210"><a href="#L210" aria-label="Line 210">210</a>  *   • a GEMINI-family call acquires a slot from the shared gemini semaphore BEFORE dispatch and releases</span>
+<span class="source-line" id="L211"><a href="#L211" aria-label="Line 211">211</a>  *     it after (the concurrency cap — behavior 3); Claude calls are ungated;</span>
+<span class="source-line" id="L212"><a href="#L212" aria-label="Line 212">212</a>  *   • on a SUCCESSFUL return the family is recorded as REACHED (behavior 2). A THROW (the W0 seam&#x27;s</span>
+<span class="source-line" id="L213"><a href="#L213" aria-label="Line 213">213</a>  *     HaltError on a non-attested / down Gemini) is NEVER recorded and NEVER caught — it propagates so the</span>
+<span class="source-line" id="L214"><a href="#L214" aria-label="Line 214">214</a>  *     round HALTs honestly, and the slot is released in `finally` (behavior 4).</span>
+<span class="source-line" id="L215"><a href="#L215" aria-label="Line 215">215</a>  *</span>
+<span class="source-line" id="L216"><a href="#L216" aria-label="Line 216">216</a>  * This is the injected-agent SEAM: `agent` can be a deterministic stub (tests) or the live role-routed</span>
+<span class="source-line" id="L217"><a href="#L217" aria-label="Line 217">217</a>  * agent (production). Nothing here spawns a process.</span>
+<span class="source-line" id="L218"><a href="#L218" aria-label="Line 218">218</a>  *</span>
+<span class="source-line" id="L219"><a href="#L219" aria-label="Line 219">219</a>  * @param {object} o</span>
+<span class="source-line" id="L220"><a href="#L220" aria-label="Line 220">220</a>  * @param {Function} o.agent                       the underlying agent(prompt, opts) (stub or live)</span>
+<span class="source-line" id="L221"><a href="#L221" aria-label="Line 221">221</a>  * @param {object}   [o.routes=DEFAULT_ROUND_ROUTES]</span>
+<span class="source-line" id="L222"><a href="#L222" aria-label="Line 222">222</a>  * @param {object}   o.tracker                      a makeReachedFamilyTracker()</span>
+<span class="source-line" id="L223"><a href="#L223" aria-label="Line 223">223</a>  * @param {object}   [o.geminiSemaphore]            a makeSemaphore(cap); built from o.geminiCap if omitted</span>
+<span class="source-line" id="L224"><a href="#L224" aria-label="Line 224">224</a>  * @param {number}   [o.geminiCap]                  cap for the internally-built semaphore</span>
+<span class="source-line" id="L225"><a href="#L225" aria-label="Line 225">225</a>  * @returns {(prompt:string, opts?:object)=&gt;Promise&lt;any&gt;}</span>
+<span class="source-line" id="L226"><a href="#L226" aria-label="Line 226">226</a>  */</span>
+<span class="source-line" id="L227"><a href="#L227" aria-label="Line 227">227</a> export function instrumentRoundAgent({</span>
+<span class="source-line" id="L228"><a href="#L228" aria-label="Line 228">228</a>   agent,</span>
+<span class="source-line" id="L229"><a href="#L229" aria-label="Line 229">229</a>   routes = DEFAULT_ROUND_ROUTES,</span>
+<span class="source-line" id="L230"><a href="#L230" aria-label="Line 230">230</a>   tracker,</span>
+<span class="source-line" id="L231"><a href="#L231" aria-label="Line 231">231</a>   geminiSemaphore = null,</span>
+<span class="source-line" id="L232"><a href="#L232" aria-label="Line 232">232</a>   geminiCap,</span>
+<span class="source-line" id="L233"><a href="#L233" aria-label="Line 233">233</a> } = {}) {</span>
+<span class="source-line" id="L234"><a href="#L234" aria-label="Line 234">234</a>   if (typeof agent !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L235"><a href="#L235" aria-label="Line 235">235</a>     throw new TypeError(&#x27;instrumentRoundAgent: an injected agent(prompt, opts) is required&#x27;);</span>
+<span class="source-line" id="L236"><a href="#L236" aria-label="Line 236">236</a>   }</span>
+<span class="source-line" id="L237"><a href="#L237" aria-label="Line 237">237</a>   if (!tracker || typeof tracker.note !== &#x27;function&#x27; || typeof tracker.families !== &#x27;function&#x27;) {</span>
+<span class="source-line" id="L238"><a href="#L238" aria-label="Line 238">238</a>     throw new TypeError(&#x27;instrumentRoundAgent: a reached-family tracker (makeReachedFamilyTracker()) is required&#x27;);</span>
+<span class="source-line" id="L239"><a href="#L239" aria-label="Line 239">239</a>   }</span>
+<span class="source-line" id="L240"><a href="#L240" aria-label="Line 240">240</a>   const sem = geminiSemaphore</span>
+<span class="source-line" id="L241"><a href="#L241" aria-label="Line 241">241</a>     || makeSemaphore(Number.isInteger(geminiCap) &amp;&amp; geminiCap &gt;= 1 ? Math.min(geminiCap, MAX_GEMINI_CAP) : DEFAULT_GEMINI_CAP);</span>
+<span class="source-line" id="L242"><a href="#L242" aria-label="Line 242">242</a> </span>
+<span class="source-line" id="L243"><a href="#L243" aria-label="Line 243">243</a>   return async (prompt, opts = {}) =&gt; {</span>
+<span class="source-line" id="L244"><a href="#L244" aria-label="Line 244">244</a>     const role = resolveRoleKey(opts);</span>
+<span class="source-line" id="L245"><a href="#L245" aria-label="Line 245">245</a>     const family = familyFromRoute(routes, role);</span>
+<span class="source-line" id="L246"><a href="#L246" aria-label="Line 246">246</a>     const gated = family === &#x27;gemini&#x27;;</span>
+<span class="source-line" id="L247"><a href="#L247" aria-label="Line 247">247</a>     if (gated) await sem.acquire();</span>
+<span class="source-line" id="L248"><a href="#L248" aria-label="Line 248">248</a>     try {</span>
+<span class="source-line" id="L249"><a href="#L249" aria-label="Line 249">249</a>       const out = await agent(prompt, opts);</span>
+<span class="source-line" id="L250"><a href="#L250" aria-label="Line 250">250</a>       // Reached ONLY on a successful (attested) return — a thrown HaltError below is never recorded, so a</span>
+<span class="source-line" id="L251"><a href="#L251" aria-label="Line 251">251</a>       // failed/unavailable Gemini call can never inflate substrateFamilies (honest degrade).</span>
+<span class="source-line" id="L252"><a href="#L252" aria-label="Line 252">252</a>       tracker.note(family);</span>
+<span class="source-line" id="L253"><a href="#L253" aria-label="Line 253">253</a>       return out;</span>
+<span class="source-line" id="L254"><a href="#L254" aria-label="Line 254">254</a>     } finally {</span>
+<span class="source-line" id="L255"><a href="#L255" aria-label="Line 255">255</a>       if (gated) sem.release();</span>
+<span class="source-line" id="L256"><a href="#L256" aria-label="Line 256">256</a>     }</span>
+<span class="source-line" id="L257"><a href="#L257" aria-label="Line 257">257</a>   };</span>
+<span class="source-line" id="L258"><a href="#L258" aria-label="Line 258">258</a> }</span>
+<span class="source-line" id="L259"><a href="#L259" aria-label="Line 259">259</a> </span>
+<span class="source-line" id="L260"><a href="#L260" aria-label="Line 260">260</a> /**</span>
+<span class="source-line" id="L261"><a href="#L261" aria-label="Line 261">261</a>  * Build the LIVE role-routed round agent from coding/review family prefs</span>
+<span class="source-line" id="L262"><a href="#L262" aria-label="Line 262">262</a>  * (reviewer/shark/debate/judge → REVIEW_FAMILY, synthesizer/default → CODING_FAMILY).</span>
+<span class="source-line" id="L263"><a href="#L263" aria-label="Line 263">263</a>  * Omit `routes` to honor prefs; pass an explicit table to pin. Instrumented with the</span>
+<span class="source-line" id="L264"><a href="#L264" aria-label="Line 264">264</a>  * reached-family tracker + live-Gemini concurrency cap. LAZY dynamic import of the trio</span>
+<span class="source-line" id="L265"><a href="#L265" aria-label="Line 265">265</a>  * registry. Runs the routing guard FIRST so a self-review route can never be built.</span>
+<span class="source-line" id="L266"><a href="#L266" aria-label="Line 266">266</a>  * @param {object} o</span>
+<span class="source-line" id="L267"><a href="#L267" aria-label="Line 267">267</a>  * @param {object}   [o.routes]                     omit → prefs; pass to pin</span>
+<span class="source-line" id="L268"><a href="#L268" aria-label="Line 268">268</a>  * @param {object}   o.tracker                      a makeReachedFamilyTracker() (its families() become substrateFamilies)</span>
+<span class="source-line" id="L269"><a href="#L269" aria-label="Line 269">269</a>  * @param {string}   [o.drafterFamily]              omit → CODING_FAMILY from prefs</span>
+<span class="source-line" id="L270"><a href="#L270" aria-label="Line 270">270</a>  * @param {object}   [o.env=process.env]</span>
+<span class="source-line" id="L271"><a href="#L271" aria-label="Line 271">271</a>  * @param {number}   [o.geminiCap]                  override the env-resolved cap</span>
+<span class="source-line" id="L272"><a href="#L272" aria-label="Line 272">272</a>  * @param {string}   [o.target]                     cwd / edit scope threaded to the backend</span>
+<span class="source-line" id="L273"><a href="#L273" aria-label="Line 273">273</a>  * @param {Function} [o.log]</span>
+<span class="source-line" id="L274"><a href="#L274" aria-label="Line 274">274</a>  * @returns {Promise&lt;(prompt:string, opts?:object)=&gt;Promise&lt;any&gt;&gt;}</span>
+<span class="source-line" id="L275"><a href="#L275" aria-label="Line 275">275</a>  */</span>
+<span class="source-line" id="L276"><a href="#L276" aria-label="Line 276">276</a> export async function buildLiveRoundAgent({</span>
+<span class="source-line" id="L277"><a href="#L277" aria-label="Line 277">277</a>   routes,</span>
+<span class="source-line" id="L278"><a href="#L278" aria-label="Line 278">278</a>   tracker,</span>
+<span class="source-line" id="L279"><a href="#L279" aria-label="Line 279">279</a>   drafterFamily,</span>
+<span class="source-line" id="L280"><a href="#L280" aria-label="Line 280">280</a>   env = process.env,</span>
+<span class="source-line" id="L281"><a href="#L281" aria-label="Line 281">281</a>   geminiCap,</span>
+<span class="source-line" id="L282"><a href="#L282" aria-label="Line 282">282</a>   target,</span>
+<span class="source-line" id="L283"><a href="#L283" aria-label="Line 283">283</a>   log,</span>
+<span class="source-line" id="L284"><a href="#L284" aria-label="Line 284">284</a> } = {}) {</span>
+<span class="source-line" id="L285"><a href="#L285" aria-label="Line 285">285</a>   if (!tracker) throw new TypeError(&#x27;buildLiveRoundAgent: a reached-family tracker is required (its families() → substrateFamilies)&#x27;);</span>
+<span class="source-line" id="L286"><a href="#L286" aria-label="Line 286">286</a>   const { makeRoleRoutedAgent, buildRoutesFromFamilies } = await import(&#x27;../../drivers/index.mjs&#x27;);</span>
+<span class="source-line" id="L287"><a href="#L287" aria-label="Line 287">287</a>   const built = buildRoutesFromFamilies({</span>
+<span class="source-line" id="L288"><a href="#L288" aria-label="Line 288">288</a>     env,</span>
+<span class="source-line" id="L289"><a href="#L289" aria-label="Line 289">289</a>     codingRoles: [&#x27;synthesizer&#x27;],</span>
+<span class="source-line" id="L290"><a href="#L290" aria-label="Line 290">290</a>     reviewRoles: [&#x27;reviewer&#x27;, &#x27;shark&#x27;, &#x27;debate&#x27;, &#x27;judge&#x27;],</span>
+<span class="source-line" id="L291"><a href="#L291" aria-label="Line 291">291</a>   });</span>
+<span class="source-line" id="L292"><a href="#L292" aria-label="Line 292">292</a>   const resolvedRoutes = routes ?? built.routes;</span>
+<span class="source-line" id="L293"><a href="#L293" aria-label="Line 293">293</a>   const resolvedDrafter = drafterFamily ?? built.drafterFamily;</span>
+<span class="source-line" id="L294"><a href="#L294" aria-label="Line 294">294</a>   // Fail-closed against accidental self-review, unless Anchor prefs set</span>
+<span class="source-line" id="L295"><a href="#L295" aria-label="Line 295">295</a>   // coding_family === review_family (honest single-family; cross_model:false).</span>
+<span class="source-line" id="L296"><a href="#L296" aria-label="Line 296">296</a>   const singleFamilyPrefs = !routes &amp;&amp; built.families.coding === built.families.review;</span>
+<span class="source-line" id="L297"><a href="#L297" aria-label="Line 297">297</a>   if (!singleFamilyPrefs) {</span>
+<span class="source-line" id="L298"><a href="#L298" aria-label="Line 298">298</a>     assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });</span>
+<span class="source-line" id="L299"><a href="#L299" aria-label="Line 299">299</a>   }</span>
+<span class="source-line" id="L300"><a href="#L300" aria-label="Line 300">300</a>   const cap = Number.isInteger(geminiCap) ? Math.min(geminiCap, MAX_GEMINI_CAP) : resolveGeminiCap(env);</span>
+<span class="source-line" id="L301"><a href="#L301" aria-label="Line 301">301</a>   const routed = makeRoleRoutedAgent({</span>
+<span class="source-line" id="L302"><a href="#L302" aria-label="Line 302">302</a>     routes: resolvedRoutes,</span>
+<span class="source-line" id="L303"><a href="#L303" aria-label="Line 303">303</a>     env: { ...env, CRUCIBLE_AGENT_LIVE: &#x27;1&#x27; },</span>
+<span class="source-line" id="L304"><a href="#L304" aria-label="Line 304">304</a>     ...(target !== undefined ? { target } : {}),</span>
+<span class="source-line" id="L305"><a href="#L305" aria-label="Line 305">305</a>     ...(log !== undefined ? { log } : {}),</span>
+<span class="source-line" id="L306"><a href="#L306" aria-label="Line 306">306</a>   });</span>
+<span class="source-line" id="L307"><a href="#L307" aria-label="Line 307">307</a>   return instrumentRoundAgent({ agent: routed, routes: resolvedRoutes, tracker, geminiCap: cap });</span>
+<span class="source-line" id="L308"><a href="#L308" aria-label="Line 308">308</a> }</span></pre></main></body></html>

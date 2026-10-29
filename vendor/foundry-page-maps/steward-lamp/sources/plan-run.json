@@ -1,0 +1,29 @@
+{
+  "skill": "ecgberht",
+  "tier": "regular",
+  "started": "2026-10-05T19:38:09.999792+00:00",
+  "ended": "2026-10-05T19:45:21.192463+00:00",
+  "input": "John plan PDF correction, turn 775e739d-ad1a-4b9c-a796-9cc938bec5a1",
+  "params": {
+    "scope": "export existing working plan for review",
+    "version": "Review copy 1",
+    "overhead_session": 2,
+    "managed": false
+  },
+  "output": [
+    "planning/working-plan/PLAN-review-copy-1.pdf",
+    "/artifact/__dashboard__?path=steward-review-artifacts%2Ffoundry-page-and-knowledge-maps%2FFoundry-working-plan-review-1-2026-10-05.pdf",
+    "planning/working-plan/review-1-receipt.json"
+  ],
+  "result": "PDF produced, exact conversation click verified, campaign registration prepared and pending explicit-path commit. No acceptance or close.",
+  "cross_model": false,
+  "models": [
+    {
+      "family": "chatgpt",
+      "model_attested": false,
+      "seat": "steward"
+    }
+  ],
+  "duration_s": 431.19,
+  "journal_ref": "journal/0009-readable-plan-pdf-review-copy-1.md"
+}

@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Verification reviewer prompt · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="review-prompt" data-anchor-id="a011">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Reusable material</p><h1>Verification reviewer prompt</h1>
+<p class="intro">Read the actual artifact; identify disputed claims and return structured findings.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\round.mjs</span><br>Lines 525–548 · frozen source snapshot</p>
+<pre class="excerpt">function reviewerPrompt(role, { round, angle, focus, artifact, northStar, heartbeatPath }) {
+  return [
+    `[researchPrime G3 verification reviewer — ${role.role} (${role.persona}); angle ${angle}]`,
+    `round ${round}: independently verify the claims and report any defect you can substantiate.`,
+    artifact ? `ARTIFACT (absolute path — read this file, do not guess): ${artifact}` : null,
+    northStar ? `NORTH STAR: ${northStar}` : null,
+    // G6 identity discipline: agreement is keyed on claim_id FIRST (falling back to
+    // the topic slug only when no id exists). Three reviewers wording the same claim
+    // three ways defeated the &gt;=2-agree quorum once (journal 0001) — never again.
+    `For EVERY finding: when the claim you dispute carries an id in the artifact, set`,
+    `claim_id to that EXACT id (agreement across reviewers is keyed on it); always also`,
+    `set topic to a short stable phrase naming the issue.`,
+    `Return JSON { findings: [{ claim_id?, topic, severity, traces_to_north_star, message }] }.`,
+    `traces_to_north_star MUST be the STRING &quot;yes&quot; or &quot;no&quot;, never a boolean.`,
+    `If you find nothing AXIS-serving, return { findings: [] } — an empty look is honest.`,
+    focus ? `STEER (Synthesizer): press hardest on — ${focus}` : `(no steering hint this round)`,
+    lookinAppendix({ heartbeatPath, northStar }),
+  ].filter(Boolean).join(&#x27;\n&#x27;);
+}
+
+export { DEFAULT_CHECKIN_MS, DEFAULT_DEAD_IDLE_MS, DEFAULT_SILENT_KILL_MS };
+
+/**
+ * Recover the findings object from a live seat&#x27;s reply. The drivers return `{ text, rec }`</pre>
+<div class="actions"><a class="button" href="../source-pages/round.html#L525">Open numbered source at line 525</a>
+<a class="button secondary" href="../sources/round.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/panel">Independent verification reviewers</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">29de2810d55645d7bb6c893c678bd1a9b3e7661077350ab437dff396b963fcd8</span></p>
+<p>Excerpt SHA-256 <span class="path">703352b12093518a359be4434bb820761bb961058f1d72ff528caf7cb8d5b677</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

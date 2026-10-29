@@ -38,7 +38,9 @@ const lower = (f) => (typeof f === 'string' ? f.trim().toLowerCase() : '');
  *   chooseSeat({ coding:'claude',  review:'gemini' }, 'claude') -> gemini (only because a pref names it)
  * @returns {{ family: string|null, cross_model: boolean, candidates: string[], reason: string }}
  */
-export function chooseSeat({ coding, review } = {}, author = DEFAULT_AUTHOR_FAMILY) {
+export function chooseSeat({ coding, review, orchestrator, reviewer } = {}, author = DEFAULT_AUTHOR_FAMILY) {
+  coding = coding || orchestrator;
+  review = review || reviewer;
   const a = lower(author) || DEFAULT_AUTHOR_FAMILY;
   const candidates = [lower(review), lower(coding)].filter((f) => SEAT_FAMILIES.includes(f));
   if (!SEAT_FAMILIES.includes(a)) {

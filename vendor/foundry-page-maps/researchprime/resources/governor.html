@@ -1,0 +1,26 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Stakes governor · researchPrime Library</title>
+<link rel="icon" href="../assets/researchprime.jpg"><link rel="stylesheet" href="../display.css"></head>
+<body class="source-page"><main><article data-resource-id="governor" data-anchor-id="a016">
+<a target="_top" href="../index.html#library">← researchPrime Library</a>
+<p class="eyebrow">Tools</p><h1>Stakes governor</h1>
+<p class="intro">Low stakes skip judge, synthesis and debate; zero on-topic findings skip that layer at every tier.</p><p class="badge">Use frequency unknown · no resource-level run evidence</p>
+<h2>Actual source</h2><p class="note">code · <span class="path">C:\dev\trio\researchPrime\bin\governor.mjs</span><br>Lines 70–81 · frozen source snapshot</p>
+<pre class="excerpt">export function governorPolicy(tier) {
+  if (tierRank(tier) &lt; 0) {
+    throw new HaltError(
+      `governorPolicy: unknown governor tier ${JSON.stringify(tier)} — expected one of ${TIERS.join(&#x27;, &#x27;)}`,
+    );
+  }
+  const include = tierAtLeast(tier, ADJUDICATION_TIER_FLOOR);
+  const reason = include
+    ? `tier=${tier} ≥ ${ADJUDICATION_TIER_FLOOR}: Synthesizer/Judge/debate INCLUDED (high-tier adjudication on)`
+    : `tier=${tier} &lt; ${ADJUDICATION_TIER_FLOOR}: Synthesizer/Judge/debate EXCLUDED (low-stakes fires zero high-tier agents, crit-4)`;
+  return { tier, include, synthesize: include, judge: include, debate: include, reason };
+}</pre>
+<div class="actions"><a class="button" href="../source-pages/governor.html#L70">Open numbered source at line 70</a>
+<a class="button secondary" href="../sources/governor.mjs" download>Download source</a></div>
+<h2>Where the process uses this</h2><p><a target="_top" href="../index.html#process/governor">Apply stakes and relevance</a> · <a target="_top" href="../index.html#process/debate">Debate conflicting origins when admitted</a> · <a target="_top" href="../index.html#process/adjudicate">Dispatch judge and synthesizer together</a> · <a target="_top" href="../index.html#process/judge">Judge returns a verdict</a> · <a target="_top" href="../index.html#process/synth">Synthesizer returns a direction</a> · <a target="_top" href="../index.html#process/join">Await both adjudication results</a> · <a target="_top" href="../index.html#process/rc6">Park work outside the critical path</a></p>
+<details><summary>Source identity and limits</summary><p>Source SHA-256 <span class="path">1848e86c2fdd5964be30f4893130e7a72ed518a1c6f64d19525b983e3e7d9d72</span></p>
+<p>Excerpt SHA-256 <span class="path">87f7606a6929c1e5e045b9a79595d610575bfe1df5d5a51e45d2fdd5de072c24</span></p><p>These saved bytes anchor the map. They do not prove that a particular run used this resource, or that an instruction was executed.</p>
+<p>Reference inventories retain their original search limits and qualifications; copied literature claims are not a new verification of the papers.</p></details></article></main></body></html>

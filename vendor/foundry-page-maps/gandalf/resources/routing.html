@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Requested families versus served seats · Gandalf</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="routing" data-anchor-id="a-routes">
+<a target="_top" href="../index.html#library">← Gandalf Library</a>
+<p class="eyebrow">Tools</p><h1>Requested families versus served seats</h1>
+<p class="intro">The live agent chooses a configured non-drafter family. Legacy labels in the host/commission can remain Claude/Gemini; inspect actual subscription receipts.</p><p class="badge">Resource access frequency unknown</p>
+<p>MBA journal 0351 and Paper journal 0372 independently name legacy family-label mismatches in their recorded contexts. Native provider receipt pointers are not re-inspected here.</p><h2>Actual source</h2>
+<p class="path">skills/gandalf/runtime/live-refuter.mjs · lines 390–408</p><pre>export async function buildLiveRefuterAgent({ routes, drafterFamily, env = process.env } = {}) {
+  const { makeRoleRoutedAgent, buildRoutesFromFamilies, familyToDriverName } = await import(&#x27;file:///C:/dev/trio/drivers/index.mjs&#x27;);
+  const built = buildRoutesFromFamilies({
+    env,
+    codingRoles: [],
+    reviewRoles: [&#x27;refuter&#x27;],
+  });
+  const resolvedDrafter = resolveDrafterFamily({ drafterFamily, env, codingFamily: built.families?.coding });
+  let resolvedRoutes = routes;
+  if (!resolvedRoutes) {
+    // (2026-09-04) refuter = the configured non-drafter family; review_family first.
+    const fam = pickRefuterFamily({ families: built.families || {}, drafterFamily: resolvedDrafter });
+    const drv = fam ? familyToDriverName(fam) : null;
+    resolvedRoutes = drv ? { ...built.routes, refuter: { driver: drv } } : built.routes;
+  }
+  // Fail-closed: a refuter that resolves to the drafter&#x27;s family is a self-refutation HALT.
+  assertCrossFamilyRouting({ routes: resolvedRoutes, drafterFamily: resolvedDrafter });
+  return makeRoleRoutedAgent({ routes: resolvedRoutes, env: { ...env, CRUCIBLE_AGENT_LIVE: &#x27;1&#x27; } });
+}</pre>
+<p><a class="button" href="../source-pages/live.html#L390">Open numbered source</a>
+<a href="../sources/live.mjs" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/bands">Resolve depth locks and requested seats</a> · <a target="_top" href="../index.html#process/routes">Resolve non-drafter review route</a> · <a target="_top" href="../index.html#process/refuters">Bounded model calls attempt defeaters</a> · <a target="_top" href="../index.html#process/halt">Refuse with the actual failure reason</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">02d66c8e1f4966c2d784962de6cf66818a10f69205e93b1b014575dcd2a7b324</span></p><p>Excerpt hash: <span class="path">6bb0dc3abb5234cfc9f3ae110cb6b633ba9ee21ba19f3594c22c3251c2c10e02</span></p></details></article></main></body></html>

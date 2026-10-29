@@ -140,13 +140,22 @@ agree; see `research1-out/.../01-report.md` F1/F2).
 
 | Phase | Topology |
 |---|---|
-| EXECUTE | single-threaded linear agent per wave; compress when long |
+| EXECUTE | single-threaded linear agent per wave — OR **parallel DAG dispatch** across orthogonal sub-waves (`W.1`, `W.2`, ...) whose declared file write-sets are mutually disjoint (journal 0139); compress when long |
+| DETERMINISTIC FAST-GATE | orchestrator-run (0 model calls) immediately after EXECUTE: (1) ground-truth test suite (`pytest` / `node --test`) + `checkDeltaCoverage`, (2) `Aegis` AST security scan (6 CWE families), and (3) `Anvil` structural/AST check |
 | REVIEW | `REVIEWER_COUNT` (default 2) independent reviewers, **CONCURRENT** (default on), read-only, prompted to refute; **stakes-gated** — ordinary clean mid-run waves run 1, the full panel runs on the terminal wave / after fix iterations / `FOREMAN_FULL_REVIEW=1`; skipped entirely on RED intermediate iterations (the gate artifact IS the fix guidance) |
 | FIX | single-threaded linear agent |
 | JUDGE | a PURE FUNCTION (0 model calls); the **orchestrator-run ground-truth gate dominates** (§5) |
 
 `REVIEWER_COUNT` is one config var (default 2) — never hard-coded.
 Independence comes from separate sub-agent calls, never multi-persona-in-one-generation.
+
+### Parallel Sub-Wave & Deterministic Fast-Gate Mode (Sleep-Cycle Promotion 2026-10-22, journal 0139)
+
+When a Stage-2 plan (such as Crucible's `--matrix-fast-track` output) decomposes a build into orthogonal sub-waves (`W.1`..`W.k`) with explicit file write-sets and deterministic test gates, Foreman avoids sequential multi-round reviewer swarm bottlenecks via three rules:
+
+1. **DAG / Parallel Sub-Wave Dispatch:** Independent sub-waves (`W.1`, `W.2`, ...) with disjoint file write-sets ($\text{writes}(W.i) \cap \text{writes}(W.j) = \emptyset$) execute in parallel rather than strictly serially. Overlapping write-sets or explicit DAG edges serialize automatically.
+2. **Orchestrator-Owned Ground-Truth Fast-Gate First:** Immediately after `EXECUTE`, the orchestrator runs the deterministic test suite (`pytest` / `node --test`) + `delta-coverage-gate.mjs` + `Aegis` deterministic AST taint/sink scan + `Anvil` structural check before invoking any LLM reviewer. If RED, the deterministic failure output goes straight to `FIX`.
+3. **Single-Pass Cross-Family Diff Review on Green Gate:** When the deterministic test gate and `Aegis`/`Anvil` checks pass with `0` issues, Foreman runs **1 bounded cross-family diff review** (`120s` timeout ceiling, scoped to the `git diff` and wave acceptance criteria) instead of a multi-round reviewer swarm, and auto-advances immediately when `BLOCKER == 0`.
 
 ---
 

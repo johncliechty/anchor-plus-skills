@@ -1,0 +1,79 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Recover the result before publishing · Aladdin-Cave of Wonders</title>
+<link rel="stylesheet" href="../../shared/maps.css"></head><body class="source-page"><main><article data-resource-id="handoff" data-anchor-id="a-handoff-record_handoff">
+<a target="_top" href="../index.html#library">← Aladdin-Cave of Wonders Library</a>
+<p class="eyebrow">Tools</p><h1>Recover the result before publishing</h1>
+<p class="intro">Capture output identity into the existing producer handoff. Missing context, failed inspection or retry stays visible; no automatic acceptance. Reconcile a late completion notice, then resume the current authorized effort.</p><p class="badge">Resource access frequency unknown</p>
+<p>Recurring need inferred from the workflow, not a measured resource access.</p><h2>Actual source</h2><aside class="source-provenance" data-source-freshness="current-source"><p><strong>Current authoritative source at capture</strong> · captured <time>2026-10-06T00:34:09.537328+00:00</time></p><p class="path">Captured from: C:/dev/Anchor/steward_cockpit/producer_handoff.py</p><p>Authoritative code or instructions must match the original at the final gate. On-disk code is not proof of activation in John&#x27;s running service.</p><p class="path">Capture SHA-256: fbf6c0e38ddbe1d6dd9e3be68b63e152d69bc8b073809c3b5a48b6bd7c612d64</p></aside>
+<p class="path">C:/dev/Anchor/steward_cockpit/producer_handoff.py · lines 164–230</p><pre>def record_handoff(campaign_dir, producer_kind, producer_id, source_ref,
+                   context=None, outputs=None, inventory_complete=False, terminal=&quot;done&quot;):
+    &quot;&quot;&quot;Record one idempotent handoff; retry a CAS conflict at most once.&quot;&quot;&quot;
+    context_warning = None
+    if isinstance(context, dict) and context.get(&quot;ok&quot;) is False:
+        # A dispatch-time read failure does not erase work that subsequently
+        # completed. Preserve the diagnostic code, without presenting the
+        # failure envelope as a snapshot or copying private diagnostic text.
+        context_warning = _capture_warning(context)
+        context = None
+    if not isinstance(producer_kind, str) or producer_kind not in _PRODUCERS:
+        return _failure(&quot;The producer kind must be job, conversation, or terminal.&quot;)
+    if not isinstance(producer_id, str) or not producer_id.strip():
+        return _failure(&quot;A stable producer ID is required.&quot;)
+    if context is not None:
+        if not isinstance(context, dict) or not isinstance(context.get(&quot;step_id&quot;), str) or not context[&quot;step_id&quot;]:
+            return _failure(&quot;Dispatch context must identify its captured step.&quot;)
+        if any(key not in context for key in _CONTEXT_FIELDS):
+            return _failure(&quot;Dispatch context must retain its complete captured state.&quot;)
+    if outputs is not None and not isinstance(outputs, list):
+        return _failure(&quot;The output inventory must be an explicit list.&quot;)
+    if type(inventory_complete) is not bool:
+        return _failure(&quot;Inventory completeness must be explicit.&quot;)
+    if not isinstance(terminal, str) or not terminal:
+        return _failure(&quot;The producer terminal state is required.&quot;)
+
+    result = _read(campaign_dir)
+    if not result[&quot;ok&quot;]:
+        return _with_context_warning(result, context_warning)
+    if not result[&quot;state&quot;][&quot;managed&quot;]:
+        return _with_context_warning({&quot;ok&quot;: True, &quot;skipped&quot;: True, &quot;reason&quot;: &quot;unmanaged&quot;}, context_warning)
+    identifier = _handoff_id(producer_kind, producer_id)
+    existing = _existing(result, identifier)
+    if existing is not None:
+        return _with_context_warning(existing, context_warning)
+
+    operation = {
+        &quot;action&quot;: &quot;producer_handoff&quot;, &quot;version&quot;: 1,
+        &quot;operation_id&quot;: identifier, &quot;handoff_id&quot;: identifier,
+        &quot;expected_seq&quot;: result[&quot;sequence&quot;],
+        &quot;step_id&quot;: context[&quot;step_id&quot;] if context is not None else None,
+        &quot;producer_kind&quot;: producer_kind, &quot;source_ref&quot;: deepcopy(source_ref),
+        &quot;dispatch_context&quot;: deepcopy(context),
+        &quot;outputs&quot;: deepcopy(outputs) if outputs is not None else [],
+        &quot;inventory_complete&quot;: inventory_complete, &quot;terminal&quot;: terminal,
+    }
+    if context_warning is not None:
+        operation[&quot;dispatch_error&quot;] = context_warning[&quot;error&quot;]
+    outcome = refinement_client.update(campaign_dir, operation)
+    conflict = _error_code(outcome)
+    if not isinstance(outcome, dict) or outcome.get(&quot;ok&quot;) is not False or conflict not in {&quot;sequence-conflict&quot;, &quot;HANDOFF_EXISTS&quot;}:
+        return _with_context_warning(outcome, context_warning)
+
+    # Re-read only to establish whether this exact handoff already committed
+    # and obtain a new CAS sequence.  Never refresh its dispatch-time context.
+    refreshed = _read(campaign_dir)
+    if not refreshed[&quot;ok&quot;]:
+        return _with_context_warning(refreshed, context_warning)
+    if not refreshed[&quot;state&quot;][&quot;managed&quot;]:
+        return _with_context_warning(outcome, context_warning)
+    existing = _existing(refreshed, identifier)
+    if existing is not None:
+        return _with_context_warning(existing, context_warning)
+    if conflict == &quot;HANDOFF_EXISTS&quot;:
+        return _with_context_warning(outcome, context_warning)
+    retried = {**operation, &quot;expected_seq&quot;: refreshed[&quot;sequence&quot;]}
+    return _with_context_warning(refinement_client.update(campaign_dir, retried), context_warning)</pre>
+<p><a class="button" href="../source-pages/handoff.html#L164">Open numbered source</a>
+<a href="../sources/handoff.py" download>Download exact source</a></p>
+<h2>Process connections</h2><p><a target="_top" href="../index.html#process/handoff">Recover and inspect the saved result</a> · <a target="_top" href="../index.html#process/inspect">Read the actual findings and changed claims</a> · <a target="_top" href="../index.html#process/retry">Recover without replaying uncertain writes</a></p>
+<details><summary>Evidence limits and identity</summary><p>Saved bytes anchor the explanation. They do not prove that a run opened this resource, followed an instruction, used a particular model, or verified factual claims.</p>
+<p>Original/source hash: <span class="path">fbf6c0e38ddbe1d6dd9e3be68b63e152d69bc8b073809c3b5a48b6bd7c612d64</span></p><p>Excerpt hash: <span class="path">d9379c077b5870bc472ce067476f68a60b0a53d0a2e6ec109661f1ab7c075613</span></p></details></article></main></body></html>

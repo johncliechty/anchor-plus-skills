@@ -71,6 +71,7 @@ tools/reading_copy.py
 tools/review_diff.mjs
 tools/steward_code_job.py
 tools/steward_review.mjs
+tools/steward_settings.py
 tools/steward_skill.py
 tools/gitguard/__init__.py
 tools/gitguard/git
@@ -501,6 +502,7 @@ vendor/anchor-term/**
 # archive of each env-injected source + denylist + host-path/PII scrub). Listed
 # here so the deny-by-default stager keeps them. The generator itself ships too.
 vendor/bundled-skills/**
+vendor/foundry-page-maps/**
 .claude/skills/onboard/**
 vendor_skills.py
 
