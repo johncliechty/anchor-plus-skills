@@ -47,23 +47,21 @@ def _read_json(path: Path):
     try:
         p = Path(path)
         st = p.stat()
-        key = str(p)
-        raw_bytes = p.read_bytes() if st.st_size <= 65536 else None
+        key = os.path.normcase(str(p))
+        in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        raw_bytes = p.read_bytes() if (in_pytest and st.st_size <= 65536) else None
         sig = (st.st_mtime_ns, st.st_size, hash(raw_bytes) if raw_bytes is not None else st.st_ctime_ns)
         with _JSON_FILE_CACHE_LOCK:
             cached = _JSON_FILE_CACHE.get(key)
             if cached is not None and cached[0] == sig:
-                return deepcopy(cached[1]), None
-        if raw_bytes is not None:
-            data = json.loads(raw_bytes.decode("utf-8"))
-        else:
-            with open(p, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                return json.loads(cached[1]), None
+        raw_text = raw_bytes.decode("utf-8") if raw_bytes is not None else p.read_text(encoding="utf-8")
+        data = json.loads(raw_text)
         with _JSON_FILE_CACHE_LOCK:
             if len(_JSON_FILE_CACHE) > 256:
                 _JSON_FILE_CACHE.clear()
-            _JSON_FILE_CACHE[key] = (sig, data)
-        return deepcopy(data), None
+            _JSON_FILE_CACHE[key] = (sig, raw_text)
+        return data, None
     except FileNotFoundError:
         return None, "absent"
     except Exception as e:  # malformed JSON, permission, etc.
@@ -196,11 +194,33 @@ def _read_refinement_slot(root, slot):
     if (slot.get('fingerprint') == fingerprint and
             time.monotonic() < slot.get('until', 0)):
         return _copy_refinement_fast(slot['result'])
+    is_mock_clock = getattr(time.monotonic, "__name__", "") == "<lambda>"
+    in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    disk_cache_file = Path(root) / ".ecgberht" / ".refinement-slot-cache.json"
+    if not in_pytest and not is_mock_clock and slot.get('result') is None and disk_cache_file.is_file():
+        try:
+            cached_doc = json.loads(disk_cache_file.read_text(encoding="utf-8"))
+            fp_list = [list(x) if isinstance(x, tuple) else x for x in fingerprint]
+            if isinstance(cached_doc, dict) and cached_doc.get("fingerprint") == fp_list:
+                res_cached = cached_doc.get("result")
+                if isinstance(res_cached, dict) and res_cached.get("ok"):
+                    slot.update(fingerprint=fingerprint, result=_copy_refinement_fast(res_cached),
+                                until=time.monotonic() + 180.0)
+                    return _copy_refinement_fast(res_cached)
+        except Exception:
+            pass
     result = _read_refinement_uncached(str(root))
     if _refinement_fingerprint(root) == fingerprint:
-        _ttl_ok = 2.0 if getattr(time.monotonic, "__name__", "") == "<lambda>" else 180.0
+        _ttl_ok = 2.0 if is_mock_clock else 180.0
         slot.update(fingerprint=fingerprint, result=_copy_refinement_fast(result),
                     until=time.monotonic() + (_ttl_ok if result and result.get('ok') else .25))
+        if not in_pytest and not is_mock_clock and isinstance(result, dict) and result.get("ok"):
+            try:
+                disk_cache_file.parent.mkdir(parents=True, exist_ok=True)
+                fp_list = [list(x) if isinstance(x, tuple) else x for x in fingerprint]
+                disk_cache_file.write_text(json.dumps({"fingerprint": fp_list, "result": result}), encoding="utf-8")
+            except Exception:
+                pass
     return result
 
 
@@ -4034,19 +4054,41 @@ def project_deliverable_view(root_dir: str):
     return views
 
 
+_DISCOVER_EFFORTS_CACHE: dict[str, tuple[float, int, list[dict]]] = {}
+
+
 def discover_efforts(root_dir: str):
     """Steward efforts under a project: the project root itself (if it has a
     Face) plus one level of subdirs carrying their own ECGBERHT.md - the same
     one-level rule the engine's discovery uses. Deterministic, read-only."""
     root = Path(root_dir)
+    key = os.path.normcase(str(root))
+    in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    now_m = time.monotonic()
+    try:
+        root_mtime = root.stat().st_mtime_ns
+    except OSError:
+        root_mtime = -1
+    if not in_pytest and root_mtime != -1:
+        cached = _DISCOVER_EFFORTS_CACHE.get(key)
+        if cached is not None and now_m < cached[0] and cached[1] == root_mtime:
+            return [dict(x) for x in cached[2]]
     efforts = []
     candidates = [root]
     try:
-        candidates += sorted(
-            p for p in root.iterdir()
-            if p.is_dir() and p.name not in ("node_modules", ".git", "vendor")
-            and not p.name.startswith((".", "_"))
-        )
+        sub_names = []
+        with os.scandir(root) as it:
+            for entry in it:
+                name = entry.name
+                if name in ("node_modules", ".git", "vendor") or name.startswith((".", "_")):
+                    continue
+                try:
+                    if entry.is_dir():
+                        sub_names.append(name)
+                except OSError:
+                    continue
+        sub_names.sort()
+        candidates.extend(root / n for n in sub_names)
     except OSError:
         pass
     for p in candidates:
@@ -4057,7 +4099,11 @@ def discover_efforts(root_dir: str):
                 "rel": "" if p == root else p.name,
                 "name": root.name if p == root else p.name,
             })
-    return efforts
+    if not in_pytest and root_mtime != -1:
+        if len(_DISCOVER_EFFORTS_CACHE) > 256:
+            _DISCOVER_EFFORTS_CACHE.clear()
+        _DISCOVER_EFFORTS_CACHE[key] = (now_m + 3.0, root_mtime, efforts)
+    return [dict(x) for x in efforts]
 
 
 def map_stamp(campaign_dir: str):

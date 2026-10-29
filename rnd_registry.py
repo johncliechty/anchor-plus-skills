@@ -66,6 +66,9 @@ def _new_id() -> str:
     return uuid.uuid4().hex
 
 
+_REGISTRY_CACHE = {"sig": None, "data": None}
+
+
 def load_registry() -> dict:
     """Load the registry as a dict ``{id: entry}``.
 
@@ -74,8 +77,14 @@ def load_registry() -> dict:
     on disk is a list of entries; this returns them keyed by id for O(1) lookup.
     """
     p = registry_path()
-    if not p.exists():
+    try:
+        st = p.stat()
+    except OSError:
         return {}
+    sig = (str(p), st.st_mtime_ns, st.st_size)
+    cached = _REGISTRY_CACHE.get("data") if _REGISTRY_CACHE.get("sig") == sig else None
+    if isinstance(cached, dict):
+        return {k: dict(v) for k, v in cached.items()}
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
@@ -92,6 +101,8 @@ def load_registry() -> dict:
                 e = dict(e)
                 e.setdefault("id", k)
                 out[e["id"]] = _normalize(e)
+    _REGISTRY_CACHE["sig"] = sig
+    _REGISTRY_CACHE["data"] = {k: dict(v) for k, v in out.items()}
     return out
 
 

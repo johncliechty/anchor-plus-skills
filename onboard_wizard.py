@@ -4175,7 +4175,7 @@ def build_or_resolve_exe_zip_package(
             zf.writestr('Anchor/anchor-test-mode.json', json.dumps({
                 'ANCHOR_SHELL_TEST': 'onboard-walkthrough',
                 'ANCHOR_SHELL_PORT': '8787',
-                'ANCHOR_SHELL_INSTALL_ROOT': r'C:\dev\Anchor-Onboard-Test',
+                'ANCHOR_SHELL_INSTALL_ROOT': r'C:\Anchor-Onboard-Test',
                 'ANCHOR_SHELL_ONBOARD_PATH': '/onboard-wizard',
             }, indent=2))
             zf.writestr("Launch-Anchor-Onboard-Test.cmd", LAUNCH_ONBOARD_TEST_CMD.replace("\n", "\r\n"))
@@ -4563,7 +4563,7 @@ def render_onboard_wizard_html(
               </div>
               <div>
                 <label for="inpContactEmail">Contact / Account Recovery Email (For Username &amp; Password Recovery Links)</label>
-                <input type="text" id="inpContactEmail" placeholder="e.g., merrill@psu.edu, john@psu.edu" autocomplete="email">
+                <input type="text" id="inpContactEmail" placeholder="e.g., researcher@example.org, admin@example.com" autocomplete="email">
               </div>
               <div>
                 <label for="inpPassword">Login Password (Stored in OS Vault + PBKDF2 Hash)</label>
@@ -5037,7 +5037,7 @@ def render_onboard_wizard_html(
           </select>
           <label style="margin-top:8px">API Key / Credential (${{svc.api_key_env || 'OS Credential Vault'}})</label>
           <div style="display:flex;gap:6px;align-items:center">
-            <input type="password" data-svc-apikey="${{svc.family}}" placeholder="${{keyPlaceholder}}" style="flex:1">
+            <input type="password" data-svc-keyinput="${{svc.family}}" placeholder="${{keyPlaceholder}}" style="flex:1">
             <button type="button" class="btn" data-act-savekey="${{svc.family}}">🔑 Save Key</button>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
@@ -5074,7 +5074,7 @@ def render_onboard_wizard_html(
       grid.querySelectorAll('[data-act-savekey]').forEach((btn) => {{
         btn.addEventListener('click', async () => {{
           const fam = btn.getAttribute('data-act-savekey');
-          const keyInp = grid.querySelector(`[data-svc-apikey="${{fam}}"]`);
+          const keyInp = grid.querySelector(`[data-svc-keyinput="${{fam}}"]`);
           const val = keyInp ? keyInp.value.trim() : '';
           if (!val) {{
             document.getElementById('wizBanner').textContent = `Enter an API key for ${{fam}} before clicking Save Key.`;

@@ -1243,17 +1243,17 @@ _TOPIC_EFFORT_HINTS = [
             re.I,
         ),
         "Open Source Token Source / Basic Infastructure (U-OSTS & GWL-Free)",
-        r"C:\dev\Open Source Token Source\Basic Infastructure",
+        str(Path(__file__).resolve().parent.parent.parent / "Open Source Token Source" / "Basic Infastructure"),
     ),
     (
         re.compile(r"\b(?:hierarchical\s+normalizing\s+flows|hnf|paper\s*1|normalizing\s+flow)\b", re.I),
         "Hierarchical Normalizing Flows / Paper 1",
-        r"C:\dev\Hierarchical Normalizing Flows\Paper 1",
+        str(Path(__file__).resolve().parent.parent.parent / "Hierarchical Normalizing Flows" / "Paper 1"),
     ),
     (
         re.compile(r"\b(?:book\s*1|chekhov|thriller\s+novel|artificial\s+magi)\b", re.I),
         "Writing - Thriller Novel / Book 1",
-        r"C:\dev\Writing - Thriller Novel\Book 1",
+        str(Path(__file__).resolve().parent.parent.parent / "Writing - Thriller Novel" / "Book 1"),
     ),
 ]
 

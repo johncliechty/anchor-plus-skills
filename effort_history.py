@@ -219,6 +219,29 @@ def load_effort(folder_path, project_id: str, lane: str, job_id: str):
         return None
 
 
+_ORIG_LOAD_EFFORT = load_effort
+_ORIG_LOAD_INDEX = _load_index
+_EFFORTS_DIR_CACHE = {}
+
+
+def _eff_dir_signature(eff_dir):
+    try:
+        if not os.path.isdir(eff_dir):
+            return None
+        entries = []
+        with os.scandir(eff_dir) as it:
+            for de in it:
+                try:
+                    st = de.stat()
+                    entries.append((de.name, st.st_mtime_ns, st.st_size))
+                except OSError:
+                    entries.append((de.name, 0, 0))
+        entries.sort()
+        return tuple(entries)
+    except OSError:
+        return None
+
+
 def list_efforts(folder_path, project_id: str, lane: str) -> list:
     """Return the lane's effort pointer-records, **NEWEST-FIRST** (AC1).
 
@@ -226,6 +249,21 @@ def list_efforts(folder_path, project_id: str, lane: str) -> list:
     deleted by reads or re-runs — the index is append-only and reversed here.
     Pointer-records that are missing/corrupt are skipped (best-effort).
     """
+    use_cache = (load_effort is _ORIG_LOAD_EFFORT and _load_index is _ORIG_LOAD_INDEX)
+    eff_dir_str = ""
+    sig = None
+    if use_cache:
+        try:
+            eff_dir_str = str(efforts_dir(folder_path, project_id, lane))
+            sig = _eff_dir_signature(eff_dir_str)
+            if sig is None:
+                return []
+            hit = _EFFORTS_DIR_CACHE.get(eff_dir_str)
+            if hit is not None and hit[0] == sig:
+                return [dict(r) for r in hit[1]]
+        except Exception:
+            use_cache = False
+
     order = _load_index(folder_path, project_id, lane)
     out = []
     seen = set()
@@ -256,6 +294,10 @@ def list_efforts(folder_path, project_id: str, lane: str) -> list:
                     out.append(rec)
     except Exception:
         pass  # best-effort repair: never fail a read over recovery
+    if use_cache and eff_dir_str and sig is not None:
+        if len(_EFFORTS_DIR_CACHE) > 2048:
+            _EFFORTS_DIR_CACHE.clear()
+        _EFFORTS_DIR_CACHE[eff_dir_str] = (sig, [dict(r) for r in out])
     return out
 
 

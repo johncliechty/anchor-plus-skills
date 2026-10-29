@@ -1482,13 +1482,13 @@
         if (famSel) famSel.value = 'gmail';
         if (lblIn) lblIn.value = 'Gmail & Google Calendar';
         if (modeSel) modeSel.value = 'app_password';
-        if (emField) emField.placeholder = 'your.name@gmail.com';
+        if (emField) emField.placeholder = 'your.name@example.com';
         if (icsField) icsField.placeholder = 'Optional: Google Calendar Secret Address in iCal format (.ics)';
       } else if (pType === 'outlook') {
         if (famSel) famSel.value = 'outlook';
         if (lblIn) lblIn.value = 'Microsoft Outlook & Calendar';
         if (modeSel) modeSel.value = 'app_password';
-        if (emField) emField.placeholder = 'you@psu.edu or you@outlook.com';
+        if (emField) emField.placeholder = 'you@example.org or you@example.com';
         if (icsField) icsField.placeholder = 'Optional: Published Outlook Calendar ICS URL (.ics)';
       } else if (pType === 'ics_only') {
         if (famSel) famSel.value = 'gmail';

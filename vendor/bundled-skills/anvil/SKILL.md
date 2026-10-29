@@ -44,7 +44,7 @@ python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" --walkthrough --rep
 python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" beta-readers --repo "<path>"
 
 # 5. Standalone Illustrated Markdown Report (with Inline SVGs, Beta-Readers & Walkthrough Table)
-python "<path> Foundry\skills\anvil\scripts\anvil_engine.py" render-report --repo "<path>" --output "<path>/ANVIL-REPORT.md"
+python "skills/anvil/scripts/anvil_engine.py" render-report --repo "." --output "ANVIL-REPORT.md"
 ```
 
 ---

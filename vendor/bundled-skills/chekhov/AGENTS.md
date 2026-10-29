@@ -52,7 +52,7 @@ Keep current START-HERE/RESULTS guidance concise and usable. Distinguish complet
 
 ## Run discipline and host adaptation
 
-Read the canonical user-global rules at `<path> Skill Foundry's tier policy and `<path> Foundry/ELEGANCE.md`; do not create competing definitions. Anchor preferences govern seats. John's current availability restriction excludes Gemini and rate-limited Claude for this effort: use configured ChatGPT work and Grok review, with actual model/family attestation and honest substitutions. Never invent receipts, model names, cross-family verification or author signatures.
+Read the canonical user-global rules at Skill Foundry's tier policy and `ELEGANCE.md`; do not create competing definitions. Anchor preferences govern seats. John's current availability restriction excludes Gemini and rate-limited Claude for this effort: use configured ChatGPT work and Grok review, with actual model/family attestation and honest substitutions. Never invent receipts, model names, cross-family verification or author signatures.
 
 The hidden ConPTY host adaptation permits Codex's terminal for batched reads, rg and explicitly assigned in-scope operations when equivalent dedicated tools are unavailable. Use apply_patch for edits; do not wait for a nonexistent local-file reader. Root owns authoritative tests, git and live process launches. No parallel production coder, tests or git by support agents, unrelated staging, or Foreman/Trio/shared-skill edits. Preserve source/test immutability during active review; keep the requested seat heartbeat and return accurate changes and limitations.
 

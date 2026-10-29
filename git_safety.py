@@ -461,4 +461,26 @@ def land_locked(repo, source_rev, files, message, who="code job", expect_head=""
         else:
             return True, ("landed on %s (snapshot %s) BUT the shared index still holds the old entries for %s: run "
                           "`git reset -q -- <those paths>` there before committing" % (root, snap, ", ".join(paths)))
+        _trigger_auto_push_after_land(root)
         return True, "landed on %s (%d file%s; snapshot %s)" % (root, len(written), "" if len(written) == 1 else "s", snap)
+
+
+def _trigger_auto_push_after_land(root_path):
+    """If a landed repo belongs to a project with GitHub auto-push enabled, push in the background."""
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("ANCHOR_HEALTHCHECK"):
+        return
+    import threading
+    r_str = str(root_path)
+    def _bg():
+        try:
+            import rnd_registry as _rnd_gs
+            import project_remote as _rem_gs
+            r_norm = os.path.normcase(os.path.realpath(r_str))
+            for proj in _rnd_gs.load_registry().values():
+                fp = proj.get("folder_path") or ""
+                if fp and os.path.normcase(os.path.realpath(fp)) == r_norm:
+                    _rem_gs.auto_push_if_opted(proj.get("id"))
+                    break
+        except Exception:
+            pass
+    threading.Thread(target=_bg, name="anchor-land-autopush", daemon=True).start()

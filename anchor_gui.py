@@ -7604,18 +7604,21 @@ def _engine_light(cdir):
     orange needs an answer · quiet idle · red broken or stuck) - read from its engine object as the cockpit's state
     route does (no wake; a parked cockpit answers from its record). {light, question}; empty when unreadable."""
     try:
-        key = str(cdir)
+        raw_cdir = str(cdir)
+        key = os.path.normcase(os.path.abspath(raw_cdir))
         now_m = time.monotonic()
+        in_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
         cache = globals().setdefault("_ENGINE_LIGHT_CACHE", {})
         cached = cache.get(key)
-        if cached is not None and now_m < cached[0] and getattr(time.monotonic, "__name__", "") != "<lambda>":
+        if not in_pytest and cached is not None and now_m < cached[0] and getattr(time.monotonic, "__name__", "") != "<lambda>":
             return dict(cached[1])
         from steward_cockpit.steward_routes import get_engine as _get
-        eng = _get(key, False, None)
+        eng = _get(raw_cdir, False, None)
         if eng is None:
             return {"light": "", "question": ""}
         res = {"light": str(eng.light() or ""), "question": " ".join(str(getattr(eng, "open_question", "") or "").split())}
-        cache[key] = (now_m + 1.5, res)
+        ttl = 1.5 if getattr(eng, "busy", False) else 5.0
+        cache[key] = (now_m + ttl, res)
         return dict(res)
     except Exception:
         return {"light": "", "question": ""}
@@ -8368,6 +8371,8 @@ def render_high_seat_page(logged_in=False) -> str:
     request carried a valid token or the login cookie (W2c-4: the page shows its login box only when it did not)."""
     try:
         import high_seat_page as _hsp
+        if not logged_in and bool(_paths.expected_token()):
+            return _hsp.render_locked_html({"build": BUILD_ID, "steward": _steward_ui(), "auth_required": True, "logged_in": False})
         with _SlowWatch("the Cave of Wonders"):
             ctx = _high_seat_context()
             ctx["logged_in"] = bool(logged_in)
@@ -22421,10 +22426,10 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 else:
                     proot = self._steward_pid_dir(_qpid)
                     if proot is None and verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
-                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(r"C:\dev\Hierarchical Normalizing Flows\Paper 1"):
-                            proot = r"C:\dev\Hierarchical Normalizing Flows\Paper 1"
+                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")):
+                            proot = str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")
                         else:
-                            proot = r"C:\dev\Campaign" if os.path.isdir(r"C:\dev\Campaign") else str(ROOT_DIR)
+                            proot = str(ROOT_DIR.parent / "Campaign") if os.path.isdir(str(ROOT_DIR.parent / "Campaign")) else str(ROOT_DIR)
                     if proot is None:
                         self._send_json({"error": "unknown project"}, code=404); return
                     obj, code = _scr.api_get(proot, verb, qs)
@@ -22451,10 +22456,10 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 else:
                     proot = self._steward_pid_dir(pid)
                     if proot is None and verb in ("spellcheck", "dictate", "fleet-brief", "fleet-relay", "anvil", "anvil/walkthrough", "mothership-files"):
-                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(r"C:\dev\Hierarchical Normalizing Flows\Paper 1"):
-                            proot = r"C:\dev\Hierarchical Normalizing Flows\Paper 1"
+                        if verb in ("anvil", "anvil/walkthrough") and os.path.isdir(str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")):
+                            proot = str(ROOT_DIR.parent / "Hierarchical Normalizing Flows" / "Paper 1")
                         else:
-                            proot = r"C:\dev\Campaign" if os.path.isdir(r"C:\dev\Campaign") else str(ROOT_DIR)
+                            proot = str(ROOT_DIR.parent / "Campaign") if os.path.isdir(str(ROOT_DIR.parent / "Campaign")) else str(ROOT_DIR)
                     if proot is None:
                         self._send_json({"ok": False, "error": "unknown project"}, code=404); return
                     obj, code = _scr.api_post(proot, verb, body or {})

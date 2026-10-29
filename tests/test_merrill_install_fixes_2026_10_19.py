@@ -236,8 +236,9 @@ def test_user_data_migrated_when_upgrading_from_older_folder(tmp_path):
 
 def test_windows_store_python_stub_rejected():
     import onboard_bootstrap as ob
-    assert ob._probe_real_python_argv([r"C:\Users\merrill\AppData\Local\Microsoft\WindowsApps\python.exe"]) is False
-    assert connect._probe_real_python_argv([r"C:\Users\merrill\AppData\Local\Microsoft\WindowsApps\python3.exe"]) is False
+    stub_base = r"C:\ProgramData\AppData\Local\Microsoft\WindowsApps"
+    assert ob._probe_real_python_argv([stub_base + r"\python.exe"]) is False
+    assert connect._probe_real_python_argv([stub_base + r"\python3.exe"]) is False
 
 
 def test_normalize_accepts_bare_localhost_as_http():

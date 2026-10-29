@@ -486,6 +486,11 @@ class ArmStats:
     total_sweeps: int = 0
 
 
+_ORIG_READ_RECEIPTS = read_receipts
+_ORIG_VERIFY_CHAIN = verify_chain
+_RECEIPT_STATS_CACHE = {"sig": None, "stats": None}
+
+
 def receipt_stats() -> ArmStats:
     """Recompute :class:`ArmStats` from the on-disk chain — the ONLY source.
 
@@ -495,11 +500,27 @@ def receipt_stats() -> ArmStats:
     verify, ``chain_ok`` is ``False`` and both streaks are 0 (an untrustworthy
     log grants NO arm progress).
     """
+    use_cache = (read_receipts is _ORIG_READ_RECEIPTS and verify_chain is _ORIG_VERIFY_CHAIN)
+    sig = None
+    if use_cache:
+        try:
+            rp = receipts_path()
+            if rp.is_file():
+                st = rp.stat()
+                sig = (str(rp), st.st_mtime_ns, st.st_size)
+                if _RECEIPT_STATS_CACHE.get("sig") == sig and _RECEIPT_STATS_CACHE.get("stats") is not None:
+                    return _RECEIPT_STATS_CACHE["stats"]
+        except OSError:
+            sig = None
     recs = read_receipts()
     ok, _bad = verify_chain(recs)
     if not ok:
-        return ArmStats(chain_ok=False, clean_streak=0, abstain_streak=0,
-                        total_sweeps=0)
+        res = ArmStats(chain_ok=False, clean_streak=0, abstain_streak=0,
+                       total_sweeps=0)
+        if sig is not None:
+            _RECEIPT_STATS_CACHE["sig"] = sig
+            _RECEIPT_STATS_CACHE["stats"] = res
+        return res
     sweeps = [r for r in recs if isinstance(r, dict) and r.get("kind") == "sweep"]
     clean_streak = 0
     for r in reversed(sweeps):
@@ -513,8 +534,12 @@ def receipt_stats() -> ArmStats:
             abstain_streak += 1
         else:
             break
-    return ArmStats(chain_ok=True, clean_streak=clean_streak,
-                    abstain_streak=abstain_streak, total_sweeps=len(sweeps))
+    res = ArmStats(chain_ok=True, clean_streak=clean_streak,
+                   abstain_streak=abstain_streak, total_sweeps=len(sweeps))
+    if sig is not None:
+        _RECEIPT_STATS_CACHE["sig"] = sig
+        _RECEIPT_STATS_CACHE["stats"] = res
+    return res
 
 
 # ─────────────────────────────────────────────────────────────────────────────

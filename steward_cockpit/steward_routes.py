@@ -37,22 +37,24 @@ for _hot_mod in ("anchor_settings", "usage_allowance_monitor", "deliverables_reg
         except Exception:
             pass
 
-# Ensure live AnchorHandler._steward_pid_dir falls back to C:\dev\Campaign when pid is omitted (e.g., global spellcheck / fleet-brief)
+# Ensure live AnchorHandler._steward_pid_dir falls back to workspace Campaign when pid is omitted (e.g., global spellcheck / fleet-brief)
+_WS_ROOT = Path(__file__).resolve().parent.parent.parent
+_DEFAULT_CAMPAIGN_DIR = str(_WS_ROOT / "Campaign")
 def _resolve_named_cockpit_dir(raw_pid):
     import urllib.parse
     clean = urllib.parse.unquote(str(raw_pid or "")).strip()
     if not clean:
-        return r"C:\dev\Campaign" if os.path.isdir(r"C:\dev\Campaign") else None
+        return _DEFAULT_CAMPAIGN_DIR if os.path.isdir(_DEFAULT_CAMPAIGN_DIR) else None
     if ":" in clean or clean.startswith(("/", "\\")) or ".." in Path(clean).parts or Path(clean).is_absolute():
         return None
     low = clean.lower()
     known = {
-        "book 1": r"C:\dev\Writing\Artificial Magi\Book 1",
-        "paper 1": r"C:\dev\Hierarchical Normalizing Flows\Paper 1",
-        "basic infastructure": r"C:\dev\Open Source Token Source\Basic Infastructure",
-        "basic infrastructure": r"C:\dev\Open Source Token Source\Basic Infastructure",
-        "campaign": r"C:\dev\Campaign",
-        "anchor": r"C:\dev\Anchor",
+        "book 1": str(_WS_ROOT / "Writing" / "Artificial Magi" / "Book 1"),
+        "paper 1": str(_WS_ROOT / "Hierarchical Normalizing Flows" / "Paper 1"),
+        "basic infastructure": str(_WS_ROOT / "Open Source Token Source" / "Basic Infastructure"),
+        "basic infrastructure": str(_WS_ROOT / "Open Source Token Source" / "Basic Infastructure"),
+        "campaign": _DEFAULT_CAMPAIGN_DIR,
+        "anchor": str(_WS_ROOT / "Anchor"),
     }
     if low in known and os.path.isdir(known[low]):
         return known[low]
@@ -2220,7 +2222,7 @@ def handle_get(cdir, verb, qs):
         from steward_cockpit.campaign_say import build_fleet_brief, is_cave_folder
         camp_dir = str(Path(cdir).parent) if is_cave_folder(cdir) and (Path(cdir).parent / "roadmap.json").is_file() else cdir
         if not (Path(camp_dir) / "roadmap.json").is_file():
-            camp_dir = r"C:\dev\Campaign"
+            camp_dir = _DEFAULT_CAMPAIGN_DIR
         return build_fleet_brief(camp_dir), 200
     return {"error": "unknown"}, 404
 
@@ -3274,7 +3276,7 @@ def handle_post(cdir, verb, body):
         from steward_cockpit.campaign_say import relay_to_cockpit_steward, is_cave_folder
         camp_dir = str(Path(cdir).parent) if is_cave_folder(cdir) and (Path(cdir).parent / "roadmap.json").is_file() else cdir
         if not (Path(camp_dir) / "roadmap.json").is_file():
-            camp_dir = r"C:\dev\Campaign"
+            camp_dir = _DEFAULT_CAMPAIGN_DIR
         res = relay_to_cockpit_steward(
             camp_dir,
             str(body.get("target") or ""),
