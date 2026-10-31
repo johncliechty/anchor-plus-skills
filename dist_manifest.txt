@@ -440,6 +440,7 @@ parity.py
 # ModuleNotFoundError — the friction intake's 12th missing module).
 onboard.cmd
 onboard.ps1
+onboard.sh
 onboard_cli.py
 onboard_bootstrap.py
 launch_anchor_dashboard.py

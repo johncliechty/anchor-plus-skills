@@ -4,3 +4,4 @@
 # CRLF-translated on checkout. Keep them LF everywhere.
 static/*.js text eol=lf
 static/*.css text eol=lf
+*.sh text eol=lf

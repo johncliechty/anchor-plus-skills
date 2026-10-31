@@ -1,7 +1,7 @@
-"""Hermetic-friendly bootstrap decisions for Windows cold-start (onboard.ps1).
+"""Hermetic-friendly bootstrap decisions for Anchor cold-start (onboard.ps1 / onboard.sh).
 
-The .ps1 script remains the user-facing entry; this module holds the decision
-logic so we can unit-test without winget/network thrash.
+The shell script remains the user-facing entry; this module holds the decision
+logic so we can unit-test without winget/brew/network thrash.
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def resolve_python_command(
         (lambda exe: _probe_real_python_argv([exe])) if live_mode else (lambda _exe: python_version_ok())
     )
 
-    if prefer_py_launcher and which("py"):
+    if prefer_py_launcher and sys.platform == "win32" and which("py"):
         if not live_mode or _probe_real_python_argv(["py", "-3"]):
             return {
                 "ok": True,
@@ -87,7 +87,8 @@ def resolve_python_command(
                 "note": "py_launcher",
             }
 
-    for name in ("python", "python3"):
+    candidates = ("python", "python3") if sys.platform == "win32" else ("python3", "python")
+    for name in candidates:
         path = which(name)
         if not path:
             continue
@@ -101,7 +102,7 @@ def resolve_python_command(
                 "note": "path_" + name,
             }
 
-    if live_mode:
+    if live_mode and sys.platform == "win32":
         for cand_exe in _discover_windows_python_installs():
             if _probe_real_python_argv([cand_exe]):
                 return {
@@ -131,7 +132,7 @@ def bootstrap_plan(
     """
     which = which_fn or shutil.which
     if winget_present is None:
-        winget_present = bool(which("winget"))
+        winget_present = bool(which("winget")) if sys.platform == "win32" else False
 
     resolved = resolve_python_command(
         which_fn=which,
@@ -155,19 +156,34 @@ def bootstrap_plan(
             "fix_link": "https://www.python.org/downloads/",
         }
 
+    if sys.platform == "darwin" and which("brew"):
+        return {
+            "action": "install_python_then_run",
+            "python": resolved,
+            "winget": False,
+            "brew": True,
+            "brew_pkg": "python",
+            "module": "share_onboard",
+            "fix_link": "https://www.python.org/downloads/",
+        }
+
+    script_hint = "onboard.cmd" if sys.platform == "win32" else "./onboard.sh"
     return {
         "action": "fail_manual",
         "python": resolved,
         "winget": False,
         "module": "share_onboard",
         "fix_link": "https://www.python.org/downloads/",
-        "note": "Install Python 3.8+ from python.org then re-run onboard.cmd",
+        "note": f"Install Python 3.8+ from python.org then re-run {script_hint}",
     }
 
 
 def package_root_has_cold_start(root: Path | str) -> dict:
     r = Path(root)
-    needed = ("onboard.cmd", "onboard.ps1", "share_onboard.py", "USER-ONBOARD.md")
+    if sys.platform != "win32" and (r / "onboard.sh").is_file():
+        needed = ("onboard.sh", "share_onboard.py", "USER-ONBOARD.md")
+    else:
+        needed = ("onboard.cmd", "onboard.ps1", "share_onboard.py", "USER-ONBOARD.md")
     missing = [n for n in needed if not (r / n).is_file()]
     return {
         "ok": not missing,
