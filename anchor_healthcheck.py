@@ -2268,12 +2268,23 @@ def check_rnd_v6_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    # This walk runs in the Doctor process alongside a separate dashboard.
+    # Its process-local WRITE_LOCK cannot protect a shared sessions.json from
+    # the dashboard's registry writes. Keep the entire synthetic lifecycle,
+    # including plan→build advance and cleanup, outside the live data root.
+    import pty_manager as _pty
+    previous_ptys = set(_pty.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-v6-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
     prev_runner = os.environ.get("ANCHOR_RUNNER_CMD")
     prev_claims = os.environ.get("STUB_STREAMJSON_CLAIMS")
+    prev_proactive = os.environ.get("ANCHOR_PROACTIVE_SUMMARY")
     os.environ["ANCHOR_PTY_BACKEND"] = "stub"
+    os.environ.pop("ANCHOR_PROACTIVE_SUMMARY", None)
     wt_base = Path(_tf.mkdtemp(prefix="anchor-hc-v6-wt-"))
     os.environ["ANCHOR_WORKTREE_BASE"] = str(wt_base)
     os.environ["ANCHOR_TERMINAL_SEED"] = "HC-V6-SEED-LOAD-SKILL"
@@ -2283,6 +2294,8 @@ def check_rnd_v6_surface(report: Report, server_proc, rnd_env: dict):
 
     pid = None
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import pty_manager as _pty
@@ -2310,7 +2323,8 @@ def check_rnd_v6_surface(report: Report, server_proc, rnd_env: dict):
             return
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v6", str(proj_folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
+        # Private project: remove it before restoring the outer data root,
+        # never hand its id to the later live-registry cleanup.
         steps.append(("register v6 project", bool(pid), str(pid)))
 
         # ── (Wave 1) summaries through the PRODUCTION stream-json stub ────────
@@ -2477,30 +2491,34 @@ def check_rnd_v6_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
-        # Reap any stub PTY sessions this walk left live (defensive).
+        # Reap only this walk's stub PTYs, preserving earlier checks' sessions.
+        # All registry cleanup still resolves the private data root here.
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
-                for srec in _sreg2.list_sessions(project_id=pid_):
+            if pid:
+                for srec in _sreg2.list_sessions(project_id=pid):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                _rnd.remove_project(pid)
         except Exception:
             pass
         # Restore every env var we forced for this walk (incl. the runner, which
         # we swapped to the stream-json stub — later checks must see fake_claude).
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed),
                           ("ANCHOR_RUNNER_CMD", prev_runner),
-                          ("STUB_STREAMJSON_CLAIMS", prev_claims)):
+                          ("STUB_STREAMJSON_CLAIMS", prev_claims),
+                          ("ANCHOR_PROACTIVE_SUMMARY", prev_proactive)):
             if prev is None:
                 os.environ.pop(var, None)
             else:
@@ -2552,6 +2570,11 @@ def check_rnd_v7_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    import pty_manager as _pty
+    previous_ptys = set(_pty.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-v7-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
@@ -2570,6 +2593,8 @@ def check_rnd_v7_surface(report: Report, server_proc, rnd_env: dict):
     gui = None
     prev_gui_flag = None
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import pty_manager as _pty
@@ -2614,7 +2639,6 @@ def check_rnd_v7_surface(report: Report, server_proc, rnd_env: dict):
             return
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v7", str(proj_folder))
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register v7 project", bool(pid), str(pid)))
 
         # Enable the proactive summary path so the finish hook actually runs
@@ -2779,26 +2803,28 @@ def check_rnd_v7_surface(report: Report, server_proc, rnd_env: dict):
                 gui._PROACTIVE_SUMMARY_ENABLED = prev_gui_flag
         except Exception:
             pass
-        # Reap any stub PTY sessions this walk left live (defensive).
+        # Reap only this walk's stub PTYs, preserving earlier checks' sessions.
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
-                for srec in _sreg2.list_sessions(project_id=pid_):
+            if pid:
+                for srec in _sreg2.list_sessions(project_id=pid):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                _rnd.remove_project(pid)
         except Exception:
             pass
         # Restore every env var we forced for this walk (incl. the runner, which
         # we swapped to the stream-json stub — later checks must see fake_claude).
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed),
                           ("ANCHOR_RUNNER_CMD", prev_runner),
@@ -2885,6 +2911,11 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    import pty_manager as _pty
+    previous_ptys = set(_pty.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-v8-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
@@ -2892,7 +2923,9 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
     prev_gh = os.environ.get("ANCHOR_GH_CMD")
     prev_gh_fail = os.environ.get("ANCHOR_GH_STUB_FAIL")
     prev_gh_remote = os.environ.get("ANCHOR_GH_STUB_REMOTE")
+    prev_proactive = os.environ.get("ANCHOR_PROACTIVE_SUMMARY")
     os.environ["ANCHOR_PTY_BACKEND"] = "stub"
+    os.environ.pop("ANCHOR_PROACTIVE_SUMMARY", None)
     wt_base = Path(_tf.mkdtemp(prefix="anchor-hc-v8-wt-"))
     os.environ["ANCHOR_WORKTREE_BASE"] = str(wt_base)
     os.environ["ANCHOR_RUNNER_CMD"] = sj_cmd
@@ -2904,6 +2937,8 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
 
     pid = None
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import session_registry as _sreg
@@ -2951,7 +2986,6 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v8", str(proj_folder),
                                 scaffold=False)
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register v8 project", bool(pid), str(pid)))
 
         # ── (b) doc persistence (THE KEYSTONE) + (c) handoff + (d) no-loss ────
@@ -3168,32 +3202,35 @@ def check_rnd_v8_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
-        # Reap any stub PTY sessions this walk left live (defensive).
+        # Reap only this walk's stub PTYs, preserving earlier checks' sessions.
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
-                for srec in _sreg2.list_sessions(project_id=pid_):
+            if pid:
+                for srec in _sreg2.list_sessions(project_id=pid):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                _rnd.remove_project(pid)
         except Exception:
             pass
         # Restore every env var we forced for this walk (incl. the runner +
         # the gh seam — later checks must see fake_claude / no gh seam).
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed),
                           ("ANCHOR_RUNNER_CMD", prev_runner),
                           ("ANCHOR_GH_CMD", prev_gh),
                           ("ANCHOR_GH_STUB_FAIL", prev_gh_fail),
-                          ("ANCHOR_GH_STUB_REMOTE", prev_gh_remote)):
+                          ("ANCHOR_GH_STUB_REMOTE", prev_gh_remote),
+                          ("ANCHOR_PROACTIVE_SUMMARY", prev_proactive)):
             if prev is None:
                 os.environ.pop(var, None)
             else:
@@ -3250,11 +3287,18 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    import pty_manager as _pty
+    previous_ptys = set(_pty.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-v9-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
     prev_runner = os.environ.get("ANCHOR_RUNNER_CMD")
+    prev_proactive = os.environ.get("ANCHOR_PROACTIVE_SUMMARY")
     os.environ["ANCHOR_PTY_BACKEND"] = "stub"
+    os.environ.pop("ANCHOR_PROACTIVE_SUMMARY", None)
     wt_base = Path(_tf.mkdtemp(prefix="anchor-hc-v9-wt-"))
     os.environ["ANCHOR_WORKTREE_BASE"] = str(wt_base)
     os.environ["ANCHOR_RUNNER_CMD"] = sj_cmd
@@ -3265,7 +3309,10 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
     prev_code_dir = _paths.CODE_DIR
 
     pid = None
+    private_pids: list[str] = []
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import session_registry as _sreg
@@ -3286,7 +3333,7 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v9", str(proj_folder),
                                 scaffold=False)
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
+        private_pids.append(pid)
         steps.append(("register v9 project", bool(pid), str(pid)))
 
         # ── (a) session delete (Option A: keep produced docs) ─────────────────
@@ -3417,7 +3464,7 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
             mproj = _rnd.add_project(SYNTHETIC_RND_NAME + " v9 move",
                                      str(mv_folder), scaffold=False)
             mpid = mproj["id"]
-            rnd_env["created_ids"].append(mpid)
+            private_pids.append(mpid)
 
             # (e1) the happy move: dir → <root>/research/tidy-proj, re-pointed.
             mres = _move.move_to_group(mpid, "research",
@@ -3455,11 +3502,11 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
             # move_to_group read an EMPTY registry and wrongly returned
             # 'unknown-project'. The move is refused BEFORE any fs op, so pointing
             # the probe at the real repo path is safe; the synthetic entry is reaped
-            # via created_ids at teardown.)
+            # via private_pids at teardown.)
             aproj = _rnd.add_project(SYNTHETIC_RND_NAME + " v9 anchor",
                                      str(_paths.CODE_DIR), scaffold=False)
             apid = aproj["id"]
-            rnd_env["created_ids"].append(apid)
+            private_pids.append(apid)
             refusal = _move.move_to_group(apid, "research",
                                           projects_root=str(move_root))
             anchor_refused = (not refusal.get("ok")
@@ -3474,7 +3521,7 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
             lproj = _rnd.add_project(SYNTHETIC_RND_NAME + " v9 live",
                                      str(live_folder), scaffold=False)
             lpid = lproj["id"]
-            rnd_env["created_ids"].append(lpid)
+            private_pids.append(lpid)
             live_rec = _sreg.register_session(lpid, "build",
                                               label="hc v9 live",
                                               status=_sreg.STATUS_RUNNING)
@@ -3499,7 +3546,7 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
             rproj = _rnd.add_project(SYNTHETIC_RND_NAME + " v9 rb",
                                      str(rb_folder), scaffold=False)
             rpid = rproj["id"]
-            rnd_env["created_ids"].append(rpid)
+            private_pids.append(rpid)
             orig_rescan = _move._rescan
 
             def _boom(_pid):
@@ -3532,28 +3579,34 @@ def check_rnd_v9_surface(report: Report, server_proc, rnd_env: dict):
     finally:
         # Always restore CODE_DIR (never leave it pointed off the real repo).
         _paths.CODE_DIR = prev_code_dir
-        # Reap any stub PTY sessions this walk left live (defensive).
+        # Reap only this walk's stub PTYs, preserving earlier checks' sessions.
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
+            for pid_ in private_pids:
                 for srec in _sreg2.list_sessions(project_id=pid_):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                try:
+                    _rnd.remove_project(pid_)
+                except Exception:
+                    pass
         except Exception:
             pass
         # Restore every env var we forced for this walk.
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed),
-                          ("ANCHOR_RUNNER_CMD", prev_runner)):
+                          ("ANCHOR_RUNNER_CMD", prev_runner),
+                          ("ANCHOR_PROACTIVE_SUMMARY", prev_proactive)):
             if prev is None:
                 os.environ.pop(var, None)
             else:
@@ -4070,6 +4123,15 @@ def check_rnd_v11_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    # This walk runs in the Doctor process alongside a separate dashboard.
+    # Its process-local WRITE_LOCK cannot protect a shared sessions.json from
+    # the dashboard's registry writes. Keep the entire synthetic lifecycle,
+    # including plan→build advance and cleanup, outside the live data root.
+    import pty_manager as _pty
+    previous_ptys = set(_pty.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-v11-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
@@ -4087,6 +4149,8 @@ def check_rnd_v11_surface(report: Report, server_proc, rnd_env: dict):
 
     pid = None
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import session_registry as _sreg
@@ -4106,7 +4170,8 @@ def check_rnd_v11_surface(report: Report, server_proc, rnd_env: dict):
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v11", str(proj_folder),
                                 scaffold=False)
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
+        # Private project: remove it before restoring the outer data root,
+        # never hand its id to the later live-registry cleanup.
         steps.append(("register v11 project", bool(pid), str(pid)))
 
         # ── (a) RESEARCH→PLAN keystone: WORKTREE-ONLY live flow (the truth walk) ─
@@ -4284,25 +4349,28 @@ def check_rnd_v11_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
-        # Reap any stub PTY sessions this walk left live (defensive).
+        # Reap only this walk's stub PTYs, preserving earlier checks' sessions.
+        # All registry cleanup still resolves the private data root here.
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
-                for srec in _sreg2.list_sessions(project_id=pid_):
+            if pid:
+                for srec in _sreg2.list_sessions(project_id=pid):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                _rnd.remove_project(pid)
         except Exception:
             pass
         # Restore every env var we forced for this walk.
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed),
                           ("ANCHOR_RUNNER_CMD", prev_runner),
@@ -4375,6 +4443,11 @@ def check_rnd_v11_1_surface(report: Report, server_proc, rnd_env: dict):
     import tempfile as _tf
     steps: list[tuple[str, bool, str]] = []
 
+    import pty_manager as _pty
+    previous_ptys = set(_pty.live_sessions())
+    prev_data = os.environ.get("ANCHOR_DATA_DIR")
+    probe_data = Path(_tf.mkdtemp(prefix="anchor-hc-v11_1-data-"))
+    rnd_env.setdefault("v3_temp_dirs", []).append(probe_data)
     prev_pty = os.environ.get("ANCHOR_PTY_BACKEND")
     prev_wtbase = os.environ.get("ANCHOR_WORKTREE_BASE")
     prev_seed = os.environ.get("ANCHOR_TERMINAL_SEED")
@@ -4401,6 +4474,8 @@ def check_rnd_v11_1_surface(report: Report, server_proc, rnd_env: dict):
 
     pid = None
     try:
+        os.environ["ANCHOR_DATA_DIR"] = str(probe_data)
+        _paths.ensure_data_dirs()
         import rnd_registry as _rnd
         import terminal_session as _ts
         import session_registry as _sreg
@@ -4420,7 +4495,6 @@ def check_rnd_v11_1_surface(report: Report, server_proc, rnd_env: dict):
         proj = _rnd.add_project(SYNTHETIC_RND_NAME + " v11.1", str(proj_folder),
                                 scaffold=False)
         pid = proj["id"]
-        rnd_env["created_ids"].append(pid)
         steps.append(("register v11.1 project", bool(pid), str(pid)))
 
         # ── (a) RESEARCH→PLAN: CONVERSATION-ONLY live flow (the v11.1 truth walk) ─
@@ -4579,26 +4653,28 @@ def check_rnd_v11_1_surface(report: Report, server_proc, rnd_env: dict):
     except Exception as e:
         steps.append(("exception", False, f"{type(e).__name__}: {e}"))
     finally:
-        # Reap any stub PTY sessions this walk left live (defensive).
+        # Reap only this walk's stub PTYs, preserving earlier checks' sessions.
         try:
             import pty_manager as _pty2
             import session_registry as _sreg2
-            for sid in list(_pty2.live_sessions()):
+            for sid in set(_pty2.live_sessions()) - previous_ptys:
                 try:
                     _pty2.kill(sid)
                 except Exception:
                     pass
-            for pid_ in rnd_env.get("created_ids", []):
-                for srec in _sreg2.list_sessions(project_id=pid_):
+            if pid:
+                for srec in _sreg2.list_sessions(project_id=pid):
                     try:
                         _sreg2.remove_session(srec.get("session_id"))
                     except Exception:
                         pass
+                _rnd.remove_project(pid)
         except Exception:
             pass
         # Restore every env var we forced for this walk (incl. PROACTIVE_SUMMARY,
         # which the keystone now reads — it must not leak ON).
-        for var, prev in (("ANCHOR_PTY_BACKEND", prev_pty),
+        for var, prev in (("ANCHOR_DATA_DIR", prev_data),
+                          ("ANCHOR_PTY_BACKEND", prev_pty),
                           ("ANCHOR_WORKTREE_BASE", prev_wtbase),
                           ("ANCHOR_TERMINAL_SEED", prev_seed),
                           ("ANCHOR_RUNNER_CMD", prev_runner),
@@ -7221,6 +7297,13 @@ def main():
                 _tripwire.uninstall()
             except Exception:
                 pass
+
+    if "PYTEST_CURRENT_TEST" not in os.environ and not os.environ.get("ANCHOR_TRIPWIRE_INVENTORY"):
+        try:
+            import usage_nightly_sync as _uns_hc
+            _uns_hc.sync_all_usage(write_snapshot=True)
+        except Exception:
+            pass
 
     report_path = REPORTS_DIR / f"{TODAY}.md"
     try:

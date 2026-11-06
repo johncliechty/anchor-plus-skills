@@ -73,6 +73,7 @@ tools/steward_code_job.py
 tools/steward_review.mjs
 tools/steward_settings.py
 tools/steward_skill.py
+tools/steward_comms.py
 tools/gitguard/__init__.py
 tools/gitguard/git
 tools/gitguard/git.cmd
@@ -387,6 +388,7 @@ git_safety.py
 anchor_next.py
 usage_index.py
 comms_connector.py
+usage_nightly_sync.py
 
 # ── Re-architecture 2026-07 C3 event-log spine (W12) ───────────────────────
 # Stdlib-only: journal (the per-project append-only JSONL event journal — the

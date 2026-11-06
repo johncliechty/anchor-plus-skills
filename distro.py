@@ -259,14 +259,28 @@ def _iter_repo_files(root: Path):
     expensive/noisy to walk: ``.git``, ``__pycache__``, ``.pytest_cache``.
     Everything else is enumerated; the manifest decides what is actually staged.
     """
-    skip_dirs = {".git", "__pycache__", ".pytest_cache"}
-    for p in sorted(root.rglob("*")):
-        if p.is_dir():
-            continue
-        rel = p.relative_to(root)
-        if any(part in skip_dirs for part in rel.parts):
-            continue
-        yield rel.as_posix(), p
+    import os as _os
+    skip_dirs = {".git", "__pycache__", ".pytest_cache", ".hypothesis", ".ruff_cache"}
+    skip_heavy_top = {"_archive", "rnd_jobs", "logs", "health_reports"}
+    skip_anchor_subdirs = {"worktrees", "code-jobs", "projects", "sessions", "jobs", "Usage"}
+    found = []
+    root_path = Path(root)
+    is_live_anchor = (root_path / "dist_manifest.txt").is_file() and (root_path / "anchor_gui.py").is_file()
+    for dirpath, dirnames, filenames in _os.walk(root_path):
+        rel_dir = Path(dirpath).relative_to(root_path)
+        if not rel_dir.parts and is_live_anchor:
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs and d not in skip_heavy_top]
+        elif rel_dir.parts and rel_dir.parts[0] == ".anchor":
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs and d not in skip_anchor_subdirs]
+        else:
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+        dirnames.sort()
+        for fname in sorted(filenames):
+            abs_p = Path(dirpath) / fname
+            rel_p = abs_p.relative_to(root_path)
+            found.append((rel_p.as_posix(), abs_p))
+    found.sort(key=lambda item: item[0])
+    yield from found
 
 
 def _match_any(rel_posix: str, patterns: list[str]) -> bool:

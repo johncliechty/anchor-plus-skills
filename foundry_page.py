@@ -1209,7 +1209,7 @@ window.ANVIL_WORKBENCH_DATA = %(payload)s;
 
   // Rail
   document.getElementById('skill-rail-links').innerHTML = (D.skills || []).map(s =>
-    `<a class="rail-item ${s.id === D.skill.id ? 'current' : ''}" href="/foundry/anvil?skill=${encodeURIComponent(s.id)}">${esc(s.name)}</a>`
+    `<a class="rail-item ${s.id === D.skill.id ? 'current' : ''}" href="/foundry/anvil?skill=${encodeURIComponent(s.id)}">${s.icon ? `<img src="${esc(s.icon)}" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:4px;object-fit:cover;flex-shrink:0">` : ''}${esc(s.name)}</a>`
   ).join('');
 
   // Metrics

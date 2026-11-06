@@ -1,0 +1,1371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cave of Wonders — Calendar &amp; Email Mockups (Live PSU + Axmra + Gmail)</title>
+<style>
+:root {
+  --bg: #0b0f17;
+  --panel: #111827;
+  --panel-2: #161f33;
+  --panel-3: #1e293b;
+  --line: #283548;
+  --line-bright: #3b4f6b;
+  --fg: #f1f5f9;
+  --muted: #94a3b8;
+  --sky: #38bdf8;
+  --emerald: #10b981;
+  --amber: #f59e0b;
+  --rose: #f43f5e;
+  --violet: #a78bfa;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 18px 24px 60px;
+}
+a { color: var(--sky); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.top-bar {
+  max-width: 1360px;
+  margin: 0 auto 14px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #111827 0%, #172036 100%);
+  border: 1px solid var(--line-bright);
+  border-radius: 12px;
+}
+.top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.top-bar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #f8fafc;
+}
+.top-bar p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.acct-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill.emerald { background: rgba(16, 185, 129, 0.16); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); }
+.pill.amber { background: rgba(245, 158, 11, 0.16); color: #fde68a; border: 1px solid rgba(245, 158, 11, 0.45); }
+.pill.sky { background: rgba(56, 189, 248, 0.16); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.4); }
+.pill.violet { background: rgba(167, 139, 250, 0.16); color: #c4b5fd; border: 1px solid rgba(167, 139, 250, 0.4); }
+.pill.rose { background: rgba(244, 63, 94, 0.16); color: #fda4af; border: 1px solid rgba(244, 63, 94, 0.4); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line-bright);
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.btn:hover { border-color: var(--sky); color: #fff; background: #26354d; }
+.btn.active { background: rgba(56, 189, 248, 0.22); border-color: var(--sky); color: #7dd3fc; }
+.btn.emerald { border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.16); color: #6ee7b7; }
+.btn.amber { border-color: rgba(245, 158, 11, 0.55); background: rgba(245, 158, 11, 0.16); color: #fde68a; }
+.btn.sky { border-color: rgba(56, 189, 248, 0.5); background: rgba(56, 189, 248, 0.16); color: #7dd3fc; }
+.btn.mini { padding: 2px 7px; font-size: 11px; border-radius: 5px; }
+
+.toast-banner {
+  max-width: 1360px;
+  margin: 0 auto 12px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: rgba(14, 116, 144, 0.2);
+  color: #e0f2fe;
+  font-size: 12.5px;
+  display: none;
+}
+
+.mockup-section {
+  max-width: 1360px;
+  margin: 0 auto 24px;
+  background: rgba(17, 24, 39, 0.65);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.mockup-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mockup-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.opt-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--sky);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+.opt-tag.rec {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+.mockup-desc {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+/* 2-Line Expandable Summary Tile */
+.two-line-tile {
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.two-line-tile.open {
+  border-color: var(--sky);
+}
+.summary-lines {
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: linear-gradient(180deg, #151e30 0%, #111827 100%);
+}
+.summary-lines:hover { background: #19243a; }
+.s-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 23px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.s-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 118px;
+  flex-shrink: 0;
+}
+.s-tag.cal-tag { color: var(--sky); }
+.s-tag.mail-tag { color: #fbbf24; }
+.s-primary {
+  font-weight: 700;
+  color: #f8fafc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.s-muted {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.s-spacer { flex: 1; }
+.s-expand {
+  font-size: 11px;
+  color: var(--sky);
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.tile-drawer {
+  border-top: 1px solid var(--line);
+  padding: 14px;
+  background: #0d1320;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 14px;
+}
+.split-grid[data-m1-layout="cal"] {
+  grid-template-columns: 1fr;
+}
+.split-grid[data-m1-layout="cal"] #m1MailCol {
+  display: none;
+}
+.split-grid[data-m1-layout="mail"] {
+  grid-template-columns: 1fr;
+}
+.split-grid[data-m1-layout="mail"] #m1CalCol {
+  display: none;
+}
+.split-grid[data-m1-layout="mail"] #m1MailBucketsWrap {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 1024px) {
+  .split-grid { grid-template-columns: 1fr; }
+}
+
+.col-box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+.col-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.col-hdr-title {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* Calendar Views: Day, Week, Month, and iPhone Rolling Stream */
+.cal-subbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.day-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 410px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.hour-row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  min-height: 36px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.14);
+  align-items: stretch;
+}
+.hour-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  padding-top: 4px;
+}
+.hour-events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 3px 0;
+}
+.cal-ev-card {
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border-left: 3px solid var(--sky);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.cal-ev-card.psu { border-left-color: #38bdf8; }
+.cal-ev-card.axmra { border-left-color: #10b981; }
+.cal-ev-card.merged { border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
+
+/* Week View */
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.week-col {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px;
+  min-height: 270px;
+}
+.week-col.today {
+  border-color: var(--sky);
+  background: rgba(56, 189, 248, 0.06);
+}
+.week-col-hdr {
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.week-chip {
+  font-size: 10.5px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  margin-bottom: 5px;
+  background: #0f172a;
+  border-left: 3px solid var(--sky);
+  line-height: 1.3;
+}
+.week-chip.axmra { border-left-color: var(--emerald); }
+.week-chip.merged { border-left-color: var(--amber); }
+
+/* Month View */
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.month-dow {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--muted);
+  text-align: center;
+  padding: 3px 0;
+}
+.month-cell {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px;
+  min-height: 68px;
+  cursor: pointer;
+}
+.month-cell:hover { border-color: var(--sky); }
+.month-cell.today { border-color: var(--emerald); background: rgba(16, 185, 129, 0.08); }
+.month-day-num { font-size: 11px; font-weight: 800; color: #cbd5e1; margin-bottom: 3px; }
+.month-dot {
+  font-size: 9.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #bae6fd;
+}
+.month-dot.axmra { background: rgba(16, 185, 129, 0.18); color: #a7f3d0; }
+.month-dot.merged { background: rgba(245, 158, 11, 0.22); color: #fde68a; }
+
+/* Apple iPhone-Style Rolling Stream */
+.iphone-stream {
+  max-height: 410px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #090d16;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stream-date-divider {
+  font-size: 11px;
+  font-weight: 800;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 6px 4px 2px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+.stream-now-marker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(244, 63, 94, 0.16);
+  border: 1px solid rgba(244, 63, 94, 0.5);
+  color: #fda4af;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.stream-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--sky);
+}
+.stream-tile.past { opacity: 0.68; }
+.stream-tile.axmra { border-left-color: var(--emerald); }
+.stream-tile.merged { border-left-color: var(--amber); background: rgba(245, 158, 11, 0.08); }
+.stream-time {
+  min-width: 90px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #e2e8f0;
+}
+
+/* Email Triage Tiles */
+.bucket-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: #172135;
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.email-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.mail-tile {
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  transition: all 0.12s;
+}
+.mail-tile:hover { border-color: var(--line-bright); }
+.mail-tile.opened { border-left-color: var(--sky); background: #131c2e; }
+.mail-tile.other-bucket { border-left-color: #475569; opacity: 0.85; }
+.mail-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mail-subj {
+  font-weight: 700;
+  color: #f8fafc;
+  margin-top: 4px;
+  cursor: pointer;
+}
+.mail-subj:hover { color: var(--sky); }
+.mail-body-preview {
+  display: none;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #0b0f17;
+  border: 1px solid var(--line);
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.mail-tile.expanded .mail-body-preview {
+  display: block;
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="top-row">
+    <div>
+      <h1>🕌 Cave of Wonders — Calendar &amp; Email Display Studio (Live PSU + Axmra + Gmail)</h1>
+      <p>
+        Showing your <b>real live Penn State (<code>jcl12&#64;psu.edu</code>) and Axmra (<code>john&#64;axmra.com</code>)</b> calendars &amp; inboxes.
+        Includes <b>Day / Week / Month</b> + <b>Apple iPhone Rolling Stream</b> calendar views, <b>Smart Multi-Calendar Merging</b>, and <b>Steward 2-Bucket Email Learning</b>.
+      </p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn sky" id="btnCollapseAll">▴ Collapse All to 2-Line Summary</button>
+      <button type="button" class="btn emerald" id="btnExpandAll">▾ Expand All Mockups</button>
+      <button type="button" class="btn" id="btnSyncNow">↻ Sync Now (Auto-Sync Every 5m)</button>
+      <a href="/" class="btn">← Back to Cave of Wonders</a>
+    </div>
+  </div>
+
+  <!-- Live Connected Accounts Bar + 1-Click 2FA Buttons -->
+  <div class="acct-bar" id="liveAccountsBar">
+    <span class="pill emerald">✓ Penn State 365 (jcl12&#64;psu.edu) · 2FA Connected</span>
+    <span class="pill emerald">✓ Axmra 365 (john&#64;axmra.com) · Auto-Connected via OS Vault</span>
+    <span class="pill amber" id="gmailStatusPill">
+      ⚠ Primary Gmail (john.liechty&#64;gmail.com) · Needs Phone 2FA
+      <button type="button" class="btn mini sky" id="btnGmail2FA" title="Uses your already-stored Google password in the OS Vault to trigger the 'Tap Yes' prompt on your phone!">
+        🔑 Authenticate 2FA (Phone Prompt — No Password Typing)
+      </button>
+    </span>
+    <span style="flex:1"></span>
+    <span class="pill sky" id="pollerBadge">🟢 Continuous Sync: Every 5m</span>
+  </div>
+</div>
+
+<div class="toast-banner" id="toastBanner"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MOCKUP 1 (SELECTED): Unified 2-Line Bar -> Split 50/50 OR 1-Click Full-Width Calendar / Email (Mockup 3)
+     ══════════════════════════════════════════════════════════════════════════ -->
+<section class="mockup-section" id="mockup-1">
+  <div class="mockup-hdr">
+    <div>
+      <div class="mockup-title">
+        <span>Mockup 1 (Selected + Click-to-Full Mockup 3): 2-Line Summary Tile → 50/50 Split Drawer OR 100% Full Calendar / Full Email</span>
+        <span class="opt-tag rec">Option 1 + Click-to-Full (Mockup 3) · Active on Cave of Wonders</span>
+      </div>
+      <div class="mockup-desc">
+        <b>Collapsed:</b> 2-line bar (Line 1 = Calendar; Line 2 = Email).
+        <b>Expanded:</b> Defaults to <b>◫ Split 50/50</b>, and clicking either Line 1 / Line 2 or the <b>⤢ Full Calendar</b> / <b>⤢ Full Email</b> buttons expands that pane to <b>100% Full Width (Mockup 3)</b>.
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button type="button" class="btn mini active" id="m1BtnSplit" onclick="setM1Layout('split')">◫ Split 50/50</button>
+      <button type="button" class="btn mini" id="m1BtnCal" onclick="setM1Layout('cal')">📅 Full Calendar (Mockup 3)</button>
+      <button type="button" class="btn mini" id="m1BtnMail" onclick="setM1Layout('mail')">✉ Full Email (Mockup 3)</button>
+      <button type="button" class="btn sky" onclick="toggleMockup('m1Tile')">Toggle Collapse / Expand</button>
+    </div>
+  </div>
+
+  <div class="two-line-tile open" id="m1Tile">
+    <div class="summary-lines">
+      <!-- LINE 1: CALENDAR SUMMARY (Click to open Full Calendar - Mockup 3) -->
+      <div class="s-line" onclick="setM1Layout('cal', true)" title="Click Line 1 to expand Calendar at 100% Full Width (Mockup 3)">
+        <span class="s-tag cal-tag">📅 Calendar</span>
+        <span class="pill emerald" id="m1CalCountPill">99 Merged Events</span>
+        <span class="s-primary" id="m1CalLineText">Mon Nov 2: 10:00 AM Axmra Core Meeting · 10:00 AM PSU Faculty Research Presentations · 12:00 PM Cheng Family Trust &lt;&gt; Axmra</span>
+        <span class="s-spacer"></span>
+        <span class="pill sky">PSU 365 ✓</span>
+        <span class="pill emerald">Axmra 365 ✓</span>
+        <span class="s-expand" onclick="event.stopPropagation();setM1Layout('split', true)">◫ Split 50/50</span>
+        <span class="s-expand">⤢ Full Calendar</span>
+        <span class="s-expand" id="m1TileBtn" onclick="event.stopPropagation();toggleMockup('m1Tile')">Collapse ▴</span>
+      </div>
+      <!-- LINE 2: EMAIL SUMMARY (Click to open Full Email - Mockup 3) -->
+      <div class="s-line" onclick="setM1Layout('mail', true)" title="Click Line 2 to expand Inbox Triage at 100% Full Width (Mockup 3)">
+        <span class="s-tag mail-tag">✉ Inbox Triage</span>
+        <span class="pill amber" id="m1ImpCountPill">⚡ 26 Emails to Address</span>
+        <span class="pill sky" id="m1OthCountPill">📥 1 Not Important</span>
+        <span class="s-primary" id="m1MailLineText">Camryn Standish (Class Absences) · David Risbey (Partnership Transfer Consent 📎) · Merrill Liechty (LP Transfer)</span>
+        <span class="s-spacer"></span>
+        <span class="s-muted">Inbox-Only (No Trash) · 5m Sync</span>
+        <span class="s-expand">⤢ Full Email</span>
+      </div>
+    </div>
+
+    <div class="tile-drawer" id="m1TileDrawer">
+      <div class="split-grid" id="m1SplitGrid" data-m1-layout="split">
+        <!-- LEFT: MULTI-VIEW CALENDAR (Day / Week / Month / Apple iPhone Rolling Stream) -->
+        <div class="col-box" id="m1CalCol">
+          <div class="col-hdr">
+            <span class="col-hdr-title">📅 Unified Calendar (Smart Duplicate &amp; Multi-Calendar Merger)</span>
+            <div style="display:flex;gap:5px;flex-wrap:wrap">
+              <button type="button" class="btn mini active" data-cal-view="iphone" onclick="switchCalView('m1', 'iphone', this)">📱 iPhone Rolling Stream</button>
+              <button type="button" class="btn mini" data-cal-view="day" onclick="switchCalView('m1', 'day', this)">📅 Day</button>
+              <button type="button" class="btn mini" data-cal-view="week" onclick="switchCalView('m1', 'week', this)">📆 Week</button>
+              <button type="button" class="btn mini" data-cal-view="month" onclick="switchCalView('m1', 'month', this)">🗓 Month</button>
+              <button type="button" class="btn mini sky" id="m1CalFullToggleBtn" onclick="toggleM1Full('cal')">⤢ Full Calendar</button>
+            </div>
+          </div>
+
+          <div class="cal-subbar">
+            <div style="display:flex;align-items:center;gap:6px">
+              <button type="button" class="btn mini" onclick="shiftDay(-1)">◀ Prev</button>
+              <button type="button" class="btn mini sky" onclick="shiftDay(0)">Today / Nov 2</button>
+              <button type="button" class="btn mini" onclick="shiftDay(1)">Next ▶</button>
+              <b id="m1CalDateLabel" style="margin-left:6px;color:#e2e8f0">Rolling Stream (Oct 25 → Dec 3, 2026)</b>
+            </div>
+            <span class="pill amber" title="Identical or overlapping events across calendars are merged into one tile">🔗 Auto-Merged Duplicates</span>
+          </div>
+
+          <div id="m1CalViewport"></div>
+        </div>
+
+        <!-- RIGHT: GMAIL-STYLE 2-BUCKET STEWARD EMAIL TRIAGE -->
+        <div class="col-box" id="m1MailCol">
+          <div class="col-hdr">
+            <span class="col-hdr-title">✉ Steward Priority Inbox (Inbox-Only · Learns Your Preferences)</span>
+            <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+              <span class="pill violet" id="stewardLearnBadge">🧠 Steward Learning Active</span>
+              <button type="button" class="btn mini sky" id="m1MailFullToggleBtn" onclick="toggleM1Full('mail')">⤢ Full Email</button>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:#94a3b8;margin-bottom:8px">
+            • Tap <b>👁 Seen</b> <i>without opening</i> = tells Steward you aren't interested &amp; moves it down.<br>
+            • Click any subject to open/read, then use <b>⬇ Not Interested</b> to downgrade or <b>⬆ Upgrade</b> from the lower list.
+          </div>
+
+          <div id="m1MailBucketsWrap">
+            <div>
+              <div class="bucket-hdr">
+                <span style="color:#fde68a">⚡ Emails to Address (Steward Important — PSU + Axmra + Gmail)</span>
+                <span class="pill amber" id="m1BucketImpCount">0</span>
+              </div>
+              <div class="email-list" id="m1ImportantEmails"></div>
+            </div>
+
+            <div>
+              <div class="bucket-hdr" style="margin-top:12px;cursor:pointer" onclick="var el=document.getElementById('m1OtherEmails');el.style.display=(el.style.display==='none'?'flex':'none')">
+                <span style="color:#94a3b8">📥 Not Important / Downgraded (Click to expand &amp; ⬆ Upgrade any item)</span>
+                <span class="pill sky" id="m1BucketOthCount">0</span>
+              </div>
+              <div class="email-list" id="m1OtherEmails" style="max-height:160px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MOCKUP 2: Stacked Full-Width Calendar Studio (Top) + 2-Column Email Triage Workbench (Bottom)
+     ══════════════════════════════════════════════════════════════════════════ -->
+<section class="mockup-section" id="mockup-2">
+  <div class="mockup-hdr">
+    <div>
+      <div class="mockup-title">
+        <span>Mockup 2: Full-Width Calendar Studio (Grid + iPhone Stream Side-by-Side) Over 2-Column Email Triage</span>
+        <span class="opt-tag">Option 2 · Wide Calendar + Side-by-Side Email Buckets</span>
+      </div>
+      <div class="mockup-desc">
+        <b>Collapsed:</b> 2-line summary strip.
+        <b>Expanded:</b> Top row gives your <b>Day / Week / Month Grid</b> and <b>📱 iPhone Rolling Stream</b> full width side-by-side; Bottom row shows <b>⚡ Emails to Address</b> on the left and <b>📥 Not Important (Upgradable)</b> on the right.
+      </div>
+    </div>
+    <button type="button" class="btn sky" onclick="toggleMockup('m2Tile')">Toggle Collapse / Expand</button>
+  </div>
+
+  <div class="two-line-tile open" id="m2Tile">
+    <div class="summary-lines" onclick="toggleMockup('m2Tile')">
+      <div class="s-line">
+        <span class="s-tag cal-tag">[C] 📅 Calendar</span>
+        <span class="pill emerald">Week + iPhone Stream</span>
+        <span class="s-primary">Mon Nov 2: 10:00 Axmra Core · 10:00 PSU Faculty Research · 12:00 Cheng Family Trust · 13:00 BoodleBox AI MasterClass</span>
+        <span class="s-spacer"></span>
+        <span class="s-expand" id="m2TileBtn">Collapse ▴</span>
+      </div>
+      <div class="s-line">
+        <span class="s-tag mail-tag">[E] ✉ Inbox Triage</span>
+        <span class="pill amber" id="m2ImpCountPill">⚡ Emails to Address</span>
+        <span class="s-primary">Left: Important Emails (👁 Seen / ⬇ Downgrade) · Right: Not Important (⬆ Upgrade to teach Steward)</span>
+      </div>
+    </div>
+
+    <div class="tile-drawer" id="m2TileDrawer">
+      <div class="split-grid" style="margin-bottom:12px">
+        <div class="col-box">
+          <div class="col-hdr">
+            <span class="col-hdr-title">📆 Week / Month / Day Grid</span>
+            <div style="display:flex;gap:5px">
+              <button type="button" class="btn mini active" onclick="switchCalView('m2', 'week', this)">📆 Week</button>
+              <button type="button" class="btn mini" onclick="switchCalView('m2', 'day', this)">📅 Day</button>
+              <button type="button" class="btn mini" onclick="switchCalView('m2', 'month', this)">🗓 Month</button>
+            </div>
+          </div>
+          <div id="m2CalViewport"></div>
+        </div>
+        <div class="col-box">
+          <div class="col-hdr">
+            <span class="col-hdr-title">📱 Apple iPhone Rolling Stream (Scroll Up = Past · Scroll Down = Future)</span>
+            <span class="pill rose">🔴 Anchored at Now</span>
+          </div>
+          <div id="m2StreamViewport"></div>
+        </div>
+      </div>
+
+      <div class="split-grid">
+        <div class="col-box">
+          <div class="bucket-hdr">
+            <span style="color:#fde68a">⚡ Bucket 1: Emails to Address (Important)</span>
+            <span class="s-muted">Tap 👁 Seen unopened = Not Interesting</span>
+          </div>
+          <div class="email-list" id="m2ImportantEmails" style="max-height:240px"></div>
+        </div>
+        <div class="col-box">
+          <div class="bucket-hdr">
+            <span style="color:#7dd3fc">📥 Bucket 2: Not Important / Downgraded</span>
+            <span class="s-muted">Tap ⬆ Upgrade to promote &amp; train Steward</span>
+          </div>
+          <div class="email-list" id="m2OtherEmails" style="max-height:240px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     MOCKUP 3: Independent 1-Line Calendar Ribbon + 1-Line Email Ribbon (Expand Separately)
+     ══════════════════════════════════════════════════════════════════════════ -->
+<section class="mockup-section" id="mockup-3">
+  <div class="mockup-hdr">
+    <div>
+      <div class="mockup-title">
+        <span>Mockup 3: Two Independent 1-Line Tiles (Expand Calendar Alone or Email Alone)</span>
+        <span class="opt-tag">Option 3 · Independent Line Drawers</span>
+      </div>
+      <div class="mockup-desc">
+        <b>Collapsed:</b> Two separate 1-line bars stacked tightly (Line 1 = Calendar, Line 2 = Email).
+        <b>Expanded:</b> Clicking the Calendar line opens <i>only</i> the Calendar drawer; clicking the Email line opens <i>only</i> the Steward Email Triage drawer.
+      </div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button type="button" class="btn sky" onclick="toggleMockup('m3CalTile')">Toggle Calendar Line</button>
+      <button type="button" class="btn amber" onclick="toggleMockup('m3MailTile')">Toggle Email Line</button>
+    </div>
+  </div>
+
+  <!-- Independent Line 1: Calendar -->
+  <div class="two-line-tile open" id="m3CalTile" style="margin-bottom:8px">
+    <div class="summary-lines" onclick="toggleMockup('m3CalTile')">
+      <div class="s-line">
+        <span class="s-tag cal-tag">📅 Calendar Line</span>
+        <span class="pill emerald">PSU 365 + Axmra 365</span>
+        <span class="s-primary">Click this line to expand/collapse ONLY the Calendar (Day · Week · Month · 📱 iPhone Rolling Stream)</span>
+        <span class="s-spacer"></span>
+        <span class="s-expand" id="m3CalTileBtn">Collapse Calendar ▴</span>
+      </div>
+    </div>
+    <div class="tile-drawer" id="m3CalTileDrawer">
+      <div class="col-hdr">
+        <span class="col-hdr-title">📅 Calendar View Mode</span>
+        <div style="display:flex;gap:5px">
+          <button type="button" class="btn mini active" onclick="switchCalView('m3', 'month', this)">🗓 Month</button>
+          <button type="button" class="btn mini" onclick="switchCalView('m3', 'week', this)">📆 Week</button>
+          <button type="button" class="btn mini" onclick="switchCalView('m3', 'day', this)">📅 Day</button>
+          <button type="button" class="btn mini" onclick="switchCalView('m3', 'iphone', this)">📱 iPhone Rolling Stream</button>
+        </div>
+      </div>
+      <div id="m3CalViewport"></div>
+    </div>
+  </div>
+
+  <!-- Independent Line 2: Email -->
+  <div class="two-line-tile open" id="m3MailTile">
+    <div class="summary-lines" onclick="toggleMockup('m3MailTile')">
+      <div class="s-line">
+        <span class="s-tag mail-tag">✉ Email Line</span>
+        <span class="pill amber">Steward 2-Bucket Triage</span>
+        <span class="s-primary">Click this line to expand/collapse ONLY the Email Triage (⚡ Emails to Address + 📥 Not Important)</span>
+        <span class="s-spacer"></span>
+        <span class="s-expand" id="m3MailTileBtn">Collapse Email ▴</span>
+      </div>
+    </div>
+    <div class="tile-drawer" id="m3MailTileDrawer">
+      <div class="split-grid">
+        <div>
+          <div class="bucket-hdr"><span style="color:#fde68a">⚡ Emails to Address</span></div>
+          <div class="email-list" id="m3ImportantEmails" style="max-height:240px"></div>
+        </div>
+        <div>
+          <div class="bucket-hdr"><span style="color:#94a3b8">📥 Not Important / Downgraded</span></div>
+          <div class="email-list" id="m3OtherEmails" style="max-height:240px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+// Fallback embedded snapshot of John's real synced Penn State + Axmra data so even file:// preview works offline
+var STATE = {
+  selectedDate: "2026-11-02",
+  views: { m1: "iphone", m2: "week", m3: "month" },
+  events: [
+    { id: "e1", date: "2026-10-26", start_time: "09:00", end_time: "10:30", time_label: "09:00–10:30", title: "TT Candidate Talk - A. Smith - Quant", location: "217 BB", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e2", date: "2026-10-26", start_time: "10:00", end_time: "10:30", time_label: "10:00–10:30", title: "Axmra Core Meeting", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e3", date: "2026-10-26", start_time: "18:30", end_time: "20:00", time_label: "18:30–20:00", title: "Dinner with A. Smith - Quant", location: "American Ale House", calendars: ["PSU 365"], calendar_count: 2, merged_badge: "🔗 Merged (2x on PSU 365)" },
+    { id: "e4", date: "2026-10-27", start_time: "08:00", end_time: "12:30", time_label: "08:00–12:30", title: "MBA Lectures", location: "Smeal", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e5", date: "2026-10-27", start_time: "14:00", end_time: "15:00", time_label: "14:00–15:00", title: "BoodleBox @ Smeal: AI Teaching & Workflow MasterClass, Session 2", location: "Zoom", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e6", date: "2026-10-28", start_time: "09:00", end_time: "10:00", time_label: "09:00–10:00", title: "Research Check-In Jason, John, Sean", location: "Zoom", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e7", date: "2026-10-29", start_time: "09:00", end_time: "09:30", time_label: "09:00–09:30", title: "Emirati Language and Culture", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e8", date: "2026-10-30", start_time: "09:00", end_time: "09:45", time_label: "09:00–09:45", title: "ALL Faculty Meeting", location: "125 BB", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e9", date: "2026-10-30", start_time: "10:00", end_time: "11:30", time_label: "10:00–11:30", title: "TT Faculty Meeting - candidate review", location: "125BB", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e10", date: "2026-10-31", start_time: "09:00", end_time: "10:30", time_label: "09:00–10:30", title: "CrossFit", location: "", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e11", date: "2026-10-31", start_time: "10:30", end_time: "12:00", time_label: "10:30–12:00", title: "Strongman", location: "", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e12", date: "2026-11-01", start_time: "10:00", end_time: "10:30", time_label: "10:00–10:30", title: "Axmra Core Meeting", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e13", date: "2026-11-02", start_time: "10:00", end_time: "10:30", time_label: "10:00–10:30", title: "Axmra Core Meeting", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e14", date: "2026-11-02", start_time: "10:00", end_time: "11:30", time_label: "10:00–11:30", title: "Faculty Research Presentations and Sandbox", location: "214BB", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e15", date: "2026-11-02", start_time: "12:00", end_time: "12:30", time_label: "12:00–12:30", title: "Monthly Update - Cheng Family Trust <> Axmra", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e16", date: "2026-11-02", start_time: "12:15", end_time: "13:00", time_label: "12:15–13:00", title: "TA Meeting", location: "409 Business Building", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e17", date: "2026-11-02", start_time: "13:00", end_time: "14:00", time_label: "13:00–14:00", title: "BoodleBox @ Smeal: AI Teaching & Workflow MasterClass Series, Session 3", location: "Zoom", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e18", date: "2026-11-02", start_time: "13:00", end_time: "14:15", time_label: "13:00–14:15", title: "MKTG590: Meet with students", location: "387BB", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e19", date: "2026-11-02", start_time: "13:00", end_time: "14:30", time_label: "13:00–14:30", title: "Lecture to 1st Year Students", location: "Business Bldg", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e20", date: "2026-11-03", start_time: "08:00", end_time: "12:30", time_label: "08:00–12:30", title: "MBA Lectures", location: "Smeal", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e21", date: "2026-11-03", start_time: "10:00", end_time: "10:30", time_label: "10:00–10:30", title: "Axmra Core Meeting", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e22", date: "2026-11-03", start_time: "12:00", end_time: "13:00", time_label: "12:00–13:00", title: "Faculty Networking Lunch - Speaker: Stefan Lewellen", location: "217 Business Building", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e23", date: "2026-11-04", start_time: "09:00", end_time: "10:00", time_label: "09:00–10:00", title: "Research Check-In Jason, John, Sean", location: "Zoom", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e24", date: "2026-11-04", start_time: "10:00", end_time: "10:30", time_label: "10:00–10:30", title: "Axmra Core Meeting", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e25", date: "2026-11-05", start_time: "08:00", end_time: "12:30", time_label: "08:00–12:30", title: "MBA Lectures", location: "Smeal", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e26", date: "2026-11-05", start_time: "09:00", end_time: "09:30", time_label: "09:00–09:30", title: "Emirati Language and Culture", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e27", date: "2026-11-05", start_time: "10:00", end_time: "10:30", time_label: "10:00–10:30", title: "Axmra Core Meeting", location: "Zoom", calendars: ["Axmra 365"], calendar_count: 1, merged_badge: "" },
+    { id: "e28", date: "2026-11-05", start_time: "11:00", end_time: "11:50", time_label: "11:00–11:50", title: "Teaching Roundtable", location: "217BB", calendars: ["PSU 365"], calendar_count: 1, merged_badge: "" }
+  ],
+  important_emails: [
+    { uid: "m-standish", account_badge: "PSU 365", from: "Standish, Camryn Reese", sender_email: "crs@example.org", subject: "Class Absences - Big Ten Tournament", date: "2026-11-01 17:39", snippet: "Hi Professor Liechty, I wanted to reach out regarding my field hockey travel schedule for the upcoming Big Ten Tournament...", has_attachments: true, steward_score: 99, steward_reason: "Steward Priority Match · Has Attachment", was_opened: false, thread_count: 1 },
+    { uid: "m-risbey-1", account_badge: "Axmra 365", from: "David Risbey", sender_email: "david@example.com", subject: "WRITTEN REQUEST FOR CONSENT TO TRANSFER OF PARTNERSHIP INTEREST", date: "2026-10-31 20:33", snippet: "Attached is the formal Written Request for Consent to Transfer of Partnership Interest for review and execution...", has_attachments: true, steward_score: 99, steward_reason: "Steward Priority Match · Has Attachment", was_opened: false, thread_count: 3 },
+    { uid: "m-kim", account_badge: "PSU 365", from: "Kim, Tae Won Benjamin", sender_email: "tbk@example.org", subject: "Re: Homework 3", date: "2026-10-31 16:20", snippet: "Professor Liechty, here is the updated Homework 3 grading breakdown and student question summary...", has_attachments: false, steward_score: 99, steward_reason: "Trusted Domain", was_opened: false, thread_count: 2 },
+    { uid: "m-merrill", account_badge: "Axmra 365", from: "Liechty, Merrill", sender_email: "merrill@example.org", subject: "RE: LP Transfer and GP Consent", date: "2026-10-15 22:16", snippet: "John, following up on the LP Transfer and GP Consent documents for the holding company...", has_attachments: false, steward_score: 99, steward_reason: "Steward Priority Match · Trusted Domain", was_opened: false, thread_count: 1 },
+    { uid: "m-harouni", account_badge: "Axmra 365", from: "David Risbey (Odoo Sign)", sender_email: "notifications@example.com", subject: "021A1 Ester_Harouni_Subscription_Agreement_10000.pdf has been signed", date: "2026-10-20 14:16", snippet: "The subscription agreement 021A1 Ester_Harouni_Subscription_Agreement_10000.pdf has been fully executed and attached.", has_attachments: true, steward_score: 99, steward_reason: "Signed Agreement · Has Attachment", was_opened: false, thread_count: 1 },
+    { uid: "m-wilcock", account_badge: "Axmra 365", from: "David Risbey (Odoo Sign)", sender_email: "notifications@example.com", subject: "019 AXMRA_LPA_Joinder_Wayne_and_Paula_Wilcock_Family_Trust_100000 Executed.pdf has been signed", date: "2026-10-12 17:20", snippet: "Executed LPA Joinder for Wayne and Paula Wilcock Family Trust ($100,000) is attached.", has_attachments: true, steward_score: 99, steward_reason: "Signed Agreement · Has Attachment", was_opened: false, thread_count: 1 },
+    { uid: "m-workday", account_badge: "PSU 365", from: "Workday Alert", sender_email: "workday@example.org", subject: "A Task Awaits You: Approval by Manager or Timekeeper - Teja Gopalan", date: "2026-10-30 14:10", snippet: "A timekeeper approval task is awaiting your action in Penn State Workday for Teja Gopalan.", has_attachments: false, steward_score: 87, steward_reason: "Action Required", was_opened: false, thread_count: 1 },
+    { uid: "m-jed", account_badge: "PSU 365", from: "Jed Neilson", sender_email: "jed@example.org", subject: "BYD at 6:30 PM @ Barnes' tonight", date: "2026-11-01 19:49", snippet: "State College Ward — Hi Everyone, I hope you're all having a great Sabbath day! Reminder that BYD is at 6:30 PM...", has_attachments: false, steward_score: 87, steward_reason: "Community / Ward", was_opened: false, thread_count: 1 },
+    { uid: "m-edgar", account_badge: "Axmra 365", from: "Edgar Postmaster (SEC)", sender_email: "edgar@example.org", subject: "ACCEPTED FORM TYPE D (0001099910-26-000274)", date: "2026-10-08 14:38", snippet: "THE FOLLOWING SUBMISSION HAS BEEN ACCEPTED BY THE U.S. SECURITIES AND EXCHANGE COMMISSION: FORM TYPE D.", has_attachments: false, steward_score: 99, steward_reason: "Regulatory Filing", was_opened: false, thread_count: 1 }
+  ],
+  other_emails: [
+    { uid: "m-otter", account_badge: "Axmra 365", from: "The Otter.ai Team", sender_email: "noreply@example.com", subject: "Meet the new way to get more from your meetings ✨", date: "2026-10-31 12:05", snippet: "Discover the latest Otter.ai product updates and automated meeting summaries...", has_attachments: false, steward_score: 27, steward_reason: "Bulk / Promotional Signal", was_opened: false, thread_count: 1 }
+  ]
+};
+
+function esc(s) {
+  var d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+
+function showToast(msg) {
+  var b = document.getElementById("toastBanner");
+  if (!b) return;
+  b.innerHTML = msg;
+  b.style.display = "block";
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(function () { b.style.display = "none"; }, 6000);
+}
+
+function renderCalendarView(targetId, mode) {
+  var container = document.getElementById(targetId);
+  if (!container) return;
+  var evs = STATE.events || [];
+  var selDate = STATE.selectedDate || "2026-11-02";
+
+  if (mode === "iphone") {
+    // Apple iPhone Rolling Stream: past events -> 🔴 NOW divider -> future events
+    var grouped = {};
+    evs.forEach(function (e) {
+      var d = e.date || "";
+      if (!grouped[d]) grouped[d] = [];
+      grouped[d].push(e);
+    });
+    var dates = Object.keys(grouped).sort();
+    var html = '<div class="iphone-stream" id="' + targetId + '_scroll">';
+    var nowInserted = false;
+    var todayIso = "2026-11-01";
+    dates.forEach(function (d) {
+      if (!nowInserted && d > todayIso) {
+        html += '<div class="stream-now-marker" id="' + targetId + '_now">🔴 NOW — Sun Nov 1, 2:20 PM · Scroll up for past events, scroll down for upcoming schedule</div>';
+        nowInserted = true;
+      }
+      var isPast = d < todayIso;
+      html += '<div class="stream-date-divider">' + esc(d) + (d === todayIso ? " · TODAY" : (d === "2026-11-02" ? " · TOMORROW (MON)" : "")) + '</div>';
+      grouped[d].forEach(function (ev) {
+        var calStr = (ev.calendars || [ev.calendar_badge || "Calendar"]).join(" + ");
+        var isAx = calStr.toLowerCase().indexOf("axmra") >= 0;
+        var isMerged = (ev.calendar_count || 1) > 1 || !!ev.merged_badge;
+        var cls = "stream-tile" + (isPast ? " past" : "") + (isMerged ? " merged" : (isAx ? " axmra" : ""));
+        html +=
+          '<div class="' + cls + '">' +
+            '<div class="stream-time">' + esc(ev.time_label || ev.start_time || "All day") + '</div>' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-weight:700;color:#f8fafc">' + esc(ev.title) + '</div>' +
+              (ev.location ? '<div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis">' + esc(ev.location) + '</div>' : '') +
+            '</div>' +
+            '<div style="display:flex;gap:4px;align-items:center">' +
+              (isMerged ? '<span class="pill amber">' + esc(ev.merged_badge || "🔗 2 Calendars") + '</span>' : '<span class="pill ' + (isAx ? 'emerald' : 'sky') + '">' + esc(calStr) + '</span>') +
+            '</div>' +
+          '</div>';
+      });
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    setTimeout(function () {
+      var sc = document.getElementById(targetId + "_scroll");
+      var nw = document.getElementById(targetId + "_now");
+      if (sc && nw) sc.scrollTop = Math.max(0, nw.offsetTop - 90);
+    }, 50);
+    return;
+  }
+
+  if (mode === "day") {
+    var dayEvs = evs.filter(function (e) { return e.date === selDate; });
+    var hours = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+    var html = '<div class="day-grid">';
+    hours.forEach(function (h) {
+      var hh = h.slice(0, 2);
+      var slotEvs = dayEvs.filter(function (e) { return String(e.start_time || e.time_label || "").slice(0, 2) === hh; });
+      html += '<div class="hour-row"><div class="hour-lbl">' + h + '</div><div class="hour-events">';
+      slotEvs.forEach(function (ev) {
+        var calStr = (ev.calendars || [ev.calendar_badge || "Calendar"]).join(" + ");
+        var isAx = calStr.toLowerCase().indexOf("axmra") >= 0;
+        var isMerged = (ev.calendar_count || 1) > 1 || !!ev.merged_badge;
+        html +=
+          '<div class="cal-ev-card ' + (isMerged ? 'merged' : (isAx ? 'axmra' : 'psu')) + '">' +
+            '<div><b>' + esc(ev.time_label || ev.start_time) + ' · ' + esc(ev.title) + '</b>' +
+            (ev.location ? '<div style="font-size:11px;color:#94a3b8">' + esc(ev.location) + '</div>' : '') + '</div>' +
+            (isMerged ? '<span class="pill amber">' + esc(ev.merged_badge) + '</span>' : '<span class="pill ' + (isAx ? 'emerald' : 'sky') + '">' + esc(calStr) + '</span>') +
+          '</div>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    return;
+  }
+
+  if (mode === "week") {
+    var weekDays = [
+      { d: "2026-11-01", lbl: "SUN 11/1" },
+      { d: "2026-11-02", lbl: "MON 11/2" },
+      { d: "2026-11-03", lbl: "TUE 11/3" },
+      { d: "2026-11-04", lbl: "WED 11/4" },
+      { d: "2026-11-05", lbl: "THU 11/5" },
+      { d: "2026-11-06", lbl: "FRI 11/6" },
+      { d: "2026-11-07", lbl: "SAT 11/7" }
+    ];
+    var html = '<div class="week-grid">';
+    weekDays.forEach(function (wd) {
+      var dEvs = evs.filter(function (e) { return e.date === wd.d; });
+      html += '<div class="week-col' + (wd.d === selDate ? ' today' : '') + '" onclick="selectDate(\'' + wd.d + '\')" style="cursor:pointer">';
+      html += '<div class="week-col-hdr">' + wd.lbl + '</div>';
+      if (!dEvs.length) {
+        html += '<div style="font-size:10.5px;color:#64748b;text-align:center;margin-top:20px">Open</div>';
+      }
+      dEvs.forEach(function (ev) {
+        var calStr = (ev.calendars || [ev.calendar_badge || "Calendar"]).join("+");
+        var isAx = calStr.toLowerCase().indexOf("axmra") >= 0;
+        var isMerged = (ev.calendar_count || 1) > 1 || !!ev.merged_badge;
+        html +=
+          '<div class="week-chip ' + (isMerged ? 'merged' : (isAx ? 'axmra' : '')) + '">' +
+            '<div style="font-weight:800;color:#f8fafc">' + esc(ev.start_time || ev.time_label) + '</div>' +
+            '<div>' + esc(ev.title) + '</div>' +
+            '<div style="font-size:9.5px;color:#94a3b8;margin-top:2px">' + esc(ev.merged_badge || calStr) + '</div>' +
+          '</div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    return;
+  }
+
+  if (mode === "month") {
+    var dows = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var html = '<div class="month-grid">';
+    dows.forEach(function (dw) { html += '<div class="month-dow">' + dw + '</div>'; });
+    for (var day = 1; day <= 30; day++) {
+      var iso = "2026-11-" + (day < 10 ? "0" + day : day);
+      var dEvs = evs.filter(function (e) { return e.date === iso; });
+      html += '<div class="month-cell' + (iso === selDate ? ' today' : '') + '" onclick="selectDateAndDayView(\'' + iso + '\')">';
+      html += '<div class="month-day-num">Nov ' + day + '</div>';
+      dEvs.slice(0, 3).forEach(function (ev) {
+        var calStr = (ev.calendars || [ev.calendar_badge || ""]).join("+");
+        var isAx = calStr.toLowerCase().indexOf("axmra") >= 0;
+        html += '<div class="month-dot ' + (isAx ? 'axmra' : '') + '">' + esc((ev.start_time || "") + " " + ev.title) + '</div>';
+      });
+      if (dEvs.length > 3) {
+        html += '<div style="font-size:9.5px;color:#94a3b8">+' + (dEvs.length - 3) + ' more</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  }
+}
+
+function renderEmailLists() {
+  var imp = STATE.important_emails || [];
+  var oth = STATE.other_emails || [];
+
+  var c1 = document.getElementById("m1ImpCountPill");
+  if (c1) c1.textContent = "⚡ " + imp.length + " Emails to Address";
+  var c2 = document.getElementById("m1OthCountPill");
+  if (c2) c2.textContent = "📥 " + oth.length + " Not Important";
+  var b1 = document.getElementById("m1BucketImpCount");
+  if (b1) b1.textContent = imp.length + " Active";
+  var b2 = document.getElementById("m1BucketOthCount");
+  if (b2) b2.textContent = oth.length + " Low Priority";
+
+  function buildTile(m, isImportant) {
+    var badgeTone = (m.account_badge || "").indexOf("Axmra") >= 0 ? "emerald" : "sky";
+    var tCount = (m.thread_count && m.thread_count > 1) ? ' <span class="pill violet">' + m.thread_count + ' msgs</span>' : '';
+    var attBadge = m.has_attachments ? ' <span class="pill sky">📎 Attachment</span>' : '';
+    var openedBadge = m.was_opened ? ' <span class="pill emerald">✓ Opened</span>' : '';
+    var actions = '';
+    if (isImportant) {
+      actions =
+        '<button type="button" class="btn mini amber" onclick="triageAction(\'' + esc(m.uid) + '\', \'seen\', event)" title="If tapped WITHOUT opening the email, Steward learns this is not interesting and moves it down">' +
+          (m.was_opened ? '✓ Seen (Read)' : '👁 Seen (Unopened = Low Interest)') +
+        '</button>' +
+        '<button type="button" class="btn mini" onclick="triageAction(\'' + esc(m.uid) + '\', \'downgrade\', event)" title="Downgrade to Not Important and teach Steward">' +
+          '⬇ Not Interested' +
+        '</button>';
+    } else {
+      actions =
+        '<button type="button" class="btn mini emerald" onclick="triageAction(\'' + esc(m.uid) + '\', \'upgrade\', event)" title="Promote to Emails to Address and teach Steward this is important">' +
+          '⬆ Upgrade to Important' +
+        '</button>';
+    }
+
+    return (
+      '<div class="mail-tile ' + (m.was_opened ? 'opened ' : '') + (isImportant ? '' : 'other-bucket') + '" id="tile-' + esc(m.uid) + '">' +
+        '<div class="mail-top">' +
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+            '<span class="pill ' + badgeTone + '">' + esc(m.account_badge || "Inbox") + '</span>' +
+            '<b style="color:#f8fafc">' + esc(m.from) + '</b>' +
+            tCount + attBadge + openedBadge +
+            '<span style="font-size:11px;color:#94a3b8">· ' + esc(m.date) + '</span>' +
+          '</div>' +
+          '<div style="display:flex;gap:5px;flex-wrap:wrap">' + actions + '</div>' +
+        '</div>' +
+        '<div class="mail-subj" onclick="openEmailTile(\'' + esc(m.uid) + '\')">' + esc(m.subject) + ' <span style="font-size:11px;color:#64748b;font-weight:400">(Click to open)</span></div>' +
+        '<div class="mail-body-preview" id="preview-' + esc(m.uid) + '">' +
+          '<div style="margin-bottom:6px;color:#94a3b8;font-size:11px">Steward Classification: <b>' + esc(m.steward_reason || "Priority Inbox") + '</b> (Score: ' + esc(m.steward_score) + ')</div>' +
+          '<div style="line-height:1.5;color:#e2e8f0">' + esc(m.snippet || "Full message body available via Steward Comms reader.") + '</div>' +
+          '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+            (m.has_attachments ? '<button type="button" class="btn mini sky" onclick="downloadAtt(\'' + esc(m.uid) + '\', event)">⬇ Download &amp; Store Attachments Locally</button>' : '') +
+            '<button type="button" class="btn mini" onclick="triageAction(\'' + esc(m.uid) + '\', \'downgrade\', event)">⬇ Downgrade / Not Interested</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  var impHtml = imp.map(function (m) { return buildTile(m, true); }).join("") || '<div style="color:#94a3b8;padding:12px">All important emails addressed!</div>';
+  var othHtml = oth.map(function (m) { return buildTile(m, false); }).join("") || '<div style="color:#94a3b8;padding:12px">No downgraded or low-priority emails.</div>';
+
+  ["m1ImportantEmails", "m2ImportantEmails", "m3ImportantEmails"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = impHtml;
+  });
+  ["m1OtherEmails", "m2OtherEmails", "m3OtherEmails"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = othHtml;
+  });
+}
+
+function openEmailTile(uid) {
+  var item = (STATE.important_emails || []).concat(STATE.other_emails || []).find(function (x) { return x.uid === uid; });
+  if (item) item.was_opened = true;
+  document.querySelectorAll('[id="tile-' + uid + '"]').forEach(function (el) {
+    el.classList.toggle("expanded");
+    el.classList.add("opened");
+  });
+  fetch("/api/steward/comms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "email_triage_feedback", uid: uid, feedback: "opened", was_opened: true })
+  }).catch(function () {});
+}
+
+function triageAction(uid, feedback, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  var all = (STATE.important_emails || []).concat(STATE.other_emails || []);
+  var item = all.find(function (x) { return x.uid === uid; });
+  var wasOpened = item ? !!item.was_opened : false;
+
+  if (feedback === "seen") {
+    if (!wasOpened) {
+      // Tapped Seen WITHOUT opening -> Steward treats as not interesting & moves to Other
+      STATE.important_emails = (STATE.important_emails || []).filter(function (x) { return x.uid !== uid; });
+      if (item) {
+        item.steward_reason = "Tapped Seen Without Opening (Steward Learned Lower Priority)";
+        STATE.other_emails = [item].concat(STATE.other_emails || []);
+      }
+      showToast("👁 <b>Tapped Seen without opening:</b> Moved <i>" + esc(item ? item.subject : uid) + "</i> out of Emails to Address &amp; taught the Steward that <b>" + esc(item ? item.from : "") + "</b> is lower interest.");
+    } else {
+      STATE.important_emails = (STATE.important_emails || []).filter(function (x) { return x.uid !== uid; });
+      showToast("✓ Marked opened email <i>" + esc(item ? item.subject : uid) + "</i> as Seen.");
+    }
+  } else if (feedback === "downgrade") {
+    STATE.important_emails = (STATE.important_emails || []).filter(function (x) { return x.uid !== uid; });
+    if (item) {
+      item.steward_reason = "Explicitly Downgraded (Steward Learned Not Interested)";
+      STATE.other_emails = [item].concat((STATE.other_emails || []).filter(function (x) { return x.uid !== uid; }));
+    }
+    showToast("⬇ <b>Downgraded to Not Important:</b> Steward learned that emails from <b>" + esc(item ? item.from : "") + "</b> are not interesting to you.");
+  } else if (feedback === "upgrade") {
+    STATE.other_emails = (STATE.other_emails || []).filter(function (x) { return x.uid !== uid; });
+    if (item) {
+      item.steward_reason = "Explicitly Upgraded (Steward Learned High Priority)";
+      item.steward_score = 98;
+      STATE.important_emails = [item].concat((STATE.important_emails || []).filter(function (x) { return x.uid !== uid; }));
+    }
+    showToast("⬆ <b>Upgraded to Emails to Address:</b> Steward learned that emails from <b>" + esc(item ? item.from : "") + "</b> are important to you!");
+  }
+  renderEmailLists();
+
+  fetch("/api/steward/comms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "email_triage_feedback",
+      uid: uid,
+      feedback: feedback,
+      was_opened: wasOpened,
+      sender: item ? item.from : "",
+      sender_email: item ? item.sender_email : ""
+    })
+  }).catch(function () {});
+}
+
+function downloadAtt(uid, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  showToast("⏳ Downloading &amp; verifying attachment(s) from Microsoft Graph / IMAP into <code>.anchor/attachments/</code>...");
+  fetch("/api/steward/comms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "download_attachments", uid: uid })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.ok) {
+        showToast("✓ Saved " + (d.count || 0) + " attachment(s) locally to <code>" + esc(d.dest_dir || ".anchor/attachments") + "</code>!");
+      } else {
+        showToast("📎 Attachment note: " + esc((d && d.error) || "Ready for Steward extraction"));
+      }
+    })
+    .catch(function () {});
+}
+
+function switchCalView(mockupPrefix, mode, btnEl) {
+  STATE.views[mockupPrefix] = mode;
+  if (btnEl && btnEl.parentElement) {
+    btnEl.parentElement.querySelectorAll(".btn").forEach(function (b) { b.classList.remove("active"); });
+    btnEl.classList.add("active");
+  }
+  var lbl = document.getElementById(mockupPrefix + "CalDateLabel");
+  if (lbl) {
+    if (mode === "iphone") lbl.textContent = "Rolling Stream (Oct 25 → Dec 3, 2026)";
+    else if (mode === "day") lbl.textContent = "Day Schedule — " + STATE.selectedDate;
+    else if (mode === "week") lbl.textContent = "Week of Nov 1 – Nov 7, 2026";
+    else if (mode === "month") lbl.textContent = "November 2026 (Click any day for Day View)";
+  }
+  renderCalendarView(mockupPrefix + "CalViewport", mode);
+}
+
+function shiftDay(delta) {
+  if (delta === 0) {
+    STATE.selectedDate = "2026-11-02";
+  } else {
+    var parts = STATE.selectedDate.split("-").map(Number);
+    var dt = new Date(parts[0], parts[1] - 1, parts[2] + delta);
+    var mm = dt.getMonth() + 1;
+    var dd = dt.getDate();
+    STATE.selectedDate = dt.getFullYear() + "-" + (mm < 10 ? "0" + mm : mm) + "-" + (dd < 10 ? "0" + dd : dd);
+  }
+  var lbl = document.getElementById("m1CalDateLabel");
+  if (lbl) lbl.textContent = "Day Schedule — " + STATE.selectedDate;
+  renderCalendarView("m1CalViewport", STATE.views.m1 === "iphone" ? "day" : STATE.views.m1);
+  renderCalendarView("m2CalViewport", STATE.views.m2);
+}
+
+function selectDate(iso) {
+  STATE.selectedDate = iso;
+  renderCalendarView("m1CalViewport", STATE.views.m1);
+  renderCalendarView("m2CalViewport", STATE.views.m2);
+}
+
+function selectDateAndDayView(iso) {
+  STATE.selectedDate = iso;
+  STATE.views.m1 = "day";
+  STATE.views.m3 = "day";
+  renderCalendarView("m1CalViewport", "day");
+  renderCalendarView("m3CalViewport", "day");
+}
+
+function setM1Layout(mode, ensureOpen) {
+  var grid = document.getElementById("m1SplitGrid");
+  if (!grid) return;
+  var m = (mode === "cal" || mode === "mail") ? mode : "split";
+  grid.setAttribute("data-m1-layout", m);
+  var bSplit = document.getElementById("m1BtnSplit");
+  var bCal = document.getElementById("m1BtnCal");
+  var bMail = document.getElementById("m1BtnMail");
+  if (bSplit) bSplit.classList.toggle("active", m === "split");
+  if (bCal) bCal.classList.toggle("active", m === "cal");
+  if (bMail) bMail.classList.toggle("active", m === "mail");
+  var cToggle = document.getElementById("m1CalFullToggleBtn");
+  if (cToggle) cToggle.textContent = m === "cal" ? "◫ Back to Split 50/50" : "⤢ Full Calendar";
+  var mToggle = document.getElementById("m1MailFullToggleBtn");
+  if (mToggle) mToggle.textContent = m === "mail" ? "◫ Back to Split 50/50" : "⤢ Full Email";
+  if (ensureOpen) {
+    var d = document.getElementById("m1TileDrawer");
+    if (d && d.hidden) toggleMockup("m1Tile");
+  }
+}
+
+function toggleM1Full(targetMode) {
+  var grid = document.getElementById("m1SplitGrid");
+  var cur = grid ? grid.getAttribute("data-m1-layout") : "split";
+  setM1Layout(cur === targetMode ? "split" : targetMode, true);
+}
+
+function toggleMockup(id) {
+  var tile = document.getElementById(id);
+  var drawer = document.getElementById(id + "Drawer");
+  var btn = document.getElementById(id + "Btn");
+  if (!tile || !drawer) return;
+  var isOpen = !drawer.hidden;
+  drawer.hidden = isOpen;
+  tile.classList.toggle("open", !isOpen);
+  if (btn) btn.textContent = isOpen ? "Expand ▾" : "Collapse ▴";
+}
+
+document.getElementById("btnCollapseAll").addEventListener("click", function () {
+  ["m1Tile", "m2Tile", "m3CalTile", "m3MailTile"].forEach(function (id) {
+    var d = document.getElementById(id + "Drawer");
+    if (d && !d.hidden) toggleMockup(id);
+  });
+});
+
+document.getElementById("btnExpandAll").addEventListener("click", function () {
+  ["m1Tile", "m2Tile", "m3CalTile", "m3MailTile"].forEach(function (id) {
+    var d = document.getElementById(id + "Drawer");
+    if (d && d.hidden) toggleMockup(id);
+  });
+});
+
+// 1-Click Gmail 2FA Phone-Prompt Button (Uses Stored OS Vault Password — No Password Entry!)
+document.getElementById("btnGmail2FA").addEventListener("click", function () {
+  showToast("📱 <b>Launching Google 2FA Phone-Prompt Window:</b> Using your stored Google password from the Windows Vault — watch for the Google window and tap <b>Yes</b> on your phone!");
+  fetch("/api/steward/comms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "gmail_2fa_start", account_id: "comms-3a9bfa74" })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.message) showToast("📱 " + esc(d.message));
+      if (window._gmPoll) clearInterval(window._gmPoll);
+      window._gmPoll = setInterval(function () {
+        fetch("/api/steward/comms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "gmail_2fa_poll", account_id: "comms-3a9bfa74" })
+        })
+          .then(function (r2) { return r2.json(); })
+          .then(function (p) {
+            if (p && p.message) showToast("📱 " + esc(p.message));
+            if (p && p.status === "connected") {
+              clearInterval(window._gmPoll);
+              var gp = document.getElementById("gmailStatusPill");
+              if (gp) {
+                gp.className = "pill emerald";
+                gp.innerHTML = "✓ Primary Gmail · 2FA Connected";
+              }
+              loadLiveCommsState();
+            }
+          })
+          .catch(function () {});
+      }, 2500);
+    })
+    .catch(function () {});
+});
+
+document.getElementById("btnSyncNow").addEventListener("click", function () {
+  showToast("↻ Syncing Penn State 365, Axmra 365, and Gmail (Inbox + Calendars)...");
+  fetch("/api/steward/comms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "sync_now" })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.ok) {
+        applyServerData(d);
+        showToast("✓ " + esc(d.sync_receipt || "Synced all connected calendars and inboxes!"));
+      }
+    })
+    .catch(function () {});
+});
+
+function applyServerData(d) {
+  if (d.calendar_events_all && d.calendar_events_all.length) {
+    STATE.events = d.calendar_events_all;
+    var cp = document.getElementById("m1CalCountPill");
+    if (cp) cp.textContent = d.calendar_events_all.length + " Merged Events";
+  }
+  if (d.important_emails && d.important_emails.length) {
+    STATE.important_emails = d.important_emails;
+  }
+  if (d.other_emails) {
+    STATE.other_emails = d.other_emails;
+  }
+  renderCalendarView("m1CalViewport", STATE.views.m1);
+  renderCalendarView("m2CalViewport", STATE.views.m2);
+  renderCalendarView("m2StreamViewport", "iphone");
+  renderCalendarView("m3CalViewport", STATE.views.m3);
+  renderEmailLists();
+}
+
+function loadLiveCommsState() {
+  fetch("/api/steward/comms")
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d && d.ok) applyServerData(d);
+    })
+    .catch(function () {});
+}
+
+// Initial render + live fetch + 5-minute auto-refresh
+renderCalendarView("m1CalViewport", "iphone");
+renderCalendarView("m2CalViewport", "week");
+renderCalendarView("m2StreamViewport", "iphone");
+renderCalendarView("m3CalViewport", "month");
+renderEmailLists();
+loadLiveCommsState();
+setInterval(loadLiveCommsState, 300000);
+</script>
+</body>
+</html>

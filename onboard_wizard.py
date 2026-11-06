@@ -4106,8 +4106,12 @@ def build_or_resolve_exe_zip_package(
                     zout.writestr(f"domains/{dom}.md", f"# {dom.title()}\n")
         return buf.getvalue()
 
+    base_ov_path = Path(__file__).resolve().parent / "shell" / "anchor-core-overlay.zip"
+    ov_mtime = base_ov_path.stat().st_mtime if base_ov_path.is_file() else 0.0
+
     if package_kind == "prod":
-        if not prod_zip.is_file():
+        need_prod = (not prod_zip.is_file()) or (ov_mtime > prod_zip.stat().st_mtime)
+        if need_prod:
             collab_ed_json = json.dumps({
                 "edition": "collaborator",
                 "hide_admin_and_download_links": True,
@@ -4134,7 +4138,8 @@ def build_or_resolve_exe_zip_package(
         return prod_zip, "Anchor.zip"
 
     if package_kind == "admin":
-        if not admin_zip.is_file():
+        need_admin = (not admin_zip.is_file()) or (ov_mtime > admin_zip.stat().st_mtime)
+        if need_admin:
             adm_ed_json = json.dumps({
                 "edition": "admin",
                 "hide_admin_and_download_links": False,
@@ -4166,11 +4171,12 @@ def build_or_resolve_exe_zip_package(
         return admin_zip, "Anchor-Admin.zip"
 
     # Build or refresh Anchor-Test-Onboard.zip
-    need_rebuild = not test_zip.is_file()
+    need_rebuild = (not test_zip.is_file()) or (ov_mtime > test_zip.stat().st_mtime)
     if not need_rebuild and prod_zip.is_file():
         need_rebuild = prod_zip.stat().st_mtime > test_zip.stat().st_mtime
 
     if need_rebuild:
+        collab_ov = _overlay_bytes_with_edition("collaborator")
         with _zf.ZipFile(test_zip, "w", compression=_zf.ZIP_DEFLATED) as zf:
             zf.writestr('Anchor/anchor-test-mode.json', json.dumps({
                 'ANCHOR_SHELL_TEST': 'onboard-walkthrough',
@@ -4184,7 +4190,13 @@ def build_or_resolve_exe_zip_package(
             if anchor_onedir.is_dir():
                 for f in anchor_onedir.rglob("*"):
                     if f.is_file():
-                        zf.write(f, str(Path("Anchor") / f.relative_to(anchor_onedir)))
+                        rel = str(Path("Anchor") / f.relative_to(anchor_onedir)).replace("\\", "/")
+                        if rel == "Anchor/anchor-core-overlay.zip" and collab_ov is not None:
+                            zf.writestr(rel, collab_ov)
+                        else:
+                            zf.write(f, rel)
+                if collab_ov is not None and not (anchor_onedir / "anchor-core-overlay.zip").is_file():
+                    zf.writestr("Anchor/anchor-core-overlay.zip", collab_ov)
             elif prod_zip.is_file():
                 with _zf.ZipFile(prod_zip, "r") as pzf:
                     for item in pzf.infolist():

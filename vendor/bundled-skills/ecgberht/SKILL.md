@@ -676,6 +676,20 @@ scripts/run-all-tests.mjs
 
 ---
 
+### The 4-Pillar Proactive Cockpit Spine (2026-11-04 — Anvil + Gandalf Retool)
+
+Every AI Cockpit Steward turn (backed deterministically at turn-end by `steward_campaign.reconcile_cockpit_turn_state`) maintains four orthogonal projections without redundant prompt rules or manual status-card ceremony:
+
+1. **Running Overview (`.ecgberht/overview.json` & `ECGBERHT.md`):** States the overall `goal`, `doing_now`, `done_summary` (completed waves), `todo_summary` (upcoming waves), and `key_deliverables`. If ambiguous, ask at most one short, easy-to-answer clarifying question with a recommended answer at the end of the dialogue turn.
+2. **Self-Maintaining Hierarchical Plan (`roadmap.json` & `strip.json`):** Completed waves are marked `done`, the current wave is `active` (pinned in `strip.json` `current_step_id`), and future waves are `proposed` with human-readable titles and `done_when` summaries. Never ask permission to update the plan; apply any user request to modify the plan immediately.
+3. **Three-Tier Deliverables & Accurate Pending (`DELIVERABLES.md`):**
+   - **Pending (Top Window):** Driven strictly by live in-flight jobs/turns (`running_code_jobs` / `running_skill_jobs` / `engine.busy`); never leave stale pending items.
+   - **For Review (`START HERE - FOR REVIEW: <Clean Human Title>`):** Reserved ONLY for the 1–2 primary deliverables awaiting John's review.
+   - **Final Deliverables (`FINAL: <Clean Human Title>`):** Completed or user-approved flagship work products. All intermediate/building-block artifacts (Gandalf reads, Beta-Reader reports, scene blueprints, plans, logs, superseded drafts) are labeled `Supporting - <Title>` so they fold into the Supplemental drawer.
+4. **Deterministic Bottom Status Window (`.ecgberht/status-summary.json` & `.ecgberht/status_card.json`):** Composed and backfilled deterministically at turn-end from the reconciled overview, roadmap, strip, and live job state.
+
+---
+
 ## When to use / when NOT to use
 
 - **Use when:** resume a project campaign, rank what-next, soft-vet an idea, choose tool depth before commissioning a slice skill, stand up Face+Strip.

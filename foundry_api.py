@@ -1399,17 +1399,23 @@ _CONTENT_TYPES = {
 def resolve_dist_file(rel_path):
     """Traversal-safe resolve of a dist-relative path → (abs_path, content_type)
     or (None, None). ``rel_path`` is the URL path (e.g. "/assets/x.js" or
-    "index.html"); it must stay inside DIST_DIR."""
+    "index.html"); it must stay inside DIST_DIR (with a containment-checked
+    fallback to foundry-gui/public/brand and vendor/brand for /brand/* icons)."""
     rel = (rel_path or "").split("?", 1)[0].lstrip("/")
     if not rel:
         rel = "index.html"
-    try:
-        resolved = (DIST_DIR / rel).resolve()
-    except (OSError, ValueError):
-        return None, None
-    if resolved != DIST_DIR and DIST_DIR not in resolved.parents:
-        return None, None
-    if not resolved.is_file():
-        return None, None
-    ctype = _CONTENT_TYPES.get(resolved.suffix.lower(), "application/octet-stream")
-    return resolved, ctype
+    roots = [DIST_DIR]
+    if rel.startswith("brand/"):
+        roots.append((ANCHOR_DIR / "foundry-gui" / "public").resolve())
+        roots.append((ANCHOR_DIR / "vendor").resolve())
+    for base_dir in roots:
+        try:
+            resolved = (base_dir / rel).resolve()
+        except (OSError, ValueError):
+            continue
+        if resolved != base_dir and base_dir not in resolved.parents:
+            continue
+        if resolved.is_file():
+            ctype = _CONTENT_TYPES.get(resolved.suffix.lower(), "application/octet-stream")
+            return resolved, ctype
+    return None, None

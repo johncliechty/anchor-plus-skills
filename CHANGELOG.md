@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.4.6 ? Aegis Foundry North Star & Shield Icon, Voice Dictate/Talk Mode, Email & Calendar Quick-Connect, and Collaborator Preset
+## v1.5.0 — Cave of Wonders Persistent Working List Spine, Speed Racer Email Hub & Steward Auto-Open, AI Cockpit & Cave Steward Anvil/Gandalf/Fable 5.1 Retool, and Nightly Token Cost Sync
 
-# Changelog
+- **Cave of Wonders Persistent Working List Spine (`#caveWorkingListSpine`, Variation A):** Adds a continuous Covey `A1`/`A2`/`B1`/`C1` workflow spine of expandable multi-step effort tiles (`.anchor/working-list-spine.json`) that carries forward across days without resetting. Each tile reorders up/down (`▲ / ▼`), checks off, archives/restores, and expands to display a **Multi-Step Checklist** (where each individual step connects to an **🛸 AI Cockpit Item** and/or a **🌟 Cave / Star Chart Initiative** via an inline dual-dropdown picker) alongside a **Brainstorming & Details Scratchpad**.
+- **Speed Racer Rapid Email Review & Approval Tile (`#caveSpeedRacerTile`) + Steward Auto-Open:** Embeds an expandable Speed Racer tile inside the Cave of Wonders Email Hub (`#commsMailCol`) above Important Inbox, Sent Emails, and Not Important folders, with `[🏎️ → Speed Racer]` queue buttons on Inbox emails, hard human-approval gating (`✓ Approve & Send` + 5-second Undo), and automatic expansion (`window.openCaveSpeedRacer`) whenever the Steward stages or references an email instead of dumping email bodies into the dialogue.
+- **Clean Cave of Wonders Dialogue Framing:** Removes the four quick-action buttons (`#cosFoundryBar`) from the bottom of the Cave of Wonders dialogue so actions are directed conversationally to the Steward.
+- **AI Cockpit & Cave of Wonders Steward Anvil v2 + Gandalf + Cross-Family Adversarial Retool (`96/100 PASS`):** Refactors the AI Cockpit Steward and Cave of Wonders Steward (`steward_engine.py`, `campaign_say.py`, `steward_routes.py`, `steward_campaign.py`, `comms_connector.py`, `tools/steward_comms.py`) into deep, well-bounded modules verified by Anvil v2 (96/100 PASS across all 5 Beta-Reader seats), Gandalf, and live cross-family adversarial review (`Gemini 4 Argon (High)` + `Claude Opus 5.5 (High)` / Fable 5.1).
+- **Real-Time & Nightly Token Usage / Dollar Cost Sync (`usage_nightly_sync.py`):** Captures incremental token and dollar cost deltas on every Claude, Codex, and Gemini turn and schedules a nightly 2:00 AM full reconciliation across all active AI Cockpits and the Cave of Wonders portfolio rollup.
 
 ## v1.4.7 — Collaborator Skill Foundry (All 19 Skills, Icons & Maps), Default YOLO Mode, Conversational Steward Settings + Session Reboot, Silent Subprocesses, and Admin Registration Sync
 

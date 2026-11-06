@@ -13,6 +13,7 @@
     { name: "Superjump",        icon: "superjump-icon.jpg",       aliases: ["superjump", "super jump"] },
     { name: "Anvil",            icon: "anvil-icon.jpg",           aliases: ["anvil"] },
     { name: "Aegis",            icon: "aegis-icon.jpg",           aliases: ["aegis", "sentinel"] },
+    { name: "Einstein",         icon: "einstein-icon.png",        aliases: ["einstein"] },
     { name: "Ramanujan",        icon: "ramanujan-icon.jpg",       aliases: ["ramanujan"] },
     { name: "legal-beagle",     icon: "legal-beagle-icon.jpg",    aliases: ["legal beagle", "legal-beagle"] },
     { name: "financial-analyst", icon: "financial-analyst-icon.jpg", aliases: ["financial analyst", "financial-analyst"] },

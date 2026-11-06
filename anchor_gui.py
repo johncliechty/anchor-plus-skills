@@ -23295,6 +23295,13 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 _out = _card_part(_pid, _part, _entry.get("folder_path") or "", _entry.get("name") or "", (_q.get("dir", [""])[0] or "").strip())
                 self._send_json(_out, code=200 if _out.get("ok") else 400)
                 return
+            if _path_only == "/api/steward/comms/oauth-callback":
+                import comms_connector as _cc_cb
+                _q_cb = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+                _obj_cb, _html_cb, _code_cb = _cc_cb.handle_oauth_callback(_q_cb)
+                if str(_q_cb.get("format") or "").lower() == "json" or "application/json" in (self.headers.get("Accept") or ""):
+                    self._send_json(_obj_cb, code=_code_cb); return
+                self._send_html(_html_cb, code=_code_cb); return
             if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
                 _verb_get = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
                 if not (self._term_token_ok() or (_verb_get in ("dictate", "anvil", "anvil/walkthrough", "mothership-files") and _local_browser(self))):
@@ -23338,6 +23345,12 @@ class AnchorHandler(BaseHTTPRequestHandler):
             elif _path_only in ("/website", "/download-portal"):
                 import website_portal as _wp
                 self._send_html(_wp.render_public_website_html())
+            elif _path_only == "/comms-mockups":
+                self._send_html((ANCHOR_DIR / "static" / "comms-mockups.html").read_text(encoding="utf-8"))
+            elif _path_only == "/chief-of-staff-mockups":
+                self._send_html((ANCHOR_DIR / "static" / "chief-of-staff-mockups.html").read_text(encoding="utf-8"))
+            elif _path_only == "/cave-speed-racer-covey-mockups":
+                self._send_html((ANCHOR_DIR / "static" / "cave-speed-racer-covey-mockups.html").read_text(encoding="utf-8"))
             elif _path_only == "/api/website/catalog":
                 import website_portal as _wp
                 self._send_json(_wp.get_portal_state(), 200)
@@ -24739,6 +24752,15 @@ def main():
             _logger.info("comms_connector background poller started")
         except Exception as e_cc:
             _logger.error("comms_connector poller start failed: %s", e_cc)
+        try:
+            from steward_cockpit import steward_engine as _se_boot
+            import paths as _paths_boot
+            _se_boot.relocate_state(_paths_boot.data_dir() / "steward-cockpit-state.json")
+            import usage_nightly_sync as _uns_boot
+            _uns_boot.start_background_sync_daemon(interval_seconds=300)
+            _logger.info("usage_nightly_sync daemon started (every 5m + nightly snapshot)")
+        except Exception as e_uns:
+            _logger.error("usage_nightly_sync daemon start failed: %s", e_uns)
     except Exception as e:
         _logger.error(f"session autosave daemon start failed: {e}")
 

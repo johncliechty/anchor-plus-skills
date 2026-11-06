@@ -298,7 +298,7 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
     if err:
         gaps.append(f"roadmap.json {err}")
     elif roadmap:
-        proj = roadmap.get("roadmap_projection") or []
+        proj = roadmap.get("roadmap_projection") or roadmap.get("steps") or roadmap.get("roadmap") or []
         if not proj:
             # honest fold-lite: newest scaffold_proposal's steps (all drafts)
             for ev in reversed(roadmap.get("roadmap_events") or []):
@@ -576,6 +576,19 @@ def read_map(campaign_dir: str, include_plan_history: bool | None = None):
     if include_plan_history:
         m["plan_proposal"] = read_plan_proposal(campaign_dir, m, roadmap)
         m["plan_history"] = read_plan_history(campaign_dir, m, roadmap)
+        try:
+            m["running_overview"] = build_running_overview(campaign_dir, m)
+        except Exception:
+            m["running_overview"] = {
+                "goal": goal or root.name,
+                "doing_now": heartbeat.get("active_effort") or "",
+                "done_summary": f"{done} of {len(steps)} steps completed",
+                "todo_summary": heartbeat.get("next_recommended") or "",
+                "done_steps": [],
+                "active_steps": [],
+                "upcoming_steps": [],
+                "key_deliverables": [],
+            }
     else:
         m["plan_proposal"] = None
         m["plan_history"] = []
@@ -3709,7 +3722,8 @@ def read_dismissed_deliverables(campaign_dir: str) -> dict:
 
 
 def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
-                        what: str = "", revision_id: str = "", hash_val: str = "") -> dict:
+                        what: str = "", revision_id: str = "", hash_val: str = "",
+                        disposition: str = "approved") -> dict:
     if not campaign_dir:
         return {"ok": False, "error": "missing campaign_dir"}
     norm_path = str(path or "").replace("\\", "/").strip().lstrip("/")
@@ -3728,6 +3742,7 @@ def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
         "revision_id": str(revision_id or ""),
         "hash": str(hash_val or "") or sig.get("sha256", ""),
         "mtime_ns": sig.get("mtime_ns"),
+        "disposition": str(disposition or "approved").strip().lower(),
         "dismissed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     entries[key] = entry
@@ -3741,6 +3756,35 @@ def dismiss_deliverable(campaign_dir: str, path: str = "", product_id: str = "",
     except OSError as exc:
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "dismissed": entry}
+
+
+def _dismissed_entry_for_item(campaign_dir: str, it: dict, dismissed: dict) -> dict | None:
+    if not dismissed or not isinstance(it, dict):
+        return None
+    norm_path = str(it.get("open_path") or it.get("path") or "").replace("\\", "/").strip().lstrip("/")
+    norm_prod = str(it.get("product_id") or "").strip()
+    norm_what = str(it.get("what") or "").strip()
+    entry = (dismissed.get(norm_path) if norm_path else None) or (
+        dismissed.get(f"product:{norm_prod}") if norm_prod else None) or (
+        dismissed.get(f"what:{norm_what}") if norm_what else None)
+    if not isinstance(entry, dict) and norm_path and not it.get("managed"):
+        it_folder, it_stem = _split_path(it)
+        if it_stem:
+            it_key = (it_folder.lower(), it_stem.lower())
+            for d_ent in dismissed.values():
+                if isinstance(d_ent, dict) and d_ent.get("path"):
+                    d_folder, d_stem = _split_path({"path": d_ent.get("path")})
+                    if d_stem and (d_folder.lower(), d_stem.lower()) == it_key:
+                        entry = d_ent
+                        break
+    return entry if isinstance(entry, dict) else None
+
+
+def _dismissed_disposition(campaign_dir: str, it: dict, dismissed: dict) -> str:
+    ent = _dismissed_entry_for_item(campaign_dir, it, dismissed)
+    if not isinstance(ent, dict):
+        return ""
+    return str(ent.get("disposition") or "approved").strip().lower()
 
 
 def _is_deliverable_dismissed(campaign_dir: str, it: dict, dismissed: dict) -> bool:
@@ -3881,6 +3925,17 @@ def sync_steward_projections(campaign_dir: str) -> dict:
                 if not old_wait or (effort_ver and _max_ver_in(old_wait) < effort_ver) or old_wait != human_wait:
                     step["waiting_on"] = human_wait
                     changed = True
+            # If the current step has unreviewed START HERE / FOR REVIEW deliverables or human_wait,
+            # ensure its status is active rather than stuck on "done" from an earlier round.
+            if step.get("status") == "done" and (designated_by_step.get(sid) or human_wait):
+                dismissed_now = read_dismissed_deliverables(campaign_dir)
+                has_unreviewed = bool(human_wait) or any(
+                    not _is_deliverable_dismissed(campaign_dir, {"path": dp, "step": sid}, dismissed_now)
+                    for dp in (designated_by_step.get(sid) or [])
+                )
+                if has_unreviewed:
+                    step["status"] = "active"
+                    changed = True
             if nav is not None:
                 if not nav.get("pin"):
                     nav["pin"] = True
@@ -3907,9 +3962,328 @@ def sync_steward_projections(campaign_dir: str) -> dict:
             tmp = rm_path.with_name(rm_path.name + ".%s.tmp" % os.getpid())
             tmp.write_text(json.dumps(roadmap, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
             os.replace(tmp, rm_path)
+            with _JSON_FILE_CACHE_LOCK:
+                _JSON_FILE_CACHE.clear()
         except OSError:
             return {"ok": False, "changed": False}
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            refresh = compute_deliverables_plan_refresh(campaign_dir, roadmap=roadmap)
+            if refresh.get("has_changes"):
+                prop_file = root / ".ecgberht" / "plan-proposal.json"
+                prop_disk = {}
+                if prop_file.is_file():
+                    try:
+                        prop_disk = json.loads(prop_file.read_text(encoding="utf-8")) or {}
+                    except Exception:
+                        prop_disk = {}
+                if not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == refresh.get("digest")):
+                    resolve_plan_proposal(campaign_dir, action="accept")
+                    changed = True
+        except Exception:
+            pass
     return {"ok": True, "changed": changed}
+
+
+_INTERMEDIATE_WHAT_RE = re.compile(
+    r"^(?:SUPPORTING|SUPPLEMENTAL|REFERENCE|COMPANION|HISTORICAL|SUPERSEDED|ARCHIVED|EARLIER|PREVIOUS)\b"
+    r"|^Existing\s+(?:Earlier|Prior|Historical)\b"
+    r"|\b(?:gandalf[-_\s]+(?:read|report|analysis|review|audit)|beta[-_\s]*reader[-_\s]+(?:report|panel|review|audit)|"
+    r"scene[-_\s]+blueprint|research[-_\s]+plan|navigation[-_\s]+plan|navigation[-_\s]+preview|"
+    r"original[-_\s]+comparison[-_\s]+draft|start[-_\s]+here[-_\s]+txt|verification[-_\s]+log|"
+    r"audit[-_\s]+receipt|smoke[-_\s]+test|working[-_\s]+notes|journal\s+\d+|kept\s*\(not\s+landed\))\b",
+    re.I,
+)
+_INTERMEDIATE_PATH_RE = re.compile(
+    r"(?:^|/)(?:journal|\.ecgberht|code-job-outputs|notes|scratch|_boneyard)/"
+    r"|\b(?:research-plan|navigation-plan|navigation-preview|original-comparison-draft|start-here\.txt)\b",
+    re.I,
+)
+
+
+def _is_intermediate_deliverable(it: dict) -> bool:
+    """Return True when a deliverable is an intermediate/supporting artifact rather than a primary/final work product."""
+    if not isinstance(it, dict):
+        return True
+    if it.get("auto"):
+        return True
+    what = str(it.get("what") or it.get("product_id") or "").strip()
+    path = str(it.get("open_path") or it.get("path") or "").replace("\\", "/").strip()
+    if _HISTORICAL_LABEL.match(what) and not _FINAL_DELIV_RE.match(what):
+        return True
+    if _INTERMEDIATE_WHAT_RE.search(what):
+        return True
+    if _INTERMEDIATE_PATH_RE.search(path):
+        return True
+    ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+    if ext in (".csv", ".json", ".jsonl", ".log", ".tmp", ".txt") and not _FINAL_DELIV_RE.match(what):
+        return True
+    return False
+
+
+def humanize_deliverable_title(it: dict) -> str:
+    """Produce a clean, human-readable title for a deliverable without internal slugs, prefix noise, or format tags."""
+    if not isinstance(it, dict):
+        return "Deliverable"
+    raw = str(it.get("what") or it.get("product_id") or it.get("open_path") or it.get("path") or "").strip()
+    s = re.sub(r"\*\*", "", raw).strip()
+    # Strip leading designation/status prefixes iteratively
+    prefix_pat = re.compile(
+        r"^(?:[\u2605\u2b50]\s*|"
+        r"(?:START\s+HERE|FOR\s+REVIEW|CURRENT|Primary\s+Deliverable(?:\s+\d+(?:\s+of\s+\d+)?)?|"
+        r"Approved\s*[\u2014\u2013\-:]\s*Finalized|FINAL(?:IZED)?|APPROVED(?:\s+VISUAL\s+DIRECTION)?|"
+        r"ACCEPTED|SAVED\s+DESIGN|SUPPORTING|SUPPLEMENTAL|COMPANION)"
+        r"\s*(?:\([^)]*\)\s*)?(?:[\u2014\u2013\-:]\s*|\s+))",
+        re.I,
+    )
+    for _ in range(5):
+        nxt = prefix_pat.sub("", s).strip()
+        if nxt == s:
+            break
+        s = nxt
+    # Strip trailing long parenthetical format/detail descriptions (e.g., "(PDF — 6-Act narrative arc...)")
+    s = re.sub(r"\s*\([^)]{32,}\)\s*$", "", s).strip()
+    # Strip trailing format suffixes such as -DOCX, -PDF, -PowerPoint, (PDF Reading Copy), etc.
+    s = re.sub(
+        r"[\s_-]*(?:\((?:pdf|docx|pptx|powerpoint|word|html|md|markdown|xlsx|excel|r|csv|zip)(?:\s+[^)]{0,35})?\)"
+        r"|-(?:DOCX|PDF|PPTX|PowerPoint|HTML|MD|CSV|XLSX|ZIP))\s*$",
+        "",
+        s,
+        flags=re.I,
+    ).strip()
+    s = _strip_format_tag(s, keep_note=True)
+    # If the string is a hyphenated slug (e.g. HW1-Final-Homework-1-Instructor-Answer-Key-Draft-4 or Lecture-3)
+    if s and " " not in s and "-" in s:
+        s = s.replace("-", " ")
+    elif re.match(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+){2,}$", s):
+        s = s.replace("-", " ")
+    # Deduplicate repeated prefix like "HW1 Final Homework 1" -> "Homework 1: ..."
+    s = re.sub(r"^HW\s*(\d+)\s+(?:Final\s+)?Homework\s+\1\s+", r"Homework \1: ", s, flags=re.I)
+    # Format trailing Draft N / Refinement N / Version N cleanly in parentheses if not already parenthesized
+    s = re.sub(r"\s+\b(Draft|Refinement|Version|Rev)\s+(\d+(?:\.\d+)*)\s*$", r" (\1 \2)", s, flags=re.I)
+    # Split off overly long em-dash narrative explanations so the core title stays crisp and readable
+    for sep in (" \u2014 ", " \u2013 ", " - "):
+        if sep in s:
+            head, tail = s.split(sep, 1)
+            if len(head.strip()) >= 12 and len(tail.strip()) > 45:
+                s = head.strip()
+                break
+    return s.strip() or Path(str(it.get("open_path") or it.get("path") or "Deliverable")).stem.replace("-", " ").replace("_", " ")
+
+
+def clean_plan_step_title(raw_name: str, raw_done_when: str = "") -> tuple[str, str]:
+    """Split a step name that may have had status notes or slide details appended into a crisp
+    human-readable (title, subtitle) pair."""
+    s = re.sub(r"\*\*", "", str(raw_name or "").strip())
+    # Strip trailing status tags like (proposed), (for review), ready for review
+    s = re.sub(r"\s*\((?:proposed|for review|ready for review|awaiting review)\)\s*$", "", s, flags=re.I).strip()
+    s = re.sub(r"\s+ready for review\s*$", "", s, flags=re.I).strip()
+    subtitle = ""
+    # Extract long trailing parenthetical details (>22 chars) into subtitle
+    m_paren = re.search(r"\s*\(([^)]{22,})\)\s*$", s)
+    if m_paren:
+        subtitle = m_paren.group(1).strip()
+        s = s[:m_paren.start()].strip()
+    # If there are multiple dash clauses or a long explanatory clause after an em/en dash, split it cleanly
+    dash_parts = [p.strip() for p in re.split(r"\s+[\u2014\u2013]\s+|\s+-\s+(?=[A-Z0-9a-z])", s) if p.strip()]
+    if len(dash_parts) >= 2:
+        p0 = dash_parts[0]
+        p1 = dash_parts[1]
+        rest = " · ".join(dash_parts[2:])
+        # Clean trailing 'Final / Refinement N' or 'Draft N' from p1 into subtitle if p1 is long
+        m_ref = re.search(r"\s+(?:Final\s*/\s*)?(?:Refinement|Draft|Revision|Round)\s+\d+.*$", p1, flags=re.I)
+        if m_ref and len(p1) > 28:
+            extra = m_ref.group(0).strip()
+            p1 = p1[:m_ref.start()].strip()
+            subtitle = (extra + (" · " + subtitle if subtitle else "")).strip()
+        if len(p0) <= 28 and len(p1) <= 44:
+            s = f"{p0} — {p1}"
+            if rest:
+                subtitle = (rest + (" · " + subtitle if subtitle else "")).strip()
+        else:
+            s = p0 if len(p0) >= 14 else f"{p0} — {one_line(p1, 38)}"
+            rem_sub = " · ".join(dash_parts[1:]) if len(p0) >= 14 else rest
+            if rem_sub:
+                subtitle = (rem_sub + (" · " + subtitle if subtitle else "")).strip()
+    if not subtitle and raw_done_when:
+        subtitle = _first_sentence(str(raw_done_when)).strip()
+    return (s or str(raw_name or "Step").strip(), one_line(subtitle, 110) if subtitle else "")
+
+
+def build_running_overview(campaign_dir: str, m: dict | None = None) -> dict:
+    """Build the Steward's Running Overview of the AI Cockpit:
+    1. Overall Goal
+    2. What Is Being Done Right Now
+    3. What Has Been Done (Completed Waves/Milestones)
+    4. What Still Needs To Be Done
+    5. Key Flagship Deliverables (Final + For Review)
+    """
+    root = Path(campaign_dir)
+    if m is None:
+        m = read_map(campaign_dir, include_plan_history=False)
+    ov_disk, _ = _read_json(root / ".ecgberht" / "overview.json")
+    if not isinstance(ov_disk, dict):
+        ov_disk = {}
+
+    steps = [s for s in (m.get("steps") or []) if isinstance(s, dict)]
+    done_steps = []
+    active_steps = []
+    upcoming_steps = []
+    for s in steps:
+        st = str(s.get("status") or "proposed").lower()
+        if st in ("parked", "cancelled", "dropped"):
+            continue
+        raw_lbl = str(((s.get("navigation") or {}).get("label") if isinstance(s.get("navigation"), dict) else "") or s.get("name") or s.get("id") or "").strip()
+        raw_dw = _first_sentence(str(s.get("done_when") or "")).strip()
+        lbl, sub_dw = clean_plan_step_title(raw_lbl, raw_dw)
+        entry = {
+            "id": str(s.get("id") or ""),
+            "name": lbl,
+            "subtitle": sub_dw,
+            "done_when": raw_dw or sub_dw,
+            "waiting_on": str(s.get("waiting_on") or "").strip(),
+            "status": st,
+            "part": str(s.get("part") or ""),
+        }
+        ref_phase = str((s.get("refinement") or {}).get("phase") or "").lower() if isinstance(s.get("refinement"), dict) else ""
+        if ref_phase == "done" or (st == "done" and ref_phase not in ("awaiting_review", "blocked")):
+            done_steps.append(entry)
+        elif st in ("active", "in_progress", "waiting", "blocked") or ref_phase in ("awaiting_review", "blocked") or str(s.get("id") or "") == str(m.get("now_step_id") or ""):
+            active_steps.append(entry)
+        else:
+            upcoming_steps.append(entry)
+
+    hb = m.get("heartbeat") or {}
+    goal_txt = str(ov_disk.get("goal") or m.get("goal_brief") or m.get("goal") or root.name).strip()
+    if len(goal_txt) > 260:
+        goal_txt = _first_sentence(goal_txt)[:260]
+
+    act_eff = str(hb.get("active_effort") or "").strip()
+    if act_eff and " " not in act_eff and "-" in act_eff:
+        act_eff = ""
+    if active_steps:
+        a0 = active_steps[0]
+        if act_eff and not re.match(r"^(?:none|idle|quiet)$", act_eff, re.I) and len(act_eff) > 12:
+            doing_now = act_eff
+        else:
+            doing_now = a0["name"] + ((" \u2014 " + a0["done_when"]) if a0["done_when"] else "")
+    elif act_eff and not re.match(r"^(?:none|idle|quiet)$", act_eff, re.I):
+        doing_now = act_eff
+    elif upcoming_steps:
+        doing_now = "Ready for next wave: " + upcoming_steps[0]["name"]
+    else:
+        doing_now = "All current planned steps completed \u2014 ready for next instructions."
+
+    total_active_plan = len(done_steps) + len(active_steps) + len(upcoming_steps)
+    done_list = [d["name"] for d in done_steps]
+    rem_list = [a["name"] for a in active_steps] + [u["name"] for u in upcoming_steps]
+    if done_steps:
+        done_summary = f"{len(done_steps)} of {total_active_plan} waves/steps completed: " + " \u00b7 ".join(done_list[-4:])
+    else:
+        done_summary = f"0 of {total_active_plan} steps marked done yet."
+
+    nxt = str(hb.get("next_recommended") or "").strip()
+    if upcoming_steps:
+        up_names = [u["name"] for u in upcoming_steps[:3]]
+        todo_summary = f"{len(upcoming_steps)} upcoming: " + " \u2192 ".join(up_names)
+        if len(upcoming_steps) > 3:
+            todo_summary += f" (+{len(upcoming_steps) - 3} more)"
+    elif nxt:
+        todo_summary = nxt
+    elif active_steps:
+        todo_summary = "Complete active review/refinement on " + active_steps[0]["name"]
+    else:
+        todo_summary = "Await your feedback or next objective."
+
+    key_deliverables = []
+    try:
+        raw_d = _read_deliverables(campaign_dir)
+        dismissed = read_dismissed_deliverables(campaign_dir)
+        raw_items = raw_d.get("items") or []
+        cur_items = [it for it in current_review_items(m, raw_items) if not _is_deliverable_dismissed(campaign_dir, it, dismissed)]
+        cur_ids = {id(it) for it in cur_items}
+        seen_fams = set()
+        # 1. Current For Review primary deliverables
+        for it in cur_items:
+            if _is_intermediate_deliverable(it):
+                continue
+            fam = _family_key(it, steps)
+            if fam in seen_fams:
+                continue
+            seen_fams.add(fam)
+            p = str(it.get("open_path") or it.get("path") or "")
+            ext = (p.rsplit(".", 1)[-1].upper() if "." in p else "LINK")
+            key_deliverables.append({
+                "title": humanize_deliverable_title(it),
+                "path": p,
+                "where": p,
+                "route": it.get("route"),
+                "ext": ext,
+                "date": str(it.get("date") or "")[:10],
+                "status": "For Review",
+                "step": str(it.get("step") or ""),
+            })
+        # 2. Final / completed flagship deliverables
+        for it in list(raw_items) + list(raw_d.get("approved") or []):
+            if id(it) in cur_ids or _is_intermediate_deliverable(it):
+                continue
+            if not (it.get("openable") or it.get("path") or it.get("route")):
+                continue
+            what = str(it.get("what") or "")
+            is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
+            is_dis_approved = bool(is_dis and _dismissed_disposition(campaign_dir, it, dismissed) != "revision_requested")
+            from .navigation_compat import resolve_step
+            owner = resolve_step(steps, it.get("step"))
+            owner_done = bool(owner and (owner.get("status") == "done" or (owner.get("refinement") or {}).get("phase") == "done"))
+            is_flagship = bool(
+                _FINAL_DELIV_RE.match(what)
+                or is_dis_approved
+                or it.get("accepted")
+                or it.get("accepted_current")
+                or (owner_done and re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW|Primary|Complete|Final)\b", what, re.I))
+            )
+            if not is_flagship:
+                continue
+            fam = _family_key(it, steps)
+            if fam in seen_fams:
+                continue
+            seen_fams.add(fam)
+            p = str(it.get("open_path") or it.get("path") or "")
+            ext = (p.rsplit(".", 1)[-1].upper() if "." in p else "LINK")
+            key_deliverables.append({
+                "title": humanize_deliverable_title(it),
+                "path": p,
+                "where": p,
+                "route": it.get("route"),
+                "ext": ext,
+                "date": str(it.get("date") or "")[:10],
+                "status": "Final",
+                "step": str(it.get("step") or ""),
+            })
+            if len(key_deliverables) >= 8:
+                break
+    except Exception:
+        pass
+
+    pct_done = round(100 * len(done_steps) / total_active_plan) if total_active_plan else 0
+    return {
+        "goal": goal_txt,
+        "doing_now": doing_now,
+        "done_summary": done_list,
+        "remaining_summary": rem_list,
+        "done_summary_text": done_summary,
+        "todo_summary": todo_summary,
+        "steps_done": len(done_steps),
+        "steps_active": len(active_steps),
+        "steps_upcoming": len(upcoming_steps),
+        "steps_total": total_active_plan,
+        "pct_done": pct_done,
+        "done_steps": done_steps,
+        "active_steps": active_steps,
+        "upcoming_steps": upcoming_steps,
+        "key_deliverables": key_deliverables[:8],
+        "human_wait": _real_wait(str(hb.get("human_wait") or "")),
+    }
 
 
 def read_deliverables(campaign_dir: str):
@@ -3922,6 +4296,7 @@ def read_deliverables(campaign_dir: str):
         map_ = read_map(campaign_dir)
     dismissed = read_dismissed_deliverables(campaign_dir)
     raw_items = result.get("items") or []
+    steps = (map_ or {}).get("steps") or []
     # Compute current_review_items BEFORE filtering dismissed items so that when John marks
     # designated FOR REVIEW items Done, `designated` remains True for the step and older
     # deliverables are never promoted into For Review. Dismissed items stay in `items`
@@ -3929,14 +4304,87 @@ def read_deliverables(campaign_dir: str):
     raw_current_items = current_review_items(map_, raw_items)
     current_items = [it for it in raw_current_items if not _is_deliverable_dismissed(campaign_dir, it, dismissed)] if dismissed else raw_current_items
     current = {id(it) for it in current_items}
-    approved = result.get("approved") or []
+    approved_raw = result.get("approved") or []
+    approved = [
+        {
+            **ap,
+            "human_title": humanize_deliverable_title(ap),
+            "is_intermediate": _is_intermediate_deliverable(ap),
+        }
+        for ap in approved_raw
+    ]
+    # Track highest version rank per product family across all items so Final Deliverables
+    # only promotes the latest version of a flagship product (never superseded v1..v9 drafts).
+    fam_max_ver = {}
+    for it in raw_items:
+        if _is_intermediate_deliverable(it):
+            continue
+        fk = _family_key(it, steps)
+        vr = _version_rank(it)
+        if fk not in fam_max_ver or vr > fam_max_ver[fk]:
+            fam_max_ver[fk] = vr
+    current_fams = {_family_key(it, steps) for it in current_items if not _is_intermediate_deliverable(it)}
+    promoted_fam_stems: dict = {}
+
     decorated = []
     for it in raw_items:
-        owner = resolve_step(map_["steps"], it.get("step"))
+        owner = resolve_step(steps, it.get("step"))
         is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
-        decorated.append({**it, "owner_step_id": owner.get("id") if owner else None,
-                          "is_current": (not is_dis) and (id(it) in current),
-                          "reviewed_done": is_dis})
+        is_dis_approved = bool(is_dis and _dismissed_disposition(campaign_dir, it, dismissed) != "revision_requested")
+        is_cur = (not is_dis) and (id(it) in current)
+        is_inter = _is_intermediate_deliverable(it)
+        what_str = str(it.get("what") or "").strip()
+        owner_done = bool(owner and (owner.get("status") == "done" or (owner.get("refinement") or {}).get("phase") == "done"))
+        nav_fp = {str(p or "").replace("\\", "/").lower() for p in ((owner or {}).get("navigation") or {}).get("featured_paths") or []}
+        p_low = str(it.get("path") or "").replace("\\", "/").lower()
+        p_stem = re.sub(r"\.[a-z0-9]{1,8}$", "", p_low)
+        fk = _family_key(it, steps)
+        vr = _version_rank(it)
+        is_latest_ver = (not vr[1]) or (vr >= fam_max_ver.get(fk, vr))
+        # Promote to Final Deliverables when:
+        # 1) Explicitly labeled FINAL / APPROVED / ACCEPTED, OR
+        # 2) Marked Done / approved by John (is_dis_approved) and not an intermediate/supporting item, OR
+        # 3) Belongs to a completed step (owner_done) and was a primary/designated deliverable of that step,
+        # provided it is the latest version of its product family and not currently superseded in For Review.
+        cand_final = bool(
+            not is_cur
+            and not is_inter
+            and (it.get("openable") or it.get("path") or it.get("route"))
+            and is_latest_ver
+            and (fk not in current_fams or _FINAL_DELIV_RE.match(what_str))
+            and (
+                _FINAL_DELIV_RE.match(what_str)
+                or is_dis_approved
+                or it.get("accepted")
+                or it.get("accepted_current")
+                or (
+                    owner_done
+                    and (
+                        re.match(r"^(?:START\s+HERE|CURRENT|FOR\s+REVIEW|Primary\s+Deliverable|Complete\b|Final\b)", what_str, re.I)
+                        or (p_low and p_low in nav_fp)
+                    )
+                )
+            )
+        )
+        final_promoted = False
+        if cand_final:
+            if fk not in promoted_fam_stems:
+                promoted_fam_stems[fk] = p_stem
+                final_promoted = True
+            elif p_stem and promoted_fam_stems[fk] == p_stem:
+                # Same stem companion format (e.g. .docx + .pdf)
+                final_promoted = True
+        tier = "final" if final_promoted else ("for_review" if (is_cur and not is_inter) else "supporting")
+        decorated.append({
+            **it,
+            "owner_step_id": owner.get("id") if owner else None,
+            "is_current": is_cur,
+            "reviewed_done": is_dis,
+            "is_intermediate": is_inter,
+            "final_promoted": final_promoted,
+            "tier": tier,
+            "human_title": humanize_deliverable_title(it),
+        })
     acts = review_acts(map_, current_items, campaign_dir)
     focused, focus_warn = _focused_step(map_)
     hb = (map_ or {}).get("heartbeat") or {}
@@ -4885,12 +5333,24 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
     for it in list(raw_items) + list(approved_items):
         if not isinstance(it, dict):
             continue
+        what = str(it.get("what") or "").strip()
+        p_norm = str(it.get("path") or "").replace("\\", "/").lower()
         owner = resolve_step(cur_proj, it.get("step"))
+        if owner is None and p_norm:
+            for cand_s in cur_proj:
+                if not isinstance(cand_s, dict):
+                    continue
+                fp_list = ((cand_s.get("navigation") or {}).get("featured_paths") if isinstance(cand_s.get("navigation"), dict) else None) or []
+                if any(str(fp or "").replace("\\", "/").lower() == p_norm for fp in fp_list):
+                    owner = cand_s
+                    break
+                dw_low = str(cand_s.get("done_when") or "").replace("\\", "/").lower()
+                if p_norm in dw_low or (Path(p_norm).name and len(Path(p_norm).name) > 6 and Path(p_norm).name in dw_low):
+                    owner = cand_s
+                    break
         sid = str((owner or {}).get("id") or (owner or {}).get("step_id") or it.get("step") or "").strip()
         if not sid:
             continue
-        what = str(it.get("what") or "").strip()
-        p_norm = str(it.get("path") or "").replace("\\", "/").lower()
         clean_label = _strip_format_tag(
             re.sub(
                 r"^(?:START\s+HERE\s*[\u2014\u2013\-:]\s*)?(?:FOR\s+REVIEW\s*[\u2014\u2013\-:]\s*)?"
@@ -4913,6 +5373,10 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
             continue
 
         is_dis = bool(dismissed and _is_deliverable_dismissed(campaign_dir, it, dismissed))
+        if is_dis and not _is_intermediate_deliverable(it):
+            if clean_label not in final_by_step.setdefault(sid, []):
+                final_by_step[sid].append(clean_label)
+            continue
         if is_dis or _HISTORICAL_LABEL.match(what):
             continue
         is_for_review = bool(
@@ -4923,6 +5387,9 @@ def compute_deliverables_plan_refresh(campaign_dir: str, m: dict | None = None, 
         if is_for_review:
             if clean_label not in open_review_by_step.setdefault(sid, []):
                 open_review_by_step[sid].append(clean_label)
+        elif it.get("openable") and not it.get("auto") and not _is_intermediate_deliverable(it):
+            if clean_label not in final_by_step.setdefault(sid, []):
+                final_by_step[sid].append(clean_label)
 
     proposed_steps = deepcopy(cur_proj)
     changes = []
@@ -5422,16 +5889,20 @@ _REVISION_FEEDBACK_RE = re.compile(
 
 
 _SPECIFIC_REVIEW_TARGET_RE = re.compile(
-    r"\b(lecture\s*\d+|chapter\s*\d+|ch\.?\s*\d+|homework\s*\d+|hw\s*\d+|quiz\s*\d+|wave\s*\d+|step\s*\d+|"
-    r"block\s*\d+|round\s*\d+|paper\s*\d+|book\s*\d+|syllabus|intro\s+lecture|lem\s+lab)\b",
+    r"\b(lectures?\s*\d+(?:\s*(?:to|through|[-\u2013\u2014])\s*\d+)?|"
+    r"chapters?\s*\d+(?:\s*(?:to|through|[-\u2013\u2014])\s*\d+)?|"
+    r"ch\.?\s*\d+(?:\s*(?:to|through|[-\u2013\u2014])\s*\d+)?|"
+    r"homeworks?\s*\d+|hw\s*\d+|quiz(?:zes)?\s*\d+|waves?\s*\d+|steps?\s*\d+|"
+    r"blocks?\s*\d+|rounds?\s*\d+|papers?\s*\d+|books?\s*\d+|v\d+(?:\.\d+)?|syllabus|intro\s+lecture|lem\s+lab)\b",
     re.I,
 )
 
 
 def _normalize_review_target_token(tok: str) -> str:
     s = re.sub(r"\s+", " ", str(tok or "").strip().lower())
-    s = re.sub(r"^ch\.?\s*(\d+)$", r"chapter \1", s)
-    s = re.sub(r"^hw\s*(\d+)$", r"homework \1", s)
+    s = re.sub(r"^(?:chapters?|ch\.?)\s*0*(\d+).*$", r"chapter \1", s)
+    s = re.sub(r"^lectures?\s*0*(\d+).*$", r"lecture \1", s)
+    s = re.sub(r"^(?:homeworks?|hw)\s*0*(\d+).*$", r"homework \1", s)
     return s
 
 
@@ -5443,12 +5914,107 @@ def _item_matches_review_targets(it: dict, targets: list[str]) -> bool:
         " ",
         f"{it.get('what') or ''} {it.get('open_path') or it.get('path') or ''} {it.get('step') or ''} {it.get('owner_step_id') or ''}".lower(),
     )
+    hay_norm = re.sub(r"\b(?:chapters?|ch\.?)[\s_-]*0*(\d+)\b", r"chapter \1", hay)
+    hay_norm = re.sub(r"\b(?:lectures?|lec\.?)[\s_-]*0*(\d+)\b", r"lecture \1", hay_norm)
     for t in targets:
-        # Match either 'lecture 5' or 'lecture-5' / 'lecture_5'
-        pat = re.escape(t).replace(r"\ ", r"[\s_-]*")
-        if re.search(r"\b" + pat + r"\b", hay, re.I):
+        pat = re.escape(t).replace(r"\ ", r"[\s_-]*0*")
+        if re.search(r"\b" + pat + r"\b", hay, re.I) or re.search(r"\b" + pat + r"\b", hay_norm, re.I):
             return True
     return False
+
+
+def _viewed_deliverables_file(campaign_dir: str) -> Path:
+    return Path(campaign_dir) / ".ecgberht" / "recently-viewed-deliverables.json"
+
+
+def record_deliverable_viewed(campaign_dir: str, rel_path: str) -> None:
+    """Record that John opened or downloaded a deliverable in the AI Cockpit so subsequent feedback
+    automatically reconciles that deliverable (and its companion formats) from For Review."""
+    if not campaign_dir or not rel_path:
+        return
+    try:
+        norm = str(rel_path or "").replace("\\", "/").strip().lstrip("/")
+        if not norm:
+            return
+        vf = _viewed_deliverables_file(campaign_dir)
+        data = {}
+        if vf.is_file():
+            try:
+                data = json.loads(vf.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        entries = data.get("entries") if isinstance(data, dict) and isinstance(data.get("entries"), dict) else {}
+        stem = Path(norm).stem.lower()
+        entries[norm] = {
+            "path": norm,
+            "stem": stem,
+            "viewed_at": time.time(),
+        }
+        if len(entries) > 40:
+            sorted_keys = sorted(entries.keys(), key=lambda k: float((entries.get(k) or {}).get("viewed_at") or 0))
+            for old_k in sorted_keys[:-40]:
+                entries.pop(old_k, None)
+        vf.parent.mkdir(parents=True, exist_ok=True)
+        vf.write_text(json.dumps({"entries": entries}, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _recently_viewed_stems(campaign_dir: str, max_age_sec: float = 86400.0) -> set[str]:
+    vf = _viewed_deliverables_file(campaign_dir)
+    if not vf.is_file():
+        return set()
+    try:
+        raw = json.loads(vf.read_text(encoding="utf-8"))
+        entries = raw.get("entries") if isinstance(raw, dict) else {}
+        if not isinstance(entries, dict):
+            return set()
+        now = time.time()
+        stems: set[str] = set()
+        for info in entries.values():
+            if not isinstance(info, dict):
+                continue
+            if now - float(info.get("viewed_at") or 0) <= max_age_sec:
+                st = str(info.get("stem") or "").strip().lower()
+                if st:
+                    stems.add(st)
+        return stems
+    except Exception:
+        return set()
+
+
+def _cockpit_review_candidates(campaign_dir: str) -> list[dict]:
+    """Return all deliverables currently shown in the AI Cockpit's For Review queue (matching `shared.js` `isReviewOrCurrent`)."""
+    out: list[dict] = []
+    seen_paths: set[str] = set()
+    try:
+        for it in review_waiting(campaign_dir):
+            if isinstance(it, dict):
+                p = str(it.get("open_path") or it.get("path") or "")
+                seen_paths.add(p)
+                out.append(it)
+        d = read_deliverables(campaign_dir)
+        for it in d.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            if it.get("accepted") or it.get("accepted_current"):
+                continue
+            w = str(it.get("what") or "").strip()
+            p = str(it.get("open_path") or it.get("path") or "").strip()
+            if re.match(r"^(?:supporting|supplemental|reference|companion)\b", w, re.I):
+                continue
+            is_rev = bool(
+                _FOR_REVIEW_LABEL.match(w)
+                or re.match(r"^[\u2605\u2b50]", w)
+                or it.get("is_current") is True
+                or (it.get("managed") and it.get("phase") in ("awaiting_review", "blocked"))
+            )
+            if is_rev and p not in seen_paths:
+                seen_paths.add(p)
+                out.append(it)
+    except Exception:
+        pass
+    return out
 
 
 def reconcile_review_on_feedback(campaign_dir: str, text: str) -> dict:
@@ -5458,32 +6024,66 @@ def reconcile_review_on_feedback(campaign_dir: str, text: str) -> dict:
     msg = str(text or "").strip()
     if not msg or len(msg) < 2:
         return {"ok": False, "reason": "empty"}
+    if re.search(r"\b(?:keep\s+(?:it\s+)?in\s+review|not\s+final|do\s+not\s+(?:mark|approve|dismiss)|stay\s+in\s+review)\b", msg, re.I):
+        return {"ok": True, "reconciled": 0, "kind": "keep_in_review"}
     is_approve = bool(_APPROVE_FEEDBACK_RE.search(msg))
     is_revision = bool(_REVISION_FEEDBACK_RE.search(msg))
-    # Even if not matching specific keywords, a multi-word substantive feedback message (>20 chars, not just a status question)
     is_status_question = bool(re.match(r"^(?:what(?:'s|\s+is)\s+the\s+status|how\s+is\s+it\s+going|status\??|eta\??|are\s+you\s+still\s+working)\s*\??$", msg, re.I))
-    is_substantive_feedback = (len(msg) >= 20 and not is_status_question)
+    is_substantive_feedback = (len(msg) >= 15 and not is_status_question)
     if not (is_approve or is_revision or is_substantive_feedback):
         return {"ok": True, "reconciled": 0}
+    disposition = "approved" if (is_approve and not is_revision) else "revision_requested"
     reconciled = 0
     try:
-        waiting = review_waiting(campaign_dir)
+        waiting = _cockpit_review_candidates(campaign_dir)
         raw_targets = _SPECIFIC_REVIEW_TARGET_RE.findall(msg)
         named_targets = list(dict.fromkeys(_normalize_review_target_token(t) for t in raw_targets if t))
         is_explicit_all = bool(re.search(r"\b(?:all\s+(?:of\s+them|deliverables|items)|mark\s+all\s+done|approve\s+all)\b", msg, re.I))
+        viewed_stems = _recently_viewed_stems(campaign_dir)
+
+        target_matched = [it for it in waiting if isinstance(it, dict) and named_targets and _item_matches_review_targets(it, named_targets)]
+        viewed_matched = [
+            it for it in waiting
+            if isinstance(it, dict) and viewed_stems and Path(str(it.get("open_path") or it.get("path") or "")).stem.lower() in viewed_stems
+        ]
+        matched_steps = {
+            str(it.get("owner_step_id") or it.get("step") or "")
+            for it in (target_matched or viewed_matched)
+            if str(it.get("owner_step_id") or it.get("step") or "")
+        }
+        matched_stems = {
+            Path(str(it.get("open_path") or it.get("path") or "")).stem.lower()
+            for it in (target_matched or viewed_matched)
+            if str(it.get("open_path") or it.get("path") or "")
+        }
         distinct_steps = {str(it.get("owner_step_id") or it.get("step") or "") for it in waiting if isinstance(it, dict)}
+
         for it in waiting:
             if not isinstance(it, dict):
                 continue
+            step_key = str(it.get("owner_step_id") or it.get("step") or "")
+            it_stem = Path(str(it.get("open_path") or it.get("path") or "")).stem.lower()
+            it_raw_targets = _SPECIFIC_REVIEW_TARGET_RE.findall(
+                f"{it.get('what') or ''} {it.get('open_path') or it.get('path') or ''}"
+            )
+            it_norm_targets = {_normalize_review_target_token(t) for t in it_raw_targets if t}
             if not is_explicit_all:
-                if named_targets:
-                    if not _item_matches_review_targets(it, named_targets):
+                if target_matched:
+                    if it not in target_matched and it_stem not in matched_stems:
+                        if it_norm_targets and not (it_norm_targets & set(named_targets)):
+                            continue
+                        if not step_key or step_key not in matched_steps:
+                            continue
+                elif viewed_matched:
+                    if it not in viewed_matched and it_stem not in matched_stems and (not step_key or step_key not in matched_steps):
                         continue
-                elif len(waiting) > 3 and len(distinct_steps) > 1:
-                    # In a multi-step campaign where no target was named and >3 items are waiting across multiple steps,
-                    # do not bulk-dismiss all waiting deliverables on a general chat turn.
+                elif named_targets:
+                    if it_norm_targets and not (it_norm_targets & set(named_targets)):
+                        continue
+                    if len(distinct_steps) > 1 and len(waiting) > 6:
+                        continue
+                elif len(waiting) > 6 and len(distinct_steps) > 1:
                     continue
-            # Dismiss from the active For Review red-flag queue so Steward doesn't keep nagging John to check it off
             dismiss_deliverable(
                 campaign_dir,
                 path=str(it.get("open_path") or it.get("path") or ""),
@@ -5491,21 +6091,176 @@ def reconcile_review_on_feedback(campaign_dir: str, text: str) -> dict:
                 what=str(it.get("what") or ""),
                 revision_id=str(it.get("revision_id") or ""),
                 hash_val=str(it.get("hash") or ""),
+                disposition=disposition,
             )
             reconciled += 1
-        # Clear stale review human_wait on strip.json if it was waiting for review and no review items remain
+
         if reconciled > 0 or not waiting:
-            st_path = Path(campaign_dir) / "strip.json"
-            st_data, st_err = _read_json(st_path)
-            if not st_err and isinstance(st_data, dict):
-                hw = str(st_data.get("human_wait") or "")
-                if re.search(r"\b(?:review|feedback|approve|look\s+at)\b", hw, re.I):
-                    st_data["human_wait"] = "none"
-                    st_data["last_feedback_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                    st_data["last_feedback_kind"] = "approved" if is_approve else "revision_requested"
-                    st_path.write_text(json.dumps(st_data, indent=2, ensure_ascii=False), encoding="utf-8")
-                    with _JSON_FILE_CACHE_LOCK:
-                        _JSON_FILE_CACHE.clear()
+            for st_path in (Path(campaign_dir) / "strip.json", Path(campaign_dir) / ".ecgberht" / "strip.json"):
+                st_data, st_err = _read_json(st_path)
+                if not st_err and isinstance(st_data, dict):
+                    hw = str(st_data.get("human_wait") or "")
+                    if hw and hw.lower() != "none":
+                        st_data["human_wait"] = "none"
+                        st_data["last_feedback_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                        st_data["last_feedback_kind"] = disposition
+                        st_path.write_text(json.dumps(st_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                        with _JSON_FILE_CACHE_LOCK:
+                            _JSON_FILE_CACHE.clear()
+            for rm_path in (Path(campaign_dir) / "roadmap.json", Path(campaign_dir) / ".ecgberht" / "roadmap.json"):
+                rm_data, rm_err = _read_json(rm_path)
+                if not rm_err and isinstance(rm_data, dict):
+                    changed_rm = False
+                    for s in (rm_data.get("roadmap_projection") or rm_data.get("steps") or []):
+                        if isinstance(s, dict) and s.get("waiting_on") and re.search(r"\b(?:john|review|feedback|approval)\b", str(s.get("waiting_on") or ""), re.I):
+                            s.pop("waiting_on", None)
+                            if s.get("status") in ("waiting", "blocked"):
+                                s["status"] = "active"
+                            changed_rm = True
+                    if changed_rm:
+                        rm_path.write_text(json.dumps(rm_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                        with _JSON_FILE_CACHE_LOCK:
+                            _JSON_FILE_CACHE.clear()
     except Exception:
         pass
-    return {"ok": True, "reconciled": reconciled, "kind": "approved" if is_approve else "revision_requested"}
+    return {"ok": True, "reconciled": reconciled, "kind": disposition}
+
+
+def reconcile_cockpit_turn_state(
+    campaign_dir: str,
+    *,
+    turn_text: str = "",
+    user_text: str = "",
+    wrote_files: bool = False,
+    engine_state: dict | None = None,
+    auto_accept_plan: bool = False,
+    emit_status: bool = False,
+) -> dict:
+    """Unified Functional-Core / Imperative-Shell turn-end bookkeeping spine for the AI Cockpit Steward.
+    In one coordinated, non-destructive pass, reconciles:
+      1. User feedback on deliverables (`reconcile_review_on_feedback`, honoring explicit 'keep in review' and distinguishing approval vs revision).
+      2. Explicit Steward status table (`persist_status_table_from_text` if present in `turn_text`).
+      3. Hierarchical Plan & Strip projections (`sync_steward_projections` + optional `compute_deliverables_plan_refresh` auto-accept when `auto_accept_plan=True`).
+      4. Running Overview (`.ecgberht/overview.json`), merging Steward-authored `goal`/`notes` with live plan & deliverable progress.
+      5. Bottom Status Window (`.ecgberht/status_card.json` backfilled from reconciled state without clobbering fresh Steward-emitted fields).
+    """
+    if not campaign_dir:
+        return {"ok": False, "reason": "missing campaign_dir"}
+    root = Path(campaign_dir)
+    if not root.is_dir():
+        return {"ok": False, "reason": "missing directory"}
+
+    feedback_res = None
+    if user_text and str(user_text).strip():
+        try:
+            feedback_res = reconcile_review_on_feedback(campaign_dir, str(user_text))
+        except Exception:
+            feedback_res = None
+
+    if turn_text and str(turn_text).strip():
+        try:
+            persist_status_table_from_text(campaign_dir, str(turn_text))
+        except Exception:
+            pass
+
+    sync_res = {"ok": False, "changed": False}
+    try:
+        sync_res = sync_steward_projections(campaign_dir)
+    except Exception:
+        pass
+
+    plan_refreshed = False
+    if auto_accept_plan:
+        try:
+            refresh = compute_deliverables_plan_refresh(campaign_dir)
+            if refresh.get("has_changes"):
+                prop_file = root / ".ecgberht" / "plan-proposal.json"
+                prop_disk, _ = _read_json(prop_file)
+                if not (isinstance(prop_disk, dict) and prop_disk.get("status") == "dismissed" and prop_disk.get("digest") == refresh.get("digest")):
+                    resolve_plan_proposal(campaign_dir, action="accept")
+                    plan_refreshed = True
+        except Exception:
+            pass
+
+    overview = {}
+    try:
+        m = read_map(campaign_dir, include_plan_history=False)
+        overview = build_running_overview(campaign_dir, m)
+        ov_path = root / ".ecgberht" / "overview.json"
+        existing_ov, _ = _read_json(ov_path)
+        merged_ov = dict(existing_ov) if isinstance(existing_ov, dict) else {}
+        # Preserve explicit non-empty goal from existing overview.json if already set by Steward
+        if merged_ov.get("goal") and str(merged_ov.get("goal")).strip():
+            overview["goal"] = str(merged_ov["goal"]).strip()
+        merged_ov.update({
+            "goal": overview.get("goal") or "",
+            "doing_now": overview.get("doing_now") or "",
+            "done_summary": overview.get("done_summary") or [],
+            "done_summary_text": overview.get("done_summary_text") or "",
+            "todo_summary": overview.get("todo_summary") or "",
+            "steps_done": overview.get("steps_done", 0),
+            "steps_active": overview.get("steps_active", 0),
+            "steps_upcoming": overview.get("steps_upcoming", 0),
+            "steps_total": overview.get("steps_total", 0),
+            "pct_done": overview.get("pct_done", 0),
+            "key_deliverables": overview.get("key_deliverables") or [],
+            "human_wait": overview.get("human_wait") or "",
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+        ov_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_ov = ov_path.with_name(f"{ov_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp_ov.write_text(json.dumps(merged_ov, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp_ov, ov_path)
+        with _JSON_FILE_CACHE_LOCK:
+            _JSON_FILE_CACHE.pop(str(ov_path), None)
+    except Exception:
+        pass
+
+    # Backfill .ecgberht/status_card.json only when missing or older than the current turn (never clobbering a card just written)
+    try:
+        sc_path = root / ".ecgberht" / "status_card.json"
+        existing_sc, _ = _read_json(sc_path)
+        existing_sc = dict(existing_sc) if isinstance(existing_sc, dict) else {}
+        sc_mtime = sc_path.stat().st_mtime if sc_path.is_file() else 0.0
+        just_written = (time.time() - sc_mtime) < 3.0 and bool(existing_sc.get("doing"))
+        if not just_written and overview:
+            steps_status = f"{overview.get('steps_done', 0)}/{overview.get('steps_total', 0)} waves · {overview.get('pct_done', 0)}% done"
+            new_sc = {
+                **existing_sc,
+                "timestamp": time.strftime("%H:%M"),
+                "project": root.name,
+                "effort": existing_sc.get("effort") or overview.get("goal") or root.name,
+                "doing": overview.get("doing_now") or existing_sc.get("doing") or "Idle — waiting for instructions",
+                "status": steps_status,
+                "tests": existing_sc.get("tests") or "pass ✓",
+                "blocker": overview.get("human_wait") or existing_sc.get("blocker") or "none",
+                "procs": existing_sc.get("procs") or "idle",
+                "journal": existing_sc.get("journal") or "none",
+                "eta": existing_sc.get("eta") or "nothing running",
+                "todo": overview.get("todo_summary") or existing_sc.get("todo") or "Await next instructions",
+            }
+            sc_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_sc = sc_path.with_name(f"{sc_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+            tmp_sc.write_text(json.dumps(new_sc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            os.replace(tmp_sc, sc_path)
+            with _JSON_FILE_CACHE_LOCK:
+                _JSON_FILE_CACHE.pop(str(sc_path), None)
+    except Exception:
+        pass
+
+    status_out = None
+    if emit_status:
+        try:
+            status_out = compose_status(campaign_dir, engine_state)
+        except Exception:
+            status_out = None
+
+    return {
+        "ok": True,
+        "feedback": feedback_res,
+        "projections_synced": bool(sync_res.get("changed")),
+        "plan_refreshed": plan_refreshed,
+        "overview": overview,
+        "status": status_out,
+    }
+

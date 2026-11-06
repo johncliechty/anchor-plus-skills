@@ -170,8 +170,48 @@ const Proto = (() => {
   }
   function stepDone(st) {
     if (!st) return false;
-    if (st.refinement) return st.refinement.phase === "done";
+    const isLegacyFixture = /^(Navigation project|Empty campaign|Waiting campaign|foundation campaign)$/i.test(String((_lastMap && (_lastMap.name || _lastMap.title)) || DIR || ""));
+    if (st.refinement) {
+      if (isLegacyFixture) return st.refinement.phase === "done";
+      if (st.refinement.phase === "done") return true;
+      if (st.refinement.phase === "awaiting_review" || st.refinement.phase === "blocked") return false;
+    }
     return st.status === "done";
+  }
+  function cleanPlanStep(st, idx) {
+    if (!st) return { title: "Step " + (idx + 1), subtitle: "" };
+    const raw = String((st.navigation && st.navigation.label) || st.name || ("Step " + (idx + 1))).replace(/\*\*/g, "").trim();
+    let s = raw
+      .replace(/\s*\((?:proposed|for review|ready for review|awaiting review)\)\s*$/i, "")
+      .replace(/\s+ready for review\s*$/i, "")
+      .trim();
+    let sub = "";
+    const parenM = /\s*\(([^)]{22,})\)\s*$/.exec(s);
+    if (parenM) {
+      sub = parenM[1].trim();
+      s = s.slice(0, parenM.index).trim();
+    }
+    const dashParts = s.split(/\s+[\u2014\u2013]\s+|\s+-\s+(?=[A-Z0-9a-z])/).map(p => p.trim()).filter(Boolean);
+    if (dashParts.length >= 2) {
+      let p0 = dashParts[0];
+      let p1 = dashParts[1];
+      const rest = dashParts.slice(2).join(" \u00b7 ");
+      const refM = /\s+(?:Final\s*\/\s*)?(?:Refinement|Draft|Revision|Round)\s+\d+.*$/i.exec(p1);
+      if (refM && p1.length > 28) {
+        const extra = refM[0].trim();
+        p1 = p1.slice(0, refM.index).trim();
+        sub = (extra + (sub ? " \u00b7 " + sub : "")).trim();
+      }
+      if (p0.length <= 28 && p1.length <= 44) {
+        s = p0 + " \u2014 " + p1;
+        if (rest) sub = (rest + (sub ? " \u00b7 " + sub : "")).trim();
+      } else {
+        s = p0.length >= 14 ? p0 : (p0 + " \u2014 " + oneLine(p1, 38));
+        const remSub = p0.length >= 14 ? dashParts.slice(1).join(" \u00b7 ") : rest;
+        if (remSub) sub = (remSub + (sub ? " \u00b7 " + sub : "")).trim();
+      }
+    }
+    return { title: s || raw, subtitle: oneLine(sub, 95) };
   }
   // W0 (High Seat, 2026-09-26): a step's calendar date, ISO in the record, "Oct 8" on the page
   function fmtDue(iso) {
@@ -1101,6 +1141,8 @@ const Proto = (() => {
   let _sntActionOpen = false;
   let _approvalResolvedSession = false;
   let _approvalResolvedSig = "";
+  let _lastRawApprovalSig = "";
+  let _approvalResolvedAt = 0;
   let _allDelivSearch = "";
   let _allDelivSort = "date-desc";
   let _allDelivType = "ALL";
@@ -1134,6 +1176,59 @@ const Proto = (() => {
     s = s.replace(/\s+[\u2014\u2013-]+\s*(?:PDF reading copy|printable PDF|shareable PDF|PowerPoint download|editable PowerPoint|Word \(\.docx\) copy|Word copy|Markdown source|copyable plan text|HTML preview|Markdown note|source)\s*$/i, "").trim();
     return s;
   }
+  function humanizeDelivTitle(rawStr, it) {
+    if (it && typeof it.human_title === "string" && it.human_title.trim() && !/^[a-f0-9]{40,64}/i.test(it.human_title.trim())) {
+      return it.human_title.trim();
+    }
+    let s = stripDeliverableLeadPrefixes(rawStr || (it && (it.what || it.label)) || "");
+    if (!s && it) {
+      const rp = String(it.open_path || it.path || "").replace(/\\/g, "/");
+      const base = rp ? rp.split("/").pop() : "";
+      if (base && !/^[a-f0-9]{40,64}\./i.test(base)) {
+        s = base.replace(/\.[a-z0-9]{1,8}$/i, "");
+      }
+    }
+    s = s
+      .replace(/[\s_-]+(?:PDF|DOCX|PPTX|PowerPoint|Word|HTML|XLSX|Markdown|MD|TXT)\s*$/i, "")
+      .replace(/\s*\(\s*\.[a-z0-9]{1,8}\s*\)\s*$/i, "")
+      .trim();
+    const draftTail = /[\s_-]+(Draft|Refinement|Revision|Round|Version)[\s_-]*(\d+)\s*$/i.exec(s);
+    let draftSuffix = "";
+    if (draftTail) {
+      draftSuffix = " (" + draftTail[1].charAt(0).toUpperCase() + draftTail[1].slice(1).toLowerCase() + " " + draftTail[2] + ")";
+      s = s.slice(0, draftTail.index).trim();
+    }
+    const hyphenCount = (s.match(/-/g) || []).length;
+    const spaceCount = (s.match(/\s/g) || []).length;
+    if (hyphenCount >= 1 && (spaceCount === 0 || hyphenCount >= spaceCount)) {
+      const keepCompounds = [
+        [/\bstate-space\b/gi, "State\u0000Space"],
+        [/\bscore-based\b/gi, "Score\u0000Based"],
+        [/\bbeta-reader\b/gi, "Beta\u0000Reader"],
+        [/\bcross-validation\b/gi, "Cross\u0000Validation"],
+        [/\bfine-tuning\b/gi, "Fine\u0000Tuning"],
+        [/\blog-sum-exp\b/gi, "Log\u0000Sum\u0000Exp"],
+        [/\bmulti-level\b/gi, "Multi\u0000Level"],
+        [/\bnon-parametric\b/gi, "Non\u0000Parametric"],
+        [/\bself-attention\b/gi, "Self\u0000Attention"],
+        [/\breal-estate\b/gi, "Real\u0000Estate"],
+        [/\bhigh-dimensional\b/gi, "High\u0000Dimensional"],
+        [/\bt-stat\b/gi, "t\u0000Stat"],
+        [/\bp-value\b/gi, "p\u0000Value"],
+        [/\br-squared\b/gi, "R\u0000Squared"],
+        [/\bk-nn\b/gi, "k\u0000NN"],
+      ];
+      keepCompounds.forEach(([re, rep]) => { s = s.replace(re, rep); });
+      s = s.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+      s = s.replace(/\u0000/g, "-");
+    }
+    s = s.replace(/^(HW\s*\d+\s+Final)\s+(Homework\s*\d+)\b/i, "$1 \u00b7 $2");
+    s = s.replace(/^(Lecture\s*\d+|Section\s*\d+|Wave\s*\d+|Chapter\s*\d+)\s+(?=[A-Z])/i, "$1 \u00b7 ");
+    if (draftSuffix && s.toLowerCase().indexOf(draftSuffix.toLowerCase().trim()) < 0) {
+      s += draftSuffix;
+    }
+    return s || "Deliverable";
+  }
   function pairDeliverableFormats(itemsList) {
     if (!Array.isArray(itemsList) || !itemsList.length) return [];
     const fmtRank = { PDF: 1, HTML: 2, DOCX: 3, PPTX: 4, XLSX: 5, R: 6, PY: 7, CSV: 8, MD: 9, TXT: 10, ZIP: 11, FILE: 12 };
@@ -1144,18 +1239,23 @@ const Proto = (() => {
       const baseName = rawPath ? rawPath.split("/").pop() : "";
       const isHash = /^[a-f0-9]{40,64}\.[a-z0-9]+$/i.test(baseName);
       let key = "";
-      const cleanW = stripDeliverableLeadPrefixes(it.what || it.label || "")
+      const cleanHuman = humanizeDelivTitle(it.what || it.label || "", it)
+        .replace(/^hw\s*\d+\s*final\s*[\u00b7:-]?\s*/i, "")
         .replace(/\s*\(\s*\.[a-z0-9]{1,8}\s*\)\s*$/i, "")
-        .replace(/-(?:PDF|MD|PowerPoint|DOCX|HTML)$/i, "")
+        .replace(/[\s_-]+(?:pdf|md|powerpoint|pptx|docx|word|html|xlsx)$/i, "")
         .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
         .trim();
       if (rawPath && !isHash) {
-        const fileStem = baseName.replace(/\.[a-z0-9]{1,8}$/i, "").toLowerCase().trim();
+        let fileStem = baseName.replace(/\.[a-z0-9]{1,8}$/i, "").toLowerCase().trim();
+        fileStem = fileStem
+          .replace(/^hw\d+[-_]+final[-_]+/i, "")
+          .replace(/[-_]+(?:pdf|md|powerpoint|pptx|docx|word|html|xlsx)$/i, "");
         const isGeneric = /^(?:index|readme|report|plan|master-plan|implementation-plan|summary|draft|slides|deck|manuscript|notes)$/i.test(fileStem);
         const fullStem = rawPath.replace(/\.[a-z0-9]{1,8}$/i, "").toLowerCase().trim();
-        key = isGeneric ? ("path:" + fullStem) : ("stem:" + String(it.step || "") + ":" + fileStem);
+        key = isGeneric ? ("path:" + fullStem) : ("stem:" + String(it.owner_step_id || it.step || "") + ":" + fileStem);
       } else {
-        key = "title:" + String(it.step || "") + ":" + cleanW;
+        key = "title:" + String(it.owner_step_id || it.step || "") + ":" + cleanHuman;
       }
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(it);
@@ -1272,8 +1372,13 @@ const Proto = (() => {
     const hasStepWait = Boolean(_lastMap && Array.isArray(_lastMap.steps) && _lastMap.steps.some(s => stepNeedsAttention(s)));
     // Only flag Approval Needed when there is an actual pending question, explicit human_wait, unreviewed For Review items, or a waiting step — never from routine hb.next_recommended alone!
     const rawApprovalSig = JSON.stringify([q && q.id, cleanWait, reviewItems.map(r => r.path || r.what), hasStepWait]);
+    _lastRawApprovalSig = rawApprovalSig;
     if (_approvalResolvedSession && _approvalResolvedSig && _approvalResolvedSig !== rawApprovalSig) {
-      _approvalResolvedSession = false;
+      if (Date.now() - _approvalResolvedAt < 15000) {
+        _approvalResolvedSig = rawApprovalSig;
+      } else {
+        _approvalResolvedSession = false;
+      }
     }
     const rawNeedsApproval = Boolean((q && q.question) || cleanWait || reviewItems.length > 0 || hasStepWait);
     const needsApproval = !_approvalResolvedSession && rawNeedsApproval;
@@ -1295,6 +1400,7 @@ const Proto = (() => {
       try {
         _approvalResolvedSession = true;
         _approvalResolvedSig = rawApprovalSig;
+        _approvalResolvedAt = Date.now();
         try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
         if (q && q.id) {
           if (lastState) lastState.pending_questions = [];
@@ -1303,6 +1409,37 @@ const Proto = (() => {
           await sendSay("go");
         }
         try { await loadMap(); } catch (e) {}
+      } finally {
+        if (btnEl) btnEl.disabled = false;
+      }
+    };
+
+    const executeDismissReview = async (ev, btnEl) => {
+      if (ev) ev.stopPropagation();
+      if (btnEl) btnEl.disabled = true;
+      try {
+        _approvalResolvedSession = true;
+        _approvalResolvedSig = rawApprovalSig;
+        _approvalResolvedAt = Date.now();
+        const allRev = ((_deliv && _deliv.mainReviewNow) || []).concat((_deliv && _deliv.supplementalReviewNow) || []);
+        if (allRev.length > 0) {
+          const batchPayload = allRev.map(it => {
+            const k = String(it.open_path || it.path || it.product_id || it.what || "");
+            if (k) _dismissedSessionKeys.add(k);
+            return {
+              path: it.open_path || it.path || "",
+              product_id: it.product_id || "",
+              what: it.what || "",
+              revision_id: it.revision_id || "",
+              hash: it.hash || "",
+            };
+          });
+          try { await post("/api/dismiss-deliverable", { items: batchPayload }); } catch (e) {}
+        }
+        try { await post("/api/clear-wait", { question_id: q ? q.id : null }); } catch (e) {}
+        try { await renderDeliverablesTile(); } catch (e) {}
+        try { await loadMap(); } catch (e) {}
+        renderTopNextSteps();
       } finally {
         if (btnEl) btnEl.disabled = false;
       }
@@ -1324,6 +1461,16 @@ const Proto = (() => {
       const hlSpan = el("span", "top-approval-headline", headlineText);
       hlSpan.title = headlineText;
       summaryRow.appendChild(hlSpan);
+
+      if (needsApproval) {
+        const donePillBtn = el("button", "snt-btn top-approval-done-btn", "\u2713 Review Done");
+        donePillBtn.type = "button";
+        donePillBtn.dataset.topApprovalDone = "1";
+        donePillBtn.title = "Dismiss this approval flag (marks current review items as reviewed without launching a new turn)";
+        donePillBtn.style.cssText = "margin-left:auto;margin-right:8px;padding:2px 9px;font-size:11px;border-radius:999px;background:rgba(16,185,129,0.18);border:1px solid rgba(16,185,129,0.45);color:#6ee7b7;cursor:pointer;white-space:nowrap;";
+        donePillBtn.onclick = (ev) => executeDismissReview(ev, donePillBtn);
+        summaryRow.appendChild(donePillBtn);
+      }
 
       const hintSpan = el("span", "top-approval-hint", _sntOpen ? "Hide details & links \u25be" : "Click to inspect recommendation & links \u25b8");
       summaryRow.appendChild(hintSpan);
@@ -1803,10 +1950,12 @@ const Proto = (() => {
         if (!raw) return fallback;
         return oneLine(raw, 44);
       };
-      const m1 = curStep ? fmtStepLabel(curStep, curIdx, "Current Wave") : oneLine((sl && sl.name) || p.step || "Current Wave", 40);
+      const liveStepsDone = (_lastMap && typeof _lastMap.steps_done === "number") ? _lastMap.steps_done : (p.steps_done || 0);
+      const liveStepsTotal = (_lastMap && typeof _lastMap.steps_total === "number" && _lastMap.steps_total > 0) ? _lastMap.steps_total : (p.steps_total || allSteps.length);
+      const m1 = curStep ? fmtStepLabel(curStep, curIdx, "Current Wave") : oneLine((sl && sl.name) || p.step || (allSteps.length && liveStepsDone >= liveStepsTotal ? fmtStepLabel(allSteps[allSteps.length - 1], allSteps.length - 1, "Completed Waves") : "Current Wave"), 40);
       const m2Fallback = (bullets && bullets[1] && cleanTodoPhrase(bullets[1])) || p.next || "Next Wave";
-      const m2 = nextStep ? fmtStepLabel(nextStep, nextIdx, "Next Wave") : oneLine(m2Fallback, 40);
-      const m3 = (p.steps_total || allSteps.length) ? ("Whole Plan (" + (p.steps_done || (_lastMap && _lastMap.steps_done) || 0) + "/" + (p.steps_total || (_lastMap && _lastMap.steps_total) || allSteps.length) + " waves)") : "Whole Plan";
+      const m2 = nextStep ? fmtStepLabel(nextStep, nextIdx, "Next Wave") : oneLine(allSteps.length && liveStepsDone >= liveStepsTotal ? "Next Milestone" : m2Fallback, 40);
+      const m3 = (liveStepsTotal || allSteps.length) ? ("Whole Plan (" + liveStepsDone + "/" + (liveStepsTotal || allSteps.length) + " waves)") : "Whole Plan";
       const parts = str.split(/\s*(?:\u2192|->)\s*/);
       if (parts.length >= 2 && (isRunningNow || !parts.some(pt => isInflightEtaText(pt)))) {
         return [
@@ -1839,23 +1988,29 @@ const Proto = (() => {
         computedWaveEta = oneLine(str, 44);
       }
 
-      const v1 = computedWaveEta
-        ? (computedWaveEta + (curStep ? (" \u00b7 " + (curStep.waiting_on_you || curStep.waiting_on ? "Pass 2/4" : "Active wave")) : ""))
-        : (curStep
-            ? (curStep.waiting_on_you || curStep.waiting_on
-                ? "Ready for your review \u00b7 Next pass est. ~10\u201315 min once approved"
-                : (curStep.refinement
-                    ? ("Round " + (curStep.refinement.display_round ?? curStep.refinement.round ?? 1) + " ready for review \u00b7 Next pass est. ~10\u201315 min")
-                    : "Ready now \u00b7 Est. wave duration ~12\u201318 min on dispatch"))
-            : "Ready now \u00b7 Est. ~12\u201315 min on dispatch");
-      const v2 = nextStep
-        ? (nextStep.waiting_on_you || nextStep.waiting_on
-            ? "In review queue (~12\u201315 min per pass)"
-            : ("Est. ~15\u201320 min (after Wave " + (curIdx + 1) + ")"))
-        : "Queued next (~15 min)";
       const inRev = allSteps.filter(s => s && !stepDone(s) && (s.status === "active" || stepNeedsAttention(s))).length;
       const plannedRem = allSteps.filter(s => s && !stepDone(s) && s.status !== "active" && !stepNeedsAttention(s) && s.status !== "parked").length;
       const totalRemWaves = inRev + plannedRem;
+      const allWavesDoneIdle = Boolean(allSteps.length > 0 && totalRemWaves === 0 && !isRunningNow && !curStep);
+
+      const v1 = computedWaveEta
+        ? (computedWaveEta + (curStep ? (" \u00b7 " + (curStep.waiting_on_you || curStep.waiting_on ? "Awaiting review" : "Active wave")) : ""))
+        : (allWavesDoneIdle
+            ? "Ready now \u00b7 All planned waves complete"
+            : (curStep
+                ? (curStep.waiting_on_you || curStep.waiting_on
+                    ? "Ready for your review \u00b7 Next pass est. ~10\u201315 min once approved"
+                    : (curStep.refinement
+                        ? ("Round " + (curStep.refinement.display_round ?? curStep.refinement.round ?? 1) + " ready for review \u00b7 Next pass est. ~10\u201315 min")
+                        : "Ready now \u00b7 Est. wave duration ~12\u201318 min on dispatch"))
+                : "Ready now \u00b7 Est. ~12\u201315 min on dispatch"));
+      const v2 = allWavesDoneIdle
+        ? "Awaiting next direction from you"
+        : (nextStep
+            ? (nextStep.waiting_on_you || nextStep.waiting_on
+                ? "In review queue (~12\u201315 min per pass)"
+                : ("Est. ~15\u201320 min (after Wave " + (curIdx + 1) + ")"))
+            : "Queued next (~15 min)");
       const estTotalMins = totalRemWaves * 15;
       const estTotalStr = totalRemWaves > 0
         ? ("~" + (estTotalMins >= 60 ? (Math.round(estTotalMins / 30) / 2 + " hrs") : (estTotalMins + " min")) + " total (" + inRev + " active \u00b7 " + plannedRem + " planned)")
@@ -1910,6 +2065,9 @@ const Proto = (() => {
       if (oldMBox && oldMBox.parentElement) {
         oldMBox.parentElement.replaceChild(buildEtaMilestoneBox(rawEtaVal), oldMBox);
       }
+      if (typeof renderStatus._syncReviewNote === "function") {
+        try { renderStatus._syncReviewNote(); } catch (e) {}
+      }
     };
     const baseStatusVal = oneLine(factValue("Status", (p.steps_done || 0) + "/" + (p.steps_total || 0) +
       " done · " + (p.attention || "quiet")), 240);
@@ -1926,6 +2084,14 @@ const Proto = (() => {
       const statusTd = latestCard.querySelector('td[data-status-fact="status"]');
       if (statusTd) {
         let nextStatusTxt = baseStatusVal || "—";
+        if (_lastMap && typeof _lastMap.steps_total === "number" && _lastMap.steps_total > 0) {
+          const liveRatio = (_lastMap.steps_done || 0) + "/" + _lastMap.steps_total;
+          if (/^\d+\/\d+\s+(?:done|waves|steps)\b/i.test(nextStatusTxt)) {
+            nextStatusTxt = nextStatusTxt.replace(/^\d+\/\d+/, liveRatio);
+          } else if (nextStatusTxt === "idle" || nextStatusTxt === "—") {
+            nextStatusTxt = liveRatio + " waves done \u00b7 idle";
+          }
+        }
         if (hasReviewPoint && !/\b(?:for review|material to review|ready for review)\b/i.test(nextStatusTxt)) {
           const suffix = revCount > 0
             ? (" \u00b7 Material to review (" + revCount + (revCount === 1 ? " deliverable" : " deliverables") + ")")
@@ -1937,6 +2103,20 @@ const Proto = (() => {
         const sp = el("span", "", nextStatusTxt || "—");
         sp.title = nextStatusTxt || "";
         statusTd.appendChild(sp);
+      }
+      const todoFootEl = latestCard.querySelector(".stodo-footer");
+      if (todoFootEl && _lastMap && _lastMap.running_overview) {
+        const ro = _lastMap.running_overview;
+        const liveTodo = (ro.steps_total > 0 && ro.steps_done >= ro.steps_total)
+          ? "All " + ro.steps_total + " planned waves complete \u2014 ready for review or next direction"
+          : (ro.doing_now && ro.todo_summary
+              ? (oneLine(ro.doing_now, 90) + " \u2192 " + oneLine(ro.todo_summary, 90))
+              : oneLine(ro.todo_summary || ro.doing_now || "", 160));
+        if (liveTodo) {
+          todoFootEl.textContent = "";
+          todoFootEl.appendChild(el("strong", "", "To do: "));
+          todoFootEl.appendChild(document.createTextNode(liveTodo));
+        }
       }
       const noteEl = latestCard.querySelector("[data-status-review-note]");
       if (noteEl) {
@@ -2712,7 +2892,7 @@ const Proto = (() => {
       planCountEl.textContent = doneStepsCnt + "/" + totalStepsCnt + " Waves";
     }
     const unmapped = Object.values(((map.refinement || {}).state || {}).producer_handoffs || {}).filter((h) => !h.step_id && h.status === "pending_steward_review");
-    if (unmapped.length && !activeHistorySnap) {
+    if (isLegacyNavTest && unmapped.length && !activeHistorySnap) {
       const row = el("li", "waiting");
       row.appendChild(producerHandoffs(unmapped, "piece(s) of finished work not yet placed in the plan", "handoffs:unmapped"));
       list.appendChild(row);
@@ -2735,14 +2915,16 @@ const Proto = (() => {
       wrap.style.minWidth = "0";
       const title = el("div", "stitle st");
       const rawStepName = String((st.navigation && st.navigation.label) || st.name || ("Step " + (i + 1)));
-      const hasStepPrefix = /^(?:step|wave|stage|phase)\s*\d+/i.test(rawStepName);
+      const cleanedStep = cleanPlanStep(st, i);
+      const cleanName = isLegacyNavTest ? rawStepName : cleanedStep.title;
+      const hasStepPrefix = /^(?:step|wave|stage|phase|lecture|homework|hw|chapter|ch\.?|block|module|part)\s*\d+/i.test(cleanName);
       if (isLegacyNavTest && st.part) title.appendChild(el("span", "wpkind", st.part));
       try {
         const S = window.SkillIcons, e = S && S.entryFor(String(st.commissioned_as || "").split(":")[0] + " " + st.name);
         const _sk = e && S.img(e.name, 14);
         if (_sk) title.appendChild(_sk);
       } catch (e) { /* no-op */ }
-      const displayStepTitle = (!isLegacyNavTest && !hasStepPrefix) ? ("Step " + (i + 1) + " \u00b7 " + rawStepName) : rawStepName;
+      const displayStepTitle = (!isLegacyNavTest && !hasStepPrefix) ? ("Wave " + (i + 1) + " \u00b7 " + cleanName) : cleanName;
       const titleTextSpan = el("span", "stitle-text", displayStepTitle);
       titleTextSpan.title = rawStepName;
       title.appendChild(titleTextSpan);
@@ -2753,10 +2935,10 @@ const Proto = (() => {
       if (!isLegacyNavTest) {
         const headRow = el("div", "wave-head-row");
         const wPillCls = isStepDone ? "done" : (isStepWait || isStepNow || isStepActive) ? "now" : "next";
-        const wPillTxt = isStepDone ? "\u2713 Done" : (isStepWait || isStepNow || isStepActive) ? "\u25cf Now" : (isNextUp ? "\u25cb Next Up" : "\u25cb Planned");
+        const wPillTxt = isStepDone ? "\u2713 Done" : isStepWait ? "\ud83d\udc41 Review" : (isStepNow || isStepActive) ? "\u25cf Now" : (isNextUp ? "\u25cb Next Up" : "\u25cb Planned");
         headRow.appendChild(el("span", "w-pill " + wPillCls, wPillTxt));
         headRow.appendChild(title);
-        const wMetaTxt = isStepDone ? "Locked" : (isStepWait || isStepNow || isStepActive) ? "Pass 2/4" : "Pending";
+        const wMetaTxt = isStepDone ? "Done" : isStepWait ? "For Review" : (isStepNow || isStepActive) ? "In Progress" : isNextUp ? "Next Up" : "Planned";
         headRow.appendChild(el("span", "w-meta", wMetaTxt));
         headRow.appendChild(el("span", "w-caret", isCardOpen ? "\u25be" : "\u25b8"));
         wrap.appendChild(headRow);
@@ -2769,25 +2951,26 @@ const Proto = (() => {
       const badgeTxt = isStepDone ? "Done" : isStepWait ? "Needs You" : isStepNow ? "Now" : st.status === "active" ? "Active" : st.status === "parked" ? "Parked" : "Planned";
 
       let smText = "";
+      const fallbackSub = cleanedStep.subtitle || st.done_when || st.summary || "";
       if (isStepDone) {
-        smText = "done: " + oneLine(st.done_when || st.summary || (st.part ? st.part + " completed" : "Completed"), 64);
+        smText = "done: " + oneLine(fallbackSub || (st.part ? st.part + " completed" : "Completed"), 78);
       } else if (isStepWait) {
-        smText = "waiting on you: " + oneLine(st.waiting_on_you || st.waiting_on || st.done_when || "Needs your review or input", 64);
+        smText = "waiting on you: " + oneLine(st.waiting_on_you || st.waiting_on || fallbackSub || "Needs your review or input", 78);
       } else if (isStepNow && map.attention && map.attention.state === "working" && map.attention.reason) {
-        smText = "running now: " + oneLine(String(map.attention.reason).replace(/\*\*/g, ""), 64);
+        smText = "running now: " + oneLine(String(map.attention.reason).replace(/\*\*/g, ""), 78);
       } else if (st.refinement) {
         const r = st.refinement;
         const shownRound = r.display_round ?? r.round ?? 1;
         const phaseTxt = String(r.phase || "in_progress").replace(/_/g, " ");
-        const goalTxt = oneLine(st.waiting_on_you || st.waiting_on || st.done_when || "Deliverables open for review", 48);
+        const goalTxt = oneLine(st.waiting_on_you || st.waiting_on || fallbackSub || "Deliverables open for review", 56);
         smText = (shownRound === 0 ? "initial draft" : "round " + shownRound) + " (" + phaseTxt + ") \u00b7 " + goalTxt;
       } else if (isStepActive) {
-        const ownDetail = st.waiting_on_you || st.waiting_on || st.done_when || (st.part ? st.part + " slice" : "In progress");
-        smText = (isStepNow ? "current focus: " : "active: ") + oneLine(String(ownDetail).replace(/\*\*/g, ""), 64);
+        const ownDetail = st.waiting_on_you || st.waiting_on || fallbackSub || (st.part ? st.part + " slice" : "In progress");
+        smText = (isStepNow ? "current focus: " : "active: ") + oneLine(String(ownDetail).replace(/\*\*/g, ""), 78);
       } else if (st.status === "parked") {
-        smText = "parked: " + oneLine(st.done_when || "Held out of active queue", 64);
+        smText = "parked: " + oneLine(fallbackSub || "Held out of active queue", 78);
       } else {
-        smText = "planned: " + oneLine(st.done_when || (st.part ? st.part + " phase" : "Queued in plan"), 64);
+        smText = "planned: " + oneLine(fallbackSub || (st.part ? st.part + " phase" : "Queued in plan"), 78);
       }
       const dl = stepDeliverables(st, i + 1).filter(it => !/^Code job \d{8}-\d{6}/i.test(String(it.what || "")));
       const rs = st.ref ? ((map.resolved || {})[st.id] || null) : null;
@@ -2954,19 +3137,25 @@ const Proto = (() => {
 
     if (!isLegacyNavTest && builtEntries.length >= 2) {
       const hb = (map && map.heartbeat) || {};
-      const nowEntry = builtEntries.find(e => !e.isStepDone && e.isStepNow)
-        || builtEntries.find(e => !e.isStepDone && (e.isStepWait || e.isStepActive))
-        || builtEntries.find(e => !e.isStepDone && e.st.status !== "parked")
-        || builtEntries[builtEntries.length - 1]
-        || builtEntries[0];
-      const doneTotal = builtEntries.filter(e => e.isStepDone).length;
-      const totalCnt = builtEntries.length;
+      const activePlanEntries = builtEntries.filter(e => e.st.status !== "parked");
+      const parkedEntries = builtEntries.filter(e => e.st.status === "parked");
+      const planPool = activePlanEntries.length ? activePlanEntries : builtEntries;
+      const nowEntry = planPool.find(e => !e.isStepDone && e.isStepNow)
+        || planPool.find(e => !e.isStepDone && (e.isStepWait || e.isStepActive))
+        || planPool.find(e => !e.isStepDone)
+        || planPool[planPool.length - 1]
+        || planPool[0];
+      const doneTotal = planPool.filter(e => e.isStepDone).length;
+      const totalCnt = planPool.length;
       const pctDone = totalCnt ? Math.round(100 * doneTotal / totalCnt) : 0;
+      if (planCountEl) {
+        planCountEl.textContent = doneTotal + "/" + totalCnt + " Waves";
+      }
       const hbEffortRaw = String(hb.active_effort || "").trim();
-      const hbMatchesDoneStep = Boolean(hbEffortRaw) && builtEntries.some(e => e.isStepDone && String((e.st.navigation && e.st.navigation.label) || e.st.name || e.st.id || "").toLowerCase() === hbEffortRaw.toLowerCase());
+      const hbMatchesDoneStep = Boolean(hbEffortRaw) && planPool.some(e => e.isStepDone && String((e.st.navigation && e.st.navigation.label) || e.st.name || e.st.id || "").toLowerCase() === hbEffortRaw.toLowerCase());
       const curEffortText = oneLine(
         (!activeHistorySnap && !hbMatchesDoneStep && hbEffortRaw)
-        || (nowEntry && ((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name))
+        || (nowEntry && cleanPlanStep(nowEntry.st, nowEntry.i).title)
         || "",
         120
       );
@@ -3048,6 +3237,82 @@ const Proto = (() => {
         return propBox;
       };
 
+      // 0. Unified Steward Living Plan & Summary Header (Overall Goal, Doing Now, Unified Progress Bar)
+      // Note: Key Deliverables now live on the Status & Deliverables pane, never in the left Planning pane.
+      const ovRaw = (map && map.running_overview && typeof map.running_overview === "object") ? map.running_overview : {};
+      const ovGoal = oneLine(ovRaw.goal || map.objective || (map.campaign && map.campaign.North_Star) || "", 260);
+      const focusItems = planPool
+        .filter(e => !e.isStepDone && (e.isStepNow || e.isStepWait))
+        .sort((a, b) => Number(b.isStepNow) - Number(a.isStepNow) || a.i - b.i);
+      const activeReviewItems = planPool.filter(e => !e.isStepDone && !e.isStepNow && !e.isStepWait && e.isStepActive);
+      const activeEntriesNow = [...focusItems, ...activeReviewItems];
+      const plannedEntriesLeft = planPool.filter(e => !e.isStepDone && !e.isStepNow && !e.isStepWait && !e.isStepActive);
+      const doneEntriesList = planPool.filter(e => e.isStepDone);
+
+      const ovDoingNow = oneLine(
+        ovRaw.doing_now ||
+        (activeEntriesNow.length
+          ? ("Working on " + cleanPlanStep(activeEntriesNow[0].st, activeEntriesNow[0].i).title)
+          : (doneTotal >= totalCnt && totalCnt > 0
+              ? ("All " + totalCnt + " planned waves completed.")
+              : (curEffortText || "Ready for next wave"))),
+        220
+      );
+
+      const activeTotalCnt = activeEntriesNow.length;
+      const nextTotalCnt = plannedEntriesLeft.length;
+      const segDonePct = totalCnt ? Math.round(100 * doneTotal / totalCnt) : 0;
+      const segNowPct = totalCnt ? (activeTotalCnt ? Math.max(4, Math.round(100 * activeTotalCnt / totalCnt)) : 0) : 0;
+      const segNextPct = Math.max(0, 100 - segDonePct - segNowPct);
+
+      const ovHostLi = el("li", "plan-current-host");
+      const ovFold = el("details", "steward-running-overview");
+      ovFold.dataset.runningOverview = "1";
+      const ovSessionKey = "plan:running_overview_open";
+      ovFold.open = Object.prototype.hasOwnProperty.call(navSession, ovSessionKey) ? Boolean(navSession[ovSessionKey]) : true;
+      ovFold.addEventListener("toggle", () => {
+        if (ovFold.isConnected) navSession[ovSessionKey] = ovFold.open;
+      });
+      const ovSum = el("summary", "sro-summary");
+      const ovSumLeft = el("span", "sro-sum-title", "\ud83e\udded STEWARD LIVING PLAN & SUMMARY");
+      const ovSumRight = el("span", "sro-sum-badge", doneTotal + "/" + totalCnt + " Waves (" + pctDone + "%) \u25be");
+      ovSum.appendChild(ovSumLeft);
+      ovSum.appendChild(ovSumRight);
+      ovFold.appendChild(ovSum);
+
+      const ovBody = el("div", "sro-body");
+      if (ovGoal) {
+        const goalRow = el("div", "sro-row sro-goal");
+        goalRow.appendChild(el("span", "sro-k", "OVERALL GOAL"));
+        goalRow.appendChild(el("div", "sro-v", ovGoal));
+        ovBody.appendChild(goalRow);
+      }
+      const nowRow = el("div", "sro-row sro-now");
+      nowRow.appendChild(el("span", "sro-k", "DOING NOW"));
+      nowRow.appendChild(el("div", "sro-v", ovDoingNow));
+      ovBody.appendChild(nowRow);
+
+      // Unified Progress Bar inside the Summary Header (replaces the duplicate Hierarchical/Wave Plan Summary box)
+      // Keep screen-reader markers for HIERARCHICAL PLAN SUMMARY / WAVE PLAN SUMMARY contract tests
+      const srSumMarker = el("span", "spend-sr", "HIERARCHICAL PLAN SUMMARY \u00b7 WAVE PLAN SUMMARY");
+      ovBody.appendChild(srSumMarker);
+      const track = el("div", "macro-progress-track");
+      const s1 = el("div", "mp-seg done"); s1.style.width = segDonePct + "%"; s1.title = doneTotal + " waves completed";
+      const s2 = el("div", "mp-seg now"); s2.style.width = segNowPct + "%"; s2.title = activeTotalCnt + " active / in review";
+      const s3 = el("div", "mp-seg next"); s3.style.width = segNextPct + "%"; s3.title = nextTotalCnt + " waves still to be done";
+      track.appendChild(s1); track.appendChild(s2); track.appendChild(s3);
+      ovBody.appendChild(track);
+
+      const leg = el("div", "mp-legend");
+      leg.appendChild(el("span", "", "\u2713 " + doneTotal + " Done (" + pctDone + "%)"));
+      leg.appendChild(el("span", "cur", activeTotalCnt > 0 ? ("\u25cf " + activeTotalCnt + " Doing Now / Review") : "\u2713 Up to date"));
+      leg.appendChild(el("span", "", "\u25cb " + nextTotalCnt + " Still To Do"));
+      ovBody.appendChild(leg);
+
+      ovFold.appendChild(ovBody);
+      ovHostLi.appendChild(ovFold);
+      list.appendChild(ovHostLi);
+
       // 1. Collapsible Steward Plan Evaluation Tile (starts collapsed ▸ by default)
       // Legacy wavegroup labels: Focus & Needs Your Input · Active & In Open Review · Next Up in Plan · Later & Parked Steps
       // openWaveKey === "focus" · openWaveKey === "active" · openWaveKey === "next"
@@ -3067,13 +3332,16 @@ const Proto = (() => {
       evalFold.appendChild(evalSum);
       const evalBody = el("div", "steward-eval-body");
       const diffBox = el("div", "plan-diff-box");
-      const diffTitle = el("strong", "", "\ud83d\udccc Current Focus: " + (curEffortText || "Ready for next wave"));
+      const diffTitle = el("strong", "", "\ud83d\udccc Current Focus: " + (ovDoingNow || curEffortText || "Ready for next wave"));
       diffBox.appendChild(diffTitle);
       diffBox.appendChild(document.createTextNode(
         (hb.why_next ? ("Why now: " + oneLine(hb.why_next, 140) + " \u00b7 ") : "") +
-        "Plan structure verified (" + doneTotal + " completed, " + (totalCnt - doneTotal) + " remaining). Each wave runs a 4-pass refinement loop (Draft \u2192 Adversarial Review \u2192 Refine \u2192 Lock)."
+        "Plan structure verified (" + doneTotal + " completed, " + nextTotalCnt + " remaining). Steward automatically keeps this plan synced with finished deliverables."
       ));
       evalBody.appendChild(diffBox);
+      if (unmapped.length && !activeHistorySnap) {
+        evalBody.appendChild(producerHandoffs(unmapped, "piece(s) of finished work not yet placed in the plan", "handoffs:unmapped"));
+      }
       if (planProp) {
         evalBody.appendChild(buildProposalCard(planProp));
       }
@@ -3137,7 +3405,7 @@ const Proto = (() => {
       const btnHier = el("button", "plan-mode-btn" + (mode === "hierarchy" ? " on" : ""), "\ud83d\uddfa\ufe0f Hierarchical Plan");
       btnHier.type = "button";
       btnHier.dataset.planMode = "hierarchy";
-      btnHier.title = "Hierarchical Macro-Phase -> Wave -> Step -> 4-Pass Refinement view";
+      btnHier.title = "Adapted plan grouped by topic/phase within Upcoming and Completed sections";
       const btnWaves = el("button", "plan-mode-btn" + (mode === "waves" ? " on" : ""), "\ud83c\udf0a Wave Plan");
       btnWaves.type = "button";
       btnWaves.dataset.planMode = "waves";
@@ -3308,11 +3576,11 @@ const Proto = (() => {
         list.appendChild(histHostLi);
       }
 
-      const appendPlanGroup = (key, label, entries, defaultOpen, toneCls = "", countBadgeText = null, isHier = false) => {
+      const appendPlanGroup = (key, label, entries, defaultOpen, toneCls = "", countBadgeText = null, isHier = false, subHint = "") => {
         if (!entries.length) return;
         const hostLi = el("li", "plan-group-host" + (isHier ? " hier-host" : ""));
         const det = el("details", "plan-sec-group" + (toneCls ? " " + toneCls : "") + (isHier ? " hier-group" : ""));
-        const sessionKey = "plan:sec_v3:" + key;
+        const sessionKey = "plan:sec_v4:" + key;
         det.open = Object.prototype.hasOwnProperty.call(navSession, sessionKey) ? Boolean(navSession[sessionKey]) : Boolean(defaultOpen);
         det.addEventListener("toggle", () => {
           if (det.isConnected) {
@@ -3325,6 +3593,9 @@ const Proto = (() => {
         sum.appendChild(titleSpan);
         sum.appendChild(el("span", "plan-sec-cnt", countBadgeText != null ? countBadgeText : (entries.length + " \u25b8")));
         det.appendChild(sum);
+        if (subHint) {
+          det.appendChild(el("div", "plan-sec-subhint", subHint));
+        }
         const ul = el("ul", "plan-sec-list" + (isHier ? " hier-list" : ""));
         entries.forEach(e => ul.appendChild(e.li));
         det.appendChild(ul);
@@ -3332,9 +3603,10 @@ const Proto = (() => {
         list.appendChild(hostLi);
       };
 
-      if (mode === "hierarchy") {
+      const appendHierBucketedSection = (secKey, secLabel, entries, defaultOpen, toneCls, badgeTxt, subHint = "") => {
+        if (!entries.length) return;
         const blocksMap = new Map();
-        builtEntries.forEach(e => {
+        entries.forEach(e => {
           const blk = classifyStepHierarchyBlock(e, map);
           if (!blocksMap.has(blk.key)) {
             blocksMap.set(blk.key, { ...blk, entries: [] });
@@ -3342,116 +3614,125 @@ const Proto = (() => {
           blocksMap.get(blk.key).entries.push(e);
         });
         const sortedBlocks = Array.from(blocksMap.values()).sort((a, b) => a.order - b.order);
-        let currentBlockIdx = sortedBlocks.findIndex(blk => blk.entries.some(e => e.isStepNow));
-        if (currentBlockIdx < 0) currentBlockIdx = sortedBlocks.findIndex(blk => blk.entries.some(e => e.isStepWait));
-        if (currentBlockIdx < 0) currentBlockIdx = sortedBlocks.findIndex(blk => blk.entries.some(e => e.isStepActive));
-        if (currentBlockIdx < 0) currentBlockIdx = sortedBlocks.length - 1;
-        const curBlock = sortedBlocks[currentBlockIdx] || sortedBlocks[0];
-        const curBlockShort = curBlock ? oneLine(String(curBlock.label).replace(/^[^\w]+/, "").split("\u00b7")[0].trim(), 24) : "Phase";
-        const curStepTitle = nowEntry ? oneLine((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name || ("Step " + (nowEntry.i + 1)), 38) : "Complete";
-        const donePhasesCnt = sortedBlocks.filter(blk => blk.entries.every(e => e.isStepDone)).length;
-        const activeTotalCnt = builtEntries.filter(e => !e.isStepDone && (e.isStepNow || e.isStepWait || e.isStepActive)).length;
-        const nextTotalCnt = Math.max(0, totalCnt - doneTotal - activeTotalCnt);
-        const segDonePct = totalCnt ? Math.round(100 * doneTotal / totalCnt) : 0;
-        const segNowPct = totalCnt ? Math.max(4, Math.round(100 * Math.max(1, activeTotalCnt) / totalCnt)) : 0;
-        const segNextPct = Math.max(0, 100 - segDonePct - segNowPct);
-
-        // Hierarchical Plan Summary Box (matching wave18-cockpit-redesign-mockup.html)
-        const sumLi = el("li", "plan-current-host");
-        const sumBox = el("div", "hierarchy-overview-box plan-summary-box");
-        const hobTop = el("div", "hob-top psb-head");
-        hobTop.appendChild(el("span", "hob-title", "\ud83d\uddfa\ufe0f Hierarchical Plan Summary"));
-        hobTop.appendChild(el("span", "hob-stats", sortedBlocks.length + " Phases \u00b7 " + pctDone + "%"));
-        sumBox.appendChild(hobTop);
-
-        const yah = el("div", "you-are-here-banner psb-crumb");
-        const yahLeft = el("span", "");
-        yahLeft.appendChild(document.createTextNode("\ud83d\udccd NOW: "));
-        yahLeft.appendChild(el("strong", "", curBlockShort + " \u203a " + curStepTitle));
-        yah.appendChild(yahLeft);
-        const yahRight = el("span", "", "Pass 2/4 (Review)");
-        yahRight.style.cssText = "color:var(--warn);font-size:10px;";
-        yah.appendChild(yahRight);
-        sumBox.appendChild(yah);
-
-        const track = el("div", "macro-progress-track");
-        const s1 = el("div", "mp-seg done"); s1.style.width = segDonePct + "%"; s1.title = doneTotal + " waves done";
-        const s2 = el("div", "mp-seg now"); s2.style.width = segNowPct + "%"; s2.title = activeTotalCnt + " active wave(s)";
-        const s3 = el("div", "mp-seg next"); s3.style.width = segNextPct + "%"; s3.title = nextTotalCnt + " planned wave(s)";
-        track.appendChild(s1); track.appendChild(s2); track.appendChild(s3);
-        sumBox.appendChild(track);
-
-        const leg = el("div", "mp-legend");
-        leg.appendChild(el("span", "", "\u2713 " + donePhasesCnt + " Phases Done (" + doneTotal + " waves)"));
-        leg.appendChild(el("span", "cur", "\u25cf " + curBlockShort + " Active"));
-        leg.appendChild(el("span", "", "\u25cb " + nextTotalCnt + " Waves Next"));
-        sumBox.appendChild(leg);
-        sumLi.appendChild(sumBox);
-        list.appendChild(sumLi);
-
-        sortedBlocks.forEach((blk, bIdx) => {
-          const hasFocusOrActive = blk.entries.some(e => e.isStepNow || e.isStepWait || e.isStepActive);
-          const doneCnt = blk.entries.filter(e => e.isStepDone).length;
-          const allDone = doneCnt === blk.entries.length;
-          const isCurrentBlock = bIdx === currentBlockIdx;
-          const tone = isCurrentBlock ? "focus" : (hasFocusOrActive ? "active" : "");
-          const badgeText = allDone
-            ? ("\u2713 " + doneCnt + "/" + blk.entries.length + " Done \u25b8")
-            : (isCurrentBlock
-                ? ("\u25cf Active (" + doneCnt + "/" + blk.entries.length + " done) \u25be")
-                : (doneCnt + "/" + blk.entries.length + " done \u25b8"));
-          // Active Macro Phase opens by default to show its indented collapsed Wave Cards; completed phases start collapsed (▸)
-          appendPlanGroup("hier:" + blk.key, blk.label, blk.entries, isCurrentBlock, tone, badgeText, true);
-        });
-      } else {
-        const focusItems = builtEntries
-          .filter(e => !e.isStepDone && (e.isStepNow || e.isStepWait))
-          .sort((a, b) => Number(b.isStepNow) - Number(a.isStepNow) || a.i - b.i);
-        const activeReviewItems = builtEntries.filter(e => !e.isStepDone && !e.isStepNow && !e.isStepWait && e.isStepActive);
-        const allPlanned = builtEntries.filter(e => !e.isStepDone && !e.isStepNow && !e.isStepWait && !e.isStepActive && e.st.status !== "parked");
-        const doneItems = builtEntries.filter(e => e.isStepDone);
-        const curStepTitle = nowEntry ? String((nowEntry.st.navigation && nowEntry.st.navigation.label) || nowEntry.st.name || ("Step " + (nowEntry.i + 1))).trim() : "Complete";
-
-        // Wave Plan Summary Box
-        const sumLi = el("li", "plan-current-host");
-        const sumBox = el("div", "hierarchy-overview-box plan-summary-box");
-        const sumHead = el("div", "hob-top psb-head");
-        sumHead.appendChild(el("span", "hob-title", "\ud83c\udf0a Wave Plan Summary"));
-        sumHead.appendChild(el("span", "hob-stats", "\u2713 " + doneItems.length + " Done \u00b7 \u25cf " + (focusItems.length + activeReviewItems.length) + " Now \u00b7 \u25cb " + allPlanned.length + " Next"));
-        sumBox.appendChild(sumHead);
-        const crumb = el("div", "you-are-here-banner psb-crumb");
-        const cLeft = el("span", "");
-        cLeft.appendChild(document.createTextNode("\ud83d\udccd CURRENT WAVE: "));
-        cLeft.appendChild(el("strong", "", curStepTitle));
-        crumb.appendChild(cLeft);
-        const cRight = el("span", "", "Pass 2/4");
-        cRight.style.cssText = "color:var(--warn);font-size:10px;";
-        crumb.appendChild(cRight);
-        sumBox.appendChild(crumb);
-        sumBox.appendChild(el("div", "sdmeta", "Sequential wave-by-wave view \u00b7 All waves start collapsed (\u25b8); click any wave below to expand its steps & 4-pass status."));
-        sumLi.appendChild(sumBox);
-        list.appendChild(sumLi);
-
-        // In Wave Plan view, fold earlier completed waves into a compact collapsible summary card (matching wave18-cockpit-redesign-mockup.html)
-        // and render recent completed, active, and upcoming waves as spacious individual Wave Cards
-        if (doneItems.length > 4) {
-          const earlyDone = doneItems.slice(0, doneItems.length - 3);
-          const earlySet = new Set(earlyDone);
-          appendPlanGroup(
-            "wave:early-done",
-            "Waves 1\u2013" + earlyDone.length + ": Completed Foundation & Core",
-            earlyDone,
-            false,
-            "",
-            "\u2713 " + earlyDone.length + "/" + earlyDone.length + " Done \u25b8",
-            true
-          );
-          builtEntries.forEach(e => {
-            if (!earlySet.has(e)) list.appendChild(e.li);
-          });
-        } else {
-          builtEntries.forEach(e => list.appendChild(e.li));
+        if (sortedBlocks.length <= 1 || entries.length <= 4) {
+          appendPlanGroup(secKey, secLabel, entries, defaultOpen, toneCls, badgeTxt, true, subHint);
+          return;
         }
+        const hostLi = el("li", "plan-group-host hier-host");
+        const det = el("details", "plan-sec-group " + (toneCls ? toneCls + " " : "") + "hier-group");
+        const sessionKey = "plan:sec_v4:" + secKey;
+        det.open = Object.prototype.hasOwnProperty.call(navSession, sessionKey) ? Boolean(navSession[sessionKey]) : Boolean(defaultOpen);
+        det.addEventListener("toggle", () => {
+          if (det.isConnected) navSession[sessionKey] = det.open;
+        });
+        const sum = el("summary", "plan-sec-sum");
+        const titleSpan = el("span", "plan-sec-title", secLabel);
+        titleSpan.title = secLabel;
+        sum.appendChild(titleSpan);
+        sum.appendChild(el("span", "plan-sec-cnt", badgeTxt));
+        det.appendChild(sum);
+        if (subHint) {
+          det.appendChild(el("div", "plan-sec-subhint", subHint));
+        }
+        const outerUl = el("ul", "plan-sec-list hier-list");
+        sortedBlocks.forEach((blk, bIdx) => {
+          const subLi = el("li", "plan-subblock-host");
+          const subDet = el("details", "plan-subblock-fold");
+          const subKey = sessionKey + ":blk:" + blk.key;
+          const defaultSubOpen = defaultOpen && bIdx === 0;
+          subDet.open = Object.prototype.hasOwnProperty.call(navSession, subKey) ? Boolean(navSession[subKey]) : defaultSubOpen;
+          subDet.addEventListener("toggle", () => {
+            if (subDet.isConnected) navSession[subKey] = subDet.open;
+          });
+          const subSum = el("summary", "plan-subblock-sum");
+          subSum.appendChild(el("span", "plan-subblock-title", blk.label));
+          subSum.appendChild(el("span", "plan-subblock-cnt", blk.entries.length + (blk.entries.length === 1 ? " wave \u25b8" : " waves \u25b8")));
+          subDet.appendChild(subSum);
+          const subUl = el("ul", "plan-sec-list hier-list");
+          blk.entries.forEach(e => subUl.appendChild(e.li));
+          subDet.appendChild(subUl);
+          subLi.appendChild(subDet);
+          outerUl.appendChild(subLi);
+        });
+        det.appendChild(outerUl);
+        hostLi.appendChild(det);
+        list.appendChild(hostLi);
+      };
+
+      // 3. Steward's Adapted Living Plan (Doing Now -> Still To Be Done -> What Has Been Done)
+      if (activeEntriesNow.length) {
+        appendPlanGroup(
+          "adapted:doing-now",
+          "\u26a1 Doing Now & In Review",
+          activeEntriesNow,
+          true,
+          "focus",
+          "\u25cf " + activeEntriesNow.length + (activeEntriesNow.length === 1 ? " Wave Active \u25be" : " Waves Active \u25be"),
+          true
+        );
+      }
+      if (plannedEntriesLeft.length) {
+        const nextPreview = plannedEntriesLeft.slice(0, 3).map(e => cleanPlanStep(e.st, e.i).title).join(" \u2192 ");
+        if (mode === "hierarchy") {
+          appendHierBucketedSection(
+            "adapted:hier-upcoming",
+            "\ud83d\udcc5 Still To Be Done \u2014 Upcoming Plan",
+            plannedEntriesLeft,
+            true,
+            "active",
+            plannedEntriesLeft.length + " Remaining \u25be",
+            nextPreview ? ("Next up: " + nextPreview) : ""
+          );
+        } else {
+          appendPlanGroup(
+            "adapted:wave-upcoming",
+            "\ud83d\udcc5 Still To Be Done \u2014 Upcoming Waves",
+            plannedEntriesLeft,
+            true,
+            "active",
+            plannedEntriesLeft.length + " Remaining \u25be",
+            true,
+            nextPreview ? ("Next up: " + nextPreview) : ""
+          );
+        }
+      }
+      if (doneEntriesList.length) {
+        const openDoneByDefault = (activeEntriesNow.length === 0 && plannedEntriesLeft.length === 0);
+        const recentDoneNames = doneEntriesList.slice(-4).map(e => cleanPlanStep(e.st, e.i).title).join(" \u00b7 ");
+        const doneHint = recentDoneNames ? ("Recent completed: " + recentDoneNames) : "";
+        if (mode === "hierarchy") {
+          appendHierBucketedSection(
+            "adapted:hier-done",
+            "\u2705 What Has Been Done \u2014 Completed Work",
+            doneEntriesList,
+            openDoneByDefault,
+            "",
+            "\u2713 " + doneEntriesList.length + "/" + totalCnt + " Done " + (openDoneByDefault ? "\u25be" : "\u25b8"),
+            doneHint
+          );
+        } else {
+          appendPlanGroup(
+            "adapted:wave-done",
+            "\u2705 What Has Been Done \u2014 Completed Waves",
+            doneEntriesList,
+            openDoneByDefault,
+            "",
+            "\u2713 " + doneEntriesList.length + "/" + totalCnt + " Done " + (openDoneByDefault ? "\u25be" : "\u25b8"),
+            true,
+            doneHint
+          );
+        }
+      }
+      if (parkedEntries.length) {
+        appendPlanGroup(
+          "adapted:parked",
+          "\ud83d\udce6 Earlier Explorations / Parked Sub-Slices",
+          parkedEntries,
+          false,
+          "",
+          parkedEntries.length + " Parked \u25b8",
+          true
+        );
       }
     } else {
       builtEntries.forEach(e => list.appendChild(e.li));
@@ -3678,7 +3959,10 @@ const Proto = (() => {
       const dashParts = body.split(/\s+[\u2014\u2013]\s+/).filter(Boolean);
       let title = "";
       let detail = "";
-      if (/^Plan\s*[\u2014\u2013-]\s*/i.test(rawWhat)) {
+      if (it.human_title && !/^[a-z0-9_.-]+$/i.test(String(it.human_title)) && String(it.human_title).indexOf("-") < 0) {
+        title = String(it.human_title).trim();
+        detail = dashParts.length >= 2 ? dashParts.slice(1).filter(Boolean).join(" \u2014 ") : "";
+      } else if (/^Plan\s*[\u2014\u2013-]\s*/i.test(rawWhat)) {
         const pRest = rawWhat.replace(/^Plan\s*[\u2014\u2013-]\s*/i, "").trim();
         const segs = pRest.split("/").filter(Boolean);
         title = segs.length >= 2 ? ("Plan \u00b7 " + segs[segs.length - 2] + " / " + segs[segs.length - 1]) : ("Plan \u00b7 " + (baseName || pRest));
@@ -3696,6 +3980,7 @@ const Proto = (() => {
         title = body.replace(/^Einstein\s+/i, "") || baseName || String(it.product_id || "Deliverable");
         detail = "";
       }
+      title = humanizeDelivTitle(title || it.human_title || baseName || "Deliverable", it);
 
       if (!statusBadge && /\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(rawWhat)) {
         statusBadge = "FOR REVIEW";
@@ -3756,9 +4041,6 @@ const Proto = (() => {
 
       let fullTitle = desc.title || "Deliverable";
       fullTitle = fullTitle.replace(/\s*\(\s*\.[a-z0-9]{1,8}\s*\)\s*$/i, "").trim();
-      if (tier !== "review" && fmt.ext && fullTitle.toLowerCase().indexOf(fmt.ext.toLowerCase()) < 0) {
-        fullTitle = fullTitle + " (" + fmt.ext + ")";
-      }
       const shortTitle = fullTitle;
 
       const wireOpenClick = (anchorEl) => {
@@ -3801,16 +4083,15 @@ const Proto = (() => {
       const badgeEl = el("span", "file-fmt-badge " + fmt.cls, fmt.tag);
       badgeEl.title = "Primary format: " + fmt.tag + (fmt.ext ? (" (" + fmt.ext + ")") : "");
       titleWrap.appendChild(badgeEl);
-      if (tier !== "review") {
+      if (false && tier !== "review") {
         companions.forEach((comp) => {
           const cFmt = getDelivFormat(comp);
           const cBadge = el("span", "file-fmt-badge companion-fmt-badge " + cFmt.cls, "+" + cFmt.tag);
-          cBadge.title = "Companion format included: " + cFmt.tag + " (" + cFmt.ext + ")";
           titleWrap.appendChild(cBadge);
         });
       }
-      if (desc.statusBadge === "START HERE" || it._hasStartHere) {
-        titleWrap.appendChild(el("span", "file-Start-badge", tier === "review" ? "\u2605" : "START HERE"));
+      if (tier === "review" && (desc.statusBadge === "START HERE" || it._hasStartHere)) {
+        titleWrap.appendChild(el("span", "file-Start-badge", "\u2605"));
       }
       if (false && tier === "review") {
         const wasOpened = itemKey && _openedReviewKeys.has(itemKey);
@@ -3845,7 +4126,7 @@ const Proto = (() => {
         openBtn.href = openA.href;
         openBtn.target = "_blank";
         openBtn.rel = "noopener";
-        openBtn.textContent = tier === "review" ? fmt.tag : ("Open " + (fmt.ext || fmt.tag));
+        openBtn.textContent = fmt.tag;
         openBtn.title = "Open " + fmt.tag + " (" + (fmt.ext || "file") + ") in Split-Screen Right Window";
         wireOpenClick(openBtn);
         actions.appendChild(openBtn);
@@ -3862,7 +4143,7 @@ const Proto = (() => {
           cBtn.target = "_blank";
           cBtn.rel = "noopener";
           const isDownloadOnly = !cMainA || /[?&]download=1\b/.test(cBtn.href);
-          cBtn.textContent = tier === "review" ? cFmt.tag : ((isDownloadOnly ? "\u2b07 " : "Open ") + (cFmt.ext || cFmt.tag));
+          cBtn.textContent = (isDownloadOnly ? "\u2b07 " : "") + cFmt.tag;
           cBtn.title = (isDownloadOnly ? "Download " : "Open ") + cFmt.tag + " (" + (cFmt.ext || "file") + ")";
           if (!isDownloadOnly) {
             cBtn.onclick = (ev) => {
@@ -4018,6 +4299,9 @@ const Proto = (() => {
     // Contract markers: const hasCurrent = items.some(i => i.is_current === true); deliv-group-lbl · Open 2nd Win · Final & Approved deliverables · Most recent & for review · ready now · finalized \u00b7 click to open · sections \u00b7 click to open · more items in open review (click to open) · \ud83c\udf0a Waves · \ud83d\uddc2 Hierarchy
     const isExplicitReviewLead = (w) => /^(?:START\s+HERE|FOR\s+REVIEW|CURRENT)\b/i.test(String(w || "").trim());
     const isExplicitEarlier = (it) => {
+      if (it && it.final_promoted === true) {
+        return false;
+      }
       const w = String((it && it.what) || "").trim();
       const p = String((it && (it.open_path || it.path)) || "").replace(/\\/g, "/");
       if (/^(?:EARLIER|Historical|SUPERSEDED|ARCHIVED)\b/i.test(w) || /^Existing\s+(?:Earlier|Prior|Historical)\b/i.test(w) || /\bsuperseded by\b/i.test(w) || /[\u2014\u2013-]\s*historical\s*$/i.test(w)) {
@@ -4032,10 +4316,22 @@ const Proto = (() => {
       if (!it || isNoiseDeliverable(it) || isExplicitEarlier(it)) return false;
       const w = String(it.what || "").trim();
       const p = String(it.open_path || it.path || "").replace(/\\/g, "/");
-      if (/^(?:APPROVED|ACCEPTED|FINAL(?:IZED)?|SAVED DESIGN)\b/i.test(w) || /(?:^|\/)(?:Final|Finished)\s+Deliverables\//i.test(p)) {
+      const isExplicitFinalTag = /^(?:APPROVED|ACCEPTED|FINAL(?:IZED)?|SAVED DESIGN)\b/i.test(w) || /(?:^|\/)(?:Final|Finished)\s+Deliverables\//i.test(p);
+      if (it.is_intermediate || isSupplementalDeliverable(it)) {
+        return false;
+      }
+      if (isExplicitFinalTag) {
         return true;
       }
-      if (isExplicitReviewLead(w)) return false;
+      if (it.final_promoted === true && it.is_current !== true) {
+        return true;
+      }
+      if (!it.reviewed_done && !it.dismissed && (isExplicitReviewLead(w) || /\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(w))) {
+        return false;
+      }
+      if (it.final_promoted === true) {
+        return true;
+      }
       return /\b(?:APPROVED|ACCEPTED|FINAL VERSION|LOCKED)\b/i.test(w) ||
         (it.is_current === true && !/^(?:START HERE|FOR REVIEW)\b/i.test(w) && !/\b(?:for review|ready for (?:john'?s )?(?:editorial )?review)\b/i.test(w) && /\b(?:shareable PDF|printable PDF|printable companion|editable PowerPoint)\b/i.test(w));
     };
@@ -4088,10 +4384,11 @@ const Proto = (() => {
     const isReviewOrCurrent = (it) => {
       if (!it || it.reviewed_done || it.dismissed || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it) || it.auto || isExplicitEarlier(it) || isFinalOrApproved(it) || isSupersededByFinalRow(it)) return false;
       const w = String(it.what || "").trim();
+      if (/^(?:Supporting|Reference)\s*[-\u2014\u2013:]/i.test(w)) return false;
       const itDate10 = String(it.date || "").slice(0, 10);
       const withinRecentBatch = !maxUnreviewedLeadDate || !itDate10 || isoDaysDiff(maxUnreviewedLeadDate, itDate10) <= 2;
       if (it.is_current === true && (withinRecentBatch || matchesActiveStep(it) || String(it.step || "") === "6")) return true;
-      if (withinRecentBatch && (/^(?:START HERE|FOR REVIEW|CURRENT)\b/i.test(w) || /\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(w))) {
+      if (withinRecentBatch && (/^(?:\u2605|START HERE|FOR REVIEW|CURRENT)\b/i.test(w) || /\b(?:ready for (?:john'?s )?(?:editorial )?review|for review|awaiting review|track changes)\b/i.test(w))) {
         return Boolean(it.openable || it.path || it.route);
       }
       return false;
@@ -4161,19 +4458,33 @@ const Proto = (() => {
     renderTopNextSteps();
 
     const seenFinalKeys = new Set(reviewNow.map(i => String(i.open_path || i.path || i.what).toLowerCase()));
-    const finalApproved = [];
+    const rawFinalCandidates = [];
     ((_deliv && _deliv.approved) || []).concat(items.filter(isFinalOrApproved)).forEach((it) => {
-      if (!it || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it)) return;
+      if (!it || isNoiseDeliverable(it) || isRawUnaliasedManagedHash(it) || it.is_intermediate || isSupplementalDeliverable(it)) return;
       const k = String(it.open_path || it.path || it.what).toLowerCase();
       if (seenFinalKeys.has(k)) return;
       seenFinalKeys.add(k);
+      rawFinalCandidates.push(it);
+    });
+    rawFinalCandidates.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    const pairedFinalCandidates = pairDeliverableFormats(rawFinalCandidates);
+    const seenFinalFamilies = new Set();
+    const finalApproved = [];
+    pairedFinalCandidates.forEach((it) => {
+      const famTitle = humanizeDelivTitle(it.human_title || it.what || it.open_path || it.path || "", it)
+        .toLowerCase()
+        .replace(/\b(?:draft|rev|revision|version|v)\s*\d+\b/gi, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+      if (famTitle && seenFinalFamilies.has(famTitle)) return;
+      if (famTitle) seenFinalFamilies.add(famTitle);
       finalApproved.push(it);
     });
     finalApproved.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
     [].forEach(() => {
     });
 
-    const usedKeys = new Set([...reviewNow, ...finalApproved].map(i => String(i.open_path || i.path || i.what).toLowerCase()));
+    const usedKeys = new Set([...reviewNow, ...rawFinalCandidates, ...finalApproved].map(i => String(i.open_path || i.path || i.what).toLowerCase()));
     const otherHuman = items.filter(i => !isNoiseDeliverable(i) && !isRawUnaliasedManagedHash(i) && !i.auto && !usedKeys.has(String(i.open_path || i.path || i.what).toLowerCase()))
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
     const supportingPlans = items.filter(i => !isNoiseDeliverable(i) && !isRawUnaliasedManagedHash(i) && i.auto && !usedKeys.has(String(i.open_path || i.path || i.what).toLowerCase()));
@@ -4189,17 +4500,25 @@ const Proto = (() => {
     });
     allHumanItems.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 
-    // Build Pending items list (active skill/code job or in-progress step)
+    // Build Pending items list ONLY when work is actively being created/executed right now (never when quiet/idle/finished)
     const pendingItems = [];
-    if (latestStatusRun && latestStatusRun.label) {
+    const mapSteps = (_lastMap && Array.isArray(_lastMap.steps)) ? _lastMap.steps : [];
+    const isWorkingState = Boolean((lastState && (lastState.busy || lastState.working_bg)) || (_lastMap && _lastMap.attention && _lastMap.attention.state === "working"));
+    const runKind = String((latestStatusRun && latestStatusRun.kind) || "").trim().toLowerCase();
+    const runLabel = String((latestStatusRun && latestStatusRun.label) || "").trim();
+    const isRunActivelyExecuting = Boolean(
+      runLabel &&
+      runKind &&
+      !/^(?:none|idle|quiet|finished|done|complete|completed|halted|stopped|failed|error)$/i.test(runKind) &&
+      !/\b(?:nothing running|quiet|idle|finished|completed|halted|stopped|no active)\b/i.test(runLabel)
+    );
+    if (isRunActivelyExecuting && (isWorkingState || runKind === "job" || runKind === "skill" || runKind === "running")) {
       pendingItems.push({
-        title: latestStatusRun.label,
+        title: runLabel,
         worker: latestStatusRun.skill || latestStatusRun.worker || "Worker",
         eta: latestStatusRun.age ? ("Running " + latestStatusRun.age) : "In flight",
       });
     }
-    const mapSteps = (_lastMap && Array.isArray(_lastMap.steps)) ? _lastMap.steps : [];
-    const isWorkingState = Boolean((lastState && (lastState.busy || lastState.working_bg)) || (_lastMap && _lastMap.attention && _lastMap.attention.state === "working"));
     if (!pendingItems.length && isWorkingState && activeStepInfo.step) {
       pendingItems.push({
         title: (activeStepInfo.step.navigation && activeStepInfo.step.navigation.label) || activeStepInfo.step.name || "Active Step",
@@ -4242,6 +4561,65 @@ const Proto = (() => {
         _delivOpen = !tile.classList.contains("folded");
       };
       tile.appendChild(who);
+
+      if (!isLegacyNavTest) {
+        const ovRaw = (_lastMap && _lastMap.running_overview && typeof _lastMap.running_overview === "object") ? _lastMap.running_overview : {};
+        const keyDelivList = (Array.isArray(ovRaw.key_deliverables) && ovRaw.key_deliverables.length)
+          ? ovRaw.key_deliverables
+          : [...mainPairedReview.slice(0, 2), ...finalApproved.slice(0, 5)].slice(0, 6).map(it => {
+              const p = String(it.open_path || it.path || it.where || "");
+              const ext = p.includes(".") ? p.split(".").pop().toUpperCase() : "FILE";
+              const isRev = mainPairedReview.includes(it);
+              return {
+                title: shortWhat(it),
+                path: p,
+                where: p,
+                route: it.route || "",
+                ext: ext,
+                status: isRev ? "For Review" : "Final",
+              };
+            });
+        if (keyDelivList.length) {
+          const kdFold = el("details", "deliv-key-strip");
+          kdFold.dataset.keyDeliverablesStrip = "1";
+          const kdSessionKey = "deliv:v4:key_deliverables_open";
+          kdFold.open = Object.prototype.hasOwnProperty.call(navSession, kdSessionKey) ? Boolean(navSession[kdSessionKey]) : true;
+          kdFold.addEventListener("toggle", () => {
+            if (kdFold.isConnected) navSession[kdSessionKey] = kdFold.open;
+          });
+          const kdSum = el("summary", "dks-head");
+          kdSum.appendChild(el("span", "dks-title", "\ud83c\udfdb KEY DELIVERABLES"));
+          kdSum.appendChild(el("span", "dks-badge", keyDelivList.length + " Flagship \u25be"));
+          kdFold.appendChild(kdSum);
+          const kdBody = el("div", "dks-list");
+          keyDelivList.slice(0, 6).forEach((kd) => {
+            const isRev = /review/i.test(String(kd.status || ""));
+            const rowBtn = el("button", "dks-item" + (isRev ? " is-review" : " is-final"));
+            rowBtn.type = "button";
+            const pill = el("span", "dks-pill " + (isRev ? "review" : "final"), isRev ? "\ud83d\udc41 Review" : "\u2605 Final");
+            const ttl = el("span", "dks-item-title", kd.title || kd.path || "Deliverable");
+            const extBadge = el("span", "dks-ext", kd.ext || "FILE");
+            rowBtn.appendChild(pill);
+            rowBtn.appendChild(ttl);
+            rowBtn.appendChild(extBadge);
+            rowBtn.title = (kd.title || "") + (kd.path ? (" (" + kd.path + ")") : "");
+            rowBtn.onclick = (ev) => {
+              ev.stopPropagation();
+              const targetPath = kd.path || kd.where || "";
+              const targetHref = kd.route || (targetPath ? ("/steward/v1/open?project=" + encodeURIComponent(PROJECT) + "&dir=" + encodeURIComponent(DIR) + "&path=" + encodeURIComponent(targetPath)) : "");
+              if (targetHref && typeof window.enterSecondWindowMode === "function") {
+                window.enterSecondWindowMode(targetHref, kd.title || targetPath);
+              } else if (targetHref) {
+                window.open(targetHref, "_blank", "noopener");
+              }
+            };
+            kdBody.appendChild(rowBtn);
+          });
+          kdFold.appendChild(kdBody);
+          tile.appendChild(kdFold);
+        }
+      }
+
       const body = el("div", "body");
       if(d?.finished_projection && !d.finished_projection.consistent)
         body.appendChild(el('div','sdmeta','Finished Deliverables needs repair · '+(d.finished_projection.error||'projection incomplete')));
@@ -5226,6 +5604,10 @@ const Proto = (() => {
       currentBlock._raw += ev.text;
       currentBlock.querySelector(".body").textContent = currentBlock._raw;
       if (stick) pin(s, true);
+      if (Date.now() - (handle._lastSpendPollTs || 0) >= 2000) {
+        handle._lastSpendPollTs = Date.now();
+        fetch(api("/api/state")).then(r => r.json()).then(st => { if (st && !st.error) updateState(st); }).catch(() => {});
+      }
     } else if (ev.t === "john") {
       closeCurrent();                    // the reply's blocks stay this turn's until turn_end (final review 10-10)
       if (_skipNextJohnEcho && String(ev.text || "").trim() === String(_skipNextJohnEcho).trim()) { _skipNextJohnEcho = ""; } else { addBlock("john", opts.johnLabel || (window.USER_DISPLAY_NAME ? String(window.USER_DISPLAY_NAME).trim().toUpperCase() : "JOHN"), ev.text); }
@@ -5240,6 +5622,10 @@ const Proto = (() => {
       // above the live tool activity line so John gets instant feedback.
       closeCurrent();
       activity(ev);
+      if (Date.now() - (handle._lastSpendPollTs || 0) >= 1200) {
+        handle._lastSpendPollTs = Date.now();
+        fetch(api("/api/state")).then(r => r.json()).then(st => { if (st && !st.error) updateState(st); }).catch(() => {});
+      }
     } else if (ev.t === "turn_end") {
       closeCurrent();
       const _turnSpokenText = turnReplyBlocks
@@ -5527,12 +5913,12 @@ const Proto = (() => {
       const _normDir = String(st.dir || DIR || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
       const _pidKey = String(window.STEWARD_PID || "").toLowerCase() + "::" + _normDir;
       const _MBA_FLOOR = {
-        reported_spend: 277.05, estimated_spend: 857.74, tokens: 1062884902, secs: 164956,
+        reported_spend: 277.05, estimated_spend: 584.44, tokens: 1062884902, secs: 164956,
         turns: 276, unpriced_turns: 252, estimated_turns: 252,
         cumulative_tokens: 22098634422, cumulative_estimated_spend: 10879.04
       };
       const _MAGI_FLOOR = {
-        reported_spend: 316.21, estimated_spend: 857.46, tokens: 851163147, secs: 145510,
+        reported_spend: 316.21, estimated_spend: 515.76, tokens: 851163147, secs: 145510,
         turns: 337, unpriced_turns: 326, estimated_turns: 326,
         cumulative_tokens: 35143875845, cumulative_estimated_spend: 19618.12
       };
@@ -5670,6 +6056,7 @@ const Proto = (() => {
       const seatsTok = seats ? num(seats.tokens) : 0;
       const seatsSecs = seats ? num(seats.secs) : 0;
       const seatsCnt = seats ? num(seats.count) : 0;
+      const kidsUsd = kids ? (num(kids.reported_spend) + num(kids.estimated_spend)) : 0;
       const kidsTok = kids ? num(kids.tokens) : 0;
       const kidsCnt = kids ? num(kids.count) : 0;
       const stewModelName = fam === "chatgpt" ? "gpt-6.1-sol \u00b7 ultra"
@@ -5704,7 +6091,7 @@ const Proto = (() => {
           role: "Delegated Sub-agents (" + kidsCnt + ")",
           tokens: fmtTok(kidsTok),
           time: "\u2014",
-          spend: "$0.00",
+          spend: fmtUsd(kidsUsd),
         }] : []),
         totalTokens: tokensTotal ? fmtTok(tokensTotal) : "0",
         totalTime: fmtTime(totalSecs),
@@ -6044,7 +6431,7 @@ const Proto = (() => {
           entries.forEach((ent) => {
             const row = el("div", "mb-row" + (ent.dir ? " is-dir" : " is-file"));
             const left = el("div", "mb-row-left");
-            const icon = ent.dir ? "📁" : (/\.(pdf|pptx|docx|xlsx)$/i.test(ent.name) ? "📗" : (/\.(py|js|ts|json|sh|ps1)$/i.test(ent.name) ? "💻" : "📄"));
+            const icon = ent.dir ? "📁" : (/\.(pdf|pptx|docx|xlsx)$/i.test(ent.name) ? "📗" : (/\.(r|rmd|qmd|py|ipynb|jl|sql|stan|tex|bib|js|ts|json|yaml|yml|toml|sh|ps1)$/i.test(ent.name) ? "💻" : "📄"));
             left.appendChild(el("span", "mb-icon", icon));
             const nameBtn = el("button", "mb-name-btn", ent.name);
             nameBtn.type = "button";
@@ -7132,29 +7519,40 @@ const Proto = (() => {
         const suppRev = (_deliv && Array.isArray(_deliv.supplementalReviewNow)) ? _deliv.supplementalReviewNow.slice() : [];
         const mainRev = (_deliv && Array.isArray(_deliv.mainReviewNow)) ? _deliv.mainReviewNow.slice() : [];
         const isExplicitApproveOrNext = /\b(?:approve[d]?|looks?\s+good|lgtm|move\s+on|next\s+(?:step|wave|chapter|section)|done\s+with\s+review|lock\s+(?:it|this)|ship\s+it|proceed|all\s+good)\b/i.test(text);
-        const isRevisionOrFeedback = /\b(?:another\s+round|next\s+round|revise|revision|update|change|fix|rework|adjust|modify|rewrite|redo|instead|make\s+sure|should\s+be|need[s]?\s+to|add\s+(?:a|more|the)|remove|cut|expand|tighten|table\s+(?:this|it|that))\b/i.test(text) || (text.length >= 20 && !/^(?:what(?:'s|\s+is)\s+the\s+status|how\s+is\s+it\s+going|status\??|eta\??)\s*\??$/i.test(text));
+        const isRevisionOrFeedback = /\b(?:another\s+round|next\s+round|revise|revision|update|change|fix|rework|adjust|modify|rewrite|redo|instead|make\s+sure|should\s+be|need[s]?\s+to|add\s+(?:a|more|the)|remove|cut|expand|tighten|table\s+(?:this|it|that)|good\s+with|happy\s+with|notes?\s+on|feedback|edits?|reviewed)\b/i.test(text) || (text.trim().length >= 8 && !/^(?:what(?:'s|\s+is)\s+the\s+status|how\s+is\s+it\s+going|status\??|eta\??|ping\??)\s*\??$/i.test(text.trim()));
         const isExplicitAll = /\b(?:all\s+(?:of\s+them|deliverables|items)|mark\s+all\s+done|approve\s+all)\b/i.test(text);
-        const targetMatches = Array.from(text.matchAll(/\b(lecture\s*\d+|chapter\s*\d+|ch\.?\s*\d+|homework\s*\d+|hw\s*\d+|quiz\s*\d+|wave\s*\d+|step\s*\d+|block\s*\d+|round\s*\d+|paper\s*\d+|book\s*\d+|syllabus|intro\s+lecture|lem\s+lab)\b/gi)).map(m => {
-          return String(m[1] || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/^ch\.?\s*(\d+)$/, "chapter $1").replace(/^hw\s*(\d+)$/, "homework $1");
+        const targetMatches = Array.from(text.matchAll(/\b(lectures?\s*\d+|chapters?\s*\d+(?:\s*(?:[-\u2013\u2014]|to|through)\s*\d+)?|ch\.?\s*\d+(?:\s*(?:[-\u2013\u2014]|to|through)\s*\d+)?|homeworks?\s*\d+|hw\s*\d+|quiz(?:zes)?\s*\d+|waves?\s*\d+|steps?\s*\d+|blocks?\s*\d+|rounds?\s*\d+|papers?\s*\d+|books?\s*\d+|v\d+|manuscript|draft|syllabus|intro\s+lecture|lem\s+lab)\b/gi)).map(m => {
+          return String(m[1] || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/^ch\.?\s*/, "chapter ").replace(/^chapters\s*/, "chapter ").replace(/^hw\s*(\d+)$/, "homework $1");
         });
         const uniqueTargets = Array.from(new Set(targetMatches));
         const itemMatchesTarget = (it) => {
           if (isExplicitAll) return true;
+          const k = String((it && (it.open_path || it.path || it.product_id || it.what)) || "");
+          if (k && _openedReviewKeys.has(k)) return true;
           const hay = ((it && it.what) + " " + (it && (it.open_path || it.path)) + " " + (it && it.step) + " " + (it && it.owner_step_id)).toLowerCase().replace(/\s+/g, " ");
           if (uniqueTargets.length > 0) {
             return uniqueTargets.some(t => {
+              const chMatch = /^chapter\s*0*(\d+)$/i.exec(t);
+              if (chMatch) {
+                const n = parseInt(chMatch[1], 10);
+                const rng = /(?:chapters?|ch\.?)\s*0*(\d+)\s*(?:[-\u2013\u2014]|to|through)\s*0*(\d+)/i.exec(hay);
+                if (rng && n >= parseInt(rng[1], 10) && n <= parseInt(rng[2], 10)) return true;
+              }
               const pat = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "[\\s_-]*");
               return new RegExp("\\b" + pat + "\\b", "i").test(hay);
             });
           }
           const allRevSteps = new Set(mainRev.concat(suppRev).map(x => String((x && (x.owner_step_id || x.step)) || "")));
-          if (mainRev.length > 3 && allRevSteps.size > 1) return false;
+          if (mainRev.length > 6 && allRevSteps.size > 2) return false;
           return true;
         };
         const candidatePool = suppRev.concat((isExplicitApproveOrNext || isRevisionOrFeedback) ? mainRev : []);
         const itemsToAutoArchive = candidatePool.filter(itemMatchesTarget);
         if ((isExplicitApproveOrNext || isRevisionOrFeedback) && (itemsToAutoArchive.length > 0 || candidatePool.length === 0)) {
           _approvalResolvedSession = true;
+          _approvalResolvedSig = _lastRawApprovalSig || "resolved";
+          _approvalResolvedAt = Date.now();
+          renderTopNextSteps();
         }
         if (itemsToAutoArchive.length > 0) {
           const batchPayload = itemsToAutoArchive.map(it => {
@@ -7308,6 +7706,7 @@ const Proto = (() => {
     wireChrome();
     try { wireFollow(scrollEl()); } catch (e) {}   // before history loads, so the replay lands at the newest
     const wantPanes = !TALK && !TILE;
+    const initStateProm = fetch(api("/api/state")).then(r => r.json()).then(st => { if (st && !st.error) updateState(st); return st; }).catch(() => null);
     const statusFetchProm = (opts.statusPane && wantPanes) ? fetch(api("/api/status")).then(r => r.json()).catch(() => null) : Promise.resolve(null);
     const delivProm = wantPanes ? Promise.resolve().then(() => renderDeliverablesTile()).catch((err) => { console.error("renderDeliverablesTile error:", err && err.stack || err); }) : Promise.resolve();
     const histProm = (!opts.skipHistory) ? loadHistory().catch(() => {}) : Promise.resolve();
@@ -7316,6 +7715,7 @@ const Proto = (() => {
       if (p) p.textContent = "map failed: " + ((e && e.message) || "could not load");
       tileSay("trouble", { text: "this cockpit's record could not be read" + (e && /401|403|auth/i.test(String(e.message || "")) ? " - this browser is not logged in" : "") });
     }
+    try { await initStateProm; } catch (e) {}
     try { await histProm; } catch (e) { /* no-op */ }
     if (opts.statusPane && wantPanes) {
       try {

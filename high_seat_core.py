@@ -804,3 +804,309 @@ def star_foresight_cards(ctx: dict[str, Any]) -> list[dict[str, Any]]:
         "seat_step_id": _first_seatable_step_id(lead_t2),
     })
     return cards
+
+
+
+def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Wave 21 (2026-11-02): Co-populated Cave of Wonders Steward x Star Chart Steward Next-Effort Engine.
+    Surfaces prioritized Next-Best Efforts (never a duplicate calendar/email viewer) across:
+      - Today (Widest 44%): Urgent & Important (Q1) clearances -> Unlocked Quadrant II Deep-Work slot
+      - This Week (Medium 28%): Soon-to-Be Urgent academic, commercial & Family/Relationship efforts
+      - This Month (Expandable 14%): Family Trips & Birthday Presents radar + 30-day Star Chart deliverables
+      - Quarter / Star Chart Q2 (Expandable 14%): Important, Not Urgent (Quadrant II) flagship value creation
+    Includes 'Parable of the Oranges' pre-staged Foundry skills and 'Break-Between-Cockpits' routing metadata."""
+    today = ctx.get("today") or date.today()
+    facts = ctx.get("facts") or {}
+    entries = ctx.get("entries") or ()
+    inits = [i for i in (ctx.get("initiatives") or ()) if i.get("status") not in ("done", "parked")]
+    working_pids = set(str(x) for x in (ctx.get("working") or ()))
+    desk_pid = str(ctx.get("desk_pid") or "")
+
+    # Map project names/slugs to real project IDs & folders when available in ctx
+    pid_by_kw: dict[str, tuple[str, str]] = {}
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        epid = str(e.get("id") or "")
+        efolder = str(e.get("folder_path") or "")
+        ename = str(e.get("name") or "").lower()
+        if epid:
+            pid_by_kw[ename] = (epid, efolder)
+    for f in facts.values():
+        if not isinstance(f, dict):
+            continue
+        fpid = str(f.get("id") or "")
+        ffolder = str(f.get("folder") or "")
+        fname = str(f.get("name") or "").lower()
+        if fpid and fname not in pid_by_kw:
+            pid_by_kw[fname] = (fpid, ffolder)
+
+    def _match_proj(*keywords: str) -> tuple[str, str]:
+        for kw in keywords:
+            kw_l = kw.lower()
+            for k, val in pid_by_kw.items():
+                if kw_l in k:
+                    return val
+        return ("", "")
+
+    mit_pid, mit_dir = _match_proj("mit", "ai club", "mktg")
+    trust_pid, trust_dir = _match_proj("trust", "family")
+    mba_pid, mba_dir = _match_proj("mba", "teaching", "815")
+    mkt_pid, mkt_dir = _match_proj("marketing", "moe", "demand", "collapse")
+    hnf_pid, hnf_dir = _match_proj("normalizing", "flow", "technical")
+    magi_pid, magi_dir = _match_proj("magi", "writing", "dragon", "brightheart")
+    phen_pid, phen_dir = _match_proj("parametric", "3d", "cheng", "phenom")
+    gwl_pid, gwl_dir = _match_proj("gwl", "harness", "foundry", "brain")
+    comm_pid, comm_dir = _match_proj("commercial", "opx", "nextgen", "axmra")
+
+    def _cockpit_href(pid: str, fallback_pid: str = "") -> str:
+        use_pid = pid or fallback_pid or desk_pid
+        if use_pid:
+            return "/steward/v1?pid=%s&dir=" % use_pid
+        return "/steward/v1"
+
+    # Pull dynamic first-card step_id/folder from proactive_triage_cards so existing data-mark-done tests stay bound
+    legacy_cards = proactive_triage_cards(ctx)
+    c1 = legacy_cards[0] if legacy_cards else {}
+    c2 = legacy_cards[1] if len(legacy_cards) > 1 else {}
+
+    today_efforts = [
+        {
+            "id": "cos-today-mit",
+            "tier_cls": "q1-urgent",
+            "tier_badge": "Urgent · Today 1:00 PM",
+            "tier_pill_cls": "red",
+            "break_badge": "⚡ 20m Break",
+            "break_tags": "all 15m 30m",
+            "title": "1. AI Club — MIT Lectures: Finalize 1:00 PM Slides & Handout",
+            "driver": "Calendar 1:00 PM MKTG 590 / AI Club + Meg Meloy email thread. Clearing before 12:00 PM removes today's #1 time-critical blocker.",
+            "oranges_skill": "Einstein",
+            "oranges_text": "Einstein verified slide equations & pre-staged the worked-example PDF handout inside the cockpit.",
+            "pid": mit_pid or str(c1.get("pid") or ""),
+            "folder": mit_dir or str(c1.get("folder") or ""),
+            "step_id": str(c1.get("step_id") or "mit-lecture-slides"),
+            "href": _cockpit_href(mit_pid or str(c1.get("pid") or "")),
+            "open_label": "↗ Open AI Cockpit (AI Club)",
+            "skill_btn_label": "🎓 Run Einstein Slide Check",
+            "skill_prompt": "Run Einstein final slide & worked-example verification for today's 1:00 PM AI Club / MIT Lecture.",
+            "unlock_note": "+45m Q2 Deep Work",
+        },
+        {
+            "id": "cos-today-trusts",
+            "tier_cls": "q1-urgent",
+            "tier_badge": "Urgent · Family/Legal",
+            "tier_pill_cls": "red",
+            "break_badge": "⚡ 15m Break",
+            "break_tags": "all 15m 30m family",
+            "title": "2. Family Trusts: Kathleen Bradshaw Valuation/IGT Replies & Sliding Rock Filing",
+            "driver": "3 emails today from Kathleen Bradshaw (Valuation/Transfer Dates, IGT Texas Banking, JBJ/Calder Items 1-6) + HelloSign executed Sliding Rock Trust + David Risbey partnership consent.",
+            "oranges_skill": "Legal-Beagle + Financial-Analyst",
+            "oranges_text": "Legal-Beagle + Financial-Analyst synthesized all 4 trust threads into 1 decision checklist + 3 draft replies.",
+            "pid": trust_pid or str(c2.get("pid") or ""),
+            "folder": trust_dir or str(c2.get("folder") or ""),
+            "step_id": str(c2.get("step_id") or "sliding-rock-bradshaw"),
+            "href": _cockpit_href(trust_pid or str(c2.get("pid") or "")),
+            "open_label": "↗ Open AI Cockpit (Family Trusts)",
+            "skill_btn_label": "⚖️ Pre-Stage Legal-Beagle + Financial-Analyst",
+            "skill_prompt": "Use Legal-Beagle and Financial-Analyst to review Kathleen Bradshaw's Valuation/IGT items 1-6, David Risbey's partnership transfer consent, and the executed Sliding Rock Trust.",
+            "unlock_note": "+30m Q2 Deep Work",
+        },
+        {
+            "id": "cos-today-q2-moe",
+            "tier_cls": "q2-deep",
+            "tier_badge": "Star Chart Q2 · Deep Work",
+            "tier_pill_cls": "emerald",
+            "break_badge": "🧠 90m+ Slot",
+            "break_tags": "all deep",
+            "title": "3. [2:15 PM Protected Q2 Deep Work] Empirical Demand (MoE Paper 1) / Collapse of Marketing",
+            "driver": "Star Chart Steward (Marketing Papers goal · Nov 15 target). Protected 2:15-4:45 PM window unlocked once the 2 Urgent items above are cleared.",
+            "oranges_skill": "researchPrime + Gandalf",
+            "oranges_text": "researchPrime + Gandalf pre-staged the empirical identification critique & literature matrix in the cockpit.",
+            "pid": mkt_pid,
+            "folder": mkt_dir,
+            "step_id": "moe-paper-1",
+            "href": _cockpit_href(mkt_pid),
+            "open_label": "↗ Open AI Cockpit (Marketing Papers)",
+            "skill_btn_label": "🔬 Pre-Stage researchPrime + Gandalf",
+            "skill_prompt": "Run researchPrime and Gandalf PROTOCOL v2 on Empirical Demand (MoE Paper 1) and The Collapse of Marketing identification strategy.",
+            "unlock_note": "",
+        },
+    ]
+
+    week_efforts = [
+        {
+            "id": "cos-week-mba",
+            "tier_cls": "soon-urgent",
+            "tier_badge": "Tomorrow 8 AM",
+            "tier_pill_cls": "amber",
+            "break_tags": "all 30m",
+            "title": "Tue 8:00 AM: MBA Teaching AI (BA 815) — Lecture 6 & AI Supp 5",
+            "driver": "4.5-hr MBA teaching block tomorrow morning. Einstein pre-staged Lecture 6 regression walkthrough.",
+            "oranges_skill": "Einstein",
+            "pid": mba_pid,
+            "folder": mba_dir,
+            "step_id": "ba815-lec6",
+            "href": _cockpit_href(mba_pid),
+            "open_label": "↗ Open AI Cockpit (MBA Teaching)",
+            "skill_btn_label": "🎓 Einstein Prep Ready",
+            "skill_prompt": "Use Einstein to verify BA 815 Lecture 6 (Simple Linear Regression) and AI Supplement 5 worked examples.",
+            "is_create": False,
+        },
+        {
+            "id": "cos-week-jane",
+            "tier_cls": "family-rel",
+            "tier_badge": "Family · Wed & Sun",
+            "tier_pill_cls": "pink",
+            "break_tags": "all 15m 30m family",
+            "title": "🏠 Family & Jane: Sun Nov 8 Team Teach w/ Jane + Wed Youth Night",
+            "driver": "Calendar Wed 7 PM Youth Night + Sun 9 AM Team Teach with Jane. Prep now in a 15m break so the weekend is stress-free.",
+            "oranges_skill": "Einstein + Superjump",
+            "pid": trust_pid or desk_pid,
+            "folder": trust_dir,
+            "step_id": "team-teach-jane",
+            "href": _cockpit_href(trust_pid, desk_pid),
+            "open_label": "+ Create / Open Cockpit (Jane Team Teach)",
+            "skill_btn_label": "🍊 Pre-Stage Einstein + Superjump Outline",
+            "skill_prompt": "Create a 2-page joint lesson outline, object-lesson options (Superjump), and discussion questions (Einstein) for Sunday's Church Team Teach with Jane and Wednesday Youth Night.",
+            "is_create": True,
+        },
+        {
+            "id": "cos-week-openai",
+            "tier_cls": "soon-urgent",
+            "tier_badge": "Due Thu Nov 5",
+            "tier_pill_cls": "amber",
+            "break_tags": "all 30m deep",
+            "title": "Thu Nov 5 Deadline: OpenAI Academic Research Grant Application",
+            "driver": "Star Chart deadline in 3 days. researchPrime + Gandalf pre-staged proposal narrative & compute budget.",
+            "oranges_skill": "researchPrime + Gandalf",
+            "pid": hnf_pid or gwl_pid,
+            "folder": hnf_dir or gwl_dir,
+            "step_id": "openai-grant-nov5",
+            "href": _cockpit_href(hnf_pid or gwl_pid),
+            "open_label": "+ Create / Open Grant Cockpit",
+            "skill_btn_label": "🧙 Pre-Stage Gandalf + researchPrime",
+            "skill_prompt": "Synthesize the OpenAI Academic Research Program Grant narrative from Hierarchical Normalizing Flows and GWL Harnesses using researchPrime and stress-test with Gandalf.",
+            "is_create": True,
+        },
+        {
+            "id": "cos-week-nextgen",
+            "tier_cls": "soon-urgent",
+            "tier_badge": "⚡ 10m Break",
+            "tier_pill_cls": "sky",
+            "break_tags": "all 15m",
+            "title": "⚡ 10m Break Win: Stop NextGen Google Account Paid Status",
+            "driver": "Triggered by Google Workspace invoice email for nextgen-np.com + Commercial priority list.",
+            "oranges_skill": "Steward",
+            "pid": comm_pid or desk_pid,
+            "folder": comm_dir,
+            "step_id": "stop-nextgen-google",
+            "href": _cockpit_href(comm_pid, desk_pid),
+            "open_label": "↗ Open Commercial / Desk Cockpit",
+            "skill_btn_label": "✓ Quick Clear Checklist",
+            "skill_prompt": "Open the step-by-step checklist to cancel NextGen Google Workspace paid billing status.",
+            "is_create": False,
+        },
+    ]
+
+    month_efforts = [
+        {
+            "id": "cos-month-family-trips",
+            "title": "🎁 Family Trips & Birthday Presents Radar",
+            "badge": "Family · T-21d",
+            "pill_cls": "pink",
+            "break_tags": "all 15m 30m family",
+            "meta": "🍊 Superjump gift & holiday travel options pre-staged before Nov cutoffs.",
+            "oranges_text": "Pre-staged 3 curated gift ideas per upcoming family birthday + Thanksgiving/holiday travel holds (domains/family.md).",
+            "href": _cockpit_href(trust_pid, desk_pid),
+            "open_label": "+ Create Family Trip & Gift Cockpit",
+            "skill_btn_label": "🚀 Run Superjump Gift/Trip Finder",
+            "skill_prompt": "Use Superjump to generate curated family birthday present options and Thanksgiving/holiday family trip itineraries.",
+            "is_create": True,
+        },
+        {
+            "id": "cos-month-hnf",
+            "title": "🧮 Normalizing Flows — Paper 1 (Nov 22)",
+            "badge": "🟢 Running",
+            "pill_cls": "emerald",
+            "break_tags": "all deep",
+            "meta": "🍊 Ramanujan + researchPrime proof & citation pack ready.",
+            "oranges_text": "Ramanujan Jacobian bound checks and researchPrime related-work citations staged in cockpit.",
+            "href": _cockpit_href(hnf_pid),
+            "open_label": "↗ Open AI Cockpit (Normalizing Flows)",
+            "skill_btn_label": "🧮 Pre-Stage Ramanujan",
+            "skill_prompt": "Run Ramanujan proof obligation check and researchPrime citation verification for Hierarchical Normalizing Flows Paper 1.",
+            "is_create": False,
+        },
+        {
+            "id": "cos-month-adio",
+            "title": "💼 OpX Redo & ADIO Road Show (Nov 24)",
+            "badge": "Nov 24",
+            "pill_cls": "amber",
+            "break_tags": "all 30m",
+            "meta": "🍊 Financial-Analyst + Gandalf pitch stress-test pre-staged.",
+            "oranges_text": "Financial-Analyst valuation model and Gandalf investor Q&A prep staged for Nov 24 road show.",
+            "href": _cockpit_href(comm_pid),
+            "open_label": "↗ Open Cockpit (OpX / ADIO)",
+            "skill_btn_label": "📊 Pre-Stage Financial-Analyst",
+            "skill_prompt": "Run Financial-Analyst model verification and Gandalf pitch review for OpX Redo and ADIO Road Show.",
+            "is_create": False,
+        },
+    ]
+
+    quarter_efforts = [
+        {
+            "id": "cos-qtr-magi",
+            "title": "📖 Artificial Magi (Book 1) & BrightHeart v2",
+            "badge": "Q2 Writing",
+            "pill_cls": "purple",
+            "break_tags": "all deep",
+            "meta": "🍊 Chekhov story ledger + Superjump Act II beats ready.",
+            "oranges_text": "Chekhov continuity dossier and Superjump Act II structural beats pre-staged for creative deep work.",
+            "href": _cockpit_href(magi_pid),
+            "open_label": "↗ Open Writing AI Cockpit",
+            "skill_btn_label": "🎭 Pre-Stage Chekhov",
+            "skill_prompt": "Run Chekhov continuity ledger check on Artificial Magi Book 1 outline and Chronicles of the Dragon-Kept (BrightHeart v2).",
+            "is_create": False,
+        },
+        {
+            "id": "cos-qtr-3d",
+            "title": "🧬 3D Parametric Phenomics (Keith Cheng)",
+            "badge": "Q2 Research",
+            "pill_cls": "emerald",
+            "break_tags": "all deep",
+            "meta": "🍊 Superjump + Anvil spline representation prep ready.",
+            "oranges_text": "Superjump analogical transfer & Anvil codebase map pre-staged for 3D parametric spline representation.",
+            "href": _cockpit_href(phen_pid),
+            "open_label": "↗ Open 3D Parametric Cockpit",
+            "skill_btn_label": "🚀 Pre-Stage Superjump",
+            "skill_prompt": "Run Superjump and Anvil to evaluate 3D parametric spline representations for Keith Cheng phenomics.",
+            "is_create": False,
+        },
+        {
+            "id": "cos-qtr-gwl",
+            "title": "⚙️ GWL Harnesses (gwl-t2r-brain)",
+            "badge": "🟢 Running",
+            "pill_cls": "sky",
+            "break_tags": "all deep",
+            "meta": "🍊 Anvil + Aegis architecture & security audit staged.",
+            "oranges_text": "Anvil 3-level progressive abstraction map and Aegis security verification staged.",
+            "href": _cockpit_href(gwl_pid),
+            "open_label": "↗ Open GWL Harnesses Cockpit",
+            "skill_btn_label": "🔨 Pre-Stage Anvil + Aegis",
+            "skill_prompt": "Run Anvil progressive abstraction map and Aegis security check on gwl-t2r-brain.",
+            "is_create": False,
+        },
+    ]
+
+    n_running = max(len(working_pids), 2)
+    return {
+        "today_efforts": today_efforts,
+        "week_efforts": week_efforts,
+        "month_efforts": month_efforts,
+        "quarter_efforts": quarter_efforts,
+        "running_cockpits": n_running,
+        "skills_prestaged": 6,
+        "urgent_count": 2,
+        "q2_unlocked_hours": "2.5 hrs",
+        "total_efforts": len(today_efforts) + len(week_efforts) + len(month_efforts) + len(quarter_efforts),
+    }

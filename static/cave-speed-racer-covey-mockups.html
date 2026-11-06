@@ -1,0 +1,2133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>★ Variation A (Recommended): Multi-Step List Tiles Connected to AI Cockpit Items &amp; Initiatives — Cave of Wonders</title>
+<link rel="icon" href="/vendor/brand/cave-of-wonders.png" type="image/png">
+<style>
+  :root {
+    --bg: #070b12;
+    --panel: #0e1522;
+    --panel-2: #131c2e;
+    --panel-3: #19253c;
+    --line: rgba(148, 163, 184, 0.18);
+    --line-strong: rgba(56, 189, 248, 0.45);
+    --text: #f1f5f9;
+    --dim: #94a3b8;
+    --faint: #64748b;
+    --amber: #f59e0b;
+    --amber-soft: rgba(245, 158, 11, 0.14);
+    --green: #10b981;
+    --green-soft: rgba(16, 185, 129, 0.14);
+    --blue: #38bdf8;
+    --blue-soft: rgba(56, 189, 248, 0.14);
+    --purple: #a78bfa;
+    --purple-soft: rgba(167, 139, 250, 0.14);
+    --red: #f43f5e;
+    --red-soft: rgba(244, 63, 94, 0.15);
+    --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  /* Sticky Top Variation Switcher */
+  .mockup-switcher {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: linear-gradient(180deg, #0b1322 0%, #09101c 100%);
+    border-bottom: 1px solid rgba(56, 189, 248, 0.38);
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .ms-brand { display: flex; align-items: center; gap: 10px; }
+  .ms-title { font-weight: 800; font-size: 14.5px; color: #f8fafc; letter-spacing: -0.01em; }
+  .ms-sub { font-size: 11.5px; color: var(--dim); }
+  .ms-tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ms-tab {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid var(--line);
+    color: #cbd5e1;
+    padding: 6px 12px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .ms-tab:hover { border-color: var(--blue); color: #fff; }
+  .ms-tab.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(16, 185, 129, 0.2) 100%);
+    border-color: #38bdf8;
+    color: #fff;
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.28);
+  }
+  .ms-rec {
+    background: rgba(16, 185, 129, 0.22);
+    border: 1px solid rgba(52, 211, 153, 0.5);
+    color: #6ee7b7;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    margin-left: 5px;
+  }
+
+  /* Architecture Banner */
+  .arch-banner {
+    margin: 12px 18px 0;
+    padding: 9px 15px;
+    background: linear-gradient(90deg, rgba(56, 189, 248, 0.14) 0%, rgba(167, 139, 250, 0.13) 50%, rgba(245, 158, 11, 0.13) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.42);
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12px;
+  }
+  .ab-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ab-pill {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: rgba(56, 189, 248, 0.22);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    color: #e0f2fe;
+  }
+  .ab-pill.purple {
+    background: rgba(167, 139, 250, 0.22);
+    border-color: rgba(167, 139, 250, 0.55);
+    color: #ede9fe;
+  }
+  .ab-pill.amber {
+    background: rgba(245, 158, 11, 0.22);
+    border-color: rgba(251, 191, 36, 0.5);
+    color: #fde68a;
+  }
+
+  .cave-shell {
+    max-width: 1580px;
+    margin: 12px auto 44px;
+    padding: 0 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .mockup-pane { display: none; flex-direction: column; gap: 16px; }
+  .mockup-pane.active { display: flex; }
+
+  /* Section Container Cards */
+  .section-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+  .section-card.spine-section { border-color: rgba(56, 189, 248, 0.42); }
+  .section-card.email-section { border-color: rgba(245, 158, 11, 0.42); }
+
+  .sec-head {
+    padding: 11px 16px;
+    background: rgba(15, 23, 42, 0.95);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .sec-title {
+    font-weight: 800;
+    font-size: 14.5px;
+    color: #f8fafc;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-wrap: wrap;
+  }
+  .sec-sub {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--dim);
+  }
+  .sec-body {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Category & Archive Filter Bar */
+  .spine-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .cat-tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .cat-tab {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: #cbd5e1;
+    padding: 6px 11px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .cat-tab:hover { border-color: var(--blue); color: #fff; }
+  .cat-tab.active {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: var(--blue);
+    color: #fff;
+  }
+  .cat-tab.archive-tab.active {
+    background: rgba(16, 185, 129, 0.22);
+    border-color: var(--green);
+    color: #ecfdf5;
+  }
+  .cat-cnt {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Quick Add New Multi-Step List Tile Row */
+  .new-tile-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 8px;
+    padding: 8px 11px;
+  }
+  .nt-input {
+    flex: 1;
+    min-width: 220px;
+    background: #080d16;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-size: 12.5px;
+  }
+  .nt-select {
+    background: #080d16;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 9px;
+    color: var(--text);
+    font-size: 11.5px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.26) 0%, rgba(16, 185, 129, 0.26) 100%);
+    border: 1px solid rgba(56, 189, 248, 0.55);
+    color: #fff;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn-urgent {
+    background: rgba(244, 63, 94, 0.22);
+    border: 1px solid rgba(244, 63, 94, 0.55);
+    color: #ffe4e6;
+    font-weight: 700;
+    font-size: 11.5px;
+    padding: 6px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  /* ===================================================================== */
+  /* EXPANDABLE MULTI-STEP LIST TILES (THE WORKFLOW SPINE)                 */
+  /* ===================================================================== */
+  .list-tiles-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .list-tile {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--blue);
+    border-radius: 9px;
+    overflow: hidden;
+    transition: all 0.15s ease;
+  }
+  .list-tile.prio-a { border-left-color: #f43f5e; }
+  .list-tile.prio-b { border-left-color: #f59e0b; }
+  .list-tile.prio-c { border-left-color: #38bdf8; }
+  .list-tile.expanded {
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  }
+  .list-tile.done-tile {
+    opacity: 0.72;
+    border-left-color: #10b981;
+  }
+
+  .lt-summary {
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .lt-summary:hover { background: rgba(255, 255, 255, 0.025); }
+  .lt-move-btns { display: flex; flex-direction: column; gap: 2px; }
+  .lt-mv-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--line);
+    color: #cbd5e1;
+    font-size: 9px;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .lt-mv-btn:hover { border-color: var(--blue); color: #fff; }
+  .lt-check { width: 18px; height: 18px; cursor: pointer; accent-color: #10b981; }
+  .lt-prio {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 5px;
+    min-width: 34px;
+    text-align: center;
+  }
+  .lt-prio.p-a { background: rgba(244, 63, 94, 0.2); border: 1px solid rgba(244, 63, 94, 0.5); color: #fda4af; }
+  .lt-prio.p-b { background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.5); color: #fde68a; }
+  .lt-prio.p-c { background: rgba(56, 189, 248, 0.16); border: 1px solid rgba(56, 189, 248, 0.4); color: #bae6fd; }
+
+  .lt-main { flex: 1; min-width: 0; }
+  .lt-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .lt-title { font-weight: 800; font-size: 13.5px; color: #f8fafc; }
+  .done-tile .lt-title { text-decoration: line-through; color: #94a3b8; }
+  .lt-cat-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.07);
+    color: #e2e8f0;
+  }
+  .lt-step-pill {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.38);
+    color: #bae6fd;
+  }
+  .lt-step-pill.all-done {
+    background: rgba(16, 185, 129, 0.18);
+    border-color: rgba(52, 211, 153, 0.45);
+    color: #6ee7b7;
+  }
+  .lt-conn-count-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: rgba(167, 139, 250, 0.16);
+    border: 1px solid rgba(167, 139, 250, 0.42);
+    color: #ddd6fe;
+  }
+  .lt-sub-preview {
+    font-size: 11.5px;
+    color: var(--dim);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lt-right-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+  .sm-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line);
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .sm-btn:hover { border-color: var(--blue); color: #fff; }
+  .sm-btn.cockpit {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: rgba(56, 189, 248, 0.45);
+    color: #bae6fd;
+  }
+  .sm-btn.initiative {
+    background: rgba(167, 139, 250, 0.16);
+    border-color: rgba(167, 139, 250, 0.48);
+    color: #ddd6fe;
+  }
+  .sm-btn.archive {
+    background: rgba(16, 185, 129, 0.16);
+    border-color: rgba(52, 211, 153, 0.45);
+    color: #6ee7b7;
+  }
+  .sm-btn.speed {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(251, 191, 36, 0.55);
+    color: #fef08a;
+  }
+
+  /* Expanded Tile Body (Steps Checklist with Per-Step Cockpit/Initiative Connections + Brainstorming Scratchpad) */
+  .lt-details {
+    display: none;
+    padding: 12px 14px 14px 38px;
+    background: rgba(9, 14, 24, 0.86);
+    border-top: 1px solid var(--line);
+    grid-template-columns: 1.42fr 1fr;
+    gap: 14px;
+  }
+  .list-tile.expanded .lt-details { display: grid; }
+  @media (max-width: 1100px) {
+    .list-tile.expanded .lt-details { grid-template-columns: 1fr; }
+  }
+  .lt-col-box {
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lt-col-head {
+    font-weight: 700;
+    font-size: 12px;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+
+  /* Sub-step Row with AI Cockpit Item & Initiative Connection Badges */
+  .substep-list { display: flex; flex-direction: column; gap: 6px; }
+  .substep-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+  }
+  .substep-card.done {
+    opacity: 0.62;
+    background: rgba(16, 185, 129, 0.04);
+  }
+  .substep-card.done .ss-text {
+    text-decoration: line-through;
+    color: #94a3b8;
+  }
+  .ss-top-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .ss-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .ss-text {
+    font-size: 12.3px;
+    font-weight: 600;
+    color: #f8fafc;
+  }
+
+  /* Per-Step Connection Chips (AI Cockpit Item AND/OR Initiative Item) */
+  .ss-connections-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-left: 24px;
+  }
+  .conn-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.8px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 5px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.12s ease;
+  }
+  .conn-chip.cockpit-item {
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    color: #bae6fd;
+  }
+  .conn-chip.cockpit-item:hover {
+    background: rgba(56, 189, 248, 0.25);
+    color: #fff;
+  }
+  .conn-chip.initiative-item {
+    background: rgba(167, 139, 250, 0.15);
+    border: 1px solid rgba(167, 139, 250, 0.45);
+    color: #ddd6fe;
+  }
+  .conn-chip.initiative-item:hover {
+    background: rgba(167, 139, 250, 0.26);
+    color: #fff;
+  }
+  .conn-status-dot {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: rgba(16, 185, 129, 0.22);
+    color: #6ee7b7;
+  }
+  .conn-status-dot.review {
+    background: rgba(245, 158, 11, 0.24);
+    color: #fde68a;
+  }
+
+  /* Inline Step Connection Picker Drawer */
+  .ss-connector-drawer {
+    display: none;
+    margin-left: 24px;
+    margin-top: 3px;
+    padding: 8px 10px;
+    background: #080d16;
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    border-radius: 7px;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .ss-connector-drawer.open {
+    display: flex;
+  }
+  .scd-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .scd-label {
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 155px;
+    color: #cbd5e1;
+  }
+
+  .brainstorm-area {
+    width: 100%;
+    min-height: 92px;
+    background: #070b12;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #f1f5f9;
+    font-family: var(--sans);
+    font-size: 12px;
+    line-height: 1.45;
+    resize: vertical;
+  }
+
+  /* ===================================================================== */
+  /* INTEGRATED EMAIL SECTION WITH EXPANDABLE TILES (SPEED RACER + INBOX)  */
+  /* ===================================================================== */
+  .email-tiles-stack { display: flex; flex-direction: column; gap: 10px; }
+  .email-sub-tile {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  .email-sub-tile.speed-tile {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.07) 0%, rgba(19, 28, 46, 0.95) 100%);
+  }
+  .email-sub-tile.inbox-tile { border-color: rgba(56, 189, 248, 0.38); }
+  .email-sub-tile.sent-tile { border-color: rgba(16, 185, 129, 0.4); }
+  .est-head {
+    padding: 10px 14px;
+    background: rgba(15, 23, 42, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    flex-wrap: wrap;
+  }
+  .est-head:hover { background: rgba(25, 37, 60, 0.95); }
+  .est-title {
+    font-weight: 800;
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .est-body {
+    display: none;
+    padding: 12px 14px;
+    border-top: 1px solid var(--line);
+    flex-direction: column;
+    gap: 10px;
+  }
+  .email-sub-tile.open .est-body { display: flex; }
+
+  .sr-card {
+    background: #0b111d;
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    border-radius: 8px;
+    padding: 11px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sr-route-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .sr-origin-pill {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(167, 139, 250, 0.18);
+    border: 1px solid rgba(167, 139, 250, 0.45);
+    color: #ddd6fe;
+  }
+  .sr-draft-box {
+    width: 100%;
+    min-height: 92px;
+    background: #060a11;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 7px;
+    padding: 8px 10px;
+    color: #f8fafc;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+  .sr-btn {
+    padding: 6px 11px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--panel-3);
+    color: var(--text);
+  }
+  .sr-btn.approve {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    border-color: #34d399;
+    color: #fff;
+  }
+  .sr-btn.feedback {
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(251, 191, 36, 0.5);
+    color: #fde68a;
+  }
+
+  .inbox-subtabs {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .email-row {
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--blue);
+    border-radius: 7px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .email-row.important { border-left-color: #f59e0b; }
+  .email-row.other { border-left-color: #64748b; opacity: 0.88; }
+  .er-main { flex: 1; min-width: 260px; }
+  .er-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .er-from { font-weight: 800; color: #f8fafc; font-size: 12.5px; }
+  .er-subj { font-weight: 700; color: #38bdf8; font-size: 12.5px; }
+  .er-snip { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  .er-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+  .sr-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 24px;
+    z-index: 200;
+    background: #0f172a;
+    border: 1px solid #34d399;
+    color: #ecfdf5;
+    padding: 10px 16px;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    gap: 12px;
+    font-weight: 600;
+  }
+  .sr-toast.show { display: flex; }
+</style>
+</head>
+<body>
+
+<header class="mockup-switcher">
+  <div class="ms-brand">
+    <span style="font-size:20px;">🕌</span>
+    <div>
+      <div class="ms-title">Cave of Wonders — Multi-Step List Tiles Connected to AI Cockpit Items &amp; Initiatives + Email Speed Racer</div>
+      <div class="ms-sub">Connect individual steps inside any List Tile directly to AI Cockpit items (Waves / Deliverables) AND/OR Initiatives (Cave &amp; Star Chart)</div>
+    </div>
+  </div>
+  <div class="ms-tabs">
+    <button class="ms-tab active" data-m="1" onclick="switchMockup('1')">Variation A: Stacked Expandable List Tiles + Email Tile Hub <span class="ms-rec">★ Recommended</span></button>
+    <button class="ms-tab" data-m="2" onclick="switchMockup('2')">Variation B: Side-by-Side Spine Tiles (Left) + Email &amp; Speed Racer Hub (Right)</button>
+    <button class="ms-tab" data-m="3" onclick="switchMockup('3')">Variation C: Category-Column Multi-Step Tiles + Bottom Email &amp; Speed Racer Tile</button>
+  </div>
+</header>
+
+<div class="arch-banner">
+  <div class="ab-left">
+    <span class="ab-pill">🔗 PER-STEP COCKPIT &amp; INITIATIVE LINKS</span>
+    <span>Every step inside an open List Tile can connect to an <strong>AI Cockpit item</strong> (Wave, Deliverable, or Skill Run) <strong>and/or an Initiative</strong> (or both) with live status sync &amp; 1-click jump.</span>
+    <span class="ab-pill amber">📬 EMAIL-INTEGRATED SPEED RACER</span>
+    <span><strong>Speed Racer Tile</strong> + <strong>Important / Not-Important Inbox</strong> (<code>[🏎️ → Put in Speed Racer]</code>) + <strong>Sent List</strong> inside Email.</span>
+  </div>
+  <div>
+    <a href="/?view=cave" style="color:#38bdf8;font-weight:700;text-decoration:none;font-size:12px;">↗ Back to Live Cave of Wonders</a>
+  </div>
+</div>
+
+<main class="cave-shell">
+
+  <div class="mockup-pane active" id="mockupPane1">
+    <div id="layoutHost" style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- =================================================================== -->
+      <!-- PART 1: PERSISTENT WORKING LIST SPINE (EXPANDABLE MULTI-STEP TILES) -->
+      <!-- =================================================================== -->
+      <section class="section-card spine-section" id="spineSectionCard">
+        <div class="sec-head">
+          <div>
+            <div class="sec-title">
+              <span>📋 My Persistent Working List — Expandable Multi-Step Effort Tiles</span>
+              <span class="lt-step-pill all-done">Continuous Spine · Per-Step Cockpit &amp; Initiative Connections</span>
+            </div>
+            <div class="sec-sub">Open any tile to view/check off its steps, connect individual steps to AI Cockpit items (Waves / Deliverables) and/or Initiatives (or both), brainstorm details, and move/archive tiles.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-family:var(--mono);font-size:11.5px;color:#6ee7b7;" id="spineHeaderCounts">5 Active Tiles · 2 Archived</span>
+          </div>
+        </div>
+
+        <div class="sec-body">
+          <!-- Category Filter Tabs + Archived Toggle -->
+          <div class="spine-toolbar">
+            <div class="cat-tabs" id="spineCatTabs">
+              <button class="cat-tab active" data-cat="all" onclick="setSpineCategory('all')">All Active Tiles <span class="cat-cnt" id="cntAll">5</span></button>
+              <button class="cat-tab" data-cat="Business" onclick="setSpineCategory('Business')">💼 Business <span class="cat-cnt" id="cntBusiness">2</span></button>
+              <button class="cat-tab" data-cat="Teaching" onclick="setSpineCategory('Teaching')">🎓 Teaching <span class="cat-cnt" id="cntTeaching">1</span></button>
+              <button class="cat-tab" data-cat="Research" onclick="setSpineCategory('Research')">🔬 Research <span class="cat-cnt" id="cntResearch">1</span></button>
+              <button class="cat-tab" data-cat="Personal" onclick="setSpineCategory('Personal')">🏠 Personal &amp; Family <span class="cat-cnt" id="cntPersonal">1</span></button>
+              <button class="cat-tab archive-tab" data-cat="archived" onclick="setSpineCategory('archived')">📦 Archived / Completed Tiles <span class="cat-cnt" id="cntArchived">2</span></button>
+            </div>
+          </div>
+
+          <!-- Add New Multi-Step Tile Bar -->
+          <div class="new-tile-bar">
+            <input type="text" id="newTileTitle" class="nt-input" placeholder="Add a new multi-step effort tile (e.g., 'Shut down Archty', 'Set up Quiz 2', 'Organize family trip')...">
+            <select id="newTileCat" class="nt-select">
+              <option value="Business">💼 Business</option>
+              <option value="Teaching">🎓 Teaching</option>
+              <option value="Research">🔬 Research</option>
+              <option value="Personal">🏠 Personal &amp; Family</option>
+            </select>
+            <select id="newTilePrio" class="nt-select">
+              <option value="A1">Priority A1 (Top of List)</option>
+              <option value="A2">Priority A2</option>
+              <option value="B1" selected>Priority B1</option>
+              <option value="C1">Priority C1</option>
+            </select>
+            <button class="btn-urgent" onclick="createNewListTile('A1')">⚡ Insert Tile at Top (A1)</button>
+            <button class="btn-primary" onclick="createNewListTile()">+ Add Tile to List</button>
+          </div>
+
+          <!-- THE STACK OF EXPANDABLE MULTI-STEP TILES -->
+          <div class="list-tiles-stack" id="listTilesContainer"></div>
+        </div>
+      </section>
+
+      <!-- =================================================================== -->
+      <!-- PART 2: EMAIL SECTION WITH EXPANDABLE SPEED RACER TILE,             -->
+      <!--         IMPORTANT / NOT-IMPORTANT INBOX TILE & SENT LIST BUTTON     -->
+      <!-- =================================================================== -->
+      <section class="section-card email-section" id="emailSectionCard">
+        <div class="sec-head">
+          <div>
+            <div class="sec-title">
+              <span>📬 Cave of Wonders Email Hub — Integrated Speed Racer Tile, Inbox (Important / Not Important) &amp; Sent List</span>
+            </div>
+            <div class="sec-sub">Speed Racer is an expandable tile right inside Email. Put any inbox email into Speed Racer via its button (or ask the Steward in chat to queue a draft).</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <button class="sm-btn speed" onclick="openEmailTile('speedRacerSubTile')">🏎️ Open Speed Racer Tile (<span id="hdrSrCount">3</span>)</button>
+            <button class="sm-btn" onclick="openInboxSubTab('important')">🔥 Important Inbox (<span id="hdrImpCount">3</span>)</button>
+            <button class="sm-btn" onclick="openInboxSubTab('other')">📥 Not Important (<span id="hdrOthCount">3</span>)</button>
+            <button class="sm-btn archive" onclick="toggleSentListTile()" id="btnViewSentEmails">📤 View Sent List (<span id="hdrSentCount">4</span>)</button>
+          </div>
+        </div>
+
+        <div class="sec-body">
+          <div class="email-tiles-stack">
+
+            <!-- 1. EXPANDABLE SPEED RACER TILE INSIDE EMAIL -->
+            <div class="email-sub-tile speed-tile open" id="speedRacerSubTile">
+              <div class="est-head" onclick="this.parentElement.classList.toggle('open')">
+                <div class="est-title">
+                  <span>🏎️ Speed Racer Tile — Rapid Email Review &amp; Approval Queue</span>
+                  <span class="lt-step-pill" style="background:rgba(245,158,11,0.2);border-color:rgba(251,191,36,0.5);color:#fde68a;" id="srTileBadge">3 Drafts Awaiting Your Approval</span>
+                  <span style="font-size:11.5px;font-weight:500;color:#a7f3d0;">🔒 Steward NEVER sends without your explicit approval</span>
+                </div>
+                <span style="font-size:11.5px;color:#fde68a;font-weight:700;">Click Tile Header to Expand / Collapse ▾</span>
+              </div>
+              <div class="est-body">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.35);padding:7px 11px;border-radius:7px;font-size:11.5px;">
+                  <span>💬 <strong>Steward Dialogue Integration:</strong> Ask the Steward in chat (or type a quick instruction here) to draft an email and drop it into Speed Racer:</span>
+                  <div style="display:flex;gap:6px;flex:1;min-width:260px;max-width:520px;">
+                    <input type="text" id="stewardDialogueEmailPrompt" class="nt-input" style="padding:4px 8px;font-size:11.5px;" placeholder="e.g., 'Draft email to Archty CPA requesting final dissolution tax clearance'...">
+                    <button class="sm-btn speed" onclick="stewardQueueFromDialogue()">💬 Have Steward Draft → Speed Racer</button>
+                  </div>
+                </div>
+                <div id="speedRacerDeckHost"></div>
+              </div>
+            </div>
+
+            <!-- 2. EXPANDABLE INBOX TILE (IMPORTANT vs NOT IMPORTANT) -->
+            <div class="email-sub-tile inbox-tile open" id="inboxSubTile">
+              <div class="est-head" onclick="this.parentElement.classList.toggle('open')">
+                <div class="est-title">
+                  <span>📬 Inbox Tile — Important &amp; Not Important Emails</span>
+                  <span class="lt-step-pill" id="inboxTileBadge">3 Important · 3 Not Important</span>
+                </div>
+                <span style="font-size:11.5px;color:#38bdf8;font-weight:700;">Click Tile Header to Expand / Collapse ▾</span>
+              </div>
+              <div class="est-body">
+                <div class="inbox-subtabs">
+                  <div class="cat-tabs" id="inboxFilterTabs">
+                    <button class="cat-tab active" data-ib="important" onclick="setInboxFilter('important')">🔥 Important Inbox <span class="cat-cnt" id="cntIbImp">3</span></button>
+                    <button class="cat-tab" data-ib="other" onclick="setInboxFilter('other')">📥 Not Important / Other <span class="cat-cnt" id="cntIbOth">3</span></button>
+                    <button class="cat-tab" data-ib="all" onclick="setInboxFilter('all')">All Inbox <span class="cat-cnt" id="cntIbAll">6</span></button>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <button class="sm-btn speed" onclick="queueAllImportantToSpeedRacer()">🏎️ Send All Important to Speed Racer</button>
+                    <button class="sm-btn archive" onclick="toggleSentListTile()">📤 Open Sent Emails List</button>
+                  </div>
+                </div>
+                <div class="list-tiles-stack" id="inboxRowsHost"></div>
+              </div>
+            </div>
+
+            <!-- 3. EXPANDABLE SENT EMAILS LIST TILE -->
+            <div class="email-sub-tile sent-tile" id="sentSubTile">
+              <div class="est-head" onclick="this.parentElement.classList.toggle('open')">
+                <div class="est-title">
+                  <span>📤 Sent Emails List (PSU M365 &amp; Axmra Accounts)</span>
+                  <span class="lt-step-pill all-done" id="sentTileBadge">4 Sent Recently</span>
+                </div>
+                <span style="font-size:11.5px;color:#6ee7b7;font-weight:700;">Click to Expand / Collapse ▾</span>
+              </div>
+              <div class="est-body" id="sentRowsHost"></div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+</main>
+
+<div class="sr-toast" id="srToast">
+  <span id="srToastText">Action completed</span>
+  <button class="sm-btn" onclick="undoLastApprove()" id="srUndoBtn" style="border-color:#fde68a;color:#fde68a;">↩ Undo</button>
+</div>
+
+<script>
+  // Catalog of Available AI Cockpit Items & Initiatives that any Step can connect to (either or both)
+  const COCKPIT_ITEMS_CATALOG = [
+    { label: "— None (Not connected to a Cockpit item) —", value: "", status: "", url: "" },
+    { label: "🛸 Archty Cockpit · Deliverable: Archty_Final_Trial_Balance_2026.pdf", value: "Archty Cockpit · Deliverable: Archty_Final_Trial_Balance_2026.pdf", status: "✅ Final", url: "/steward/v1" },
+    { label: "🛸 Archty Cockpit · Wave 2: Legal-Beagle Articles of Dissolution (.docx)", value: "Archty Cockpit · Wave 2: Articles of Dissolution (.docx)", status: "👁 For Review", url: "/steward/v1" },
+    { label: "🛸 Archty Cockpit · Wave 3: Financial-Analyst Stub-Year Tax Tie-Out", value: "Archty Cockpit · Wave 3: Stub-Year Tax Tie-Out", status: "⏳ Running", url: "/steward/v1" },
+    { label: "🛸 MBA Teaching AI Cockpit · Wave 46: LEM Lab Room 116 Sign-Up App", value: "MBA Teaching AI · Wave 46: LEM Lab Sign-Up App", status: "✅ Done", url: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=" },
+    { label: "🛸 MBA Teaching AI Cockpit · Deliverable: BA815_Quiz1_FormA_FormB_Key.pdf", value: "MBA Teaching AI · Deliverable: Quiz1_FormA_FormB_Key.pdf", status: "👁 Ready for Review", url: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=" },
+    { label: "🛸 MBA Teaching AI Cockpit · Wave 47: Einstein R Elasticity Solution Check", value: "MBA Teaching AI · Wave 47: Einstein R Solution Check", status: "✅ Verified", url: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=" },
+    { label: "🛸 Family Trusts Cockpit · Deliverable: Exmera_LP_Transfer_Schedule_v3.docx", value: "Family Trusts Cockpit · Exmera_LP_Transfer_Schedule_v3.docx", status: "👁 For Review", url: "/steward/v1" },
+    { label: "🛸 HNF Paper 1 Cockpit · Wave 14: Ramanujan Section 4 Gaussian Star Bound", value: "HNF Paper 1 Cockpit · Wave 14: Section 4 Bound", status: "✅ Verified", url: "/steward/v1" },
+    { label: "🛸 HNF Paper 1 Cockpit · Deliverable: HNF_Paper1_Unified_Report_v4.pdf", value: "HNF Paper 1 Cockpit · Deliverable: Report_v4.pdf (Fig 6)", status: "👁 Ready for Review", url: "/steward/v1" }
+  ];
+
+  const INITIATIVE_ITEMS_CATALOG = [
+    { label: "— None (Not connected to an Initiative) —", value: "", url: "" },
+    { label: "🌟 Initiative: Axmra Corporate & Entity Wind-Down (Goal: Close Archty LLC)", value: "Initiative: Axmra Entity Wind-Down · Close Archty LLC", url: "/?view=cave" },
+    { label: "🌟 Initiative: Axmra Tax & Compliance 2026 (Milestone: Final K-1 & Dissolution)", value: "Initiative: Axmra Tax & Compliance · Final K-1", url: "/?view=cave" },
+    { label: "🌟 Initiative: BA 815 / MBA Teaching AI (Milestone: Quiz 1 LEM Lab Rollout)", value: "Initiative: MBA Teaching AI · Quiz 1 Rollout", url: "/?view=cave" },
+    { label: "🌟 Star Chart Goal: Smeal AI-Assisted Programming Curriculum (Fall 2026)", value: "Star Chart: Smeal AI Curriculum · Assessment Pack", url: "/?view=starchart" },
+    { label: "🌟 Initiative: Family Trusts & Estate Consolidation (Exmera LP -> Holding Co.)", value: "Initiative: Family Trusts · Exmera LP Transfer", url: "/?view=cave" },
+    { label: "🌟 Star Chart Initiative: HNF Paper 1 — Annals Submission (Section 4 & Fig 6)", value: "Star Chart: HNF Paper 1 · Annals Submission", url: "/?view=starchart" },
+    { label: "🌟 Initiative: NextGen Nuclear Series A Financing (Cap-Table & Waterfall)", value: "Initiative: NextGen Nuclear · Series A Waterfall", url: "/?view=cave" }
+  ];
+
+  const LIST_TILES = [
+    {
+      id: "tile-archty",
+      title: "Shut down my company Archty",
+      category: "Business",
+      prio: "A1",
+      cockpitName: "Archty Dissolution Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["Legal-Beagle", "Financial-Analyst"],
+      expanded: true,
+      done: false,
+      archived: false,
+      brainstormNotes: "• Check if Delaware / PA Articles of Dissolution require tax clearance certificate first.\n• Need final zero-balance ledger export from Financial-Analyst before closing operating bank account.\n• Retain corporate records & IP assignment archive in Anchor Boneyard/Vault for 7 years.",
+      steps: [
+        {
+          id: "s1",
+          text: "Export final trial balance & reconcile remaining vendor payables to $0.00",
+          done: true,
+          cockpitItem: "Archty Cockpit · Deliverable: Archty_Final_Trial_Balance_2026.pdf",
+          cockpitStatus: "✅ Final",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Initiative: Axmra Entity Wind-Down · Close Archty LLC",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "s2",
+          text: "Draft Member Written Consent & Articles of Dissolution (Legal-Beagle check)",
+          done: true,
+          cockpitItem: "Archty Cockpit · Wave 2: Articles of Dissolution (.docx)",
+          cockpitStatus: "👁 For Review",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Initiative: Axmra Entity Wind-Down · Close Archty LLC",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "s3",
+          text: "Confirm final stub-year federal & state tax return schedule with CPA (Speed Racer draft queued)",
+          done: false,
+          cockpitItem: "Archty Cockpit · Wave 3: Stub-Year Tax Tie-Out",
+          cockpitStatus: "⏳ Running",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Initiative: Axmra Tax & Compliance · Final K-1",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "s4",
+          text: "File Articles of Dissolution & archive stamped confirmation PDF",
+          done: false,
+          cockpitItem: "",
+          cockpitStatus: "",
+          cockpitUrl: "",
+          initiativeItem: "Initiative: Axmra Entity Wind-Down · Close Archty LLC",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "s5",
+          text: "Distribute final residual cash & close Archty business checking account",
+          done: false,
+          cockpitItem: "",
+          cockpitStatus: "",
+          cockpitUrl: "",
+          initiativeItem: "",
+          initiativeUrl: ""
+        }
+      ]
+    },
+    {
+      id: "tile-quiz1",
+      title: "Get Quiz 1 set up (BA 815 — Smeal LEM Lab)",
+      category: "Teaching",
+      prio: "A1",
+      cockpitName: "MBA Teaching AI Cockpit",
+      cockpitUrl: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=",
+      skills: ["Einstein", "Anvil"],
+      expanded: true,
+      done: false,
+      archived: false,
+      brainstormNotes: "• Room 116 Business Building (Smeal LEM Lab) slot sign-up page is live.\n• Make sure Quiz 1 covers Hot Chocolate demand elasticity + log-price R script interpretation.\n• Generate 2 parallel versions (Form A & Form B) + worked grading key.",
+      steps: [
+        {
+          id: "q1",
+          text: "Publish LEM Lab Room 116 student slot sign-up sheet & verify roster",
+          done: true,
+          cockpitItem: "MBA Teaching AI · Wave 46: LEM Lab Sign-Up App",
+          cockpitStatus: "✅ Done",
+          cockpitUrl: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=",
+          initiativeItem: "Initiative: MBA Teaching AI · Quiz 1 Rollout",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "q2",
+          text: "Finalize Quiz 1 Form A & Form B problem sets in MBA Teaching AI Cockpit",
+          done: true,
+          cockpitItem: "MBA Teaching AI · Deliverable: Quiz1_FormA_FormB_Key.pdf",
+          cockpitStatus: "👁 Ready for Review",
+          cockpitUrl: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=",
+          initiativeItem: "Star Chart: Smeal AI Curriculum · Assessment Pack",
+          initiativeUrl: "/?view=starchart"
+        },
+        {
+          id: "q3",
+          text: "Run Einstein worked-solution check on the R/Python elasticity coding question",
+          done: true,
+          cockpitItem: "MBA Teaching AI · Wave 47: Einstein R Solution Check",
+          cockpitStatus: "✅ Verified",
+          cockpitUrl: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=",
+          initiativeItem: "",
+          initiativeUrl: ""
+        },
+        {
+          id: "q4",
+          text: "Upload locked Quiz 1 packet to Canvas & send TA proctoring instructions to Meg",
+          done: false,
+          cockpitItem: "MBA Teaching AI · Deliverable: Quiz1_FormA_FormB_Key.pdf",
+          cockpitStatus: "👁 Ready for Review",
+          cockpitUrl: "/steward/v1?pid=6765ece4b3bc43b0b0b0907b92b17280&dir=",
+          initiativeItem: "Initiative: MBA Teaching AI · Quiz 1 Rollout",
+          initiativeUrl: "/?view=cave"
+        }
+      ]
+    },
+    {
+      id: "tile-trusts",
+      title: "Family Trusts: Complete Merrill Exmera LP → Holding Co. Transfer",
+      category: "Personal",
+      prio: "A2",
+      cockpitName: "Family Trusts Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["Legal-Beagle"],
+      expanded: false,
+      done: false,
+      archived: false,
+      brainstormNotes: "• Stanford Trust Counsel sent revised Assignment of LP Interest.\n• Exhibit A date updated to Nov 5, 2026.\n• Once counsel confirms, circulate signature packet to trustees.",
+      steps: [
+        {
+          id: "tr1",
+          text: "Verify Section 3 & Exhibit A transfer schedule with Legal-Beagle",
+          done: true,
+          cockpitItem: "Family Trusts Cockpit · Exmera_LP_Transfer_Schedule_v3.docx",
+          cockpitStatus: "👁 For Review",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Initiative: Family Trusts · Exmera LP Transfer",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "tr2",
+          text: "Approve Speed Racer email reply to Stanford Trust Counsel with redlined .docx",
+          done: false,
+          cockpitItem: "",
+          cockpitStatus: "",
+          cockpitUrl: "",
+          initiativeItem: "Initiative: Family Trusts · Exmera LP Transfer",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "tr3",
+          text: "Execute Merrill LOA & countersign Holding Co. acceptance schedule",
+          done: false,
+          cockpitItem: "",
+          cockpitStatus: "",
+          cockpitUrl: "",
+          initiativeItem: "Initiative: Family Trusts · Exmera LP Transfer",
+          initiativeUrl: "/?view=cave"
+        }
+      ]
+    },
+    {
+      id: "tile-hnf",
+      title: "HNF Paper 1: Finalize Section 4 Gaussian Star Bounds & Figure 6",
+      category: "Research",
+      prio: "A2",
+      cockpitName: "HNF Paper 1 Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["Ramanujan", "Anvil", "figure-designer"],
+      expanded: false,
+      done: false,
+      archived: false,
+      brainstormNotes: "• Ramanujan verified the tightened constant on Lemma 4.2.\n• Figure 6 regenerated; need final caption walk-through before sending v4 PDF to Srinivas.",
+      steps: [
+        {
+          id: "h1",
+          text: "Run Ramanujan + Anvil check on Section 4 Gaussian Star inequality",
+          done: true,
+          cockpitItem: "HNF Paper 1 Cockpit · Wave 14: Section 4 Bound",
+          cockpitStatus: "✅ Verified",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Star Chart: HNF Paper 1 · Annals Submission",
+          initiativeUrl: "/?view=starchart"
+        },
+        {
+          id: "h2",
+          text: "Regenerate Figure 6 multi-panel schematic with figure-designer",
+          done: true,
+          cockpitItem: "HNF Paper 1 Cockpit · Deliverable: Report_v4.pdf (Fig 6)",
+          cockpitStatus: "👁 Ready for Review",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Star Chart: HNF Paper 1 · Annals Submission",
+          initiativeUrl: "/?view=starchart"
+        },
+        {
+          id: "h3",
+          text: "Approve Speed Racer email to Srinivas with HNF_Paper1_Unified_Report_v4.pdf",
+          done: false,
+          cockpitItem: "HNF Paper 1 Cockpit · Deliverable: Report_v4.pdf (Fig 6)",
+          cockpitStatus: "👁 Ready for Review",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: "Star Chart: HNF Paper 1 · Annals Submission",
+          initiativeUrl: "/?view=starchart"
+        }
+      ]
+    },
+    {
+      id: "tile-nextgen",
+      title: "NextGen Nuclear: Series A Waterfall & Cap-Table Tie-Out",
+      category: "Business",
+      prio: "B1",
+      cockpitName: "NextGen Nuclear Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["Financial-Analyst"],
+      expanded: false,
+      done: false,
+      archived: false,
+      brainstormNotes: "• Check 8% compounding preferred return hurdle in v4 workbook before Thursday's call.",
+      steps: [
+        {
+          id: "ng1",
+          text: "Run Financial-Analyst exact-Decimal tie-out on v4 waterfall sheet",
+          done: true,
+          cockpitItem: "",
+          cockpitStatus: "",
+          cockpitUrl: "",
+          initiativeItem: "Initiative: NextGen Nuclear · Series A Waterfall",
+          initiativeUrl: "/?view=cave"
+        },
+        {
+          id: "ng2",
+          text: "Send 1-page hurdle summary table to Chris before Thursday's call",
+          done: false,
+          cockpitItem: "",
+          cockpitStatus: "",
+          cockpitUrl: "",
+          initiativeItem: "Initiative: NextGen Nuclear · Series A Waterfall",
+          initiativeUrl: "/?view=cave"
+        }
+      ]
+    },
+    {
+      id: "tile-arch-1",
+      title: "Lecture 2: Demand Elasticity R Script & Problem Set 2 Solutions",
+      category: "Teaching",
+      prio: "A1",
+      cockpitName: "MBA Teaching AI Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["Einstein"],
+      expanded: false,
+      done: true,
+      archived: true,
+      brainstormNotes: "Completed and posted to Canvas.",
+      steps: [
+        { id: "a1", text: "Verify R script & guided examples", done: true, cockpitItem: "MBA Teaching AI · Wave 42", cockpitStatus: "✅ Done", cockpitUrl: "/steward/v1", initiativeItem: "Initiative: MBA Teaching AI", initiativeUrl: "/?view=cave" }
+      ]
+    },
+    {
+      id: "tile-arch-2",
+      title: "Artificial Magi Book 1: Chapter 4 Continuity & Dossier Check",
+      category: "Research",
+      prio: "A2",
+      cockpitName: "Artificial Magi Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["chekhov"],
+      expanded: false,
+      done: true,
+      archived: true,
+      brainstormNotes: "Completed with Chekhov dossier ledger check.",
+      steps: [
+        { id: "am1", text: "Run Chekhov continuity ledger pass on Chapter 4", done: true, cockpitItem: "Artificial Magi Cockpit · Wave 9", cockpitStatus: "✅ Done", cockpitUrl: "/steward/v1", initiativeItem: "Star Chart: Artificial Magi Book 1", initiativeUrl: "/?view=starchart" }
+      ]
+    }
+  ];
+
+  const SPEED_RACER_QUEUE = [
+    {
+      id: "sr1",
+      account: "Axmra / Business (M365)",
+      to: "Archty CPA <tax@example.com>",
+      subject: "Archty LLC — Final Stub-Year Tax Return & Dissolution Clearance",
+      origin: "💬 Queued by Steward from List Tile: 'Shut down my company Archty' (Step 3)",
+      incomingSnippet: "Steward proactive draft for Step 3 of 'Shut down my company Archty'",
+      draftBody: "Hi Mark,\n\nWe are executing the wind-down and dissolution of Archty LLC. We have reconciled the final trial balance and zeroed out all vendor payables. Could you confirm our timeline for the final stub-year federal/state tax return and whether we need a state tax clearance certificate prior to filing the Articles of Dissolution?\n\nBest,\nJohn",
+      attachments: ["Archty_Final_Trial_Balance_2026.pdf"]
+    },
+    {
+      id: "sr2",
+      account: "Axmra / Personal (M365)",
+      to: "Stanford Trust Counsel <counsel@example.org>",
+      subject: "Re: Exmera LP -> Holding Co. Assignment & Trust Schedule",
+      origin: "📬 Queued from Important Inbox",
+      incomingSnippet: "John — attached is the revised Assignment of LP Interest. Please confirm if Section 3 matches the family trust schedule before we circulate for signature.",
+      draftBody: "Hi David,\n\nI reviewed the revised Assignment of LP Interest alongside our Legal-Beagle verification check. Section 3 matches the Exmera LP -> Holding Co. transfer schedule, with one minor date correction on Exhibit A (changed from Oct 15 to Nov 5, 2026). I have attached the redlined .docx and clean PDF.\n\nPlease go ahead and prepare the signature packet.\n\nBest,\nJohn",
+      attachments: ["Exmera_LP_Transfer_Schedule_v3_Redline.docx", "Exmera_LP_Transfer_Schedule_v3_Clean.pdf"]
+    },
+    {
+      id: "sr3",
+      account: "PSU Microsoft 365",
+      to: "Meg (BA 815 TA) <ta@example.org>",
+      subject: "Re: BA 815 Quiz 1 LEM Lab Proctoring & Form A/B Packet",
+      origin: "💬 Queued by Steward from Dialogue",
+      incomingSnippet: "Prof. Liechty — let me know when the Quiz 1 packet is ready for Room 116.",
+      draftBody: "Hi Meg,\n\nQuiz 1 (Form A and Form B) and the worked grading key are ready for the Smeal LEM Lab (Room 116). Please remind students that Problem 3 uses the log-transformed price column (`log_price`).\n\nThanks,\nJohn",
+      attachments: ["BA815_Quiz1_FormA_FormB_Key.pdf"]
+    }
+  ];
+
+  const INBOX_EMAILS = [
+    {
+      id: "inb-1",
+      importance: "important",
+      account: "PSU M365",
+      from: "Liliana (PSU Marketing)",
+      toAddress: "Liliana <colleague@example.org>",
+      subject: "Quick 15-min sync on PhD Seminar syllabus today?",
+      snippet: "Hi John, do you have 15 minutes around 12:30 or after your afternoon lecture to align on the seminar reading list?",
+      suggestedDraft: "Hi Liliana,\n\nI have a TA meeting overlapping 12:15–12:45 and lecture right after, so 12:30 is tight. Would 3:45 PM today (or 10:30 AM tomorrow) work for a quick 15-minute sync on the PhD Seminar reading list?\n\nBest,\nJohn",
+      queued: false
+    },
+    {
+      id: "inb-2",
+      importance: "important",
+      account: "Axmra M365",
+      from: "Chris (NextGen Nuclear)",
+      toAddress: "Chris <partner@example.com>",
+      subject: "Updated Cap Table & Series A Waterfall Sheet",
+      snippet: "Attached the v4 waterfall workbook—let us know if the preferred return hurdle matches your notes before Thursday's call.",
+      suggestedDraft: "Hi Chris,\n\nThanks for sending over the v4 waterfall workbook. I ran our penny-exact Financial-Analyst tie-out on the Series A preferred return hurdle—the 8% compounding tier matches our notes, and I attached the one-page summary table for Thursday's call.\n\nBest,\nJohn",
+      queued: false
+    },
+    {
+      id: "inb-3",
+      importance: "important",
+      account: "PSU M365",
+      from: "Smeal Dean's Office",
+      toAddress: "Smeal Dean Office <dean@example.org>",
+      subject: "Spring AI Curriculum Committee Summary Paragraph",
+      snippet: "Could you send a 1-paragraph blurb on the MBA AI-Assisted Programming course outcomes by Friday?",
+      suggestedDraft: "Dear Colleagues,\n\nHere is the summary paragraph for the MBA AI-Assisted Programming course: Students learn to orchestrate frontier AI coding and analytical agents on real quantitative marketing problems—moving from problem framing to verified Python/R models and executive decision decks.\n\nBest regards,\nJohn Liechty",
+      queued: false
+    },
+    {
+      id: "inb-4",
+      importance: "other",
+      account: "PSU M365",
+      from: "PSU Libraries Alert",
+      toAddress: "PSU Libraries <noreply@example.org>",
+      subject: "Monthly Subscribed Journals Digest — November 2026",
+      snippet: "New issues available in Marketing Science, JMR, and Quantitative Marketing and Economics.",
+      suggestedDraft: "Thanks for the update.",
+      queued: false
+    },
+    {
+      id: "inb-5",
+      importance: "other",
+      account: "Axmra M365",
+      from: "Mercury Corporate Treasury",
+      toAddress: "Support <support@example.com>",
+      subject: "October 2026 Monthly Account Statement Ready",
+      snippet: "Your October 2026 statement for Archty LLC is available for download in the portal.",
+      suggestedDraft: "Please send the final closing statement through November 5, 2026 as well.",
+      queued: false
+    },
+    {
+      id: "inb-6",
+      importance: "other",
+      account: "PSU M365",
+      from: "Canvas Notification",
+      toAddress: "Canvas <notifications@example.org>",
+      subject: "BA 815: 38 students signed up for Quiz 1 LEM Lab slots",
+      snippet: "Automated roster summary for Room 116 Business Building.",
+      suggestedDraft: "Received, thank you.",
+      queued: false
+    }
+  ];
+
+  const SENT_EMAILS = [
+    {
+      time: "Today 11:42 AM",
+      account: "PSU M365",
+      to: "Srinivas <coauthor@example.org>",
+      subject: "Re: HNF Paper 1 — Lemma 4.1 Proof Check",
+      via: "✓ Approved via Speed Racer"
+    },
+    {
+      time: "Today 09:18 AM",
+      account: "Axmra M365",
+      to: "Merrill Private Wealth <wealth@example.com>",
+      subject: "Exmera LP Account — Preliminary Transfer Notice",
+      via: "✓ Approved via Speed Racer"
+    },
+    {
+      time: "Yesterday 4:50 PM",
+      account: "PSU M365",
+      to: "BA 815 Class Roster <class@example.org>",
+      subject: "Sign-Up Link for Quiz 1 in Smeal LEM Lab (Room 116)",
+      via: "✓ Approved via Steward Dialogue"
+    },
+    {
+      time: "Yesterday 2:15 PM",
+      account: "Axmra M365",
+      to: "Delaware Registered Agent <filings@example.com>",
+      subject: "Archty LLC — Good Standing & Franchise Tax Inquiry",
+      via: "✓ Approved via Speed Racer"
+    }
+  ];
+
+  let currentSpineCat = "all";
+  let currentInboxFilter = "important";
+  let currentSrIdx = 0;
+  let lastApprovedSr = null;
+  let currentVariation = "1";
+  let openConnectorStepId = null;
+
+  function prioClass(p) {
+    if (String(p).startsWith("A")) return "p-a";
+    if (String(p).startsWith("B")) return "p-b";
+    return "p-c";
+  }
+  function tileBorderClass(p) {
+    if (String(p).startsWith("A")) return "prio-a";
+    if (String(p).startsWith("B")) return "prio-b";
+    return "prio-c";
+  }
+
+  // =========================================================================
+  // RENDER MULTI-STEP EXPANDABLE LIST TILES WITH PER-STEP CONNECTIONS
+  // =========================================================================
+  function renderListTiles() {
+    const host = document.getElementById("listTilesContainer");
+    if (!host) return;
+    host.innerHTML = "";
+
+    const activeTiles = LIST_TILES.filter(t => !t.archived);
+    const archivedTiles = LIST_TILES.filter(t => t.archived);
+
+    document.getElementById("cntAll").textContent = String(activeTiles.length);
+    ["Business", "Teaching", "Research", "Personal"].forEach(c => {
+      const el = document.getElementById("cnt" + c);
+      if (el) el.textContent = String(activeTiles.filter(t => t.category === c).length);
+    });
+    document.getElementById("cntArchived").textContent = String(archivedTiles.length);
+    document.getElementById("spineHeaderCounts").textContent = `${activeTiles.length} Active Tiles on Spine · ${archivedTiles.length} Archived`;
+
+    const visibleTiles = currentSpineCat === "archived"
+      ? archivedTiles
+      : activeTiles.filter(t => currentSpineCat === "all" || t.category === currentSpineCat);
+
+    if (currentVariation === "3" && currentSpineCat !== "archived") {
+      host.style.display = "grid";
+      host.style.gridTemplateColumns = "repeat(auto-fit, minmax(420px, 1fr))";
+      host.style.gap = "12px";
+    } else {
+      host.style.display = "flex";
+      host.style.flexDirection = "column";
+      host.style.gap = "8px";
+    }
+
+    visibleTiles.forEach((tile) => {
+      const doneSteps = tile.steps.filter(s => s.done).length;
+      const totalSteps = tile.steps.length;
+      const allStepsDone = totalSteps > 0 && doneSteps === totalSteps;
+      const nextStepObj = tile.steps.find(s => !s.done);
+      const connectedStepsCount = tile.steps.filter(s => s.cockpitItem || s.initiativeItem).length;
+
+      const card = document.createElement("div");
+      card.className = `list-tile ${tileBorderClass(tile.prio)}` +
+        (tile.expanded ? " expanded" : "") +
+        (tile.done ? " done-tile" : "");
+
+      const sum = document.createElement("div");
+      sum.className = "lt-summary";
+
+      const mv = document.createElement("div");
+      mv.className = "lt-move-btns";
+      mv.innerHTML = `<button class="lt-mv-btn" title="Move Tile Up">▲</button><button class="lt-mv-btn" title="Move Tile Down">▼</button>`;
+      const [upB, dnB] = mv.querySelectorAll("button");
+      upB.onclick = (e) => { e.stopPropagation(); moveTile(tile.id, -1); };
+      dnB.onclick = (e) => { e.stopPropagation(); moveTile(tile.id, 1); };
+
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.className = "lt-check";
+      chk.checked = tile.done;
+      chk.title = "Check off entire effort tile";
+      chk.onclick = (e) => e.stopPropagation();
+      chk.onchange = () => {
+        tile.done = chk.checked;
+        if (tile.done) tile.steps.forEach(s => { s.done = true; });
+        renderAll();
+      };
+
+      const prio = document.createElement("span");
+      prio.className = `lt-prio ${prioClass(tile.prio)}`;
+      prio.textContent = tile.prio;
+      prio.title = "Click to cycle priority (A1 -> A2 -> B1 -> C1)";
+      prio.onclick = (e) => {
+        e.stopPropagation();
+        const cycle = ["A1", "A2", "B1", "C1"];
+        tile.prio = cycle[(cycle.indexOf(tile.prio) + 1) % cycle.length];
+        renderAll();
+      };
+
+      const main = document.createElement("div");
+      main.className = "lt-main";
+      main.innerHTML = `
+        <div class="lt-title-line">
+          <span class="lt-title">${tile.title}</span>
+          <span class="lt-cat-pill">${tile.category}</span>
+          <span class="lt-step-pill ${allStepsDone ? 'all-done' : ''}">✓ ${doneSteps}/${totalSteps} steps</span>
+          <span class="lt-conn-count-pill">🔗 ${connectedStepsCount}/${totalSteps} steps connected to Cockpit / Initiative</span>
+        </div>
+        <div class="lt-sub-preview">
+          ${nextStepObj ? `<strong>Next step:</strong> ${nextStepObj.text}` : `✅ All ${totalSteps} steps completed — ready to archive!`}
+        </div>
+      `;
+
+      const acts = document.createElement("div");
+      acts.className = "lt-right-actions";
+      acts.onclick = (e) => e.stopPropagation();
+
+      if (tile.cockpitUrl) {
+        const ck = document.createElement("a");
+        ck.className = "sm-btn cockpit";
+        ck.href = tile.cockpitUrl;
+        ck.target = "_blank";
+        ck.textContent = `🛸 ${tile.cockpitName || 'AI Cockpit'}`;
+        acts.appendChild(ck);
+      }
+
+      if (!tile.archived) {
+        const archBtn = document.createElement("button");
+        archBtn.className = "sm-btn archive";
+        archBtn.textContent = tile.done || allStepsDone ? "📦 Archive Done Tile" : "📦 Archive";
+        archBtn.onclick = () => {
+          tile.done = true;
+          tile.archived = true;
+          showToast(`Archived "${tile.title}" to Completed Tiles.`);
+          renderAll();
+        };
+        acts.appendChild(archBtn);
+      } else {
+        const restBtn = document.createElement("button");
+        restBtn.className = "sm-btn";
+        restBtn.textContent = "↩ Restore to Spine";
+        restBtn.onclick = () => {
+          tile.archived = false;
+          tile.done = false;
+          renderAll();
+        };
+        acts.appendChild(restBtn);
+      }
+
+      const expBtn = document.createElement("button");
+      expBtn.className = "sm-btn";
+      expBtn.textContent = tile.expanded ? "▴ Collapse Tile" : "▾ Open Steps & Connections";
+      expBtn.onclick = () => {
+        tile.expanded = !tile.expanded;
+        renderListTiles();
+      };
+      acts.appendChild(expBtn);
+
+      sum.onclick = () => {
+        tile.expanded = !tile.expanded;
+        renderListTiles();
+      };
+
+      sum.appendChild(mv);
+      sum.appendChild(chk);
+      sum.appendChild(prio);
+      sum.appendChild(main);
+      sum.appendChild(acts);
+      card.appendChild(sum);
+
+      // Expanded Details Body
+      const details = document.createElement("div");
+      details.className = "lt-details";
+
+      // Left Column: Multi-Step Checklist with Per-Step AI Cockpit & Initiative Connectors
+      const stepCol = document.createElement("div");
+      stepCol.className = "lt-col-box";
+      stepCol.innerHTML = `
+        <div class="lt-col-head">
+          <span>☑️ Multi-Step Checklist — Connect Any Step to an AI Cockpit Item and/or Initiative</span>
+          <span style="font-size:11px;color:#bae6fd;">Click <strong>[🔗 Connect / Edit Links]</strong> on any step</span>
+        </div>
+        <div class="substep-list" id="substeps-${tile.id}"></div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;padding-top:8px;border-top:1px solid var(--line);">
+          <div style="font-size:11px;font-weight:700;color:#cbd5e1;">+ Add a New Step (Optionally Connected to an AI Cockpit Item &amp; Initiative):</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <input type="text" class="nt-input" id="add-step-inp-${tile.id}" style="padding:5px 8px;font-size:11.5px;min-width:200px;" placeholder="Step description...">
+            <select class="nt-select" id="add-step-ck-${tile.id}" style="font-size:11px;max-width:220px;">
+              ${COCKPIT_ITEMS_CATALOG.map(c => `<option value="${c.value}" data-status="${c.status}" data-url="${c.url}">${c.label}</option>`).join("")}
+            </select>
+            <select class="nt-select" id="add-step-init-${tile.id}" style="font-size:11px;max-width:220px;">
+              ${INITIATIVE_ITEMS_CATALOG.map(i => `<option value="${i.value}" data-url="${i.url}">${i.label}</option>`).join("")}
+            </select>
+            <button class="btn-primary" style="padding:5px 10px;" onclick="addSubStep('${tile.id}')">+ Add Connected Step</button>
+          </div>
+        </div>
+      `;
+
+      const stepListEl = stepCol.querySelector(`#substeps-${tile.id}`);
+      tile.steps.forEach((st, sIdx) => {
+        const sCard = document.createElement("div");
+        sCard.className = "substep-card" + (st.done ? " done" : "");
+
+        const topLine = document.createElement("div");
+        topLine.className = "ss-top-line";
+
+        const leftPart = document.createElement("div");
+        leftPart.className = "ss-left";
+
+        const sChk = document.createElement("input");
+        sChk.type = "checkbox";
+        sChk.checked = st.done;
+        sChk.style.accentColor = "#10b981";
+        sChk.style.cursor = "pointer";
+        sChk.onchange = () => {
+          st.done = sChk.checked;
+          if (tile.steps.every(x => x.done)) tile.done = true;
+          renderListTiles();
+        };
+
+        const sTxt = document.createElement("span");
+        sTxt.className = "ss-text";
+        sTxt.textContent = `${sIdx + 1}. ${st.text}`;
+
+        leftPart.appendChild(sChk);
+        leftPart.appendChild(sTxt);
+
+        const connectBtn = document.createElement("button");
+        connectBtn.className = "sm-btn";
+        connectBtn.style.fontSize = "10.5px";
+        connectBtn.style.padding = "2px 7px";
+        const hasBoth = Boolean(st.cockpitItem && st.initiativeItem);
+        const hasAny = Boolean(st.cockpitItem || st.initiativeItem);
+        connectBtn.textContent = hasBoth
+          ? "🔗 Connected: Cockpit + Initiative ▾"
+          : (hasAny ? "🔗 Connected (Add/Edit Link) ▾" : "🔗 + Connect Cockpit / Initiative ▾");
+        connectBtn.onclick = () => {
+          openConnectorStepId = (openConnectorStepId === st.id) ? null : st.id;
+          renderListTiles();
+        };
+
+        topLine.appendChild(leftPart);
+        topLine.appendChild(connectBtn);
+        sCard.appendChild(topLine);
+
+        // Connected Chips Row (Shows AI Cockpit Item Chip AND/OR Initiative Chip)
+        const connRow = document.createElement("div");
+        connRow.className = "ss-connections-row";
+        if (st.cockpitItem) {
+          const ckChip = document.createElement("a");
+          ckChip.className = "conn-chip cockpit-item";
+          ckChip.href = st.cockpitUrl || tile.cockpitUrl || "/steward/v1";
+          ckChip.target = "_blank";
+          ckChip.title = "Open connected AI Cockpit item";
+          const isRev = String(st.cockpitStatus).includes("Review") || String(st.cockpitStatus).includes("Running");
+          ckChip.innerHTML = `<span>🛸 ${st.cockpitItem}</span>` +
+            (st.cockpitStatus ? `<span class="conn-status-dot ${isRev ? 'review' : ''}">${st.cockpitStatus}</span>` : "") +
+            `<span>↗</span>`;
+          connRow.appendChild(ckChip);
+        }
+        if (st.initiativeItem) {
+          const inChip = document.createElement("a");
+          inChip.className = "conn-chip initiative-item";
+          inChip.href = st.initiativeUrl || "/?view=cave";
+          inChip.target = "_blank";
+          inChip.title = "Open connected Initiative / Star Chart goal";
+          inChip.innerHTML = `<span>🌟 ${st.initiativeItem}</span><span>↗</span>`;
+          connRow.appendChild(inChip);
+        }
+        if (!st.cockpitItem && !st.initiativeItem) {
+          connRow.innerHTML = `<span style="font-size:10.5px;color:var(--faint);font-style:italic;">No Cockpit or Initiative linked yet — click [🔗 + Connect Cockpit / Initiative] to link one or both</span>`;
+        }
+        sCard.appendChild(connRow);
+
+        // Inline Connector Picker Drawer (Connect to AI Cockpit Item AND/OR Initiative)
+        const drawer = document.createElement("div");
+        drawer.className = "ss-connector-drawer" + (openConnectorStepId === st.id ? " open" : "");
+        drawer.innerHTML = `
+          <div style="font-size:11px;font-weight:700;color:#e0f2fe;display:flex;justify-content:space-between;">
+            <span>🔗 Connect Step #${sIdx + 1} to an AI Cockpit Item and/or an Initiative (or Both):</span>
+            <span style="color:var(--dim);cursor:pointer;" onclick="openConnectorStepId=null;renderListTiles();">✕ Close</span>
+          </div>
+          <div class="scd-row">
+            <span class="scd-label">🛸 AI Cockpit Item:</span>
+            <select class="nt-select" id="sel-ck-${st.id}" style="flex:1;">
+              ${COCKPIT_ITEMS_CATALOG.map(c => `<option value="${c.value}" data-status="${c.status}" data-url="${c.url}" ${st.cockpitItem === c.value ? 'selected' : ''}>${c.label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="scd-row">
+            <span class="scd-label">🌟 Initiative / Goal:</span>
+            <select class="nt-select" id="sel-init-${st.id}" style="flex:1;">
+              ${INITIATIVE_ITEMS_CATALOG.map(i => `<option value="${i.value}" data-url="${i.url}" ${st.initiativeItem === i.value ? 'selected' : ''}>${i.label}</option>`).join("")}
+            </select>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:6px;">
+            <button class="sm-btn cockpit" onclick="saveStepConnections('${tile.id}', '${st.id}')">✓ Save Step Connections</button>
+          </div>
+        `;
+        sCard.appendChild(drawer);
+        stepListEl.appendChild(sCard);
+      });
+
+      // Right Column: Brainstorming & Steward Scratchpad + Cockpit/Initiative Summary
+      const brainCol = document.createElement("div");
+      brainCol.className = "lt-col-box";
+      brainCol.innerHTML = `
+        <div class="lt-col-head">
+          <span>🧠 Brainstorming &amp; Details Scratchpad</span>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="sm-btn" onclick="stewardBrainstormSteps('${tile.id}')">✨ Brainstorm Connected Steps</button>
+            <a class="sm-btn cockpit" href="${tile.cockpitUrl || '/steward/v1'}" target="_blank">↗ Open AI Cockpit</a>
+          </div>
+        </div>
+        <textarea class="brainstorm-area" id="brain-${tile.id}" placeholder="Brainstorm what needs to get done, key contacts, links, or questions for the AI Cockpit...">${tile.brainstormNotes || ""}</textarea>
+        <div style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.3);border-radius:7px;padding:7px 9px;font-size:11px;color:#ddd6fe;">
+          <strong>🔗 How Step Connections Work:</strong> Each step on the left can link to a specific <strong>AI Cockpit Wave / Deliverable</strong>, a <strong>Cave / Star Chart Initiative</strong>, or <strong>both</strong>. Status updates from the AI Cockpit (e.g. <em>👁 Ready for Review</em> or <em>✅ Verified</em>) appear live on the connected step.
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--dim);">
+          <span>Synced with <code>domains/${tile.category.toLowerCase()}.md</code></span>
+          <button class="sm-btn speed" onclick="queueTileEmailInSpeedRacer('${tile.id}')">🏎️ Draft Related Email in Speed Racer</button>
+        </div>
+      `;
+      const brainTa = brainCol.querySelector(`#brain-${tile.id}`);
+      brainTa.onchange = () => { tile.brainstormNotes = brainTa.value; };
+
+      details.appendChild(stepCol);
+      details.appendChild(brainCol);
+      card.appendChild(details);
+      host.appendChild(card);
+    });
+  }
+
+  function saveStepConnections(tileId, stepId) {
+    const tile = LIST_TILES.find(t => t.id === tileId);
+    if (!tile) return;
+    const st = tile.steps.find(s => s.id === stepId);
+    if (!st) return;
+    const ckSel = document.getElementById(`sel-ck-${stepId}`);
+    const inSel = document.getElementById(`sel-init-${stepId}`);
+    if (ckSel) {
+      const opt = ckSel.options[ckSel.selectedIndex];
+      st.cockpitItem = ckSel.value;
+      st.cockpitStatus = opt.getAttribute("data-status") || "✅ Linked";
+      st.cockpitUrl = opt.getAttribute("data-url") || "/steward/v1";
+    }
+    if (inSel) {
+      const opt = inSel.options[inSel.selectedIndex];
+      st.initiativeItem = inSel.value;
+      st.initiativeUrl = opt.getAttribute("data-url") || "/?view=cave";
+    }
+    openConnectorStepId = null;
+    renderListTiles();
+    showToast(`Updated AI Cockpit & Initiative connections for "${st.text.slice(0, 42)}..."`);
+  }
+
+  function moveTile(tileId, delta) {
+    const idx = LIST_TILES.findIndex(t => t.id === tileId);
+    if (idx < 0) return;
+    const targetIdx = idx + delta;
+    if (targetIdx < 0 || targetIdx >= LIST_TILES.length) return;
+    const [item] = LIST_TILES.splice(idx, 1);
+    LIST_TILES.splice(targetIdx, 0, item);
+    renderListTiles();
+  }
+
+  function addSubStep(tileId) {
+    const tile = LIST_TILES.find(t => t.id === tileId);
+    const inp = document.getElementById(`add-step-inp-${tileId}`);
+    const ckSel = document.getElementById(`add-step-ck-${tileId}`);
+    const inSel = document.getElementById(`add-step-init-${tileId}`);
+    if (!tile || !inp || !inp.value.trim()) return;
+    const ckOpt = ckSel ? ckSel.options[ckSel.selectedIndex] : null;
+    const inOpt = inSel ? inSel.options[inSel.selectedIndex] : null;
+    tile.steps.push({
+      id: "st-" + Date.now(),
+      text: inp.value.trim(),
+      done: false,
+      cockpitItem: ckSel ? ckSel.value : "",
+      cockpitStatus: ckOpt ? (ckOpt.getAttribute("data-status") || "✅ Linked") : "",
+      cockpitUrl: ckOpt ? (ckOpt.getAttribute("data-url") || "/steward/v1") : "",
+      initiativeItem: inSel ? inSel.value : "",
+      initiativeUrl: inOpt ? (inOpt.getAttribute("data-url") || "/?view=cave") : ""
+    });
+    tile.done = false;
+    inp.value = "";
+    renderListTiles();
+  }
+
+  function stewardBrainstormSteps(tileId) {
+    const tile = LIST_TILES.find(t => t.id === tileId);
+    if (!tile) return;
+    tile.steps.push({
+      id: "st-" + Date.now(),
+      text: `Verify final deliverable package & sign-off checklist`,
+      done: false,
+      cockpitItem: `${tile.cockpitName || 'AI Cockpit'} · Final Verification Wave`,
+      cockpitStatus: "⏳ Pre-staged",
+      cockpitUrl: tile.cockpitUrl || "/steward/v1",
+      initiativeItem: `Initiative: ${tile.title.split(':')[0]}`,
+      initiativeUrl: "/?view=cave"
+    });
+    renderListTiles();
+    showToast(`Steward added a step connected to ${tile.cockpitName} & Initiative.`);
+  }
+
+  function queueTileEmailInSpeedRacer(tileId) {
+    const tile = LIST_TILES.find(t => t.id === tileId);
+    if (!tile) return;
+    SPEED_RACER_QUEUE.unshift({
+      id: "sr-" + Date.now(),
+      account: tile.category === "Teaching" || tile.category === "Research" ? "PSU M365" : "Axmra M365",
+      to: "Team / Collaborator <recipient@example.com>",
+      subject: `Update & Next Steps: ${tile.title}`,
+      origin: `💬 Queued from List Tile: '${tile.title}'`,
+      incomingSnippet: `Drafted from your brainstorm notes on '${tile.title}'`,
+      draftBody: `Hi all,\n\nFollowing up on ${tile.title}:\n${tile.steps.filter(s => !s.done).map(s => '- ' + s.text).join('\n')}\n\nBest,\nJohn`,
+      attachments: []
+    });
+    currentSrIdx = 0;
+    openEmailTile("speedRacerSubTile");
+    renderAll();
+    showToast(`Drafted email for "${tile.title}" and placed it in the Speed Racer Tile.`);
+  }
+
+  function createNewListTile(forcedPrio) {
+    const inp = document.getElementById("newTileTitle");
+    const cat = document.getElementById("newTileCat").value;
+    const prio = forcedPrio || document.getElementById("newTilePrio").value;
+    if (!inp.value.trim()) return;
+    LIST_TILES.unshift({
+      id: "tile-" + Date.now(),
+      title: inp.value.trim(),
+      category: cat,
+      prio: prio,
+      cockpitName: `${inp.value.trim().slice(0, 22)} Cockpit`,
+      cockpitUrl: "/steward/v1",
+      skills: ["researchPrime", "Gandalf"],
+      expanded: true,
+      done: false,
+      archived: false,
+      brainstormNotes: "• Brainstorm notes & steps here...",
+      steps: [
+        {
+          id: "s-1",
+          text: "Scope initial steps & connect to AI Cockpit + Initiative",
+          done: false,
+          cockpitItem: `${inp.value.trim().slice(0, 18)} Cockpit · Wave 1`,
+          cockpitStatus: "⏳ Ready",
+          cockpitUrl: "/steward/v1",
+          initiativeItem: `Initiative: ${inp.value.trim().slice(0, 24)}`,
+          initiativeUrl: "/?view=cave"
+        }
+      ]
+    });
+    inp.value = "";
+    renderAll();
+  }
+
+  function setSpineCategory(cat) {
+    currentSpineCat = cat;
+    document.querySelectorAll("#spineCatTabs .cat-tab").forEach(b => {
+      b.classList.toggle("active", b.dataset.cat === cat);
+    });
+    renderListTiles();
+  }
+
+  // =========================================================================
+  // RENDER EMAIL HUB: SPEED RACER TILE + INBOX (IMPORTANT/OTHER) + SENT LIST
+  // =========================================================================
+  function renderSpeedRacerTile() {
+    const host = document.getElementById("speedRacerDeckHost");
+    const badge = document.getElementById("srTileBadge");
+    const hdrCnt = document.getElementById("hdrSrCount");
+    if (!host) return;
+    hdrCnt.textContent = String(SPEED_RACER_QUEUE.length);
+    badge.textContent = `${SPEED_RACER_QUEUE.length} Drafts Awaiting Your Approval`;
+
+    if (!SPEED_RACER_QUEUE.length) {
+      host.innerHTML = `<div class="sr-card" style="border-color:rgba(16,185,129,0.45);text-align:center;padding:18px;">
+        <div style="font-weight:800;font-size:13.5px;color:#6ee7b7;">🏁 Speed Racer Queue Is Clear!</div>
+        <div style="font-size:12px;color:var(--dim);">Click <strong>[🏎️ → Put in Speed Racer]</strong> on any Inbox email below (or ask the Steward in dialogue) to queue a response.</div>
+      </div>`;
+      return;
+    }
+
+    if (currentSrIdx >= SPEED_RACER_QUEUE.length) currentSrIdx = 0;
+    const item = SPEED_RACER_QUEUE[currentSrIdx];
+    const attHtml = (item.attachments || []).map(a => `<span class="lt-step-pill">📎 ${a}</span>`).join(" ");
+
+    host.innerHTML = `
+      <div class="sr-card">
+        <div class="sr-route-bar">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="lt-step-pill" style="background:rgba(245,158,11,0.2);border-color:rgba(251,191,36,0.5);color:#fde68a;">Draft ${currentSrIdx + 1} of ${SPEED_RACER_QUEUE.length}</span>
+            <span style="font-family:var(--mono);font-size:11px;color:#bae6fd;">📤 From: ${item.account} → To: <strong>${item.to}</strong></span>
+          </div>
+          <span class="sr-origin-pill">${item.origin}</span>
+        </div>
+        <div style="font-weight:800;font-size:13px;color:#fff;">Subject: ${item.subject}</div>
+        <div style="font-size:11.5px;color:#cbd5e1;background:rgba(15,23,42,0.8);border-left:3px solid #f59e0b;padding:5px 9px;border-radius:0 5px 5px 0;">
+          <strong>Context / Incoming Email:</strong> "${item.incomingSnippet}"
+        </div>
+        <textarea class="sr-draft-box" id="srActiveTextarea">${item.draftBody}</textarea>
+        ${attHtml ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px;color:#bae6fd;"><strong>Attachments:</strong> ${attHtml}</div>` : ""}
+        <div id="srFeedbackBar" style="display:none;gap:6px;align-items:center;">
+          <input type="text" id="srFeedbackText" class="nt-input" style="padding:5px 9px;font-size:11.5px;" placeholder="Give feedback to Steward (e.g., 'Make it briefer and ask for Friday deadline')...">
+          <button class="sr-btn feedback" onclick="redraftSpeedRacer()">↻ Steward Redraft</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:2px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="sr-btn approve" onclick="approveSpeedRacer()">✓ Approve &amp; Send [Enter]</button>
+            <button class="sr-btn" onclick="document.getElementById('srActiveTextarea').focus()">✎ Edit Directly [E]</button>
+            <button class="sr-btn feedback" onclick="const b=document.getElementById('srFeedbackBar');b.style.display=b.style.display==='flex'?'none':'flex';">💬 Feedback to Steward [F]</button>
+            <button class="sr-btn" onclick="nextSpeedRacer()">⏸ Next in Queue (${currentSrIdx + 1}/${SPEED_RACER_QUEUE.length}) [S]</button>
+          </div>
+          <span style="font-family:var(--mono);font-size:10.5px;color:var(--dim);">5-second Undo safety lock on send</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function approveSpeedRacer() {
+    if (!SPEED_RACER_QUEUE.length) return;
+    const ta = document.getElementById("srActiveTextarea");
+    if (ta) SPEED_RACER_QUEUE[currentSrIdx].draftBody = ta.value;
+    lastApprovedSr = SPEED_RACER_QUEUE.splice(currentSrIdx, 1)[0];
+    SENT_EMAILS.unshift({
+      time: "Just now",
+      account: lastApprovedSr.account,
+      to: lastApprovedSr.to,
+      subject: lastApprovedSr.subject,
+      via: "✓ Approved via Speed Racer Tile"
+    });
+    renderAll();
+    showToast(`✓ Approved & sent to ${lastApprovedSr.to} (added to Sent List)`);
+  }
+
+  function undoLastApprove() {
+    if (!lastApprovedSr) return;
+    SPEED_RACER_QUEUE.unshift(lastApprovedSr);
+    SENT_EMAILS.shift();
+    lastApprovedSr = null;
+    currentSrIdx = 0;
+    document.getElementById("srToast").classList.remove("show");
+    renderAll();
+  }
+
+  function nextSpeedRacer() {
+    if (!SPEED_RACER_QUEUE.length) return;
+    currentSrIdx = (currentSrIdx + 1) % SPEED_RACER_QUEUE.length;
+    renderSpeedRacerTile();
+  }
+
+  function redraftSpeedRacer() {
+    const inp = document.getElementById("srFeedbackText");
+    const ta = document.getElementById("srActiveTextarea");
+    if (!inp || !ta || !SPEED_RACER_QUEUE.length) return;
+    const fb = inp.value.trim() || "updated per your feedback";
+    SPEED_RACER_QUEUE[currentSrIdx].draftBody = `[Steward Redrafted per your feedback: "${fb}"]\n\n` + ta.value;
+    renderSpeedRacerTile();
+  }
+
+  function stewardQueueFromDialogue() {
+    const inp = document.getElementById("stewardDialogueEmailPrompt");
+    const promptText = (inp && inp.value.trim()) || "Follow up with Archty CPA on final dissolution tax clearance";
+    SPEED_RACER_QUEUE.unshift({
+      id: "sr-" + Date.now(),
+      account: "Axmra M365",
+      to: "Recipient (from Steward Dialogue)",
+      subject: promptText.slice(0, 64),
+      origin: "💬 Queued by Steward from Your Dialogue",
+      incomingSnippet: `Your dialogue instruction: "${promptText}"`,
+      draftBody: `Hi,\n\n[Steward drafted from your dialogue instruction: "${promptText}"]\n\nPlease let me know if you need any additional documentation from our side.\n\nBest,\nJohn`,
+      attachments: []
+    });
+    if (inp) inp.value = "";
+    currentSrIdx = 0;
+    openEmailTile("speedRacerSubTile");
+    renderAll();
+    showToast("Steward drafted the email and placed it in the Speed Racer Tile for your approval.");
+  }
+
+  function renderInboxTile() {
+    const host = document.getElementById("inboxRowsHost");
+    if (!host) return;
+    host.innerHTML = "";
+
+    const imp = INBOX_EMAILS.filter(e => e.importance === "important");
+    const oth = INBOX_EMAILS.filter(e => e.importance === "other");
+    document.getElementById("cntIbImp").textContent = String(imp.length);
+    document.getElementById("cntIbOth").textContent = String(oth.length);
+    document.getElementById("cntIbAll").textContent = String(INBOX_EMAILS.length);
+    document.getElementById("hdrImpCount").textContent = String(imp.length);
+    document.getElementById("hdrOthCount").textContent = String(oth.length);
+    document.getElementById("inboxTileBadge").textContent = `${imp.length} Important · ${oth.length} Not Important`;
+
+    const visible = INBOX_EMAILS.filter(e => currentInboxFilter === "all" || e.importance === currentInboxFilter);
+
+    visible.forEach(em => {
+      const row = document.createElement("div");
+      row.className = `email-row ${em.importance}`;
+      row.innerHTML = `
+        <div class="er-main">
+          <div class="er-top">
+            <span class="lt-cat-pill" style="${em.importance === 'important' ? 'background:rgba(245,158,11,0.2);color:#fde68a;' : ''}">
+              ${em.importance === 'important' ? '🔥 IMPORTANT' : '📥 NOT IMPORTANT'}
+            </span>
+            <span class="er-from">${em.from}</span>
+            <span>·</span>
+            <span class="er-subj">${em.subject}</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--dim);">(${em.account})</span>
+          </div>
+          <div class="er-snip">"${em.snippet}"</div>
+        </div>
+        <div class="er-actions">
+          <button class="sm-btn speed" ${em.queued ? "disabled" : ""} onclick="putInboxInSpeedRacer('${em.id}')">
+            ${em.queued ? "✓ In Speed Racer Tile ↑" : "🏎️ → Put in Speed Racer"}
+          </button>
+          <button class="sm-btn" onclick="toggleEmailImportance('${em.id}')">
+            ${em.importance === "important" ? "↓ Move to Not Important" : "↑ Mark Important"}
+          </button>
+          <button class="sm-btn cockpit" onclick="turnEmailIntoListTile('${em.id}')">+ Create List Tile</button>
+        </div>
+      `;
+      host.appendChild(row);
+    });
+  }
+
+  function putInboxInSpeedRacer(emailId) {
+    const em = INBOX_EMAILS.find(x => x.id === emailId);
+    if (!em || em.queued) return;
+    em.queued = true;
+    SPEED_RACER_QUEUE.unshift({
+      id: "sr-" + Date.now(),
+      account: em.account,
+      to: em.toAddress,
+      subject: "Re: " + em.subject,
+      origin: `📬 Added from ${em.importance === 'important' ? 'Important' : 'Other'} Inbox`,
+      incomingSnippet: em.snippet,
+      draftBody: em.suggestedDraft,
+      attachments: []
+    });
+    currentSrIdx = 0;
+    openEmailTile("speedRacerSubTile");
+    renderAll();
+    showToast(`Queued "${em.subject}" into the Speed Racer Tile.`);
+  }
+
+  function queueAllImportantToSpeedRacer() {
+    INBOX_EMAILS.filter(e => e.importance === "important" && !e.queued).forEach(e => putInboxInSpeedRacer(e.id));
+  }
+
+  function toggleEmailImportance(emailId) {
+    const em = INBOX_EMAILS.find(x => x.id === emailId);
+    if (!em) return;
+    em.importance = em.importance === "important" ? "other" : "important";
+    renderInboxTile();
+  }
+
+  function turnEmailIntoListTile(emailId) {
+    const em = INBOX_EMAILS.find(x => x.id === emailId);
+    if (!em) return;
+    LIST_TILES.unshift({
+      id: "tile-" + Date.now(),
+      title: em.subject,
+      category: em.account.includes("psu") ? "Teaching" : "Business",
+      prio: "A2",
+      cockpitName: "AI Cockpit",
+      cockpitUrl: "/steward/v1",
+      skills: ["researchPrime"],
+      expanded: true,
+      done: false,
+      archived: false,
+      brainstormNotes: `Created from email by ${em.from}: "${em.snippet}"`,
+      steps: [
+        { id: "s1", text: `Review request from ${em.from}`, done: false, cockpitItem: "AI Cockpit · Wave 1", cockpitStatus: "⏳ Ready", cockpitUrl: "/steward/v1", initiativeItem: "", initiativeUrl: "" },
+        { id: "s2", text: "Approve reply in Speed Racer", done: false, cockpitItem: "", cockpitStatus: "", cockpitUrl: "", initiativeItem: "", initiativeUrl: "" }
+      ]
+    });
+    renderAll();
+    showToast(`Created expandable List Tile for "${em.subject}"`);
+  }
+
+  function setInboxFilter(f) {
+    currentInboxFilter = f;
+    document.querySelectorAll("#inboxFilterTabs .cat-tab").forEach(b => {
+      b.classList.toggle("active", b.dataset.ib === f);
+    });
+    renderInboxTile();
+  }
+
+  function openInboxSubTab(f) {
+    openEmailTile("inboxSubTile");
+    setInboxFilter(f);
+  }
+
+  function renderSentTile() {
+    const host = document.getElementById("sentRowsHost");
+    if (!host) return;
+    document.getElementById("hdrSentCount").textContent = String(SENT_EMAILS.length);
+    document.getElementById("sentTileBadge").textContent = `${SENT_EMAILS.length} Sent Recently`;
+    host.innerHTML = SENT_EMAILS.map(s => `
+      <div class="email-row" style="border-left-color:#10b981;">
+        <div class="er-main">
+          <div class="er-top">
+            <span class="lt-step-pill all-done">${s.time}</span>
+            <span class="er-from">To: ${s.to}</span>
+            <span>·</span>
+            <span class="er-subj">${s.subject}</span>
+            <span style="font-family:var(--mono);font-size:10.5px;color:var(--dim);">(${s.account})</span>
+          </div>
+        </div>
+        <span style="font-size:11px;color:#6ee7b7;font-weight:700;">${s.via}</span>
+      </div>
+    `).join("");
+  }
+
+  function openEmailTile(id) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.classList.add("open");
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function toggleSentListTile() {
+    const el = document.getElementById("sentSubTile");
+    if (!el) return;
+    el.classList.toggle("open");
+    if (el.classList.contains("open")) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById("srToast");
+    document.getElementById("srToastText").textContent = msg;
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 4500);
+  }
+
+  const VARIATION_TITLES = {
+    "1": "★ Variation A (Recommended): Multi-Step List Tiles Connected to AI Cockpit Items & Initiatives — Cave of Wonders",
+    "2": "Variation B: Side-by-Side Spine Tiles (Left) + Email & Speed Racer Hub (Right) — Cave of Wonders",
+    "3": "Variation C: Category-Column Multi-Step Tiles + Bottom Email & Speed Racer Tile — Cave of Wonders"
+  };
+
+  function switchMockup(m) {
+    currentVariation = String(m);
+    document.querySelectorAll(".ms-tab").forEach(t => t.classList.toggle("active", t.dataset.m === String(m)));
+    if (VARIATION_TITLES[String(m)]) document.title = VARIATION_TITLES[String(m)];
+    const layoutHost = document.getElementById("layoutHost");
+    if (String(m) === "2") {
+      layoutHost.style.display = "grid";
+      layoutHost.style.gridTemplateColumns = "1.25fr 1fr";
+      layoutHost.style.alignItems = "start";
+    } else {
+      layoutHost.style.display = "flex";
+      layoutHost.style.flexDirection = "column";
+    }
+    renderAll();
+  }
+
+  function renderAll() {
+    renderListTiles();
+    renderSpeedRacerTile();
+    renderInboxTile();
+    renderSentTile();
+  }
+
+  // Open Step #1 of Archty's connector picker by default so John can immediately see how connecting a step works
+  openConnectorStepId = "s3";
+  renderAll();
+  switchMockup(new URLSearchParams(window.location.search).get("mockup") || "1");
+</script>
+</body>
+</html>

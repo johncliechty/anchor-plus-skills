@@ -102,12 +102,15 @@ HERE = Path(__file__).parent
 STATIC = HERE / "static"
 
 OPENABLE_EXT = {".md", ".txt", ".pdf", ".docx", ".doc", ".xlsx", ".xls",
-                ".csv", ".pptx", ".ppt", ".png", ".jpg", ".jpeg", ".gif", ".json"}
-DENY_UPLOAD_EXT = {".exe", ".bat", ".cmd", ".com", ".scr", ".hta", ".js",
-                   ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".ps1", ".psm1",
-                   ".ps1xml", ".lnk", ".url", ".msi", ".reg", ".dll", ".jar",
-                   ".pif", ".application", ".gadget", ".cpl", ".py", ".pyw",
-                   ".pyc", ".pyo", ".ipynb", ".r", ".svg", ".html", ".htm",
+                ".csv", ".pptx", ".ppt", ".png", ".jpg", ".jpeg", ".gif", ".json",
+                ".r", ".rmd", ".qmd", ".rds", ".rdata", ".py", ".ipynb", ".jl",
+                ".m", ".sql", ".stan", ".tex", ".bib", ".toml", ".yaml", ".yml",
+                ".html", ".htm", ".svg", ".xml", ".log"}
+# Only block actual OS binary executables / shell linkers; source code & data-science scripts
+# (.r, .rmd, .py, .ipynb, .jl, .sql, .sh, .ps1, .js, .ts, .html, .svg) are allowed in AI Cockpits.
+DENY_UPLOAD_EXT = {".exe", ".com", ".scr", ".hta", ".jse", ".vbs", ".vbe",
+                   ".wsf", ".wsh", ".lnk", ".url", ".msi", ".reg", ".dll", ".jar",
+                   ".pif", ".application", ".gadget", ".cpl",
                    ".scf", ".sct", ".inf", ".msc", ".jnlp", ".vb", ".ws"}
 MAX_LIVE_ENGINES = 24
 
@@ -223,8 +226,10 @@ SKILLS = ["researchPrime", "Crucible", "Foreman", "Gandalf", "Jumper",
 SKILL_ICONS = {
     "researchPrime": "research-prime-icon.jpg", "Crucible": "crucible-icon.svg",
     "Foreman": "foreman-icon.svg", "Gandalf": "gandalf-icon.jpg", "Jumper": "jumper-icon.jpg",
-    "Superjump": "superjump-icon.jpg", "Anvil": "anvil-icon.jpg", "anvil": "anvil-icon.jpg",
+    "Superjump": "superjump-icon.jpg", "superjump": "superjump-icon.jpg",
+    "Anvil": "anvil-icon.jpg", "anvil": "anvil-icon.jpg",
     "Aegis": "aegis-icon.jpg", "aegis": "aegis-icon.jpg",
+    "Einstein": "einstein-icon.png", "einstein": "einstein-icon.png",
     "ramanujan": "ramanujan-icon.jpg", "legal-beagle": "legal-beagle-icon.jpg",
     "financial-analyst": "financial-analyst-icon.jpg",
     "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
@@ -1042,6 +1047,13 @@ def _usage_rollup_fresh(cdir, estate=None):
     from steward_cockpit.steward_engine import (
         _backfill_usage_estimate, _read_all_state, _usage_snapshot, estimate_list_price_usd, fmt_usage_cost_text, infer_subscription_cli)
     if estate is None:
+        from steward_cockpit import steward_engine as _se_mod
+        if _se_mod.STATE_FILE == _se_mod.HERE / "proto-state.json" and "PYTEST_CURRENT_TEST" not in os.environ:
+            try:
+                import paths as _p_reloc
+                _se_mod.relocate_state(_p_reloc.data_dir() / "steward-cockpit-state.json")
+            except Exception:
+                pass
         estate = _read_all_state()
     stew, term = zero(), zero()
     cdir_n = os.path.realpath(cdir)
@@ -1056,6 +1068,17 @@ def _usage_rollup_fresh(cdir, estate=None):
             continue
         raw = entry.get("usage")
         u = _backfill_usage_estimate(_usage_snapshot(raw), raw, entry.get("model_policy"))
+        eng_live = ENGINES.get(key)
+        if eng_live is not None and getattr(eng_live, "busy", False) and isinstance(getattr(eng_live, "_inflight_claude_usage", None), dict):
+            try:
+                inf_usd, inf_turns, inf_tok = eng_live._inflight_usage_estimate()
+                if inf_tok > 0:
+                    u["tokens"] = int(u.get("tokens") or 0) + inf_tok
+                    u["estimated_spend"] = round(float(u.get("estimated_spend") or 0.0) + inf_usd, 4)
+                    u["estimated_turns"] = int(u.get("estimated_turns") or 0) + inf_turns
+                    u["unpriced_turns"] = int(u.get("unpriced_turns") or 0) + max(1, inf_turns)
+            except Exception:
+                pass
         b = term if "||general||" in key else stew
         for field in numeric_fields:
             b[field] += u[field]
@@ -1145,6 +1168,16 @@ def _usage_rollup_fresh(cdir, estate=None):
             else:
                 children["unpriced_turns"] += 1
                 children["_tokens_known"] += 1
+                est_c = estimate_list_price_usd(row.get("model") or "claude-opus-4-6", row.get("usage"))
+                if est_c is None and number(tokens) and tokens > 0:
+                    in_t = int(tokens * 0.90)
+                    est_c = estimate_list_price_usd(
+                        row.get("model") or "claude-opus-4-6",
+                        {"input_tokens": in_t, "cached_input_tokens": int(tokens * 0.50), "output_tokens": max(0, int(tokens) - in_t)},
+                    )
+                if est_c is not None:
+                    children["estimated_spend"] += est_c
+                    children["estimated_turns"] += 1
             children["_cost_unknown"] += 1
             stamp = row.get("recorded_at")
             if isinstance(stamp, str) and stamp:
@@ -1191,6 +1224,57 @@ def _usage_rollup_fresh(cdir, estate=None):
         stamp = row.get("recorded_at")
         if isinstance(stamp, str) and stamp:
             b["usage_updated_at"] = max(b["usage_updated_at"] or stamp, stamp)
+    # Also join any delegated code jobs recorded in <effort>/.ecgberht/code-jobs.json whose engine
+    # usage lives in estate under *anchor-code-jobs*<job_id>* (so efforts like Artificial Magi\Book 1
+    # whose code jobs ran against the parent repo root still have their exact job tokens & spend included).
+    try:
+        roots_for_jobs = allowed_roots if allowed_roots is not None else {cdir_n}
+        effort_job_ids: set[str] = set()
+        for rdir in roots_for_jobs:
+            cj_file = Path(rdir) / ".ecgberht" / "code-jobs.json"
+            if cj_file.is_file():
+                cj_data = json.loads(cj_file.read_text(encoding="utf-8"))
+                if isinstance(cj_data, dict):
+                    effort_job_ids.update(str(k) for k in cj_data.keys() if k)
+        if effort_job_ids:
+            already_indexed_jobs = {
+                str(r.get("job_id") or "")
+                for r in rows
+                if isinstance(r, dict) and r.get("source") == "job" and (in_scope(r.get("scope")) or in_scope(r.get("folder_scope")))
+            }
+            for ekey, eentry in estate.items():
+                if "anchor-code-jobs" not in ekey.lower() or not isinstance(eentry, dict):
+                    continue
+                ebase_name = Path(ekey.split("||")[0]).name
+                if ebase_name not in effort_job_ids or ebase_name in already_indexed_jobs:
+                    continue
+                j_raw = eentry.get("usage")
+                ju = _backfill_usage_estimate(_usage_snapshot(j_raw), j_raw, eentry.get("model_policy"))
+                jobs["count"] += 1
+                for field in numeric_fields:
+                    jobs[field] += ju[field]
+                if ju["reported_spend"] > 0:
+                    jobs["_cost_known"] += 1
+                    jobs["_tokens_known"] += 1
+                elif ju["unpriced_turns"] > 0 or ju["tokens"] > 0:
+                    jobs["_cost_unknown"] += 1
+                    jobs["_tokens_known"] += 1
+                    j_fam = infer_subscription_cli(eentry.get("cli"), (j_raw or {}).get("usage_source") if isinstance(j_raw, dict) else None)
+                    if j_fam:
+                        jobs["_sub_unpriced"] += max(1, ju["unpriced_turns"])
+                        if j_fam not in jobs["_sub_clis"]:
+                            jobs["_sub_clis"].append(j_fam)
+                    else:
+                        jobs["_other_unpriced"] += max(1, ju["unpriced_turns"])
+                else:
+                    jobs["unknown"] += 1
+                    jobs["_cost_unknown"] += 1
+                    jobs["_tokens_unknown"] += 1
+                j_upd = ju.get("usage_updated_at")
+                if isinstance(j_upd, str) and j_upd:
+                    jobs["usage_updated_at"] = max(jobs["usage_updated_at"] or j_upd, j_upd)
+    except Exception:
+        pass
     total = zero()
     for field in numeric_fields + ("_cost_known", "_cost_unknown", "_tokens_known",
                                    "_tokens_unknown", "_tokens_partial",
@@ -1274,10 +1358,15 @@ def _compute_global_usage_summary():
         projects_list = []
 
     proj_by_id = {}
+    canon_by_folder = {}
+    pid_alias = {}
     folder_to_proj = []
-    for p in projects_list:
-        if not isinstance(p, dict) or not p.get("id"):
-            continue
+    # Sort active projects ahead of archived/retired so canonical folder ownership prefers active projects
+    sorted_projs = sorted(
+        [p for p in projects_list if isinstance(p, dict) and p.get("id")],
+        key=lambda p: (1 if p.get("status") in ("archived", "retired", "future") else 0, -len(str(p.get("name") or ""))),
+    )
+    for p in sorted_projs:
         pid = str(p["id"])
         pname = str(p.get("name") or pid)
         fp = str(p.get("folder_path") or "").strip()
@@ -1287,10 +1376,20 @@ def _compute_global_usage_summary():
         if fp and fp != ".":
             try:
                 norm_fp = os.path.normcase(os.path.realpath(fp))
-                folder_to_proj.append((len(norm_fp), norm_fp, pid, pname))
+                if norm_fp in canon_by_folder:
+                    c_pid, c_name = canon_by_folder[norm_fp]
+                    pid_alias[pid] = (c_pid, c_name)
+                else:
+                    canon_by_folder[norm_fp] = (pid, pname)
+                    folder_to_proj.append((len(norm_fp), norm_fp, pid, pname))
             except Exception:
                 pass
     folder_to_proj.sort(reverse=True)
+
+    def canon_proj(pid_val, pname_val):
+        if pid_val and pid_val in pid_alias:
+            return pid_alias[pid_val]
+        return pid_val, pname_val
 
     def match_proj(folder):
         if not folder:
@@ -1305,6 +1404,15 @@ def _compute_global_usage_summary():
         return None, None
 
     sid_map = {}
+    lsu_by_sid = {}
+    inflight_by_sid = {}
+    from steward_cockpit import steward_engine as _se_mod
+    if _se_mod.STATE_FILE == _se_mod.HERE / "proto-state.json" and "PYTEST_CURRENT_TEST" not in os.environ:
+        try:
+            _se_mod.relocate_state(_paths.data_dir() / "steward-cockpit-state.json")
+            estate = _read_all_state()
+        except Exception:
+            pass
     for skey, entry in estate.items():
         if not isinstance(entry, dict):
             continue
@@ -1322,7 +1430,17 @@ def _compute_global_usage_summary():
             mp = entry.get("model_policy") if isinstance(entry.get("model_policy"), dict) else {}
             fam = entry.get("cli") or mp.get("family")
             mod = mp.get("model_served") or mp.get("model")
-            sid_map[str(entry["session_id"])] = (fam, mod, pid, pname, base_dir)
+            sid_str = str(entry["session_id"])
+            sid_map[sid_str] = (fam, mod, pid, pname, base_dir)
+            raw_u = entry.get("usage") if isinstance(entry.get("usage"), dict) else {}
+            lsu = raw_u.get("last_session_usage")
+            if isinstance(lsu, dict) and (int(lsu.get("input_tokens") or 0) > 0 or int(lsu.get("output_tokens") or 0) > 0):
+                lsu_by_sid[sid_str] = (lsu, str(raw_u.get("usage_updated_at") or ""), fam, mod, pid, pname, base_dir)
+            cks = raw_u.get("usage_checkpoints")
+            if isinstance(cks, dict):
+                for ck_id, ck in cks.items():
+                    if isinstance(ck, dict) and not ck.get("invalid") and ck.get("finalized") is not True and isinstance(ck.get("counts"), dict):
+                        inflight_by_sid.setdefault(sid_str, []).append((ck, fam, mod, pid, pname))
 
     seen_keys = set()
     records = []
@@ -1377,17 +1495,86 @@ def _compute_global_usage_summary():
                         out_p = int(prev_u.get("output_tokens") or 0)
                         ca_p = int(prev_u.get("cached_input_tokens") or prev_u.get("cache_read_input_tokens") or 0)
                         if in_c >= in_p and out_c >= out_p and ca_c >= ca_p:
-                            e_copy["tokens"] = tok - prev_tok
-                            e_copy["usage"] = {
-                                "input_tokens": in_c - in_p,
-                                "output_tokens": out_c - out_p,
-                                "cached_input_tokens": ca_c - ca_p,
-                            }
+                            delta_in = in_c - in_p
+                            delta_out = out_c - out_p
+                            delta_ca = ca_c - ca_p
+                            has_additive_ca = "cache_read_input_tokens" in u and "cached_input_tokens" not in u
+                            delta_sum = delta_in + delta_out + (delta_ca if has_additive_ca else 0)
+                            # tok in .anchor/usage_ledger is already the per-turn delta for steward-turn/terminal-turn;
+                            # only subtract prev_tok when tok is a cumulative counter larger than the current cumulative input.
+                            if tok >= prev_tok and prev_tok > 0 and tok >= in_c and delta_sum > 0 and tok > delta_sum:
+                                e_copy["tokens"] = tok - prev_tok
+                            elif delta_sum > 0:
+                                e_copy["tokens"] = delta_sum
+                            if has_additive_ca:
+                                e_copy["usage"] = {
+                                    "input_tokens": delta_in,
+                                    "output_tokens": delta_out,
+                                    "cache_read_input_tokens": delta_ca,
+                                }
+                            else:
+                                e_copy["usage"] = {
+                                    "input_tokens": delta_in,
+                                    "output_tokens": delta_out,
+                                    "cached_input_tokens": delta_ca,
+                                }
                     has_u = isinstance(u, dict) and (int(u.get("input_tokens") or 0) > 0 or int(u.get("output_tokens") or 0) > 0)
                     prev_by_sess[sess_key] = (u if has_u else prev_u, tok if tok > 0 else prev_tok)
                 epid = e.get("project_id") or pid
                 epname = (proj_by_id.get(epid) or {}).get("name") or pname
+                if not epid and (e.get("effort_dir") or e.get("folder_path")):
+                    epid, epname = match_proj(e.get("effort_dir") or e.get("folder_path"))
+                epid, epname = canon_proj(epid, epname)
                 records.append((efam, emod, epid, epname, e_copy))
+            # If last_session_usage in estate has strictly higher cumulative tokens than the last
+            # ledger entry for this session (e.g., turns run after a turn-counter reset), include
+            # the verified un-ledgered delta at usage_updated_at.
+            if sid in lsu_by_sid:
+                lsu, lsu_at, lfam, lmod, lpid, lpname, _ = lsu_by_sid[sid]
+                efam = str(lfam or fam or "claude").lower()
+                if efam in ("chatgpt", "gemini"):
+                    prev_u, _ = prev_by_sess.get(sid, (None, 0))
+                    in_c = int(lsu.get("input_tokens") or 0)
+                    out_c = int(lsu.get("output_tokens") or 0)
+                    ca_c = int(lsu.get("cached_input_tokens") or lsu.get("cache_read_input_tokens") or 0)
+                    in_p = int((prev_u or {}).get("input_tokens") or 0)
+                    out_p = int((prev_u or {}).get("output_tokens") or 0)
+                    ca_p = int((prev_u or {}).get("cached_input_tokens") or (prev_u or {}).get("cache_read_input_tokens") or 0)
+                    if in_c >= in_p and out_c >= out_p and ca_c >= ca_p and (in_c > in_p or out_c > out_p or ca_c > ca_p):
+                        delta_in = in_c - in_p
+                        delta_out = out_c - out_p
+                        delta_ca = ca_c - ca_p
+                        has_additive_ca = "cache_read_input_tokens" in lsu and "cached_input_tokens" not in lsu
+                        delta_tok = delta_in + delta_out + (delta_ca if has_additive_ca else 0)
+                        delta_u = {
+                            "input_tokens": delta_in,
+                            "output_tokens": delta_out,
+                            ("cache_read_input_tokens" if has_additive_ca else "cached_input_tokens"): delta_ca,
+                        }
+                        records.append((efam, lmod or mod, lpid or pid, lpname or pname, {
+                            "session_id": sid,
+                            "cli": efam,
+                            "model": lmod or mod,
+                            "tokens": delta_tok,
+                            "usage": delta_u,
+                            "recorded_at": lsu_at,
+                            "source": "steward-turn",
+                        }))
+            if sid in inflight_by_sid:
+                for ck, ifam, imod, ipid, ipname in inflight_by_sid[sid]:
+                    efam = str(ifam or fam or "claude").lower()
+                    counts = ck.get("counts") or {}
+                    tok_inf = int(counts.get("input_tokens") or 0) + int(counts.get("output_tokens") or 0)
+                    if tok_inf > 0:
+                        records.append((efam, imod or mod, ipid or pid, ipname or pname, {
+                            "session_id": sid,
+                            "cli": efam,
+                            "model": imod or mod,
+                            "tokens": tok_inf,
+                            "usage": dict(counts),
+                            "recorded_at": str(ck.get("updated_at") or ""),
+                            "source": "steward-checkpoint",
+                        }))
 
     try:
         import usage_index as _ui
@@ -1409,7 +1596,8 @@ def _compute_global_usage_summary():
                 sfam, smod, _, _, _ = sid_map.get(str(esid or ""), (None, None, None, None, None))
                 rfam = str(r.get("cli") or sfam or "claude").lower()
                 rmod = r.get("model") or smod
-                records.append((rfam, rmod, pid, pinfo["name"], r))
+                cpid, cpname = canon_proj(pid, pinfo["name"])
+                records.append((rfam, rmod, cpid, cpname, r))
 
     def normalize_model(fam, mod):
         m = str(mod or "").strip()
@@ -1722,7 +1910,16 @@ def _state_cached(eng, cdir):
     except ValueError:
         ttl = 2.0
     stamp = campaign.map_stamp(cdir)                  # a question or review written to disk is never answered stale
-    key = (id(eng), getattr(eng, "seq", None), getattr(eng, "busy", None), getattr(eng, "tokens", None), getattr(eng, "turns", None), stamp)
+    key = (
+        id(eng),
+        getattr(eng, "seq", None),
+        getattr(eng, "busy", None),
+        getattr(eng, "tokens", None),
+        getattr(eng, "turns", None),
+        round(float(getattr(eng, "spend", 0.0) or 0.0), 4),
+        round(float(getattr(eng, "estimated_spend", 0.0) or 0.0), 4),
+        stamp,
+    )
     now = time.monotonic()
     if ttl:
         with _STATE_LOCK:
@@ -1742,6 +1939,16 @@ def _state_cached(eng, cdir):
 
 def _state_with_usage(eng, cdir):
     state = eng.state()
+    cur_sig = (
+        getattr(eng, "tokens", 0),
+        getattr(eng, "turns", 0),
+        round(float(getattr(eng, "spend", 0.0) or 0.0), 4),
+        round(float(getattr(eng, "estimated_spend", 0.0) or 0.0), 4),
+    )
+    if getattr(eng, "_last_rollup_sig", None) != cur_sig:
+        eng._last_rollup_sig = cur_sig
+        with _ROLLUP_LOCK:
+            _ROLLUP_CACHE.pop(os.path.normcase(os.path.abspath(cdir)), None)
     state["usage_rollup"] = _usage_rollup(cdir)
     return state
 
@@ -1870,10 +2077,19 @@ def handle_get(cdir, verb, qs):
             return {"error": "private host credentials are not deliverables"}, 403
         in_effort = (real == creal or real.startswith(creal + os.sep))
         if in_effort and not os.path.isfile(real) and rel and not rel.startswith(("/", "\\")) and ".." not in Path(rel).parts:
-            # Resolve bare filenames (e.g. `CHAPTER-04-05-DRAFT-v2.docx` written in backticks in Steward dialogue)
+            # 0. Strip duplicate leading effort folder prefix (e.g. `Book 1/chapters/...` inside `Book 1`)
+            cdir_name = Path(cdir).name
+            rel_norm = rel.replace("\\", "/").lstrip("/")
+            if cdir_name and rel_norm.lower().startswith(cdir_name.lower() + "/"):
+                stripped_rel = rel_norm[len(cdir_name) + 1:]
+                cand_strip = os.path.realpath(str(Path(cdir) / stripped_rel))
+                if (cand_strip == creal or cand_strip.startswith(creal + os.sep)) and os.path.isfile(cand_strip) and not private_account_path(cand_strip):
+                    real = cand_strip
+                    rel = stripped_rel
+            # 1. Resolve bare or relative filenames (e.g. `CHAPTER-04-05-DRAFT-v2.docx` written in backticks in Steward dialogue)
             # against DELIVERABLES.md rows or effort subdirectories before checking code-job worktrees.
-            if "/" not in rel and "\\" not in rel:
-                target_name = Path(rel).name.lower()
+            target_name = Path(rel).name.lower()
+            if not os.path.isfile(real) and target_name:
                 try:
                     deliv_data = campaign.read_deliverables(cdir)
                     for it in (deliv_data.get("items") or []) + (deliv_data.get("approved") or []):
@@ -1888,22 +2104,22 @@ def handle_get(cdir, verb, qs):
                                 break
                 except Exception:
                     pass
-                if not os.path.isfile(real):
-                    try:
-                        for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", ".ecgberht/journal"):
-                            sub_root = Path(cdir) / sub
-                            if not sub_root.is_dir():
-                                continue
-                            for match_p in sub_root.rglob("*"):
-                                if match_p.is_file() and match_p.name.lower() == target_name:
-                                    cand_sub = os.path.realpath(str(match_p))
-                                    if (cand_sub == creal or cand_sub.startswith(creal + os.sep)) and not private_account_path(cand_sub):
-                                        real = cand_sub
-                                        break
-                            if os.path.isfile(real):
-                                break
-                    except Exception:
-                        pass
+            if not os.path.isfile(real) and target_name:
+                try:
+                    for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", ".ecgberht/journal"):
+                        sub_root = Path(cdir) / sub
+                        if not sub_root.is_dir():
+                            continue
+                        for match_p in sub_root.rglob("*"):
+                            if match_p.is_file() and match_p.name.lower() == target_name:
+                                cand_sub = os.path.realpath(str(match_p))
+                                if (cand_sub == creal or cand_sub.startswith(creal + os.sep)) and not private_account_path(cand_sub):
+                                    real = cand_sub
+                                    break
+                        if os.path.isfile(real):
+                            break
+                except Exception:
+                    pass
             # 2026-10-14 (John: "why are we still having problems with deliverables not landing"):
             # When a code job builds deliverables in its worktree and keeps them in kept_delivery
             # (or while a worktree has produced the file under work_dir), serve the kept file
@@ -1914,7 +2130,6 @@ def handle_get(cdir, verb, qs):
                     if cj_path.is_file():
                         cj_raw = json.loads(cj_path.read_text(encoding="utf-8"))
                         cj_rows = list(cj_raw.values()) if isinstance(cj_raw, dict) else (cj_raw if isinstance(cj_raw, list) else [])
-                        target_name = Path(rel).name.lower()
                         for rec in reversed(cj_rows):
                             if not isinstance(rec, dict):
                                 continue
@@ -1926,10 +2141,9 @@ def handle_get(cdir, verb, qs):
                             rel_cands = [rel]
                             if wdir:
                                 rel_cands.append(f"{wdir}/{rel}")
-                            if "/" not in rel and "\\" not in rel:
-                                for out_p in (rec.get("outputs") or []):
-                                    if isinstance(out_p, str) and Path(out_p).name.lower() == target_name:
-                                        rel_cands.append(out_p)
+                            for out_p in (rec.get("outputs") or []):
+                                if isinstance(out_p, str) and Path(out_p).name.lower() == target_name:
+                                    rel_cands.append(out_p)
                             found_wt = False
                             for rc in rel_cands:
                                 cand = os.path.realpath(str(Path(wt) / rc))
@@ -1941,8 +2155,55 @@ def handle_get(cdir, verb, qs):
                                 break
                 except Exception:
                     pass
+            # 2026-10-31 (Journal 0202 / Chekhov 0066): On-the-fly reading copy synthesis when `.docx`/`.pdf`/`.html`
+            # is requested for a manuscript/deliverable whose `.md` source exists in the effort directory.
+            req_ext = Path(rel).suffix.lower()
+            if not os.path.isfile(real) and req_ext in (".docx", ".pdf", ".html"):
+                try:
+                    stem_lower = Path(rel).stem.lower()
+                    md_source = None
+                    direct_md = Path(real).with_suffix(".md")
+                    if direct_md.is_file():
+                        cand_md = os.path.realpath(str(direct_md))
+                        if (cand_md == creal or cand_md.startswith(creal + os.sep)) and not private_account_path(cand_md):
+                            md_source = Path(cand_md)
+                    if md_source is None:
+                        for sub in ("chapters", "deliverables", "story-arc", "editorial", "Finished Deliverables", ""):
+                            sub_root = Path(cdir) / sub if sub else Path(cdir)
+                            if not sub_root.is_dir():
+                                continue
+                            it_files = sub_root.rglob("*.md") if sub else sub_root.glob("*.md")
+                            for match_p in it_files:
+                                if match_p.is_file() and match_p.stem.lower() == stem_lower:
+                                    cand_md = os.path.realpath(str(match_p))
+                                    if (cand_md == creal or cand_md.startswith(creal + os.sep)) and not private_account_path(cand_md):
+                                        md_source = Path(cand_md)
+                                        break
+                            if md_source is not None:
+                                break
+                    if md_source is not None and md_source.is_file():
+                        from tools import reading_copy as _rc
+                        target_out = md_source.with_suffix(req_ext)
+                        if req_ext == ".docx":
+                            _rc.write_docx(md_source, target_out)
+                        elif req_ext == ".pdf":
+                            _rc.write_pdf(md_source, target_out)
+                        elif req_ext == ".html":
+                            _rc.write_html(md_source, target_out)
+                        if target_out.is_file():
+                            real = os.path.realpath(str(target_out))
+                except Exception:
+                    pass
         if not in_effort or not os.path.isfile(real):
             return {"error": "not an openable deliverable (outside this effort or missing)"}, 404
+        if qs.get("pdf_page") is None:
+            try:
+                campaign.record_deliverable_viewed(cdir, rel)
+                rel_from_cdir = os.path.relpath(real, creal).replace("\\", "/")
+                if rel_from_cdir and not rel_from_cdir.startswith("..") and rel_from_cdir != rel:
+                    campaign.record_deliverable_viewed(cdir, rel_from_cdir)
+            except Exception:
+                pass
         if os.path.getsize(real) > 50 * 1024 * 1024:
             return {"error": "file too large to serve inline (50MB cap)"}, 413
         expected_hash = qs.get("hash")
@@ -2045,6 +2306,16 @@ def handle_get(cdir, verb, qs):
     if verb == "efforts":
         return _efforts(cdir), 200
     if verb == "map":
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                _sync_cache = globals().setdefault("_LAST_MAP_SYNC_TS", {})
+                _norm_cdir = os.path.normcase(os.path.abspath(str(cdir)))
+                _now_mono = time.monotonic()
+                if _now_mono - _sync_cache.get(_norm_cdir, 0.0) > 30.0:
+                    _sync_cache[_norm_cdir] = _now_mono
+                    campaign.sync_steward_projections(cdir)
+            except Exception:
+                pass
         m = dict(campaign.read_map(cdir, include_plan_history=True))
         # W0b (High Seat, 2026-09-26): a part that points at another record is resolved at read,
         # once per distinct target per request; a broken reference is named on the page, never blank.
@@ -2844,7 +3115,8 @@ def _filetext(cdir, fpath):
     target = os.path.realpath(os.path.join(cdir, fpath))
     if target != base and not target.startswith(base + os.sep):
         return {"error": "outside the effort"}, 400
-    if not target.lower().endswith((".md", ".txt", ".json", ".csv", ".log")):
+    ext = Path(target).suffix.lower()
+    if ext not in (".md", ".txt", ".json", ".csv", ".log") and ext not in _SOURCE_TEXT:
         return {"error": "not a text report"}, 415
     try:
         return {"text": Path(target).read_text(encoding="utf-8",
@@ -2932,6 +3204,11 @@ def handle_post(cdir, verb, body):
                         revision_id=str(it.get("revision_id") or ""),
                         hash_val=str(it.get("hash") or ""),
                     )
+            if not os.environ.get("PYTEST_CURRENT_TEST"):
+                try:
+                    campaign.sync_steward_projections(cdir)
+                except Exception:
+                    pass
             _DELIV_CACHE.clear()
             return last_res, 200
         result = campaign.dismiss_deliverable(
@@ -2942,6 +3219,11 @@ def handle_post(cdir, verb, body):
             revision_id=str(body.get("revision_id") or ""),
             hash_val=str(body.get("hash") or ""),
         )
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                campaign.sync_steward_projections(cdir)
+            except Exception:
+                pass
         _DELIV_CACHE.clear()
         return result, 200 if result.get("ok") else 400
     if verb in ("plan-proposal", "plan/proposal", "plan-history", "plan/history"):
@@ -3313,7 +3595,7 @@ def handle_post(cdir, verb, body):
                 _txt = str(body.get("text") or "")
                 spoken = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave)
                 if spoken is None:
-                    spoken = say_campaign(_camp_dir, _txt, goal=_goal)
+                    spoken = say_campaign(_camp_dir, _txt, goal=_goal, run_fast_fallback=False)
                     if spoken and not spoken.get("ok") and "a goal has no seat" in str(spoken.get("say") or ""):
                         spoken_goal = fast_steward_command(_camp_dir, _txt, goal=_goal, from_cave=_is_cave, force_goal_seat=True)
                         if spoken_goal is not None:
@@ -3322,7 +3604,7 @@ def handle_post(cdir, verb, body):
                     if spoken.get("ok"):
                         _reply_txt = str(spoken.get("say") or spoken.get("receipt") or "")
                         note_goal_receipt(cdir, _goal, _txt, _reply_txt)
-                        if _camp_dir != cdir:
+                        if _camp_dir != cdir and _goal:
                             note_goal_receipt(_camp_dir, _goal, _txt, _reply_txt)
                         try:
                             _live_eng = get_engine(cdir, create=False)
@@ -3358,9 +3640,11 @@ def handle_post(cdir, verb, body):
                 _as_say.apply_conversational_anvil_side_effects(cdir, str(body.get("text", "")))
             except Exception:
                 pass
+        _reconciled_review = False
         if not body.get("general") and str(body.get("text") or "").strip():
             try:
-                campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
+                _rec_res = campaign.reconcile_review_on_feedback(cdir, str(body.get("text") or ""))
+                _reconciled_review = bool((_rec_res or {}).get("reconciled", 0) > 0)
                 _DELIV_CACHE.clear()
             except Exception:
                 pass
@@ -3368,6 +3652,13 @@ def handle_post(cdir, verb, body):
                          str(body.get("term") or "") or None)
         if eng is None:
             return {"ok": False, "error": "no such session / cap hit"}, 404
+        if _reconciled_review and not body.get("question_id"):
+            try:
+                eng.open_question = None
+                eng.question_context = None
+                eng.pending_questions = []
+            except Exception:
+                pass
         result = (eng.say(body.get("text", ""), question_id=body["question_id"]) if body.get("question_id")
                   else eng.say(body.get("text", ""), goal=(str(body.get("goal") or "").strip() or None)))
         if _refined_turn:

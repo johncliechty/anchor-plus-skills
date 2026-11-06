@@ -58,3 +58,26 @@ def test_skills_verb_carries_icons():
     out, status = routes.handle_get(str(ROOT), "skills", {})
     assert status == 200 and out["skills"] == routes.SKILLS
     assert out["icons"]["Gandalf"] == "gandalf-icon.jpg"
+
+
+def test_every_foundry_catalog_skill_and_icon_map_resolves_on_disk():
+    import foundry_api as fapi
+    import foundry_page as fpage
+    for _key, fname in fpage.ICON_NAMES:
+        assert (ROOT / "vendor" / "brand" / fname).is_file(), fname
+    for _key, fname in rv.SKILL_ICON_FILES.items():
+        assert (ROOT / "vendor" / "brand" / fname).is_file(), fname
+    for _key, fname in routes.SKILL_ICONS.items():
+        assert (ROOT / "vendor" / "brand" / fname).is_file(), fname
+    for skill in fpage.catalog()["skills"]:
+        ic = skill.get("icon") or ""
+        assert ic, skill["id"]
+        if ic.startswith("/brand/"):
+            resolved, _ = fapi.resolve_dist_file(ic)
+            assert resolved is not None and resolved.is_file(), (skill["id"], ic)
+        elif ic.startswith("/vendor/brand/"):
+            rel = ic[len("/vendor/brand/"):]
+            assert (ROOT / "vendor" / "brand" / rel).is_file(), (skill["id"], ic)
+        elif ic.startswith("/foundry/icon"):
+            p = fpage.icon_file(skill["id"])
+            assert p is not None and p.is_file(), (skill["id"], ic)

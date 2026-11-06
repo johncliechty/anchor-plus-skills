@@ -45,12 +45,23 @@ def page(md_path, for_print):
         # review r8: Anchor opens the HTML copy through a file route, where a relative figure path breaks - local
         # figures from the document's own folder ride inside the copy
         folder = md_path.resolve().parent
+        bound_root = folder
+        for anc in [folder] + list(folder.parents):
+            if (anc / ".ecgberht").is_dir() or (anc / ".git").exists():
+                bound_root = anc
+                break
+        else:
+            if folder.parent and folder.parent != Path(folder.anchor):
+                bound_root = folder.parent
 
         def embed(m):
             src = urllib.parse.unquote(htmllib.unescape(m.group(1)))      # review r9: "Figure 1.png" arrives escaped
             try:
                 f = (folder / src).resolve()
-                f.relative_to(folder)
+                try:
+                    f.relative_to(folder)
+                except ValueError:
+                    f.relative_to(bound_root)
                 kind = mimetypes.guess_type(f.name)[0] or ""
                 if kind.startswith("image/") and f.is_file() and f.stat().st_size <= 8 * 1024 * 1024:
                     return '<img src="data:%s;base64,%s"' % (kind, base64.b64encode(f.read_bytes()).decode("ascii"))
@@ -102,6 +113,31 @@ def _write_docx(md: Path, docx_out: Path) -> bool:
     except Exception as e:
         print("no DOCX was made: %s" % e)
     return False
+
+
+def write_docx(md: Path, docx_out: Path) -> bool:
+    return _write_docx(Path(md).resolve(), Path(docx_out).resolve())
+
+
+def write_html(md: Path, html_out: Path) -> bool:
+    try:
+        md_p = Path(md).resolve()
+        out_p = Path(html_out).resolve()
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(
+            page(md_p, False).replace(report_viewer.VENDOR_KATEX_DIR.as_uri(), "/vendor/katex"),
+            encoding="utf-8",
+        )
+        return out_p.is_file() and out_p.stat().st_size > 0
+    except Exception:
+        return False
+
+
+def write_pdf(md: Path, pdf_out: Path) -> bool:
+    try:
+        return main([str(Path(md).resolve()), "--out", str(Path(pdf_out).resolve())]) == 0
+    except Exception:
+        return False
 
 
 def main(argv=None):

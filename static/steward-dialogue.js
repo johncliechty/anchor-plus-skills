@@ -36,7 +36,21 @@
     function md(li) {
       var x = li && li.querySelector('.ext'); if (!x || !window.mdRender || !li.classList.contains('st')) return;
       var raw = li._raw !== undefined ? li._raw : x.textContent; if (!String(raw).trim()) return;
-      try { x.textContent = ''; window.mdRender(x, raw); } catch (e) { x.textContent = raw; }
+      var rawStr = String(raw);
+      if (rawStr.indexOf('[SPEED_RACER_OPEN') !== -1) {
+        var mOpen = rawStr.match(/\[SPEED_RACER_OPEN:?([^\]]*)\]/);
+        var openDid = (mOpen && mOpen[1]) ? mOpen[1].trim() : '';
+        rawStr = rawStr.replace(/\[SPEED_RACER_OPEN:?[^\]]*\]/g, '').trim();
+        li._raw = rawStr;
+        try {
+          var hw = (window.parent && window.parent !== window) ? window.parent : window;
+          if (typeof hw.openCaveSpeedRacer === 'function' && !li.dataset.srTriggered) {
+            li.dataset.srTriggered = '1';
+            if (live && live.sent) hw.openCaveSpeedRacer(openDid);
+          }
+        } catch (e) {}
+      }
+      try { x.textContent = ''; window.mdRender(x, rawStr); } catch (e) { x.textContent = rawStr; }
     }
     // 2026-10-07: the dialogue opens at the newest line and follows what arrives (rendering, late layout) until John
     // scrolls up - then it stays where he put it. Only a real scroll changes `_follow`; content growth fires none.
@@ -240,6 +254,26 @@
             if (j.act === 'open_deliverable' && j.open_deliverable_url) {
               receipt(j.receipt || j.say || 'Opened deliverable.', false);
               openCaveDeliverableDrawer(j.open_deliverable_title || 'Deliverable', j.open_deliverable_url);
+              return;
+            }
+            if (j.act === 'open_speed_racer' || j.open_speed_racer) {
+              receipt(j.receipt || 'Opened Speed Racer Tile in Email Hub.', false);
+              try {
+                var hostWin = (window.parent && window.parent !== window) ? window.parent : window;
+                if (typeof hostWin.openCaveSpeedRacer === 'function') {
+                  hostWin.openCaveSpeedRacer(j.speed_racer_draft_id || '');
+                }
+              } catch (e) {}
+              return;
+            }
+            if (j.working_list_act) {
+              receipt(j.receipt || j.say || 'Updated Working List Spine.', false);
+              try {
+                var hostWinWl = (window.parent && window.parent !== window) ? window.parent : window;
+                if (typeof hostWinWl.refreshCaveWorkingList === 'function') {
+                  hostWinWl.refreshCaveWorkingList(j.working_list || null);
+                }
+              } catch (e) {}
               return;
             }
             if (j.read_only) { receipt(j.receipt || j.say || 'Answered.', false); return; }

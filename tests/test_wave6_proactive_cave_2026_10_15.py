@@ -94,8 +94,8 @@ def test_wave6b_proactive_triage_two_horizon_schedule_and_desk_cockpit():
     # 1. Proactive Triage Strip at top of board before #camp
     assert 'id="shTriage"' in html
     assert html.index('id="shTriage"') < html.index('id="camp"')
-    assert "Proactive Chief-of-Staff Triage" in html
-    assert "Desktop (Ad-Hoc AI Cockpit)" in html
+    assert "Chief of Staff" in html
+    assert "Ad-Hoc Cockpit" in html
 
     # 2. Two-Horizon Schedule (#thisWeekBoard + compact #ruler + horizon tabs)
     assert 'id="thisWeekBoard"' in html
@@ -195,4 +195,67 @@ def test_working_status_always_green_across_cockpit_and_cave(tmp_path):
     assert 'st.light === "red" ? "red" : (working || st.light === "green") ? "green" : needsHuman ? "orange" : "quiet"' in shared_js
     fb_js = (ROOT / "static" / "cockpit-feedback.js").read_text(encoding="utf-8")
     assert "light === 'red' ? 'red' : light === 'green' ? 'green' : ready ? 'orange' : 'gray'" in fb_js
+
+
+
+
+def test_wave21_chief_of_staff_option1_next_effort_and_oranges():
+    """John (2026-11-02): Option 1 (Mockup 4) Chief-of-Staff Asymmetric Horizon Strip (Today 44% · This Week 28% ·
+    This Month 14% · Star Chart Q2 Goals 14%), Break-Between-Cockpits Filter, Q1 -> Q2 Deep-Work Unlock Meter,
+    Family & Relationship Lead-Time Radar, and Parable-of-the-Oranges Skill Pre-Staging."""
+    ctx = base._ctx(campaign=True)
+    html = hsp.render_high_seat_html(ctx)
+    assert 'id="cosCommandBar"' in html
+    assert 'id="cosHorizonStrip"' in html
+    assert 'id="cosQ2UnlockLabel"' in html
+    assert 'id="cosOrangesModal"' in html
+    assert 'data-cos-break="15m"' in html
+    assert 'data-cos-break="family"' in html
+    assert 'data-cos-break="deep"' in html
+    assert "Parable of the Oranges" in html
+    assert "Family &amp; Relationships Radar" in html
+    assert "Star Chart Q2 Goals" in html
+    assert 'data-cos-dispatch-skill="researchPrime"' in html
+    assert 'data-cos-dispatch-skill="Superjump"' in html
+    assert 'data-cos-dispatch-skill="Gandalf"' in html
+    assert 'data-cos-dispatch-skill="Einstein"' in html
+    assert 'data-cos-dispatch-skill="Chekhov"' in html
+    assert 'data-cos-dispatch-skill="Legal-Beagle"' in html
+    assert 'data-cos-dispatch-skill="Financial-Analyst"' in html
+
+
+def test_wave21_compact_chief_of_staff_and_r_file_cockpit_upload(tmp_path):
+    """John (2026-11-03): Chief-of-Staff starts compact/collapsed by default with 1-click drill-down/expand,
+    and .r / .R / .Rmd files can be loaded and read in the AI cockpit."""
+    import base64
+    from steward_cockpit import steward_routes as sr
+
+    ctx = base._ctx(campaign=True)
+    html = hsp.render_high_seat_html(ctx)
+    assert 'class="triage-strip compact-horizons is-collapsed" id="shTriage"' in html
+    assert 'id="cosCompactSummaryRow"' in html
+    assert 'id="cosExpandableBody" hidden' in html
+    assert 'id="btnCosToggleExpand"' in html
+    assert 'data-cos-drill="today"' in html
+    assert 'data-cos-drill="week"' in html
+    assert 'data-cos-drill="month"' in html
+    assert 'data-cos-drill="quarter"' in html
+
+    # Verify .r / .R / .Rmd upload and _filetext in the AI cockpit
+    r_code = b"# R Bayesian MCMC simulation\nx <- rnorm(100)\nsummary(x)\n"
+    res, status = sr._upload(
+        str(tmp_path),
+        {
+            "name": "bayesian_model.R",
+            "data_b64": base64.b64encode(r_code).decode("ascii"),
+            "mode": "new",
+            "sub": "",
+        },
+    )
+    assert status == 200 and res.get("ok") is True
+    assert (tmp_path / "bayesian_model.R").is_file()
+
+    txt_res, txt_status = sr._filetext(str(tmp_path), "bayesian_model.R")
+    assert txt_status == 200
+    assert "rnorm(100)" in txt_res.get("text", "")
 

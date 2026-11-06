@@ -253,7 +253,7 @@ def markdown_to_html(md_text: str) -> str:
 SKILL_ICON_FILES = {
     "researchprime": "research-prime-icon.jpg", "crucible": "crucible-icon.svg",
     "foreman": "foreman-icon.svg", "gandalf": "gandalf-icon.jpg", "jumper": "jumper-icon.jpg",
-    "superjump": "superjump-icon.jpg",
+    "superjump": "superjump-icon.jpg", "aegis": "aegis-icon.jpg", "anvil": "anvil-icon.jpg", "einstein": "einstein-icon.png",
     "ramanujan": "ramanujan-icon.jpg", "legal-beagle": "legal-beagle-icon.jpg",
     "financial-analyst": "financial-analyst-icon.jpg",
     "literature-review": "literature-review-icon.jpg", "tidy-idy": "tidy-idy-icon.jpg",
@@ -443,9 +443,10 @@ _ARTIFACT_CONTENT_TYPES = {
     ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
     ".csv": "text/csv; charset=utf-8",
 }
-# Program source and plain config read as text in the browser - a .py link shows its code, never a download (2026-10-11).
-SOURCE_TEXT_EXTENSIONS = frozenset({".py", ".r", ".jl", ".m", ".sh", ".ps1", ".bat", ".sql", ".tex", ".bib", ".toml",
-                                    ".yaml", ".yml", ".ini", ".cfg", ".ts", ".tsx", ".jsx", ".java", ".c", ".h",
+# Program source and plain config read as text in the browser - a .py or .r link shows its code, never a download (2026-10-11 / 2026-11-03).
+SOURCE_TEXT_EXTENSIONS = frozenset({".py", ".r", ".rmd", ".qmd", ".jl", ".m", ".sh", ".ps1", ".bat", ".sql", ".stan",
+                                    ".do", ".sas", ".tex", ".bib", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".ipynb",
+                                    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".css", ".xml", ".java", ".c", ".h",
                                     ".cpp", ".rs", ".go", ".rb", ".log"})
 _ARTIFACT_CONTENT_TYPES.update({e: "text/plain; charset=utf-8" for e in SOURCE_TEXT_EXTENSIONS})
 

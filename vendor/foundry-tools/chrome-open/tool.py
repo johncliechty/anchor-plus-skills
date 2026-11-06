@@ -76,14 +76,14 @@ def current_desktop_name() -> str:
     return f"{winsta}\\{buf.value}"
 
 
-def list_default_desktop_chrome_windows() -> list[str]:
+def list_default_desktop_chrome_hwnds_and_titles() -> list[tuple[int, str]]:
     if os.name != "nt":
         return []
     u32 = ctypes.windll.user32
     h_def = u32.OpenDesktopW("Default", 0, False, 0x01FF)
     if not h_def:
         return []
-    titles: list[str] = []
+    items: list[tuple[int, str]] = []
     WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
     def _cb(hwnd, _lparam):
@@ -93,20 +93,55 @@ def list_default_desktop_chrome_windows() -> list[str]:
                 buf = ctypes.create_unicode_buffer(length + 1)
                 u32.GetWindowTextW(hwnd, buf, length + 1)
                 if "Chrome" in buf.value:
-                    titles.append(buf.value)
+                    items.append((int(hwnd), buf.value))
         return True
 
     try:
         u32.EnumDesktopWindows(h_def, WNDENUMPROC(_cb), 0)
     finally:
         u32.CloseDesktop(h_def)
-    return titles
+    return items
+
+
+def list_default_desktop_chrome_windows() -> list[str]:
+    return [t for _, t in list_default_desktop_chrome_hwnds_and_titles()]
+
+
+def bring_chrome_window_to_front_on_default_desktop(target_hwnds: list[int]) -> list[str]:
+    """Switch thread desktop to WinSta0\\Default and raise the target Chrome window(s) to the top of Z-order."""
+    if os.name != "nt" or not target_hwnds:
+        return list_default_desktop_chrome_windows()
+    u32 = ctypes.windll.user32
+    k32 = ctypes.windll.kernel32
+    h_orig = u32.GetThreadDesktop(k32.GetCurrentThreadId())
+    h_def = u32.OpenDesktopW("Default", 0, False, 0x01FF)
+    if h_def:
+        try:
+            u32.SetThreadDesktop(h_def)
+            for hwnd in reversed(target_hwnds):
+                if u32.IsIconic(hwnd):
+                    u32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                else:
+                    u32.ShowWindow(hwnd, 5)  # SW_SHOW
+                u32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)  # HWND_TOPMOST
+                u32.SwitchToThisWindow(hwnd, True)
+                u32.SetForegroundWindow(hwnd)
+                u32.BringWindowToTop(hwnd)
+                time.sleep(0.08)
+                u32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)  # HWND_NOTOPMOST
+        finally:
+            if h_orig:
+                u32.SetThreadDesktop(h_orig)
+            u32.CloseDesktop(h_def)
+    return list_default_desktop_chrome_windows()
 
 
 def launch_on_default_desktop(urls: list[str], new_window: bool = False) -> dict:
     chrome = find_chrome()
     caller_desktop = current_desktop_name()
-    before_titles = list_default_desktop_chrome_windows()
+    before_pairs = list_default_desktop_chrome_hwnds_and_titles()
+    before_hwnds = {h for h, _ in before_pairs}
+    before_titles = [t for _, t in before_pairs]
 
     args = [chrome]
     if new_window:
@@ -146,8 +181,17 @@ def launch_on_default_desktop(urls: list[str], new_window: bool = False) -> dict
     if launched_pid is None:
         raise RuntimeError(f"CreateProcessW failed with WinError {k32.GetLastError()}")
 
-    time.sleep(1.2)
-    after_titles = list_default_desktop_chrome_windows()
+    time.sleep(1.3)
+    mid_pairs = list_default_desktop_chrome_hwnds_and_titles()
+    new_hwnds = [h for h, _ in mid_pairs if h not in before_hwnds]
+    if not new_hwnds and mid_pairs:
+        for h, t in mid_pairs:
+            if any(k in t for k in ("Persistent Working List", "Speed Racer", "Mockup")):
+                new_hwnds.append(h)
+                break
+        if not new_hwnds:
+            new_hwnds = [mid_pairs[0][0]]
+    after_titles = bring_chrome_window_to_front_on_default_desktop(new_hwnds)
     return {
         "ok": True,
         "chrome": chrome,
@@ -155,6 +199,7 @@ def launch_on_default_desktop(urls: list[str], new_window: bool = False) -> dict
         "target_desktop": "WinSta0\\Default",
         "launched_pid": launched_pid,
         "urls": urls,
+        "raised_hwnds": new_hwnds,
         "visible_chrome_windows_before": before_titles,
         "visible_chrome_windows_after": after_titles,
     }

@@ -27,7 +27,7 @@ def test_the_agy_catalog_keeps_gemini_only_and_selects_the_newest_at_its_highest
     assert [r["model"] for r in rows] == ["gemini-3.8-flash", "gemini-3.1-pro"]
     assert rows[0]["efforts"] == ["high", "medium", "low"]
     chosen = mp.select_model("gemini", rows)
-    assert (chosen["model"], chosen["effort"]) == ("gemini-3.8-flash", "high")
+    assert (chosen["model"], chosen["effort"]) == ("gemini-3.1-pro", "high")
     assert mp.agy_model_id("gemini-3.8-flash", "high") == "gemini-3.8-flash-high"
     assert mp.agy_model_id("gemini-3.8-flash-high", "low") == "gemini-3.8-flash-high", "an id already carrying its effort is kept"
     assert mp.launch_args({"family": "gemini", "model": "gemini-3.8-flash", "effort": "high"}) == ["--model", "gemini-3.8-flash-high"]

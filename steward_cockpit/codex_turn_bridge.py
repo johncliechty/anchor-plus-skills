@@ -763,7 +763,7 @@ class Broker:
             self.emit({"type": "usage_checkpoint", "session_id": self.thread_id,
                        "invocation_id": invocation_id, "usage": update.get("usage"),
                        "token_status": update.get("token_status", "partial"),
-                       "usage_source": "codex-rollout", "usage_error": update.get("error"),
+                       "usage_source": update.get("usage_source") or "codex-rollout", "usage_error": update.get("error"),
                        "at": datetime.now(timezone.utc).isoformat()})
         submitted = False
         reader_stop = threading.Event()
@@ -997,7 +997,9 @@ class Broker:
         if result.get("is_error") and self._stderr_tail:
             result["stderr_hint"] = classify_stderr(self._stderr_tail)
         poll_usage(force=True)
-        if tracker is not None:
+        if tracker is not None and hasattr(tracker, "finalize_result"):
+            tracker.finalize_result(result, checkpoint, invocation_id)
+        elif tracker is not None:
             result["usage_invocation_id"] = invocation_id
             result["token_status"] = "reported" if result.get("usage") else "partial"
             result["usage_source"] = "codex-cli-final" if result.get("usage") else "codex-rollout"

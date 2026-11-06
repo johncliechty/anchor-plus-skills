@@ -16,7 +16,9 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import subprocess
 import sys
+import time
 import uuid
 from typing import Any
 
@@ -232,6 +234,130 @@ class GeminiNormalizer(EventNormalizer):
         return result
 
 
+def default_brain_dir() -> Path:
+    override = os.environ.get("AGY_BRAIN_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".gemini" / "antigravity-cli" / "brain"
+
+
+class GeminiUsageTracker:
+    """Live step-by-step usage tracker for Gemini (agy) turns via transcript.jsonl."""
+
+    def __init__(self, *, target: str, thread_id: str | None = None,
+                 sessions_root: str | Path | None = None,
+                 min_poll_interval: float = 0.2):
+        self.target = target
+        self.sessions_root = Path(sessions_root) if sessions_root is not None else default_brain_dir()
+        self.min_poll_interval = min_poll_interval
+        self._last_poll = 0.0
+        self.thread_id: str | None = None
+        self._path: Path | None = None
+        self._offset = 0
+        self._base_in = 0
+        self._base_cache = 0
+        self._base_out = 0
+        self._turn_in = 0
+        self._turn_cache = 0
+        self._turn_out = 0
+        self._last_emitted: tuple[int, int, int] = (0, 0, 0)
+        if thread_id:
+            self.bind(thread_id, resumed=True)
+
+    def bind(self, thread_id: str | None, *, resumed: bool = False) -> None:
+        if not thread_id or self.thread_id == thread_id:
+            return
+        try:
+            cid = canonical_conversation_id(thread_id)
+        except BridgeError:
+            return
+        self.thread_id = cid
+        self._path = self.sessions_root / cid / ".system_generated" / "logs" / "transcript.jsonl"
+        if resumed and self._path.is_file():
+            try:
+                raw = self._path.read_bytes()
+                last_nl = raw.rfind(b"\n")
+                self._offset = (last_nl + 1) if last_nl >= 0 else 0
+                for line in raw[:self._offset].splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        obj = json.loads(line.decode("utf-8", errors="replace"))
+                    except Exception:
+                        continue
+                    if isinstance(obj, dict) and obj.get("type") == "PLANNER_RESPONSE":
+                        self._base_in += max(0, int(obj.get("input_tokens") or 0))
+                        self._base_cache += max(0, int(obj.get("cache_read_tokens") or 0))
+                        self._base_out += max(0, int(obj.get("output_tokens") or 0) + int(obj.get("thinking_tokens") or 0))
+            except OSError:
+                self._offset = 0
+
+    def poll(self, *, force: bool = False) -> dict[str, Any] | None:
+        if not self.thread_id or self._path is None:
+            return None
+        now = time.monotonic()
+        if not force and (now - self._last_poll) < self.min_poll_interval:
+            return None
+        self._last_poll = now
+        try:
+            if not self._path.is_file():
+                return None
+            size = self._path.stat().st_size
+            if size <= self._offset:
+                return None
+            with self._path.open("rb") as fh:
+                fh.seek(self._offset)
+                chunk = fh.read(size - self._offset)
+            last_nl = chunk.rfind(b"\n")
+            if last_nl < 0:
+                return None
+            complete = chunk[:last_nl + 1]
+            self._offset += len(complete)
+            for line in complete.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line.decode("utf-8", errors="replace"))
+                except Exception:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if obj.get("type") == "PLANNER_RESPONSE":
+                    in_t = max(0, int(obj.get("input_tokens") or 0))
+                    ca_t = max(0, int(obj.get("cache_read_tokens") or 0))
+                    out_t = max(0, int(obj.get("output_tokens") or 0) + int(obj.get("thinking_tokens") or 0))
+                    self._turn_in += in_t
+                    self._turn_cache += ca_t
+                    self._turn_out += out_t
+        except OSError:
+            return {"usage": None, "token_status": "unavailable", "usage_source": "gemini-transcript", "error": "usage-read-failed"}
+        cur = (self._turn_in, self._turn_cache, self._turn_out)
+        if cur == self._last_emitted or sum(cur) <= 0:
+            return None
+        self._last_emitted = cur
+        return {
+            "usage": {
+                "input_tokens": self._turn_in + self._turn_cache,
+                "cached_input_tokens": self._turn_cache,
+                "output_tokens": self._turn_out,
+            },
+            "token_status": "partial",
+            "usage_source": "gemini-transcript",
+        }
+
+    def finalize_result(self, result: dict[str, Any], checkpoint: dict[str, Any] | None, invocation_id: str) -> None:
+        if checkpoint and isinstance(checkpoint.get("usage"), dict):
+            result["usage_invocation_id"] = invocation_id
+            result["usage"] = dict(checkpoint["usage"])
+            result["token_status"] = "reported" if not result.get("is_error") else "partial"
+            result["usage_source"] = "gemini-transcript"
+            result["session_cumulative_usage"] = {
+                "input_tokens": self._base_in + self._turn_in,
+                "cache_read_input_tokens": self._base_cache + self._turn_cache,
+                "output_tokens": self._base_out + self._turn_out,
+            }
+
+
 class GeminiBroker(Broker):
     provider_label = "Gemini"
 
@@ -240,6 +366,8 @@ class GeminiBroker(Broker):
             kwargs["executable"] = shutil.which("agy.exe" if os.name == "nt" else "agy") or shutil.which("agy")
             if not kwargs["executable"]:
                 raise BridgeError("Subscription Gemini CLI (agy) is not installed")
+        if "usage_tracker_factory" not in kwargs and kwargs.get("popen_factory") in (None, subprocess.Popen):
+            kwargs["usage_tracker_factory"] = GeminiUsageTracker
         super().__init__(**kwargs)
 
     def _validate_launch(self, executable, model, effort, permission_mode, resume):

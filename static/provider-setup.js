@@ -980,9 +980,9 @@
   if($('comms-return'))$('comms-return').onclick=leave;
   if($('btn-comms-save-account'))$('btn-comms-save-account').onclick=async()=>{
     const fb=$('comms-form-feedback');
-    if(fb)fb.textContent='Saving to OS Credential Vault & syncing…';
+    if(fb)fb.textContent='Saving to OS Credential Vault & verifying live connection…';
     try{
-      await api.request('/api/steward/comms',{
+      const saved=await api.request('/api/steward/comms',{
         action:'save_account',
         family:$('comms-family')?$('comms-family').value:'gmail',
         label:$('comms-label')?$('comms-label').value:'',
@@ -996,7 +996,13 @@
       if($('comms-secret'))$('comms-secret').value='';
       const synced=await api.request('/api/steward/comms',{action:'sync_now'});
       renderWave9Comms(synced);
-      if(fb)fb.textContent='✓ Saved account to Windows OS Credential Vault and synced Calendar & Email.';
+      const acc=(synced.accounts||[]).find(a=>a.id===saved.account_id) || {};
+      const notes=[acc.last_imap_note||saved.last_imap_note, acc.last_ics_note||saved.last_ics_note].filter(Boolean).join(' · ');
+      if(acc.status==='auth_error' || (notes && notes.indexOf('IMAP connection note:')===0)){
+        if(fb)fb.textContent='⚠ Saved in OS Vault, but live sign-in reported: '+notes;
+      }else{
+        if(fb)fb.textContent='✓ Saved account to Windows OS Credential Vault and synced Calendar & Email'+(notes?(' ('+notes+')'):'.');
+      }
     }catch(e){
       if(fb)fb.textContent='Error: '+e.message;
     }

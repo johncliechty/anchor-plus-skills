@@ -16,6 +16,8 @@ projection includes terminal-status sessions and stays SAFE.
 """
 import importlib
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -84,6 +86,110 @@ def test_check_rnd_v6_surface_is_green(hc):
     assert ok, f"v6 surface check failed: {detail}"
 
 
+def test_v6_walk_survives_live_registry_writer(hc, monkeypatch):
+    """A dashboard writer saving an earlier ambient registry snapshot right after
+    the v6 planning session starts must not erase psid or break the plan→build
+    auto-advance chain.
+    """
+    import json
+    import session_registry as reg
+    import terminal_session as ts
+
+    hc_mod, tmp_path = hc
+    live = reg.register_session("live-project", "general", label="Before")
+    snapshot = reg.load_sessions()
+    snapshot[live["session_id"]]["label"] = "Dashboard update"
+    writer_env = dict(os.environ, ANCHOR_DATA_DIR=str(tmp_path))
+    original_start = ts.start_session
+    writes = []
+
+    def start_with_live_writer(project_id, lane, *args, **kwargs):
+        result = original_start(project_id, lane, *args, **kwargs)
+        if lane == "planning" and not writes:
+            proc = subprocess.run(
+                [sys.executable, "-c",
+                 "import json,sys,session_registry as r; "
+                 "r._save_sessions(json.loads(sys.stdin.read()))"],
+                input=json.dumps(snapshot), text=True, capture_output=True,
+                env=writer_env, cwd=str(Path(__file__).resolve().parent.parent),
+                timeout=15)
+            assert proc.returncode == 0, proc.stderr
+            writes.append(result["session_id"])
+        return result
+
+    monkeypatch.setattr(ts, "start_session", start_with_live_writer)
+    rnd_env = _rnd_env(hc_mod, tmp_path, "writer")
+    report = hc_mod.Report()
+    try:
+        hc_mod.check_rnd_v6_surface(report, object(), rnd_env)
+        assert writes, "the interleaved registry writer never ran"
+        result = next(c for c in report.checks if c[0] == "R&D v6 surface")
+        assert result[1], result[2]
+        assert os.environ.get("ANCHOR_DATA_DIR") == str(tmp_path)
+        assert reg.load_sessions() == snapshot
+    finally:
+        hc_mod._cleanup_synthetic_rnd(rnd_env, report)
+    assert reg.load_sessions() == snapshot
+
+
+def test_v6_walk_preserves_existing_session_and_pty(hc, monkeypatch):
+    import pty_manager as pty
+    import session_registry as reg
+
+    hc_mod, tmp_path = hc
+    monkeypatch.setenv("ANCHOR_PTY_BACKEND", "stub")
+    sid = pty.start(["stub"])
+    live = reg.register_session(
+        "live-project", "research", session_id=sid,
+        status=reg.STATUS_RUNNING)
+    rnd_env = _rnd_env(hc_mod, tmp_path, "live")
+    rnd_env["created_ids"].append(live["project_id"])
+    report = hc_mod.Report()
+    try:
+        hc_mod.check_rnd_v6_surface(report, object(), rnd_env)
+        assert pty.live_sessions() == [sid]
+        assert reg.get_session(sid) == live
+    finally:
+        rnd_env["created_ids"].remove(live["project_id"])
+        if sid in pty.live_sessions():
+            pty.kill(sid)
+        hc_mod._cleanup_synthetic_rnd(rnd_env, report)
+
+
+@pytest.mark.parametrize("previous_data", [None, "", "configured"])
+def test_v6_data_scope_restored_after_failure(hc, monkeypatch, previous_data):
+    import paths
+    import session_registry as reg
+
+    hc_mod, tmp_path = hc
+    monkeypatch.setattr(paths, "CODE_DIR", tmp_path)
+    if previous_data is None:
+        monkeypatch.delenv("ANCHOR_DATA_DIR")
+    else:
+        if previous_data:
+            previous_data = str(tmp_path)
+        monkeypatch.setenv("ANCHOR_DATA_DIR", previous_data)
+    live = reg.register_session("live-project", "general")
+    observed = []
+
+    def fail_after_entering_scope(folder):
+        observed.append(paths.data_dir())
+        raise RuntimeError("injected v6 setup failure")
+
+    monkeypatch.setattr(hc_mod, "_git_init_repo", fail_after_entering_scope)
+    rnd_env = _rnd_env(hc_mod, tmp_path, "early-error")
+    report = hc_mod.Report()
+    try:
+        hc_mod.check_rnd_v6_surface(report, object(), rnd_env)
+        assert observed and observed[0] != tmp_path
+        assert os.environ.get("ANCHOR_DATA_DIR") == previous_data
+        assert reg.get_session(live["session_id"]) == live
+        result = next(c for c in report.checks if c[0] == "R&D v6 surface")
+        assert not result[1] and "injected v6 setup failure" in result[2]
+    finally:
+        hc_mod._cleanup_synthetic_rnd(rnd_env, report)
+
+
 def test_v6_walk_restores_env(hc, monkeypatch):
     """The walk restores ANCHOR_PTY_BACKEND / WORKTREE_BASE / TERMINAL_SEED /
     ANCHOR_RUNNER_CMD / STUB_STREAMJSON_CLAIMS to their prior values (or absence).
@@ -106,7 +212,7 @@ def test_v6_walk_restores_env(hc, monkeypatch):
     assert os.environ.get("ANCHOR_RUNNER_CMD") == prev_runner
 
 
-def test_v6_walk_never_8777_and_no_orphans(hc):
+def test_v6_walk_never_8777_and_no_orphans(hc, monkeypatch):
     """No preview bound to :8777, no leftover synthetic project, and no live PTY /
     managed session left running after teardown."""
     import preview_server
@@ -118,6 +224,13 @@ def test_v6_walk_never_8777_and_no_orphans(hc):
     report = hc_mod.Report()
     try:
         hc_mod.check_rnd_v6_surface(report, object(), rnd_env)
+        private_roots = [d for d in rnd_env["v3_temp_dirs"]
+                         if Path(d).name.startswith("anchor-hc-v6-data-")]
+        assert len(private_roots) == 1
+        with monkeypatch.context() as private:
+            private.setenv("ANCHOR_DATA_DIR", str(private_roots[0]))
+            assert session_registry.list_sessions() == []
+            assert rnd_registry.list_projects(with_effective_state=False) == []
         for pid in rnd_env["created_ids"]:
             proj = rnd_registry.get_project(pid)
             assert proj is None or "__healthcheck__" in proj.get("name", "")
@@ -146,7 +259,7 @@ def test_v6_walk_torn_down_temp_dirs(hc):
     finally:
         hc_mod._cleanup_synthetic_rnd(rnd_env, report)
     for d in created:
-        if Path(d).name.startswith("anchor-hc-v6-wt-"):
+        if Path(d).name.startswith(("anchor-hc-v6-data-", "anchor-hc-v6-wt-")):
             assert not Path(d).exists(), f"temp dir not cleaned: {d}"
 
 

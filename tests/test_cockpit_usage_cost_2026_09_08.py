@@ -281,3 +281,101 @@ def test_engine_decumulates_resumed_session_turns_and_tracks_cumulative_context(
     assert round(cockpit.estimated_spend, 2) == 15.60
     assert round(cockpit.cumulative_estimated_spend, 2) == 23.40
 
+
+
+def test_live_mid_turn_usage_checkpoint_and_claude_assistant_update_estimated_spend(tmp_path, monkeypatch):
+    monkeypatch.setattr(engine_mod, "STATE_FILE", tmp_path / "state.json")
+    cockpit = engine_mod.Engine(str(tmp_path))
+    cockpit.cli = "gemini"
+    cockpit.session_id = "96622deb-e07f-4ef3-abe2-0819b0f7efe3"
+    cockpit.model_selection = {"cli": "gemini", "model": "gemini-4-argon", "model_served": "gemini-4-argon"}
+    cockpit._record_usage_checkpoint({
+        "type": "usage_checkpoint",
+        "invocation_id": "11111111-2222-4333-8444-555555555555",
+        "session_id": cockpit.session_id,
+        "cli": "gemini",
+        "model": "gemini-4-argon",
+        "usage": {"input_tokens": 100_000, "cached_input_tokens": 50_000, "output_tokens": 10_000},
+    })
+    st = cockpit.state()
+    assert st["tokens"] == 110_000
+    assert st["estimated_spend_usd"] > 0.0
+    assert st["billing_mode"] in ("subscription", "estimated")
+    rollup = steward_routes._usage_rollup_fresh(str(tmp_path))
+    assert rollup["total"]["tokens"] == 110_000
+    assert rollup["total"]["estimated_spend"] > 0.0
+
+    # Also test Claude mid-turn assistant event with message.usage before result arrives
+    claude_dir = tmp_path / "claude_proj"
+    claude_dir.mkdir()
+    c_eng = engine_mod.Engine(str(claude_dir))
+    c_eng.cli = "claude"
+    c_eng.busy = True
+    c_eng.model_selection = {"cli": "claude", "model": "claude-opus-5-5", "model_served": "claude-opus-5-5"}
+    c_eng._handle({
+        "type": "assistant",
+        "message": {
+            "id": "msg-live-1",
+            "model": "claude-opus-5-5",
+            "usage": {"input_tokens": 50_000, "cache_read_input_tokens": 0, "output_tokens": 5_000},
+            "content": [{"type": "text", "text": "Working on it..."}],
+        },
+    }, c_eng.proc)
+    c_st = c_eng.state()
+    assert c_st["tokens"] == 55_000
+    assert c_st["estimated_spend_usd"] > 0.0
+
+
+def test_gemini_usage_tracker_tails_transcript_and_nightly_sync_reconciles(tmp_path, monkeypatch):
+    import json
+    from steward_cockpit.gemini_turn_bridge import GeminiUsageTracker
+    import usage_nightly_sync as uns
+    import paths
+
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("AGY_BRAIN_DIR", str(tmp_path / "brain"))
+    monkeypatch.setattr(engine_mod, "STATE_FILE", tmp_path / "steward-cockpit-state.json")
+
+    conv_id = "96622deb-e07f-4ef3-abe2-0819b0f7efe3"
+    log_dir = tmp_path / "brain" / conv_id / ".system_generated" / "logs"
+    log_dir.mkdir(parents=True)
+    transcript = log_dir / "transcript.jsonl"
+    transcript.write_text(
+        json.dumps({"step_index": 0, "type": "USER_INPUT", "content": "Hello"}) + "\n",
+        encoding="utf-8",
+    )
+
+    tracker = GeminiUsageTracker(target="gemini", thread_id=conv_id, sessions_root=tmp_path / "brain", min_poll_interval=0.0)
+    # Append a PLANNER_RESPONSE step mid-turn
+    with transcript.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({
+            "step_index": 1,
+            "type": "PLANNER_RESPONSE",
+            "created_at": "2026-11-03T20:00:00Z",
+            "input_tokens": 40_000,
+            "cache_read_tokens": 10_000,
+            "output_tokens": 2_000,
+        }) + "\n")
+
+    upd = tracker.poll()
+    assert upd is not None
+    assert upd["usage_source"] == "gemini-transcript"
+    assert upd["usage"]["input_tokens"] == 50_000
+    assert upd["usage"]["cached_input_tokens"] == 10_000
+    assert upd["usage"]["output_tokens"] == 2_000
+
+    # Test nightly sync reconciling a second un-ledgered turn from transcript.jsonl
+    skey = str(tmp_path / "mba_proj")
+    engine_mod._update_state(skey, {
+        "cli": "gemini",
+        "session_id": conv_id,
+        "model_policy": {"cli": "gemini", "model": "gemini-4-argon", "model_served": "gemini-4-argon"},
+        "usage": {"turns": 0, "unpriced_turns": 0, "tokens": 0, "estimated_spend": 0.0},
+    })
+    res = uns.sync_all_usage(write_snapshot=True)
+    assert res["ok"] is True
+    assert res["ledger_entries_added"] >= 1
+    st_after = engine_mod._read_all_state()[skey]["usage"]
+    assert st_after["tokens"] == 52_000
+    assert st_after["estimated_spend"] > 0.0
+    assert (paths.data_dir() / ".anchor" / "usage_snapshots" / "latest.json").is_file()

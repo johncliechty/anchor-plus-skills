@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cave of Wonders — Chief-of-Staff Next-Effort &amp; Parable-of-the-Oranges Mockups</title>
+<style>
+  :root {
+    --bg: #0a0e16;
+    --panel: #111826;
+    --panel-2: #162032;
+    --panel-3: #1c2940;
+    --border: #26354d;
+    --border-hi: #3d567a;
+    --text: #e6edf3;
+    --muted: #8b9bb4;
+    --emerald: #10b981;
+    --emerald-bg: rgba(16, 185, 129, 0.13);
+    --amber: #f59e0b;
+    --amber-bg: rgba(245, 158, 11, 0.14);
+    --orange: #f97316;
+    --orange-bg: rgba(249, 115, 22, 0.15);
+    --red: #f43f5e;
+    --red-bg: rgba(244, 63, 94, 0.15);
+    --sky: #38bdf8;
+    --sky-bg: rgba(56, 189, 248, 0.13);
+    --purple: #a855f7;
+    --purple-bg: rgba(168, 85, 247, 0.14);
+    --pink: #ec4899;
+    --pink-bg: rgba(236, 72, 153, 0.14);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px 22px 70px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  a { color: var(--sky); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Sticky Top Switcher */
+  .top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 18px;
+    margin: -16px -22px 18px;
+    background: rgba(10, 14, 22, 0.95);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .top-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .top-badge {
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--orange-bg);
+    color: #fdba74;
+    border: 1px solid rgba(249, 115, 22, 0.45);
+  }
+  .nav-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .nav-tab {
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .nav-tab:hover { border-color: var(--sky); color: #fff; }
+  .nav-tab.active {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: var(--sky);
+    color: #bae6fd;
+  }
+  .nav-tab.rec {
+    border-color: rgba(16, 185, 129, 0.65);
+    background: rgba(16, 185, 129, 0.16);
+    color: #a7f3d0;
+  }
+
+  /* Philosophy / Vetting Banner */
+  .philosophy-banner {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .phil-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 13px;
+  }
+  .phil-card h4 {
+    margin: 0 0 4px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .phil-card p {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.38;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .pill.red { background: var(--red-bg); color: #fda4af; border: 1px solid rgba(244,63,94,0.4); }
+  .pill.orange { background: var(--orange-bg); color: #fdba74; border: 1px solid rgba(249,115,22,0.45); }
+  .pill.amber { background: var(--amber-bg); color: #fcd34d; border: 1px solid rgba(245,158,11,0.4); }
+  .pill.emerald { background: var(--emerald-bg); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.4); }
+  .pill.sky { background: var(--sky-bg); color: #7dd3fc; border: 1px solid rgba(56,189,248,0.4); }
+  .pill.purple { background: var(--purple-bg); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.4); }
+  .pill.pink { background: var(--pink-bg); color: #f9a8d4; border: 1px solid rgba(236,72,153,0.4); }
+
+  /* Mockup Section Frame */
+  .mockup-section {
+    margin-bottom: 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #0d131f;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.48);
+  }
+  .mockup-section.recommended {
+    border: 2px solid var(--emerald);
+  }
+  .mockup-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 18px;
+    background: linear-gradient(90deg, rgba(22,32,50,0.96), rgba(15,23,36,0.96));
+    border-bottom: 1px solid var(--border);
+  }
+  .mockup-header h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mockup-sub {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .cave-shell {
+    padding: 14px 16px 18px;
+  }
+
+  /* Break-Between-Cockpits Mode & Q1->Q2 Meter Strip */
+  .cos-command-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 13px;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, rgba(249,115,22,0.10), rgba(56,189,248,0.08), rgba(16,185,129,0.11));
+    border: 1px solid var(--border-hi);
+  }
+  .break-selector {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .break-label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #fdba74;
+    margin-right: 4px;
+  }
+  .break-btn {
+    padding: 4px 9px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: rgba(17, 24, 38, 0.88);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.14s;
+  }
+  .break-btn:hover {
+    border-color: var(--sky);
+    color: #fff;
+  }
+  .break-btn.active {
+    background: rgba(249, 115, 22, 0.22);
+    border-color: var(--orange);
+    color: #ffedd5;
+  }
+  .q2-meter-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11.5px;
+  }
+  .q2-progress-track {
+    width: 150px;
+    height: 8px;
+    border-radius: 999px;
+    background: #1e293b;
+    overflow: hidden;
+    display: flex;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .q2-seg-urgent { background: var(--red); height: 100%; transition: width 0.25s; }
+  .q2-seg-soon { background: var(--amber); height: 100%; transition: width 0.25s; }
+  .q2-seg-deep { background: var(--emerald); height: 100%; transition: width 0.25s; }
+
+  /* Asymmetric Horizon Strip (Today Wide, This Week Medium, Month & Star Chart Compact Expandable) */
+  .horizon-strip {
+    display: grid;
+    grid-template-columns: 2.3fr 1.45fr 0.85fr 0.9fr;
+    gap: 10px;
+    align-items: stretch;
+    transition: all 0.2s ease;
+  }
+  .horizon-strip.expanded-week {
+    grid-template-columns: 1.35fr 2.4fr 0.8fr 0.85fr;
+  }
+  .horizon-strip.expanded-month {
+    grid-template-columns: 1.35fr 1.1fr 2.15fr 0.85fr;
+  }
+  .horizon-strip.expanded-quarter {
+    grid-template-columns: 1.35fr 1.1fr 0.8fr 2.2fr;
+  }
+  .hz-col {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .hz-col.hz-today {
+    background: linear-gradient(180deg, rgba(22, 32, 50, 0.95), rgba(15, 22, 35, 0.95));
+    border-color: var(--border-hi);
+  }
+  .hz-col.hz-focused {
+    border-color: var(--sky);
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+  }
+  .hz-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    cursor: pointer;
+  }
+  .hz-title {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hz-expand-btn {
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--muted);
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .hz-expand-btn:hover { color: #fff; border-color: var(--sky); }
+
+  /* Effort Cards (Core Unit of the Chief of Staff) */
+  .effort-card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--sky);
+    border-radius: 9px;
+    padding: 9px 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    transition: transform 0.12s, border-color 0.12s, opacity 0.2s;
+  }
+  .effort-card:hover {
+    border-color: var(--border-hi);
+  }
+  .effort-card.q1-urgent {
+    border-left-color: var(--red);
+    background: linear-gradient(90deg, rgba(244, 63, 94, 0.09), rgba(22, 32, 50, 0.95));
+  }
+  .effort-card.soon-urgent {
+    border-left-color: var(--amber);
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.09), rgba(22, 32, 50, 0.95));
+  }
+  .effort-card.family-rel {
+    border-left-color: var(--pink);
+    background: linear-gradient(90deg, rgba(236, 72, 153, 0.09), rgba(22, 32, 50, 0.95));
+  }
+  .effort-card.q2-deep {
+    border-left-color: var(--emerald);
+    background: linear-gradient(90deg, rgba(16, 185, 129, 0.10), rgba(22, 32, 50, 0.95));
+  }
+  .effort-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .effort-name {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #f8fafc;
+    cursor: pointer;
+  }
+  .effort-name:hover { color: var(--sky); text-decoration: underline; }
+  .effort-driver {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .effort-driver strong { color: #cbd5e1; }
+
+  /* Parable of the Oranges Pre-Stage Strip inside an Effort Card */
+  .oranges-box {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: rgba(249, 115, 22, 0.10);
+    border: 1px dashed rgba(249, 115, 22, 0.42);
+    font-size: 11px;
+    color: #fed7aa;
+  }
+  .oranges-box.q2-oranges {
+    background: rgba(16, 185, 129, 0.10);
+    border-color: rgba(16, 185, 129, 0.42);
+    color: #a7f3d0;
+  }
+
+  /* Action Buttons on Effort Cards */
+  .effort-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+  }
+  .act-btn {
+    padding: 3px 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.12s;
+  }
+  .act-btn:hover { border-color: var(--sky); color: #fff; }
+  .act-btn.cockpit-open {
+    background: rgba(56, 189, 248, 0.16);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #bae6fd;
+  }
+  .act-btn.cockpit-create {
+    background: rgba(168, 85, 247, 0.16);
+    border-color: rgba(168, 85, 247, 0.5);
+    color: #e9d5ff;
+  }
+  .act-btn.skill-prestage {
+    background: rgba(249, 115, 22, 0.16);
+    border-color: rgba(249, 115, 22, 0.5);
+    color: #fed7aa;
+  }
+  .act-btn.done-unlock {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.45);
+    color: #a7f3d0;
+  }
+
+  /* Compact Horizon Summary Items (when Month/Quarter is collapsed) */
+  .compact-effort {
+    padding: 7px 9px;
+    border-radius: 7px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--emerald);
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.12s;
+  }
+  .compact-effort:hover { border-color: var(--sky); }
+  .compact-effort-title {
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .compact-effort-meta {
+    font-size: 10.5px;
+    color: var(--muted);
+  }
+  .detail-only { display: none; }
+  .hz-col.is-wide .detail-only { display: block; }
+  .hz-col.is-wide .compact-only { display: none; }
+
+  /* Mockup 2: 3-Lane Funnel Grid */
+  .funnel-grid {
+    display: grid;
+    grid-template-columns: 1.15fr 1.15fr 1.25fr 0.75fr;
+    gap: 10px;
+  }
+
+  /* Mockup 3: Break-Between-Cockpits Dispatcher Deck */
+  .dispatcher-grid {
+    display: grid;
+    grid-template-columns: 1.45fr 1.2fr 1.35fr;
+    gap: 12px;
+  }
+
+  /* Context Bar showing lower Cave sections remain untouched */
+  .cave-context-stub {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(15, 23, 38, 0.65);
+    border: 1px dashed var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Modal for Effort / Skill Pre-Staging Inspection */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 8, 15, 0.78);
+    backdrop-filter: blur(5px);
+    z-index: 300;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-card {
+    width: 100%;
+    max-width: 680px;
+    background: var(--panel);
+    border: 1px solid var(--border-hi);
+    border-radius: 14px;
+    padding: 18px 20px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.65);
+  }
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .modal-head h3 { margin: 0; font-size: 15px; }
+  .skill-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 10px 0;
+  }
+  .toast-banner {
+    position: fixed;
+    bottom: 18px;
+    right: 22px;
+    z-index: 400;
+    padding: 10px 16px;
+    border-radius: 9px;
+    background: #064e3b;
+    border: 1px solid var(--emerald);
+    color: #ecfdf5;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.5);
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="top-title">
+    <span>🧞‍♂️ Cave of Wonders × Star Chart — Chief-of-Staff Next-Effort Engine</span>
+    <span class="top-badge">🍊 Parable of the Oranges · Q1 → Q2 Deep-Work Unlocker</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab rec active" onclick="showView('4')" id="tab-4">★ Mockup 4 (Recommended Hybrid)</button>
+    <button class="nav-tab" onclick="showView('1')" id="tab-1">Mockup 1 (Asymmetric Horizon Strip)</button>
+    <button class="nav-tab" onclick="showView('2')" id="tab-2">Mockup 2 (Urgent → Soon → Q2 Deep-Work Funnel)</button>
+    <button class="nav-tab" onclick="showView('3')" id="tab-3">Mockup 3 (Break-Between-Cockpits Skill Deck)</button>
+    <button class="nav-tab" onclick="showView('all')" id="tab-all">Compare All 4 Side-by-Side</button>
+  </div>
+</div>
+
+<!-- Philosophy & Gandalf / researchPrime Vetting Summary -->
+<div class="philosophy-banner">
+  <div class="phil-card">
+    <h4>
+      <span>1. Effort Recommender — Never a Duplicate Inbox/Calendar</span>
+      <span class="pill orange">Core Rule</span>
+    </h4>
+    <p>
+      Raw emails and calendar grids live in their dedicated sections below. The Chief-of-Staff bar surfaces <strong>which Effort to work on next</strong> (especially during breaks between AI cockpits), uniting <strong>Cave Steward</strong> (calendar/email urgency + family radar) and <strong>Star Chart Steward</strong> (Quadrant II high-impact goals).
+    </p>
+  </div>
+  <div class="phil-card">
+    <h4>
+      <span>2. Clear Urgent (Q1) to Unlock Deep Work (Q2)</span>
+      <span class="pill emerald">Covey Flow</span>
+    </h4>
+    <p>
+      Balances <strong>🔴 Urgent &amp; Important</strong> (1:00 PM MIT class, Family Trust signings) and <strong>🟠 Soon-to-Be Urgent</strong> (Jane Team Teach, Family Trips/Birthdays, Nov 5 OpenAI Grant) so clearing them unlocks protected hours for <strong>🟢 Important, Not Urgent</strong> Star Chart value creation.
+    </p>
+  </div>
+  <div class="phil-card">
+    <h4>
+      <span>3. Parable of the Oranges: Pre-Staged AI Cockpits</span>
+      <span class="pill sky">Proactive Prep</span>
+    </h4>
+    <p>
+      Before you even click an effort, the Steward pre-runs or stages Foundry skills (<strong>researchPrime</strong>, <strong>Superjump</strong>, <strong>Gandalf</strong>, <strong>Einstein</strong>, <strong>Chekhov</strong>, <strong>Legal-Beagle</strong>, <strong>Financial-Analyst</strong>) and offers 1-click <strong>↗ Open AI Cockpit</strong> or <strong>+ Create AI Cockpit</strong>.
+    </p>
+  </div>
+  <div class="phil-card">
+    <h4>
+      <span>4. Dynamic &amp; Never Stuck (Live Cockpit Rotation)</span>
+      <span class="pill purple">Anti-Stagnation</span>
+    </h4>
+    <p>
+      Reads live AI Cockpit state (`🟢 2 Running`). While a cockpit is running autonomously, the bar pivots to suggest <strong>15m/30m break efforts</strong> or pre-staging the next cockpit. Marking an item cleared immediately updates the <strong>Q2 Deep-Work Unlock Meter</strong>.
+    </p>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- MOCKUP 4 (RECOMMENDED HYBRID)                                         -->
+<!-- ===================================================================== -->
+<section class="mockup-section recommended" id="view-4">
+  <div class="mockup-header">
+    <div>
+      <h2>
+        <span class="pill emerald">★ Recommended — Mockup 4</span>
+        <span>Asymmetric Horizon Strip + "Break-Between-Cockpits" Filter + Parable-of-the-Oranges Skill Pre-Stage</span>
+      </h2>
+      <div class="mockup-sub">
+        <strong>Today</strong> is widest (44%), <strong>This Week</strong> is medium (28%), and <strong>This Month</strong> &amp; <strong>Quarter / Star Chart Q2</strong> are compact expandable tiles (click any horizon header to expand it wide). Every card is an actionable <strong>Effort</strong> with pre-staged Foundry skills and 1-click Cockpit open/create.
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span class="pill sky">🟢 2 AI Cockpits Running Now</span>
+      <span class="pill orange">🍊 6 Skills Pre-Staged</span>
+    </div>
+  </div>
+
+  <div class="cave-shell">
+    <!-- Break-Between-Cockpits Command & Q1->Q2 Unlock Meter -->
+    <div class="cos-command-bar">
+      <div class="break-selector">
+        <span class="break-label">🍊 Break Between Cockpits:</span>
+        <button class="break-btn active" onclick="filterBreak('m4', 'all', this)">All Next Efforts (9)</button>
+        <button class="break-btn" onclick="filterBreak('m4', '15m', this)">⚡ 15m Break (Quick Clear / Triage)</button>
+        <button class="break-btn" onclick="filterBreak('m4', '30m', this)">🍊 30m Break (Pre-Staged Cockpit Prep)</button>
+        <button class="break-btn" onclick="filterBreak('m4', 'deep', this)">🧠 60m+ Q2 Deep Work (Star Chart Value)</button>
+        <button class="break-btn" onclick="filterBreak('m4', 'family', this)">🏠 Family &amp; Relationships Radar</button>
+      </div>
+      <div class="q2-meter-box">
+        <span><strong>Q1 → Q2 Deep-Work Unlock:</strong> <span id="m4-unlock-label">Clear 2 Urgent efforts → Unlocks <strong>2.5 hrs</strong> uninterrupted Q2 Deep Work (2:15–4:45 PM)</span></span>
+        <div class="q2-progress-track" title="Red = Urgent Now | Amber = Soon-Urgent | Green = Unlocked Q2 Deep Work">
+          <div class="q2-seg-urgent" id="m4-seg-urg" style="width:28%"></div>
+          <div class="q2-seg-soon" id="m4-seg-soon" style="width:27%"></div>
+          <div class="q2-seg-deep" id="m4-seg-deep" style="width:45%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Asymmetric 4-Horizon Strip -->
+    <div class="horizon-strip" id="m4-strip">
+
+      <!-- COLUMN 1: TODAY (WIDEST) -->
+      <div class="hz-col hz-today is-wide" id="m4-col-today">
+        <div class="hz-head" onclick="expandHorizon('m4', 'today')">
+          <div class="hz-title">
+            <span>🔥 Today (Mon Nov 2) — Clear Urgent → Enter Q2 Deep Work</span>
+            <span class="pill red">2 Urgent</span>
+            <span class="pill emerald">1 Q2 Deep Slot</span>
+          </div>
+          <button class="hz-expand-btn">Widest (Default)</button>
+        </div>
+
+        <!-- Effort 1: Urgent Today Class -->
+        <div class="effort-card q1-urgent" data-break="15m 30m" id="card-m4-mit">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('AI Club — MIT Lectures (1:00 PM Class Today)', 'Urgent & Important (Q1)', 'Calendar: 1:00 PM–2:15 PM AI Club MIT Lectures + Meg email on slides/room prep', 'Einstein + Steward pre-built the final slide review checklist, worked example verification, and printable PDF handout.', 'Open AI Cockpit: AI Club · MIT Lectures')">
+              1. AI Club — MIT Lectures: Finalize 1:00 PM Slides &amp; Handout
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <span class="pill red">Urgent · 1:00 PM</span>
+              <span class="pill sky">⚡ 20m Break</span>
+            </div>
+          </div>
+          <div class="effort-driver">
+            <strong>Driver:</strong> Calendar <code>1:00 PM MKTG 590 / AI Club</code> + Meg's email thread. Clearing this before 12:00 PM removes today's #1 time-critical blocker.
+          </div>
+          <div class="oranges-box">
+            <span>🍊 <strong>Parable of the Oranges (Pre-Staged):</strong> <code>Einstein</code> verified slide equations &amp; staged the worked-example handout inside the cockpit.</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Cockpit: AI Club — MIT Lectures (with pre-staged Einstein deck)')">↗ Open AI Cockpit (AI Club)</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Launched Einstein + Gandalf quick slide stress-test in AI Club cockpit')">🎓 Run Einstein Slide Check</button>
+            <button class="act-btn done-unlock" onclick="markEffortCleared('card-m4-mit', 'm4')">✓ Mark Cleared (+45m Q2 Deep Work)</button>
+            <button class="act-btn" onclick="rotateEffort('card-m4-mit')">⏭ Rotate / Next Suggestion</button>
+          </div>
+        </div>
+
+        <!-- Effort 2: Urgent Family Trusts -->
+        <div class="effort-card q1-urgent" data-break="15m 30m family" id="card-m4-trusts">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('Family Trusts — Sliding Rock Executed & Kathleen Bradshaw Valuation / IGT Actions', 'Urgent & Important (Family & Legal)', 'Gmail: Sliding Rock Trust signed via HelloSign (20:44 UTC) + 3 Kathleen Bradshaw emails today (Valuation/Transfer Dates, Fri Nov 13 Invite, IGT Texas Banking, JBJ/Calder Items 1–6) + David Risbey Partnership Consent', 'Legal-Beagle + Financial-Analyst pre-staged a unified response packet & checklist of JBJ/Calder Items 1–6 so you can reply in one 15-minute break.', 'Open AI Cockpit: Family Trusts')">
+              2. Family Trusts: Kathleen Bradshaw Valuation/IGT Replies &amp; Sliding Rock Filing
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <span class="pill red">Urgent · Family/Legal</span>
+              <span class="pill pink">⚡ 15m Break</span>
+            </div>
+          </div>
+          <div class="effort-driver">
+            <strong>Driver:</strong> 3 emails today from <strong>Kathleen Bradshaw</strong> (Valuation/Transfer Dates, IGT Texas Banking, JBJ/Calder Items 1–6) + <strong>HelloSign</strong> executed <em>Sliding Rock Trust</em> + <strong>David Risbey</strong> partnership consent.
+          </div>
+          <div class="oranges-box">
+            <span>🍊 <strong>Parable of the Oranges (Pre-Staged):</strong> <code>Legal-Beagle</code> + <code>Financial-Analyst</code> synthesized all 4 trust threads into 1 decision checklist + 3 draft replies.</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Cockpit: Family Trusts (with Legal-Beagle & Financial-Analyst brief)')">↗ Open AI Cockpit (Family Trusts)</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged Legal-Beagle review of David Risbey Partnership Consent & IGT Banking')">⚖️ Pre-Stage Legal-Beagle + Financial-Analyst</button>
+            <button class="act-btn done-unlock" onclick="markEffortCleared('card-m4-trusts', 'm4')">✓ Mark Cleared (+30m Q2 Deep Work)</button>
+            <button class="act-btn" onclick="rotateEffort('card-m4-trusts')">⏭ Rotate / Next Suggestion</button>
+          </div>
+        </div>
+
+        <!-- Effort 3: Today's Unlocked Q2 Deep Work Slot -->
+        <div class="effort-card q2-deep" data-break="deep" id="card-m4-moe">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('Star Chart Q2 Deep Work — Empirical Demand (MoE Paper 1) & The Collapse of Marketing', 'Important, Not Urgent (Quadrant II — High Impact)', 'Star Chart Goal: Marketing Papers (Target Nov 15) — 2:15 PM–4:45 PM Protected Deep-Work Window after MIT Lecture', 'researchPrime + Literature-Review + Gandalf pre-staged the identification strategy critique and updated citation table so you can write immediately.', 'Open AI Cockpit: Marketing Papers')">
+              3. [2:15 PM Protected Q2 Deep Work] Empirical Demand (MoE Paper 1) / Collapse of Marketing
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;">
+              <span class="pill emerald">Star Chart Q2 · Deep Work</span>
+              <span class="pill purple">🧠 90m+ Slot</span>
+            </div>
+          </div>
+          <div class="effort-driver">
+            <strong>Driver:</strong> <strong>Star Chart Steward</strong> (<em>Marketing Papers</em> goal · Nov 15 target). Protected 2:15–4:45 PM window unlocked once the 2 Urgent items above are cleared.
+          </div>
+          <div class="oranges-box q2-oranges">
+            <span>🍊 <strong>Parable of the Oranges (Pre-Staged):</strong> <code>researchPrime</code> + <code>Gandalf</code> pre-staged the empirical identification critique &amp; literature matrix in the cockpit.</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Cockpit: Empirical Demand (MoE Paper 1) — Q2 Deep Work ready')">↗ Open AI Cockpit (Marketing Papers)</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched researchPrime + Gandalf to pre-verify Section 3 identification claims')">🔬 Pre-Stage researchPrime + Gandalf</button>
+            <button class="act-btn" onclick="rotateEffort('card-m4-moe')">⏭ Rotate Q2 Focus (Switch to HNF Paper 1 / Spring 2027 AI Class)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLUMN 2: THIS WEEK (MEDIUM WIDTH — SOON-TO-BE URGENT + FAMILY/RELATIONSHIPS) -->
+      <div class="hz-col is-wide" id="m4-col-week">
+        <div class="hz-head" onclick="expandHorizon('m4', 'week')">
+          <div class="hz-title">
+            <span>🟠 This Week (Nov 3–8) — Soon-Urgent &amp; Family</span>
+            <span class="pill amber">4 Efforts</span>
+          </div>
+          <button class="hz-expand-btn">⤢ Focus Week</button>
+        </div>
+
+        <!-- Effort 4: Tomorrow 8:00 AM MBA Teaching -->
+        <div class="effort-card soon-urgent" data-break="30m">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('MBA Teaching AI (BA 815) — Tomorrow 8:00 AM–12:30 PM Session', 'Soon-to-Be Urgent (Tomorrow Morning)', 'Calendar: Tue Nov 3, 8:00 AM–12:30 PM BA 815 + Star Chart: Lecture 6 (Simple Linear Regression) & AI Supplement 5', 'Einstein pre-staged the Lecture 6 student notebook check and R/Python worked examples.', 'Open AI Cockpit: MBA Teaching AI')">
+              Tue 8:00 AM: MBA Teaching AI (BA 815) — Lecture 6 &amp; AI Supp 5
+            </div>
+            <span class="pill amber">Tomorrow 8 AM</span>
+          </div>
+          <div class="effort-driver">
+            <strong>Driver:</strong> 4.5-hr MBA teaching block tomorrow morning. <code>Einstein</code> pre-staged Lecture 6 regression walkthrough.
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Cockpit: MBA Teaching AI (Lecture 6 & AI Supp 5)')">↗ Open AI Cockpit (MBA Teaching)</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Einstein pre-staged BA 815 Lecture 6 worked examples')">🎓 Einstein Prep Ready</button>
+          </div>
+        </div>
+
+        <!-- Effort 5: Family & Relationship — Sunday Team Teach with Jane + Wed Youth Night -->
+        <div class="effort-card family-rel" data-break="15m 30m family">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('Church Team Teach with Jane (Sun Nov 8) & Wed Youth Night (Nov 4)', 'Family, Relationships & Service (Get Ahead)', 'Calendar: Wed Nov 4 7:00 PM Youth Night (Deacon Lesson) + Sun Nov 8 9:00 AM Church Team Teach with Jane', 'Einstein + Superjump pre-staged a 2-page joint lesson outline and 3 discussion prompts so you and Jane can review it calmly mid-week.', 'Create / Open Prep Cockpit: Team Teach with Jane')">
+              🏠 Family &amp; Jane: Sun Nov 8 Team Teach w/ Jane + Wed Youth Night
+            </div>
+            <span class="pill pink">Family · Wed &amp; Sun</span>
+          </div>
+          <div class="effort-driver">
+            <strong>Driver:</strong> Calendar <code>Wed 7 PM Youth Night</code> + <code>Sun 9 AM Team Teach with Jane</code>. Prep now in a 15m break so the weekend is stress-free.
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created & opened AI Cockpit: Church Team Teach with Jane (pre-loaded with lesson outline)')">+ Create / Open Cockpit (Jane Team Teach)</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged Superjump + Einstein object lessons for Team Teach with Jane')">🍊 Pre-Stage Einstein + Superjump Outline</button>
+          </div>
+        </div>
+
+        <!-- Effort 6: OpenAI Grant (Due Thu Nov 5) -->
+        <div class="effort-card soon-urgent" data-break="30m deep">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('OpenAI Academic Research Program Grant (Due Thu Nov 5)', 'Soon-to-Be Urgent (72h Lead Time)', 'Star Chart: Other Grant Opportunities — OpenAI Academic Research Program Grant due 2026-11-05', 'researchPrime + Gandalf pre-staged the draft proposal framing & compute budget from your Normalizing Flows & GWL papers.', 'Create / Open Grant AI Cockpit')">
+              Thu Nov 5 Deadline: OpenAI Academic Research Grant Application
+            </div>
+            <span class="pill amber">Due Thu Nov 5</span>
+          </div>
+          <div class="effort-driver">
+            <strong>Driver:</strong> Star Chart deadline in 3 days. <code>researchPrime</code> + <code>Gandalf</code> pre-staged proposal narrative &amp; compute budget.
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created & opened AI Cockpit: OpenAI Academic Grant (with researchPrime draft)')">+ Create / Open Grant Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Launched Gandalf review on OpenAI Grant draft narrative')">🧙 Pre-Stage Gandalf + researchPrime</button>
+          </div>
+        </div>
+
+        <!-- Effort 7: Quick Break Commercial Clear (NextGen Billing) -->
+        <div class="effort-card soon-urgent" data-break="15m">
+          <div class="effort-top">
+            <div class="effort-name" onclick="openEffortModal('Stop NextGen Google Workspace Paid Status', 'Quick 10-Min Break Task (Commercial Hygiene)', 'Gmail: Google Workspace invoice for nextgen-np.com arrived Nov 1 + domains/commercial.md priority task', 'Steward pre-staged the exact admin console cancellation steps so you can knock it out in 5 minutes between cockpits.', 'Open Commercial Desk Cockpit')">
+              ⚡ 10m Break Win: Stop NextGen Google Account Paid Status
+            </div>
+            <span class="pill sky">⚡ 10m Break</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Commercial Cockpit with NextGen cancellation checklist')">↗ Open Commercial Cockpit</button>
+            <button class="act-btn done-unlock" onclick="this.closest('.effort-card').style.opacity='0.4';triggerAction('Marked NextGen Google Account task done!')">✓ Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLUMN 3: THIS MONTH (COMPACT EXPANDABLE — FAMILY TRIPS/GIFTS + NOVEMBER MILESTONES) -->
+      <div class="hz-col" id="m4-col-month">
+        <div class="hz-head" onclick="expandHorizon('m4', 'month')">
+          <div class="hz-title">
+            <span>📅 This Month (Nov)</span>
+            <span class="pill pink">3</span>
+          </div>
+          <button class="hz-expand-btn">⤢ Expand</button>
+        </div>
+
+        <div class="compact-effort" data-break="15m 30m family" onclick="expandHorizon('m4', 'month')">
+          <div class="compact-effort-title">
+            <span>🎁 Family Trips &amp; Birthday Presents Radar</span>
+            <span class="pill pink">Family</span>
+          </div>
+          <div class="compact-effort-meta">
+            🍊 <code>Superjump</code> gift &amp; holiday travel options pre-staged before Nov cutoffs.
+          </div>
+          <div class="detail-only" style="margin-top:6px;">
+            <div class="oranges-box">
+              <span>🍊 Pre-staged 3 gift ideas per upcoming family birthday + Thanksgiving/holiday itinerary holds (`domains/family.md`).</span>
+            </div>
+            <div class="effort-actions">
+              <button class="act-btn cockpit-create" onclick="event.stopPropagation();triggerAction('Created Family Trips & Birthday Presents AI Cockpit with Superjump shortlist')">+ Create Family Trip &amp; Gift Cockpit</button>
+              <button class="act-btn skill-prestage" onclick="event.stopPropagation();triggerAction('Dispatched Superjump to generate curated family gift & trip options')">🚀 Run Superjump Gift/Trip Finder</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="compact-effort" data-break="deep" onclick="expandHorizon('m4', 'month')">
+          <div class="compact-effort-title">
+            <span>🧮 Normalizing Flows — Paper 1 (Nov 22)</span>
+            <span class="pill emerald">🟢 Running</span>
+          </div>
+          <div class="compact-effort-meta">
+            🍊 <code>Ramanujan</code> + <code>researchPrime</code> proof &amp; citation pack ready.
+          </div>
+          <div class="detail-only" style="margin-top:6px;">
+            <div class="effort-actions">
+              <button class="act-btn cockpit-open" onclick="event.stopPropagation();triggerAction('Opened AI Cockpit: Hierarchical Normalizing Flows — Paper 1')">↗ Open AI Cockpit (Normalizing Flows)</button>
+              <button class="act-btn skill-prestage" onclick="event.stopPropagation();triggerAction('Pre-staged Ramanujan Jacobian bound certifier')">🧮 Pre-Stage Ramanujan</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="compact-effort" data-break="30m" onclick="expandHorizon('m4', 'month')">
+          <div class="compact-effort-title">
+            <span>💼 OpX Redo &amp; ADIO Road Show (Nov 24)</span>
+            <span class="pill amber">Nov 24</span>
+          </div>
+          <div class="compact-effort-meta">
+            🍊 <code>Financial-Analyst</code> + <code>Gandalf</code> pitch stress-test pre-staged.
+          </div>
+          <div class="detail-only" style="margin-top:6px;">
+            <div class="effort-actions">
+              <button class="act-btn cockpit-open" onclick="event.stopPropagation();triggerAction('Opened Commercial AI Cockpit: OpX & ADIO Road Show')">↗ Open Cockpit (OpX / ADIO)</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COLUMN 4: QUARTER / STAR CHART Q2 DEEP WORK (COMPACT EXPANDABLE) -->
+      <div class="hz-col" id="m4-col-quarter">
+        <div class="hz-head" onclick="expandHorizon('m4', 'quarter')">
+          <div class="hz-title">
+            <span>🌟 Star Chart Q2 Goals</span>
+            <span class="pill emerald">3</span>
+          </div>
+          <button class="hz-expand-btn">⤢ Expand</button>
+        </div>
+
+        <div class="compact-effort" data-break="deep" onclick="expandHorizon('m4', 'quarter')">
+          <div class="compact-effort-title">
+            <span>📖 Artificial Magi (Book 1) &amp; BrightHeart v2</span>
+            <span class="pill purple">Q2 Writing</span>
+          </div>
+          <div class="compact-effort-meta">
+            🍊 <code>Chekhov</code> story ledger + <code>Superjump</code> Act II beats ready.
+          </div>
+          <div class="detail-only" style="margin-top:6px;">
+            <div class="effort-actions">
+              <button class="act-btn cockpit-open" onclick="event.stopPropagation();triggerAction('Opened AI Cockpit: Artificial Magi & Chronicles of the Dragon-Kept')">↗ Open Writing AI Cockpit</button>
+              <button class="act-btn skill-prestage" onclick="event.stopPropagation();triggerAction('Pre-staged Chekhov continuity check for Artificial Magi Book 1')">🎭 Pre-Stage Chekhov</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="compact-effort" data-break="deep" onclick="expandHorizon('m4', 'quarter')">
+          <div class="compact-effort-title">
+            <span>🧬 3D Parametric Phenomics (Keith Cheng)</span>
+            <span class="pill emerald">Q2 Research</span>
+          </div>
+          <div class="compact-effort-meta">
+            🍊 <code>Superjump</code> + <code>Anvil</code> spline representation prep ready.
+          </div>
+          <div class="detail-only" style="margin-top:6px;">
+            <div class="effort-actions">
+              <button class="act-btn cockpit-open" onclick="event.stopPropagation();triggerAction('Opened AI Cockpit: 3D Parametric Representation')">↗ Open 3D Parametric Cockpit</button>
+              <button class="act-btn skill-prestage" onclick="event.stopPropagation();triggerAction('Pre-staged Superjump analogical transfer for 3D spline representation')">🚀 Pre-Stage Superjump</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="compact-effort" data-break="deep" onclick="expandHorizon('m4', 'quarter')">
+          <div class="compact-effort-title">
+            <span>⚙️ GWL Harnesses (gwl-t2r-brain)</span>
+            <span class="pill sky">🟢 Running</span>
+          </div>
+          <div class="compact-effort-meta">
+            🍊 <code>Anvil</code> + <code>Aegis</code> architecture &amp; security audit staged.
+          </div>
+          <div class="detail-only" style="margin-top:6px;">
+            <div class="effort-actions">
+              <button class="act-btn cockpit-open" onclick="event.stopPropagation();triggerAction('Opened AI Cockpit: GWL Harnesses (gwl-t2r-brain)')">↗ Open GWL Harnesses Cockpit</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="cave-context-stub">
+      <span>⬇ <strong>Below this Chief-of-Staff top bar on the Cave of Wonders:</strong> Active AI Cockpit Initiatives Grid · Dedicated Calendar (Week/Day/Month) · Dedicated Email Triage (PSU / Gmail / Axmra)</span>
+      <span>No duplicate calendar grids or inbox lists inside the Chief-of-Staff bar</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<!-- MOCKUP 1: ASYMMETRIC HORIZON STRIP (CLEAN CARD EDITION)               -->
+<!-- ===================================================================== -->
+<section class="mockup-section" id="view-1" style="display:none;">
+  <div class="mockup-header">
+    <div>
+      <h2>
+        <span class="pill sky">Mockup 1</span>
+        <span>Pure Asymmetric Horizon Strip (`Today` 45% · `This Week` 27% · `This Month` 14% · `Quarter / Star Chart` 14%)</span>
+      </h2>
+      <div class="mockup-sub">
+        Ultra-clean horizon progression without the top Break-Selector bar. Every horizon tile shows prioritized <strong>Efforts</strong> (Urgent → Soon-Urgent → Q2 Deep Work) with 1-click <strong>Open Cockpit</strong> / <strong>Create Cockpit</strong> / <strong>Pre-Stage Skill</strong> buttons, and clicking any narrower horizon expands it wide.
+      </div>
+    </div>
+    <span class="pill orange">Click any column header to expand</span>
+  </div>
+
+  <div class="cave-shell">
+    <div class="horizon-strip" id="m1-strip">
+      <div class="hz-col hz-today is-wide" id="m1-col-today">
+        <div class="hz-head" onclick="expandHorizon('m1', 'today')">
+          <div class="hz-title"><span>🔥 Today — Urgent &amp; Protected Q2 Deep Work</span><span class="pill red">2 Urgent · 1 Deep</span></div>
+          <button class="hz-expand-btn">Wide</button>
+        </div>
+        <div class="effort-card q1-urgent">
+          <div class="effort-top">
+            <div class="effort-name">1. AI Club — MIT Lectures (1:00 PM Class Slides &amp; Handout)</div>
+            <span class="pill red">🔴 Urgent · 1:00 PM</span>
+          </div>
+          <div class="effort-driver"><strong>Driver:</strong> 1:00 PM Calendar block + Meg's email. 🍊 <code>Einstein</code> slide verification pre-staged.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Club Cockpit')">↗ Open AI Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Ran Einstein slide check')">🎓 Pre-Stage Einstein</button>
+          </div>
+        </div>
+        <div class="effort-card q1-urgent">
+          <div class="effort-top">
+            <div class="effort-name">2. Family Trusts — Kathleen Bradshaw (3 Emails) &amp; Sliding Rock Executed</div>
+            <span class="pill red">🔴 Urgent · Family/Legal</span>
+          </div>
+          <div class="effort-driver"><strong>Driver:</strong> HelloSign executed + Kathleen Bradshaw Valuation/IGT/Calder emails. 🍊 <code>Legal-Beagle</code> + <code>Financial-Analyst</code> brief ready.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Family Trusts Cockpit')">↗ Open AI Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged Legal-Beagle')">⚖️ Pre-Stage Legal-Beagle</button>
+          </div>
+        </div>
+        <div class="effort-card q2-deep">
+          <div class="effort-top">
+            <div class="effort-name">3. [2:15 PM Q2 Deep Work] Empirical Demand (MoE Paper 1) &amp; Collapse of Marketing</div>
+            <span class="pill emerald">🟢 Star Chart Q2</span>
+          </div>
+          <div class="effort-driver"><strong>Driver:</strong> Star Chart <em>Marketing Papers</em> goal (Nov 15). 🍊 <code>researchPrime</code> + <code>Gandalf</code> identification review staged.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Marketing Papers Cockpit')">↗ Open AI Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged researchPrime')">🔬 Pre-Stage researchPrime</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hz-col is-wide" id="m1-col-week">
+        <div class="hz-head" onclick="expandHorizon('m1', 'week')">
+          <div class="hz-title"><span>🟠 This Week — Soon-Urgent &amp; Family</span><span class="pill amber">3 Efforts</span></div>
+          <button class="hz-expand-btn">⤢ Expand</button>
+        </div>
+        <div class="effort-card soon-urgent">
+          <div class="effort-top">
+            <div class="effort-name">Tue 8 AM: MBA Teaching AI (BA 815 Lecture 6 &amp; Supp 5)</div>
+            <span class="pill amber">Tomorrow</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened MBA Teaching AI Cockpit')">↗ Open AI Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged Einstein')">🎓 Einstein Staged</button>
+          </div>
+        </div>
+        <div class="effort-card family-rel">
+          <div class="effort-top">
+            <div class="effort-name">🏠 Sun Nov 8: Church Team Teach w/ Jane + Wed Youth Night</div>
+            <span class="pill pink">Family &amp; Jane</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created Team Teach w/ Jane Cockpit')">+ Create / Open Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged Einstein + Superjump lesson outline')">🍊 Pre-Stage Outline</button>
+          </div>
+        </div>
+        <div class="effort-card soon-urgent">
+          <div class="effort-top">
+            <div class="effort-name">Thu Nov 5: OpenAI Academic Research Program Grant</div>
+            <span class="pill amber">Due Thu</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created OpenAI Grant Cockpit')">+ Create Grant Cockpit</button>
+            <button class="act-btn skill-prestage" onclick="triggerAction('Pre-staged researchPrime + Gandalf')">🔬 Pre-Stage researchPrime</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hz-col" id="m1-col-month">
+        <div class="hz-head" onclick="expandHorizon('m1', 'month')">
+          <div class="hz-title"><span>📅 This Month</span><span class="pill pink">3</span></div>
+          <button class="hz-expand-btn">⤢</button>
+        </div>
+        <div class="compact-effort" onclick="expandHorizon('m1', 'month')">
+          <div class="compact-effort-title"><span>🎁 Family Trips &amp; Birthdays</span><span class="pill pink">Family</span></div>
+          <div class="compact-effort-meta">🍊 <code>Superjump</code> gift &amp; travel shortlist</div>
+        </div>
+        <div class="compact-effort" onclick="expandHorizon('m1', 'month')">
+          <div class="compact-effort-title"><span>🧮 Normalizing Flows P1</span><span class="pill emerald">Nov 22</span></div>
+          <div class="compact-effort-meta">🍊 <code>Ramanujan</code> proofs staged</div>
+        </div>
+        <div class="compact-effort" onclick="expandHorizon('m1', 'month')">
+          <div class="compact-effort-title"><span>💼 OpX &amp; ADIO Road Show</span><span class="pill amber">Nov 24</span></div>
+          <div class="compact-effort-meta">🍊 <code>Financial-Analyst</code> model</div>
+        </div>
+      </div>
+
+      <div class="hz-col" id="m1-col-quarter">
+        <div class="hz-head" onclick="expandHorizon('m1', 'quarter')">
+          <div class="hz-title"><span>🌟 Star Chart Q2</span><span class="pill emerald">3</span></div>
+          <button class="hz-expand-btn">⤢</button>
+        </div>
+        <div class="compact-effort" onclick="expandHorizon('m1', 'quarter')">
+          <div class="compact-effort-title"><span>📖 Artificial Magi / BrightHeart</span></div>
+          <div class="compact-effort-meta">🍊 <code>Chekhov</code> dossier ready</div>
+        </div>
+        <div class="compact-effort" onclick="expandHorizon('m1', 'quarter')">
+          <div class="compact-effort-title"><span>🧬 3D Parametric Phenomics</span></div>
+          <div class="compact-effort-meta">🍊 <code>Superjump</code> + <code>Anvil</code></div>
+        </div>
+        <div class="compact-effort" onclick="expandHorizon('m1', 'quarter')">
+          <div class="compact-effort-title"><span>⚙️ GWL Harnesses</span></div>
+          <div class="compact-effort-meta">🍊 <code>Anvil</code> + <code>Aegis</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<!-- MOCKUP 2: THE COVEY Q1 -> SOON-Q1 -> Q2 DEEP-WORK FUNNEL              -->
+<!-- ===================================================================== -->
+<section class="mockup-section" id="view-2" style="display:none;">
+  <div class="mockup-header">
+    <div>
+      <h2>
+        <span class="pill amber">Mockup 2</span>
+        <span>The Covey Q1 → Q2 Deep-Work Funnel (`🔴 Clear Urgent` → `🟠 Get Ahead (Soon-Urgent &amp; Family)` → `🟢 Protected Q2 Deep Work`)</span>
+      </h2>
+      <div class="mockup-sub">
+        Organizes the Chief-of-Staff bar by <strong>Why You Are Doing It</strong>: Column 1 clears immediate Urgent blockers; Column 2 gets ahead of Soon-to-Be Urgent academic, commercial &amp; family commitments; Column 3 is the unlocked <strong>Quadrant II Star Chart Deep-Work Zone</strong>; Column 4 holds compact Month/Quarter horizon rollups.
+      </div>
+    </div>
+    <span class="pill emerald">Explicit Q1 → Q2 Flow</span>
+  </div>
+
+  <div class="cave-shell">
+    <div class="funnel-grid">
+      <!-- Lane 1: Urgent & Important -->
+      <div class="hz-col hz-today">
+        <div class="hz-head">
+          <div class="hz-title"><span>🔴 Step 1: Clear Urgent Now (Q1)</span><span class="pill red">2 Left</span></div>
+        </div>
+        <div class="effort-card q1-urgent">
+          <div class="effort-top">
+            <div class="effort-name">AI Club — MIT Lectures (Today 1:00 PM)</div>
+            <span class="pill red">Today 1 PM</span>
+          </div>
+          <div class="effort-driver">Driven by Calendar + Meg's email. 🍊 <code>Einstein</code> slide check pre-staged.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Club Cockpit')">↗ Open Cockpit</button>
+            <button class="act-btn done-unlock" onclick="triggerAction('Cleared! +45m Q2 Deep Work unlocked')">✓ Clear → Unlock Q2</button>
+          </div>
+        </div>
+        <div class="effort-card q1-urgent">
+          <div class="effort-top">
+            <div class="effort-name">Family Trusts: Kathleen Bradshaw &amp; Sliding Rock</div>
+            <span class="pill red">3 Emails Today</span>
+          </div>
+          <div class="effort-driver">Driven by HelloSign + Kathleen Bradshaw valuation/IGT emails. 🍊 <code>Legal-Beagle</code> brief staged.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Family Trusts Cockpit')">↗ Open Cockpit</button>
+            <button class="act-btn done-unlock" onclick="triggerAction('Cleared! +30m Q2 Deep Work unlocked')">✓ Clear → Unlock Q2</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lane 2: Soon-to-Be Urgent (Academic, Commercial, Family/Relationships) -->
+      <div class="hz-col">
+        <div class="hz-head">
+          <div class="hz-title"><span>🟠 Step 2: Get Ahead (Soon-Urgent &amp; Family)</span><span class="pill amber">4</span></div>
+        </div>
+        <div class="effort-card family-rel">
+          <div class="effort-top">
+            <div class="effort-name">🏠 Team Teach w/ Jane (Sun) &amp; Youth Night (Wed)</div>
+            <span class="pill pink">Family</span>
+          </div>
+          <div class="effort-driver">🍊 <code>Einstein</code> + <code>Superjump</code> 2-page joint lesson outline pre-staged.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created Team Teach w/ Jane Cockpit')">+ Create / Open Cockpit</button>
+          </div>
+        </div>
+        <div class="effort-card family-rel">
+          <div class="effort-top">
+            <div class="effort-name">🎁 Family Trips &amp; Birthday Presents Radar</div>
+            <span class="pill pink">Family Lead-Time</span>
+          </div>
+          <div class="effort-driver">🍊 <code>Superjump</code> gift ideas &amp; holiday travel options pre-staged.</div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created Family Trips & Gifts Cockpit')">+ Create Trip/Gift Cockpit</button>
+          </div>
+        </div>
+        <div class="effort-card soon-urgent">
+          <div class="effort-top">
+            <div class="effort-name">Tue 8 AM: MBA Teaching AI (BA 815) &amp; Thu OpenAI Grant</div>
+            <span class="pill amber">Tue / Thu</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened MBA Teaching AI Cockpit')">↗ MBA Cockpit</button>
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created OpenAI Grant Cockpit')">+ OpenAI Grant Cockpit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lane 3: Quadrant II Deep Work (Star Chart Value Creation) -->
+      <div class="hz-col" style="border-color: rgba(16,185,129,0.5);">
+        <div class="hz-head">
+          <div class="hz-title"><span>🟢 Step 3: Quadrant II Deep Work (Star Chart Impact)</span><span class="pill emerald">Unlocked 2:15 PM</span></div>
+        </div>
+        <div class="effort-card q2-deep">
+          <div class="effort-top">
+            <div class="effort-name">Empirical Demand (MoE Paper 1) &amp; Collapse of Marketing</div>
+            <span class="pill emerald">Target Nov 15</span>
+          </div>
+          <div class="oranges-box q2-oranges">
+            <span>🍊 <code>researchPrime</code> + <code>Gandalf</code> identification review pre-staged.</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Marketing Papers Cockpit')">↗ Open Deep-Work Cockpit</button>
+          </div>
+        </div>
+        <div class="effort-card q2-deep">
+          <div class="effort-top">
+            <div class="effort-name">Hierarchical Normalizing Flows — Paper 1</div>
+            <span class="pill emerald">🟢 Running · Nov 22</span>
+          </div>
+          <div class="oranges-box q2-oranges">
+            <span>🍊 <code>Ramanujan</code> Jacobian bounds &amp; <code>researchPrime</code> citations ready.</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Normalizing Flows Cockpit')">↗ Open Deep-Work Cockpit</button>
+          </div>
+        </div>
+        <div class="effort-card q2-deep">
+          <div class="effort-top">
+            <div class="effort-name">Artificial Magi (Book 1) &amp; 3D Parametric Phenomics</div>
+            <span class="pill purple">Q2 Creative / Science</span>
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Artificial Magi Cockpit')">↗ Writing Cockpit</button>
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened 3D Parametric Cockpit')">↗ 3D Phenomics Cockpit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lane 4: Horizon Rollup -->
+      <div class="hz-col">
+        <div class="hz-head">
+          <div class="hz-title"><span>📅 Horizons</span></div>
+        </div>
+        <div class="compact-effort">
+          <div class="compact-effort-title"><span>Today</span><span class="pill red">3</span></div>
+          <div class="compact-effort-meta">MIT Class · Trusts · MoE Deep Work</div>
+        </div>
+        <div class="compact-effort">
+          <div class="compact-effort-title"><span>This Week</span><span class="pill amber">4</span></div>
+          <div class="compact-effort-meta">MBA Class · Jane Teach · OpenAI Grant · NextGen</div>
+        </div>
+        <div class="compact-effort">
+          <div class="compact-effort-title"><span>This Month</span><span class="pill pink">3</span></div>
+          <div class="compact-effort-meta">Family Trips/Gifts · Flows P1 · ADIO Roadshow</div>
+        </div>
+        <div class="compact-effort">
+          <div class="compact-effort-title"><span>Quarter (Q2)</span><span class="pill emerald">4</span></div>
+          <div class="compact-effort-meta">Books · 3D Phenomics · GWL Harnesses</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== -->
+<!-- MOCKUP 3: BREAK-BETWEEN-COCKPITS DISPATCHER & SKILL PRE-STAGE DECK    -->
+<!-- ===================================================================== -->
+<section class="mockup-section" id="view-3" style="display:none;">
+  <div class="mockup-header">
+    <div>
+      <h2>
+        <span class="pill purple">Mockup 3</span>
+        <span>"Break-Between-Cockpits" Steward Dispatcher &amp; Parable-of-the-Oranges Skill Pre-Stage Deck</span>
+      </h2>
+      <div class="mockup-sub">
+        Designed for the exact moment when you step out of an active AI Cockpit while workers are running: Left shows <strong>What to Do on Your Break Right Now (by 15m / 30m / 60m+ window)</strong>; Center shows the <strong>🍊 Parable-of-the-Oranges Skill Pre-Stage Queue</strong> warming up cockpits for later; Right shows the <strong>Today / Week / Month / Star Chart</strong> horizon stack.
+      </div>
+    </div>
+    <span class="pill orange">🍊 Maximum Proactive Skill Staging</span>
+  </div>
+
+  <div class="cave-shell">
+    <div class="dispatcher-grid">
+      <!-- Col 1: Break-Between-Cockpits Immediate Next Action -->
+      <div class="hz-col hz-today">
+        <div class="hz-head">
+          <div class="hz-title"><span>⚡ 1. Best Use of Your Break Right Now</span><span class="pill sky">While 2 Cockpits Run 🟢</span></div>
+        </div>
+        <div class="effort-card q1-urgent">
+          <div class="effort-top">
+            <div class="effort-name">If you have 15–20 mins before 12:00 PM: AI Club MIT Slides + Family Trusts Reply</div>
+            <span class="pill red">Urgent Clear</span>
+          </div>
+          <div class="effort-driver">
+            Knock out the 1:00 PM MIT slide check (<code>Einstein</code> pre-staged) and approve the 3 Kathleen Bradshaw Family Trust replies (<code>Legal-Beagle</code> pre-staged).
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened AI Club Cockpit')">↗ Open AI Club Cockpit</button>
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Family Trusts Cockpit')">↗ Open Family Trusts Cockpit</button>
+          </div>
+        </div>
+
+        <div class="effort-card family-rel">
+          <div class="effort-top">
+            <div class="effort-name">If you want a 15m Family / Life Break: Sun Team Teach w/ Jane &amp; Birthday Gifts</div>
+            <span class="pill pink">Family &amp; Relationships</span>
+          </div>
+          <div class="effort-driver">
+            Review the 2-page Sunday lesson outline staged for you &amp; Jane, or pick from <code>Superjump</code>'s family birthday present &amp; holiday trip shortlist.
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created Team Teach w/ Jane Cockpit')">+ Open Jane Team Teach Cockpit</button>
+            <button class="act-btn cockpit-create" onclick="triggerAction('Created Family Trips & Birthday Presents Cockpit')">+ Open Family Trips &amp; Gifts Cockpit</button>
+          </div>
+        </div>
+
+        <div class="effort-card q2-deep">
+          <div class="effort-top">
+            <div class="effort-name">If you have 60–90+ mins (After 2:15 PM): Star Chart Quadrant II Deep Work</div>
+            <span class="pill emerald">High-Impact Value</span>
+          </div>
+          <div class="effort-driver">
+            Drop straight into <strong>Empirical Demand (MoE Paper 1)</strong> or <strong>Hierarchical Normalizing Flows</strong> — proofs and literature matrices are already warmed up.
+          </div>
+          <div class="effort-actions">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Marketing Papers Cockpit')">↗ Open MoE / Marketing Cockpit</button>
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened Normalizing Flows Cockpit')">↗ Open Normalizing Flows Cockpit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Col 2: Parable of the Oranges Skill Pre-Stage Deck -->
+      <div class="hz-col">
+        <div class="hz-head">
+          <div class="hz-title"><span>🍊 2. Parable of the Oranges — Skill Pre-Staging Deck</span><span class="pill orange">1-Click Warmup</span></div>
+        </div>
+        <div class="oranges-box" style="margin-bottom:4px;">
+          <span>Have the Steward pre-run Foundry skills in the background now so these AI Cockpits are 100% ready when you open them later:</span>
+        </div>
+
+        <div class="compact-effort">
+          <div class="compact-effort-title">
+            <span>🔬 researchPrime + 🧙 Gandalf → OpenAI Grant (Due Nov 5)</span>
+            <span class="pill amber">Ready to Stage</span>
+          </div>
+          <div class="compact-effort-meta">Synthesize proposal narrative from Normalizing Flows + GWL Harnesses and stress-test reviewer objections.</div>
+          <div class="effort-actions" style="margin-top:5px;">
+            <button class="act-btn skill-prestage" onclick="triggerAction('Launched researchPrime + Gandalf background pre-stage for OpenAI Grant')">🍊 Pre-Stage OpenAI Grant Cockpit Now</button>
+          </div>
+        </div>
+
+        <div class="compact-effort">
+          <div class="compact-effort-title">
+            <span>🎓 Einstein → MBA Teaching AI (Tue 8 AM) &amp; Jane Team Teach (Sun)</span>
+            <span class="pill sky">Staged ✓</span>
+          </div>
+          <div class="compact-effort-meta">Lecture 6 regression worked examples verified; Sunday Team Teach w/ Jane outline drafted.</div>
+          <div class="effort-actions" style="margin-top:5px;">
+            <button class="act-btn cockpit-open" onclick="triggerAction('Opened MBA Teaching AI Cockpit')">↗ Open MBA Cockpit</button>
+            <button class="act-btn cockpit-create" onclick="triggerAction('Opened Jane Team Teach Cockpit')">+ Open Jane Lesson Cockpit</button>
+          </div>
+        </div>
+
+        <div class="compact-effort">
+          <div class="compact-effort-title">
+            <span>🚀 Superjump + 🎭 Chekhov → Family Gifts/Trips &amp; Artificial Magi</span>
+            <span class="pill purple">Ready to Stage</span>
+          </div>
+          <div class="compact-effort-meta">Curate family birthday gift options + Thanksgiving travel holds; check Artificial Magi Book 1 continuity ledger.</div>
+          <div class="effort-actions" style="margin-top:5px;">
+            <button class="act-btn skill-prestage" onclick="triggerAction('Launched Superjump for Family Gifts/Trips + Chekhov for Artificial Magi')">🍊 Pre-Stage Superjump + Chekhov</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Col 3: Dynamic Horizon Stack -->
+      <div class="hz-col">
+        <div class="hz-head">
+          <div class="hz-title"><span>🗓️ 3. Dynamic Horizon Map (Today → Quarter)</span></div>
+        </div>
+        <div class="compact-effort" style="border-left-color:var(--red);">
+          <div class="compact-effort-title"><span>🔥 Today (Mon Nov 2)</span><span class="pill red">2 Urgent · 1 Q2</span></div>
+          <div class="compact-effort-meta">1:00 PM MIT Class · Family Trusts (Bradshaw/Sliding Rock) → 2:15 PM MoE Paper 1 Deep Work</div>
+        </div>
+        <div class="compact-effort" style="border-left-color:var(--amber);">
+          <div class="compact-effort-title"><span>🟠 This Week (Nov 3–8)</span><span class="pill amber">4 Soon-Urgent</span></div>
+          <div class="compact-effort-meta">Tue 8 AM MBA Class · Wed Youth Night · Thu OpenAI Grant · Sun Team Teach w/ Jane</div>
+        </div>
+        <div class="compact-effort" style="border-left-color:var(--pink);">
+          <div class="compact-effort-title"><span>📅 This Month (Nov)</span><span class="pill pink">Family + 2 Papers</span></div>
+          <div class="compact-effort-meta">Family Trips &amp; Birthday Presents · Collapse of Marketing (Nov 15) · Normalizing Flows (Nov 22) · ADIO (Nov 24)</div>
+        </div>
+        <div class="compact-effort" style="border-left-color:var(--emerald);">
+          <div class="compact-effort-title"><span>🌟 Quarter / Star Chart Q2</span><span class="pill emerald">Deep Value</span></div>
+          <div class="compact-effort-meta">Artificial Magi Book 1 · BrightHeart v2 · 3D Parametric Phenomics · GWL Harnesses</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Interactive Effort & Parable-of-the-Oranges Modal -->
+<div class="modal-backdrop" id="effort-modal" onclick="if(event.target===this)closeEffortModal()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 id="modal-title">Effort Details</h3>
+      <button class="act-btn" onclick="closeEffortModal()">✕ Close (Esc)</button>
+    </div>
+    <div style="margin-bottom:8px;">
+      <span class="pill orange" id="modal-tier">Tier</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:6px 0;" id="modal-driver"></p>
+    <div class="oranges-box" style="margin:10px 0;padding:9px 11px;" id="modal-oranges"></div>
+    <div style="font-size:11.5px;font-weight:700;margin-top:12px;">🍊 Pre-Stage or Launch Additional Foundry Skills into This AI Cockpit:</div>
+    <div class="skill-chip-row">
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched researchPrime to pre-stage evidence in cockpit')">🔬 researchPrime</button>
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched Superjump to pre-stage creative leaps in cockpit')">🚀 Superjump</button>
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched Gandalf for deep-think adversarial review in cockpit')">🧙 Gandalf</button>
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched Einstein to build guided examples/slides in cockpit')">🎓 Einstein</button>
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched Chekhov story memory check in cockpit')">🎭 Chekhov</button>
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched Legal-Beagle contract/trust review in cockpit')">⚖️ Legal-Beagle</button>
+      <button class="act-btn skill-prestage" onclick="triggerAction('Dispatched Financial-Analyst model check in cockpit')">📊 Financial-Analyst</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:10px;border-top:1px solid var(--border);">
+      <button class="act-btn cockpit-create" onclick="triggerAction('Created new dedicated AI Cockpit with pre-staged brief');closeEffortModal()">+ Create New AI Cockpit</button>
+      <button class="act-btn cockpit-open" id="modal-primary-btn" onclick="triggerAction('Opened AI Cockpit with pre-staged Parable-of-the-Oranges package');closeEffortModal()">↗ Open Ready AI Cockpit</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-banner" id="toast-banner"></div>
+
+<script>
+  function showView(viewId) {
+    const views = ['1', '2', '3', '4'];
+    document.querySelectorAll('.nav-tab').forEach(btn => btn.classList.remove('active'));
+    const activeTab = document.getElementById('tab-' + viewId);
+    if (activeTab) activeTab.classList.add('active');
+
+    if (viewId === 'all') {
+      views.forEach(v => {
+        const el = document.getElementById('view-' + v);
+        if (el) el.style.display = 'block';
+      });
+    } else {
+      views.forEach(v => {
+        const el = document.getElementById('view-' + v);
+        if (el) el.style.display = (v === String(viewId)) ? 'block' : 'none';
+      });
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', viewId);
+    window.history.replaceState({}, '', url);
+  }
+
+  function expandHorizon(prefix, horizon) {
+    const strip = document.getElementById(prefix + '-strip');
+    if (!strip) return;
+    strip.classList.remove('expanded-week', 'expanded-month', 'expanded-quarter');
+    const cols = ['today', 'week', 'month', 'quarter'];
+    cols.forEach(c => {
+      const colEl = document.getElementById(prefix + '-col-' + c);
+      if (!colEl) return;
+      colEl.classList.remove('hz-focused', 'is-wide');
+    });
+
+    if (horizon === 'week') {
+      strip.classList.add('expanded-week');
+      document.getElementById(prefix + '-col-today')?.classList.add('is-wide');
+      document.getElementById(prefix + '-col-week')?.classList.add('is-wide', 'hz-focused');
+    } else if (horizon === 'month') {
+      strip.classList.add('expanded-month');
+      document.getElementById(prefix + '-col-today')?.classList.add('is-wide');
+      document.getElementById(prefix + '-col-month')?.classList.add('is-wide', 'hz-focused');
+    } else if (horizon === 'quarter') {
+      strip.classList.add('expanded-quarter');
+      document.getElementById(prefix + '-col-today')?.classList.add('is-wide');
+      document.getElementById(prefix + '-col-quarter')?.classList.add('is-wide', 'hz-focused');
+    } else {
+      document.getElementById(prefix + '-col-today')?.classList.add('is-wide', 'hz-focused');
+      document.getElementById(prefix + '-col-week')?.classList.add('is-wide');
+    }
+  }
+
+  function filterBreak(prefix, mode, btnEl) {
+    const bar = btnEl.closest('.break-selector');
+    if (bar) {
+      bar.querySelectorAll('.break-btn').forEach(b => b.classList.remove('active'));
+    }
+    btnEl.classList.add('active');
+
+    const section = document.getElementById('view-4');
+    section.querySelectorAll('[data-break]').forEach(card => {
+      const tags = (card.getAttribute('data-break') || '').split(/\s+/);
+      if (mode === 'all' || tags.includes(mode)) {
+        card.style.display = '';
+      } else {
+        card.style.display = 'none';
+      }
+    });
+    if (mode === 'family') {
+      expandHorizon('m4', 'month');
+    } else if (mode === 'deep') {
+      expandHorizon('m4', 'quarter');
+    } else {
+      expandHorizon('m4', 'today');
+    }
+  }
+
+  let m4ClearedCount = 0;
+  function markEffortCleared(cardId, prefix) {
+    const card = document.getElementById(cardId);
+    if (card) {
+      card.style.opacity = '0.38';
+    }
+    m4ClearedCount++;
+    const label = document.getElementById('m4-unlock-label');
+    const urg = document.getElementById('m4-seg-urg');
+    const deep = document.getElementById('m4-seg-deep');
+    if (m4ClearedCount === 1) {
+      if (label) label.innerHTML = '1 Urgent effort cleared! <strong>1 left</strong> → <strong>3.25 hrs</strong> Q2 Deep Work unlocked today';
+      if (urg) urg.style.width = '14%';
+      if (deep) deep.style.width = '59%';
+    } else {
+      if (label) label.innerHTML = '🎉 All Urgent Q1 items cleared! <strong>Full 3.75 hrs Quadrant II Deep Work</strong> unlocked!';
+      if (urg) urg.style.width = '0%';
+      if (deep) deep.style.width = '73%';
+    }
+    triggerAction('Effort marked cleared — Q1→Q2 Deep-Work capacity meter updated & next effort promoted!');
+  }
+
+  function rotateEffort(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const titleEl = card.querySelector('.effort-name');
+    if (cardId === 'card-m4-moe' && titleEl) {
+      titleEl.textContent = '3. [2:15 PM Protected Q2 Deep Work] Spring 2027 AI Class Proposal (w/ Min) & GWL Harnesses';
+      triggerAction('Rotated Q2 Deep-Work slot to next Star Chart priority: Spring 2027 AI Class Proposal (Superjump + Gandalf pre-staged)');
+    } else if (titleEl) {
+      card.style.borderColor = '#38bdf8';
+      triggerAction('Rotated effort — promoted next candidate from Steward queue & logged break receipt!');
+    }
+  }
+
+  function openEffortModal(title, tier, driver, oranges, primaryBtnText) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-tier').textContent = tier;
+    document.getElementById('modal-driver').innerHTML = '<strong>Signal / Driver Provenance:</strong> ' + driver;
+    document.getElementById('modal-oranges').innerHTML = '🍊 <strong>Parable of the Oranges Pre-Staging:</strong> ' + oranges;
+    document.getElementById('modal-primary-btn').textContent = '↗ ' + primaryBtnText;
+    document.getElementById('effort-modal').classList.add('open');
+  }
+
+  function closeEffortModal() {
+    document.getElementById('effort-modal').classList.remove('open');
+  }
+
+  function triggerAction(msg) {
+    const toast = document.getElementById('toast-banner');
+    toast.textContent = '✓ ' + msg;
+    toast.style.display = 'block';
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer = setTimeout(() => {
+      toast.style.display = 'none';
+    }, 3400);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeEffortModal();
+  });
+
+  (function initFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('view') || '4';
+    showView(v);
+  })();
+</script>
+</body>
+</html>

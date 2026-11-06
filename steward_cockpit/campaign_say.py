@@ -266,7 +266,7 @@ def _scoped(folder, goal, text, today):
     return None
 
 
-def say_campaign(folder, text, dialogue=None, today=None, goal=None):
+def say_campaign(folder, text, dialogue=None, today=None, goal=None, run_fast_fallback=True):
     """None when the words are not a Campaign verb (the steward takes them); else the act's answer. With ``goal``
     (an initiative id: the words were said inside that goal's place) the scoped forms are read first."""
     if goal:
@@ -276,16 +276,20 @@ def say_campaign(folder, text, dialogue=None, today=None, goal=None):
     bare = _bare_pace(folder, text, today or date.today())
     if bare is not None:
         return bare
+    norm_words = " ".join(str(text or "").split())
+    if dialogue is None and (len(norm_words.split()) > 24 or _BRAINSTORM_DISCUSSION_RX.search(norm_words)):
+        return fast_steward_command(folder, text, goal=goal) if run_fast_fallback else None
     c = compile_utterance(text, dialogue)
     if c is None:
-        return _refuse("the Campaign\u2019s grammar could not be read (the engine did not answer) \u2014 nothing was done", "campaign_compile")
+        if dialogue is not None:
+            return _refuse("the Campaign’s grammar could not be read (the engine did not answer) — nothing was done", "campaign_compile")
+        return fast_steward_command(folder, text, goal=goal) if run_fast_fallback else None
     if not c.get("campaign"):
-        return fast_steward_command(folder, text, goal=goal)
+        return fast_steward_command(folder, text, goal=goal) if run_fast_fallback else None
     try:
         return _apply(folder, c, today or date.today())
     except Exception as e:
-        return _refuse("that did not go through: %s \u2014 look at the board before saying it again" % e, str(c.get("act") or "campaign_act"))
-
+        return _refuse("that did not go through: %s — look at the board before saying it again" % e, str(c.get("act") or "campaign_act"))
 
 def _apply(folder, c, today):
     from . import campaign_acts as acts
@@ -785,6 +789,129 @@ def relay_to_cockpit_steward(folder, target_query: str, action: str, message: st
     return {"ok": False, "say": f"Could not relay action to **{cname}**."}
 
 
+_WL_ADD_RX = re.compile(
+    r"^(?:add|put|insert)\s+(.+?)\s+(?:to|on|into)\s+(?:my\s+|the\s+)?(?:working\s+list|persistent\s+list|effort\s+list|spine)"
+    r"(?:\s+under\s+(business|teaching|research|personal))?(?:\s+(?:as|at|priority)\s*(a1|a2|b1|c1))?\s*[.!?]*$",
+    re.I,
+)
+_WL_LIST_RX = re.compile(
+    r"^(?:what(?:'s| is)\s+on\s+my\s+(?:working\s+list|persistent\s+list|spine)|show\s+(?:me\s+)?my\s+(?:working\s+list|persistent\s+list|spine))\s*[.!?]*$",
+    re.I,
+)
+
+
+def _fast_working_list_clause(t: str):
+    """Pure domain handler for Persistent Working List Spine commands spoken to the Cave of Wonders Steward."""
+    m_list = _WL_LIST_RX.match(t)
+    if m_list:
+        try:
+            import comms_connector as _cc
+            wl = _cc.load_working_list_spine()
+            active = [x for x in (wl.get("tiles") or []) if isinstance(x, dict) and not x.get("archived")]
+            summary = "; ".join(f"**{x.get('prio', 'B1')} {x.get('title')}** ({sum(1 for s in (x.get('steps') or []) if s.get('done'))}/{len(x.get('steps') or [])} steps)" for x in active[:5])
+            msg = f"📋 **Your Persistent Working List Spine ({len(active)} active tiles):** {summary}."
+            return {
+                "ok": True,
+                "say": msg,
+                "receipt": "Listed Persistent Working List Spine.",
+                "act": "working_list_status",
+                "working_list_act": True,
+                "working_list": wl,
+                "campaign_act": True,
+                "read_only": True,
+                "model_called": False,
+            }
+        except Exception:
+            return None
+    m_add = _WL_ADD_RX.match(t)
+    if m_add:
+        try:
+            import comms_connector as _cc
+            title = m_add.group(1).strip().strip("\"'")
+            cat = (m_add.group(2) or "Business").strip().title()
+            prio = (m_add.group(3) or "A1").strip().upper()
+            res = _cc.mutate_working_list_spine("add_tile", {
+                "title": title,
+                "category": cat,
+                "prio": prio,
+                "insert_top": prio == "A1",
+            })
+            msg = f"📋 Added **{title}** ({cat} · Priority **{prio}**) to your **Persistent Working List Spine**. Expand its tile on the Cave of Wonders to add or connect steps to an AI Cockpit or Initiative."
+            return {
+                "ok": True,
+                "say": msg,
+                "receipt": f"Added “{title}” ({prio}) to Persistent Working List Spine.",
+                "act": "working_list_add",
+                "working_list_act": True,
+                "working_list": res.get("working_list"),
+                "campaign_act": True,
+                "read_only": False,
+                "model_called": False,
+            }
+        except Exception:
+            return None
+    return None
+
+
+_SR_OPEN_CMD_RX = re.compile(
+    r"^(?:open|show|launch|pull\s+up|expand|go\s+to)\s+(?:the\s+|my\s+)?speed\s*racer(?:\s+tile|\s+queue)?\s*[.!?]*$",
+    re.I,
+)
+_SR_DRAFT_CMD_RX = re.compile(
+    r"^(?:draft|write|prepare|compose|queue|stage|put)\s+(?:an?\s+|the\s+)?(?:email|reply|response|message)\b|"
+    r"^(?:put|send|move|add|queue)\s+.+\b(?:in|into|to)\s+(?:the\s+)?speed\s*racer\b|"
+    r"^(?:deal\s+with|handle|respond\s+to|reply\s+to)\s+(?:the\s+)?email\b",
+    re.I,
+)
+
+
+def _fast_speed_racer_clause(t: str):
+    """Pure domain handler for Speed Racer email staging & auto-open (never dumps email text into dialogue)."""
+    is_open_only = bool(_SR_OPEN_CMD_RX.match(t))
+    is_draft_cmd = bool(_SR_DRAFT_CMD_RX.search(t))
+    if not (is_open_only or is_draft_cmd):
+        return None
+    try:
+        import comms_connector as _cc
+        if is_open_only:
+            sr_st = _cc.load_speed_racer_queue()
+            q_len = len(sr_st.get("queue") or [])
+            did = str(sr_st.get("last_opened_draft_id") or "")
+            msg = f"🏎️ Opened the **Speed Racer Tile** in your Email Hub ({q_len} draft{'s' if q_len != 1 else ''} ready for rapid review & approval). [SPEED_RACER_OPEN:{did}]"
+        else:
+            m_to = re.search(r"\b(?:to|for|with|from)\s+([A-Za-z0-9_.@\-\s]{2,40}?)(?:\s+(?:about|on|regarding|re:|requesting|asking|in\s+speed)|$)", t, re.I)
+            recip = (m_to.group(1).strip() if m_to else "").strip(" .,;:")
+            m_about = re.search(r"\b(?:about|on|regarding|re:|requesting|asking)\s+(.+)$", t, re.I)
+            topic = (m_about.group(1).strip() if m_about else "").strip(" .,;:")
+            sr_res = _cc.queue_speed_racer_draft({
+                "to": recip or "recipient@example.com",
+                "subject": topic[:72] if topic else (f"Follow-up with {recip}" if recip else "Steward Drafted Email"),
+                "custom_prompt": topic or t,
+                "origin": "💬 Queued by Steward from Dialogue",
+                "open_speed_racer": True,
+            })
+            did = str(sr_res.get("draft_id") or "")
+            d_obj = sr_res.get("draft") or {}
+            msg = (
+                f"🏎️ Queued draft to **{d_obj.get('to') or recip or 'recipient'}** "
+                f"(*“{d_obj.get('subject') or 'Follow-up'}”*) and opened **Speed Racer** for your review and approval "
+                f"(no email text dumped in chat — review, edit, or click **✓ Approve & Send** in the Speed Racer tile). [SPEED_RACER_OPEN:{did}]"
+            )
+        return {
+            "ok": True,
+            "say": msg,
+            "receipt": "Opened Speed Racer Tile in Email Hub.",
+            "act": "open_speed_racer",
+            "speed_racer_draft_id": did,
+            "open_speed_racer": True,
+            "campaign_act": True,
+            "read_only": False,
+            "model_called": False,
+        }
+    except Exception:
+        return None
+
+
 def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=False, force_goal_seat=False):
     import urllib.parse
     from . import campaign_acts as acts
@@ -1064,6 +1191,16 @@ def _fast_single_clause(folder, raw_text, goal=None, today_dt=None, from_cave=Fa
             _save_rm_fast(rm_path, rm)
             msg = f"\u2713 Marked \u201c{sname}\u201d done" + (" and moved it off the board." if (old_seat in ("active", "deck") and not is_next) else ".")
             return {"ok": True, "say": msg, "receipt": msg, "undo": {"act": "reopen_step", "step": sid, "old_status": old_st, "old_seat": old_seat}, "act": "mark_done", "campaign_act": True, "read_only": False, "model_called": False}
+
+    # 4b. Persistent Working List Spine Fast Domain Handler
+    wl_res = _fast_working_list_clause(t)
+    if wl_res is not None:
+        return wl_res
+
+    # 4c. Speed Racer Email Queue & Auto-Open Fast Domain Handler
+    sr_res = _fast_speed_racer_clause(t)
+    if sr_res is not None:
+        return sr_res
 
     # 5. Rearrange / Move / Seat into Active, On Deck, Not Active (Inactive), Tier 1/2/3, or Horizon (Today / Week / Month / Quarter / Year)
     m_re = _REARRANGE_RX.match(t)
