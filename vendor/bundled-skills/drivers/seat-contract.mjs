@@ -12,14 +12,17 @@ export function reportPhysicalReceipt(opts, entry) {
 export function rawTransportError(rec, familyName = 'model') {
   const status = String(rec?.status || 'missing_receipt');
   const aborted = status === 'aborted' || rec?.aborted === true;
+  const detail = typeof rec?.error === 'string' && rec.error.trim() ? `: ${rec.error.trim()}` : '';
   const error = new Error(aborted
     ? `${familyName} transport aborted`
-    : `${familyName} transport unavailable (${status})`);
+    : `${familyName} transport unavailable (${status})${detail}`);
   error.aborted = aborted;
   if (!aborted) error.seat_unavailable = true;
   error.requested_model = rec?.requested_model ?? null;
   error.served_model = rec?.model_served ?? null;
   error.seat_status = status;
+  error.provider_error = typeof rec?.error === 'string' && rec.error.trim() ? rec.error.trim() : null;
+  error.api_error_code = rec?.api_error_code ?? null;
   error.raw_receipt = rec ?? null;
   return error;
 }

@@ -53,7 +53,7 @@ def test_long_john_instructions_are_durable_before_send(cockpit, monkeypatch):
     sent = []
     assert len(LONG_INSTRUCTIONS) > 3500
 
-    def send(text):
+    def send(text, **_kwargs):
         assert LONG_INSTRUCTIONS in text
         assert texts(root)[-1] == LONG_INSTRUCTIONS
         sent.append(text)
@@ -77,7 +77,7 @@ def test_corrupt_canonical_history_refuses_delivery_and_preserves_original_bytes
     before_queue = list(engine.queue)
     calls = []
 
-    def send(text):
+    def send(text, **_kwargs):
         calls.append(text)
         return True
 

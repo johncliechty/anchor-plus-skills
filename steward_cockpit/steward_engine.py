@@ -1257,6 +1257,7 @@ def _personalize_prompt_for_user(prompt_text: str, user_profile: dict | None = N
             f"- Always address the user as {display_name}"
             + (f" (or {pseudonym} when in character)" if pseudonym else "")
             + f". Never call them John unless their name is John.\n"
+            f"- Note: in .ecgberht/conversation-log.json, human turns use the legacy schema key role=\"john\" to represent the active human user ({display_name}).\n"
         )
         if "[ACTIVE HUMAN USER PROFILE]" not in out:
             out = out + footer
@@ -1814,8 +1815,10 @@ class Engine:
             return ""
         relative = (f".ecgberht/terminal-history/{self._history_thread()}.json"
                     if self.general else ".ecgberht/conversation-log.json")
-        return ("CONVERSATION CONTINUITY: This is an existing conversation, even if the goal/map is still empty. "
-                f"Before answering or working, read the complete durable history in {relative}. "
+        return _personalize_prompt_for_user(
+                "CONVERSATION CONTINUITY: This is an existing conversation, even if the goal/map is still empty. "
+                f"Before answering or working, read the complete durable history in {relative} "
+                "(in the JSON schema, human turns use the legacy key role='john' for the active human user). "
                 "Do not substitute a short summary for John's original instructions. His unresolved requirements remain active; "
                 "do not ask him to dictate them again. Read the existing project files as needed. "
                 "Distinguish requirements from completed actions: do not replay completed actions; verify uncertain action outcomes before repeating them. Explicit, still-current authorization for outstanding agreed work remains valid across session or provider changes, but does not create new approval or expand scope. Honor later pauses, unresolved decisions, scope limits, and budgets. "
@@ -2033,9 +2036,10 @@ class Engine:
         ('best' -> 'opus' -> 'sonnet'), persist the preference, and replay the turn."""
         if str(self.cli or "").lower() != "claude":
             return False
+        err_blob = f"{err_text or ''} {(ev or {}).get('api_error_code') or ''} {(ev or {}).get('error') or ''}"
         if not re.search(
-            r"requires usage credits|switch to another model|fable[\s\w.]*credits|not entitled to model",
-            str(err_text or ""),
+            r"requires (?:extra )?usage credits|credits_required|model_requires_usage_credits|switch to another model|fable[\s\w.]*credits|not entitled to model",
+            err_blob,
             re.I,
         ):
             return False
@@ -2179,12 +2183,14 @@ class Engine:
             if self.provider_connection["family"] != target:
                 self.provider_connection = _provider_setup.selected_for_launch(settings, target)
                 self.provider_quality = settings.get("provider_preferences", {}).get("quality", {}).get(target)
+            elif settings.get("provider_preferences", {}).get("quality", {}).get(target):
+                self.provider_quality = settings.get("provider_preferences", {}).get("quality", {}).get(target)
             try:
                 _provider_setup.require_capacity_choice(settings, self.provider_connection)
             except ValueError as exc:
                 self._emit({"t": "sys", "text": str(exc)})
                 return False, str(exc)
-            if not entry.get("session_id") and (not self.provider_connection["native_default"] or settings.get("provider_preferences", {}).get("quality")):
+            if (not entry.get("session_id") and not self.provider_connection["native_default"]) or self.provider_quality:
                 try:
                     bound_settings = {**settings, "provider_preferences": {**settings["provider_preferences"],
                                      "quality": {target: self.provider_quality} if self.provider_quality else {}}}
@@ -2267,7 +2273,7 @@ class Engine:
                        "plan" if read_only else ("fenced" if fenced else self.permission_mode)]
                 if stored:
                     cmd += ["--resume", stored]
-                self._bridge_system_prompt = persona + self._contract() + "\n" + history_reference
+                self._bridge_system_prompt = _personalize_prompt_for_user(persona) + self._contract() + "\n" + history_reference
             elif self.cli == "claude":
                 # W1a (ChatGPT r1): the fence guard runs BEFORE a tool - a fenced steward's shell admits no operator,
                 # redirection or file-writing git option; a code job's coder writes files only in its worktree
@@ -2284,7 +2290,7 @@ class Engine:
                 # W1a: *(SERVED_CODE_DENY if (fenced and in_served) else ()) extended to all in_served launches
                 "--disallowedTools", "AskUserQuestion", *(SERVED_CODE_DENY if in_served else ()),
                 *(("--settings", guard[0]) if guard[0] else ()),
-                "--append-system-prompt", persona + self._contract() + "\n" + history_reference,
+                "--append-system-prompt", _personalize_prompt_for_user(persona) + self._contract() + "\n" + history_reference,
                 "--name", "steward-proto",
                 ] + model_policy.launch_args(selection)
                 if stored:
@@ -3370,8 +3376,10 @@ class Engine:
             return False
         human_text = text  # the durability identity: his words, never the wrapper
         if origin == "human" and self._resume_prefix:
-            text = (self._resume_prefix
-                    + (JOIN_QUIET if self._resume_prefix.startswith(RESUME_QUIET) else JOIN_PICKUP) + text)
+            text = (_personalize_prompt_for_user(
+                        self._resume_prefix
+                        + (JOIN_QUIET if self._resume_prefix.startswith(RESUME_QUIET) else JOIN_PICKUP))
+                    + text)
             self._resume_prefix = None
         if not (self.fake or os.environ.get("STEWARD_COCKPIT_FAKE")):
             try:

@@ -23302,6 +23302,31 @@ class AnchorHandler(BaseHTTPRequestHandler):
                 if str(_q_cb.get("format") or "").lower() == "json" or "application/json" in (self.headers.get("Accept") or ""):
                     self._send_json(_obj_cb, code=_code_cb); return
                 self._send_html(_html_cb, code=_code_cb); return
+            if _path_only == "/api/steward/comms/attachment":
+                if not (self._term_token_ok() or _local_browser(self)):
+                    self._send_json({"error": "unauthorized"}, code=401); return
+                import comms_connector as _cc_att
+                import mimetypes as _mimetypes
+                _q_att = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+                _resolved_att = _cc_att.resolve_attachment_file_path(
+                    raw_path=str(_q_att.get("path") or ""),
+                    filename=str(_q_att.get("name") or _q_att.get("filename") or ""),
+                    uid=str(_q_att.get("uid") or ""),
+                    account_id=str(_q_att.get("account_id") or ""),
+                )
+                if _resolved_att is None or not _resolved_att.is_file():
+                    self._send_json({"ok": False, "error": "attachment not found"}, code=404); return
+                _ctype, _ = _mimetypes.guess_type(str(_resolved_att))
+                if not _ctype:
+                    _ctype = "application/pdf" if _resolved_att.suffix.lower() == ".pdf" else "application/octet-stream"
+                _raw_bytes = _resolved_att.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", _ctype)
+                self.send_header("Content-Length", str(len(_raw_bytes)))
+                self.send_header("Content-Disposition", f'inline; filename="{_resolved_att.name}"')
+                self.end_headers()
+                self.wfile.write(_raw_bytes)
+                return
             if _path_only.startswith("/api/steward/") or urlparse(self.path).path == "/api/anvil/walkthrough":
                 _verb_get = "anvil/walkthrough" if urlparse(self.path).path == "/api/anvil/walkthrough" else _path_only[len("/api/steward/"):]
                 if not (self._term_token_ok() or (_verb_get in ("dictate", "anvil", "anvil/walkthrough", "mothership-files") and _local_browser(self))):

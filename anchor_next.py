@@ -60,20 +60,55 @@ class InstalledUnknown(RuntimeError):
     read. Every caller refuses a DIRECT landing and says why (fail closed); it is never read as "nothing installed"."""
 
 
+def _inside(path, root):
+    p, r = _norm(path), _norm(root)
+    return bool(p and r) and (p == r or p.startswith(r.rstrip(os.sep) + os.sep))
+
+
+def _is_umbrella_dir(path):
+    """True when ``path`` is a parent container above the Anchor checkout itself (e.g. C:\\dev or C:\\) or the
+    user's home/drive root - an accidental .git in an umbrella parent folder must never claim every sibling project
+    under C:\\dev as Anchor's own repository or as an installed skill repository."""
+    try:
+        c = Path(path).resolve()
+        here = Path(__file__).resolve().parent
+        if c == c.anchor or c.parent == c:
+            return True
+        if c in here.parents:
+            return True
+        env_sr = os.environ.get("ANCHOR_SERVED_ROOT")
+        if env_sr:
+            sr_p = Path(env_sr).resolve()
+            if c != sr_p and c in sr_p.parents:
+                return True
+        home = Path.home().resolve()
+        if c == home or c in home.parents:
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def served_root():
     """The checkout the Anchor service serves from - ONE answer wherever this module is imported from (ChatGPT W1a
     r1: a job worktree or a development worktree must not take itself for the running Anchor): the MAIN worktree of
     the repository this file belongs to (C:\\dev\\Anchor for every worktree of it), or ANCHOR_SERVED_ROOT (a throwaway
-    repository in tests). Raises ServedUnknown when git cannot say."""
+    repository in tests). On collaborator zip installs where C:\\dev\\Anchor has no .git of its own, returns the
+    Anchor directory itself instead of walking up to a parent folder (such as C:\\dev) or raising ServedUnknown."""
     env = os.environ.get("ANCHOR_SERVED_ROOT")
     if env:
         return Path(env)
     here = Path(__file__).resolve().parent
+    if not (here / ".git").exists():
+        return here
     code, out, _ = _git(here, "worktree", "list", "--porcelain", timeout=60)
     first = next((ln[len("worktree "):] for ln in out.splitlines() if ln.startswith("worktree ")), "") if code == 0 else ""
     if not first:
         raise ServedUnknown("git could not name the main worktree of %s" % here)
-    return Path(first)
+    first_path = Path(first)
+    if _is_umbrella_dir(first_path):
+        return here
+    return first_path
 
 
 def toplevel(path):
@@ -89,14 +124,35 @@ def common_dir(path):
 
 def is_served_checkout(path):
     """True for the running checkout itself (by its working-tree root), never for a worktree of the same repository."""
+    if not path:
+        return False
+    sr = served_root()
+    if not (sr / ".git").exists():
+        return _inside(path, sr)
     top = toplevel(path)
-    return bool(top) and top == toplevel(served_root())
+    if top and _is_umbrella_dir(top) and not _inside(path, sr):
+        return False
+    sr_top = toplevel(sr)
+    if not sr_top or _is_umbrella_dir(sr_top):
+        return _inside(path, sr)
+    return bool(top) and top == sr_top
 
 
 def is_served_repo(path):
     """True for the running checkout's repository - the checkout or any worktree of it."""
+    if not path:
+        return False
+    sr = served_root()
+    if not (sr / ".git").exists():
+        return _inside(path, sr)
+    top = toplevel(path)
+    if top and _is_umbrella_dir(top) and not _inside(path, sr):
+        return False
     c = common_dir(path)
-    return bool(c) and c == common_dir(served_root())
+    sr_common = common_dir(sr)
+    if not sr_common or (toplevel(sr) and _is_umbrella_dir(toplevel(sr))):
+        return _inside(path, sr)
+    return bool(c) and c == sr_common
 
 
 def _manifest_roots():
@@ -205,6 +261,8 @@ def _git_anchor(path):
     except Exception as exc:
         raise InstalledUnknown("cannot resolve repository path %s: %s" % (path, exc)) from exc
     for cand in (p, *p.parents):
+        if _is_umbrella_dir(cand):
+            continue
         try:
             # exists() can turn access errors into False. A failed identity
             # inspection must not make an installed repository look absent.

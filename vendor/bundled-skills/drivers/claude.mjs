@@ -80,29 +80,70 @@ export function extractJson(text) {
  * @param {?number}[meta.cli_status] process exit code
  * @returns {{ text:string, rec:object }}
  */
+const CLAUDE_ENTITLEMENT_FALLBACK_LADDER = Object.freeze({
+  best: Object.freeze(['opus', 'sonnet']),
+  opus: Object.freeze(['sonnet']),
+});
+
+const CLAUDE_CREDIT_GATE_RE = /\b(?:requires?\s+(?:extra\s+)?usage\s+credits|credits_required|model_requires_usage_credits|switch\s+to\s+another\s+model|not\s+entitled\s+to\s+model|model\s+is\s+not\s+available\s+on\s+your\s+plan)\b/i;
+
+export function isClaudeModelCreditGate(rec, finalEnv = null, result = null) {
+  if (!rec || rec.ok) return false;
+  if (Number(rec.tools) > 0) return false;
+  const code = String(rec.api_error_code || finalEnv?.api_error_code || '').trim().toLowerCase();
+  if (code === 'credits_required' || code === 'model_requires_usage_credits') return true;
+  const combined = [
+    rec.error,
+    typeof finalEnv?.result === 'string' ? finalEnv.result : '',
+    typeof result?.stderr === 'string' ? result.stderr : '',
+  ].filter(Boolean).join(' ');
+  return CLAUDE_CREDIT_GATE_RE.test(combined);
+}
+
 export function parseClaudeFrames(stdout, {
   label = '(unlabeled)', cli_status = null, requested_model = null,
 } = {}) {
   let finalEnv = null, lastText = '', tools = 0, servedModel = null;
+  let apiErrorCode = null, apiErrorStatus = null;
   for (const raw of String(stdout).split('\n')) {
     const line = raw.trim();
     if (!line) continue;
     let o; try { o = JSON.parse(line); } catch { continue; }
+    if (typeof o.api_error_code === 'string' && o.api_error_code.trim()) {
+      apiErrorCode = o.api_error_code.trim();
+    }
+    if (typeof o.api_error_status === 'number' && Number.isFinite(o.api_error_status)) {
+      apiErrorStatus = o.api_error_status;
+    }
     if (o.type === 'assistant' && o.message?.content) {
-      if (typeof o.message.model === 'string' && o.message.model) servedModel = o.message.model;
+      if (typeof o.message.model === 'string' && o.message.model && !o.message.model.startsWith('<')) {
+        servedModel = o.message.model;
+      }
       for (const x of o.message.content) {
         if (x.type === 'tool_use') { tools++; }
         else if (x.type === 'text' && x.text?.trim()) { lastText = x.text.trim(); }
       }
     } else if (o.type === 'result') {
       finalEnv = o;
-      if (typeof o.model === 'string' && o.model) servedModel = o.model; // most authoritative
+      if (typeof o.model === 'string' && o.model && !o.model.startsWith('<')) {
+        servedModel = o.model; // most authoritative
+      }
     }
   }
+  const ok = cli_status === 0 && !!finalEnv && finalEnv.is_error === false;
+  const envError = !ok
+    ? ((typeof finalEnv?.result === 'string' && finalEnv.result.trim())
+      || (typeof finalEnv?.error === 'string' && finalEnv.error.trim())
+      || (typeof finalEnv?.error?.message === 'string' && finalEnv.error.message.trim())
+      || (Array.isArray(finalEnv?.errors)
+        ? finalEnv.errors.map(e => (typeof e === 'string' ? e : e?.message || '')).filter(Boolean).join('; ')
+        : '')
+      || (finalEnv?.is_error ? lastText : ''))
+    : '';
   const rec = {
     label, cli_status,
-    ok: cli_status === 0 && !!finalEnv && finalEnv.is_error === false,
-    status: cli_status === 0 && !!finalEnv && finalEnv.is_error === false
+    ok,
+    status: ok
       ? 'success'
       : 'cli_error',
     requested_model,
@@ -113,6 +154,9 @@ export function parseClaudeFrames(stdout, {
     // the internal physical receipt so the dispatcher's sink can record them.
     session_id: typeof finalEnv?.session_id === 'string' ? finalEnv.session_id : null,
     usage: finalEnv?.usage && typeof finalEnv.usage === 'object' ? finalEnv.usage : null,
+    ...(envError ? { error: String(envError).trim().slice(0, 500) } : {}),
+    ...(apiErrorCode ? { api_error_code: apiErrorCode } : {}),
+    ...(apiErrorStatus !== null ? { api_error_status: apiErrorStatus } : {}),
     ...attestStamp(servedModel), // SR-5 served-model stamp
   };
   rec.model_family = rec.ok ? 'claude' : null;
@@ -191,37 +235,44 @@ export function defaultRunClaude(fullPrompt, label, {
       'set CRUCIBLE_AGENT_LIVE=1 to spawn a real `claude -p` sub-agent, or inject a stub `runClaude` (tests/orchestrator)',
     );
   }
-  const args = [...BASE_ARGS, '--allowedTools', allowedTools];
+  const baseArgs = [...BASE_ARGS, '--allowedTools', allowedTools];
   if (sandbox === 'read-only' || isVerificationRole({ role, label })) {
-    const modeIndex = args.indexOf('--permission-mode');
-    if (modeIndex !== -1) args[modeIndex + 1] = 'plan';
-    const toolsIndex = args.indexOf('--allowedTools');
-    if (toolsIndex !== -1) args[toolsIndex + 1] = 'Read,Glob,Grep';
+    const modeIndex = baseArgs.indexOf('--permission-mode');
+    if (modeIndex !== -1) baseArgs[modeIndex + 1] = 'plan';
+    const toolsIndex = baseArgs.indexOf('--allowedTools');
+    if (toolsIndex !== -1) baseArgs[toolsIndex + 1] = 'Read,Glob,Grep';
   }
   const selection = policyResolver('claude', { env });
   const mdl = selection.model;
-  args.push(...modelLaunchArgs(selection));
   const cmdName = platform === 'win32' ? 'claude.exe' : 'claude';
-  return processRunner({
-    command: cmdName,
-    args,
-    options: { cwd: target, env: policyEnvironment(env), shell: false, windowsHide: true },
-    input: fullPrompt,
-    signal,
-    timeoutMs,
-    label,
-    log,
-    ...(spawnImpl ? { spawnImpl } : {}),
-    ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
-    platform,
-    ...(killImpl ? { killImpl } : {}),
-  }).then((result) => {
+  const childEnv = policyEnvironment(env);
+
+  const invokeModel = (activeSelection) => {
+    const launchArgs = [...baseArgs, ...modelLaunchArgs(activeSelection)];
+    return processRunner({
+      command: cmdName,
+      args: launchArgs,
+      options: { cwd: target, env: childEnv, shell: false, windowsHide: true },
+      input: fullPrompt,
+      signal,
+      timeoutMs,
+      label,
+      log,
+      ...(spawnImpl ? { spawnImpl } : {}),
+      ...(spawnSyncImpl ? { spawnSyncImpl } : {}),
+      platform,
+      ...(killImpl ? { killImpl } : {}),
+    });
+  };
+
+  const evaluateResult = (result, activeSelection) => {
+    const activeModel = activeSelection.model;
     const { text, rec, _finalEnv } = parseClaudeFrames(result.stdout, {
       label,
       cli_status: result.code,
-      requested_model: mdl,
+      requested_model: activeModel,
     });
-    const outcome = classifySubscriptionOutcome({family: 'claude', ...result});
+    const outcome = classifySubscriptionOutcome({ family: 'claude', ...result });
     rec.replay_safe = !rec.ok && outcome.replay_safe;
     rec.replay_evidence = outcome.replay_evidence;
     if (!rec.ok && outcome.failure_status) rec.status = outcome.failure_status;
@@ -231,15 +282,71 @@ export function defaultRunClaude(fullPrompt, label, {
       rec.error = result.error || result.stderr.slice(0, 500);
     }
     rec.timed_out = result.terminal === 'timeout';
-    rec.requested_effort = selection.effort;
-    rec.model_policy = selection;
+    rec.requested_effort = activeSelection.effort;
+    rec.model_policy = activeSelection;
     rec.highest_effort_verified = true;
     rec.aborted = result.terminal === 'aborted';
     rec.kill_status = result.kill_status;
     if (!_finalEnv) {
       log(`!! ${label}: no result envelope. stderr=${result.stderr.slice(0, 300)}`);
     }
-    return { text, rec };
+    return { text, rec, _finalEnv, result };
+  };
+
+  return invokeModel(selection).then(async (initialResult) => {
+    const initial = evaluateResult(initialResult, selection);
+    if (
+      initial.rec.ok
+      || initialResult.terminal !== 'closed'
+      || signal?.aborted
+      || !isClaudeModelCreditGate(initial.rec, initial._finalEnv, initialResult)
+    ) {
+      return { text: initial.text, rec: initial.rec };
+    }
+
+    const fallbackModels = CLAUDE_ENTITLEMENT_FALLBACK_LADDER[String(mdl || '').toLowerCase()] || [];
+    if (fallbackModels.length === 0) {
+      return { text: initial.text, rec: initial.rec };
+    }
+
+    const primaryError = initial.rec.error;
+    const attemptedModels = [mdl];
+    let lastAttempt = initial;
+
+    for (const nextModel of fallbackModels) {
+      if (signal?.aborted) break;
+      const prevModel = attemptedModels.at(-1);
+      attemptedModels.push(nextModel);
+      log(`   !! ${label}: Claude model '${prevModel}' requires usage credits — retrying with subscription model '${nextModel}'`);
+      const fallbackSelection = {
+        ...selection,
+        model: nextModel,
+        fallback_from_model: mdl,
+        selection_evidence: `${selection.selection_evidence || 'provider_moving_alias'}+entitlement_fallback`,
+      };
+      const retryRaw = await invokeModel(fallbackSelection);
+      const retryEval = evaluateResult(retryRaw, fallbackSelection);
+      lastAttempt = retryEval;
+      if (retryEval.rec.ok) {
+        retryEval.rec.fallback_from_model = mdl;
+        retryEval.rec.attempted_models = attemptedModels;
+        return { text: retryEval.text, rec: retryEval.rec };
+      }
+      if (
+        retryRaw.terminal !== 'closed'
+        || !isClaudeModelCreditGate(retryEval.rec, retryEval._finalEnv, retryRaw)
+      ) {
+        break;
+      }
+    }
+
+    if (primaryError && !lastAttempt.rec.error) {
+      lastAttempt.rec.error = primaryError;
+    } else if (primaryError) {
+      lastAttempt.rec.error = primaryError;
+    }
+    lastAttempt.rec.attempted_models = attemptedModels;
+    return { text: lastAttempt.text, rec: lastAttempt.rec };
   });
 }
 

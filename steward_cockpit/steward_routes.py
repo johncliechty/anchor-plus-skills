@@ -4033,11 +4033,46 @@ def _new_effort(cdir, body):
     if (d / "ECGBERHT.md").exists():
         return {"ok": False, "error": "that effort already exists"}, 409
     d.mkdir(exist_ok=True)
+    user_name = "John"
+    try:
+        import onboard_wizard as _ow
+        prof = _ow.get_active_user_profile()
+        if isinstance(prof, dict) and prof.get("configured") and str(prof.get("display_name") or "").strip():
+            user_name = str(prof.get("display_name")).strip()
+    except Exception:
+        pass
     (d / "ECGBERHT.md").write_text(
         "# Ecgberht — Face (campaign memory)\n\n## North star\n\n\n"
-        "## Active effort\n\n- None yet.\n\n## Why next\n\n- Stand-up: John "
+        f"## Active effort\n\n- None yet.\n\n## Why next\n\n- Stand-up: {user_name} "
         "describes the effort; the steward drafts the goal and the map.\n\n"
-        "## Human wait\n\n- John: describe this effort.\n", encoding="utf-8")
+        f"## Human wait\n\n- {user_name}: describe this effort.\n", encoding="utf-8")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "effort"
+    today_str = time.strftime("%Y-%m-%d")
+    if not (d / "roadmap.json").exists():
+        c_rm = {
+            "schema": "ecgberht-roadmap-v0",
+            "project_id": slug,
+            "updated": today_str,
+            "roadmap_events": [],
+            "roadmap_projection": [
+                {"id": "stage-0-intake", "name": f"Stage 0 Intake & Scope: {name}", "status": "active", "done_when": f"Scope and objectives locked for {name}"},
+            ],
+        }
+        (d / "roadmap.json").write_text(json.dumps(c_rm, indent=2) + "\n", encoding="utf-8")
+    if not (d / "strip.json").exists():
+        c_strip = {
+            "schema": "ecgberht-strip-v0",
+            "project_id": slug,
+            "face_path": "ECGBERHT.md",
+            "as_of": today_str,
+            "phase": "intake",
+            "active_effort": name,
+            "effort_status": "IN_PROGRESS",
+            "current_step_id": "stage-0-intake",
+            "next_recommended": f"Stage 0 Intake & Scope: {name}",
+            "why_next": f"Stand-up: {user_name} describes the effort; the steward drafts the goal and the map.",
+        }
+        (d / "strip.json").write_text(json.dumps(c_strip, indent=2) + "\n", encoding="utf-8")
     return {"ok": True, "rel": name}, 200
 
 

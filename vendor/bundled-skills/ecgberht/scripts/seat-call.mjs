@@ -463,10 +463,32 @@ export async function callTrioSeat(prompt, opts = {}) {
     };
   } catch (error) {
     const failedReceipt = error?.receipt ?? null;
+    const lastAttempt = Array.isArray(failedReceipt?.attempts) ? failedReceipt.attempts.at(-1) : null;
+    const lastTransport = Array.isArray(lastAttempt?.transport_attempts)
+      ? lastAttempt.transport_attempts.at(-1)
+      : null;
+    const providerError = lastTransport?.error?.message
+      || lastAttempt?.error?.message
+      || failedReceipt?.error?.message
+      || error?.provider_error
+      || error?.remedy
+      || '';
+    const providerStatus = lastTransport?.provider_status
+      || lastTransport?.error?.code
+      || lastAttempt?.error?.code
+      || failedReceipt?.error?.code
+      || null;
+    const isGenericTransportMsg = /^provider transport did not complete|^inspect the attached/i.test(providerError);
+    const rawDetail = providerError && !isGenericTransportMsg
+      ? providerError
+      : String(error?.message ?? error);
     return {
       ok: false,
       reason: failedReceipt?.status || error?.seat_status || 'seat_failed',
-      detail: String(error?.message ?? error).slice(0, 500),
+      detail: String(rawDetail).slice(0, 500),
+      ...(providerError && !isGenericTransportMsg ? { provider_error: String(providerError).slice(0, 500) } : {}),
+      ...(providerStatus ? { provider_status: String(providerStatus) } : {}),
+      family: failedReceipt?.requested?.family || family,
       meta: failedReceipt ? { trio_receipt: failedReceipt } : undefined,
     };
   }

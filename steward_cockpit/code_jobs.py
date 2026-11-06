@@ -82,9 +82,14 @@ def _git_raw(repo, *args, timeout=600):
 
 def porcelain_paths(repo):
     """Every changed or untracked path of ``repo`` (no renames), parsed from NUL-delimited porcelain v1; None on
-    failure."""
-    code, out, _ = _git_raw(repo, "-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                            "--no-renames")
+    failure. Uses --no-optional-locks with a brief retry so transient Windows index locks after worktree creation
+    never abort dirty_snapshot."""
+    code, out, _ = _git_raw(repo, "--no-optional-locks", "-c", "core.quotepath=false", "status", "--porcelain=v1", "-z",
+                            "--untracked-files=all", "--no-renames")
+    if code != 0:
+        time.sleep(0.15)
+        code, out, _ = _git_raw(repo, "--no-optional-locks", "-c", "core.quotepath=false", "status", "--porcelain=v1", "-z",
+                                "--untracked-files=all", "--no-renames")
     if code != 0:
         return None
     return [rec[3:] for rec in out.split("\0") if len(rec) > 3]
@@ -268,9 +273,51 @@ def _transition(cdir, job_id, expect, *, expect_attempt=None, **updates):
         return dict(j)
 
 
+def _is_umbrella_dir(path) -> bool:
+    """True when ``path`` is an umbrella parent container above ANCHOR_DIR (e.g. C:\\dev or C:\\) or user home/drive root."""
+    try:
+        c = Path(path).resolve()
+        here = Path(__file__).resolve().parents[1]
+        if c == c.anchor or c.parent == c:
+            return True
+        if c in here.parents:
+            return True
+        env_sr = os.environ.get("ANCHOR_SERVED_ROOT")
+        if env_sr:
+            sr_p = Path(env_sr).resolve()
+            if c != sr_p and c in sr_p.parents:
+                return True
+        home = Path.home().resolve()
+        if c == home or c in home.parents:
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def _repo_root(path):
     code, out, _ = _git(path, "rev-parse", "--show-toplevel")
-    return Path(out).resolve() if code == 0 and out else None
+    if code != 0 or not out:
+        return None
+    top = Path(out).resolve()
+    try:
+        req = Path(path).resolve()
+    except Exception:
+        req = top
+    if _norm(top) != _norm(req):
+        if _is_umbrella_dir(top):
+            return None
+        try:
+            if (req / ".anchor").exists() or (req / "ECGBERHT.md").exists() or (req / ".ecgberht").exists():
+                rel = req.relative_to(top).as_posix()
+                c_ls, tracked_out, _ = _git(top, "ls-files", "--", rel)
+                if c_ls == 0 and not tracked_out.strip():
+                    return None
+        except Exception:
+            pass
+    elif _is_umbrella_dir(top):
+        return None
+    return top
 
 
 def scratch_repos_base():
@@ -779,7 +826,8 @@ def foreman_manifest(job):
     """Foreman's seats keep no per-file write record, so its manifest is its whole change in its own worktree (minus
     runtime records and what never lands) - and every NEW file is named to the landing reviewer (review_note), who
     blocks a byproduct of running the tests (fcj r2, his call 2026-10-09: no pre-run of the check)."""
-    return [p for p in (changed_paths(job["worktree"], candidate_base(job)) or []) if not never_lands(p) and not _runtime(p)]
+    raw_paths = _filter_unmodified_seeded_untracked(job["worktree"], job, changed_paths(job["worktree"], candidate_base(job)) or [], [])
+    return [p for p in (raw_paths or []) if not never_lands(p) and not _runtime(p)]
 
 
 REVIEW_BRIEF_READ = 16000   # tools/steward_review.mjs reads this much of the brief file; a longer one is refused
@@ -1665,12 +1713,25 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
     if len(doc_stems) > 3:
         return {"ok": False, "error": "no job started: %d distinct document stems declared in outputs (max 3 per job) - "
                 "split multi-chapter or multi-deliverable bundles into separate focused jobs" % len(doc_stems)}
+    if repo and cdir and _is_umbrella_dir(repo):
+        try:
+            cdir_res = Path(cdir).resolve()
+            repo_res = Path(repo).resolve()
+            anchor_root = Path(os.environ.get("ANCHOR_SERVED_ROOT") or Path(__file__).resolve().parents[1]).resolve()
+            if inside(cdir_res, repo_res) and not inside(cdir_res, anchor_root):
+                rel_parts = cdir_res.relative_to(repo_res).parts
+                if rel_parts:
+                    repo = str(repo_res / rel_parts[0])
+                else:
+                    repo = str(cdir_res)
+        except Exception:
+            pass
     root = _repo_root(repo or "")
     non_git_source_dir = ""
     if root is None and repo and Path(repo).is_dir():
         import paths as _paths
         cand_dir = Path(repo).resolve()
-        if not any(inside(cand_dir, b) for b in (_paths.code_jobs_dir(), _paths.legacy_code_jobs_dir())):
+        if not _is_umbrella_dir(cand_dir) and not any(inside(cand_dir, b) for b in (_paths.code_jobs_dir(), _paths.legacy_code_jobs_dir())):
             root, scratch_err = _ensure_scratch_git_repo(cand_dir)
             if root is not None:
                 non_git_source_dir = str(cand_dir)
@@ -1736,11 +1797,15 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
                 return {"ok": False, "error": "could not make the worktree: %s" % (why or err)[-300:]}
             served_dirt = dirty_snapshot(root)
             if served_dirt is None:
+                _cleanup({"id": job_id, "repo": str(root), "branch": branch, "worktree": str(wt)}, keep_branch=False)
                 return {"ok": False, "error": "could not record the repository's own changes before starting; no job started"}
             why = _redo_refusal(read_jobs(cdir), escalates) if escalates else None
             if why:                                   # five r1 #2 / r2 #2: raced with another redo or a re-filing
                 _cleanup({"id": job_id, "repo": str(root), "branch": branch, "worktree": str(wt)}, keep_branch=False)
                 return {"ok": False, "error": "no job started: " + why}
+            seeded_untracked = {}
+            if not installed and not non_git_source_dir:
+                seeded_untracked = _seed_untracked_inputs(root, wt, work_dir)
             job = {"id": job_id, "repo": str(root), "branch": branch, "worktree": str(wt), "base": base, "brief": brief,
                    "work_dir": work_dir, "attempt": 1, "phase": "producing", "phase_at": time.time(),
                    "repo_dirt": served_dirt,
@@ -1753,6 +1818,8 @@ def start(cdir, repo, brief, check="", engine_factory=None, steward="", coder=""
                 job["escalates"] = escalates
             if non_git_source_dir:
                 job["non_git_source_dir"] = non_git_source_dir
+            if seeded_untracked:
+                job["seeded_untracked"] = seeded_untracked
             # 2026-10-08 (John: "identify the actual skill being used"): a job that runs a skill says which, so the status
             # names it and its finish time is reckoned from that skill's own history - never from other coding jobs
             label = re.sub(r"[^A-Za-z0-9 ._-]", "", str(skill or "")).strip()[:40]
@@ -1916,6 +1983,87 @@ def _companion_outputs(job, wt, allowed, candidates, *, base=None):
     return out
 
 
+def _seed_untracked_inputs(root, wt, work_dir="") -> dict[str, str]:
+    """Copy untracked non-ignored, non-runtime project files (e.g. newly dropped student submissions or data files)
+    from ``root`` into ``wt`` so the coder and --check can read them, recording their initial sha256 hashes so
+    unmodified input files are cleaned before landing and never block landing as unexpected changes."""
+    seeded: dict[str, str] = {}
+    try:
+        args = ["--no-optional-locks", "-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard", "-z"]
+        if work_dir:
+            args += ["--", work_dir]
+        code, out, _ = _git_raw(root, *args, timeout=60)
+        if code != 0 or not out:
+            return {}
+        candidates = [p for p in out.split("\0") if p.strip()]
+        if len(candidates) > 200:
+            return {}
+        root_p, wt_p = Path(root).resolve(), Path(wt).resolve()
+        for rel in candidates:
+            rel_norm = rel.replace(chr(92), "/").lstrip("/")
+            if _BOOKKEEPING.search(rel_norm) or _runtime(rel_norm) or never_lands(rel_norm) or _COCKPIT_LEDGER_RE.search(rel_norm):
+                continue
+            if any(part in _SCRATCH_SKIP_DIRS for part in Path(rel_norm).parts):
+                continue
+            src = root_p / rel_norm
+            dst = wt_p / rel_norm
+            try:
+                if not src.is_file() or src.is_symlink() or dst.exists():
+                    continue
+                st = src.stat()
+                if st.st_size > _SCRATCH_MAX_FILE_BYTES:
+                    continue
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                h = file_hash(wt_p, rel_norm)
+                if h:
+                    seeded[rel_norm] = h
+            except OSError:
+                continue
+    except Exception:
+        return {}
+    return seeded
+
+
+def _filter_unmodified_seeded_untracked(wt, job, paths, manifest):
+    """Filter out seeded untracked input files that were neither modified nor written/declared by the job."""
+    if paths is None:
+        return None
+    seeded = job.get("seeded_untracked")
+    if not isinstance(seeded, dict) or not seeded:
+        return paths
+    written = set(manifest or ()) | set(job.get("outputs") or ())
+    out = []
+    for p in paths:
+        if p in seeded and p not in written and file_hash(wt, p) == seeded[p]:
+            continue
+        out.append(p)
+    return out
+
+
+def _cleanup_unmodified_seeded_untracked(wt, job, manifest):
+    """Remove unmodified seeded untracked input files from ``wt`` after ``run_check`` so git status is clean for landing."""
+    seeded = job.get("seeded_untracked")
+    if not isinstance(seeded, dict) or not seeded:
+        return
+    written = set(manifest or ()) | set(job.get("outputs") or ())
+    wt_p = Path(wt).resolve()
+    for rel, sha in list(seeded.items()):
+        if rel in written:
+            continue
+        if file_hash(wt_p, rel) == sha:
+            target = wt_p / rel
+            try:
+                if target.is_file() or target.is_symlink():
+                    target.unlink()
+                parent = target.parent
+                while parent != wt_p and parent.is_dir() and not any(parent.iterdir()):
+                    parent.rmdir()
+                    parent = parent.parent
+            except OSError:
+                pass
+
+
 def _hold_cockpit_records(wt, job, manifest):
     """When a worker produces real deliverable files and also edits cockpit ledger files (DELIVERABLES.md, ECGBERHT.md,
     STATUS*.md, roadmap.json) inside the worktree, stash those ledger copies under .anchor/held-records/ and restore
@@ -2050,7 +2198,7 @@ def _finish(cdir, job_id, job, result):
         return
     made_copies = list(job.get("anchor_copies") or [])                # five r5 #1: copies an earlier attempt made stay ours
     _make_reading_copies(job, wt, made_copies)                        # a declared PDF/HTML/DOCX left to package is made, not missed
-    changed = _with_declared_ignored(job, wt, changed_paths(wt, candidate_base(job)))
+    changed = _filter_unmodified_seeded_untracked(wt, job, _with_declared_ignored(job, wt, changed_paths(wt, candidate_base(job))), manifest)
     fields = {"summary": summary, "manifest": manifest, "check_ok": None, "check_output": "", "files": [],
               "unexpected": [], "landed": False, "landed_commit": "", "review": None, "authors": job["authors"],
               "model_served": (result or {}).get("model_served") or job.get("model_served") or None}
@@ -2063,11 +2211,12 @@ def _finish(cdir, job_id, job, result):
         checked = True
         phase(job, "checking", check_ok=fields["check_ok"], check_output=fields["check_output"],
                   anchor_copies=list(made_copies), copy_prints=dict(job.get("copy_prints") or {}))
-        changed = _with_declared_ignored(job, wt, changed_paths(wt, candidate_base(job)))
+        changed = _filter_unmodified_seeded_untracked(wt, job, _with_declared_ignored(job, wt, changed_paths(wt, candidate_base(job))), manifest)
     keep = True                                            # the worktree stays unless the work is safely placed
     if changed is None:
         note, status, error = "not landed: git could not list the changes; the worktree is kept at %s" % wt, "failed", "git status failed"
     elif not changed:
+        _cleanup_unmodified_seeded_untracked(wt, job, manifest)
         note, status, error = "nothing changed", ("failed" if err else "done"), err
         left = _unlanded(wt, manifest)                 # an ignored output the coder wrote is still work: keep it
         keep = bool(left)
@@ -2110,7 +2259,9 @@ def _finish(cdir, job_id, job, result):
             phase(job, "checking", check_ok=fields["check_ok"], check_output=fields["check_output"],
                   anchor_copies=list(made_copies), copy_prints=dict(job.get("copy_prints") or {}))
             _hold_cockpit_records(wt, job, manifest)
-            after = changed_paths(wt, candidate_base(job))
+            if fields["check_ok"] is True:
+                _cleanup_unmodified_seeded_untracked(wt, job, manifest)
+            after = _filter_unmodified_seeded_untracked(wt, job, changed_paths(wt, candidate_base(job)), manifest)
             late = sorted(set(after or []) - set(changed)) if after is not None else ["(git could not list the changes)"]
             late = _not_runtime(late)                    # W1: a runtime record the check touched never refuses
             late_companions = _companion_outputs(job, wt, allowed, late, base=candidate_base(job))

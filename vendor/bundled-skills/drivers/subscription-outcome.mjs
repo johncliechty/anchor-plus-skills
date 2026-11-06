@@ -32,7 +32,7 @@ const USAGE_CODES = new Set([
   'usage_limit', 'usage_limit_reached', 'usage_limit_exceeded',
   'quota_exceeded', 'quota_exhausted', 'insufficient_quota',
   'rate_limit_error', 'rate_limit_exceeded', 'rate_limited', 'too_many_requests',
-  'credit_balance_too_low',
+  'credit_balance_too_low', 'credits_required', 'model_requires_usage_credits',
 ]);
 const AUTH_CODES = new Set([
   'authentication_error', 'authentication_required', 'authentication_failed',
@@ -40,7 +40,7 @@ const AUTH_CODES = new Set([
   'session_expired', 'invalid_authentication', 'invalid_api_key',
 ]);
 
-const USAGE_TEXT = /^(?:error:\s*)?(?:you(?:['’]ve| have) (?:hit|reached|exceeded) (?:your|the) (?:usage |rate )?limit|you (?:have )?(?:hit|reached|exceeded) your (?:usage |rate )?limit|you(?:['’]re| are) out of (?:extra )?usage|(?:claude ai )?usage limit (?:reached|exceeded)|rate limit (?:reached|exceeded)|too many requests|insufficient (?:quota|credits)|quota (?:exceeded|exhausted)|credit balance (?:is )?too low)\b/i;
+const USAGE_TEXT = /^(?:error:\s*)?(?:you(?:['’]ve| have) (?:hit|reached|exceeded) (?:your|the) (?:usage |rate )?limit|you (?:have )?(?:hit|reached|exceeded) your (?:usage |rate )?limit|you(?:['’]re| are) out of (?:extra )?usage|(?:claude ai )?usage limit (?:reached|exceeded)|rate limit (?:reached|exceeded)|too many requests|insufficient (?:quota|credits)|quota (?:exceeded|exhausted)|credit balance (?:is )?too low|model requires (?:extra )?usage credits|[a-z0-9][a-z0-9._ -]{0,60} requires (?:extra )?usage credits(?:\.\s*switch to another model)?)\b/i;
 const AUTH_TEXT = /^(?:error:\s*)?(?:not logged in|authentication (?:required|failed)|failed to authenticate|login required|please (?:log|sign) in|your (?:login )?session has expired|invalid authentication credentials|unauthorized(?: request)?)\b/i;
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -83,6 +83,7 @@ function errorCategories(frame) {
   if (Array.isArray(frame.errors)) values.push(...frame.errors);
   if (frame.message !== undefined) values.push(frame.message);
   if (frame.code !== undefined) values.push({ code: frame.code });
+  if (frame.api_error_code !== undefined) values.push({ code: frame.api_error_code });
   if (typeof frame.result === 'string' && frame.result.trim()) values.push(frame.result);
   return values.map(category).filter(Boolean);
 }
@@ -203,9 +204,19 @@ function inspectCodex(frames) {
   };
 }
 
-function inspectClaude(frames) {
+function inspectClaude(rawFrames) {
+  const frames = rawFrames.filter(frame => frame?.type !== 'rate_limit_event');
   const init = frames[0];
-  const result = frames[1];
+  const result = frames.at(-1);
+  const syntheticErrorAssistant = frames.length === 3
+    && object(frames[1])
+    && frames[1].type === 'assistant'
+    && (frames[1].message?.model === '<synthetic>'
+      || typeof frames[1].api_error_code === 'string'
+      || typeof frames[1].error === 'string'
+      || typeof result?.api_error_code === 'string')
+    && !toolsInFrame(frames[1])
+    && !contradictoryOutput(frames[1].message?.usage);
   const success = frames.some(frame => frame.type === 'result' && frame.is_error === false
     && !(typeof frame.subtype === 'string' && frame.subtype.startsWith('error')));
   const failures = frames.filter(frame => frame.type === 'result' &&
@@ -213,11 +224,16 @@ function inspectClaude(frames) {
   const categories = failures.flatMap(errorCategories);
   const unique = [...new Set(categories)];
   const resultIsError = object(result) && result.type === 'result' && result.is_error === true
-    && typeof result.subtype === 'string' && result.subtype.startsWith('error');
+    && typeof result.subtype === 'string'
+    && (result.subtype.startsWith('error')
+      || (result.subtype === 'success' && (typeof result.api_error_code === 'string' || unique.length === 1)));
   const noAnswer = !nonempty(result?.result) || category(result.result) === unique[0];
-  const proof = frames.length === 2 && init?.type === 'system' && init.subtype === 'init'
+  const zeroTurns = zero(result?.num_turns)
+    || (result?.num_turns === 1 && (typeof result?.api_error_code === 'string' || syntheticErrorAssistant));
+  const proof = (frames.length === 2 || syntheticErrorAssistant)
+    && init?.type === 'system' && init.subtype === 'init'
     && nonempty(init.session_id) && result?.session_id === init.session_id
-    && resultIsError && zero(result.num_turns) && zero(result.usage?.output_tokens)
+    && resultIsError && zeroTurns && zero(result.usage?.output_tokens)
     && !contradictoryToolCounter(result) && !contradictoryOutput(result.usage)
     && !contradictoryOutput(result.modelUsage)
     && (!Array.isArray(result.permission_denials) || result.permission_denials.length === 0)
@@ -225,7 +241,9 @@ function inspectClaude(frames) {
     && unique.length === 1 && noAnswer;
   return {
     success, terminal: frames.some(frame => frame.type === 'result'), categories,
-    activity: frames.some(frame => ['assistant', 'user', 'tool_use', 'tool_result'].includes(frame.type)),
+    activity: frames.some((frame, idx) =>
+      ['assistant', 'user', 'tool_use', 'tool_result'].includes(frame.type)
+      && !(idx === 1 && syntheticErrorAssistant)),
     proof, evidence: 'claude_native_zero_turn_zero_output_rejection',
   };
 }

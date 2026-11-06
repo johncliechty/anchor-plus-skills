@@ -46,10 +46,21 @@ def tokens(cmd):
             out.append((cmd[i + 1:j], True))
             i = j + 1
         elif c == '"':
-            j = cmd.find('"', i + 1)
-            if j < 0:
+            buf = []
+            j = i + 1
+            while j < n:
+                ch = cmd[j]
+                if ch == "\\" and j + 1 < n and cmd[j + 1] in ('"', "\\"):
+                    buf.append(cmd[j + 1])
+                    j += 2
+                    continue
+                if ch == '"':
+                    break
+                buf.append(ch)
+                j += 1
+            if j >= n or cmd[j] != '"':
                 return None
-            body = cmd[i + 1:j]
+            body = "".join(buf)
             if any(x in body for x in ("$", "`")) or body.endswith("\\"):
                 return None
             out.append((body, True))
@@ -103,7 +114,7 @@ def check_steward_shell(cmd):
     if not toks:
         refuse("an empty command")
     for kind, prog, first in ALLOWED:
-        if len(toks) >= 2 and not toks[0][1] and prog.match(toks[0][0]) and not toks[1][1] and first.match(toks[1][0]):
+        if len(toks) >= 2 and not toks[0][1] and prog.match(toks[0][0]) and (not toks[1][1] or kind != "git") and first.match(toks[1][0]):
             if kind == "git":
                 rest = toks[2:]
                 if any(q for _, q in rest):

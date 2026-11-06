@@ -66,8 +66,34 @@ export function validatePolicy(policy = DEFAULT_POLICY) {
   return { ...DEFAULT_POLICY };
 }
 
+function extractQualityPreferences(raw) {
+  if (!object(raw)) return null;
+  const quality = object(raw.provider_preferences) && object(raw.provider_preferences.quality)
+    ? raw.provider_preferences.quality
+    : {};
+  const out = {};
+  for (const family of FAMILIES) {
+    const item = quality[family];
+    if (typeof item === 'string' && MODEL_ID.test(item.trim())) {
+      out[family] = { model: item.trim(), effort: 'highest_supported' };
+    } else if (object(item) && typeof item.model === 'string' && MODEL_ID.test(item.model.trim())) {
+      const eff = typeof item.effort === 'string' ? item.effort.trim().toLowerCase() : 'highest_supported';
+      out[family] = {
+        model: item.model.trim(),
+        effort: (eff === 'highest_supported' || EFFORTS.includes(eff)) ? eff : 'highest_supported',
+      };
+    } else if (typeof raw[`${family}_model`] === 'string' && MODEL_ID.test(raw[`${family}_model`].trim())) {
+      out[family] = { model: raw[`${family}_model`].trim(), effort: 'highest_supported' };
+    }
+  }
+  return Object.keys(out).length > 0 ? { quality: out } : null;
+}
+
 function validatePrefs(raw, source) {
   if (!object(raw) || raw.settings_error) fail(null, 'Model preferences are invalid.', 'settings_invalid');
+  if (raw.orchestrator_family && !raw.coding_family) raw = { ...raw, coding_family: raw.orchestrator_family };
+  if (raw.orchestrator_family && !raw.default_cli) raw = { ...raw, default_cli: raw.orchestrator_family };
+  if (raw.reviewer_family && !raw.review_family) raw = { ...raw, review_family: raw.reviewer_family };
   for (const key of ['coding_family', 'review_family', 'default_cli']) {
     if (!FAMILIES.has(raw[key])) fail(null, `Missing or invalid ${key}.`, 'settings_invalid');
   }
@@ -75,6 +101,7 @@ function validatePrefs(raw, source) {
   if (!Number.isSafeInteger(revision) || revision < 0) {
     fail(null, 'settings_revision must be a nonnegative safe integer.', 'settings_invalid');
   }
+  const providerPreferences = extractQualityPreferences(raw);
   return {
     coding_family: raw.coding_family,
     review_family: raw.review_family,
@@ -82,6 +109,7 @@ function validatePrefs(raw, source) {
     model_policy: validatePolicy(raw.model_policy === undefined ? DEFAULT_POLICY : raw.model_policy),
     settings_revision: revision,
     source: source || raw.source || 'provided-settings',
+    ...(providerPreferences ? { provider_preferences: providerPreferences } : {}),
   };
 }
 
@@ -260,7 +288,12 @@ export function normalizeCatalog(family, raw) {
     })));
     evidence = 'provider_catalog_order';
   } else {
-    entries = normalizedRows(family, [{ model: 'best', efforts: claudeEfforts(raw), rank: 0 }]);
+    const efforts = claudeEfforts(raw);
+    entries = normalizedRows(family, ['best', 'opus', 'sonnet', 'haiku'].map((alias, index) => ({
+      model: alias,
+      efforts,
+      rank: index,
+    })));
     evidence = 'provider_moving_alias';
   }
   if (family === 'grok') {
@@ -443,8 +476,31 @@ export function resolveModelPolicy(family, {
     cache.set(key, entry);
     if (cache.size > 64) cache.delete(cache.keys().next().value);
   }
+  const baseSelection = selectModel(family, entry.catalog);
+  const qualityChoice = prefs.provider_preferences?.quality?.[family];
+  let resolvedSelection = baseSelection;
+  if (qualityChoice && typeof qualityChoice.model === 'string') {
+    const targetModel = qualityChoice.model === 'latest_supported'
+      ? baseSelection.model
+      : qualityChoice.model;
+    const matchedRow = entry.catalog.models.find(row => row.model === targetModel);
+    if (matchedRow) {
+      const targetEffort = qualityChoice.effort && qualityChoice.effort !== 'highest_supported'
+        && matchedRow.efforts.includes(qualityChoice.effort)
+        ? qualityChoice.effort
+        : highestEffort(matchedRow.efforts, family);
+      if (targetModel !== baseSelection.model || targetEffort !== baseSelection.effort) {
+        resolvedSelection = {
+          ...baseSelection,
+          model: matchedRow.model,
+          effort: targetEffort,
+          selection_evidence: 'explicit_setup_choice',
+        };
+      }
+    }
+  }
   return {
-    ...selectModel(family, entry.catalog),
+    ...resolvedSelection,
     policy_version: POLICY_VERSION,
     requested_policy: { ...prefs.model_policy },
     settings_revision: prefs.settings_revision,

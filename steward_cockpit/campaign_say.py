@@ -790,12 +790,12 @@ def relay_to_cockpit_steward(folder, target_query: str, action: str, message: st
 
 
 _WL_ADD_RX = re.compile(
-    r"^(?:add|put|insert)\s+(.+?)\s+(?:to|on|into)\s+(?:my\s+|the\s+)?(?:working\s+list|persistent\s+list|effort\s+list|spine)"
-    r"(?:\s+under\s+(business|teaching|research|personal))?(?:\s+(?:as|at|priority)\s*(a1|a2|b1|c1))?\s*[.!?]*$",
+    r"^(?:add|put|insert)\s+(.+?)\s+(?:to|on|into)\s+(?:my\s+|the\s+)?(?:working\s+list|persistent\s+list|effort\s+list|spine|list)"
+    r"(?:\s+under\s+(business|teaching|research|personal))?(?:\s+(?:as|at|priority)\s*#?(a1|a2|b1|c1|\d+))?\s*[.!?]*$",
     re.I,
 )
 _WL_LIST_RX = re.compile(
-    r"^(?:what(?:'s| is)\s+on\s+my\s+(?:working\s+list|persistent\s+list|spine)|show\s+(?:me\s+)?my\s+(?:working\s+list|persistent\s+list|spine))\s*[.!?]*$",
+    r"^(?:what(?:'s| is)\s+on\s+(?:my\s+|the\s+)?(?:working\s+list|persistent\s+list|spine|list)|show\s+(?:me\s+)?(?:my\s+|the\s+)?(?:working\s+list|persistent\s+list|spine|list))\s*[.!?]*$",
     re.I,
 )
 

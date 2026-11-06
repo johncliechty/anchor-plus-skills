@@ -21,6 +21,7 @@ Both REUSE :func:`worktrees._git` (the single subprocess git wrapper) — git
 invocation is never forked here. Stdlib only.
 """
 
+import os
 from pathlib import Path
 
 import worktrees as _wt
@@ -32,6 +33,28 @@ _STARTER_CLAUDE_MD = (
     "\n"
     "R&D project managed by Anchor — research/plan/build via the trio.\n"
 )
+
+
+def _is_umbrella_dir(path: Path) -> bool:
+    """Refuse to git-init umbrella parent containers (e.g. C:\\dev, drive root, user home, or any parent of ANCHOR_DIR)."""
+    try:
+        c = Path(path).resolve()
+        here = Path(__file__).resolve().parent
+        if c == c.anchor or c.parent == c:
+            return True
+        if c in here.parents:
+            return True
+        env_sr = os.environ.get("ANCHOR_SERVED_ROOT")
+        if env_sr:
+            sr_p = Path(env_sr).resolve()
+            if c != sr_p and c in sr_p.parents:
+                return True
+        home = Path.home().resolve()
+        if c == home or c in home.parents:
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def ensure_git_repo(folder) -> dict:
@@ -59,9 +82,16 @@ def ensure_git_repo(folder) -> dict:
     except (OSError, ValueError):
         return {"ok": False, "reason": "path-missing", "folder": str(folder)}
 
-    # Already a repo → no-op.
+    if _is_umbrella_dir(path):
+        return {"ok": False, "initialized": False, "reason": "umbrella-directory", "folder": str(path)}
+
+    # Already a repo → no-op, UNLESS path has no .git of its own and only inherits an accidental umbrella .git (e.g. C:\dev\.git).
     if _wt._is_git_repo(path):
-        return {"ok": True, "initialized": False}
+        if (path / ".git").exists():
+            return {"ok": True, "initialized": False}
+        ok_top, _rc_top, top_out, _err_top = _wt._git(path, ["rev-parse", "--show-toplevel"])
+        if not (ok_top and (top_out or "").strip() and _is_umbrella_dir(Path((top_out or "").strip()))):
+            return {"ok": True, "initialized": False}
 
     # git init. A missing git binary folds into ok=False (the _git wrapper turns
     # OSError into a clean failure tuple) → surface "git-unavailable".

@@ -870,68 +870,46 @@ def chief_of_staff_horizon_efforts(ctx: dict[str, Any]) -> dict[str, Any]:
     c1 = legacy_cards[0] if legacy_cards else {}
     c2 = legacy_cards[1] if len(legacy_cards) > 1 else {}
 
-    today_efforts = [
-        {
-            "id": "cos-today-mit",
-            "tier_cls": "q1-urgent",
-            "tier_badge": "Urgent · Today 1:00 PM",
-            "tier_pill_cls": "red",
-            "break_badge": "⚡ 20m Break",
-            "break_tags": "all 15m 30m",
-            "title": "1. AI Club — MIT Lectures: Finalize 1:00 PM Slides & Handout",
-            "driver": "Calendar 1:00 PM MKTG 590 / AI Club + Meg Meloy email thread. Clearing before 12:00 PM removes today's #1 time-critical blocker.",
-            "oranges_skill": "Einstein",
-            "oranges_text": "Einstein verified slide equations & pre-staged the worked-example PDF handout inside the cockpit.",
-            "pid": mit_pid or str(c1.get("pid") or ""),
-            "folder": mit_dir or str(c1.get("folder") or ""),
-            "step_id": str(c1.get("step_id") or "mit-lecture-slides"),
-            "href": _cockpit_href(mit_pid or str(c1.get("pid") or "")),
-            "open_label": "↗ Open AI Cockpit (AI Club)",
-            "skill_btn_label": "🎓 Run Einstein Slide Check",
-            "skill_prompt": "Run Einstein final slide & worked-example verification for today's 1:00 PM AI Club / MIT Lecture.",
-            "unlock_note": "+45m Q2 Deep Work",
-        },
-        {
-            "id": "cos-today-trusts",
-            "tier_cls": "q1-urgent",
-            "tier_badge": "Urgent · Family/Legal",
-            "tier_pill_cls": "red",
-            "break_badge": "⚡ 15m Break",
-            "break_tags": "all 15m 30m family",
-            "title": "2. Family Trusts: Kathleen Bradshaw Valuation/IGT Replies & Sliding Rock Filing",
-            "driver": "3 emails today from Kathleen Bradshaw (Valuation/Transfer Dates, IGT Texas Banking, JBJ/Calder Items 1-6) + HelloSign executed Sliding Rock Trust + David Risbey partnership consent.",
-            "oranges_skill": "Legal-Beagle + Financial-Analyst",
-            "oranges_text": "Legal-Beagle + Financial-Analyst synthesized all 4 trust threads into 1 decision checklist + 3 draft replies.",
-            "pid": trust_pid or str(c2.get("pid") or ""),
-            "folder": trust_dir or str(c2.get("folder") or ""),
-            "step_id": str(c2.get("step_id") or "sliding-rock-bradshaw"),
-            "href": _cockpit_href(trust_pid or str(c2.get("pid") or "")),
-            "open_label": "↗ Open AI Cockpit (Family Trusts)",
-            "skill_btn_label": "⚖️ Pre-Stage Legal-Beagle + Financial-Analyst",
-            "skill_prompt": "Use Legal-Beagle and Financial-Analyst to review Kathleen Bradshaw's Valuation/IGT items 1-6, David Risbey's partnership transfer consent, and the executed Sliding Rock Trust.",
-            "unlock_note": "+30m Q2 Deep Work",
-        },
-        {
-            "id": "cos-today-q2-moe",
-            "tier_cls": "q2-deep",
-            "tier_badge": "Star Chart Q2 · Deep Work",
-            "tier_pill_cls": "emerald",
-            "break_badge": "🧠 90m+ Slot",
-            "break_tags": "all deep",
-            "title": "3. [2:15 PM Protected Q2 Deep Work] Empirical Demand (MoE Paper 1) / Collapse of Marketing",
-            "driver": "Star Chart Steward (Marketing Papers goal · Nov 15 target). Protected 2:15-4:45 PM window unlocked once the 2 Urgent items above are cleared.",
-            "oranges_skill": "researchPrime + Gandalf",
-            "oranges_text": "researchPrime + Gandalf pre-staged the empirical identification critique & literature matrix in the cockpit.",
-            "pid": mkt_pid,
-            "folder": mkt_dir,
-            "step_id": "moe-paper-1",
-            "href": _cockpit_href(mkt_pid),
-            "open_label": "↗ Open AI Cockpit (Marketing Papers)",
-            "skill_btn_label": "🔬 Pre-Stage researchPrime + Gandalf",
-            "skill_prompt": "Run researchPrime and Gandalf PROTOCOL v2 on Empirical Demand (MoE Paper 1) and The Collapse of Marketing identification strategy.",
-            "unlock_note": "",
-        },
-    ]
+    # Pull dynamic recommendations directly from 'The List' (ordered by Priority #1, #2, #3...)
+    list_recs = []
+    try:
+        import comms_connector as _cc_list
+        list_recs = _cc_list.build_chief_of_staff_recommendations_from_the_list()
+    except Exception:
+        list_recs = []
+
+    today_efforts = []
+    for idx_r, rec in enumerate(list_recs[:3]):
+        fallback_c = c1 if idx_r == 0 else (c2 if idx_r == 1 else {})
+        r_copy = dict(rec)
+        r_copy["pid"] = str(r_copy.get("pid") or fallback_c.get("pid") or mit_pid or mba_pid or "")
+        r_copy["folder"] = str(r_copy.get("folder") or fallback_c.get("folder") or mit_dir or mba_dir or "")
+        r_copy["step_id"] = str(r_copy.get("step_id") or fallback_c.get("step_id") or f"list-step-{idx_r+1}")
+        today_efforts.append(r_copy)
+
+    if not today_efforts:
+        today_efforts = [
+            {
+                "id": "cos-today-mit",
+                "tier_cls": "q1-urgent",
+                "tier_badge": "📋 The List · #1 (1st)",
+                "tier_pill_cls": "red",
+                "break_badge": "⚡ 20m Break",
+                "break_tags": "all 15m 30m",
+                "title": "Priority #1: Shut down my company Archty",
+                "driver": "The List (#1 · Business) — Next To Do: Confirm final stub-year federal & state tax return schedule with CPA.",
+                "oranges_skill": "Legal-Beagle + Financial-Analyst",
+                "oranges_text": "Steward Chief-of-Staff recommendation for #1: Execute stub-year tax tie-out in Archty Cockpit.",
+                "pid": mit_pid or str(c1.get("pid") or ""),
+                "folder": mit_dir or str(c1.get("folder") or ""),
+                "step_id": str(c1.get("step_id") or "mit-lecture-slides"),
+                "href": _cockpit_href(mit_pid or str(c1.get("pid") or "")),
+                "open_label": "↗ Open AI Cockpit",
+                "skill_btn_label": "🍊 Pre-Stage Legal-Beagle + Financial-Analyst",
+                "skill_prompt": "Run Legal-Beagle and Financial-Analyst on Archty final dissolution & stub-year tax schedule.",
+                "unlock_note": "Move to Things Done",
+            }
+        ]
 
     week_efforts = [
         {

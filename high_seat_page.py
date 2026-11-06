@@ -792,6 +792,7 @@ def _comms_pulse_html(ctx):
     all_cal_evs = comms.get("calendar_events_all") or cal_evs
     imp_emails = comms.get("important_emails") or []
     oth_emails = comms.get("other_emails") or []
+    acted_emails = comms.get("acted_upon_emails") or []
     sent_emails = comms.get("sent_emails") or []
     sr_state = comms.get("speed_racer") or _cc.load_speed_racer_queue()
     sr_queue = sr_state.get("queue") or []
@@ -851,15 +852,30 @@ def _comms_pulse_html(ctx):
             if ev.get("merged_badge")
             else ""
         )
+        rsvp_st = str(ev.get("rsvp_status") or "responded")
+        rsvp_lbl = esc(str(ev.get("rsvp_label") or ("✓ Responded · Attending" if rsvp_st == "responded" else "⏳ Not Responded")))
+        rsvp_tone = esc(str(ev.get("rsvp_tone") or ("emerald" if rsvp_st == "responded" else "amber")))
+        rsvp_pill = (
+            '<button type="button" class="tw-btn comms-badge %s" data-cal-rsvp-toggle="%s" data-cal-rsvp-status="%s" data-cal-title="%s" data-cal-date="%s" '
+            'style="cursor:pointer;font-weight:750" title="Click to toggle your response status (Responded / Attending vs Not Responded)">%s</button>'
+            % (
+                rsvp_tone,
+                esc(ev.get("id") or ev.get("uid") or ""),
+                esc(rsvp_st),
+                esc(ev.get("title") or ""),
+                esc(ev.get("date") or ""),
+                rsvp_lbl,
+            )
+        )
         loc_html = (
             '<div class="comms-item-sub">&#128205; %s</div>' % esc(str(ev.get("location") or "")[:90])
             if ev.get("location")
             else ""
         )
         cal_rows.append(
-            '<div class="comms-item %s cave-cal-card" data-cave-cal-open="%s" data-cal-title="%s" data-cal-date="%s" data-cal-start="%s" data-cal-end="%s" data-cal-loc="%s" data-cal-source="%s" style="cursor:pointer" title="Click to open Calendar Event Dialogue Tile">'
+            '<div class="comms-item %s cave-cal-card" data-cave-cal-open="%s" data-cal-title="%s" data-cal-date="%s" data-cal-start="%s" data-cal-end="%s" data-cal-loc="%s" data-cal-source="%s" data-cal-rsvp="%s" style="cursor:pointer" title="Click to open Calendar Event Dialogue Tile">'
             '<div class="comms-item-top">'
-            '<span class="comms-badge %s">%s &middot; %s</span>%s%s%s</div>'
+            '<span class="comms-badge %s">%s &middot; %s</span>%s%s%s%s</div>'
             '<div class="comms-item-title">%s</div>%s</div>'
             % (
                 esc(ev.get("tone") or "sky"),
@@ -870,9 +886,11 @@ def _comms_pulse_html(ctx):
                 esc(ev.get("end_time") or ""),
                 esc(ev.get("location") or ""),
                 esc(ev.get("calendar_badge") or ev.get("project_name") or "Calendar"),
+                esc(rsvp_st),
                 esc(ev.get("tone") or "sky"),
                 esc(_short(ev.get("date")) or ev.get("date") or ""),
                 esc(ev.get("time_label") or ""),
+                rsvp_pill,
                 proj_link,
                 merged_pill,
                 acts,
@@ -1047,6 +1065,35 @@ def _comms_pulse_html(ctx):
         )
     sent_mail_html = "".join(sent_mail_rows) or '<div class="tw-empty">No recent sent emails recorded yet &mdash; click <b>&#8635; Sync Now</b> or send a reply from any email thread.</div>'
 
+    acted_mail_rows = []
+    for em in acted_emails[:30]:
+        uid = esc(em.get("uid") or "")
+        frm_raw = str(em.get("from") or "Inbox")
+        frm_clean = esc(frm_raw.split("<")[0].strip().strip('"') or frm_raw)
+        s_email = esc(em.get("sender_email") or frm_raw)
+        subj = esc(em.get("subject") or "(No Subject)")
+        acct_b = esc(em.get("account_badge") or "Inbox")
+        act_st = esc(em.get("acted_status") or "✓ Acted Upon")
+        act_tone = esc(em.get("acted_tone") or "emerald")
+        act_rsn = esc(em.get("acted_reason") or "Handled")
+        dt_short = esc(str(em.get("date") or "")[:16])
+        acted_mail_rows.append(
+            '<div class="comms-item %s cave-mail-card cave-acted-card" data-mail-uid="%s" data-mail-sender="%s" data-mail-source="%s" data-cave-mail-open="%s" style="cursor:pointer;opacity:0.92;border-left:3px solid #38bdf8" title="Click to open Email Dialogue Tile">'
+            '<div class="comms-item-top">'
+            '<span class="comms-badge %s" style="font-weight:750">%s</span>'
+            '<span class="comms-badge sky">%s</span>'
+            '<b class="cave-mail-from" data-cave-mail-open="%s" style="cursor:pointer;color:#f8fafc">%s</b>'
+            '<span class="comms-meta" style="text-align:right">%s</span>'
+            '<span class="comms-acts">'
+            '<button type="button" class="tw-btn" data-cave-mail-open="%s" title="Open Email Dialogue Tile">&#128172; Open</button>'
+            '<button type="button" class="tw-btn" data-cave-mail-triage="unact" data-mail-uid="%s" data-mail-sender="%s" title="Move back to Active Inbox">&#8617; Back to Active Inbox</button>'
+            '</span></div>'
+            '<div class="comms-item-title" data-cave-mail-open="%s" style="cursor:pointer">%s</div>'
+            '<div class="comms-item-sub" style="color:#94a3b8;font-size:11px">%s</div></div>'
+            % (act_tone, uid, s_email, acct_b, uid, act_tone, act_st, acct_b, uid, frm_clean, dt_short, uid, uid, s_email, uid, subj, act_rsn)
+        )
+    acted_mail_html = "".join(acted_mail_rows) or '<div class="tw-empty">No acted-upon emails yet. Emails you reply to, mark Seen, or send to Speed Racer appear here.</div>'
+
     mail_rows = []
     for th in [t for t in threads if t.get("can_mark_done") or str(t.get("id") or "").startswith(("corr-", "log-"))][:4]:
         acts = []
@@ -1178,7 +1225,11 @@ def _comms_pulse_html(ctx):
         ev_st = esc(str(p.get("start_time") or "09:00"))
         ev_et = esc(str(p.get("end_time") or "10:00"))
         ev_src = esc(str(p.get("calendar_badge") or "Calendar"))
-        m_badge = (' <span class="comms-badge amber" style="font-size:9.5px">%s</span>' % esc(str(p.get("merged_badge")))) if p.get("merged_badge") else ""
+        p_rsvp_st = str(p.get("rsvp_status") or "responded")
+        p_rsvp_lbl = esc(str(p.get("rsvp_label") or ("✓ Responded" if p_rsvp_st == "responded" else "⏳ Not Responded")))
+        p_rsvp_tone = "emerald" if p_rsvp_st == "responded" else "amber"
+        rsvp_prep_badge = ' <span class="comms-badge %s" style="font-size:9.5px;font-weight:750">%s</span>' % (p_rsvp_tone, p_rsvp_lbl)
+        m_badge = rsvp_prep_badge + ((' <span class="comms-badge amber" style="font-size:9.5px">%s</span>' % esc(str(p.get("merged_badge")))) if p.get("merged_badge") else "")
         em_chips = []
         for rem in rel_ems[:2]:
             r_uid = esc(str(rem.get("uid") or ""))
@@ -1377,13 +1428,24 @@ def _comms_pulse_html(ctx):
         '        <div id="caveDlgMailMeta" style="font-size:11.5px;color:#94a3b8;margin-top:3px">From: &mdash;</div>'
         '      </div>'
         '      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-        '        <button type="button" class="mini" id="btnCaveDlgDownloadAtt" hidden style="border-color:#38bdf8;color:#7dd3fc">&#11015; Save Attachments Locally</button>'
-        '        <button type="button" class="mini" id="btnCaveDlgSeen" title="Mark Seen">&#128065; Seen</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgSeen" style="border-color:#38bdf8;background:rgba(56,189,248,0.18);color:#7dd3fc;font-weight:800" title="Mark as Seen (no response needed right now) and move out of Active Inbox into Acted Upon">&#128065; Seen (&rarr; Acted Upon)</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgToSpeedRacer" style="border-color:#f59e0b;background:rgba(245,158,11,0.22);color:#fef08a;font-weight:800" title="Have the Steward craft a response in Speed Racer and move this email out of Active Inbox into Acted Upon">&#127950;&#65039; Speed Racer (Craft Response)</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgAlreadyReplied" style="border-color:#10b981;background:rgba(16,185,129,0.16);color:#6ee7b7;font-weight:750" title="Tell Steward you already answered this email — removes any draft and moves to Acted Upon">&#10003; Already Replied</button>'
+        '        <button type="button" class="mini" id="btnCaveDlgDownloadAtt" hidden style="border-color:#38bdf8;color:#7dd3fc">&#11015; Save Attachments</button>'
         '        <button type="button" class="mini" id="btnCaveDlgDowngrade" title="Downgrade to Not Important &amp; teach Steward">&#11015; Not Interested</button>'
         '        <button type="button" class="mini" id="btnCaveDlgUpgrade" title="Promote to Emails to Address">&#11014; Upgrade</button>'
-        '        <button type="button" class="mini" data-cave-dlg-close="1" style="border-color:#f43f5e;color:#fda4af;font-weight:700">&times; Close Dialogue</button>'
+        '        <button type="button" class="mini" data-cave-dlg-close="1" style="border-color:#f43f5e;color:#fda4af;font-weight:700">&times; Close</button>'
         '      </div>'
         '    </div>'
+        '    <!-- Steward Directions Bar for Open Email (Giving instructions moves email from Active Inbox -> Acted Upon & queues in Speed Racer) -->'
+        '    <div id="caveDlgStewardDirectionsBar" style="margin-top:10px;padding:8px 11px;border-radius:8px;border:1px solid rgba(245,158,11,0.45);background:rgba(245,158,11,0.09);display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        '      <span style="font-size:11px;font-weight:800;color:#fef08a">&#127950;&#65039; Give Steward Directions for This Email:</span>'
+        '      <input type="text" id="caveDlgStewardDirectionsInput" placeholder="e.g. Confirm Wednesday 3-5 PM proctoring and ask Hollie to assign 2 TAs (then move out of Active Inbox)..." style="flex:1;min-width:240px;padding:5px 9px;border-radius:6px;border:1px solid #334155;background:#070b12;color:#f8fafc;font-size:11.5px">'
+        '      <button type="button" class="tw-btn" id="btnCaveDlgSendDirectionsToSr" style="border-color:#f59e0b;background:rgba(245,158,11,0.24);color:#fef08a;font-weight:800;padding:4px 10px" title="Steward crafts response per your directions in Speed Racer and moves this email to Acted Upon">&#127950;&#65039; Send Directions &rarr; Speed Racer (&amp; Move to Acted Upon)</button>'
+        '    </div>'
+        '    <!-- Clickable Attachments Bar + Inline Attachment Viewer inside Expanded Email Tile -->'
+        '    <div id="caveDlgAttachmentsBar" hidden style="margin-top:8px;padding:7px 10px;border-radius:8px;border:1px solid rgba(56,189,248,0.4);background:rgba(15,23,42,0.9);display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>'
+        '    <div id="caveDlgAttachmentPreviewHost" hidden style="margin-top:8px;padding:10px;border-radius:8px;border:1px solid #38bdf8;background:#070b12"></div>'
         '    <div style="display:grid;grid-template-columns:1.05fr 1fr;gap:14px;margin-top:12px" class="cave-dlg-split">'
         '      <!-- Left: Conversation & Past Messages History -->'
         '      <div style="background:#090d16;border:1px solid #283548;border-radius:10px;padding:10px 12px;max-height:420px;overflow-y:auto">'
@@ -1441,6 +1503,15 @@ def _comms_pulse_html(ctx):
         '        </div>'
         '        <div><label style="font-size:10.5px;color:#94a3b8;display:block;margin-bottom:2px">Location / Zoom Link</label><input type="text" id="caveCalEvLocation" placeholder="Zoom / 217 Business Building" style="width:100%%;box-sizing:border-box;padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9"></div>'
         '        <div><label style="font-size:10.5px;color:#94a3b8;display:block;margin-bottom:2px">Agenda / Notes</label><textarea id="caveCalEvNotes" rows="3" placeholder="Meeting agenda, attendees, or context..." style="width:100%%;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid #283548;background:#0b0f17;color:#f1f5f9"></textarea></div>'
+        '        <div id="caveCalEvRsvpBar" style="padding:8px 10px;border-radius:8px;background:#090d16;border:1px solid #283548;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">'
+        '          <span style="font-size:10.5px;font-weight:700;color:#cbd5e1">&#9989; Your Response / Attendance Status:</span>'
+        '          <div style="display:inline-flex;gap:5px;flex-wrap:wrap">'
+        '            <button type="button" class="tw-btn done" data-cave-cal-rsvp-set="responded" style="font-weight:750">&#10003; Responded &middot; Attending</button>'
+        '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="not_responded" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700">&#9203; Not Responded</button>'
+        '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="tentative">? Tentative</button>'
+        '            <button type="button" class="tw-btn" data-cave-cal-rsvp-set="declined" style="border-color:rgba(244,63,94,0.45);color:#fda4af">&#10005; Declined</button>'
+        '          </div>'
+        '        </div>'
         '        <div style="padding:8px 10px;border-radius:8px;background:#090d16;border:1px solid #283548">'
         '          <div style="font-size:10.5px;font-weight:700;color:#cbd5e1;margin-bottom:5px">&#128197; Reflect &amp; Sync Back into Calendar(s):</div>'
         '          <div style="display:flex;gap:12px;flex-wrap:wrap">'
@@ -1473,11 +1544,16 @@ def _comms_pulse_html(ctx):
         '<button type="button" class="tw-btn" data-cave-cal-view="iphone" title="Apple iPhone Rolling Stream anchored at NOW">&#128241; Rolling Stream</button>'
         '<button type="button" class="tw-btn" data-comms-layout-toggle="cal" title="Click to toggle Calendar between 100%% Full Width (Mockup 3) and 50/50 Split">&#10530; Full Calendar</button>'
         '</div></div>'
-        '<div class="cave-cal-nav" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 0 4px;font-size:11px;color:var(--text-dim)">'
-        '<div style="display:inline-flex;gap:4px">'
+        '<div class="cave-cal-nav" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:2px 0 4px;font-size:11px;color:var(--text-dim);flex-wrap:wrap">'
+        '<div style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap">'
         '<button type="button" class="tw-btn" data-cave-cal-nav="-1">&#9664; Prev</button>'
         '<button type="button" class="tw-btn" data-cave-cal-nav="0">Today / Now</button>'
         '<button type="button" class="tw-btn" data-cave-cal-nav="1">Next &#9654;</button>'
+        '<span style="margin-left:4px;display:inline-flex;gap:4px;align-items:center" id="caveCalRsvpFilterBar">'
+        '<button type="button" class="tw-btn on" data-cal-rsvp-filter="all" title="Show all calendar items">All (<span id="caveCalRsvpAllCnt">0</span>)</button>'
+        '<button type="button" class="tw-btn" data-cal-rsvp-filter="responded" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="Show items you have responded to / are attending">&#10003; Responded (<span id="caveCalRsvpYesCnt">0</span>)</button>'
+        '<button type="button" class="tw-btn" data-cal-rsvp-filter="not_responded" style="border-color:rgba(245,158,11,0.55);color:#fde68a;font-weight:700" title="Show invitations you have NOT responded to yet">&#9203; Not Responded (<span id="caveCalRsvpNoCnt">0</span>)</button>'
+        '</span>'
         '</div>'
         '<span id="caveCalDateLabel" style="font-weight:700;color:var(--text-warm)">7-Day Week Schedule</span>'
         '</div>'
@@ -1490,9 +1566,11 @@ def _comms_pulse_html(ctx):
         '<span>&#9993; Steward Email Hub: Speed Racer, Inbox &amp; Sent</span>'
         '<div class="cave-mail-folder-bar" id="caveMailFolderBar" style="display:inline-flex;gap:4px;margin-left:2px;flex-wrap:wrap">'
         '<button type="button" class="tw-btn" id="btnCaveOpenSpeedRacer" data-cave-open-speed-racer="1" style="border-color:rgba(245,158,11,0.65);background:rgba(245,158,11,0.18);color:#fef08a;font-weight:800" title="Toggle the expandable Speed Racer Rapid Email Review &amp; Approval Tile">&#127950;&#65039; Speed Racer (<span id="caveSrBtnCount">%d</span>)</button>'
-        '<button type="button" class="tw-btn on" data-cave-mail-folder="all" title="Show Inbox Triage + Sent Emails together">&#128203; All Mail</button>'
-        '<button type="button" class="tw-btn" data-cave-mail-folder="inbox" title="Show Inbox Triage only (To Address + Not Important)">&#128229; Inbox (%d)</button>'
-        '<button type="button" class="tw-btn" id="btnCaveMailFolderSent" data-cave-mail-folder="sent" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View emails you have sent across your connected accounts &amp; Anchor">&#128228; Sent Emails (<span id="caveSentCountBadge">%d</span>)</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailFolderSrArchive" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.55);background:rgba(16,185,129,0.14);color:#6ee7b7;font-weight:750" title="Pull up the Speed Racer Archive of emails you have approved &amp; sent">&#128220; Speed Racer Archive (<span id="caveMailBarSrArchCount">0</span>)</button>'
+        '<button type="button" class="tw-btn on" data-cave-mail-folder="all" title="Show Active Inbox + Acted Upon + Sent Emails">&#128203; All Mail</button>'
+        '<button type="button" class="tw-btn" data-cave-mail-folder="inbox" title="Show Active Inbox only (Emails you have not yet replied to, marked Seen, or queued in Speed Racer)">&#128229; Active Inbox (<span id="caveActiveInboxCountBadge">%d</span>)</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailFolderActed" data-cave-mail-folder="acted" style="border-color:rgba(56,189,248,0.55);background:rgba(56,189,248,0.12);color:#7dd3fc;font-weight:750" title="View emails you have already replied to (auto-detected from Sent Items), marked Seen, or given Steward instructions for Speed Racer">&#9745; Acted Upon (<span id="caveActedCountBadge">%d</span>)</button>'
+        '<button type="button" class="tw-btn" id="btnCaveMailFolderSent" data-cave-mail-folder="sent" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View emails you have sent across your connected accounts &amp; Anchor">&#128228; Sent List (<span id="caveSentCountBadge">%d</span>)</button>'
         '</div></div>'
         '<div style="display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap">'
         '<span class="comms-badge amber" id="caveImpCountBadge">&#9889; %d to Address</span>'
@@ -1508,7 +1586,10 @@ def _comms_pulse_html(ctx):
         '      <span class="comms-badge amber" id="caveSrTileBadge" style="font-weight:700">%d Drafts Awaiting Approval</span>'
         '      <span style="font-size:10.5px;color:#6ee7b7;font-weight:600">&#128274; Steward NEVER sends without your explicit approval</span>'
         '    </div>'
-        '    <span id="caveSrToggleHint" style="font-size:11px;color:#fde68a;font-weight:700">Click Header to Expand / Collapse &#9662;</span>'
+        '    <div style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        '      <button type="button" class="tw-btn" id="btnCaveSrArchiveToggle" data-sr-archive-toggle="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="View all emails approved &amp; sent through Speed Racer">&#128220; Speed Racer Archive (<span id="caveSrArchiveCount">0</span>)</button>'
+        '      <span id="caveSrToggleHint" style="font-size:11px;color:#fde68a;font-weight:700">Click Header to Expand / Collapse &#9662;</span>'
+        '    </div>'
         '  </div>'
         '  <div class="cave-sr-body" id="caveSpeedRacerBody" style="padding:10px 12px;border-top:1px solid rgba(245,158,11,0.3);display:flex;flex-direction:column;gap:8px">'
         '    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.35);padding:6px 10px;border-radius:7px;font-size:11px">'
@@ -1522,16 +1603,25 @@ def _comms_pulse_html(ctx):
         '      <span id="caveSpeedRacerUndoText">&#10003; Approved &amp; Sent</span>'
         '      <button type="button" class="tw-btn" id="btnCaveSrUndoSend" style="border-color:#fde68a;color:#fde68a;font-weight:700">&#8617; Undo Send</button>'
         '    </div>'
+        '    <div id="caveSpeedRacerArchiveDrawer" hidden style="padding:10px;border-radius:8px;border:1px solid rgba(16,185,129,0.45);background:#070b12"></div>'
+        '    <div id="caveSrAttachmentPreviewHost" hidden style="padding:10px;border-radius:8px;border:1px solid #38bdf8;background:#070b12"></div>'
         '    <div id="caveSpeedRacerDeckHost"></div>'
         '  </div>'
         '</div>'
         '<div class="cave-mail-buckets" id="caveMailBucketsGrid" data-mail-folder-mode="all">'
         '<div class="cave-mail-bucket-col" id="caveMailImportantCol">'
         '<div style="font-size:10.5px;font-weight:750;color:#fbbf24;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
-        '<span>&#9889; Emails to Address (Steward Priority &mdash; Generously Weighted)</span>'
-        '<span style="font-size:10px;color:var(--text-dim);font-weight:500">Tap &#128065; Seen unopened = Not Interesting</span>'
+        '<span>&#9889; Active Inbox — Emails to Address (Already-Replied &amp; Seen Emails Auto-Moved to Acted Upon)</span>'
+        '<span style="font-size:10px;color:var(--text-dim);font-weight:500">Open &rarr; &#128065; Seen or &#127950;&#65039; Speed Racer moves to Acted Upon</span>'
         '</div>'
         '<div id="caveMailImportantList" class="cave-mail-list">%s</div>'
+        '</div>'
+        '<div class="cave-mail-bucket-col" id="caveMailActedCol" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(56,189,248,0.35)">'
+        '<div style="font-size:10.5px;font-weight:750;color:#7dd3fc;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
+        '<span>&#9745; Acted Upon List (Already Replied in Sent Items, Queued in Speed Racer, or Marked Seen)</span>'
+        '<span style="font-size:10px;color:var(--text-dim);font-weight:500">Auto-detects your Sent replies (e.g. Hollie Meyer)</span>'
+        '</div>'
+        '<div id="caveMailActedList" class="cave-mail-list">%s</div>'
         '</div>'
         '<div class="cave-mail-bucket-col" id="caveMailSentCol" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(16,185,129,0.35)">'
         '<div style="font-size:10.5px;font-weight:750;color:#6ee7b7;margin-bottom:5px;display:flex;align-items:center;justify-content:space-between">'
@@ -1575,11 +1665,13 @@ def _comms_pulse_html(ctx):
         sr_json_boot,
         len(sr_queue),
         len(imp_emails) + len(oth_emails),
+        len(acted_emails),
         len(sent_emails),
         len(imp_emails),
         len(oth_emails),
         len(sr_queue),
         imp_mail_html,
+        acted_mail_html,
         sent_mail_html,
         oth_mail_html,
         roadmap_corr_html,
@@ -2090,7 +2182,15 @@ def _proactive_triage_strip(ctx):
     cos_today_html = []
     for ef in cos.get("today_efforts") or ():
         done_btn = ""
-        if ef.get("unlock_note"):
+        list_tid = str(ef.get("list_tile_id") or "")
+        if list_tid:
+            done_btn = (
+                '<button type="button" class="cos-act-btn done-unlock" data-wl-cos-complete="%s" data-mark-done="1" data-cos-clear-id="%s" '
+                'data-target-dir="%s" data-target-step="%s" title="Check off this item on The List and move it to Things Done">&#10003; Check Off The List (&rarr; Things Done)</button>'
+                '<button type="button" class="cos-act-btn" data-wl-focus-tile="%s" title="Open this item inside The List tile below">&#128203; Open in The List</button>'
+                % (esc(list_tid), esc(ef["id"]), esc(ef.get("folder") or ""), esc(ef.get("step_id") or ""), esc(list_tid))
+            )
+        elif ef.get("unlock_note"):
             done_btn = (
                 '<button type="button" class="cos-act-btn done-unlock" data-mark-done="1" data-cos-clear-id="%s" '
                 'data-target-dir="%s" data-target-step="%s" title="Mark cleared and unlock Q2 Deep Work">&#10003; Mark Cleared (%s)</button>'
@@ -2378,11 +2478,11 @@ def _proactive_triage_strip(ctx):
         '<span class="ts-badge chz-badge">&#9733; Chief of Staff</span>'
         '<span class="cos-pill sky">&#128994; %d Running</span>'
         '<span class="cos-pill orange">&#127818; %d Pre-Staged</span>'
-        '<span class="ts-sub chz-sub" style="font-size:10.5px">&#127818; Parable of the Oranges &middot; Clear 2 Q1 &rarr; <strong>2.5h Q2 Deep Work</strong></span>'
+        '<span class="cos-pill emerald" id="cosListLinkBadge">&#128203; Populated from The List (#1 &rarr; #2 &rarr; #3)</span><span class="ts-sub chz-sub" style="font-size:10.5px">&#127818; Parable of the Oranges &middot; 1) You set Priority on <strong>The List</strong> &rarr; 2) Chief of Staff populates <strong>Things To Do</strong></span>'
         '</div>'
         '<div class="ts-quick chz-quick" style="gap:4px">'
         '<button type="button" class="ts-pill cos-expand-toggle" id="btnCosToggleExpand" data-cos-toggle-body="1" aria-expanded="false" title="Click to drill down and expand Chief-of-Staff Next-Effort Recommendations &amp; Parable-of-the-Oranges Skill Pre-Staging">&#9662; Expand Recommendations (%d)</button>'
-        '<button type="button" class="ts-pill" id="btnTriageSynthesize" data-triage-synthesize="1" title="Synthesize a cross-portfolio Chief-of-Staff Executive Brief">&#10022; Brief</button>'
+        '<button type="button" class="ts-pill" data-open-the-list="1" style="border-color:rgba(56,189,248,0.55);color:#7dd3fc" title="Open or expand The List tile right below Chief of Staff">&#128203; The List</button><button type="button" class="ts-pill" data-wl-populate-cos="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7" title="Steward (in Chief of Staff mode) populates Things To Do from your priority order on The List">&#9889; Populate from The List</button><button type="button" class="ts-pill" id="btnTriageSynthesize" data-triage-synthesize="1" title="Synthesize a cross-portfolio Chief-of-Staff Executive Brief">&#10022; Brief</button>'
         '<a class="ts-pill desk" href="%s" target="_blank" rel="noopener" title="Run ad-hoc admin tasks in the Desktop AI Cockpit">&#128421; Ad-Hoc Cockpit</a>'
         '<button type="button" class="ts-pill" data-toggle-dated="1" title="Toggle Dated Schedule Ruler">&#128197; Dated Ruler</button>'
         '<button type="button" class="ts-pill" data-jump="#cal">&#9993; Email &amp; Counsel</button>'
@@ -2429,7 +2529,7 @@ def _proactive_triage_strip(ctx):
         '<div class="cos-horizon-strip" id="cosHorizonStrip">'
         '<div class="cos-hz-col cos-hz-today is-wide" id="cosCol-today">'
         '<div class="cos-hz-head" data-cos-expand-col="today">'
-        '<div class="cos-hz-title"><span>&#128293; Today &mdash; Clear Urgent &rarr; Enter Q2 Deep Work</span>'
+        '<div class="cos-hz-title"><span>&#128203; Things To Do &mdash; Populated by Chief of Staff from The List (#1 &rarr; #2 &rarr; #3)</span>'
         '<span class="cos-pill red">2 Urgent</span><span class="cos-pill emerald">1 Q2 Deep Slot</span></div>'
         '<button type="button" class="cos-hz-exp-btn" data-cos-expand-col="today">Widest (Default)</button>'
         '</div>%s</div>'
@@ -2538,93 +2638,107 @@ def _proactive_triage_strip(ctx):
     )
 
 def _working_list_spine_html(ctx) -> str:
-    """Variation A (2026-11-06): Persistent Working List Spine of Expandable Multi-Step Effort Tiles on the Cave of Wonders.
-    Each tile can be moved up/down, checked off, or archived, and expands to show a Multi-Step Checklist where every step
-    can connect to an AI Cockpit item (Wave / Deliverable) AND/OR a Cave / Star Chart Initiative (or both), plus a Brainstorming Scratchpad."""
+    """Variation A + The List (2026-11-06):
+    - The List starts as a single collapsed tile showing the number of items on it; click to expand.
+    - Inside The List, every item starts as a single-line tile showing its Order (#1, #2...), Title, and Category of Sub-List (plus assigned AI Cockpit & Star Chart Goal/Initiative badges), which expands when clicked on."""
     try:
         import comms_connector as _cc
         wl_state = _cc.load_working_list_spine()
     except Exception:
-        wl_state = {"tiles": [], "cockpit_items_catalog": [], "initiative_items_catalog": []}
+        wl_state = {"tiles": [], "cockpit_items_catalog": [], "initiative_items_catalog": [], "cockpits_dropdown_catalog": [], "goals_dropdown_catalog": [], "project_folders_catalog": [], "cos_recommendations": []}
 
     tiles = [t for t in (wl_state.get("tiles") or []) if isinstance(t, dict)]
+    # Ensure all items start collapsed as single-line tiles on initial render
+    for _t in tiles:
+        _t["expanded"] = False
     active_tiles = [t for t in tiles if not t.get("archived")]
     arch_tiles = [t for t in tiles if t.get("archived")]
     cnt_bus = sum(1 for t in active_tiles if t.get("category") == "Business")
     cnt_tch = sum(1 for t in active_tiles if t.get("category") == "Teaching")
     cnt_res = sum(1 for t in active_tiles if t.get("category") == "Research")
     cnt_per = sum(1 for t in active_tiles if t.get("category") == "Personal")
-    wl_json = json.dumps(wl_state).replace("</", "<\\/")
+    wl_json = json.dumps(wl_state).replace("</", "<\/")
+
+    def _ord_lbl(n: int) -> str:
+        n = max(1, int(n or 1))
+        suf = "th" if 10 <= (n % 100) <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+        return f"#{n} ({n}{suf})"
 
     init_rows = []
     for t in active_tiles:
         tid = esc(str(t.get("id") or ""))
         title = esc(str(t.get("title") or "Effort Tile"))
         cat = esc(str(t.get("category") or "Business"))
-        prio = esc(str(t.get("prio") or "B1"))
+        p_num = int(t.get("priority") or 1)
+        ord_txt = esc(_ord_lbl(p_num))
         steps = [s for s in (t.get("steps") or []) if isinstance(s, dict)]
         done_n = sum(1 for s in steps if s.get("done"))
         tot_n = len(steps)
-        conn_n = sum(1 for s in steps if s.get("cockpitItem") or s.get("initiativeItem"))
-        nxt_step = next((s for s in steps if not s.get("done")), None)
-        nxt_txt = ("<b>Next step:</b> %s" % esc(str(nxt_step.get("text") or ""))) if nxt_step else ("&#10003; All %d steps completed &mdash; ready to archive!" % tot_n)
-        p_cls = "prio-a" if prio.startswith("A") else ("prio-b" if prio.startswith("B") else "prio-c")
+        ck_name = esc(str(t.get("cockpitName") or ""))
+        goal_name = esc(str(t.get("goalName") or ""))
+        ck_chip = ('<span class="wl-pill sky" title="Assigned AI Cockpit">&#128760; %s</span>' % ck_name) if ck_name else ""
+        goal_chip = ('<span class="wl-pill purple" title="Assigned Star Chart Goal / Initiative">&#127775; %s</span>' % goal_name[:34]) if goal_name else ""
+        p_cls = "prio-a" if p_num == 1 else ("prio-b" if p_num == 2 else "prio-c")
         init_rows.append(
-            '<article class="wl-tile %s" data-wl-tile-id="%s">'
-            '<div class="wl-summary" data-wl-toggle-expand="%s">'
-            '<span class="wl-prio">%s</span>'
-            '<div class="wl-main">'
-            '<div class="wl-title-line"><b class="wl-title">%s</b>'
+            '<article class="wl-tile %s" data-wl-tile-id="%s" data-wl-priority="%d">'
+            '<div class="wl-summary" data-wl-toggle-expand="%s" style="padding:7px 10px;align-items:center">'
+            '<span class="wl-prio" data-wl-cycle-prio="%s" title="Order %s on The List">%s</span>'
+            '<div class="wl-main" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0">'
+            '<div class="wl-title-line" style="margin:0;flex-wrap:nowrap;overflow:hidden"><b class="wl-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">%s</b>'
             '<span class="wl-pill">%s</span>'
-            '<span class="wl-pill sky">&#10003; %d/%d steps</span>'
-            '<span class="wl-pill purple">&#128279; %d/%d connected to Cockpit / Initiative</span></div>'
-            '<div class="wl-sub">%s</div>'
+            '%s%s'
+            '<span class="wl-pill sky">&#10003; %d/%d</span></div>'
             '</div>'
             '<div class="wl-acts">'
-            '<button type="button" class="mini" data-wl-toggle-expand="%s">&#9662; Open Steps &amp; Connections</button>'
+            '<button type="button" class="mini" data-wl-archive="%s" title="Check off and move to Things Done">&#10003; Done</button>'
+            '<button type="button" class="mini" data-wl-toggle-expand="%s">&#9662; Expand</button>'
             '</div></div></article>'
-            % (p_cls, tid, tid, prio, title, cat, done_n, tot_n, conn_n, tot_n, nxt_txt, tid)
+            % (p_cls, tid, p_num, tid, tid, ord_txt, ord_txt, title, cat, ck_chip, goal_chip, done_n, tot_n, tid, tid)
         )
 
     return (
-        '<section class="wl-spine-sec" id="caveWorkingListSpine" aria-label="Persistent Working List Spine">'
+        '<section class="wl-spine-sec is-collapsed" id="caveWorkingListSpine" data-the-list-tile="1" aria-label="The List">'
         '<script>window.ANCHOR_WORKING_LIST_INIT = %s;</script>'
-        '<div class="wl-head" id="wlSpineHead">'
-        '  <div class="wl-head-left" id="wlSpineToggleBar" style="cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        '    <span style="font-size:15px">&#128203;</span>'
-        '    <h3 style="margin:0;font-size:13.5px;font-weight:800;color:#f8fafc">My Persistent Working List &mdash; Multi-Step Effort Tiles</h3>'
-        '    <span class="comms-pill emerald" style="font-size:10px;padding:1px 7px">Continuous Workflow Spine &middot; Per-Step Cockpit &amp; Initiative Links</span>'
-        '    <span id="wlHeaderCounts" style="font-family:var(--mono);font-size:11px;color:#7dd3fc">%d Active Tiles &middot; %d Archived</span>'
+        '<div class="wl-head" id="wlSpineHead" style="cursor:pointer" title="Click to expand or collapse The List">'
+        '  <div class="wl-head-left" id="wlSpineToggleBar" data-wl-toggle-spine="1" style="cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1">'
+        '    <span class="ts-badge chz-badge" style="background:rgba(56,189,248,0.18);border-color:rgba(56,189,248,0.55);color:#7dd3fc;font-size:12.5px;padding:3px 10px">&#128203; The List</span>'
+        '    <span class="comms-pill sky" id="wlHeaderCounts" style="font-family:var(--mono);font-size:11.5px;font-weight:800;padding:2px 9px">%d Items on The List</span>'
+        '    <span id="wlHeaderSubSummary" style="font-size:11.5px;color:#cbd5e1">%d Business &middot; %d Teaching &middot; %d Research &middot; %d Personal &middot; <span style="color:#6ee7b7">%d in Things Done</span></span>'
         '  </div>'
         '  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+        '    <button type="button" class="tw-btn" id="btnWlPopulateCos" data-wl-populate-cos="1" style="border-color:rgba(16,185,129,0.55);color:#6ee7b7;font-weight:700" title="Steward (in Chief of Staff mode) populates What Is To Be Done in the Chief of Staff tile above directly from your priority order on The List">&#9889; Populate Chief of Staff</button>'
+        '    <button type="button" class="ts-pill cos-expand-toggle" id="wlSpineCollapseBtn" aria-expanded="false" title="Click to open/expand or collapse The List tile">&#9662; Click to Expand (%d items)</button>'
+        '  </div>'
+        '</div>'
+        '<div class="wl-body" id="wlSpineBody" hidden style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(56,189,248,0.28)">'
+        '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
         '    <div class="wl-cat-tabs" id="wlCatTabs" style="display:inline-flex;gap:4px;flex-wrap:wrap">'
         '      <button type="button" class="tw-btn on" data-wl-cat="all">All Active (<span id="wlCntAll">%d</span>)</button>'
         '      <button type="button" class="tw-btn" data-wl-cat="Business">&#128188; Business (<span id="wlCntBusiness">%d</span>)</button>'
         '      <button type="button" class="tw-btn" data-wl-cat="Teaching">&#127891; Teaching (<span id="wlCntTeaching">%d</span>)</button>'
         '      <button type="button" class="tw-btn" data-wl-cat="Research">&#128300; Research (<span id="wlCntResearch">%d</span>)</button>'
         '      <button type="button" class="tw-btn" data-wl-cat="Personal">&#127968; Personal (<span id="wlCntPersonal">%d</span>)</button>'
-        '      <button type="button" class="tw-btn" data-wl-cat="archived">&#128230; Archived (<span id="wlCntArchived">%d</span>)</button>'
+        '      <button type="button" class="tw-btn" data-wl-cat="archived">&#10003; Things Done (<span id="wlCntArchived">%d</span>)</button>'
         '    </div>'
-        '    <button type="button" class="tog" id="wlSpineCollapseBtn" title="Collapse or expand Working List Spine">Collapse</button>'
+        '    <span style="font-size:11px;color:#94a3b8">Click any single-line item below to expand its AI Cockpit &amp; Star Chart Goal dropdowns and steps</span>'
         '  </div>'
-        '</div>'
-        '<div class="wl-body" id="wlSpineBody">'
         '  <div class="wl-add-bar">'
-        '    <input type="text" id="wlNewTileTitle" placeholder="Add a new multi-step effort tile to your persistent list (e.g. Shut down Archty, Set up Quiz 2, Organize family trip)..." style="flex:1;min-width:210px;padding:5px 9px;border-radius:6px;border:1px solid #283548;background:#080d16;color:#f1f5f9;font-size:12px">'
-        '    <select id="wlNewTileCat" style="padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#080d16;color:#f1f5f9;font-size:11.5px">'
+        '    <input type="text" id="wlNewTileTitle" placeholder="Add a new item to The List (starts as a single-line tile)..." style="flex:1;min-width:210px;padding:5px 9px;border-radius:6px;border:1px solid #283548;background:#080d16;color:#f1f5f9;font-size:12px">'
+        '    <select id="wlNewTileCat" style="padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#080d16;color:#f1f5f9;font-size:11.5px" title="Category of sub-list">'
         '      <option value="Business">&#128188; Business</option>'
         '      <option value="Teaching">&#127891; Teaching</option>'
         '      <option value="Research">&#128300; Research</option>'
         '      <option value="Personal">&#127968; Personal &amp; Family</option>'
         '    </select>'
-        '    <select id="wlNewTilePrio" style="padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#080d16;color:#f1f5f9;font-size:11.5px">'
-        '      <option value="A1">Priority A1 (Top)</option>'
-        '      <option value="A2">Priority A2</option>'
-        '      <option value="B1" selected>Priority B1</option>'
-        '      <option value="C1">Priority C1</option>'
+        '    <select id="wlNewTilePrio" style="padding:5px 8px;border-radius:6px;border:1px solid #283548;background:#080d16;color:#f1f5f9;font-size:11.5px" title="Order / Priority number on The List">'
+        '      <option value="1">Order #1 (1st)</option>'
+        '      <option value="2" selected>Order #2 (2nd)</option>'
+        '      <option value="3">Order #3 (3rd)</option>'
+        '      <option value="4">Order #4 (4th)</option>'
+        '      <option value="5">Order #5 (5th)</option>'
         '    </select>'
-        '    <button type="button" class="tw-btn" id="btnWlAddTopA1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.18);color:#fda4af;font-weight:700">&#9889; Insert at Top (A1)</button>'
-        '    <button type="button" class="tw-btn done" id="btnWlAddTile" style="font-weight:700">+ Add Tile to Spine</button>'
+        '    <button type="button" class="tw-btn" id="btnWlAddTopA1" style="border-color:rgba(244,63,94,0.55);background:rgba(244,63,94,0.18);color:#fda4af;font-weight:700">&#9889; Add as #1 (1st)</button>'
+        '    <button type="button" class="tw-btn done" id="btnWlAddTile" style="font-weight:700">+ Add to The List</button>'
         '  </div>'
         '  <div class="wl-tiles-stack" id="wlTilesContainer">%s</div>'
         '</div>'
@@ -2632,7 +2746,12 @@ def _working_list_spine_html(ctx) -> str:
     ) % (
         wl_json,
         len(active_tiles),
+        cnt_bus,
+        cnt_tch,
+        cnt_res,
+        cnt_per,
         len(arch_tiles),
+        len(active_tiles),
         len(active_tiles),
         cnt_bus,
         cnt_tch,

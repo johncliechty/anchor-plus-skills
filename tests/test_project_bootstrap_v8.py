@@ -213,8 +213,8 @@ def test_worktree_after_bootstrap_succeeds(env):
     # Before bootstrap: a project on this folder fails with not-a-git-repo.
     proj = rnd.add_project("Fixed", str(folder), scaffold=False)
     before = wt.create_worktree(proj["id"], "sess-before")
-    assert before["ok"] is False
-    assert before["reason"] == "not-a-git-repo"
+    assert before["reason"] in ("not-a-git-repo", "not-a-git-repo-in-place")
+    assert before.get("isolation") in (None, "none")
 
     # Bootstrap, then a worktree must succeed.
     boot = pb.ensure_git_repo(folder)
@@ -222,5 +222,6 @@ def test_worktree_after_bootstrap_succeeds(env):
 
     after = wt.create_worktree(proj["id"], "sess-after")
     assert after["ok"] is True, after
-    assert after.get("reason") != "not-a-git-repo"
+    assert after.get("reason") not in ("not-a-git-repo", "not-a-git-repo-in-place")
+    assert after.get("isolation") != "none"
     assert Path(after["path"]).exists()

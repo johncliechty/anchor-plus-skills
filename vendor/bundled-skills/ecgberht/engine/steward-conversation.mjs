@@ -158,6 +158,63 @@ export const CONVERSE_TEXT = Object.freeze({
  * @param {string} code
  * @param {object} [extra]
  */
+const FAMILY_DISPLAY_NAMES = Object.freeze({
+  claude: 'Claude',
+  chatgpt: 'ChatGPT',
+  gemini: 'Gemini',
+  grok: 'Grok',
+});
+
+/**
+ * When a seat fails with a concrete provider refusal (credits_required, usage/rate
+ * limit, model access, or authentication error), surface the actual provider message
+ * rather than generic "could not reach the steward's seat".
+ *
+ * Returns null for generic/unclassified failures so existing unit tests and generic
+ * transport failures retain `CONVERSE_TEXT[CONVERSE_CODE.SEAT_UNREACHABLE]`.
+ */
+export function formatSeatUnreachableText(seatResult, seatFamily = 'claude') {
+  if (!seatResult || typeof seatResult !== 'object') return null;
+  const familyKey = String(seatResult.family || seatFamily || 'claude').toLowerCase();
+  const providerLabel = FAMILY_DISPLAY_NAMES[familyKey] || familyKey || 'Provider';
+  const rawDetail = String(seatResult.provider_error || seatResult.detail || '').trim();
+  const reason = String(seatResult.provider_status || seatResult.reason || '').trim().toLowerCase();
+  if (!rawDetail && !reason) return null;
+
+  const cleaned = rawDetail
+    .replace(/^trio\s+seat\s+[A-Za-z0-9_:-]+\s*:\s*/i, '')
+    .replace(/^[A-Za-z0-9_-]+\s+transport\s+unavailable\s*\([^)]*\)\s*:\s*/i, '')
+    .trim();
+  const genericDetail = !cleaned
+    || /^provider transport did not complete/i.test(cleaned)
+    || /^trio seat\b/i.test(cleaned)
+    || /^[A-Za-z0-9_-]+\s+transport\s+unavailable\s*\([^)]*\)$/i.test(cleaned);
+
+  const probe = `${reason} ${cleaned}`;
+  const isCredits = /\b(?:requires?\s+(?:extra\s+)?usage\s+credits|credits_required|model_requires_usage_credits|switch\s+to\s+another\s+model)\b/i.test(probe);
+  const isUsageOrRate = /\b(?:usage_limit|usage_limit_reached|usage_limit_exceeded|quota_exceeded|quota_exhausted|insufficient_quota|rate_limit|rate_limited|too_many_requests|credit_balance_too_low|hit\s+your\s+(?:usage|rate)\s+limit|usage\s+limit\s+(?:reached|exceeded)|out\s+of\s+(?:extra\s+)?usage)\b/i.test(probe);
+  const isAuth = /\b(?:auth_error|authentication_error|authentication_required|authentication_failed|failed\s+to\s+authenticate|unauthenticated|unauthorized|not_authenticated|login_required|session_expired|session\s+(?:has\s+)?expired|not\s+logged\s+in|please\s+(?:log|sign)\s+in)\b/i.test(probe);
+  const isModelAccess = /\b(?:not\s+entitled\s+to\s+model|model\s+is\s+not\s+available|model_not_found|no\s+model\s+access)\b/i.test(probe);
+
+  if (isCredits) {
+    const detailSentence = !genericDetail ? cleaned : 'The selected model requires usage credits on this account.';
+    return `${providerLabel} refused the request: ${detailSentence}${detailSentence.endsWith('.') ? '' : '.'} Nothing was written.`;
+  }
+  if (isUsageOrRate) {
+    const detailSentence = !genericDetail ? cleaned : `${providerLabel} usage or rate limit reached.`;
+    return `${providerLabel} refused the request: ${detailSentence}${detailSentence.endsWith('.') ? '' : '.'} Nothing was written.`;
+  }
+  if (isAuth) {
+    const detailSentence = !genericDetail ? cleaned : `${providerLabel} requires sign-in.`;
+    return `${providerLabel} refused the request: ${detailSentence}${detailSentence.endsWith('.') ? '' : '.'} Nothing was written.`;
+  }
+  if (isModelAccess) {
+    const detailSentence = !genericDetail ? cleaned : `${providerLabel} rejected access to the requested model.`;
+    return `${providerLabel} refused the request: ${detailSentence}${detailSentence.endsWith('.') ? '' : '.'} Nothing was written.`;
+  }
+  return null;
+}
+
 export function converseFailure(code, extra = {}) {
   const text = CONVERSE_TEXT[code] ?? CONVERSE_TEXT[CONVERSE_CODE.SEAT_UNREACHABLE];
   return {
@@ -1379,10 +1436,19 @@ export async function converse(projectPath, opts = {}) {
   // scaffolding — so the steward can never open by dumping a finished plan on him.
   let seatResult = await callSeat(prompt, SEAT_ROLE.CONVERSATIONAL);
   if (!seatResult || seatResult.ok !== true || !String(seatResult.text ?? '').trim()) {
+    const providerText = formatSeatUnreachableText(seatResult, seats.coding_family);
     return converseFailure(CONVERSE_CODE.SEAT_UNREACHABLE, {
       error: 'seat_call_failed',
       reason: seatResult?.reason ?? 'no_reply',
       detail: seatResult?.detail,
+      ...(seatResult?.provider_error ? { provider_error: seatResult.provider_error } : {}),
+      ...(seatResult?.provider_status ? { provider_status: seatResult.provider_status } : {}),
+      ...(providerText ? {
+        say: providerText,
+        text: providerText,
+        message: providerText,
+        user_text: providerText,
+      } : {}),
     });
   }
 

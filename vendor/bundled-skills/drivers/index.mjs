@@ -129,7 +129,7 @@ function readPrefsFile(file) {
 export function loadModelFamilies(env = process.env) {
   const prefs = loadPolicyPrefs(env);
   return { coding: prefs.coding_family, review: prefs.review_family,
-    terminal: prefs.default_cli, cross_model: prefs.coding_family !== prefs.review_family,
+    orchestrator: prefs.coding_family, reviewer: prefs.review_family, terminal: prefs.default_cli, cross_model: prefs.coding_family !== prefs.review_family,
     source: prefs.source, settings_revision: prefs.settings_revision,
     model_policy: prefs.model_policy };
 }
@@ -256,7 +256,7 @@ export function applyFamilyPrefsToEnv(env = process.env) {
   for (const [R, drv] of Object.entries(roleMap)) {
     env[`TRIO_DRIVER_${R}`] = drv;
   }
-  env.CODING_FAMILY = fams.coding;
+  env.ORCHESTRATOR_FAMILY = fams.coding; env.REVIEWER_FAMILY = fams.review; env.CODING_FAMILY = fams.coding;
   env.REVIEW_FAMILY = fams.review;
   env.CROSS_MODEL = fams.cross_model ? 'true' : 'false';
   return fams;
